@@ -1,6 +1,6 @@
 // pattern: Functional Core
 
-//! Checked, MSB-first bitstream reading for OpenJOC parsers.
+//! Checked, MSB-first bitstream reading for `OpenJOC` parsers.
 
 use core::fmt;
 
@@ -35,18 +35,31 @@ impl fmt::Display for BitError {
 
 impl std::error::Error for BitError {}
 
-/// Minimal interface shared by the normative OpenJOC syntax parsers.
+/// Minimal interface shared by the normative `OpenJOC` syntax parsers.
 pub trait BitRead {
     /// Reads one bit in MSB-first order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BitError`] when no complete bit remains or length arithmetic failed.
     fn read_bit(&mut self) -> Result<bool, BitError>;
 
     /// Reads up to 64 bits in MSB-first order into the low bits of a `u64`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BitError`] for widths above 64, truncated input, or arithmetic failure.
     fn read_bits(&mut self, n: u8) -> Result<u64, BitError>;
 
     /// Returns the exact number of unread bits, or zero after length overflow.
     fn bits_remaining(&self) -> usize;
 
     /// Advances to the next byte boundary without reading beyond the input.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BitError`] if the remaining partial byte is truncated or its
+    /// cursor arithmetic cannot be represented.
     fn byte_align(&mut self) -> Result<(), BitError>;
 }
 

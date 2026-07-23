@@ -188,7 +188,7 @@ impl ImportedTables {
         }
         let _ = writeln!(
             output,
-            "pub const PROT64: [f32; {}] = {:?};",
+            "#[allow(clippy::unreadable_literal)]\npub const PROT64: [f32; {}] = {:?};",
             self.prototype_64.len(),
             self.prototype_64
         );

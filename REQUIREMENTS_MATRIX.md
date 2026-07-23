@@ -17,7 +17,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 6.4 | JOC input/output/control boundary | `openjoc-joc`, `openjoc-scene` | low-level `JocFrameInput` integration test | planned |
 | TS 103 420 6.5, Table 54 | Exact 1/3/5/7/9/12/15/23 band mapping | `openjoc-joc` | exhaustive 8 x 64 test | planned |
 | TS 103 420 6.6.2 | Separate sparse and full differential decoding | `openjoc-joc` | normative examples and state/boundary tests | planned |
-| TS 103 420 6.6.3, Annex A | Six MSB-first Huffman trees and symbol mapping | importer, `openjoc-joc` | all leaves, uniqueness, prefix-free, truncation tests | planned |
+| TS 103 420 6.6.3, Annex A | Six MSB-first Huffman trees and symbol mapping | importer, `openjoc-joc` | all leaves, uniqueness, prefix-free, truncation and malformed-reference tests pass | verified |
 | TS 103 420 6.6.4 | Exact 96/192-level dequantization | `openjoc-joc` | exhaustive oracle/finite/monotonic/centre tests | planned |
 | TS 103 420 6.6.5 | Smooth/steep interpolation and previous-frame state | `openjoc-joc` | 1/2 point and frame-boundary tests | planned |
 | TS 103 420 6.6.6 | Complex QMF object matrix reconstruction | `openjoc-joc` | identity, mixing, zeroing, dimension-error tests | planned |

@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/openjoc-bitio", "tools/import-etsi-tables"]
+members = [
+    "crates/openjoc-bitio",
+    "crates/openjoc-joc",
+    "tools/import-etsi-tables",
+]
 resolver = "3"
 
 [workspace.package]
