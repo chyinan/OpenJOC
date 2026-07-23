@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/openjoc-bitio"]
+members = ["crates/openjoc-bitio", "tools/import-etsi-tables"]
 resolver = "3"
 
 [workspace.package]
@@ -12,4 +12,3 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-

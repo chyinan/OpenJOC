@@ -23,7 +23,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 6.6.6 | Complex QMF object matrix reconstruction | `openjoc-joc` | identity, mixing, zeroing, dimension-error tests | planned |
 | TS 103 420 7.2 | 64-band/640-tap complex QMF analysis | `openjoc-qmf` | impulse/DC/sines/noise/random numerical tests | planned |
 | TS 103 420 7.3 | Complex QMF synthesis and resettable state | `openjoc-qmf` | roundtrip delay/gain/max/RMS metrics | planned |
-| TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | hash, count, provenance tests | planned |
+| TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
 | TS 103 420 8.1 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3` | legal real-vector inspection/decode | planned |
 | TS 103 420 8.2, Table 55 | EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | container/substream/unknown payload tests | planned |
 | TS 103 420 8.3 | `addbsi` extension type and complexity index | `openjoc-eac3` | syntax/semantics tests | planned |
@@ -32,6 +32,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 102 366 Annex E semantics | Independent/dependent substream relationships | `openjoc-eac3` | multi-substream legal/synthetic tests | planned |
 | TS 102 366 Annex H.2 | EMDF sync/container/config/protection | `openjoc-emdf` | variable-length, bounds, protection tests | planned |
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
+| Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene` | JSON roundtrip and timeline tests | planned |
 | Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | command integration/golden artifact tests | planned |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |

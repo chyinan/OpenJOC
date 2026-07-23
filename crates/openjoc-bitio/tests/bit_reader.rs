@@ -15,7 +15,10 @@ fn reads_bits_msb_first_across_byte_boundaries() {
 fn rejects_widths_larger_than_u64_without_consuming_input() {
     let mut reader = BitReader::new(&[0xff]);
 
-    assert_eq!(reader.read_bits(65), Err(BitError::InvalidWidth { width: 65 }));
+    assert_eq!(
+        reader.read_bits(65),
+        Err(BitError::InvalidWidth { width: 65 })
+    );
     assert_eq!(reader.bits_remaining(), 8);
 }
 
