@@ -1,0 +1,32 @@
+{
+  "project": "OpenJOC",
+  "normative_baseline": {
+    "etsi_ts_103_420": {
+      "version": "1.2.1",
+      "date": "2018-10",
+      "pdf": "https://www.etsi.org/deliver/etsi_ts/103400_103499/103420/01.02.01_60/ts_103420v010201p.pdf",
+      "companion_zip": "https://www.etsi.org/deliver/etsi_ts/103400_103499/103420/01.02.01_60/ts_103420v010201p0.zip",
+      "companion_zip_sha256": "a79cf108c4529b7d9ca9525c871183a70b1732ed6df03a3d85b2f31be46eeced",
+      "tables_c_sha256": "4db8ae83e3c2e9269e88365be92a1a3ed6a9e6ee3851afac8ca03902723b1fcd"
+    },
+    "etsi_ts_102_366": {
+      "version": "1.4.1",
+      "date": "2017-09",
+      "pdf": "https://www.etsi.org/deliver/etsi_ts/102300_102399/102366/01.04.01_60/ts_102366v010401p.pdf"
+    }
+  },
+  "verified_attachment_arrays": {
+    "joc_huff_code_coarse_generic": 95,
+    "joc_huff_code_fine_generic": 191,
+    "joc_huff_code_coarse_coeff_sparse": 95,
+    "joc_huff_code_fine_coeff_sparse": 191,
+    "joc_huff_code_5ch_pos_index_sparse": 4,
+    "joc_huff_code_7ch_pos_index_sparse": 6,
+    "prot64": 640
+  },
+  "informative": [
+    "https://secure.aes.org/forum/pubs/conventions/?elib=18285",
+    "https://projectzero.google/2026/01/pixel-0-click-part-1.html",
+    "https://projectzero.google/2026/05/pixel-10-exploit.html"
+  ]
+}
