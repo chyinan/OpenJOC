@@ -244,6 +244,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-complex"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -271,6 +280,14 @@ version = "0.1.0"
 dependencies = [
  "import-etsi-tables",
  "openjoc-bitio",
+]
+
+[[package]]
+name = "openjoc-qmf"
+version = "0.1.0"
+dependencies = [
+ "import-etsi-tables",
+ "num-complex",
 ]
 
 [[package]]

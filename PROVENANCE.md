@@ -60,11 +60,17 @@ implementation is complete.
   phase adjustment, or inferred normalization is used.
 - Validation: direct roundtrip tests measure delay and gain from an impulse and
   evaluate DC, 1 kHz, boundary-adjacent tones, and deterministic white noise.
-  Numerical thresholds remain unverified until the current RED/GREEN cycle is
-  complete.
+  The deterministic metrics are regression-checked rather than compared to an
+  invented perfect-reconstruction threshold absent from clause 7.
 
 ## Ambiguities and open normative questions
 
-None have yet been resolved outside the normative sources. New ambiguities must
+Clause 7 specifies the complete transform equations but no analysis/synthesis
+error or unity-gain threshold. The literal reference equations with the official
+`prot64` data produce a 514-sample peak delay and signal-dependent gain/error.
+These results are retained and reported rather than normalized or modified.
+Conformance must ultimately be cross-checked with a legal normative test vector.
+
+No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,
 and a test or explicit TODO before implementation proceeds.

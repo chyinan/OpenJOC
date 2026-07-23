@@ -21,8 +21,8 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 6.6.4 | Exact 96/192-level dequantization | `openjoc-joc` | exhaustive oracle/finite/monotonic/centre tests | planned |
 | TS 103 420 6.6.5 | Smooth/steep interpolation and previous-frame state | `openjoc-joc` | 1/2 point and frame-boundary tests | planned |
 | TS 103 420 6.6.6 | Complex QMF object matrix reconstruction | `openjoc-joc` | identity, mixing, zeroing, dimension-error tests | planned |
-| TS 103 420 7.2 | 64-band/640-tap complex QMF analysis | `openjoc-qmf` | impulse/DC/sines/noise/random numerical tests | planned |
-| TS 103 420 7.3 | Complex QMF synthesis and resettable state | `openjoc-qmf` | roundtrip delay/gain/max/RMS metrics | planned |
+| TS 103 420 7.2 | 64-band/640-tap complex QMF analysis | `openjoc-qmf` | direct pseudocode 8-12 path; impulse/DC/sines/noise numerical suite passes | verified |
+| TS 103 420 7.3 | Complex QMF synthesis and resettable state | `openjoc-qmf` | direct pseudocode 13-17 path; reset and deterministic delay/gain/max/RMS regression tests pass | verified |
 | TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
 | TS 103 420 8.1 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3` | legal real-vector inspection/decode | planned |
 | TS 103 420 8.2, Table 55 | EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | container/substream/unknown payload tests | planned |

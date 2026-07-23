@@ -2,6 +2,7 @@
 members = [
     "crates/openjoc-bitio",
     "crates/openjoc-joc",
+    "crates/openjoc-qmf",
     "tools/import-etsi-tables",
 ]
 resolver = "3"
