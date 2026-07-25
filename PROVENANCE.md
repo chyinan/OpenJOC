@@ -158,6 +158,16 @@ after complete timing syntax succeeds, exposes the clause 4.4 `frame_offset`,
 and provides an explicit discontinuity reset. Consecutive, rejected, and reset
 frame behavior is covered by integration tests.
 
+### OAMD basic object properties
+
+- Normative source: TS 103 420 clauses 5.5.10, 5.6.1.3, and 5.6.1.4,
+  tables 18 and 19.
+- Design rationale: represent negative-infinity gain as an enum rather than a
+  floating sentinel, preserve integer-dB values exactly, and make the table 18
+  previous-object reuse dependency explicit at the function boundary.
+- Validation: exhaustive 64-code explicit gain coverage, all 32 priority codes,
+  default gain/priority, negative infinity, reuse, and missing-field errors.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

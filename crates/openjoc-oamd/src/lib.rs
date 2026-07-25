@@ -5,8 +5,10 @@
 use openjoc_bitio::{BitError, BitRead};
 use std::fmt;
 
+mod basic_properties;
 mod content;
 mod timing;
+pub use basic_properties::{Gain, decode_gain, decode_priority};
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
 };
@@ -30,6 +32,12 @@ pub enum OamdError {
     ReservedSampleOffsetCode,
     /// Adding the normative 1,536-sample codec-frame size overflowed.
     FrameOffsetOverflow,
+    /// A conditionally required gain codeword was absent.
+    MissingGainBits,
+    /// A conditionally required priority codeword was absent.
+    MissingPriorityBits,
+    /// A property code was outside its normative bit-width/table domain.
+    InvalidPropertyCode,
 }
 
 impl fmt::Display for OamdError {
@@ -51,6 +59,9 @@ impl fmt::Display for OamdError {
                 formatter.write_str("reserved OAMD sample offset code 3")
             }
             Self::FrameOffsetOverflow => formatter.write_str("OAMD frame offset overflow"),
+            Self::MissingGainBits => formatter.write_str("missing OAMD object gain bits"),
+            Self::MissingPriorityBits => formatter.write_str("missing OAMD object priority bits"),
+            Self::InvalidPropertyCode => formatter.write_str("invalid OAMD property code"),
         }
     }
 }
