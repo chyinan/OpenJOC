@@ -6,6 +6,7 @@ use crate::{
     reconstruct_sparse,
 };
 use num_complex::Complex64;
+use openjoc_qmf::ReferenceQmf64F64;
 use std::fmt;
 
 const QMF_SUBBANDS: usize = 64;
@@ -25,6 +26,8 @@ pub struct ObjectReconstructionStages {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedJocFrame {
     pub object_qmf: Vec<Vec<[Complex64; QMF_SUBBANDS]>>,
+    /// Object-major PCM, with 64 samples emitted for every QMF timeslot.
+    pub object_pcm: Vec<Vec<f64>>,
     pub stages: Vec<Option<ObjectReconstructionStages>>,
     pub state_reset: bool,
 }
@@ -96,6 +99,7 @@ pub struct JocDecoderState {
     previous_sequence: Option<u16>,
     channel_count: Option<u8>,
     previous_matrices: Vec<Vec<[f64; QMF_SUBBANDS]>>,
+    synthesis_states: Vec<ReferenceQmf64F64>,
 }
 
 impl JocDecoderState {
@@ -267,11 +271,30 @@ impl JocDecoderState {
             }));
         }
         let object_qmf = reconstruct_objects(inputs, &object_matrices)?;
+        let mut synthesis_states =
+            if state_reset || self.synthesis_states.len() != frame.objects.len() {
+                vec![ReferenceQmf64F64::new(); frame.objects.len()]
+            } else {
+                self.synthesis_states.clone()
+            };
+        let object_pcm = object_qmf
+            .iter()
+            .zip(&mut synthesis_states)
+            .map(|(timeslots, synthesis)| {
+                let mut pcm = Vec::with_capacity(timeslots.len() * QMF_SUBBANDS);
+                for timeslot in timeslots {
+                    pcm.extend_from_slice(&synthesis.synthesize(timeslot));
+                }
+                pcm
+            })
+            .collect();
         self.previous_sequence = Some(frame.sequence_count);
         self.channel_count = Some(frame.header.channel_count);
         self.previous_matrices = previous;
+        self.synthesis_states = synthesis_states;
         Ok(DecodedJocFrame {
             object_qmf,
+            object_pcm,
             stages,
             state_reset,
         })

@@ -281,6 +281,7 @@ dependencies = [
  "import-etsi-tables",
  "num-complex",
  "openjoc-bitio",
+ "openjoc-qmf",
 ]
 
 [[package]]

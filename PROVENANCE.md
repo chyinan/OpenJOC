@@ -81,6 +81,20 @@ implementation is complete.
   frame reuses it; sequence zero resets it; a counter discontinuity starts
   smooth interpolation from zero; quantized and interpolated stages are checked.
 
+### Per-object inverse QMF
+
+- Normative source: TS 103 420 clauses 6.6.6, 7.3, and 7.4, pseudocode 13–17.
+- Official reference data: the verified `prot64[640]` table imported from the
+  official ETSI companion archive.
+- Design rationale: retain one clause 7.3 synthesis history per object, emit 64
+  PCM samples for every reconstructed object-QMF timeslot, and reset synthesis
+  histories on the same sequence/configuration discontinuities as matrix state.
+  Synthesis runs against cloned histories so decoder state is committed only
+  after the complete frame succeeds.
+- Validation: integrated PCM is sample-exact against direct calls to the
+  normative reference synthesizer across consecutive frames, and sequence zero
+  clears residual synthesis history.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

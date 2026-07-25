@@ -3,6 +3,7 @@ use openjoc_joc::{
     HuffmanCodeword, JocDataPoint, JocDecoderState, JocFrame, JocHeader, JocObjectFrame,
     JocPayloadData, QuantMode, Slope,
 };
+use openjoc_qmf::ReferenceQmf64F64;
 
 fn full_object(symbol: u16) -> JocObjectFrame {
     JocObjectFrame {
@@ -115,4 +116,26 @@ fn discontinuous_sequence_resets_interpolation_origin() {
             .abs()
             < 1.0e-12
     );
+}
+
+#[test]
+fn object_qmf_is_synthesized_to_pcm_with_continuous_per_object_state() {
+    let mut state = JocDecoderState::new();
+    let first = state
+        .decode_frame(&frame(1, full_object(5)), &inputs())
+        .expect("first frame");
+    let second = state
+        .decode_frame(&frame(2, absent_object()), &inputs())
+        .expect("continuous frame");
+
+    let mut reference = ReferenceQmf64F64::new();
+    let expected_first = reference.synthesize(&first.object_qmf[0][0]);
+    let expected_second = reference.synthesize(&second.object_qmf[0][0]);
+    assert_eq!(first.object_pcm, vec![expected_first.to_vec()]);
+    assert_eq!(second.object_pcm, vec![expected_second.to_vec()]);
+
+    let reset = state
+        .decode_frame(&frame(0, absent_object()), &inputs())
+        .expect("reset frame");
+    assert_eq!(reset.object_pcm, vec![vec![0.0; 64]]);
 }
