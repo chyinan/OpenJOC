@@ -168,6 +168,17 @@ frame behavior is covered by integration tests.
 - Validation: exhaustive 64-code explicit gain coverage, all 32 priority codes,
   default gain/priority, negative infinity, reuse, and missing-field errors.
 
+### OAMD size and zone constraints
+
+- Normative source: TS 103 420 clauses 5.2.2, 5.2.6, 5.5.11, 5.6.1.2,
+  and 5.6.1.6, tables 17, 20, and 21.
+- Design rationale: retain size as three normalized components, implement the
+  three normative size modes exactly, and return all six ordered zone
+  constraints without collapsing horizontal and elevation semantics.
+- Validation: zero/uniform/independent size boundaries, reserved size mode,
+  all six valid horizontal zone indices, both elevation states, and both
+  reserved zone indices.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

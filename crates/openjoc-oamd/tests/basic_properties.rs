@@ -1,4 +1,7 @@
-use openjoc_oamd::{Gain, OamdError, decode_gain, decode_priority};
+use openjoc_oamd::{
+    Extent3, Gain, OamdError, ZoneConstraint, decode_gain, decode_priority, decode_size,
+    decode_zone_constraints,
+};
 
 #[test]
 fn decodes_every_explicit_gain_code_and_index_semantics() {
@@ -36,4 +39,56 @@ fn decodes_default_and_all_signalled_priorities() {
         decode_priority(false, None),
         Err(OamdError::MissingPriorityBits)
     );
+}
+
+#[test]
+fn decodes_all_size_modes_and_boundaries() {
+    assert_eq!(decode_size(0, None, None), Ok(Extent3::ZERO));
+    assert_eq!(
+        decode_size(1, Some(31), None),
+        Ok(Extent3 {
+            width: 1.0,
+            depth: 1.0,
+            height: 1.0
+        })
+    );
+    assert_eq!(
+        decode_size(2, None, Some([0, 15, 31])),
+        Ok(Extent3 {
+            width: 0.0,
+            depth: 15.0 / 31.0,
+            height: 1.0
+        })
+    );
+    assert_eq!(
+        decode_size(3, None, None),
+        Err(OamdError::ReservedSizeIndex)
+    );
+    assert!(decode_size(1, Some(32), None).is_err());
+}
+
+#[test]
+fn decodes_every_zone_table_entry_and_elevation_flag() {
+    let include = ZoneConstraint::Include;
+    let exclude = ZoneConstraint::Exclude;
+    let expected = [
+        [include, include, include, include, include],
+        [include, include, include, exclude, include],
+        [include, exclude, include, include, include],
+        [exclude, exclude, exclude, exclude, include],
+        [include, exclude, exclude, exclude, exclude],
+        [exclude, exclude, include, exclude, exclude],
+    ];
+    for (index, horizontal) in expected.into_iter().enumerate() {
+        let zones =
+            decode_zone_constraints(u8::try_from(index).expect("index"), false).expect("zone");
+        assert_eq!(zones[..5], horizontal);
+        assert_eq!(zones[5], exclude);
+        assert_eq!(
+            decode_zone_constraints(u8::try_from(index).expect("index"), true).expect("zone")[5],
+            include
+        );
+    }
+    assert!(decode_zone_constraints(6, true).is_err());
+    assert!(decode_zone_constraints(7, true).is_err());
 }

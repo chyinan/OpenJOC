@@ -8,7 +8,10 @@ use std::fmt;
 mod basic_properties;
 mod content;
 mod timing;
-pub use basic_properties::{Gain, decode_gain, decode_priority};
+pub use basic_properties::{
+    Extent3, Gain, ZoneConstraint, decode_gain, decode_priority, decode_size,
+    decode_zone_constraints,
+};
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
 };
@@ -38,6 +41,12 @@ pub enum OamdError {
     MissingPriorityBits,
     /// A property code was outside its normative bit-width/table domain.
     InvalidPropertyCode,
+    /// Conditional object-size fields were absent.
+    MissingSizeBits,
+    /// Table 17 reserves object-size index 3.
+    ReservedSizeIndex,
+    /// Table 20 reserves zone indices 6 and 7.
+    ReservedZoneIndex { index: u8 },
 }
 
 impl fmt::Display for OamdError {
@@ -62,6 +71,11 @@ impl fmt::Display for OamdError {
             Self::MissingGainBits => formatter.write_str("missing OAMD object gain bits"),
             Self::MissingPriorityBits => formatter.write_str("missing OAMD object priority bits"),
             Self::InvalidPropertyCode => formatter.write_str("invalid OAMD property code"),
+            Self::MissingSizeBits => formatter.write_str("missing OAMD object size bits"),
+            Self::ReservedSizeIndex => formatter.write_str("reserved OAMD object size index 3"),
+            Self::ReservedZoneIndex { index } => {
+                write!(formatter, "reserved OAMD zone constraint index {index}")
+            }
         }
     }
 }
