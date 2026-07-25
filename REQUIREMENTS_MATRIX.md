@@ -12,6 +12,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 5.6.1 | Position, size, priority, gain, lock, zones | `openjoc-oamd` | boundary/exhaustive table tests | planned |
 | TS 103 420 5.6.2 | Metadata timing and ramp semantics | `openjoc-oamd` | multiple updates per frame and timestamp tests | planned |
 | TS 103 420 5.6.4-5.6.6 | Additional metadata, trim, divergence, precision extension | `openjoc-oamd` | extension/reuse/unknown-element tests | planned |
+| TS 103 420 5.5.1 | Bounded `variable_bits_max` decoding | `openjoc-oamd` | group values, exact bound, truncation, invalid configuration, overflow tests pass | verified |
 | TS 103 420 6.2 | Complete JOC payload syntax | `openjoc-joc` | full/sparse retained-codeword vectors and padding tests pass | verified |
 | TS 103 420 6.3 | Complete JOC field semantics and validation | `openjoc-joc` | 5/7 channel, 96/192, smooth/steep, reserved/range tests pass | verified |
 | TS 103 420 6.4 | JOC input/output/control boundary | `openjoc-joc`, `openjoc-scene` | channel PCM → analysis QMF → object QMF → object PCM equivalence and atomic rejection tests pass; public OAMD-carrying `JocFrameInput` remains | implemented |

@@ -107,6 +107,27 @@ implementation is complete.
 - Validation: integrated output is sample-exact with separately staged normative
   analysis plus JOC decoding; partial blocks are rejected without advancing state.
 
+### OAMD bounded variable-length fields
+
+- Normative source: TS 103 420 clause 5.5.1; TS 102 366 clauses H.2.1.2.1 and
+  H.2.2.2.1 provide the underlying `variable_bits` definition and group-offset
+  semantics.
+- Official reference data: none; this component is defined directly by normative
+  pseudocode.
+- Design rationale: decode MSB-first groups using checked `u64` arithmetic and
+  enforce the caller-supplied group count before any additional group can drive
+  allocation or indexing.
+- Validation: one- and multi-group values, exact maximum-group stopping,
+  truncation, invalid bounds, and arithmetic overflow are tested.
+
+TS 103 420 clause 5.5.1 initializes `num_group` to one but its printed pseudocode
+does not increment it immediately after the first continuation. Read literally,
+that loop can consume one more group than `max_num_groups`. The parameter name,
+the bounded-purpose variant, and TS 102 366 H.2.2.2.1's definition that each
+continuation introduces exactly one additional group support treating
+`max_num_groups` as the total permitted group count. OpenJOC enforces that bound;
+the explicit maximum-group test records this interpretation for conformance.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.
