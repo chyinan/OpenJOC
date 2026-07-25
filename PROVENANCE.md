@@ -66,6 +66,21 @@ implementation is complete.
   table 54 inputs, interpolation boundary/state tests, and complex identity,
   mixing, zero, and dimension tests.
 
+### Stateful JOC frame pipeline
+
+- Normative source: TS 103 420 clauses 6.3.3.3, 6.6.1–6.6.6.
+- Official reference data: retained Annex A codewords already decoded by the
+  parser.
+- Design rationale: perform parser → distinct differential path → dequantizer →
+  table 54 mapping/interpolation → complex matrix multiply as one atomic frame
+  transaction. Previous matrices are initialized/reset to zero, committed only
+  after successful reconstruction, and reset on sequence zero, counter gaps, or
+  channel/object configuration changes. Every intermediate matrix remains
+  available for debug dumps.
+- Validation: a present frame establishes matrix state; a consecutive absent
+  frame reuses it; sequence zero resets it; a counter discontinuity starts
+  smooth interpolation from zero; quantized and interpolated stages are checked.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.
@@ -94,6 +109,13 @@ indexing is undefined for subbands above the selected band count. OpenJOC uses
 `sb_to_pb(sb)` for steep data points as required by the declared matrix shape,
 clause 6.5, and the final state assignment. A legal conformance vector remains
 the external confirmation gate for this textual inconsistency.
+
+Clause 6.3.3.4 defines `b_joc_obj_present` as presence of side information, but
+clause 6.6 does not separately state the absent-object interpolation operation.
+OpenJOC retains the previous matrix when side information is absent, consistent
+with the flag's stated meaning and the required cross-frame matrix state. On a
+first frame or detected splice that retained matrix is the normative all-zero
+initial state. This interpretation remains subject to legal-vector conformance.
 
 No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,
