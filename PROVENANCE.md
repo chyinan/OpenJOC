@@ -179,6 +179,23 @@ frame behavior is covered by integration tests.
   all six valid horizontal zone indices, both elevation states, and both
   reserved zone indices.
 
+### OAMD object position and spatial factors
+
+- Normative source: TS 103 420 clauses 5.6.1.1.7 through 5.6.1.1.20,
+  tables 14 through 16, and clauses 5.6.6.4.3 through 5.6.6.4.5,
+  tables 44 through 46.
+- Official reference data: none; coordinates and factors are defined directly
+  by the normative equations and tables.
+- Design rationale: retain the previous standard-precision coordinate
+  codewords explicitly for differential updates; decode three-bit deltas as
+  two's-complement values; add extended-precision signed fifth-steps exactly;
+  and apply only the clamps stated by the coordinate equations. Validate every
+  raw value at its bit-width boundary before arithmetic.
+- Validation: both absolute Z signs, all four extended-precision indices, X/Y
+  upper clamping, exhaustive three-bit signed deltas, differential lower and
+  upper coordinate clamping, invalid field widths, all 16 distance factors,
+  all eight screen factors, and all four depth factors are tested.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

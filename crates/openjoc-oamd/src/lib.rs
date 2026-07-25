@@ -7,6 +7,7 @@ use std::fmt;
 
 mod basic_properties;
 mod content;
+mod position;
 mod timing;
 pub use basic_properties::{
     Extent3, Gain, ZoneConstraint, decode_gain, decode_priority, decode_size,
@@ -14,6 +15,11 @@ pub use basic_properties::{
 };
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
+};
+pub use position::{
+    Position3, StandardPositionBits, decode_absolute_position, decode_depth_factor,
+    decode_differential_position, decode_distance_factor, decode_screen_factor,
+    decode_signed_position_delta,
 };
 pub use timing::{
     MetadataBlockTiming, MetadataTimelineState, MetadataTiming, TimedMetadataBlock,
