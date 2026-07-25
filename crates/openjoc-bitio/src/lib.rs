@@ -82,6 +82,33 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Advances this reader by `bit_count` and returns a reader restricted to
+    /// exactly that possibly unaligned window.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BitError`] without advancing when the complete window is not
+    /// available or cursor arithmetic overflows.
+    pub fn take_bits(&mut self, bit_count: usize) -> Result<Self, BitError> {
+        let remaining = self.checked_remaining()?;
+        if bit_count > remaining {
+            return Err(BitError::EndOfInput {
+                requested: bit_count,
+                remaining,
+            });
+        }
+        let start = self.bit_position;
+        let end = start
+            .checked_add(bit_count)
+            .ok_or(BitError::LengthOverflow)?;
+        self.bit_position = end;
+        Ok(Self {
+            bytes: self.bytes,
+            bit_position: start,
+            bit_len: Some(end),
+        })
+    }
+
     fn checked_remaining(&self) -> Result<usize, BitError> {
         let bit_len = self.bit_len.ok_or(BitError::LengthOverflow)?;
         bit_len

@@ -48,6 +48,37 @@ fn byte_align_discards_only_the_partial_byte() {
     assert_eq!(reader.byte_align(), Ok(()));
 }
 
+#[test]
+fn bounded_subreader_is_unaligned_and_cannot_cross_its_parent_window() {
+    let mut parent = BitReader::new(&[0b1011_0010, 0b0110_1001]);
+    assert_eq!(parent.read_bits(3), Ok(0b101));
+
+    let mut child = parent.take_bits(7).expect("bounded window");
+    assert_eq!(parent.bits_remaining(), 6);
+    assert_eq!(child.read_bits(7), Ok(0b100_1001));
+    assert_eq!(
+        child.read_bit(),
+        Err(BitError::EndOfInput {
+            requested: 1,
+            remaining: 0
+        })
+    );
+    assert_eq!(parent.read_bits(6), Ok(0b10_1001));
+}
+
+#[test]
+fn truncated_subreader_request_does_not_advance_parent() {
+    let mut parent = BitReader::new(&[0xaa]);
+    assert_eq!(
+        parent.take_bits(9).map(|_| ()),
+        Err(BitError::EndOfInput {
+            requested: 9,
+            remaining: 8
+        })
+    );
+    assert_eq!(parent.bits_remaining(), 8);
+}
+
 proptest! {
     #[test]
     fn sequential_bits_match_a_boolean_oracle(bytes in proptest::collection::vec(any::<u8>(), 0..128)) {
