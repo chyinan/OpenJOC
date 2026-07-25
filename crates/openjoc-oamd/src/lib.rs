@@ -8,6 +8,7 @@ use std::fmt;
 mod basic_properties;
 mod content;
 mod object_element;
+mod payload;
 mod position;
 mod timing;
 pub use basic_properties::{
@@ -21,6 +22,7 @@ pub use object_element::{
     Distance, ObjectBasicInfo, ObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
     parse_object_element,
 };
+pub use payload::{OamdElement, OamdElementMetadata, OamdPayload, OpaqueBits, parse_oamd_payload};
 pub use position::{
     Position3, StandardPositionBits, decode_absolute_position, decode_depth_factor,
     decode_differential_position, decode_distance_factor, decode_screen_factor,
@@ -62,6 +64,14 @@ pub enum OamdError {
     NonzeroReservedData,
     /// A reuse status appeared without a preceding metadata update.
     MissingPreviousObjectUpdate,
+    /// A declared object count disagreed with the program assignment.
+    ObjectCountMismatch { declared: u16, described: u16 },
+    /// An object element used a reserved alternate-data identifier.
+    ReservedAlternateObjectData { id: u8 },
+    /// A known normative element has not yet been connected to the payload parser.
+    UnsupportedKnownElement { id: u8 },
+    /// A bounded known element or payload ended with a nonzero padding bit.
+    NonzeroPadding,
 }
 
 impl fmt::Display for OamdError {
@@ -95,6 +105,23 @@ impl fmt::Display for OamdError {
             Self::MissingPreviousObjectUpdate => {
                 formatter.write_str("missing previous OAMD object update")
             }
+            Self::ObjectCountMismatch {
+                declared,
+                described,
+            } => write!(
+                formatter,
+                "OAMD object count mismatch: declared {declared}, described {described}"
+            ),
+            Self::ReservedAlternateObjectData { id } => {
+                write!(
+                    formatter,
+                    "reserved OAMD alternate object data identifier {id}"
+                )
+            }
+            Self::UnsupportedKnownElement { id } => {
+                write!(formatter, "unsupported known OAMD element {id}")
+            }
+            Self::NonzeroPadding => formatter.write_str("nonzero OAMD padding"),
         }
     }
 }

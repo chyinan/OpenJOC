@@ -100,8 +100,15 @@ pub fn parse_object_element(
     object_classes: &[ObjectClass],
 ) -> Result<ObjectElement, OamdError> {
     let mut reader = BitReader::new(payload);
+    parse_object_element_reader(&mut reader, object_classes)
+}
+
+pub(crate) fn parse_object_element_reader(
+    reader: &mut BitReader<'_>,
+    object_classes: &[ObjectClass],
+) -> Result<ObjectElement, OamdError> {
     let initial_bits = reader.bits_remaining();
-    let timing = parse_metadata_timing_reader(&mut reader)?;
+    let timing = parse_metadata_timing_reader(reader)?;
     if !reader.read_bit()? && reader.read_bits(5)? != 0 {
         return Err(OamdError::NonzeroReservedData);
     }
@@ -118,26 +125,25 @@ pub fn parse_object_element(
             } else if block_index == 0 {
                 1
             } else {
-                read_u8(&mut reader, 2)?
+                read_u8(reader, 2)?
             };
             let prior_gain = objects
                 .get(object_index.wrapping_sub(1))
                 .and_then(|object| object.get(block_index))
                 .map(|update| update.basic.gain);
-            let basic = parse_basic_info(&mut reader, basic_status, previous, prior_gain)?;
+            let basic = parse_basic_info(reader, basic_status, previous, prior_gain)?;
 
             let render_status = if !active || class == ObjectClass::BedOrIsf {
                 0
             } else if block_index == 0 {
                 1
             } else {
-                read_u8(&mut reader, 2)?
+                read_u8(reader, 2)?
             };
-            let resolved_render =
-                parse_render_info(&mut reader, render_status, block_index, previous)?;
+            let resolved_render = parse_render_info(reader, render_status, block_index, previous)?;
             let additional_table_data = if reader.read_bit()? {
-                let byte_count = usize::from(read_u8(&mut reader, 4)?) + 1;
-                Some(read_byte_window(&mut reader, byte_count)?)
+                let byte_count = usize::from(read_u8(reader, 4)?) + 1;
+                Some(read_byte_window(reader, byte_count)?)
             } else {
                 None
             };

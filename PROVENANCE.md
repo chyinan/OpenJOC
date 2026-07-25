@@ -218,6 +218,24 @@ frame behavior is covered by integration tests.
   additional-data retention, truncation, reserved sample-offset coding, and
   nonzero reserved object-element bits are tested.
 
+### OAMD top-level payload and bounded element dispatch
+
+- Normative source: TS 103 420 clauses 5.5.2 through 5.5.5 and 5.6.4.2
+  through 5.6.4.5, tables 26 and 27; object ordering follows clause 5.6.4.8.
+- Official reference data: none; sizes and dispatch identifiers are defined by
+  the normative syntax and tables.
+- Design rationale: compose prefix and body parsers on one MSB-first reader;
+  restrict each element to exactly `oa_element_size` bytes before reading its
+  conditional alternate ID and discard flag; require zero remainder for known
+  decoded elements; and retain genuinely unknown bodies as length-bearing bit
+  strings. IDs 2 and 5 are recognized as normative trim/extended elements and
+  fail explicitly until implemented instead of being mislabeled as unknown.
+- Validation: complete unaligned object payload, declared-window truncation,
+  nonzero known-element padding, unknown-bit retention, discard intent,
+  reserved alternate object data, mixed bed/ISF/dynamic ordering, program/count
+  mismatch, dynamic-plus-LFE ordering, and unfinished-known-ID rejection are
+  tested.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.
@@ -232,6 +250,14 @@ frame behavior is covered by integration tests.
   invented perfect-reconstruction threshold absent from clause 7.
 
 ## Ambiguities and open normative questions
+
+Clause 5.6.0.5 defines a dynamic-only program as one or more dynamic objects
+plus an optional LFE, while clause 5.6.4.8 lists only bed, ISF, and dynamic
+classes when defining ordering and the render-info helper flag. OpenJOC treats
+the optional LFE as the first speaker-anchored (`BedOrIsf`) object, followed by
+the required dynamic objects. This preserves the general speaker-anchored-first
+ordering and prevents dynamic position syntax from being read for an LFE. The
+two-object LFE-plus-dynamic test records this interpretation for conformance.
 
 Clause 7 specifies the complete transform equations but no analysis/synthesis
 error or unity-gain threshold. The literal reference equations with the official

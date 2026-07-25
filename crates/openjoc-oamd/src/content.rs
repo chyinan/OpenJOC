@@ -46,30 +46,36 @@ pub struct OamdContentPrefix {
 /// Returns [`OamdError`] for truncation, reserved ISF values, or overflow.
 pub fn parse_oamd_content_prefix(payload: &[u8]) -> Result<OamdContentPrefix, OamdError> {
     let mut reader = BitReader::new(payload);
+    parse_oamd_content_prefix_reader(&mut reader)
+}
+
+pub(crate) fn parse_oamd_content_prefix_reader(
+    reader: &mut BitReader<'_>,
+) -> Result<OamdContentPrefix, OamdError> {
     let initial_bits = reader.bits_remaining();
 
-    let mut syntax_version = read_u8(&mut reader, 2)?;
+    let mut syntax_version = read_u8(reader, 2)?;
     if syntax_version == 3 {
         syntax_version = syntax_version
-            .checked_add(read_u8(&mut reader, 3)?)
+            .checked_add(read_u8(reader, 3)?)
             .ok_or(OamdError::ValueOverflow)?;
     }
-    let mut object_count_bits = u16::from(read_u8(&mut reader, 5)?);
+    let mut object_count_bits = u16::from(read_u8(reader, 5)?);
     if object_count_bits == 31 {
         object_count_bits = object_count_bits
-            .checked_add(u16::from(read_u8(&mut reader, 7)?))
+            .checked_add(u16::from(read_u8(reader, 7)?))
             .ok_or(OamdError::ValueOverflow)?;
     }
     let object_count = object_count_bits
         .checked_add(1)
         .ok_or(OamdError::ValueOverflow)?;
 
-    let content = parse_program_assignment(&mut reader)?;
+    let content = parse_program_assignment(reader)?;
     let alternate_object_data_present = reader.read_bit()?;
-    let mut element_count = read_u8(&mut reader, 4)?;
+    let mut element_count = read_u8(reader, 4)?;
     if element_count == 15 {
         element_count = element_count
-            .checked_add(read_u8(&mut reader, 5)?)
+            .checked_add(read_u8(reader, 5)?)
             .ok_or(OamdError::ValueOverflow)?;
     }
     Ok(OamdContentPrefix {
