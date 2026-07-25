@@ -95,6 +95,18 @@ implementation is complete.
   normative reference synthesizer across consecutive frames, and sequence zero
   clears residual synthesis history.
 
+### PCM-to-object reconstruction boundary
+
+- Normative source: TS 103 420 clauses 6.4 and 7.2–7.4.
+- Official reference data: the verified `prot64[640]` table used by the direct
+  analysis and synthesis implementations.
+- Design rationale: accept channel-major downmix PCM in exact 64-sample QMF
+  blocks, retain one analysis history per input channel, and feed the resulting
+  complex timeslots through the stateful JOC and inverse-QMF pipeline. Analysis
+  histories are cloned and committed only after complete frame reconstruction.
+- Validation: integrated output is sample-exact with separately staged normative
+  analysis plus JOC decoding; partial blocks are rejected without advancing state.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

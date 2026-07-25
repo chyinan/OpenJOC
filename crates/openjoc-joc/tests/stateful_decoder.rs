@@ -1,7 +1,7 @@
 use num_complex::Complex64;
 use openjoc_joc::{
-    HuffmanCodeword, JocDataPoint, JocDecoderState, JocFrame, JocHeader, JocObjectFrame,
-    JocPayloadData, QuantMode, Slope,
+    HuffmanCodeword, JocDataPoint, JocDecodeError, JocDecoderState, JocFrame, JocHeader,
+    JocObjectFrame, JocPayloadData, QuantMode, Slope,
 };
 use openjoc_qmf::ReferenceQmf64F64;
 
@@ -138,4 +138,54 @@ fn object_qmf_is_synthesized_to_pcm_with_continuous_per_object_state() {
         .decode_frame(&frame(0, absent_object()), &inputs())
         .expect("reset frame");
     assert_eq!(reset.object_pcm, vec![vec![0.0; 64]]);
+}
+
+#[test]
+fn downmix_pcm_is_analyzed_before_object_reconstruction() {
+    let joc_frame = frame(1, full_object(5));
+    let downmix_pcm = (1..=5)
+        .map(|channel| {
+            (0..128)
+                .map(|sample| f64::from(channel * 128 + sample) / 1024.0)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    let mut integrated = JocDecoderState::new();
+    let actual = integrated
+        .decode_pcm_frame(&joc_frame, &downmix_pcm)
+        .expect("PCM frame");
+
+    let mut analyzers = vec![ReferenceQmf64F64::new(); 5];
+    let qmf = downmix_pcm
+        .iter()
+        .zip(&mut analyzers)
+        .map(|(channel, analyzer)| {
+            channel
+                .chunks_exact(64)
+                .map(|chunk| analyzer.analyze(chunk.try_into().expect("64 samples")))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut staged = JocDecoderState::new();
+    let expected = staged.decode_frame(&joc_frame, &qmf).expect("QMF frame");
+
+    assert_eq!(actual.object_qmf, expected.object_qmf);
+    assert_eq!(actual.object_pcm, expected.object_pcm);
+}
+
+#[test]
+fn downmix_pcm_rejects_partial_qmf_blocks_without_advancing_state() {
+    let mut state = JocDecoderState::new();
+    let invalid = vec![vec![0.0; 65]; 5];
+    assert!(matches!(
+        state.decode_pcm_frame(&frame(1, full_object(5)), &invalid),
+        Err(JocDecodeError::InputSampleCountNotQmfAligned { samples: 65 })
+    ));
+
+    let valid = vec![vec![0.0; 64]; 5];
+    let decoded = state
+        .decode_pcm_frame(&frame(1, full_object(5)), &valid)
+        .expect("state remains usable after rejected PCM");
+    assert!(!decoded.state_reset);
 }

@@ -40,6 +40,7 @@ pub enum JocDecodeError {
     HeaderObjectCount { header: u8, actual: usize },
     InputChannelCount { expected: usize, actual: usize },
     InputTimeslotMismatch,
+    InputSampleCountNotQmfAligned { samples: usize },
     MissingObjectField { object: usize, field: &'static str },
     PayloadModeMismatch { object: usize },
 }
@@ -66,6 +67,10 @@ impl fmt::Display for JocDecodeError {
             Self::InputTimeslotMismatch => {
                 formatter.write_str("JOC input channel timeslots differ")
             }
+            Self::InputSampleCountNotQmfAligned { samples } => write!(
+                formatter,
+                "JOC input contains {samples} samples, not a multiple of 64"
+            ),
             Self::MissingObjectField { object, field } => {
                 write!(formatter, "present JOC object {object} is missing {field}")
             }
@@ -100,6 +105,7 @@ pub struct JocDecoderState {
     channel_count: Option<u8>,
     previous_matrices: Vec<Vec<[f64; QMF_SUBBANDS]>>,
     synthesis_states: Vec<ReferenceQmf64F64>,
+    analysis_states: Vec<ReferenceQmf64F64>,
 }
 
 impl JocDecoderState {
@@ -127,6 +133,60 @@ impl JocDecoderState {
         let frame = parse_joc_payload(payload)?;
         let decoded = self.decode_frame(&frame, inputs)?;
         Ok((frame, decoded))
+    }
+
+    /// Analyzes channel-major PCM and decodes one retained JOC frame end to end.
+    ///
+    /// Each channel must contain the same number of samples, divisible by 64.
+    /// Analysis history is committed only when reconstruction also succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JocDecodeError`] for inconsistent PCM or JOC dimensions.
+    pub fn decode_pcm_frame(
+        &mut self,
+        frame: &JocFrame,
+        downmix_pcm: &[Vec<f64>],
+    ) -> Result<DecodedJocFrame, JocDecodeError> {
+        let expected_channels = usize::from(frame.header.channel_count);
+        if downmix_pcm.len() != expected_channels {
+            return Err(JocDecodeError::InputChannelCount {
+                expected: expected_channels,
+                actual: downmix_pcm.len(),
+            });
+        }
+        let samples = downmix_pcm.first().map_or(0, Vec::len);
+        if downmix_pcm.iter().any(|channel| channel.len() != samples) {
+            return Err(JocDecodeError::InputTimeslotMismatch);
+        }
+        if samples % QMF_SUBBANDS != 0 {
+            return Err(JocDecodeError::InputSampleCountNotQmfAligned { samples });
+        }
+
+        let reset =
+            self.requires_state_reset(frame) || self.analysis_states.len() != expected_channels;
+        let mut analysis_states = if reset {
+            vec![ReferenceQmf64F64::new(); expected_channels]
+        } else {
+            self.analysis_states.clone()
+        };
+        let inputs = downmix_pcm
+            .iter()
+            .zip(&mut analysis_states)
+            .map(|(channel, analysis)| {
+                channel
+                    .chunks_exact(QMF_SUBBANDS)
+                    .map(|chunk| {
+                        let mut block = [0.0; QMF_SUBBANDS];
+                        block.copy_from_slice(chunk);
+                        analysis.analyze(&block)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let decoded = self.decode_frame(frame, &inputs)?;
+        self.analysis_states = analysis_states;
+        Ok(decoded)
     }
 
     /// Decodes a retained JOC frame and commits state only after full success.
@@ -158,14 +218,7 @@ impl JocDecoderState {
             return Err(JocDecodeError::InputTimeslotMismatch);
         }
 
-        let sequence_reset = self.previous_sequence.is_some_and(|previous| {
-            let expected = if previous == 1023 { 1 } else { previous + 1 };
-            frame.sequence_count == 0 || frame.sequence_count != expected
-        });
-        let configuration_reset = self.previous_sequence.is_some()
-            && (self.channel_count != Some(frame.header.channel_count)
-                || self.previous_matrices.len() != frame.objects.len());
-        let state_reset = sequence_reset || configuration_reset;
+        let state_reset = self.requires_state_reset(frame);
         let mut previous = if state_reset
             || self.previous_matrices.len() != frame.objects.len()
             || self
@@ -298,6 +351,17 @@ impl JocDecoderState {
             stages,
             state_reset,
         })
+    }
+
+    fn requires_state_reset(&self, frame: &JocFrame) -> bool {
+        let sequence_reset = self.previous_sequence.is_some_and(|previous| {
+            let expected = if previous == 1023 { 1 } else { previous + 1 };
+            frame.sequence_count == 0 || frame.sequence_count != expected
+        });
+        let configuration_reset = self.previous_sequence.is_some()
+            && (self.channel_count != Some(frame.header.channel_count)
+                || self.previous_matrices.len() != frame.objects.len());
+        sequence_reset || configuration_reset
     }
 }
 
