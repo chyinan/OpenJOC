@@ -8,7 +8,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | scene model/API tests | planned |
 | TS 103 420 5.1-5.4 | OAMD content, properties, timed update/reuse model | `openjoc-oamd` | multi-update and reuse integration tests | planned |
 | TS 103 420 5.5 | Complete OAMD bitstream syntax | `openjoc-oamd` | syntax vectors, truncation and malformed tests | planned |
-| TS 103 420 5.6.0 | OAMD content-description semantics | `openjoc-oamd` | field-by-field semantic tests | planned |
+| TS 103 420 5.6.0 | OAMD content-description semantics | `openjoc-oamd` | dynamic-only, LFE, bed, ISF, dynamic and extended-count prefix tests pass; full element integration remains | implemented |
 | TS 103 420 5.6.1 | Position, size, priority, gain, lock, zones | `openjoc-oamd` | boundary/exhaustive table tests | planned |
 | TS 103 420 5.6.2 | Metadata timing and ramp semantics | `openjoc-oamd` | multiple updates per frame and timestamp tests | planned |
 | TS 103 420 5.6.4-5.6.6 | Additional metadata, trim, divergence, precision extension | `openjoc-oamd` | extension/reuse/unknown-element tests | planned |

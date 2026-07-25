@@ -128,6 +128,19 @@ continuation introduces exactly one additional group support treating
 `max_num_groups` as the total permitted group count. OpenJOC enforces that bound;
 the explicit maximum-group test records this interpretation for conformance.
 
+### OAMD content-description prefix
+
+- Normative source: TS 103 420 clauses 5.5.2, 5.5.3, and 5.6.0; bed channel
+  masks are retained according to clauses 5.6.1.1.3–5.6.1.1.6.
+- Official reference data: none; fields are decoded directly from normative
+  syntax and semantics.
+- Design rationale: expose an explicitly named prefix parser until all
+  `oa_element` bodies are implemented. Preserve bed masks losslessly, derive
+  all `+1`/`+2` counts exactly, reject reserved ISF indices, and consume
+  reserved-program bytes using their declared bounded size.
+- Validation: dynamic-only/LFE, extended syntax/object/element counts, mixed
+  ISF/dynamic content, standard bed assignment, and reserved ISF tests.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

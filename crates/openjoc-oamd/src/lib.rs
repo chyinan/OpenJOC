@@ -5,6 +5,11 @@
 use openjoc_bitio::{BitError, BitRead};
 use std::fmt;
 
+mod content;
+pub use content::{
+    BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
+};
+
 /// Checked failures while decoding OAMD syntax.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OamdError {
@@ -14,6 +19,8 @@ pub enum OamdError {
     InvalidVariableBits { width: u8, max_groups: u8 },
     /// The decoded variable-length integer cannot be represented by `u64`.
     ValueOverflow,
+    /// ISF table 11b reserves indices 6 and 7.
+    ReservedIntermediateSpatialFormat { index: u8 },
 }
 
 impl fmt::Display for OamdError {
@@ -25,6 +32,12 @@ impl fmt::Display for OamdError {
                 "invalid OAMD variable-bits configuration: width {width}, maximum groups {max_groups}"
             ),
             Self::ValueOverflow => formatter.write_str("OAMD variable-length value overflow"),
+            Self::ReservedIntermediateSpatialFormat { index } => {
+                write!(
+                    formatter,
+                    "reserved OAMD intermediate spatial format {index}"
+                )
+            }
         }
     }
 }
@@ -34,6 +47,12 @@ impl std::error::Error for OamdError {}
 impl From<BitError> for OamdError {
     fn from(value: BitError) -> Self {
         Self::Bit(value)
+    }
+}
+
+impl From<std::num::TryFromIntError> for OamdError {
+    fn from(_: std::num::TryFromIntError) -> Self {
+        Self::ValueOverflow
     }
 }
 
