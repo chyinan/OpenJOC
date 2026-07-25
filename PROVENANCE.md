@@ -141,6 +141,17 @@ the explicit maximum-group test records this interpretation for conformance.
 - Validation: dynamic-only/LFE, extended syntax/object/element counts, mixed
   ISF/dynamic content, standard bed assignment, and reserved ISF tests.
 
+### OAMD metadata timing
+
+- Normative source: TS 103 420 clauses 5.3, 5.5.6–5.5.7, and 5.6.2,
+  tables 22–25.
+- Design rationale: retain every update block, derive `start_sample` as
+  `sample_offset + 32 * block_offset_factor`, and decode all fixed, indexed,
+  and explicit ramp-duration forms without collapsing multiple updates.
+- Validation: one four-update vector covers table/offset arithmetic and every
+  ramp coding form; reserved and malformed coverage remains part of the next
+  stateful timing slice.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.

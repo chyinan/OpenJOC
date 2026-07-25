@@ -6,9 +6,11 @@ use openjoc_bitio::{BitError, BitRead};
 use std::fmt;
 
 mod content;
+mod timing;
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
 };
+pub use timing::{MetadataBlockTiming, MetadataTiming, parse_metadata_timing};
 
 /// Checked failures while decoding OAMD syntax.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,6 +23,8 @@ pub enum OamdError {
     ValueOverflow,
     /// ISF table 11b reserves indices 6 and 7.
     ReservedIntermediateSpatialFormat { index: u8 },
+    /// Clause 5.6.2.1 reserves sample-offset code 3.
+    ReservedSampleOffsetCode,
 }
 
 impl fmt::Display for OamdError {
@@ -37,6 +41,9 @@ impl fmt::Display for OamdError {
                     formatter,
                     "reserved OAMD intermediate spatial format {index}"
                 )
+            }
+            Self::ReservedSampleOffsetCode => {
+                formatter.write_str("reserved OAMD sample offset code 3")
             }
         }
     }

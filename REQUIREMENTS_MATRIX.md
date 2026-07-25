@@ -10,7 +10,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 5.5 | Complete OAMD bitstream syntax | `openjoc-oamd` | syntax vectors, truncation and malformed tests | planned |
 | TS 103 420 5.6.0 | OAMD content-description semantics | `openjoc-oamd` | dynamic-only, LFE, bed, ISF, dynamic and extended-count prefix tests pass; full element integration remains | implemented |
 | TS 103 420 5.6.1 | Position, size, priority, gain, lock, zones | `openjoc-oamd` | boundary/exhaustive table tests | planned |
-| TS 103 420 5.6.2 | Metadata timing and ramp semantics | `openjoc-oamd` | multiple updates per frame and timestamp tests | planned |
+| TS 103 420 5.6.2 | Metadata timing and ramp semantics | `openjoc-oamd` | four updates, offset arithmetic, fixed/indexed ramp forms pass; frame-offset state remains | implemented |
 | TS 103 420 5.6.4-5.6.6 | Additional metadata, trim, divergence, precision extension | `openjoc-oamd` | extension/reuse/unknown-element tests | planned |
 | TS 103 420 5.5.1 | Bounded `variable_bits_max` decoding | `openjoc-oamd` | group values, exact bound, truncation, invalid configuration, overflow tests pass | verified |
 | TS 103 420 6.2 | Complete JOC payload syntax | `openjoc-joc` | full/sparse retained-codeword vectors and padding tests pass | verified |
