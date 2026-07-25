@@ -10,7 +10,10 @@ mod timing;
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
 };
-pub use timing::{MetadataBlockTiming, MetadataTiming, parse_metadata_timing};
+pub use timing::{
+    MetadataBlockTiming, MetadataTimelineState, MetadataTiming, TimedMetadataBlock,
+    parse_metadata_timing,
+};
 
 /// Checked failures while decoding OAMD syntax.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +28,8 @@ pub enum OamdError {
     ReservedIntermediateSpatialFormat { index: u8 },
     /// Clause 5.6.2.1 reserves sample-offset code 3.
     ReservedSampleOffsetCode,
+    /// Adding the normative 1,536-sample codec-frame size overflowed.
+    FrameOffsetOverflow,
 }
 
 impl fmt::Display for OamdError {
@@ -45,6 +50,7 @@ impl fmt::Display for OamdError {
             Self::ReservedSampleOffsetCode => {
                 formatter.write_str("reserved OAMD sample offset code 3")
             }
+            Self::FrameOffsetOverflow => formatter.write_str("OAMD frame offset overflow"),
         }
     }
 }

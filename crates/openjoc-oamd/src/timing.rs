@@ -20,6 +20,54 @@ pub struct MetadataTiming {
     pub blocks: Vec<MetadataBlockTiming>,
 }
 
+/// Decoder-interface timing from clause 4.4, including codec-frame position.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimedMetadataBlock {
+    pub start_sample: u16,
+    pub frame_offset: u64,
+    pub ramp_duration: u16,
+}
+
+/// Cross-frame timing state mandated by clause 5.3.2.
+#[derive(Clone, Debug, Default)]
+pub struct MetadataTimelineState {
+    frame_offset: u64,
+}
+
+impl MetadataTimelineState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reset(&mut self) {
+        self.frame_offset = 0;
+    }
+
+    /// Decodes one frame's timing and advances the frame offset atomically.
+    ///
+    /// # Errors
+    /// Returns [`OamdError`] for invalid syntax or frame-offset overflow.
+    pub fn decode_frame(&mut self, payload: &[u8]) -> Result<Vec<TimedMetadataBlock>, OamdError> {
+        let timing = parse_metadata_timing(payload)?;
+        let next = self
+            .frame_offset
+            .checked_add(1536)
+            .ok_or(OamdError::FrameOffsetOverflow)?;
+        let blocks = timing
+            .blocks
+            .into_iter()
+            .map(|block| TimedMetadataBlock {
+                start_sample: block.start_sample,
+                frame_offset: self.frame_offset,
+                ramp_duration: block.ramp_duration,
+            })
+            .collect();
+        self.frame_offset = next;
+        Ok(blocks)
+    }
+}
+
 /// Decodes clauses 5.5.6 and 5.5.7 timing syntax.
 ///
 /// # Errors

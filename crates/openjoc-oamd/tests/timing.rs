@@ -1,4 +1,7 @@
-use openjoc_oamd::{MetadataBlockTiming, MetadataTiming, parse_metadata_timing};
+use openjoc_oamd::{
+    MetadataBlockTiming, MetadataTimelineState, MetadataTiming, TimedMetadataBlock,
+    parse_metadata_timing,
+};
 
 fn push(bits: &mut Vec<bool>, value: u64, width: u8) {
     for shift in (0..width).rev() {
@@ -59,5 +62,28 @@ fn decodes_multiple_update_offsets_and_all_ramp_forms() {
                 },
             ],
         })
+    );
+}
+
+#[test]
+fn frame_offset_advances_by_1536_and_failed_frames_are_atomic() {
+    let mut state = MetadataTimelineState::new();
+    assert_eq!(
+        state.decode_frame(&[0, 0]).expect("first frame"),
+        vec![TimedMetadataBlock {
+            start_sample: 0,
+            frame_offset: 0,
+            ramp_duration: 0,
+        }]
+    );
+    assert!(state.decode_frame(&[0b1100_0000]).is_err());
+    assert_eq!(
+        state.decode_frame(&[0, 0]).expect("second valid frame")[0].frame_offset,
+        1536
+    );
+    state.reset();
+    assert_eq!(
+        state.decode_frame(&[0, 0]).expect("reset frame")[0].frame_offset,
+        0
     );
 }
