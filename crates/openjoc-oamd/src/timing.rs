@@ -74,6 +74,12 @@ impl MetadataTimelineState {
 /// Returns [`OamdError`] for truncation or reserved sample-offset coding.
 pub fn parse_metadata_timing(payload: &[u8]) -> Result<MetadataTiming, OamdError> {
     let mut reader = BitReader::new(payload);
+    parse_metadata_timing_reader(&mut reader)
+}
+
+pub(crate) fn parse_metadata_timing_reader(
+    reader: &mut impl BitRead,
+) -> Result<MetadataTiming, OamdError> {
     let sample_offset = match reader.read_bits(2)? {
         0 => 0,
         1 => SAMPLE_OFFSETS[usize::try_from(reader.read_bits(2)?)?],

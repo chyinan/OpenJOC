@@ -185,7 +185,10 @@ frame behavior is covered by integration tests.
   tables 14 through 16, and clauses 5.6.6.4.3 through 5.6.6.4.5,
   tables 44 through 46.
 - Official reference data: none; coordinates and factors are defined directly
-  by the normative equations and tables.
+  by the normative equations and tables. The layout-sensitive equations on
+  specification pages 38 through 41 and extension tables on page 54 were also
+  visually verified from lossless 300 DPI PNG renders produced by Poppler
+  26.02.0; text extraction was not used to infer fraction or min/max grouping.
 - Design rationale: retain the previous standard-precision coordinate
   codewords explicitly for differential updates; decode three-bit deltas as
   two's-complement values; add extended-precision signed fifth-steps exactly;
@@ -195,6 +198,25 @@ frame behavior is covered by integration tests.
   upper clamping, exhaustive three-bit signed deltas, differential lower and
   upper coordinate clamping, invalid field widths, all 16 distance factors,
   all eight screen factors, and all four depth factors are tested.
+
+### OAMD object element and update/reuse semantics
+
+- Normative source: TS 103 420 clauses 5.5.5 through 5.5.11 and 5.6.4.6
+  through 5.6.4.14, tables 28 through 31.
+- Official reference data: none; the syntax, default values, property masks,
+  and reuse actions are specified directly by the normative pseudocode and
+  tables.
+- Design rationale: parse in the standard's object-major/block-minor order;
+  resolve default, full-update, full-reuse, and mixed states into complete
+  values; keep the standard-precision position codewords needed by subsequent
+  differential updates; and make previous-object gain lookup specific to the
+  same metadata block. Bed/ISF and inactive render defaults are applied before
+  exposing updates. Unknown additional table data is retained within its
+  declared byte bound.
+- Validation: full dynamic updates, two-block mixed and full reuse, inactive
+  defaults, bed/ISF render defaults, previous-object gain, exact bounded
+  additional-data retention, truncation, reserved sample-offset coding, and
+  nonzero reserved object-element bits are tested.
 
 ### 64-band complex QMF (in progress)
 

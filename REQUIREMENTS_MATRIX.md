@@ -8,8 +8,9 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | scene model/API tests | planned |
 | TS 103 420 5.1-5.4 | OAMD content, properties, timed update/reuse model | `openjoc-oamd` | multi-update and reuse integration tests | planned |
 | TS 103 420 5.5 | Complete OAMD bitstream syntax | `openjoc-oamd` | syntax vectors, truncation and malformed tests | planned |
+| TS 103 420 5.5.5-5.5.11 | Object element, per-object updates, basic/render information | `openjoc-oamd` | full, inactive, bed/ISF, mixed/reuse, previous-object gain, bounded additional-data, truncation and reserved-bit tests pass | verified |
 | TS 103 420 5.6.0 | OAMD content-description semantics | `openjoc-oamd` | dynamic-only, LFE, bed, ISF, dynamic and extended-count prefix tests pass; full element integration remains | implemented |
-| TS 103 420 5.6.1 | Position, size, priority, gain, lock, zones | `openjoc-oamd` | boundary/exhaustive table tests | planned |
+| TS 103 420 5.6.1 | Position, size, priority, gain, lock, zones | `openjoc-oamd` | boundary/exhaustive tables and integrated object-update tests pass; outside-room coordinate projection remains | implemented |
 | TS 103 420 5.6.1.3-5.6.1.4 | Priority and gain semantics | `openjoc-oamd` | exhaustive 32 priority and 64 gain codes, defaults, infinity and reuse pass | verified |
 | TS 103 420 5.6.1.2, 5.6.1.6 | Size and zone constraints | `openjoc-oamd` | all size modes/boundaries and every valid/reserved zone index pass | verified |
 | TS 103 420 5.6.2 | Metadata timing and ramp semantics | `openjoc-oamd` | four updates, offset arithmetic, all ramp forms, atomic 1,536-sample frame advancement and reset pass | verified |

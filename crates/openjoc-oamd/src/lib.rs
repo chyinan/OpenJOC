@@ -7,6 +7,7 @@ use std::fmt;
 
 mod basic_properties;
 mod content;
+mod object_element;
 mod position;
 mod timing;
 pub use basic_properties::{
@@ -15,6 +16,10 @@ pub use basic_properties::{
 };
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
+};
+pub use object_element::{
+    Distance, ObjectBasicInfo, ObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
+    parse_object_element,
 };
 pub use position::{
     Position3, StandardPositionBits, decode_absolute_position, decode_depth_factor,
@@ -53,6 +58,10 @@ pub enum OamdError {
     ReservedSizeIndex,
     /// Table 20 reserves zone indices 6 and 7.
     ReservedZoneIndex { index: u8 },
+    /// Reserved OAMD syntax bits were not zero.
+    NonzeroReservedData,
+    /// A reuse status appeared without a preceding metadata update.
+    MissingPreviousObjectUpdate,
 }
 
 impl fmt::Display for OamdError {
@@ -81,6 +90,10 @@ impl fmt::Display for OamdError {
             Self::ReservedSizeIndex => formatter.write_str("reserved OAMD object size index 3"),
             Self::ReservedZoneIndex { index } => {
                 write!(formatter, "reserved OAMD zone constraint index {index}")
+            }
+            Self::NonzeroReservedData => formatter.write_str("nonzero reserved OAMD data"),
+            Self::MissingPreviousObjectUpdate => {
+                formatter.write_str("missing previous OAMD object update")
             }
         }
     }
