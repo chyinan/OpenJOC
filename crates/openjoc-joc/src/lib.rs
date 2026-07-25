@@ -5,6 +5,17 @@
 use openjoc_bitio::{BitError, BitRead};
 use std::fmt;
 
+mod parser;
+mod reconstruction;
+pub use parser::{
+    JocDataPoint, JocFrame, JocHeader, JocObjectFrame, JocParseError, JocPayloadData, QuantMode,
+    Slope, parse_joc_payload,
+};
+pub use reconstruction::{
+    InterpolatedMatrix, JocBandCount, ReconstructionError, dequantize, interpolate_matrix,
+    qmf_subband_to_parameter_band, reconstruct_full, reconstruct_objects, reconstruct_sparse,
+};
+
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/etsi_tables.rs"));
 }
@@ -23,6 +34,13 @@ pub enum HuffmanError {
     InvalidNode { node: usize, node_count: usize },
     CyclicTree,
     BitReader(BitError),
+}
+
+/// One retained Huffman codeword and the symbol produced by clause 6.6.3.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HuffmanCodeword {
+    pub bits: Vec<bool>,
+    pub symbol: u16,
 }
 
 impl fmt::Display for HuffmanError {
@@ -88,6 +106,19 @@ pub fn decode_huffman(
     nodes: &[[i16; 2]],
     codeword_bits: Option<usize>,
 ) -> Result<u16, HuffmanError> {
+    Ok(decode_huffman_codeword(reader, nodes, codeword_bits)?.symbol)
+}
+
+/// Decodes and retains one MSB-first codeword for diagnostics and raw syntax dumps.
+///
+/// # Errors
+///
+/// Returns [`HuffmanError`] under the same conditions as [`decode_huffman`].
+pub fn decode_huffman_codeword(
+    reader: &mut impl BitRead,
+    nodes: &[[i16; 2]],
+    codeword_bits: Option<usize>,
+) -> Result<HuffmanCodeword, HuffmanError> {
     if nodes.is_empty() {
         return Err(HuffmanError::InvalidNode {
             node: 0,
@@ -97,6 +128,7 @@ pub fn decode_huffman(
 
     let mut node = 0_usize;
     let mut consumed = 0_usize;
+    let mut bits = Vec::new();
     loop {
         if consumed >= codeword_bits.unwrap_or(usize::MAX) {
             return Err(HuffmanError::TruncatedCodeword);
@@ -113,13 +145,16 @@ pub fn decode_huffman(
             Err(BitError::EndOfInput { .. }) => return Err(HuffmanError::TruncatedCodeword),
             Err(error) => return Err(HuffmanError::BitReader(error)),
         };
+        bits.push(bit);
         consumed += 1;
         let next = branches[usize::from(bit)];
         if next <= 0 {
-            return u16::try_from(-i32::from(next) - 1).map_err(|_| HuffmanError::InvalidNode {
-                node,
-                node_count: nodes.len(),
-            });
+            let symbol =
+                u16::try_from(-i32::from(next) - 1).map_err(|_| HuffmanError::InvalidNode {
+                    node,
+                    node_count: nodes.len(),
+                })?;
+            return Ok(HuffmanCodeword { bits, symbol });
         }
         node = usize::try_from(next).map_err(|_| HuffmanError::InvalidNode {
             node,

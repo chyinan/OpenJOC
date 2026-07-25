@@ -50,6 +50,22 @@ implementation is complete.
   decoded to the normative symbol; paths are unique and prefix-free; every
   truncated path and an invalid node reference return structured errors.
 
+### JOC syntax and reconstruction matrix
+
+- Normative source: TS 103 420 clauses 6.2, 6.3, 6.5, and 6.6.2–6.6.6;
+  tables 47–54; pseudocode 2–7.
+- Official reference data: the six verified Annex A.1 Huffman trees.
+- Design rationale: retain header/info fields and every codeword for dumps;
+  reject reserved header values; keep sparse and full differential decoding as
+  separate pure functions; use the exact rational dequantizer; encode table 54
+  as its grouped subband widths; return interpolation state explicitly; clear
+  object output buffers before complex matrix accumulation.
+- Validation: full and sparse parser branches (5/7 channels, 96/192 steps,
+  smooth/steep, one/two data points), malformed header/padding cases, distinct
+  sparse/full differential examples, all 288 valid dequantizer inputs, all 512
+  table 54 inputs, interpolation boundary/state tests, and complex identity,
+  mixing, zero, and dimension tests.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.
@@ -70,6 +86,14 @@ error or unity-gain threshold. The literal reference equations with the official
 `prot64` data produce a 514-sample peak delay and signal-dependent gain/error.
 These results are retained and reported rather than normalized or modified.
 Conformance must ultimately be cross-checked with a legal normative test vector.
+
+Clause 6.6.5 pseudocode 6 indexes steep data-point coefficients with `sb`, even
+though `joc_mix_mtx_dq` is defined over parameter bands and the same pseudocode
+requires `sb_to_pb(sb)` for smooth interpolation and state update. Direct `sb`
+indexing is undefined for subbands above the selected band count. OpenJOC uses
+`sb_to_pb(sb)` for steep data points as required by the declared matrix shape,
+clause 6.5, and the final state assignment. A legal conformance vector remains
+the external confirmation gate for this textual inconsistency.
 
 No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,

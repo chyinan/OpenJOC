@@ -279,6 +279,7 @@ name = "openjoc-joc"
 version = "0.1.0"
 dependencies = [
  "import-etsi-tables",
+ "num-complex",
  "openjoc-bitio",
 ]
 
