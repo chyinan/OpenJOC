@@ -472,10 +472,19 @@ frame behavior is covered by integration tests.
 - Design rationale: derive an uncoupled channel's `endmant` directly from its
   bounded `chbwcod`, reject reserved codes 61 through 63, and apply the
   distinct D15/D25/D45 integer group-count equations exactly as printed.
+  Decode each six-bit grouped exponent as three base-5 mapped differentials
+  using the printed inverse equations, subtract two from each mapped value,
+  accumulate from the four-bit absolute exponent, and replicate each result
+  over one, two, or four mantissas for D15, D25, or D45 respectively. Reject
+  grouped values above 124, mismatched group counts, and every intermediate
+  exponent outside the normative 0 through 24 range.
 - Validation: minimum and maximum legal channel bandwidth codes, the first
   reserved code, all three exponent strategies at a common end mantissa, and
-  rejection of the reuse strategy are covered. Coupling, SPX, decoded
-  exponents, bit allocation, and mantissa traversal remain incomplete.
+  rejection of the reuse strategy are covered. Exact neutral, decreasing,
+  and increasing grouped-exponent examples validate differential accumulation
+  and D15/D25/D45 replication; malformed dimensions, grouped code 125,
+  exponent underflow, and group-count mismatch are rejected. Coupling, SPX,
+  bit allocation, and mantissa traversal remain incomplete.
 
 ### Enhanced AC-3 access-unit and substream ordering
 

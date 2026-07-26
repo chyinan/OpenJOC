@@ -1,8 +1,8 @@
 use openjoc_eac3::{
     Eac3Error, JocAddbsi, StreamType, block_start_information_length, channel_end_mantissa,
-    channel_exponent_group_count, decode_frame_exponent_strategy, extract_aux_emdf,
-    extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
-    parse_audio_frame, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
+    channel_exponent_group_count, decode_exponents, decode_frame_exponent_strategy,
+    extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, group_access_units,
+    index_syncframes, parse_audio_frame, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
     validate_complexity_index,
 };
 
@@ -489,6 +489,39 @@ fn derives_channel_mantissa_and_exponent_group_counts() {
     assert_eq!(
         channel_exponent_group_count(73, 0),
         Err(Eac3Error::InvalidExponentStrategy { actual: 0 })
+    );
+}
+
+#[test]
+fn decodes_grouped_exponents_for_every_strategy() {
+    assert_eq!(decode_exponents(10, &[62, 62], 1, 7), Ok(vec![10; 7]));
+    assert_eq!(decode_exponents(10, &[62], 2, 7), Ok(vec![10; 7]));
+    assert_eq!(decode_exponents(10, &[62], 3, 13), Ok(vec![10; 13]));
+
+    assert_eq!(decode_exponents(6, &[0], 1, 4), Ok(vec![6, 4, 2, 0]));
+    assert_eq!(decode_exponents(0, &[124], 1, 4), Ok(vec![0, 2, 4, 6]));
+}
+
+#[test]
+fn rejects_malformed_grouped_exponents() {
+    assert_eq!(
+        decode_exponents(10, &[], 1, 0),
+        Err(Eac3Error::InvalidExponentDimensions { end_mantissa: 0 })
+    );
+    assert_eq!(
+        decode_exponents(10, &[125], 1, 4),
+        Err(Eac3Error::InvalidGroupedExponent { actual: 125 })
+    );
+    assert_eq!(
+        decode_exponents(1, &[0], 1, 4),
+        Err(Eac3Error::ExponentOutOfRange { actual: -1 })
+    );
+    assert_eq!(
+        decode_exponents(10, &[], 1, 4),
+        Err(Eac3Error::ExponentGroupCountMismatch {
+            expected: 1,
+            actual: 0,
+        })
     );
 }
 

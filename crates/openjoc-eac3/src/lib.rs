@@ -46,6 +46,19 @@ pub enum Eac3Error {
     InvalidChannelBandwidthCode {
         actual: u8,
     },
+    InvalidGroupedExponent {
+        actual: u8,
+    },
+    ExponentOutOfRange {
+        actual: i16,
+    },
+    ExponentGroupCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidExponentDimensions {
+        end_mantissa: usize,
+    },
     InvalidBlockStartDimensions {
         frame_size: usize,
         audio_blocks: u8,
@@ -103,12 +116,69 @@ impl Eac3Error {
             _ => None,
         }
     }
+
+    fn format_exponent_error(&self, formatter: &mut fmt::Formatter<'_>) -> Option<fmt::Result> {
+        match self {
+            Self::InvalidGroupedExponent { actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 grouped exponent {actual}"
+            )),
+            Self::ExponentOutOfRange { actual } => Some(write!(
+                formatter,
+                "decoded E-AC-3 exponent {actual} is out of range"
+            )),
+            Self::ExponentGroupCountMismatch { expected, actual } => Some(write!(
+                formatter,
+                "E-AC-3 exponent group count mismatch: expected {expected}, got {actual}"
+            )),
+            Self::InvalidExponentDimensions { end_mantissa } => Some(write!(
+                formatter,
+                "invalid E-AC-3 exponent end mantissa {end_mantissa}"
+            )),
+            _ => None,
+        }
+    }
+
+    fn format_structure_error(&self, formatter: &mut fmt::Formatter<'_>) -> Option<fmt::Result> {
+        match self {
+            Self::InvalidBlockStartDimensions {
+                frame_size,
+                audio_blocks,
+            } => Some(write!(
+                formatter,
+                "invalid E-AC-3 block-start dimensions: {frame_size} frame bytes and {audio_blocks} blocks"
+            )),
+            Self::MissingIndependentSubstreamZero { frame } => Some(write!(
+                formatter,
+                "E-AC-3 access unit at frame {frame} does not begin with independent substream 0"
+            )),
+            Self::NonsequentialIndependentSubstream { expected, actual } => Some(write!(
+                formatter,
+                "nonsequential E-AC-3 independent substream: expected {expected}, got {actual}"
+            )),
+            Self::NonsequentialDependentSubstream { expected, actual } => Some(write!(
+                formatter,
+                "nonsequential E-AC-3 dependent substream: expected {expected}, got {actual}"
+            )),
+            Self::DependentAfterConvertedSubstream { frame } => Some(write!(
+                formatter,
+                "dependent E-AC-3 frame {frame} follows a converted independent substream"
+            )),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Eac3Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(message) = self.static_message() {
             return formatter.write_str(message);
+        }
+        if let Some(result) = self.format_exponent_error(formatter) {
+            return result;
+        }
+        if let Some(result) = self.format_structure_error(formatter) {
+            return result;
         }
         match self {
             Self::Bit(error) => write!(formatter, "failed to read E-AC-3 bitstream: {error}"),
@@ -145,29 +215,6 @@ impl fmt::Display for Eac3Error {
             Self::InvalidChannelBandwidthCode { actual } => {
                 write!(formatter, "invalid E-AC-3 channel bandwidth code {actual}")
             }
-            Self::InvalidBlockStartDimensions {
-                frame_size,
-                audio_blocks,
-            } => write!(
-                formatter,
-                "invalid E-AC-3 block-start dimensions: {frame_size} frame bytes and {audio_blocks} blocks"
-            ),
-            Self::MissingIndependentSubstreamZero { frame } => write!(
-                formatter,
-                "E-AC-3 access unit at frame {frame} does not begin with independent substream 0"
-            ),
-            Self::NonsequentialIndependentSubstream { expected, actual } => write!(
-                formatter,
-                "nonsequential E-AC-3 independent substream: expected {expected}, got {actual}"
-            ),
-            Self::NonsequentialDependentSubstream { expected, actual } => write!(
-                formatter,
-                "nonsequential E-AC-3 dependent substream: expected {expected}, got {actual}"
-            ),
-            Self::DependentAfterConvertedSubstream { frame } => write!(
-                formatter,
-                "dependent E-AC-3 frame {frame} follows a converted independent substream"
-            ),
             Self::SubstreamTimingMismatch { frame } => {
                 write!(
                     formatter,
@@ -203,7 +250,18 @@ impl fmt::Display for Eac3Error {
             | Self::MissingJocExtensionFlag
             | Self::ReservedSnrOffsetStrategy
             | Self::InvalidAccessUnitRange
-            | Self::MultipleJocCarriers => unreachable!("handled static E-AC-3 error message"),
+            | Self::MultipleJocCarriers
+            | Self::InvalidGroupedExponent { .. }
+            | Self::ExponentOutOfRange { .. }
+            | Self::ExponentGroupCountMismatch { .. }
+            | Self::InvalidExponentDimensions { .. }
+            | Self::InvalidBlockStartDimensions { .. }
+            | Self::MissingIndependentSubstreamZero { .. }
+            | Self::NonsequentialIndependentSubstream { .. }
+            | Self::NonsequentialDependentSubstream { .. }
+            | Self::DependentAfterConvertedSubstream { .. } => {
+                unreachable!("handled E-AC-3 error message")
+            }
         }
     }
 }
@@ -756,6 +814,60 @@ pub fn channel_exponent_group_count(
         3 => Ok(end_mantissa.saturating_add(8) / 12),
         actual => Err(Eac3Error::InvalidExponentStrategy { actual }),
     }
+}
+
+/// Decodes clause 6.1.3 base-25 grouped differential exponents.
+///
+/// The result contains one exponent for every mantissa bin, including the
+/// initial absolute exponent at bin zero. Strategies 1, 2, and 3 denote D15,
+/// D25, and D45.
+///
+/// # Errors
+/// Returns an error for invalid dimensions, strategy, group count/code, or an
+/// exponent outside the normative 0 through 24 range.
+pub fn decode_exponents(
+    initial_exponent: u8,
+    grouped_exponents: &[u8],
+    exponent_strategy: u8,
+    end_mantissa: usize,
+) -> Result<Vec<u8>, Eac3Error> {
+    if end_mantissa == 0 || end_mantissa > 253 {
+        return Err(Eac3Error::InvalidExponentDimensions { end_mantissa });
+    }
+    let expected = channel_exponent_group_count(end_mantissa, exponent_strategy)?;
+    if grouped_exponents.len() != expected {
+        return Err(Eac3Error::ExponentGroupCountMismatch {
+            expected,
+            actual: grouped_exponents.len(),
+        });
+    }
+    let mut exponent = i16::from(initial_exponent);
+    if exponent > 24 {
+        return Err(Eac3Error::ExponentOutOfRange { actual: exponent });
+    }
+    let repeats = 1_usize << usize::from(exponent_strategy - 1);
+    let mut decoded = Vec::with_capacity(end_mantissa);
+    decoded.push(initial_exponent);
+    for &group in grouped_exponents {
+        if group > 124 {
+            return Err(Eac3Error::InvalidGroupedExponent { actual: group });
+        }
+        for value in [group / 25, (group % 25) / 5, group % 5] {
+            exponent += i16::from(value) - 2;
+            if !(0..=24).contains(&exponent) {
+                return Err(Eac3Error::ExponentOutOfRange { actual: exponent });
+            }
+            for _ in 0..repeats {
+                if decoded.len() < end_mantissa {
+                    decoded.push(
+                        u8::try_from(exponent)
+                            .map_err(|_| Eac3Error::ExponentOutOfRange { actual: exponent })?,
+                    );
+                }
+            }
+        }
+    }
+    Ok(decoded)
 }
 
 fn parse_mixing_metadata(
