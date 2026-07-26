@@ -37,6 +37,14 @@ pub enum Eac3Error {
         complexity: u8,
         objects: u16,
     },
+    InvalidFrameExponentStrategy {
+        actual: u8,
+    },
+    InvalidBlockStartDimensions {
+        frame_size: usize,
+        audio_blocks: u8,
+    },
+    ReservedSnrOffsetStrategy,
     MissingIndependentSubstreamZero {
         frame: usize,
     },
@@ -108,6 +116,19 @@ impl fmt::Display for Eac3Error {
                 formatter,
                 "E-AC-3 JOC complexity index {complexity} does not equal OAMD object count {objects}"
             ),
+            Self::InvalidFrameExponentStrategy { actual } => {
+                write!(formatter, "invalid E-AC-3 frame exponent strategy {actual}")
+            }
+            Self::InvalidBlockStartDimensions {
+                frame_size,
+                audio_blocks,
+            } => write!(
+                formatter,
+                "invalid E-AC-3 block-start dimensions: {frame_size} frame bytes and {audio_blocks} blocks"
+            ),
+            Self::ReservedSnrOffsetStrategy => {
+                formatter.write_str("reserved E-AC-3 SNR offset strategy")
+            }
             Self::MissingIndependentSubstreamZero { frame } => write!(
                 formatter,
                 "E-AC-3 access unit at frame {frame} does not begin with independent substream 0"
@@ -243,6 +264,59 @@ pub struct BitstreamInformation {
     pub addbsi: Option<Vec<u8>>,
 }
 
+/// E.1.2.3 frame state required to decode each following audio block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioFrameInformation {
+    pub bsi: BitstreamInformation,
+    pub full_bandwidth_channels: u8,
+    pub snr_offset_strategy: u8,
+    pub syntax: AudioFrameSyntaxFlags,
+    pub coupling_in_use: Vec<bool>,
+    pub coupling_exponent_strategy: Vec<u8>,
+    pub channel_exponent_strategy: Vec<Vec<u8>>,
+    pub lfe_exponent_strategy: Vec<bool>,
+    pub coupling_aht_in_use: bool,
+    pub channel_aht_in_use: Vec<bool>,
+    pub lfe_aht_in_use: bool,
+    pub block_start_information: Option<AuxiliaryData>,
+    pub audio_blocks_offset_bits: usize,
+}
+
+/// Compact E.1.2.3 syntax-enable fields.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AudioFrameSyntaxFlags(u8);
+
+impl AudioFrameSyntaxFlags {
+    #[must_use]
+    pub fn block_switch(self) -> bool {
+        self.0 & (1 << 0) != 0
+    }
+    #[must_use]
+    pub fn dither(self) -> bool {
+        self.0 & (1 << 1) != 0
+    }
+    #[must_use]
+    pub fn bit_allocation(self) -> bool {
+        self.0 & (1 << 2) != 0
+    }
+    #[must_use]
+    pub fn frame_fast_gain(self) -> bool {
+        self.0 & (1 << 3) != 0
+    }
+    #[must_use]
+    pub fn delta_bit_allocation(self) -> bool {
+        self.0 & (1 << 4) != 0
+    }
+    #[must_use]
+    pub fn skip_field(self) -> bool {
+        self.0 & (1 << 5) != 0
+    }
+    #[must_use]
+    pub fn spx_attenuation(self) -> bool {
+        self.0 & (1 << 6) != 0
+    }
+}
+
 /// Parses the fixed acquisition prefix from clauses E.1.2.1 and E.1.2.2.
 ///
 /// # Errors
@@ -318,61 +392,312 @@ pub fn parse_bsi(bytes: &[u8]) -> Result<BitstreamInformation, Eac3Error> {
         });
     }
     let mut bits = BitReader::new(&bytes[..header.frame_size]);
-    let (header, num_blocks_code) = parse_header_reader(&mut bits)?;
-    let acmod = read_u8(&mut bits, 3)?;
+    Ok(parse_bsi_reader(&mut bits)?.0)
+}
+
+fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u8), Eac3Error> {
+    let (header, num_blocks_code) = parse_header_reader(bits)?;
+    let acmod = read_u8(bits, 3)?;
     let lfe_on = bits.read_bit()?;
-    let bitstream_id = read_u8(&mut bits, 5)?;
-    skip(&mut bits, 5)?; // dialnorm
+    let bitstream_id = read_u8(bits, 5)?;
+    skip(bits, 5)?; // dialnorm
     if bits.read_bit()? {
-        skip(&mut bits, 8)?;
+        skip(bits, 8)?;
     }
     if acmod == 0 {
-        skip(&mut bits, 5)?;
+        skip(bits, 5)?;
         if bits.read_bit()? {
-            skip(&mut bits, 8)?;
+            skip(bits, 8)?;
         }
     }
     if header.stream_type == StreamType::Dependent && bits.read_bit()? {
-        skip(&mut bits, 16)?;
+        skip(bits, 16)?;
     }
     if bits.read_bit()? {
-        parse_mixing_metadata(
-            &mut bits,
-            header.stream_type,
-            acmod,
-            lfe_on,
-            num_blocks_code,
-        )?;
+        parse_mixing_metadata(bits, header.stream_type, acmod, lfe_on, num_blocks_code)?;
     }
     if bits.read_bit()? {
-        parse_informational_metadata(&mut bits, acmod)?;
+        parse_informational_metadata(bits, acmod)?;
     }
     if header.stream_type == StreamType::Independent && num_blocks_code != 3 {
-        skip(&mut bits, 1)?;
+        skip(bits, 1)?;
     }
     if header.stream_type == StreamType::ConvertedIndependent {
         let block_id = num_blocks_code == 3 || bits.read_bit()?;
         if block_id {
-            skip(&mut bits, 6)?;
+            skip(bits, 6)?;
         }
     }
     let addbsi = if bits.read_bit()? {
-        let length = usize::from(read_u8(&mut bits, 6)?) + 1;
+        let length = usize::from(read_u8(bits, 6)?) + 1;
         let mut data = Vec::with_capacity(length);
         for _ in 0..length {
-            data.push(read_u8(&mut bits, 8)?);
+            data.push(read_u8(bits, 8)?);
         }
         Some(data)
     } else {
         None
     };
-    Ok(BitstreamInformation {
-        header,
-        audio_coding_mode: acmod,
-        lfe_on,
-        bitstream_id,
-        addbsi,
+    Ok((
+        BitstreamInformation {
+            header,
+            audio_coding_mode: acmod,
+            lfe_on,
+            bitstream_id,
+            addbsi,
+        },
+        num_blocks_code,
+    ))
+}
+
+/// Parses E.1.2.2 and the following E.1.2.3 audio-frame state.
+///
+/// # Errors
+/// Returns an error for malformed or truncated bounded syntax.
+#[allow(clippy::too_many_lines)] // Mirrors E.1.2.3 in one auditable clause order.
+pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Error> {
+    let header = parse_syncframe_header(bytes)?;
+    if header.frame_size > bytes.len() {
+        return Err(Eac3Error::TruncatedFrame {
+            offset: 0,
+            declared: header.frame_size,
+            available: bytes.len(),
+        });
+    }
+    let frame_bits = header
+        .frame_size
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let mut bits = BitReader::new(&bytes[..header.frame_size]);
+    let (bsi, num_blocks_code) = parse_bsi_reader(&mut bits)?;
+    let (exponent_strategy_exists, aht_exists) = if num_blocks_code == 3 {
+        (bits.read_bit()?, bits.read_bit()?)
+    } else {
+        (true, false)
+    };
+    let snr_offset_strategy = read_u8(&mut bits, 2)?;
+    if snr_offset_strategy == 3 {
+        return Err(Eac3Error::ReservedSnrOffsetStrategy);
+    }
+    let transient_processing = bits.read_bit()?;
+    let mut syntax = 0_u8;
+    for index in 0..7 {
+        syntax |= u8::from(bits.read_bit()?) << index;
+    }
+    let syntax = AudioFrameSyntaxFlags(syntax);
+    let channel_count = full_bandwidth_channels(bsi.audio_coding_mode);
+    let block_count = usize::from(bsi.header.audio_blocks);
+    let mut coupling_in_use = vec![false; block_count];
+    let mut coupling_strategy_exists = vec![false; block_count];
+    if bsi.audio_coding_mode > 1 {
+        coupling_strategy_exists[0] = true;
+        coupling_in_use[0] = bits.read_bit()?;
+        for block in 1..block_count {
+            coupling_strategy_exists[block] = bits.read_bit()?;
+            if coupling_strategy_exists[block] {
+                coupling_in_use[block] = bits.read_bit()?;
+            } else {
+                coupling_in_use[block] = coupling_in_use[block - 1];
+            }
+        }
+    }
+    let mut coupling_exponent_strategy = vec![0_u8; block_count];
+    let mut channel_exponent_strategy = vec![vec![0_u8; usize::from(channel_count)]; block_count];
+    if exponent_strategy_exists {
+        for block in 0..block_count {
+            if coupling_in_use[block] {
+                coupling_exponent_strategy[block] = read_u8(&mut bits, 2)?;
+            }
+            for channel in 0..usize::from(channel_count) {
+                channel_exponent_strategy[block][channel] = read_u8(&mut bits, 2)?;
+            }
+        }
+    } else {
+        if bsi.audio_coding_mode > 1 && coupling_in_use.iter().any(|in_use| *in_use) {
+            coupling_exponent_strategy = decode_frame_exponent_strategy(read_u8(&mut bits, 5)?)?
+                .into_iter()
+                .collect();
+        }
+        for channel in 0..usize::from(channel_count) {
+            let strategies = decode_frame_exponent_strategy(read_u8(&mut bits, 5)?)?;
+            for (block, strategy) in strategies.into_iter().enumerate() {
+                channel_exponent_strategy[block][channel] = strategy;
+            }
+        }
+    }
+    let mut lfe_exponent_strategy = vec![false; block_count];
+    if bsi.lfe_on {
+        for strategy in &mut lfe_exponent_strategy {
+            *strategy = bits.read_bit()?;
+        }
+    }
+    if bsi.header.stream_type == StreamType::Independent {
+        let converter_exponent_exists = if num_blocks_code == 3 {
+            true
+        } else {
+            bits.read_bit()?
+        };
+        if converter_exponent_exists {
+            for _ in 0..channel_count {
+                skip(&mut bits, 5)?;
+            }
+        }
+    }
+    let mut coupling_aht_in_use = false;
+    let mut channel_aht_in_use = vec![false; usize::from(channel_count)];
+    let mut lfe_aht_in_use = false;
+    if aht_exists {
+        let coupling_regions = coupling_strategy_exists
+            .iter()
+            .zip(&coupling_exponent_strategy)
+            .filter(|(exists, strategy)| **exists || **strategy != 0)
+            .count();
+        if coupling_in_use.iter().all(|in_use| *in_use) && coupling_regions == 1 {
+            coupling_aht_in_use = bits.read_bit()?;
+        }
+        for channel in 0..usize::from(channel_count) {
+            let regions = channel_exponent_strategy
+                .iter()
+                .filter(|strategies| strategies[channel] != 0)
+                .count();
+            if regions == 1 {
+                channel_aht_in_use[channel] = bits.read_bit()?;
+            }
+        }
+        if bsi.lfe_on && lfe_exponent_strategy.iter().filter(|value| **value).count() == 1 {
+            lfe_aht_in_use = bits.read_bit()?;
+        }
+    }
+    if snr_offset_strategy == 0 {
+        skip(&mut bits, 10)?;
+    }
+    if transient_processing {
+        for _ in 0..channel_count {
+            if bits.read_bit()? {
+                skip(&mut bits, 18)?;
+            }
+        }
+    }
+    if syntax.spx_attenuation() {
+        for _ in 0..channel_count {
+            if bits.read_bit()? {
+                skip(&mut bits, 5)?;
+            }
+        }
+    }
+    let block_start_information = if num_blocks_code != 0 && bits.read_bit()? {
+        let length =
+            block_start_information_length(bsi.header.frame_size, bsi.header.audio_blocks)?;
+        Some(read_raw_bits(&mut bits, length)?)
+    } else {
+        None
+    };
+    let audio_blocks_offset_bits = frame_bits
+        .checked_sub(bits.bits_remaining())
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    Ok(AudioFrameInformation {
+        bsi,
+        full_bandwidth_channels: channel_count,
+        snr_offset_strategy,
+        syntax,
+        coupling_in_use,
+        coupling_exponent_strategy,
+        channel_exponent_strategy,
+        lfe_exponent_strategy,
+        coupling_aht_in_use,
+        channel_aht_in_use,
+        lfe_aht_in_use,
+        block_start_information,
+        audio_blocks_offset_bits,
     })
+}
+
+fn full_bandwidth_channels(audio_coding_mode: u8) -> u8 {
+    [2, 1, 2, 3, 3, 4, 4, 5][usize::from(audio_coding_mode)]
+}
+
+fn read_raw_bits(bits: &mut BitReader<'_>, bit_len: usize) -> Result<AuxiliaryData, Eac3Error> {
+    let byte_len = bit_len.checked_add(7).ok_or(Eac3Error::FrameSizeOverflow)? / 8;
+    let mut bytes = vec![0_u8; byte_len];
+    for index in 0..bit_len {
+        if bits.read_bit()? {
+            bytes[index / 8] |= 0x80 >> (index % 8);
+        }
+    }
+    Ok(AuxiliaryData { bit_len, bytes })
+}
+
+/// Applies TS 102 366 table E.1.9 (`R`, `D15`, `D25`, `D45` = 0..=3).
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidFrameExponentStrategy`] for values wider than
+/// the normative five-bit field.
+pub fn decode_frame_exponent_strategy(code: u8) -> Result<[u8; 6], Eac3Error> {
+    const TABLE: [[u8; 6]; 32] = [
+        [1, 0, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0, 3],
+        [1, 0, 0, 0, 2, 0],
+        [1, 0, 0, 0, 3, 3],
+        [2, 0, 0, 2, 0, 0],
+        [2, 0, 0, 2, 0, 3],
+        [2, 0, 0, 3, 2, 0],
+        [2, 0, 0, 3, 3, 3],
+        [2, 0, 1, 0, 0, 0],
+        [2, 0, 2, 0, 0, 3],
+        [2, 0, 2, 0, 2, 0],
+        [2, 0, 2, 0, 3, 3],
+        [2, 0, 3, 2, 0, 0],
+        [2, 0, 3, 2, 0, 3],
+        [2, 0, 3, 3, 2, 0],
+        [2, 0, 3, 3, 3, 3],
+        [3, 1, 0, 0, 0, 0],
+        [3, 1, 0, 0, 0, 3],
+        [3, 2, 0, 0, 2, 0],
+        [3, 2, 0, 0, 3, 3],
+        [3, 2, 0, 2, 0, 0],
+        [3, 2, 0, 2, 0, 3],
+        [3, 2, 0, 3, 2, 0],
+        [3, 2, 0, 3, 3, 3],
+        [3, 3, 1, 0, 0, 0],
+        [3, 3, 2, 0, 0, 3],
+        [3, 3, 2, 0, 2, 0],
+        [3, 3, 2, 0, 3, 3],
+        [3, 3, 3, 2, 0, 0],
+        [3, 3, 3, 2, 0, 3],
+        [3, 3, 3, 3, 2, 0],
+        [3, 3, 3, 3, 3, 3],
+    ];
+    TABLE
+        .get(usize::from(code))
+        .copied()
+        .ok_or(Eac3Error::InvalidFrameExponentStrategy { actual: code })
+}
+
+/// Evaluates the page-138 clause E.1.3.2.27 `nblkstrtbits` equation.
+///
+/// # Errors
+/// Returns a dimension or overflow error for an impossible Enhanced AC-3
+/// frame size/block count.
+pub fn block_start_information_length(
+    frame_size: usize,
+    audio_blocks: u8,
+) -> Result<usize, Eac3Error> {
+    if frame_size == 0 || frame_size % 2 != 0 || !matches!(audio_blocks, 1 | 2 | 3 | 6) {
+        return Err(Eac3Error::InvalidBlockStartDimensions {
+            frame_size,
+            audio_blocks,
+        });
+    }
+    let words = frame_size / 2;
+    let ceiling_log2 = usize::try_from(usize::BITS - (words - 1).leading_zeros())
+        .map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    usize::from(audio_blocks - 1)
+        .checked_mul(
+            4_usize
+                .checked_add(ceiling_log2)
+                .ok_or(Eac3Error::FrameSizeOverflow)?,
+        )
+        .ok_or(Eac3Error::FrameSizeOverflow)
 }
 
 fn parse_mixing_metadata(

@@ -437,6 +437,32 @@ frame behavior is covered by integration tests.
   `mixdeflen` field. Dependent-substream assembly, EMDF location, CRC, and audio
   decoding remain explicitly incomplete.
 
+### Enhanced AC-3 audio-frame state
+
+- Normative source: TS 102 366 clauses E.1.2.3, E.1.3.2, and E.2.4.2;
+  tables E.1.8 and E.1.9.
+- Official reference data: none. TS 102 366 pages 116 through 118, 137, and
+  138 were rendered losslessly at 300 DPI using Poppler 26.02.0 and visually
+  inspected. This verified the continuous BSI-to-`audfrm` field order, compact
+  syntax flags, per-block and frame-based exponent strategies, complete
+  32-row frame exponent table, AHT region eligibility, and the exact
+  block-start-information length equation.
+- Design rationale: continue the same bounded MSB-first reader from BSI rather
+  than reconstructing a cursor; retain typed frame syntax and per-block
+  coupling/channel/LFE exponent state needed by `audblk`; derive frame-coded
+  strategies directly from table E.1.9; count exponent regions according to
+  E.2.4.2 before consuming AHT flags; reject the reserved SNR strategy; and
+  retain block-start information bit-exactly so later block traversal can use
+  normative offsets without scanning payload bytes.
+- Validation: all 32 table E.1.9 rows; one- and six-block exact cursor cases;
+  per-block and frame-coded exponent strategies; coupling reuse; LFE and
+  converter syntax; AHT single-region eligibility; transient and SPX
+  conditionals; reserved-SNR rejection; invalid block-start dimensions; exact
+  55-bit retention; and the block-start equation at 128-byte/one-block,
+  128-byte/six-block, 130-byte/six-block, and 256-byte/three-block boundaries
+  are covered by the 19 `openjoc-eac3` tests. Full E.1.2.4 audio-block,
+  exponent, bit-allocation, and mantissa traversal remains incomplete.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

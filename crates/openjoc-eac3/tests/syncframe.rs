@@ -1,10 +1,11 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, extract_aux_emdf, extract_aux_joc_access_unit,
-    extract_auxdata, group_access_units, index_syncframes, parse_bsi, parse_joc_addbsi,
+    Eac3Error, JocAddbsi, StreamType, block_start_information_length,
+    decode_frame_exponent_strategy, extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata,
+    group_access_units, index_syncframes, parse_audio_frame, parse_bsi, parse_joc_addbsi,
     parse_syncframe_header, validate_complexity_index,
 };
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Bits(Vec<bool>);
 
 impl Bits {
@@ -223,6 +224,291 @@ fn mixing_option_four_length_includes_the_mixdeflen_field() {
 
     let bsi = parse_bsi(&bits.bytes(64)).expect("bounded option-four mixdata");
     assert_eq!(bsi.addbsi, Some(vec![0x01, 0x04]));
+}
+
+#[test]
+fn parses_one_block_audio_frame_state_and_exact_block_offset() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(63, 11); // 128-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(1, 1); // block-switch syntax
+    bits.push(0, 1); // dither syntax
+    bits.push(0, 1); // bit-allocation syntax
+    bits.push(1, 1); // frame fast-gain syntax
+    bits.push(1, 1); // delta-bit-allocation syntax
+    bits.push(1, 1); // skip-field syntax
+    bits.push(0, 1); // SPX attenuation syntax
+    bits.push(1, 2); // channel exponent strategy D15
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(32, 6); // frame coarse SNR offset
+    bits.push(7, 4); // frame fine SNR offset
+    let expected_offset = bits.0.len();
+    let bytes = bits.bytes(128);
+
+    let frame = parse_audio_frame(&bytes).expect("valid audio-frame syntax");
+    assert_eq!(frame.full_bandwidth_channels, 1);
+    assert_eq!(frame.snr_offset_strategy, 0);
+    assert!(frame.syntax.block_switch());
+    assert!(!frame.syntax.dither());
+    assert!(!frame.syntax.bit_allocation());
+    assert!(frame.syntax.frame_fast_gain());
+    assert!(frame.syntax.delta_bit_allocation());
+    assert!(frame.syntax.skip_field());
+    assert!(!frame.syntax.spx_attenuation());
+    assert_eq!(frame.coupling_in_use, [false]);
+    assert_eq!(frame.channel_exponent_strategy, vec![vec![1]]);
+    assert_eq!(frame.audio_blocks_offset_bits, expected_offset);
+}
+
+#[test]
+fn parses_six_block_coupling_lfe_converter_and_optional_frame_data() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2);
+    bits.push(0, 3);
+    bits.push(127, 11); // 256-byte frame
+    bits.push(0, 2);
+    bits.push(3, 2); // six blocks
+    bits.push(7, 3); // 3/2 mode, five full-bandwidth channels
+    bits.push(1, 1); // LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // addbsie
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(0, 1); // no AHT
+    bits.push(2, 2); // channel-specific SNR strategy
+    bits.push(1, 1); // transient processing
+    bits.push(0, 1); // block switch syntax
+    bits.push(1, 1); // dither syntax
+    bits.push(1, 1); // bit allocation syntax
+    bits.push(0, 1); // frame fast gain syntax
+    bits.push(1, 1); // delta bit allocation syntax
+    bits.push(1, 1); // skip field syntax
+    bits.push(1, 1); // SPX attenuation syntax
+    bits.push(1, 1); // coupling in block 0
+    for _ in 1..6 {
+        bits.push(0, 1); // reuse coupling-in-use state
+    }
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 2); // coupling D15 then reuse
+        for _ in 0..5 {
+            bits.push(u64::from(block == 0), 2); // channel D15 then reuse
+        }
+    }
+    bits.push(0b10_0000, 6); // LFE D15 then reuse
+    for _ in 0..5 {
+        bits.push(0, 5); // converter frame strategy
+    }
+    bits.push(1, 1); // channel 0 transient data
+    bits.push(341, 10);
+    bits.push(85, 8);
+    for _ in 1..5 {
+        bits.push(0, 1);
+    }
+    bits.push(1, 1); // channel 0 SPX attenuation
+    bits.push(17, 5);
+    for _ in 1..5 {
+        bits.push(0, 1);
+    }
+    bits.push(1, 1); // block start information present
+    bits.push((1_u64 << 55) - 1, 55);
+    let expected_offset = bits.0.len();
+    let bytes = bits.bytes(256);
+
+    let frame = parse_audio_frame(&bytes).expect("complete six-block frame state");
+    assert_eq!(frame.full_bandwidth_channels, 5);
+    assert_eq!(frame.coupling_in_use, [true; 6]);
+    assert_eq!(frame.coupling_exponent_strategy, vec![1, 0, 0, 0, 0, 0]);
+    assert_eq!(frame.channel_exponent_strategy[0], [1; 5]);
+    assert!(
+        frame.channel_exponent_strategy[1..]
+            .iter()
+            .all(|strategies| strategies == &[0; 5])
+    );
+    assert_eq!(
+        frame.lfe_exponent_strategy,
+        [true, false, false, false, false, false]
+    );
+    assert_eq!(
+        frame.block_start_information,
+        Some(openjoc_eac3::AuxiliaryData {
+            bit_len: 55,
+            bytes: vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe],
+        })
+    );
+    assert_eq!(frame.audio_blocks_offset_bits, expected_offset);
+}
+
+#[test]
+fn decodes_every_frame_exponent_strategy_table_row() {
+    let rows = [
+        [1, 0, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0, 3],
+        [1, 0, 0, 0, 2, 0],
+        [1, 0, 0, 0, 3, 3],
+        [2, 0, 0, 2, 0, 0],
+        [2, 0, 0, 2, 0, 3],
+        [2, 0, 0, 3, 2, 0],
+        [2, 0, 0, 3, 3, 3],
+        [2, 0, 1, 0, 0, 0],
+        [2, 0, 2, 0, 0, 3],
+        [2, 0, 2, 0, 2, 0],
+        [2, 0, 2, 0, 3, 3],
+        [2, 0, 3, 2, 0, 0],
+        [2, 0, 3, 2, 0, 3],
+        [2, 0, 3, 3, 2, 0],
+        [2, 0, 3, 3, 3, 3],
+        [3, 1, 0, 0, 0, 0],
+        [3, 1, 0, 0, 0, 3],
+        [3, 2, 0, 0, 2, 0],
+        [3, 2, 0, 0, 3, 3],
+        [3, 2, 0, 2, 0, 0],
+        [3, 2, 0, 2, 0, 3],
+        [3, 2, 0, 3, 2, 0],
+        [3, 2, 0, 3, 3, 3],
+        [3, 3, 1, 0, 0, 0],
+        [3, 3, 2, 0, 0, 3],
+        [3, 3, 2, 0, 2, 0],
+        [3, 3, 2, 0, 3, 3],
+        [3, 3, 3, 2, 0, 0],
+        [3, 3, 3, 2, 0, 3],
+        [3, 3, 3, 3, 2, 0],
+        [3, 3, 3, 3, 3, 3],
+    ];
+    for (code, expected) in rows.into_iter().enumerate() {
+        assert_eq!(
+            decode_frame_exponent_strategy(u8::try_from(code).expect("code")),
+            Ok(expected)
+        );
+    }
+    assert_eq!(
+        decode_frame_exponent_strategy(32),
+        Err(Eac3Error::InvalidFrameExponentStrategy { actual: 32 })
+    );
+}
+
+#[test]
+fn derives_six_block_channel_strategies_from_frame_code() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2);
+    bits.push(0, 3);
+    bits.push(63, 11);
+    bits.push(0, 2);
+    bits.push(3, 2);
+    bits.push(1, 3); // mono: no coupling syntax
+    bits.push(0, 1);
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // addbsie
+
+    bits.push(0, 1); // frame-based exponent strategy
+    bits.push(0, 1); // no AHT
+    let snr_position = bits.0.len();
+    bits.push(2, 2); // channel-specific SNR strategy
+    bits.push(0, 7); // transient through skip-field syntax disabled
+    bits.push(0, 1); // SPX attenuation
+    bits.push(30, 5); // channel frame strategy
+    bits.push(0, 5); // converter frame strategy
+    bits.push(0, 1); // no block-start information
+    let expected_offset = bits.0.len();
+    let mut reserved = bits.clone();
+    reserved.set(snr_position, 3, 2);
+    let bytes = bits.bytes(128);
+
+    let frame = parse_audio_frame(&bytes).expect("frame-based strategies");
+    assert_eq!(
+        frame.channel_exponent_strategy,
+        vec![vec![3], vec![3], vec![3], vec![3], vec![2], vec![0]]
+    );
+    assert_eq!(frame.audio_blocks_offset_bits, expected_offset);
+    assert_eq!(
+        parse_audio_frame(&reserved.bytes(128)),
+        Err(Eac3Error::ReservedSnrOffsetStrategy)
+    );
+}
+
+#[test]
+fn computes_the_normative_block_start_information_length() {
+    assert_eq!(block_start_information_length(128, 1), Ok(0));
+    assert_eq!(block_start_information_length(128, 6), Ok(50));
+    assert_eq!(block_start_information_length(130, 6), Ok(55));
+    assert_eq!(block_start_information_length(256, 3), Ok(22));
+    assert_eq!(
+        block_start_information_length(0, 6),
+        Err(Eac3Error::InvalidBlockStartDimensions {
+            frame_size: 0,
+            audio_blocks: 6,
+        })
+    );
+    assert_eq!(
+        block_start_information_length(128, 4),
+        Err(Eac3Error::InvalidBlockStartDimensions {
+            frame_size: 128,
+            audio_blocks: 4,
+        })
+    );
+}
+
+#[test]
+fn parses_aht_flags_only_for_single_exponent_regions() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2);
+    bits.push(0, 3);
+    bits.push(63, 11);
+    bits.push(0, 2);
+    bits.push(3, 2);
+    bits.push(1, 3); // mono
+    bits.push(0, 1);
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // addbsie
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(1, 1); // AHT syntax
+    bits.push(1, 2); // SNR strategy
+    bits.push(0, 8); // frame syntax flags
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 2);
+    }
+    bits.push(0, 5); // converter exponent strategy
+    bits.push(1, 1); // mono channel uses AHT (one exponent region)
+    bits.push(0, 1); // no block-start information
+    let expected_offset = bits.0.len();
+    let bytes = bits.bytes(128);
+
+    let frame = parse_audio_frame(&bytes).expect("AHT frame flags");
+    assert!(!frame.coupling_aht_in_use);
+    assert_eq!(frame.channel_aht_in_use, [true]);
+    assert!(!frame.lfe_aht_in_use);
+    assert_eq!(frame.audio_blocks_offset_bits, expected_offset);
 }
 
 #[test]
