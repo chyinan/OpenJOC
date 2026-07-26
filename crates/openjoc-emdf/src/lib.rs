@@ -8,6 +8,11 @@ use openjoc_bitio::{BitError, BitRead, BitReader};
 const SYNCWORD: u16 = 0x5838;
 const MAX_EXTENDED_GROUPS: u8 = 31;
 
+/// TS 103 420 table 55 OAMD payload identifier.
+pub const OAMD_PAYLOAD_ID: u64 = 11;
+/// TS 103 420 table 55 JOC payload identifier.
+pub const JOC_PAYLOAD_ID: u64 = 14;
+
 /// Checked failures while decoding bounded Annex H syntax.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmdfError {
@@ -29,14 +34,16 @@ pub enum EmdfError {
     UnsupportedVersion { version: u64 },
     /// Annex H.2.1.3 requires this reserved bit to be zero.
     NonzeroReservedData,
-    /// Annex H base-version payload configuration requires `codecdatae = 0`.
-    UnsupportedCodecData,
     /// Table H.2.5 reserves primary protection-length code zero.
     ReservedPrimaryProtectionLength,
     /// Padding through the declared byte boundary was not all zero.
     NonzeroPadding,
     /// More than the partial-byte padding permitted by H.2.2.1.2 remained.
     ExcessPadding { bits: usize },
+    /// Table 55 requires exactly one OAMD and one JOC payload per frame.
+    JocProfilePayloadCount { oamd: usize, joc: usize },
+    /// An OAMD/JOC payload violates table 56 or uses a different group ID.
+    JocProfileConfiguration,
 }
 
 impl fmt::Display for EmdfError {
@@ -67,15 +74,19 @@ impl fmt::Display for EmdfError {
                 write!(formatter, "unsupported EMDF syntax version {version}")
             }
             Self::NonzeroReservedData => formatter.write_str("nonzero reserved EMDF data"),
-            Self::UnsupportedCodecData => {
-                formatter.write_str("unsupported EMDF codec-specific payload configuration")
-            }
             Self::ReservedPrimaryProtectionLength => {
                 formatter.write_str("reserved EMDF primary protection length")
             }
             Self::NonzeroPadding => formatter.write_str("nonzero EMDF padding"),
             Self::ExcessPadding { bits } => {
                 write!(formatter, "excess EMDF byte-boundary padding: {bits} bits")
+            }
+            Self::JocProfilePayloadCount { oamd, joc } => write!(
+                formatter,
+                "invalid JOC-profile payload count: {oamd} OAMD and {joc} JOC"
+            ),
+            Self::JocProfileConfiguration => {
+                formatter.write_str("invalid JOC-profile EMDF payload configuration")
             }
         }
     }
@@ -95,6 +106,8 @@ pub struct EmdfPayloadConfig {
     pub sample_offset: Option<u16>,
     pub duration: Option<u64>,
     pub group_id: Option<u64>,
+    /// The reserved codec-data octet was present and verified as zero.
+    pub codec_data_present: bool,
     pub discard_unknown_payload: bool,
     pub payload_frame_aligned: Option<bool>,
     pub create_duplicate: Option<bool>,
@@ -133,6 +146,66 @@ pub struct ParsedEmdf {
     pub container: EmdfContainer,
     /// Header plus declared container bytes; trailing caller data is untouched.
     pub bytes_consumed: usize,
+}
+
+/// Table 55 payload bytes after all table 56 restrictions are validated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JocPayloadPair<'a> {
+    pub oamd: &'a [u8],
+    pub joc: &'a [u8],
+}
+
+/// Applies every TS 103 420 table 55 and table 56 restriction.
+///
+/// The otherwise omitted `smploffste` and `payload_frame_aligned` values are
+/// structurally implied by the presence of `create_duplicate`,
+/// `remove_duplicate`, `priority`, and `proc_allowed` in table 56.
+///
+/// # Errors
+/// Returns an error unless exactly one OAMD and one JOC payload are present,
+/// both have the prescribed configuration, and their group IDs match.
+pub fn validate_joc_profile(container: &EmdfContainer) -> Result<JocPayloadPair<'_>, EmdfError> {
+    let oamd: Vec<_> = container
+        .payloads
+        .iter()
+        .filter(|payload| payload.id == OAMD_PAYLOAD_ID)
+        .collect();
+    let joc: Vec<_> = container
+        .payloads
+        .iter()
+        .filter(|payload| payload.id == JOC_PAYLOAD_ID)
+        .collect();
+    if oamd.len() != 1 || joc.len() != 1 {
+        return Err(EmdfError::JocProfilePayloadCount {
+            oamd: oamd.len(),
+            joc: joc.len(),
+        });
+    }
+    let oamd = oamd[0];
+    let joc = joc[0];
+    if !is_joc_profile_config(&oamd.config)
+        || !is_joc_profile_config(&joc.config)
+        || oamd.config.group_id != joc.config.group_id
+    {
+        return Err(EmdfError::JocProfileConfiguration);
+    }
+    Ok(JocPayloadPair {
+        oamd: &oamd.data,
+        joc: &joc.data,
+    })
+}
+
+fn is_joc_profile_config(config: &EmdfPayloadConfig) -> bool {
+    config.sample_offset.is_none()
+        && config.duration.is_none()
+        && config.group_id.is_some()
+        && config.codec_data_present
+        && !config.discard_unknown_payload
+        && config.payload_frame_aligned == Some(true)
+        && config.create_duplicate == Some(false)
+        && config.remove_duplicate == Some(false)
+        && config.priority == Some(0)
+        && config.processing_allowed == Some(0)
 }
 
 /// Decodes clause H.2.1.2.1 using an explicit resource bound.
@@ -281,9 +354,9 @@ fn parse_payload_config(reader: &mut impl BitRead) -> Result<EmdfPayloadConfig, 
     } else {
         None
     };
-    if reader.read_bit()? {
-        let _reserved = reader.read_bits(8)?;
-        return Err(EmdfError::UnsupportedCodecData);
+    let codec_data_present = reader.read_bit()?;
+    if codec_data_present && reader.read_bits(8)? != 0 {
+        return Err(EmdfError::NonzeroReservedData);
     }
 
     let discard_unknown_payload = reader.read_bit()?;
@@ -312,6 +385,7 @@ fn parse_payload_config(reader: &mut impl BitRead) -> Result<EmdfPayloadConfig, 
         sample_offset,
         duration,
         group_id,
+        codec_data_present,
         discard_unknown_payload,
         payload_frame_aligned,
         create_duplicate,

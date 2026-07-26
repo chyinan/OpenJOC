@@ -383,7 +383,8 @@ frame behavior is covered by integration tests.
 - Normative source: TS 102 366 clauses H.2.1.1 through H.2.2.4 and tables
   H.2.1 through H.2.6; TS 103 420 clause 8.2 and table 55 assign OAMD payload
   ID 11 and JOC payload ID 14.
-- Official reference data: none. Specification pages 204, 205, 206, and 209
+- Official reference data: none. TS 102 366 specification pages 204, 205, 206,
+  and 209 and TS 103 420 profile pages 68 and 69
   were rendered losslessly at 300 DPI using Poppler 26.02.0 and visually
   inspected. This verified the syntax nesting, `variable_bits(n)` exponent
   grouping and group offsets, conditional payload configuration, and both
@@ -393,8 +394,9 @@ frame behavior is covered by integration tests.
   MSB-first reader; retain payload bytes for known JOC/OAMD and unknown IDs;
   represent conditional controls with `Option`; enforce the two-group duration
   limit and a 31-group resource/arithmetic limit on otherwise unbounded small
-  variable fields; reject nonzero base syntax versions and codec-specific data
-  not defined by Annex H; retain implementation-defined protection bytes
+  variable fields; reject nonzero base syntax versions; accept the zero
+  reserved codec-data octet required to be present by TS 103 420 table 56 while
+  rejecting nonzero reserved bits; retain implementation-defined protection bytes
   without pretending to validate them; and allow only zero padding needed to
   complete the final byte. Payload size uses at most two 8-bit groups because
   the minimum value represented by a third group exceeds the 65,535-byte
@@ -404,7 +406,10 @@ frame behavior is covered by integration tests.
   configuration branches; retained ID 11/14 bytes; every primary/secondary
   protection-length combination; reserved primary length, reserved sample
   offset bit, codec data, unsupported version, truncation, nonzero padding,
-  and excess full-byte padding are tested.
+  and excess full-byte padding are tested. Table 55/56 validation additionally
+  requires exactly one ID 11 and one ID 14 payload per frame, equal present
+  group IDs, absent sample offset/duration, present codec data, frame alignment,
+  zero duplicate flags, highest priority, and no-processing retention.
 
 ## Ambiguities and open normative questions
 

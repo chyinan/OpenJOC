@@ -1,5 +1,8 @@
 use openjoc_bitio::BitReader;
-use openjoc_emdf::{EmdfError, EmdfPayloadConfig, parse_emdf_sync, variable_bits};
+use openjoc_emdf::{
+    EmdfContainer, EmdfError, EmdfPayload, EmdfPayloadConfig, EmdfProtection, JOC_PAYLOAD_ID,
+    OAMD_PAYLOAD_ID, parse_emdf_sync, validate_joc_profile, variable_bits,
+};
 
 #[derive(Default)]
 struct Bits {
@@ -134,6 +137,7 @@ fn parses_payload_configuration_conditionals_and_unknown_payload_bytes() {
             sample_offset: Some(123),
             duration: Some(16_393),
             group_id: Some(13),
+            codec_data_present: false,
             discard_unknown_payload: false,
             payload_frame_aligned: None,
             create_duplicate: None,
@@ -246,10 +250,10 @@ fn rejects_truncation_reserved_data_codec_data_and_nonzero_padding() {
     codec_data.push(0, 1);
     codec_data.push(0, 1);
     codec_data.push(1, 1);
-    codec_data.push(0, 8);
+    codec_data.push(1, 8);
     assert_eq!(
         parse_emdf_sync(&wrap_sync(&codec_data.bytes())),
-        Err(EmdfError::UnsupportedCodecData)
+        Err(EmdfError::NonzeroReservedData)
     );
 
     let mut padding = minimal_container(0, 1, 0);
@@ -257,5 +261,88 @@ fn rejects_truncation_reserved_data_codec_data_and_nonzero_padding() {
     assert_eq!(
         parse_emdf_sync(&wrap_sync(&padding.bytes())),
         Err(EmdfError::NonzeroPadding)
+    );
+}
+
+#[test]
+fn accepts_zero_reserved_codec_data_required_by_the_joc_profile() {
+    let mut container = Bits::default();
+    container.push(0, 2);
+    container.push(0, 3);
+    container.push(11, 5);
+    container.push(0, 1); // no sample offset
+    container.push(0, 1); // no duration
+    container.push(1, 1); // group ID exists
+    container.variable(&[(1, false)], 2);
+    container.push(1, 1); // codec data exists
+    container.push(0, 8); // reserved
+    container.push(1, 1); // discard unknown (no further config fields)
+    container.variable(&[(0, false)], 8);
+    container.push(0, 5);
+    container.push(1, 2);
+    container.push(0, 2);
+    container.push(0, 8);
+
+    let parsed = parse_emdf_sync(&wrap_sync(&container.bytes())).expect("JOC profile config");
+    assert!(parsed.container.payloads[0].config.codec_data_present);
+}
+
+fn joc_profile_config(group_id: u64) -> EmdfPayloadConfig {
+    EmdfPayloadConfig {
+        sample_offset: None,
+        duration: None,
+        group_id: Some(group_id),
+        codec_data_present: true,
+        discard_unknown_payload: false,
+        payload_frame_aligned: Some(true),
+        create_duplicate: Some(false),
+        remove_duplicate: Some(false),
+        priority: Some(0),
+        processing_allowed: Some(0),
+    }
+}
+
+fn joc_profile_container() -> EmdfContainer {
+    EmdfContainer {
+        version: 0,
+        key_id: 0,
+        payloads: vec![
+            EmdfPayload {
+                id: OAMD_PAYLOAD_ID,
+                config: joc_profile_config(7),
+                data: vec![1],
+            },
+            EmdfPayload {
+                id: JOC_PAYLOAD_ID,
+                config: joc_profile_config(7),
+                data: vec![2],
+            },
+        ],
+        protection: EmdfProtection {
+            primary: vec![0],
+            secondary: Vec::new(),
+        },
+    }
+}
+
+#[test]
+fn validates_the_complete_table_55_and_56_joc_profile() {
+    let container = joc_profile_container();
+    let pair = validate_joc_profile(&container).expect("valid OAMD/JOC pair");
+    assert_eq!(pair.oamd, [1]);
+    assert_eq!(pair.joc, [2]);
+
+    let mut wrong_group = joc_profile_container();
+    wrong_group.payloads[1].config.group_id = Some(8);
+    assert_eq!(
+        validate_joc_profile(&wrong_group),
+        Err(EmdfError::JocProfileConfiguration)
+    );
+
+    let mut duplicate = joc_profile_container();
+    duplicate.payloads.push(duplicate.payloads[0].clone());
+    assert_eq!(
+        validate_joc_profile(&duplicate),
+        Err(EmdfError::JocProfilePayloadCount { oamd: 2, joc: 1 })
     );
 }
