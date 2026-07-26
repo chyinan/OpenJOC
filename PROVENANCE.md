@@ -378,6 +378,34 @@ frame behavior is covered by integration tests.
   binary and reopens the emitted object stem to verify all-zero reconstructed
   PCM plus the required scene, timeline, and debug artifact paths.
 
+### EMDF container and payload extraction
+
+- Normative source: TS 102 366 clauses H.2.1.1 through H.2.2.4 and tables
+  H.2.1 through H.2.6; TS 103 420 clause 8.2 and table 55 assign OAMD payload
+  ID 11 and JOC payload ID 14.
+- Official reference data: none. Specification pages 204, 205, 206, and 209
+  were rendered losslessly at 300 DPI using Poppler 26.02.0 and visually
+  inspected. This verified the syntax nesting, `variable_bits(n)` exponent
+  grouping and group offsets, conditional payload configuration, and both
+  protection-length tables without inferring damaged superscripts or layout
+  from extracted text.
+- Design rationale: decode every field through a declared-container-bounded
+  MSB-first reader; retain payload bytes for known JOC/OAMD and unknown IDs;
+  represent conditional controls with `Option`; enforce the two-group duration
+  limit and a 31-group resource/arithmetic limit on otherwise unbounded small
+  variable fields; reject nonzero base syntax versions and codec-specific data
+  not defined by Annex H; retain implementation-defined protection bytes
+  without pretending to validate them; and allow only zero padding needed to
+  complete the final byte. Payload size uses at most two 8-bit groups because
+  the minimum value represented by a third group exceeds the 65,535-byte
+  container-length domain.
+- Validation: one-, two-, and three-group offset arithmetic; group limits and
+  invalid widths; complete sample-offset/duration/group and frame-aligned
+  configuration branches; retained ID 11/14 bytes; every primary/secondary
+  protection-length combination; reserved primary length, reserved sample
+  offset bit, codec data, unsupported version, truncation, nonzero padding,
+  and excess full-byte padding are tested.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the
@@ -431,6 +459,15 @@ OpenJOC retains the previous matrix when side information is absent, consistent
 with the flag's stated meaning and the required cross-frame matrix state. On a
 first frame or detected splice that retained matrix is the normative all-zero
 initial state. This interpretation remains subject to legal-vector conformance.
+
+Clause H.2.1.2.0 reads `emdf_payload_id` in the `while` condition and exits
+directly when it is zero, after which `emdf_protection()` follows. Clause
+H.2.2.2.4 nevertheless says that for ID zero all payload-config fields and the
+payload-size field "shall be set to 0", even though the printed syntax provides
+no such terminator fields to read. OpenJOC follows the normative syntax table:
+the five zero ID bits terminate the loop immediately and are followed by
+protection data. A compatibility test against an authoritative encoded vector
+remains TODO; no decoder implementation was consulted to resolve the wording.
 
 No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,

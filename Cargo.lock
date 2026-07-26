@@ -290,6 +290,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "openjoc-emdf"
+version = "0.1.0"
+dependencies = [
+ "openjoc-bitio",
+]
+
+[[package]]
 name = "openjoc-joc"
 version = "0.1.0"
 dependencies = [
