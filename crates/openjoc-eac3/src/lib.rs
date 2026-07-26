@@ -33,6 +33,10 @@ pub enum Eac3Error {
     ComplexityIndexOutOfRange {
         actual: u8,
     },
+    ComplexityIndexMismatch {
+        complexity: u8,
+        objects: u16,
+    },
     MissingIndependentSubstreamZero {
         frame: usize,
     },
@@ -97,6 +101,13 @@ impl fmt::Display for Eac3Error {
             Self::ComplexityIndexOutOfRange { actual } => {
                 write!(formatter, "E-AC-3 JOC complexity index {actual} exceeds 16")
             }
+            Self::ComplexityIndexMismatch {
+                complexity,
+                objects,
+            } => write!(
+                formatter,
+                "E-AC-3 JOC complexity index {complexity} does not equal OAMD object count {objects}"
+            ),
             Self::MissingIndependentSubstreamZero { frame } => write!(
                 formatter,
                 "E-AC-3 access unit at frame {frame} does not begin with independent substream 0"
@@ -747,4 +758,19 @@ pub fn parse_joc_addbsi(bytes: &[u8]) -> Result<JocAddbsi, Eac3Error> {
         });
     }
     Ok(JocAddbsi { complexity_index })
+}
+
+/// Enforces TS 103 420 clause 8.3.2.2 against the decoded OAMD programme.
+///
+/// # Errors
+/// Returns [`Eac3Error::ComplexityIndexMismatch`] unless the extension index
+/// equals the total OAMD bed, ISF, and dynamic object count.
+pub fn validate_complexity_index(complexity: u8, objects: u16) -> Result<(), Eac3Error> {
+    if u16::from(complexity) != objects {
+        return Err(Eac3Error::ComplexityIndexMismatch {
+            complexity,
+            objects,
+        });
+    }
+    Ok(())
 }

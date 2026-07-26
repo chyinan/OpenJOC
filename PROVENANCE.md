@@ -491,6 +491,8 @@ frame behavior is covered by integration tests.
   index; moving the identical profile to dependent substream 0 is rejected
   with the exact required carrier frame. Multiple carriers and missing
   same-frame extension are structurally rejected by the public API.
+  Clause 8.3.2.2 is additionally tested at its zero and sixteen-object
+  boundaries, with mismatched and over-profile OAMD counts rejected.
 
 ### Direct Enhanced AC-3 inspection command
 

@@ -1,7 +1,7 @@
 use openjoc_eac3::{
     Eac3Error, JocAddbsi, StreamType, extract_aux_emdf, extract_aux_joc_access_unit,
     extract_auxdata, group_access_units, index_syncframes, parse_bsi, parse_joc_addbsi,
-    parse_syncframe_header,
+    parse_syncframe_header, validate_complexity_index,
 };
 
 #[derive(Default)]
@@ -136,6 +136,26 @@ fn parses_and_bounds_the_type_a_addbsi_extension() {
     assert_eq!(
         parse_joc_addbsi(&[0x01]),
         Err(Eac3Error::InvalidAddbsiLength { actual: 1 })
+    );
+}
+
+#[test]
+fn complexity_index_equals_the_oamd_program_object_count() {
+    assert_eq!(validate_complexity_index(0, 0), Ok(()));
+    assert_eq!(validate_complexity_index(16, 16), Ok(()));
+    assert_eq!(
+        validate_complexity_index(7, 8),
+        Err(Eac3Error::ComplexityIndexMismatch {
+            complexity: 7,
+            objects: 8,
+        })
+    );
+    assert_eq!(
+        validate_complexity_index(0, 17),
+        Err(Eac3Error::ComplexityIndexMismatch {
+            complexity: 0,
+            objects: 17,
+        })
     );
 }
 
