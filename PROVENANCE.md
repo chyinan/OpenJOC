@@ -676,6 +676,19 @@ frame behavior is covered by integration tests.
 - Validation: all 50 rows and every bin from 0 through 252 are checked; band
   50 and bin 253 are explicit malformed cases.
 
+### Enhanced AC-3 conventional bit-allocation pointers
+
+- Normative source: TS 102 366 clause 6.2.2.7 and table 6.16.
+- Official reference data: none. Pages 64 and 65 were rendered losslessly at
+  300 DPI with Poppler 26.02.0 and visually inspected together because the
+  table continuation on page 65 supplies addresses 28 through 31 and 60
+  through 63.
+- Design rationale: retain the complete table as an exact 64-entry lookup and
+  require its caller to provide the already clamped six-bit address prescribed
+  by the clause 6.2.2.7 pseudocode.
+- Validation: all 64 addresses are checked exhaustively and address 64 is
+  rejected.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

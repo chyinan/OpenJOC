@@ -1,7 +1,7 @@
 use openjoc_eac3::{
     BitAllocationBand, BitAllocationParameters, Eac3Error, FixedBitAllocationParameters,
-    bit_allocation_band, bit_allocation_band_for_bin, decode_bit_allocation_parameters,
-    exponents_to_psd,
+    bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer,
+    decode_bit_allocation_parameters, exponents_to_psd,
 };
 
 #[test]
@@ -168,6 +168,29 @@ fn rejects_bit_allocation_band_and_bin_outside_table_six_twelve() {
         Err(Eac3Error::InvalidBitAllocationTableIndex {
             table: "bin",
             actual: 253,
+        })
+    );
+}
+
+#[test]
+fn maps_every_normative_conventional_bit_allocation_pointer() {
+    let expected = [
+        0, 1, 1, 1, 1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9,
+        9, 10, 10, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 14, 14, 14,
+        14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    ];
+
+    for (address, pointer) in expected.into_iter().enumerate() {
+        assert_eq!(
+            bit_allocation_pointer(u8::try_from(address).expect("64 addresses fit u8")),
+            Ok(pointer)
+        );
+    }
+    assert_eq!(
+        bit_allocation_pointer(64),
+        Err(Eac3Error::InvalidBitAllocationTableIndex {
+            table: "pointer",
+            actual: 64,
         })
     );
 }
