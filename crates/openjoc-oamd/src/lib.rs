@@ -25,7 +25,7 @@ pub use extended_object::{
     parse_extended_object_element,
 };
 pub use object_element::{
-    Distance, ObjectBasicInfo, ObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
+    ObjectBasicInfo, ObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
     parse_object_element,
 };
 pub use payload::{
@@ -33,9 +33,10 @@ pub use payload::{
     parse_oamd_payload, parse_oamd_payload_with_config,
 };
 pub use position::{
-    Position3, PositionCoding, StandardPositionBits, decode_absolute_position, decode_depth_factor,
-    decode_differential_position, decode_distance_factor, decode_screen_factor,
-    decode_signed_position_delta,
+    Distance, Position3, PositionCoding, RoomPosition, StandardPositionBits,
+    decode_absolute_position, decode_depth_factor, decode_differential_position,
+    decode_distance_factor, decode_screen_factor, decode_signed_position_delta,
+    project_room_position,
 };
 pub use timing::{
     MetadataBlockTiming, MetadataTimelineState, MetadataTiming, TimedMetadataBlock,
@@ -101,6 +102,10 @@ pub enum OamdError {
     ExtendedObjectShapeMismatch,
     /// An ID 5 element appeared before the object state it extends.
     MissingObjectElementForExtension,
+    /// A distance-specified object was coded at the exact room centre.
+    UndefinedRoomProjectionDirection,
+    /// A finite outside-room distance factor was non-finite or not greater than one.
+    InvalidRoomDistanceFactor,
     /// A bounded known element or payload ended with a nonzero padding bit.
     NonzeroPadding,
 }
@@ -176,6 +181,12 @@ impl fmt::Display for OamdError {
             }
             Self::MissingObjectElementForExtension => {
                 formatter.write_str("missing OAMD object element for extension")
+            }
+            Self::UndefinedRoomProjectionDirection => {
+                formatter.write_str("undefined OAMD room projection direction")
+            }
+            Self::InvalidRoomDistanceFactor => {
+                formatter.write_str("invalid OAMD room distance factor")
             }
             Self::NonzeroPadding => formatter.write_str("nonzero OAMD padding"),
         }

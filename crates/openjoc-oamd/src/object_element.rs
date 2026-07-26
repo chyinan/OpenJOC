@@ -1,10 +1,11 @@
 // pattern: Functional Core
 
 use crate::{
-    Extent3, Gain, MetadataTiming, OamdError, Position3, PositionCoding, StandardPositionBits,
-    ZoneConstraint, decode_absolute_position, decode_depth_factor, decode_differential_position,
-    decode_distance_factor, decode_gain, decode_priority, decode_screen_factor, decode_size,
-    decode_zone_constraints, timing::parse_metadata_timing_reader,
+    Distance, Extent3, Gain, MetadataTiming, OamdError, Position3, PositionCoding, RoomPosition,
+    StandardPositionBits, ZoneConstraint, decode_absolute_position, decode_depth_factor,
+    decode_differential_position, decode_distance_factor, decode_gain, decode_priority,
+    decode_screen_factor, decode_size, decode_zone_constraints, project_room_position,
+    timing::parse_metadata_timing_reader,
 };
 use openjoc_bitio::{BitRead, BitReader};
 
@@ -13,14 +14,6 @@ use openjoc_bitio::{BitRead, BitReader};
 pub enum ObjectClass {
     BedOrIsf,
     Dynamic,
-}
-
-/// Room distance signalled by clauses 5.6.1.1.15 through 5.6.1.1.17.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Distance {
-    InsideRoom,
-    Finite(f64),
-    Infinity,
 }
 
 /// Gain and priority after clause 5.6.4.7 update/reuse processing.
@@ -69,6 +62,15 @@ impl ObjectRenderInfo {
         depth_factor: 1.0,
         channel_lock: false,
     };
+
+    /// Resolves the coded position and distance into room coordinates.
+    ///
+    /// # Errors
+    /// Returns an OAMD error when the coded position cannot define the
+    /// clause 5.2.1.2 projection ray or distance.
+    pub fn room_position(self) -> Result<RoomPosition, OamdError> {
+        project_room_position(self.position, self.distance)
+    }
 }
 
 /// One fully resolved object property update.

@@ -10,6 +10,21 @@ pub struct Position3 {
     pub z: f64,
 }
 
+/// Room distance signalled by clauses 5.6.1.1.15 through 5.6.1.1.17.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Distance {
+    InsideRoom,
+    Finite(f64),
+    Infinity,
+}
+
+/// Clause 5.2.1.2 room-anchored decoder-interface position.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RoomPosition {
+    Finite(Position3),
+    AtInfinity { boundary_intersection: Position3 },
+}
+
 /// Previous standard-precision position codewords used by differential coding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StandardPositionBits {
@@ -149,6 +164,76 @@ pub fn decode_depth_factor(index: u8) -> Result<f64, OamdError> {
         .get(usize::from(index))
         .copied()
         .ok_or(OamdError::InvalidPropertyCode)
+}
+
+/// Projects coded room coordinates through the room boundary per clause 5.2.1.2.
+///
+/// An infinite position retains the finite boundary intersection defining its
+/// ray, avoiding undefined infinity-times-zero floating-point components.
+///
+/// # Errors
+/// Returns an OAMD error for non-finite inputs, an invalid finite distance
+/// factor, or a distance-specified object at the exact room centre.
+pub fn project_room_position(
+    coded: Position3,
+    distance: Distance,
+) -> Result<RoomPosition, OamdError> {
+    const ORIGIN: Position3 = Position3 {
+        x: 0.5,
+        y: 0.5,
+        z: 0.0,
+    };
+
+    if !coded.x.is_finite() || !coded.y.is_finite() || !coded.z.is_finite() {
+        return Err(OamdError::InvalidPropertyCode);
+    }
+    if distance == Distance::InsideRoom {
+        return Ok(RoomPosition::Finite(coded));
+    }
+    let direction = Position3 {
+        x: coded.x - ORIGIN.x,
+        y: coded.y - ORIGIN.y,
+        z: coded.z - ORIGIN.z,
+    };
+    let mut boundary_scale = f64::INFINITY;
+    for scale in [
+        axis_boundary_scale(direction.x, 0.5),
+        axis_boundary_scale(direction.y, 0.5),
+        axis_boundary_scale(direction.z, 1.0),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        boundary_scale = boundary_scale.min(scale);
+    }
+    if !boundary_scale.is_finite() {
+        return Err(OamdError::UndefinedRoomProjectionDirection);
+    }
+    let boundary_intersection = Position3 {
+        x: ORIGIN.x + boundary_scale * direction.x,
+        y: ORIGIN.y + boundary_scale * direction.y,
+        z: ORIGIN.z + boundary_scale * direction.z,
+    };
+    match distance {
+        Distance::InsideRoom => unreachable!(),
+        Distance::Infinity => Ok(RoomPosition::AtInfinity {
+            boundary_intersection,
+        }),
+        Distance::Finite(factor) => {
+            if !factor.is_finite() || factor <= 1.0 {
+                return Err(OamdError::InvalidRoomDistanceFactor);
+            }
+            Ok(RoomPosition::Finite(Position3 {
+                x: ORIGIN.x + factor * (boundary_intersection.x - ORIGIN.x),
+                y: ORIGIN.y + factor * (boundary_intersection.y - ORIGIN.y),
+                z: ORIGIN.z + factor * (boundary_intersection.z - ORIGIN.z),
+            }))
+        }
+    }
+}
+
+fn axis_boundary_scale(direction: f64, half_extent: f64) -> Option<f64> {
+    (direction != 0.0).then_some(half_extent / direction.abs())
 }
 
 fn decode_extended(values: [Option<u8>; 3]) -> Result<[i8; 3], OamdError> {

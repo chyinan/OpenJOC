@@ -1,7 +1,7 @@
 use openjoc_oamd::{
-    OamdError, Position3, StandardPositionBits, decode_absolute_position, decode_depth_factor,
-    decode_differential_position, decode_distance_factor, decode_screen_factor,
-    decode_signed_position_delta,
+    Distance, OamdError, Position3, RoomPosition, StandardPositionBits, decode_absolute_position,
+    decode_depth_factor, decode_differential_position, decode_distance_factor,
+    decode_screen_factor, decode_signed_position_delta, project_room_position,
 };
 
 fn assert_close(actual: f64, expected: f64) {
@@ -132,4 +132,98 @@ fn decodes_all_distance_screen_and_depth_factors() {
     assert!(decode_distance_factor(16).is_err());
     assert!(decode_screen_factor(8).is_err());
     assert!(decode_depth_factor(4).is_err());
+}
+
+#[test]
+fn projects_finite_room_positions_from_the_centre_through_the_boundary() {
+    assert_eq!(
+        project_room_position(
+            Position3 {
+                x: 0.25,
+                y: 0.75,
+                z: 0.25,
+            },
+            Distance::InsideRoom,
+        ),
+        Ok(RoomPosition::Finite(Position3 {
+            x: 0.25,
+            y: 0.75,
+            z: 0.25,
+        }))
+    );
+    assert_eq!(
+        project_room_position(
+            Position3 {
+                x: 0.75,
+                y: 0.75,
+                z: 0.25,
+            },
+            Distance::Finite(2.0),
+        ),
+        Ok(RoomPosition::Finite(Position3 {
+            x: 1.5,
+            y: 1.5,
+            z: 1.0,
+        }))
+    );
+    assert_eq!(
+        project_room_position(
+            Position3 {
+                x: 1.0,
+                y: 0.5,
+                z: 0.0,
+            },
+            Distance::Finite(2.0),
+        ),
+        Ok(RoomPosition::Finite(Position3 {
+            x: 1.5,
+            y: 0.5,
+            z: 0.0,
+        }))
+    );
+}
+
+#[test]
+fn represents_infinite_room_position_without_nan_coordinates() {
+    assert_eq!(
+        project_room_position(
+            Position3 {
+                x: 1.0,
+                y: 0.5,
+                z: 0.0,
+            },
+            Distance::Infinity,
+        ),
+        Ok(RoomPosition::AtInfinity {
+            boundary_intersection: Position3 {
+                x: 1.0,
+                y: 0.5,
+                z: 0.0,
+            },
+        })
+    );
+}
+
+#[test]
+fn rejects_undefined_projection_rays_and_invalid_factors() {
+    let centre = Position3 {
+        x: 0.5,
+        y: 0.5,
+        z: 0.0,
+    };
+    assert_eq!(
+        project_room_position(centre, Distance::Finite(1.1)),
+        Err(OamdError::UndefinedRoomProjectionDirection)
+    );
+    assert_eq!(
+        project_room_position(
+            Position3 {
+                x: 1.0,
+                y: 0.5,
+                z: 0.0,
+            },
+            Distance::Finite(0.5),
+        ),
+        Err(OamdError::InvalidRoomDistanceFactor)
+    );
 }
