@@ -1,6 +1,6 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, group_access_units, index_syncframes, parse_bsi,
-    parse_joc_addbsi, parse_syncframe_header,
+    Eac3Error, JocAddbsi, StreamType, extract_aux_emdf, extract_auxdata, group_access_units,
+    index_syncframes, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
 };
 
 #[derive(Default)]
@@ -23,6 +23,12 @@ impl Bits {
                     .fold(0_u8, |value, bit| (value << 1) | u8::from(*bit))
             })
             .collect()
+    }
+
+    fn set(&mut self, position: usize, value: u64, width: u8) {
+        for (index, shift) in (0..width).rev().enumerate() {
+            self.0[position + index] = (value >> shift) & 1 != 0;
+        }
     }
 }
 
@@ -242,4 +248,65 @@ fn rejects_nonsequential_substreams_and_timing_mismatch() {
         group_access_units(&index_syncframes(&bad_timing).expect("headers")),
         Err(Eac3Error::SubstreamTimingMismatch { frame: 1 })
     );
+}
+
+fn auxdata_frame(auxdatae: bool, declared_bits: u16, payload: &[u8]) -> Vec<u8> {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2);
+    bits.push(0, 3);
+    bits.push(7, 11); // 16 bytes
+    bits.push(0, 2);
+    bits.push(0, 2);
+    bits.0.resize(128, false);
+    if auxdatae {
+        bits.set(96, u64::from(declared_bits), 14);
+        bits.set(110, 1, 1);
+        let payload_start = 96 - payload.len() * 8;
+        for (index, byte) in payload.iter().copied().enumerate() {
+            bits.set(payload_start + index * 8, u64::from(byte), 8);
+        }
+    }
+    bits.bytes(16)
+}
+
+#[test]
+fn extracts_forward_ordered_auxdata_from_the_frame_end() {
+    let payload = [0x58, 0x38, 0x00, 0x00];
+    let extracted = extract_auxdata(&auxdata_frame(true, 32, &payload))
+        .expect("valid auxdata")
+        .expect("present auxdata");
+    assert_eq!(extracted.bit_len, 32);
+    assert_eq!(extracted.bytes, payload);
+
+    assert_eq!(extract_auxdata(&auxdata_frame(false, 0, &[])), Ok(None));
+    assert_eq!(
+        extract_auxdata(&auxdata_frame(true, 100, &[])),
+        Err(Eac3Error::AuxDataLengthOutOfRange {
+            declared: 100,
+            available: 96,
+        })
+    );
+}
+
+#[test]
+fn parses_a_bounded_emdf_container_directly_from_auxdata() {
+    let mut container = Bits::default();
+    container.push(0, 2); // EMDF version
+    container.push(0, 3); // key
+    container.push(0, 5); // terminator
+    container.push(1, 2); // primary protection: 8 bits
+    container.push(0, 2); // no secondary protection
+    container.push(0, 8);
+    let container = container.bytes(3);
+    let mut emdf = vec![0x58, 0x38, 0, 3];
+    emdf.extend_from_slice(&container);
+    let frame = auxdata_frame(true, 56, &emdf);
+
+    let parsed = extract_aux_emdf(&frame)
+        .expect("valid carrier")
+        .expect("EMDF present");
+    assert_eq!(parsed.container.version, 0);
+    assert!(parsed.container.payloads.is_empty());
+    assert_eq!(parsed.bytes_consumed, 7);
 }

@@ -454,6 +454,26 @@ frame behavior is covered by integration tests.
   nonsequential independent and dependent IDs; sample-rate mismatch; and the
   resulting frame spans, rate, and sample count are tested.
 
+### Enhanced AC-3 auxiliary EMDF carrier
+
+- Normative source: TS 102 366 clauses E.1.2.5, E.1.2.6, 4.4.4.1 through
+  4.4.4.3, and H.1.
+- Official reference data: none. Pages 45, 46, and 125 were rendered
+  losslessly at 300 DPI with Poppler 26.02.0 and visually inspected. This
+  verified the reverse frame-end ordering, the 14-bit length, forward user-bit
+  order, and the fixed 1+16-bit error-check suffix.
+- Design rationale: locate `auxdatae` exactly 18 bits before the declared frame
+  end; if present, decode the preceding 14-bit `auxdatal`; copy exactly that
+  many immediately preceding user bits in forward order; and parse a complete
+  octet-sized auxiliary carrier through the bounded Annex H parser. Audio
+  mantissas are not decoded or scanned to recover this carrier, matching the
+  normative reverse-extraction method.
+- Validation: present and absent carriers, exact forward byte order, declared
+  length exceeding the frame prefix, and an actual bounded EMDF synchronization
+  header/container/protection unit carried inside an E-AC-3 frame are tested.
+  Audio-block `skipfld` carriage remains incomplete and is not conflated with
+  this path.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the

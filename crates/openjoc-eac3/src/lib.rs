@@ -4,6 +4,7 @@
 
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
+use openjoc_emdf::{EmdfError, ParsedEmdf, parse_emdf_sync};
 
 const EAC3_SYNCWORD: u16 = 0x0b77;
 
@@ -47,6 +48,14 @@ pub enum Eac3Error {
     SubstreamTimingMismatch {
         frame: usize,
     },
+    AuxDataLengthOutOfRange {
+        declared: usize,
+        available: usize,
+    },
+    AuxDataNotByteAligned {
+        bits: usize,
+    },
+    Emdf(EmdfError),
 }
 
 impl fmt::Display for Eac3Error {
@@ -99,6 +108,18 @@ impl fmt::Display for Eac3Error {
                     "E-AC-3 substream timing mismatch at frame {frame}"
                 )
             }
+            Self::AuxDataLengthOutOfRange {
+                declared,
+                available,
+            } => write!(
+                formatter,
+                "E-AC-3 auxiliary-data length {declared} exceeds {available} available bits"
+            ),
+            Self::AuxDataNotByteAligned { bits } => write!(
+                formatter,
+                "E-AC-3 EMDF auxiliary data is not byte-aligned: {bits} bits"
+            ),
+            Self::Emdf(error) => write!(formatter, "failed to decode carried EMDF: {error}"),
         }
     }
 }
@@ -108,6 +129,12 @@ impl std::error::Error for Eac3Error {}
 impl From<BitError> for Eac3Error {
     fn from(value: BitError) -> Self {
         Self::Bit(value)
+    }
+}
+
+impl From<EmdfError> for Eac3Error {
+    fn from(value: EmdfError) -> Self {
+        Self::Emdf(value)
     }
 }
 
@@ -144,6 +171,13 @@ pub struct AccessUnitIndex {
     pub frame_count: usize,
     pub sample_rate: u32,
     pub samples: u16,
+}
+
+/// Forward-ordered auxiliary user bits, packed from the first bit into the MSB.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuxiliaryData {
+    pub bit_len: usize,
+    pub bytes: Vec<u8>,
 }
 
 /// TS 103 420 clause 8.3 type-A extension fields.
@@ -482,6 +516,90 @@ pub fn group_access_units(
         first = index;
     }
     Ok(units)
+}
+
+/// Extracts E.1.2.5 auxiliary user data backward from the fixed frame end.
+///
+/// This follows clause 4.4.4.1 and does not require decoding audio blocks.
+///
+/// # Errors
+/// Returns an error for malformed acquisition data, a truncated declared
+/// frame, or an auxiliary length that reaches before the frame start.
+pub fn extract_auxdata(frame: &[u8]) -> Result<Option<AuxiliaryData>, Eac3Error> {
+    let header = parse_syncframe_header(frame)?;
+    if header.frame_size > frame.len() {
+        return Err(Eac3Error::TruncatedFrame {
+            offset: 0,
+            declared: header.frame_size,
+            available: frame.len(),
+        });
+    }
+    let frame = &frame[..header.frame_size];
+    let frame_bits = header
+        .frame_size
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let auxdatae_position = frame_bits
+        .checked_sub(18)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    if !bit_at(frame, auxdatae_position) {
+        return Ok(None);
+    }
+    let length_position = auxdatae_position
+        .checked_sub(14)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let declared = usize::try_from(bits_at(frame, length_position, 14))
+        .map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    if declared > length_position {
+        return Err(Eac3Error::AuxDataLengthOutOfRange {
+            declared,
+            available: length_position,
+        });
+    }
+    let start = length_position - declared;
+    let byte_len = declared
+        .checked_add(7)
+        .ok_or(Eac3Error::FrameSizeOverflow)?
+        / 8;
+    let mut bytes = vec![0_u8; byte_len];
+    for index in 0..declared {
+        if bit_at(frame, start + index) {
+            bytes[index / 8] |= 1 << (7 - index % 8);
+        }
+    }
+    Ok(Some(AuxiliaryData {
+        bit_len: declared,
+        bytes,
+    }))
+}
+
+/// Parses an EMDF synchronization unit carried as complete auxiliary user data.
+///
+/// # Errors
+/// Returns an error for malformed auxiliary syntax, a non-octet user payload,
+/// or malformed bounded EMDF data.
+pub fn extract_aux_emdf(frame: &[u8]) -> Result<Option<ParsedEmdf>, Eac3Error> {
+    let Some(auxdata) = extract_auxdata(frame)? else {
+        return Ok(None);
+    };
+    if auxdata.bit_len % 8 != 0 {
+        return Err(Eac3Error::AuxDataNotByteAligned {
+            bits: auxdata.bit_len,
+        });
+    }
+    Ok(Some(parse_emdf_sync(&auxdata.bytes)?))
+}
+
+fn bits_at(bytes: &[u8], position: usize, width: u8) -> u64 {
+    let mut value = 0_u64;
+    for index in 0..usize::from(width) {
+        value = (value << 1) | u64::from(bit_at(bytes, position + index));
+    }
+    value
+}
+
+fn bit_at(bytes: &[u8], position: usize) -> bool {
+    bytes[position / 8] & (1 << (7 - position % 8)) != 0
 }
 
 /// Parses the exact two-byte TS 103 420 clause 8.3 `addbsi` payload.

@@ -32,7 +32,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 7.4 | Per-object inverse-QMF integration | `openjoc-joc`, `openjoc-qmf` | sample-exact integrated/reference synthesis, continuity, and splice-reset tests pass | verified |
 | TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
 | TS 103 420 8.1 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3` | legal real-vector inspection/decode | planned |
-| TS 103 420 8.2, Table 55 | EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | EMDF retains IDs 11/14 and unknown bounded payloads; E-AC-3 placement remains | implemented |
+| TS 103 420 8.2, Table 55 | EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | EMDF retains IDs 11/14; bounded E-AC-3 auxdata carrier works; skipfld and last-dependent enforcement remain | implemented |
 | TS 103 420 8.3 | `addbsi` extension type and complexity index | `openjoc-eac3` | exact 7+1+8 syntax, flag, reserved bits, and 0..=16 complexity tests pass | verified |
 | TS 103 420 Annex B | OAMD-to-ADM conversion architecture | `openjoc-scene` | ADM export schema/golden tests | planned |
 | TS 102 366 Annex E.1.2 | E-AC-3 syncframe syntax, size and timing | `openjoc-eac3` | bounded acquisition header, conditional BSI/addbsi extraction, option-4 mixdata bound, and sequential frame-size indexing tests pass; audio decode remains | implemented |

@@ -294,6 +294,7 @@ name = "openjoc-eac3"
 version = "0.1.0"
 dependencies = [
  "openjoc-bitio",
+ "openjoc-emdf",
 ]
 
 [[package]]
