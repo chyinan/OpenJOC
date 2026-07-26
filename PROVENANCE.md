@@ -510,6 +510,32 @@ frame behavior is covered by integration tests.
   verifies frame count, access-unit count, rate, samples, carrier, complexity,
   and both payload sizes.
 
+### Direct Enhanced AC-3 JOC-to-ObjectScene orchestration
+
+- Normative source: TS 103 420 clauses 6.4, 7.2 through 7.4, and 8.1 through
+  8.3; TS 102 366 clauses E.1.2 and E.1.3.1.2. The base channel decoder is the
+  replaceable boundary explicitly required by the engineering specification.
+- Official reference data: the already verified JOC Huffman and `prot64`
+  companion tables used by the downstream reconstruction core. No existing
+  JOC decoder source, symbols, layout, or behavior were consulted. FFmpeg is
+  invoked only as an external black-box base E-AC-3 channel-PCM decoder; it is
+  not used to locate, parse, interpret, or reconstruct JOC/OAMD metadata.
+- Design rationale: index and group the original byte stream independently of
+  PCM decoding; require one bounded profile carrier per access unit; validate
+  clause 8.3 complexity against the decoded OAMD programme before advancing
+  state; require exact rate and cumulative sample agreement; slice
+  channel-major PCM by each access unit's declared block timing; and pass each
+  aligned frame through the existing atomic `PayloadDecoder`. The functional
+  core accepts decoded PCM directly, while the CLI shell either reads a
+  caller-supplied WAV or invokes FFmpeg to create a retained
+  `debug/downmix.wav` artifact.
+- Validation: an actual CLI-process test supplies one 1,536-sample access unit,
+  five-channel aligned PCM, valid inactive OAMD, and valid absent-object JOC;
+  the direct `.ec3` command writes a scene, timeline, per-frame debug dumps,
+  and an exact 1,536-sample reconstructed object WAV. A legal encoded JOC
+  vector and `skipfld` carriage remain required before this path is fully
+  verified.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the

@@ -1,5 +1,7 @@
 // pattern: Imperative Shell
 
+mod eac3_decode;
+
 use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{decode, encode_f64_mono};
@@ -9,10 +11,10 @@ use std::{
     fs, io,
     num::NonZeroU8,
     path::{Path, PathBuf},
-    process::ExitCode,
+    process::{Command, ExitCode},
 };
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -21,6 +23,12 @@ struct DecodePayloadArgs {
     output: PathBuf,
     trim_count: Option<NonZeroU8>,
     reference_screen: Option<ReferenceScreen>,
+}
+
+struct DecodeEac3Args {
+    input: PathBuf,
+    downmix: Option<PathBuf>,
+    output: PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -46,6 +54,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some("decode-payload") => {
             let values = arguments.collect::<Vec<_>>();
             decode_payload(&values)
+        }
+        Some("decode") => {
+            let values = arguments.collect::<Vec<_>>();
+            decode_eac3(&parse_decode_eac3(&values)?)
         }
         _ => Err(usage_error().into()),
     }
@@ -93,8 +105,70 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
     })?;
     let scene = decoder.finish()?;
     write_scene(&arguments.output, &scene)?;
-    write_debug(&arguments.output, &frame_output)?;
+    write_debug(&arguments.output, 0, &frame_output)?;
     Ok(())
+}
+
+fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>> {
+    let input = values.first().filter(|value| !value.starts_with('-'));
+    let mut downmix = None;
+    let mut output = None;
+    let mut index = 1;
+    while index < values.len() {
+        let flag = &values[index];
+        let value = values.get(index + 1).ok_or_else(usage_error)?;
+        match flag.as_str() {
+            "--downmix" => downmix = Some(PathBuf::from(value)),
+            "-o" | "--output" => output = Some(PathBuf::from(value)),
+            _ => return Err(usage_error().into()),
+        }
+        index += 2;
+    }
+    Ok(DecodeEac3Args {
+        input: PathBuf::from(input.ok_or_else(usage_error)?),
+        downmix,
+        output: output.ok_or_else(usage_error)?,
+    })
+}
+
+fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
+    let stream = fs::read(&arguments.input)?;
+    let downmix_path = match &arguments.downmix {
+        Some(path) => path.clone(),
+        None => decode_base_audio(&arguments.input, &arguments.output)?,
+    };
+    let downmix = decode(&fs::read(downmix_path)?)?;
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig {
+            trim_configuration_count: None,
+        },
+    };
+    let decoded = eac3_decode::decode_aligned_eac3(&stream, &downmix, config)?;
+    for (frame_index, frame) in decoded.frames.iter().enumerate() {
+        write_debug(&arguments.output, frame_index, frame)?;
+    }
+    write_scene(&arguments.output, &decoded.scene)
+}
+
+fn decode_base_audio(input: &Path, output: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let debug = output.join("debug");
+    fs::create_dir_all(&debug)?;
+    let downmix = debug.join("downmix.wav");
+    let result = Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(input)
+        .args(["-map", "0:a:0", "-c:a", "pcm_f64le"])
+        .arg(&downmix)
+        .output()?;
+    if !result.status.success() {
+        return Err(io::Error::other(format!(
+            "base E-AC-3 decode failed: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        ))
+        .into());
+    }
+    Ok(downmix)
 }
 
 fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn Error>> {
@@ -169,9 +243,10 @@ fn write_scene(output: &Path, scene: &openjoc_scene::ObjectScene) -> Result<(), 
 
 fn write_debug(
     output: &Path,
+    frame_index: usize,
     decoded: &openjoc_scene::DecodedPayloadFrame,
 ) -> Result<(), Box<dyn Error>> {
-    let frame = output.join("debug/frame_000");
+    let frame = output.join(format!("debug/frame_{frame_index:03}"));
     fs::create_dir_all(&frame)?;
     fs::write(frame.join("joc.txt"), format!("{:#?}\n", decoded.joc))?;
     fs::write(frame.join("oamd.txt"), format!("{:#?}\n", decoded.oamd))?;

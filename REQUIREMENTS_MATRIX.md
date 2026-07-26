@@ -31,7 +31,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 7.3 | Complex QMF synthesis and resettable state | `openjoc-qmf` | direct pseudocode 13-17 path; reset and deterministic delay/gain/max/RMS regression tests pass | verified |
 | TS 103 420 7.4 | Per-object inverse-QMF integration | `openjoc-joc`, `openjoc-qmf` | sample-exact integrated/reference synthesis, continuity, and splice-reset tests pass | verified |
 | TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
-| TS 103 420 8.1 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3` | legal real-vector inspection/decode | planned |
+| TS 103 420 8.1 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3`, `openjoc-cli` | exact access-unit/PCM rate and sample alignment reaches ObjectScene; base PCM uses replaceable external FFmpeg boundary; legal real-vector proof remains | implemented |
 | TS 103 420 8.2, Tables 55-56 | EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | bounded auxdata profile extraction, same-frame addbsi, and last-dependent enforcement pass; skipfld remains | implemented |
 | TS 103 420 8.3 | `addbsi` extension type and complexity index | `openjoc-eac3` | exact 7+1+8 syntax, flag, reserved bits, 0..=16 bounds, and equality with total OAMD object count pass | verified |
 | TS 103 420 Annex B | OAMD-to-ADM conversion architecture | `openjoc-scene` | ADM export schema/golden tests | planned |
@@ -41,7 +41,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
-| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` writes scene/timeline/f64 stem/debug artifacts; direct `inspect` reports bounded E-AC-3/JOC profile timing and carrier details; remaining commands remain | implemented |
+| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3` `decode` write scene/timeline/f64 stem/debug artifacts; `inspect` reports bounded profile timing/carrier details; dump commands remain | implemented |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
 | Mandatory DoD | WAV stems, scene, timeline, debug artifacts from real JOC | end-to-end workspace | legal vector artifacts plus fidelity comparison | planned |
 | Mandatory DoD | Windows/Linux/macOS CI | `.github/workflows` | all platform jobs green | planned |
