@@ -90,6 +90,12 @@ const BIT_ALLOCATION_POINTERS: [u8; 64] = [
     15, 15, 15, 15, 15, 15, 15, 15, 15,
 ];
 
+const HIGH_EFFICIENCY_BIT_ALLOCATION_POINTERS: [u8; 64] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 8, 8, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12,
+    13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 15, 16, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 18,
+    18, 18, 18, 18, 19, 19, 19, 19, 19, 19, 19, 19, 19,
+];
+
 /// One row of TS 102 366 Table 6.12.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BitAllocationBand {
@@ -148,6 +154,21 @@ pub fn bit_allocation_pointer(address: u8) -> Result<u8, Eac3Error> {
         .copied()
         .ok_or(Eac3Error::InvalidBitAllocationTableIndex {
             table: "pointer",
+            actual: u16::from(address),
+        })
+}
+
+/// Maps a clamped six-bit address through TS 102 366 Table E.2.1.
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidBitAllocationTableIndex`] for addresses above
+/// 63.
+pub fn high_efficiency_bit_allocation_pointer(address: u8) -> Result<u8, Eac3Error> {
+    HIGH_EFFICIENCY_BIT_ALLOCATION_POINTERS
+        .get(usize::from(address))
+        .copied()
+        .ok_or(Eac3Error::InvalidBitAllocationTableIndex {
+            table: "high-efficiency pointer",
             actual: u16::from(address),
         })
 }

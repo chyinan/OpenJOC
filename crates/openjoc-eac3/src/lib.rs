@@ -15,7 +15,7 @@ pub use audio_block::{
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, bit_allocation_band,
     bit_allocation_band_for_bin, bit_allocation_pointer, decode_bit_allocation_parameters,
-    exponents_to_psd,
+    exponents_to_psd, high_efficiency_bit_allocation_pointer,
 };
 
 use core::fmt;

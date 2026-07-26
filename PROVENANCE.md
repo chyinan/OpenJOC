@@ -689,6 +689,18 @@ frame behavior is covered by integration tests.
 - Validation: all 64 addresses are checked exhaustively and address 64 is
   rejected.
 
+### Enhanced AC-3 high-efficiency bit-allocation pointers
+
+- Normative source: TS 102 366 clauses E.2.4.3.1 and E.2.4.3.2, table E.2.1.
+- Official reference data: none. Pages 152 and 153 were rendered losslessly at
+  300 DPI with Poppler 26.02.0 and visually inspected together to recover all
+  64 `hebaptab` entries.
+- Design rationale: keep the AHT high-efficiency lookup distinct from the
+  conventional Table 6.16 lookup because it produces five-bit `hebap` values
+  with different quantizer semantics.
+- Validation: all 64 addresses are checked exhaustively and address 64 is
+  rejected with a table-specific error.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420
