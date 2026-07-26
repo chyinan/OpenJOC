@@ -30,6 +30,23 @@ pub enum Eac3Error {
     ComplexityIndexOutOfRange {
         actual: u8,
     },
+    MissingIndependentSubstreamZero {
+        frame: usize,
+    },
+    NonsequentialIndependentSubstream {
+        expected: u8,
+        actual: u8,
+    },
+    NonsequentialDependentSubstream {
+        expected: u8,
+        actual: u8,
+    },
+    DependentAfterConvertedSubstream {
+        frame: usize,
+    },
+    SubstreamTimingMismatch {
+        frame: usize,
+    },
 }
 
 impl fmt::Display for Eac3Error {
@@ -59,6 +76,28 @@ impl fmt::Display for Eac3Error {
             }
             Self::ComplexityIndexOutOfRange { actual } => {
                 write!(formatter, "E-AC-3 JOC complexity index {actual} exceeds 16")
+            }
+            Self::MissingIndependentSubstreamZero { frame } => write!(
+                formatter,
+                "E-AC-3 access unit at frame {frame} does not begin with independent substream 0"
+            ),
+            Self::NonsequentialIndependentSubstream { expected, actual } => write!(
+                formatter,
+                "nonsequential E-AC-3 independent substream: expected {expected}, got {actual}"
+            ),
+            Self::NonsequentialDependentSubstream { expected, actual } => write!(
+                formatter,
+                "nonsequential E-AC-3 dependent substream: expected {expected}, got {actual}"
+            ),
+            Self::DependentAfterConvertedSubstream { frame } => write!(
+                formatter,
+                "dependent E-AC-3 frame {frame} follows a converted independent substream"
+            ),
+            Self::SubstreamTimingMismatch { frame } => {
+                write!(
+                    formatter,
+                    "E-AC-3 substream timing mismatch at frame {frame}"
+                )
             }
         }
     }
@@ -96,6 +135,15 @@ pub struct SyncframeHeader {
 pub struct SyncframeIndexEntry {
     pub offset: usize,
     pub header: SyncframeHeader,
+}
+
+/// One time-aligned set of independent and dependent substream frames.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessUnitIndex {
+    pub first_frame: usize,
+    pub frame_count: usize,
+    pub sample_rate: u32,
+    pub samples: u16,
 }
 
 /// TS 103 420 clause 8.3 type-A extension fields.
@@ -365,6 +413,75 @@ pub fn index_syncframes(bytes: &[u8]) -> Result<Vec<SyncframeIndexEntry>, Eac3Er
         offset = end;
     }
     Ok(entries)
+}
+
+/// Groups E.1.3.1.2 ordered substreams into time-aligned access units.
+///
+/// # Errors
+/// Returns an error unless each unit starts with independent substream zero,
+/// independent and dependent IDs are sequential, dependent streams immediately
+/// follow their parent, and every substream has identical rate/block timing.
+pub fn group_access_units(
+    frames: &[SyncframeIndexEntry],
+) -> Result<Vec<AccessUnitIndex>, Eac3Error> {
+    let mut units = Vec::new();
+    let mut first = 0_usize;
+    while first < frames.len() {
+        let base = frames[first].header;
+        if base.stream_type == StreamType::Dependent || base.substream_id != 0 {
+            return Err(Eac3Error::MissingIndependentSubstreamZero { frame: first });
+        }
+        let mut expected_independent = 0_u8;
+        let mut expected_dependent = 0_u8;
+        let mut dependent_allowed = false;
+        let mut index = first;
+        while index < frames.len() {
+            let header = frames[index].header;
+            if index > first
+                && header.stream_type != StreamType::Dependent
+                && header.substream_id == 0
+            {
+                break;
+            }
+            if header.sample_rate != base.sample_rate || header.audio_blocks != base.audio_blocks {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+            }
+            match header.stream_type {
+                StreamType::Dependent => {
+                    if !dependent_allowed {
+                        return Err(Eac3Error::DependentAfterConvertedSubstream { frame: index });
+                    }
+                    if header.substream_id != expected_dependent {
+                        return Err(Eac3Error::NonsequentialDependentSubstream {
+                            expected: expected_dependent,
+                            actual: header.substream_id,
+                        });
+                    }
+                    expected_dependent += 1;
+                }
+                StreamType::Independent | StreamType::ConvertedIndependent => {
+                    if header.substream_id != expected_independent {
+                        return Err(Eac3Error::NonsequentialIndependentSubstream {
+                            expected: expected_independent,
+                            actual: header.substream_id,
+                        });
+                    }
+                    expected_independent += 1;
+                    expected_dependent = 0;
+                    dependent_allowed = header.stream_type == StreamType::Independent;
+                }
+            }
+            index += 1;
+        }
+        units.push(AccessUnitIndex {
+            first_frame: first,
+            frame_count: index - first,
+            sample_rate: base.sample_rate,
+            samples: base.samples,
+        });
+        first = index;
+    }
+    Ok(units)
 }
 
 /// Parses the exact two-byte TS 103 420 clause 8.3 `addbsi` payload.

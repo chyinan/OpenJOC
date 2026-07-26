@@ -36,7 +36,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 8.3 | `addbsi` extension type and complexity index | `openjoc-eac3` | exact 7+1+8 syntax, flag, reserved bits, and 0..=16 complexity tests pass | verified |
 | TS 103 420 Annex B | OAMD-to-ADM conversion architecture | `openjoc-scene` | ADM export schema/golden tests | planned |
 | TS 102 366 Annex E.1.2 | E-AC-3 syncframe syntax, size and timing | `openjoc-eac3` | bounded acquisition header, conditional BSI/addbsi extraction, option-4 mixdata bound, and sequential frame-size indexing tests pass; audio decode remains | implemented |
-| TS 102 366 Annex E semantics | Independent/dependent substream relationships | `openjoc-eac3` | multi-substream legal/synthetic tests | planned |
+| TS 102 366 E.1.3.1.2, E.2.8 | Independent/dependent substream relationships | `openjoc-eac3` | access-unit grouping, sequential IDs, immediate dependency, converted-stream exclusion, and timing tests pass | verified |
 | TS 102 366 Annex H.2 | EMDF sync/container/config/protection | `openjoc-emdf` | group-offset, conditional config, bounded payload, all protection lengths, version/reserved/padding/truncation tests pass | verified |
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |

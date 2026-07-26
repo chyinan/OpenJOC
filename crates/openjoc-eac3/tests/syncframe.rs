@@ -1,6 +1,6 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, index_syncframes, parse_bsi, parse_joc_addbsi,
-    parse_syncframe_header,
+    Eac3Error, JocAddbsi, StreamType, group_access_units, index_syncframes, parse_bsi,
+    parse_joc_addbsi, parse_syncframe_header,
 };
 
 #[derive(Default)]
@@ -191,4 +191,55 @@ fn mixing_option_four_length_includes_the_mixdeflen_field() {
 
     let bsi = parse_bsi(&bits.bytes(64)).expect("bounded option-four mixdata");
     assert_eq!(bsi.addbsi, Some(vec![0x01, 0x04]));
+}
+
+#[test]
+fn groups_sequential_independent_and_dependent_substreams_into_access_units() {
+    let frames = [
+        frame(0, 0, 16, 0, 3),
+        frame(1, 0, 16, 0, 3),
+        frame(1, 1, 16, 0, 3),
+        frame(0, 1, 16, 0, 3),
+        frame(0, 0, 16, 0, 3),
+        frame(1, 0, 16, 0, 3),
+        frame(1, 1, 16, 0, 3),
+        frame(0, 1, 16, 0, 3),
+    ]
+    .concat();
+    let indexed = index_syncframes(&frames).expect("indexed frames");
+    let units = group_access_units(&indexed).expect("valid substream sequence");
+    assert_eq!(units.len(), 2);
+    assert_eq!(units[0].first_frame, 0);
+    assert_eq!(units[0].frame_count, 4);
+    assert_eq!(units[1].first_frame, 4);
+    assert_eq!(units[1].frame_count, 4);
+    assert_eq!(units[0].sample_rate, 48_000);
+    assert_eq!(units[0].samples, 1536);
+}
+
+#[test]
+fn rejects_nonsequential_substreams_and_timing_mismatch() {
+    let bad_dependent = [frame(0, 0, 16, 0, 3), frame(1, 1, 16, 0, 3)].concat();
+    assert_eq!(
+        group_access_units(&index_syncframes(&bad_dependent).expect("headers")),
+        Err(Eac3Error::NonsequentialDependentSubstream {
+            expected: 0,
+            actual: 1,
+        })
+    );
+
+    let bad_independent = [frame(0, 0, 16, 0, 3), frame(0, 2, 16, 0, 3)].concat();
+    assert_eq!(
+        group_access_units(&index_syncframes(&bad_independent).expect("headers")),
+        Err(Eac3Error::NonsequentialIndependentSubstream {
+            expected: 1,
+            actual: 2,
+        })
+    );
+
+    let bad_timing = [frame(0, 0, 16, 0, 3), frame(1, 0, 16, 1, 3)].concat();
+    assert_eq!(
+        group_access_units(&index_syncframes(&bad_timing).expect("headers")),
+        Err(Eac3Error::SubstreamTimingMismatch { frame: 1 })
+    );
 }

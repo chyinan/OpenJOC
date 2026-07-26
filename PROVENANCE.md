@@ -437,6 +437,23 @@ frame behavior is covered by integration tests.
   `mixdeflen` field. Dependent-substream assembly, EMDF location, CRC, and audio
   decoding remain explicitly incomplete.
 
+### Enhanced AC-3 access-unit and substream ordering
+
+- Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420
+  clauses 8.1 and 8.2.
+- Official reference data: none. The sequential independent/dependent ID and
+  immediate-parent rules were verified from searchable normative prose; no
+  layout-sensitive equation is involved.
+- Design rationale: a new access unit begins only at independent substream ID
+  zero; independent IDs and each parent's dependent IDs must ascend from zero;
+  dependents must immediately follow their parent; converted type-2 streams
+  cannot own dependents; and every frame in an access unit must share sample
+  rate and block count. Grouping operates on previously size-bounded frame
+  indices, so payload bytes cannot create false access-unit boundaries.
+- Validation: two complete multi-program, multi-dependent access units;
+  nonsequential independent and dependent IDs; sample-rate mismatch; and the
+  resulting frame spans, rate, and sample count are tested.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the
