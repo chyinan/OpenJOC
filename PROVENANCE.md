@@ -514,19 +514,23 @@ frame behavior is covered by integration tests.
 - Normative source: TS 102 366 clauses E.1.2.4, E.1.3.3.14 through
   E.1.3.3.22, and E.2.5.5.1.
 - Official reference data: none. Syntax pages 120 and 121 and descriptive
-  pages 141 through 143 were rendered losslessly at 300 DPI using Poppler
+  pages 141 through 143 and 145 through 146 were rendered losslessly at 300 DPI using Poppler
   26.02.0 and visually inspected before implementing standard/enhanced range,
-  band-structure, coordinate, amplitude, phase, and reserved-field traversal.
+  band-structure, coordinate, amplitude, phase, reserved-field, and rematrix
+  traversal.
 - Design rationale: carry the validated SPX begin code into coupling so the
   possibly negative standard `cplendf` and enhanced terminal subband are
   derived exactly; initialize standard and enhanced structures from Tables
   E.1.12 and E.1.13; treat zero structure entries as band starts and ones as
   merges; retain raw standard coordinates, enhanced amplitudes, and phase
   flags; and require every enhanced reserved bit to be zero. Checked ranges
-  prevent empty regions and array overrun before any structure loop.
+  prevent empty regions and array overrun before any structure loop. Derive
+  the stereo rematrix-flag count from the complete E.2.3.2 piecewise mapping
+  and consume it immediately after coupling coordinates.
 - Validation: a bounded stereo block covers standard coupling, both implicit
   participating channels, explicit five-subband/three-band structure, two
-  complete coordinate sets, phase flags, and exact post-coordinate offset. A
+  complete coordinate sets, phase flags, two derived rematrix flags, and exact
+  terminal offset. A
   bounded three-channel block covers enhanced coupling, sparse channel
   participation, the piecewise begin/end mapping, `max(9, begin + 1)` syntax,
   one merged subband, two complete five-band amplitude sets, 36 plus one

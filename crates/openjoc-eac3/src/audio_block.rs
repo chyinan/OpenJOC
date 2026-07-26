@@ -28,7 +28,8 @@ pub struct AudioBlockPrefix {
     pub dynamic_range_2: Option<u8>,
     pub spectral_extension: Option<SpectralExtensionInformation>,
     pub coupling: Option<CouplingInformation>,
-    /// Absolute frame bit offset immediately after coupling coordinates.
+    pub rematrix_flags: Vec<bool>,
+    /// Absolute frame bit offset immediately after rematrix flags.
     pub next_offset_bits: usize,
 }
 
@@ -137,6 +138,19 @@ fn parse_first_prefix_reader(
     } else {
         None
     };
+    let rematrix_flags = if frame.bsi.audio_coding_mode == 2 {
+        read_flags_or_default(
+            bits,
+            usize::from(rematrix_band_count(
+                coupling.as_ref(),
+                spectral_extension.as_ref(),
+            )),
+            true,
+            false,
+        )?
+    } else {
+        Vec::new()
+    };
     let frame_bits = frame
         .bsi
         .header
@@ -153,8 +167,33 @@ fn parse_first_prefix_reader(
         dynamic_range_2,
         spectral_extension,
         coupling,
+        rematrix_flags,
         next_offset_bits,
     })
+}
+
+fn rematrix_band_count(
+    coupling: Option<&CouplingInformation>,
+    spx: Option<&SpectralExtensionInformation>,
+) -> u8 {
+    match coupling {
+        Some(CouplingInformation::Enhanced(info)) => match info.begin_frequency_code {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 | 4 => 3,
+            _ => 4,
+        },
+        Some(CouplingInformation::Standard(info)) => match info.begin_frequency_code {
+            0 => 2,
+            1 | 2 => 3,
+            _ => 4,
+        },
+        None => match spx {
+            Some(info) if info.begin_frequency_code < 2 => 3,
+            Some(_) | None => 4,
+        },
+    }
 }
 
 fn parse_first_spx(

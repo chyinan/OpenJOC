@@ -390,6 +390,7 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
         }
     }
     bits.push(0b101, 3); // one phase flag per coupling band
+    bits.push(0b10, 2); // two rematrix flags for standard cplbegf zero
     let expected_offset = bits.0.len();
 
     let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("standard coupling");
@@ -410,6 +411,7 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
     assert_eq!(right.master, 2);
     assert_eq!(right.bands, vec![(7, 8), (9, 10), (11, 12)]);
     assert_eq!(coupling.phase_flags, vec![true, false, true]);
+    assert_eq!(prefix.rematrix_flags, vec![true, false]);
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 
