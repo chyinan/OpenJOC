@@ -607,6 +607,32 @@ frame behavior is covered by integration tests.
   converter-SNR-offset boundary. Existing strategy-0 fixtures verify that
   this stage consumes no block SNR bits.
 
+### Enhanced AC-3 converter, leakage, delta-allocation, and skip syntax
+
+- Normative source: TS 102 366 clauses 4.4.3.47 through 4.4.3.60,
+  E.1.2.4, E.1.3.2.9, E.1.3.2.10, E.1.3.2.30, and E.1.3.3.25 through
+  E.1.3.3.26; table 4.11.
+- Official reference data: none. Syntax pages 123 and 124 were rendered
+  losslessly at 300 DPI using Poppler 26.02.0 and visually inspected. The
+  first-coupling-leak initialization rule and delta strategy meanings were
+  additionally verified from searchable normative prose; no equation was
+  reconstructed from extracted text.
+- Design rationale: consume the converter SNR extension only for independent
+  streams. Because `audfrm` initializes `firstcplleak` to one, the bounded
+  first-block parser consumes both three-bit coupling leak codes directly and
+  does not invent a transmitted `cplleake` bit. Retain delta strategy and raw
+  segment codes separately for coupling and every full-bandwidth channel;
+  reject both reuse and reserved strategies in block zero, while an absent
+  `deltbaie` produces the normative no-delta strategy. Treat the nine-bit skip
+  length as a byte count, perform checked conversion to bits, and retain every
+  skipped byte without interpreting its contents.
+- Validation: standard and enhanced coupling fixtures verify distinct first
+  leak codes. The independent mono-plus-LFE fixture verifies the ten-bit
+  converter offset, two complete channel delta segments in bitstream order,
+  exact retention of a two-byte unaligned skip field, and the exact mantissa
+  boundary. Frame syntax controls continue to prevent absent delta/skip
+  branches from consuming bits.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

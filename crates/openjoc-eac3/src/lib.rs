@@ -5,10 +5,11 @@
 mod audio_block;
 
 pub use audio_block::{
-    AudioBlockPrefix, BitAllocationParameters, CouplingInformation, EnhancedCouplingInformation,
-    ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
-    SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
-    parse_first_audio_block_prefix,
+    AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
+    DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
+    EnhancedCouplingInformation, ExponentInformation, FastGainCodes, SnrOffsets,
+    SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
+    StandardCouplingInformation, parse_first_audio_block_prefix,
 };
 
 use core::fmt;
@@ -38,6 +39,9 @@ pub enum Eac3Error {
         actual: usize,
     },
     NonzeroReservedData,
+    InvalidDeltaBitAllocationStrategy {
+        actual: u8,
+    },
     MissingJocExtensionFlag,
     ComplexityIndexOutOfRange {
         actual: u8,
@@ -251,6 +255,10 @@ impl fmt::Display for Eac3Error {
             Self::InvalidChannelBandwidthCode { actual } => {
                 write!(formatter, "invalid E-AC-3 channel bandwidth code {actual}")
             }
+            Self::InvalidDeltaBitAllocationStrategy { actual } => write!(
+                formatter,
+                "invalid first-block E-AC-3 delta bit allocation strategy {actual}"
+            ),
             Self::SubstreamTimingMismatch { frame } => {
                 write!(
                     formatter,

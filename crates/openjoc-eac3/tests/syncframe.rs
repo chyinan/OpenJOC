@@ -327,6 +327,7 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
         bits.push(62, 7); // neutral D15 groups through SPX begin bin 49
     }
     bits.push(1, 2); // gain range
+    bits.push(0, 1); // converter SNR offset absent
     let expected_offset = bits.0.len();
 
     let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("valid block prefix");
@@ -354,6 +355,7 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn parses_first_audio_block_standard_coupling_coordinates() {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
@@ -414,6 +416,9 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
         }
         bits.push(gain_range, 2);
     }
+    bits.push(0, 1); // converter SNR offset absent
+    bits.push(3, 3); // first coupling fast leak
+    bits.push(5, 3); // first coupling slow leak
     let expected_offset = bits.0.len();
 
     let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("standard coupling");
@@ -455,10 +460,13 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
         prefix.channel_exponents[1].as_ref().expect("right").decoded,
         vec![10; 37]
     );
+    let leakage = prefix.coupling_leak.expect("coupling leakage");
+    assert_eq!((leakage.fast_code, leakage.slow_code), (3, 5));
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn parses_first_audio_block_enhanced_coupling_coordinates() {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
@@ -517,6 +525,9 @@ fn parses_first_audio_block_enhanced_coupling_coordinates() {
         }
         bits.push(gain_range, 2);
     }
+    bits.push(0, 1); // converter SNR offset absent
+    bits.push(2, 3); // first coupling fast leak
+    bits.push(6, 3); // first coupling slow leak
     let expected_offset = bits.0.len();
 
     let prefix = parse_first_audio_block_prefix(&bits.bytes(256)).expect("enhanced coupling");
@@ -559,10 +570,13 @@ fn parses_first_audio_block_enhanced_coupling_coordinates() {
         prefix.channel_exponents[2].as_ref().expect("right").decoded,
         vec![10; 49]
     );
+    let leakage = prefix.coupling_leak.expect("coupling leakage");
+    assert_eq!((leakage.fast_code, leakage.slow_code), (2, 6));
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn parses_uncoupled_channel_and_lfe_exponents() {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
@@ -586,7 +600,9 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(0, 1); // dither syntax
     bits.push(1, 1); // bit-allocation syntax
     bits.push(1, 1); // frame fast-gain syntax
-    bits.push(0, 3); // remaining compact syntax flags
+    bits.push(1, 1); // delta-bit-allocation syntax
+    bits.push(1, 1); // skip-field syntax
+    bits.push(0, 1); // SPX attenuation syntax
     bits.push(1, 2); // channel D15
     bits.push(1, 1); // LFE D15
     bits.push(0, 1); // converter exponent strategy absent
@@ -614,6 +630,19 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(1, 1); // new fast-gain codes
     bits.push(3, 3); // channel fast gain
     bits.push(6, 3); // LFE fast gain
+    bits.push(1, 1); // converter SNR offset exists
+    bits.push(0x155, 10); // converter SNR offset
+    bits.push(1, 1); // delta-bit-allocation information exists
+    bits.push(1, 2); // channel: new information follows
+    bits.push(1, 3); // two channel delta segments
+    for (offset, length, delta) in [(3, 4, 5), (17, 9, 2)] {
+        bits.push(offset, 5);
+        bits.push(length, 4);
+        bits.push(delta, 3);
+    }
+    bits.push(1, 1); // skip length exists
+    bits.push(2, 9); // two skipped bytes
+    bits.push(0xabcd, 16); // skipped data
     let expected_offset = bits.0.len();
 
     let prefix =
@@ -646,6 +675,34 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     assert_eq!(fast_gain.coupling, None);
     assert_eq!(fast_gain.channels, vec![3]);
     assert_eq!(fast_gain.lfe, Some(6));
+    assert_eq!(prefix.converter_snr_offset, Some(0x155));
+    let delta = prefix.delta_bit_allocation.expect("delta allocation");
+    assert_eq!(delta.coupling, None);
+    assert_eq!(delta.channels[0].strategy, 1);
+    assert_eq!(delta.channels[0].segments.len(), 2);
+    assert_eq!(
+        (
+            delta.channels[0].segments[0].offset,
+            delta.channels[0].segments[0].length,
+            delta.channels[0].segments[0].delta
+        ),
+        (3, 4, 5)
+    );
+    assert_eq!(
+        (
+            delta.channels[0].segments[1].offset,
+            delta.channels[0].segments[1].length,
+            delta.channels[0].segments[1].delta
+        ),
+        (17, 9, 2)
+    );
+    assert_eq!(
+        prefix.skip_field,
+        Some(openjoc_eac3::AuxiliaryData {
+            bit_len: 16,
+            bytes: vec![0xab, 0xcd],
+        })
+    );
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 

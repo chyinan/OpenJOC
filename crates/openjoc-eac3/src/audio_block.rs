@@ -5,8 +5,8 @@
 use openjoc_bitio::{BitRead, BitReader};
 
 use crate::{
-    AudioFrameInformation, Eac3Error, channel_end_mantissa, channel_exponent_group_count,
-    decode_exponents, parse_audio_frame, spx_subband_range,
+    AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
+    channel_exponent_group_count, decode_exponents, parse_audio_frame, spx_subband_range,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -30,7 +30,7 @@ const DEFAULT_ENHANCED_COUPLING_STRUCTURE: [bool; 22] = [
     false, true, true, true, false, true, true, true,
 ];
 
-/// E.1.2.4 fields through SNR offsets and fast-gain codes in the first block.
+/// E.1.2.4 fields through the optional skip field in the first block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioBlockPrefix {
     pub block_switch: Vec<bool>,
@@ -47,7 +47,11 @@ pub struct AudioBlockPrefix {
     pub bit_allocation_parameters: Option<BitAllocationParameters>,
     pub snr_offsets: Option<SnrOffsets>,
     pub fast_gain_codes: Option<FastGainCodes>,
-    /// Absolute frame bit offset immediately after the LFE exponents.
+    pub converter_snr_offset: Option<u16>,
+    pub coupling_leak: Option<CouplingLeak>,
+    pub delta_bit_allocation: Option<DeltaBitAllocation>,
+    pub skip_field: Option<AuxiliaryData>,
+    /// Absolute frame bit offset immediately after the optional skip field.
     pub next_offset_bits: usize,
 }
 
@@ -88,6 +92,35 @@ pub struct FastGainCodes {
     pub coupling: Option<u8>,
     pub channels: Vec<u8>,
     pub lfe: Option<u8>,
+}
+
+/// First-block coupling leak initialization codes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CouplingLeak {
+    pub fast_code: u8,
+    pub slow_code: u8,
+}
+
+/// Raw delta-bit-allocation segment syntax for one spectral element.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeltaBitAllocationElement {
+    pub strategy: u8,
+    pub segments: Vec<DeltaBitAllocationSegment>,
+}
+
+/// One raw delta-bit-allocation segment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeltaBitAllocationSegment {
+    pub offset: u8,
+    pub length: u8,
+    pub delta: u8,
+}
+
+/// Coupling and full-bandwidth-channel delta-bit-allocation state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeltaBitAllocation {
+    pub coupling: Option<DeltaBitAllocationElement>,
+    pub channels: Vec<DeltaBitAllocationElement>,
 }
 
 /// First-block spectral-extension strategy and coordinate syntax.
@@ -151,10 +184,10 @@ pub struct EnhancedCouplingInformation {
     pub amplitudes: Vec<Option<Vec<u8>>>,
 }
 
-/// Parses the first `audblk` through SNR offsets and fast-gain codes.
+/// Parses the first `audblk` through the optional skip field.
 ///
 /// This is the first stateful stage of full E.1.2.4 traversal. The returned
-/// offset identifies the converter-SNR-offset boundary without scanning.
+/// offset identifies the quantized-mantissa boundary without scanning.
 ///
 /// # Errors
 /// Returns an error for malformed frame syntax, truncation, invalid SPX,
@@ -220,6 +253,11 @@ fn parse_first_prefix_reader(
     let bit_allocation_parameters = parse_bit_allocation_parameters(bits, frame)?;
     let snr_offsets = parse_snr_offsets(bits, frame, coupling.as_ref(), channels)?;
     let fast_gain_codes = parse_fast_gain_codes(bits, frame, coupling.as_ref(), channels)?;
+    let converter_snr_offset = parse_converter_snr_offset(bits, frame)?;
+    let coupling_leak = parse_first_coupling_leak(bits, coupling.as_ref())?;
+    let delta_bit_allocation =
+        parse_delta_bit_allocation(bits, frame, coupling.as_ref(), channels)?;
+    let skip_field = parse_skip_field(bits, frame)?;
     let frame_bits = frame
         .bsi
         .header
@@ -244,6 +282,10 @@ fn parse_first_prefix_reader(
         bit_allocation_parameters,
         snr_offsets,
         fast_gain_codes,
+        converter_snr_offset,
+        coupling_leak,
+        delta_bit_allocation,
+        skip_field,
         next_offset_bits,
     })
 }
@@ -515,6 +557,113 @@ fn parse_fast_gain_codes(
         channels: channel_codes,
         lfe: lfe_code,
     }))
+}
+
+fn parse_converter_snr_offset(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+) -> Result<Option<u16>, Eac3Error> {
+    if frame.bsi.header.stream_type != StreamType::Independent || !bits.read_bit()? {
+        return Ok(None);
+    }
+    u16::try_from(bits.read_bits(10)?)
+        .map(Some)
+        .map_err(|_| Eac3Error::FrameSizeOverflow)
+}
+
+fn parse_first_coupling_leak(
+    bits: &mut BitReader<'_>,
+    coupling: Option<&CouplingInformation>,
+) -> Result<Option<CouplingLeak>, Eac3Error> {
+    if coupling.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(CouplingLeak {
+        fast_code: read_u8(bits, 3)?,
+        slow_code: read_u8(bits, 3)?,
+    }))
+}
+
+fn parse_delta_bit_allocation(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+    coupling: Option<&CouplingInformation>,
+    channels: usize,
+) -> Result<Option<DeltaBitAllocation>, Eac3Error> {
+    if !frame.syntax.delta_bit_allocation() {
+        return Ok(None);
+    }
+    if !bits.read_bit()? {
+        return Ok(Some(DeltaBitAllocation {
+            coupling: coupling.map(|_| no_delta_allocation()),
+            channels: (0..channels).map(|_| no_delta_allocation()).collect(),
+        }));
+    }
+    let coupling_strategy = coupling.map(|_| read_delta_strategy(bits)).transpose()?;
+    let channel_strategies = (0..channels)
+        .map(|_| read_delta_strategy(bits))
+        .collect::<Result<Vec<_>, _>>()?;
+    let coupling = coupling_strategy
+        .map(|strategy| parse_delta_element(bits, strategy))
+        .transpose()?;
+    let channels = channel_strategies
+        .into_iter()
+        .map(|strategy| parse_delta_element(bits, strategy))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(DeltaBitAllocation { coupling, channels }))
+}
+
+fn read_delta_strategy(bits: &mut BitReader<'_>) -> Result<u8, Eac3Error> {
+    let strategy = read_u8(bits, 2)?;
+    if !matches!(strategy, 1 | 2) {
+        return Err(Eac3Error::InvalidDeltaBitAllocationStrategy { actual: strategy });
+    }
+    Ok(strategy)
+}
+
+fn parse_delta_element(
+    bits: &mut BitReader<'_>,
+    strategy: u8,
+) -> Result<DeltaBitAllocationElement, Eac3Error> {
+    let segments = if strategy == 1 {
+        let count = usize::from(read_u8(bits, 3)?) + 1;
+        (0..count)
+            .map(|_| {
+                Ok(DeltaBitAllocationSegment {
+                    offset: read_u8(bits, 5)?,
+                    length: read_u8(bits, 4)?,
+                    delta: read_u8(bits, 3)?,
+                })
+            })
+            .collect::<Result<Vec<_>, Eac3Error>>()?
+    } else {
+        Vec::new()
+    };
+    Ok(DeltaBitAllocationElement { strategy, segments })
+}
+
+fn no_delta_allocation() -> DeltaBitAllocationElement {
+    DeltaBitAllocationElement {
+        strategy: 2,
+        segments: Vec::new(),
+    }
+}
+
+fn parse_skip_field(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+) -> Result<Option<AuxiliaryData>, Eac3Error> {
+    if !frame.syntax.skip_field() || !bits.read_bit()? {
+        return Ok(None);
+    }
+    let byte_len = usize::try_from(bits.read_bits(9)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    let bit_len = byte_len
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let bytes = (0..byte_len)
+        .map(|_| read_u8(bits, 8))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(AuxiliaryData { bit_len, bytes }))
 }
 
 fn rematrix_band_count(
