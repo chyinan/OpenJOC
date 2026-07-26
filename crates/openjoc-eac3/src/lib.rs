@@ -5,7 +5,7 @@
 mod audio_block;
 
 pub use audio_block::{
-    AudioBlockPrefix, CouplingInformation, EnhancedCouplingInformation,
+    AudioBlockPrefix, CouplingInformation, EnhancedCouplingInformation, ExponentInformation,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
     StandardCouplingInformation, parse_first_audio_block_prefix,
 };

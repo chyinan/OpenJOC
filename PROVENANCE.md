@@ -472,7 +472,7 @@ frame behavior is covered by integration tests.
 - Design rationale: derive an uncoupled channel's `endmant` directly from its
   bounded `chbwcod`, reject reserved codes 61 through 63, and apply the
   distinct D15/D25/D45 integer group-count equations exactly as printed.
-  Decode each six-bit grouped exponent as three base-5 mapped differentials
+  Decode each seven-bit grouped exponent as three base-5 mapped differentials
   using the printed inverse equations, subtract two from each mapped value,
   accumulate from the four-bit absolute exponent, and replicate each result
   over one, two, or four mantissas for D15, D25, or D45 respectively. Reject
@@ -535,6 +535,38 @@ frame behavior is covered by integration tests.
   participation, the piecewise begin/end mapping, `max(9, begin + 1)` syntax,
   one merged subband, two complete five-band amplitude sets, 36 plus one
   reserved bits, and the exact terminal offset.
+
+### Enhanced AC-3 audio-block exponent payloads
+
+- Normative source: TS 102 366 clauses 6.1.3, E.1.2.4, E.2.3.3 through
+  E.2.3.5, E.2.5.2, E.2.5.3, and E.2.6.2; tables E.2.7, E.2.9, and E.2.11.
+- Official reference data: none. Pages 53, 54, 122, 146, 157 through 159,
+  and 162 were rendered losslessly at 300 DPI using Poppler 26.02.0 and
+  visually inspected. This verified the layout-sensitive standard-coupling
+  mantissa formulas, enhanced-coupling and SPX subband boundary tables,
+  syntax order, absolute-exponent scaling, differential group dimensions,
+  and LFE exponent payload.
+- Design rationale: consume channel bandwidth codes before exponent payloads
+  exactly in syntax order. A channel participating in standard coupling ends
+  at `cplbegf * 12 + 37`; enhanced coupling and SPX use the exact table
+  boundary at their respective begin subband; only channels in neither tool
+  consume `chbwcod`. Standard coupling spans `cplbegf * 12 + 37` through
+  `(cplendf + 3) * 12 + 37`, while enhanced coupling uses table E.2.9.
+  Double the four-bit coupling absolute exponent, decode one reference plus
+  the active coupling bins with the shared D15/D25/D45 differential decoder,
+  then omit only that reference from the exposed active-bin vector. Decode
+  each channel from bin zero through its derived end mantissa and retain its
+  two-bit gain range. Decode the LFE's fixed seven bins from its absolute
+  exponent and two D15 groups. Block-zero reuse is rejected because this
+  bounded API has no prior exponent state from which normative reuse could
+  be performed.
+- Validation: bounded first-block frames cover mono SPX, stereo standard
+  coupling, sparse three-channel enhanced coupling with one uncoupled
+  `chbwcod` channel, and an uncoupled mono-plus-LFE case. Assertions verify
+  exact channel/coupling/LFE bounds, group traversal, neutral differential
+  decoding, coupling absolute-exponent doubling, gain ranges, bandwidth-code
+  presence, and the exact post-exponent bit offset. Together with malformed
+  grouped-exponent tests, all 28 `openjoc-eac3` integration tests pass.
 
 ### Enhanced AC-3 access-unit and substream ordering
 

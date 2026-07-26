@@ -4,7 +4,18 @@
 
 use openjoc_bitio::{BitRead, BitReader};
 
-use crate::{AudioFrameInformation, Eac3Error, parse_audio_frame, spx_subband_range};
+use crate::{
+    AudioFrameInformation, Eac3Error, channel_end_mantissa, channel_exponent_group_count,
+    decode_exponents, parse_audio_frame, spx_subband_range,
+};
+
+const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
+    13, 19, 25, 31, 37, 49, 61, 73, 85, 97, 109, 121, 133, 145, 157, 169, 181, 193, 205, 217, 229,
+    241, 253,
+];
+const SPX_SUBBAND_MANTISSA: [usize; 18] = [
+    25, 37, 49, 61, 73, 85, 97, 109, 121, 133, 145, 157, 169, 181, 193, 205, 217, 229,
+];
 
 const DEFAULT_SPX_BAND_STRUCTURE: [bool; 17] = [
     false, false, false, false, false, false, false, false, true, false, true, false, true, false,
@@ -19,7 +30,7 @@ const DEFAULT_ENHANCED_COUPLING_STRUCTURE: [bool; 22] = [
     false, true, true, true, false, true, true, true,
 ];
 
-/// E.1.2.4 fields preceding coupling-strategy information in the first block.
+/// E.1.2.4 fields through exponent payloads in the first block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioBlockPrefix {
     pub block_switch: Vec<bool>,
@@ -29,8 +40,24 @@ pub struct AudioBlockPrefix {
     pub spectral_extension: Option<SpectralExtensionInformation>,
     pub coupling: Option<CouplingInformation>,
     pub rematrix_flags: Vec<bool>,
-    /// Absolute frame bit offset immediately after rematrix flags.
+    pub channel_bandwidth_codes: Vec<Option<u8>>,
+    pub coupling_exponents: Option<ExponentInformation>,
+    pub channel_exponents: Vec<Option<ExponentInformation>>,
+    pub lfe_exponents: Option<ExponentInformation>,
+    /// Absolute frame bit offset immediately after the LFE exponents.
     pub next_offset_bits: usize,
+}
+
+/// One newly transmitted E.1.2.4 exponent payload and its decoded bins.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExponentInformation {
+    pub strategy: u8,
+    pub initial_exponent: u8,
+    pub grouped_exponents: Vec<u8>,
+    pub start_mantissa: usize,
+    pub end_mantissa: usize,
+    pub decoded: Vec<u8>,
+    pub gain_range: Option<u8>,
 }
 
 /// First-block spectral-extension strategy and coordinate syntax.
@@ -94,14 +121,14 @@ pub struct EnhancedCouplingInformation {
     pub amplitudes: Vec<Option<Vec<u8>>>,
 }
 
-/// Parses the first `audblk` through the terminal SPX coordinate fields.
+/// Parses the first `audblk` through channel, coupling, and LFE exponents.
 ///
 /// This is the first stateful stage of full E.1.2.4 traversal. The returned
-/// offset identifies the coupling-strategy boundary without scanning bytes.
+/// offset identifies the bit-allocation-parameter boundary without scanning.
 ///
 /// # Errors
-/// Returns an error for malformed frame syntax, truncation, invalid SPX
-/// dimensions, or checked cursor arithmetic failure.
+/// Returns an error for malformed frame syntax, truncation, invalid SPX,
+/// coupling, or exponent dimensions, or checked cursor arithmetic failure.
 pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, Eac3Error> {
     let frame = parse_audio_frame(bytes)?;
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
@@ -151,6 +178,15 @@ fn parse_first_prefix_reader(
     } else {
         Vec::new()
     };
+    let (channel_bandwidth_codes, channel_end_mantissas) = parse_channel_bandwidths(
+        bits,
+        coupling.as_ref(),
+        spectral_extension.as_ref(),
+        channels,
+    )?;
+    let coupling_exponents = parse_coupling_exponents(bits, frame, coupling.as_ref())?;
+    let channel_exponents = parse_channel_exponents(bits, frame, &channel_end_mantissas)?;
+    let lfe_exponents = parse_lfe_exponents(bits, frame)?;
     let frame_bits = frame
         .bsi
         .header
@@ -168,8 +204,196 @@ fn parse_first_prefix_reader(
         spectral_extension,
         coupling,
         rematrix_flags,
+        channel_bandwidth_codes,
+        coupling_exponents,
+        channel_exponents,
+        lfe_exponents,
         next_offset_bits,
     })
+}
+
+fn parse_channel_bandwidths(
+    bits: &mut BitReader<'_>,
+    coupling: Option<&CouplingInformation>,
+    spx: Option<&SpectralExtensionInformation>,
+    channels: usize,
+) -> Result<(Vec<Option<u8>>, Vec<usize>), Eac3Error> {
+    let mut codes = Vec::with_capacity(channels);
+    let mut end_mantissas = Vec::with_capacity(channels);
+    for channel in 0..channels {
+        let coupling_end = match coupling {
+            Some(CouplingInformation::Standard(value)) if value.channel_in_use[channel] => Some(
+                usize::from(value.begin_frequency_code)
+                    .checked_mul(12)
+                    .and_then(|value| value.checked_add(37))
+                    .ok_or(Eac3Error::FrameSizeOverflow)?,
+            ),
+            Some(CouplingInformation::Enhanced(value)) if value.channel_in_use[channel] => Some(
+                *ENHANCED_COUPLING_SUBBAND_MANTISSA
+                    .get(usize::from(value.begin_subband))
+                    .ok_or(Eac3Error::InvalidCouplingRange {
+                        begin: i16::from(value.begin_subband),
+                        end: i16::from(value.end_subband),
+                    })?,
+            ),
+            Some(CouplingInformation::Standard(_) | CouplingInformation::Enhanced(_)) | None => {
+                None
+            }
+        };
+        let spx_end = spx.and_then(|information| {
+            information
+                .channel_in_use
+                .get(channel)
+                .copied()
+                .filter(|in_use| *in_use)
+                .and_then(|_| {
+                    SPX_SUBBAND_MANTISSA
+                        .get(usize::from(information.begin_subband))
+                        .copied()
+                })
+        });
+        if let Some(end_mantissa) = coupling_end.or(spx_end) {
+            codes.push(None);
+            end_mantissas.push(end_mantissa);
+        } else {
+            let code = read_u8(bits, 6)?;
+            codes.push(Some(code));
+            end_mantissas.push(channel_end_mantissa(code)?);
+        }
+    }
+    Ok((codes, end_mantissas))
+}
+
+fn parse_coupling_exponents(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+    coupling: Option<&CouplingInformation>,
+) -> Result<Option<ExponentInformation>, Eac3Error> {
+    let Some(coupling) = coupling else {
+        return Ok(None);
+    };
+    let strategy = frame.coupling_exponent_strategy[0];
+    let (start_mantissa, end_mantissa) = match coupling {
+        CouplingInformation::Standard(value) => {
+            let start = usize::from(value.begin_frequency_code)
+                .checked_mul(12)
+                .and_then(|value| value.checked_add(37))
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let end_code = i16::from(value.end_frequency_code) + 3;
+            let end_code =
+                usize::try_from(end_code).map_err(|_| Eac3Error::InvalidCouplingRange {
+                    begin: i16::from(value.begin_frequency_code),
+                    end: i16::from(value.end_frequency_code),
+                })?;
+            let end = end_code
+                .checked_mul(12)
+                .and_then(|value| value.checked_add(37))
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            (start, end)
+        }
+        CouplingInformation::Enhanced(value) => (
+            *ENHANCED_COUPLING_SUBBAND_MANTISSA
+                .get(usize::from(value.begin_subband))
+                .ok_or(Eac3Error::InvalidCouplingRange {
+                    begin: i16::from(value.begin_subband),
+                    end: i16::from(value.end_subband),
+                })?,
+            *ENHANCED_COUPLING_SUBBAND_MANTISSA
+                .get(usize::from(value.end_subband))
+                .ok_or(Eac3Error::InvalidCouplingRange {
+                    begin: i16::from(value.begin_subband),
+                    end: i16::from(value.end_subband),
+                })?,
+        ),
+    };
+    let initial_exponent = read_u8(bits, 4)?
+        .checked_mul(2)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let length =
+        end_mantissa
+            .checked_sub(start_mantissa)
+            .ok_or(Eac3Error::InvalidCouplingRange {
+                begin: i16::try_from(start_mantissa).unwrap_or(i16::MAX),
+                end: i16::try_from(end_mantissa).unwrap_or(i16::MAX),
+            })?;
+    let decoded_length = length.checked_add(1).ok_or(Eac3Error::FrameSizeOverflow)?;
+    let group_count = channel_exponent_group_count(decoded_length, strategy)?;
+    let grouped_exponents = read_grouped_exponents(bits, group_count)?;
+    let mut decoded = decode_exponents(
+        initial_exponent,
+        &grouped_exponents,
+        strategy,
+        decoded_length,
+    )?;
+    decoded.remove(0);
+    Ok(Some(ExponentInformation {
+        strategy,
+        initial_exponent,
+        grouped_exponents,
+        start_mantissa,
+        end_mantissa,
+        decoded,
+        gain_range: None,
+    }))
+}
+
+fn parse_channel_exponents(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+    end_mantissas: &[usize],
+) -> Result<Vec<Option<ExponentInformation>>, Eac3Error> {
+    end_mantissas
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(channel, end_mantissa)| {
+            let strategy = frame.channel_exponent_strategy[0][channel];
+            let initial_exponent = read_u8(bits, 4)?;
+            let group_count = channel_exponent_group_count(end_mantissa, strategy)?;
+            let grouped_exponents = read_grouped_exponents(bits, group_count)?;
+            let decoded =
+                decode_exponents(initial_exponent, &grouped_exponents, strategy, end_mantissa)?;
+            let gain_range = read_u8(bits, 2)?;
+            Ok(Some(ExponentInformation {
+                strategy,
+                initial_exponent,
+                grouped_exponents,
+                start_mantissa: 0,
+                end_mantissa,
+                decoded,
+                gain_range: Some(gain_range),
+            }))
+        })
+        .collect()
+}
+
+fn parse_lfe_exponents(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+) -> Result<Option<ExponentInformation>, Eac3Error> {
+    if !frame.bsi.lfe_on {
+        return Ok(None);
+    }
+    if !frame.lfe_exponent_strategy[0] {
+        return Err(Eac3Error::InvalidExponentStrategy { actual: 0 });
+    }
+    let strategy = 1;
+    let initial_exponent = read_u8(bits, 4)?;
+    let grouped_exponents = read_grouped_exponents(bits, 2)?;
+    let decoded = decode_exponents(initial_exponent, &grouped_exponents, strategy, 7)?;
+    Ok(Some(ExponentInformation {
+        strategy,
+        initial_exponent,
+        grouped_exponents,
+        start_mantissa: 0,
+        end_mantissa: 7,
+        decoded,
+        gain_range: None,
+    }))
+}
+
+fn read_grouped_exponents(bits: &mut BitReader<'_>, count: usize) -> Result<Vec<u8>, Eac3Error> {
+    (0..count).map(|_| read_u8(bits, 7)).collect()
 }
 
 fn rematrix_band_count(
