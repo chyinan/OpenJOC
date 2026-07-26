@@ -6,8 +6,9 @@ mod audio_block;
 
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, EnhancedCouplingInformation,
-    ExponentInformation, SpectralExtensionCoordinates, SpectralExtensionInformation,
-    StandardCouplingCoordinates, StandardCouplingInformation, parse_first_audio_block_prefix,
+    ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
+    SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
+    parse_first_audio_block_prefix,
 };
 
 use core::fmt;

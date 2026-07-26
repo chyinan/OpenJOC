@@ -30,7 +30,7 @@ const DEFAULT_ENHANCED_COUPLING_STRUCTURE: [bool; 22] = [
     false, true, true, true, false, true, true, true,
 ];
 
-/// E.1.2.4 fields through bit-allocation parameters in the first block.
+/// E.1.2.4 fields through SNR offsets and fast-gain codes in the first block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioBlockPrefix {
     pub block_switch: Vec<bool>,
@@ -45,6 +45,8 @@ pub struct AudioBlockPrefix {
     pub channel_exponents: Vec<Option<ExponentInformation>>,
     pub lfe_exponents: Option<ExponentInformation>,
     pub bit_allocation_parameters: Option<BitAllocationParameters>,
+    pub snr_offsets: Option<SnrOffsets>,
+    pub fast_gain_codes: Option<FastGainCodes>,
     /// Absolute frame bit offset immediately after the LFE exponents.
     pub next_offset_bits: usize,
 }
@@ -69,6 +71,23 @@ pub struct BitAllocationParameters {
     pub slow_gain_code: u8,
     pub db_per_bit_code: u8,
     pub floor_code: u8,
+}
+
+/// Newly transmitted block SNR-offset codes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnrOffsets {
+    pub coarse_code: u8,
+    pub coupling_fine_code: Option<u8>,
+    pub channel_fine_codes: Vec<u8>,
+    pub lfe_fine_code: Option<u8>,
+}
+
+/// Effective E.1.2.4 fast-gain codes for the active spectral elements.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FastGainCodes {
+    pub coupling: Option<u8>,
+    pub channels: Vec<u8>,
+    pub lfe: Option<u8>,
 }
 
 /// First-block spectral-extension strategy and coordinate syntax.
@@ -132,10 +151,10 @@ pub struct EnhancedCouplingInformation {
     pub amplitudes: Vec<Option<Vec<u8>>>,
 }
 
-/// Parses the first `audblk` through bit-allocation parameter codes.
+/// Parses the first `audblk` through SNR offsets and fast-gain codes.
 ///
 /// This is the first stateful stage of full E.1.2.4 traversal. The returned
-/// offset identifies the SNR-offset boundary without scanning.
+/// offset identifies the converter-SNR-offset boundary without scanning.
 ///
 /// # Errors
 /// Returns an error for malformed frame syntax, truncation, invalid SPX,
@@ -199,6 +218,8 @@ fn parse_first_prefix_reader(
     let channel_exponents = parse_channel_exponents(bits, frame, &channel_end_mantissas)?;
     let lfe_exponents = parse_lfe_exponents(bits, frame)?;
     let bit_allocation_parameters = parse_bit_allocation_parameters(bits, frame)?;
+    let snr_offsets = parse_snr_offsets(bits, frame, coupling.as_ref(), channels)?;
+    let fast_gain_codes = parse_fast_gain_codes(bits, frame, coupling.as_ref(), channels)?;
     let frame_bits = frame
         .bsi
         .header
@@ -221,6 +242,8 @@ fn parse_first_prefix_reader(
         channel_exponents,
         lfe_exponents,
         bit_allocation_parameters,
+        snr_offsets,
+        fast_gain_codes,
         next_offset_bits,
     })
 }
@@ -431,6 +454,66 @@ fn parse_bit_allocation_parameters(
         slow_gain_code: read_u8(bits, 2)?,
         db_per_bit_code: read_u8(bits, 2)?,
         floor_code: read_u8(bits, 3)?,
+    }))
+}
+
+fn parse_snr_offsets(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+    coupling: Option<&CouplingInformation>,
+    channels: usize,
+) -> Result<Option<SnrOffsets>, Eac3Error> {
+    let strategy = frame.snr_offset_strategy;
+    if strategy == 0 {
+        return Ok(None);
+    }
+    let coarse_code = read_u8(bits, 6)?;
+    let (coupling_fine_code, channel_fine_codes, lfe_fine_code) = if strategy == 1 {
+        let fine = read_u8(bits, 4)?;
+        (
+            coupling.map(|_| fine),
+            vec![fine; channels],
+            frame.bsi.lfe_on.then_some(fine),
+        )
+    } else {
+        let coupling_fine = coupling.map(|_| read_u8(bits, 4)).transpose()?;
+        let channel_fine = (0..channels)
+            .map(|_| read_u8(bits, 4))
+            .collect::<Result<Vec<_>, _>>()?;
+        let lfe_fine = frame.bsi.lfe_on.then(|| read_u8(bits, 4)).transpose()?;
+        (coupling_fine, channel_fine, lfe_fine)
+    };
+    Ok(Some(SnrOffsets {
+        coarse_code,
+        coupling_fine_code,
+        channel_fine_codes,
+        lfe_fine_code,
+    }))
+}
+
+fn parse_fast_gain_codes(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+    coupling: Option<&CouplingInformation>,
+    channels: usize,
+) -> Result<Option<FastGainCodes>, Eac3Error> {
+    let new_codes = frame.syntax.frame_fast_gain() && bits.read_bit()?;
+    if !new_codes {
+        return Ok(Some(FastGainCodes {
+            coupling: coupling.map(|_| 4),
+            channels: vec![4; channels],
+            lfe: frame.bsi.lfe_on.then_some(4),
+        }));
+    }
+    let coupling_code = coupling.map(|_| read_u8(bits, 3)).transpose()?;
+    let channel_codes = (0..channels)
+        .map(|_| read_u8(bits, 3))
+        .collect::<Result<Vec<_>, _>>()?;
+    let lfe_code = frame.bsi.lfe_on.then(|| read_u8(bits, 3)).transpose()?;
+    Ok(Some(FastGainCodes {
+        coupling: coupling_code,
+        channels: channel_codes,
+        lfe: lfe_code,
     }))
 }
 

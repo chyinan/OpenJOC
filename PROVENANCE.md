@@ -586,6 +586,27 @@ frame behavior is covered by integration tests.
   checks the exact SNR-offset boundary. Existing syntax-disabled block cases
   continue to reach the same boundary without consuming parameter bits.
 
+### Enhanced AC-3 block SNR and fast-gain syntax
+
+- Normative source: TS 102 366 clause E.1.2.4.
+- Official reference data: none. Pages 122 and 123 were rendered losslessly
+  at 300 DPI using Poppler 26.02.0 and visually inspected to verify the nested
+  `snroffststr` branches, first-block implicit update, element conditionals,
+  and fast-gain field widths and defaults.
+- Design rationale: for block-coded SNR strategy 1, retain one six-bit coarse
+  code and apply the single four-bit fine code to every active spectral
+  element. For strategy 2, consume distinct coupling, full-bandwidth channel,
+  and LFE fine codes in printed order. Frame-coded strategy 0 consumes no
+  `audblk` bits and remains represented by the `audfrm` state. When fast-gain
+  syntax signals new codes, retain each active element's three-bit value;
+  otherwise expose the printed effective default code 4 without consuming
+  element fields.
+- Validation: the bounded mono-plus-LFE fixture uses strategy 2 and verifies
+  a non-default coarse code, distinct channel/LFE fine codes, explicit
+  channel/LFE fast-gain codes, absent coupling fields, and the exact
+  converter-SNR-offset boundary. Existing strategy-0 fixtures verify that
+  this stage consumes no block SNR bits.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

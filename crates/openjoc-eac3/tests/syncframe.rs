@@ -580,16 +580,16 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(0, 1); // infomdate
     bits.push(0, 1); // convsync
     bits.push(0, 1); // addbsie
-    bits.push(0, 2); // frame SNR strategy
+    bits.push(2, 2); // per-element block SNR strategy
     bits.push(0, 1); // transient processing
     bits.push(0, 1); // block-switch syntax
     bits.push(0, 1); // dither syntax
     bits.push(1, 1); // bit-allocation syntax
-    bits.push(0, 4); // remaining compact syntax flags
+    bits.push(1, 1); // frame fast-gain syntax
+    bits.push(0, 3); // remaining compact syntax flags
     bits.push(1, 2); // channel D15
     bits.push(1, 1); // LFE D15
     bits.push(0, 1); // converter exponent strategy absent
-    bits.push(0, 10); // frame SNR offsets
 
     bits.push(0, 1); // dynamic range absent
     bits.push(0, 1); // SPX not in use
@@ -608,6 +608,12 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(1, 2); // slow gain
     bits.push(0, 2); // dB per bit
     bits.push(5, 3); // floor
+    bits.push(33, 6); // coarse SNR offset
+    bits.push(5, 4); // channel fine SNR offset
+    bits.push(7, 4); // LFE fine SNR offset
+    bits.push(1, 1); // new fast-gain codes
+    bits.push(3, 3); // channel fast gain
+    bits.push(6, 3); // LFE fast gain
     let expected_offset = bits.0.len();
 
     let prefix =
@@ -631,6 +637,15 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     assert_eq!(bit_allocation.slow_gain_code, 1);
     assert_eq!(bit_allocation.db_per_bit_code, 0);
     assert_eq!(bit_allocation.floor_code, 5);
+    let snr = prefix.snr_offsets.expect("SNR offsets");
+    assert_eq!(snr.coarse_code, 33);
+    assert_eq!(snr.coupling_fine_code, None);
+    assert_eq!(snr.channel_fine_codes, vec![5]);
+    assert_eq!(snr.lfe_fine_code, Some(7));
+    let fast_gain = prefix.fast_gain_codes.expect("fast-gain codes");
+    assert_eq!(fast_gain.coupling, None);
+    assert_eq!(fast_gain.channels, vec![3]);
+    assert_eq!(fast_gain.lfe, Some(6));
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 
