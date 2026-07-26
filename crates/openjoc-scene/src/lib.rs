@@ -7,6 +7,10 @@ use std::{collections::HashSet, fmt};
 
 mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder};
+mod payload_decoder;
+pub use payload_decoder::{
+    DecodedPayloadFrame, JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
+};
 
 /// Cartesian decoder-interface coordinate.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]

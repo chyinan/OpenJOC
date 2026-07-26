@@ -345,6 +345,21 @@ frame behavior is covered by integration tests.
 - Validation: exact RIFF, format, rate, bit-depth, data-size, and sample-byte
   assertions plus invalid-rate and non-finite-sample rejection.
 
+### Payload-to-scene orchestration
+
+- Normative source: TS 103 420 clauses 4.3–4.4, 5, 6.4, 6.6, and 7.4.
+- Official reference data: the same verified Huffman/QMF companion tables used
+  by the called JOC and QMF components; orchestration introduces no tables.
+- Design rationale: expose the engineering-spec `JocFrameInput` boundary with
+  sample rate, channel-major downmix PCM, raw JOC/OAMD payloads, and frame
+  index. Parse both payloads, enforce their object-count agreement, clone JOC
+  and scene state, run analysis/reconstruction/synthesis and OAMD assembly,
+  then commit both only after the complete frame succeeds.
+- Validation: a raw absent-JOC/inactive-OAMD vector traverses both parsers,
+  normative zero initial matrix, QMF reconstruction/synthesis, timed metadata,
+  and ObjectScene PCM; malformed second-frame OAMD is rejected and the same
+  frame index then succeeds, proving atomic retry behavior.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the

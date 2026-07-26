@@ -309,6 +309,7 @@ dependencies = [
 name = "openjoc-scene"
 version = "0.1.0"
 dependencies = [
+ "openjoc-joc",
  "openjoc-oamd",
  "serde",
  "serde_json",
