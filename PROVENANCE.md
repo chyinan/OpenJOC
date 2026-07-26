@@ -340,10 +340,13 @@ frame behavior is covered by integration tests.
   RIFF/WAVE serialization is a container concern outside TS 103 420.
 - Official reference data: none.
 - Design rationale: emit mono 64-bit IEEE-float WAV so reference f64 object PCM
-  is preserved without clipping or sample-format quantization. All RIFF size
-  arithmetic is checked before allocation.
+  is preserved without clipping or sample-format quantization. Read PCM
+  16/24/32, IEEE-float 32/64, and extensible equivalents into channel-major
+  f64 for payload decoding. All RIFF/chunk/frame size arithmetic is checked
+  before allocation or slicing.
 - Validation: exact RIFF, format, rate, bit-depth, data-size, and sample-byte
-  assertions plus invalid-rate and non-finite-sample rejection.
+  assertions, f64 mono/stereo roundtrips, PCM16 deinterleaving, and invalid-rate
+  and non-finite-sample rejection.
 
 ### Payload-to-scene orchestration
 
@@ -359,6 +362,21 @@ frame behavior is covered by integration tests.
   normative zero initial matrix, QMF reconstruction/synthesis, timed metadata,
   and ObjectScene PCM; malformed second-frame OAMD is rejected and the same
   frame index then succeeds, proving atomic retry behavior.
+
+### `decode-payload` CLI and artifact export
+
+- Normative source: engineering specification clause 6 and final acceptance
+  scenario 1; codec behavior is delegated to the traced normative components.
+- Official reference data: none added at the CLI layer.
+- Design rationale: keep file I/O in an imperative shell. Read multichannel WAV
+  plus one aligned raw JOC/OAMD frame, invoke `JocFrameInput`, and write a
+  PCM-free `scene.json` manifest, complete `metadata/timeline.json`, lossless
+  f64 object WAV stems, and retained syntax/reconstruction debug text. Screen
+  geometry is optional but must be supplied explicitly if screen anchoring is
+  encountered; no non-normative default geometry is inferred.
+- Validation: executable integration test invokes the actual `openjoc`
+  binary and reopens the emitted object stem to verify all-zero reconstructed
+  PCM plus the required scene, timeline, and debug artifact paths.
 
 ## Ambiguities and open normative questions
 

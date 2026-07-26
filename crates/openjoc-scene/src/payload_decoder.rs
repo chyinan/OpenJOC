@@ -20,7 +20,7 @@ pub struct JocFrameInput<'a> {
 /// Decoder-interface configuration not carried by the two payloads.
 #[derive(Clone, Copy, Debug)]
 pub struct PayloadDecoderConfig {
-    pub reference_screen: ReferenceScreen,
+    pub reference_screen: Option<ReferenceScreen>,
     pub oamd: OamdDecoderConfig,
 }
 

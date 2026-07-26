@@ -136,6 +136,21 @@ pub struct ObjectScene {
     pub metadata_timeline: Vec<MetadataUpdate>,
 }
 
+#[derive(Serialize)]
+struct SceneManifest {
+    sample_rate: u32,
+    duration_samples: u64,
+    objects: Vec<ObjectManifest>,
+    metadata_timeline: &'static str,
+}
+
+#[derive(Serialize)]
+struct ObjectManifest {
+    object_id: u32,
+    class: ObjectClass,
+    wav: String,
+}
+
 /// Scene-model and JSON validation failures.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SceneError {
@@ -271,6 +286,39 @@ impl ObjectScene {
     pub fn to_json_pretty(&self) -> Result<String, SceneError> {
         self.validate()?;
         serde_json::to_string_pretty(self).map_err(|error| SceneError::Json(error.to_string()))
+    }
+
+    /// Serializes the output-directory manifest without embedding PCM arrays.
+    ///
+    /// # Errors
+    /// Returns [`SceneError`] when validation or JSON serialization fails.
+    pub fn to_manifest_json_pretty(&self) -> Result<String, SceneError> {
+        self.validate()?;
+        let manifest = SceneManifest {
+            sample_rate: self.sample_rate,
+            duration_samples: self.duration_samples,
+            objects: self
+                .objects
+                .iter()
+                .map(|object| ObjectManifest {
+                    object_id: object.object_id,
+                    class: object.class,
+                    wav: format!("objects/object_{:03}.wav", object.object_id),
+                })
+                .collect(),
+            metadata_timeline: "metadata/timeline.json",
+        };
+        serde_json::to_string_pretty(&manifest).map_err(|error| SceneError::Json(error.to_string()))
+    }
+
+    /// Serializes the complete timed metadata update list for artifact export.
+    ///
+    /// # Errors
+    /// Returns [`SceneError`] when validation or JSON serialization fails.
+    pub fn to_timeline_json_pretty(&self) -> Result<String, SceneError> {
+        self.validate()?;
+        serde_json::to_string_pretty(&self.metadata_timeline)
+            .map_err(|error| SceneError::Json(error.to_string()))
     }
 
     /// Parses and validates a scene JSON document.

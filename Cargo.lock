@@ -281,6 +281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "openjoc-cli"
+version = "0.1.0"
+dependencies = [
+ "openjoc-oamd",
+ "openjoc-scene",
+ "openjoc-wave",
+]
+
+[[package]]
 name = "openjoc-joc"
 version = "0.1.0"
 dependencies = [

@@ -60,7 +60,7 @@ fn decodes_raw_payloads_and_downmix_into_an_object_scene() {
     let oamd = inactive_oamd_payload();
     let downmix = vec![vec![1.0; 64]; 5];
     let mut decoder = PayloadDecoder::new(PayloadDecoderConfig {
-        reference_screen: ReferenceScreen {
+        reference_screen: Some(ReferenceScreen {
             bottom_left: OamdPosition3 {
                 x: 0.1,
                 y: 0.0,
@@ -68,7 +68,7 @@ fn decodes_raw_payloads_and_downmix_into_an_object_scene() {
             },
             width: 0.8,
             height: 1.0,
-        },
+        }),
         oamd: OamdDecoderConfig::default(),
     });
 
@@ -109,7 +109,7 @@ fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
     let oamd = inactive_oamd_payload();
     let downmix = vec![vec![1.0; 64]; 5];
     let config = PayloadDecoderConfig {
-        reference_screen: ReferenceScreen {
+        reference_screen: Some(ReferenceScreen {
             bottom_left: OamdPosition3 {
                 x: 0.1,
                 y: 0.0,
@@ -117,7 +117,7 @@ fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
             },
             width: 0.8,
             height: 1.0,
-        },
+        }),
         oamd: OamdDecoderConfig::default(),
     };
     let mut decoder = PayloadDecoder::new(config);

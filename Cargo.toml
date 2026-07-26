@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/openjoc-bitio",
+    "crates/openjoc-cli",
     "crates/openjoc-joc",
     "crates/openjoc-oamd",
     "crates/openjoc-qmf",

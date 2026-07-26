@@ -41,7 +41,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
-| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | command integration/golden artifact tests | planned |
+| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` test writes scene/timeline/f64 stem and retained JOC/OAMD/reconstruction debug artifacts; remaining commands remain | implemented |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
 | Mandatory DoD | WAV stems, scene, timeline, debug artifacts from real JOC | end-to-end workspace | legal vector artifacts plus fidelity comparison | planned |
 | Mandatory DoD | Windows/Linux/macOS CI | `.github/workflows` | all platform jobs green | planned |

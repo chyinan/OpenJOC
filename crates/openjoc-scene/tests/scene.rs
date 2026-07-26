@@ -49,6 +49,18 @@ fn scene_json_roundtrips_without_losing_timeline_or_pcm() {
 }
 
 #[test]
+fn artifact_json_references_wav_stems_and_separates_timeline() {
+    let scene = scene();
+    let manifest = scene.to_manifest_json_pretty().expect("scene manifest");
+    let timeline = scene.to_timeline_json_pretty().expect("metadata timeline");
+
+    assert!(manifest.contains("objects/object_000.wav"));
+    assert!(!manifest.contains("\"pcm\""));
+    assert!(manifest.contains("metadata/timeline.json"));
+    assert!(timeline.contains("\"start_sample\": 1"));
+}
+
+#[test]
 fn validation_rejects_inconsistent_scene_boundaries() {
     let mut invalid_rate = scene();
     invalid_rate.sample_rate = 0;

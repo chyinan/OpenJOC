@@ -74,7 +74,7 @@ fn assembles_reconstructed_pcm_and_timed_oamd_into_scene() {
         .append_frame(
             &[vec![0.25, -0.5, 1.0]],
             &oamd,
-            ReferenceScreen {
+            Some(ReferenceScreen {
                 bottom_left: OamdPosition3 {
                     x: 0.1,
                     y: 0.0,
@@ -82,7 +82,7 @@ fn assembles_reconstructed_pcm_and_timed_oamd_into_scene() {
                 },
                 width: 0.8,
                 height: 1.0,
-            },
+            }),
         )
         .expect("aligned frame");
     let scene = builder.finish().expect("valid scene");

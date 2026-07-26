@@ -20,6 +20,7 @@ pub enum SceneBuildError {
     ObjectCount { expected: usize, actual: usize },
     FrameLengthMismatch,
     MetadataShapeMismatch,
+    MissingReferenceScreen,
     DurationOverflow,
 }
 
@@ -40,6 +41,9 @@ impl fmt::Display for SceneBuildError {
             }
             Self::MetadataShapeMismatch => {
                 formatter.write_str("OAMD object/block metadata dimensions disagree")
+            }
+            Self::MissingReferenceScreen => {
+                formatter.write_str("screen-anchored OAMD requires reference-screen geometry")
             }
             Self::DurationOverflow => formatter.write_str("scene duration overflow"),
         }
@@ -114,7 +118,7 @@ impl SceneBuilder {
         &mut self,
         object_pcm: &[Vec<f64>],
         oamd: &OamdPayload,
-        reference_screen: ReferenceScreen,
+        reference_screen: Option<ReferenceScreen>,
     ) -> Result<(), SceneBuildError> {
         if oamd.prefix.object_anchors()? != self.anchors {
             return Err(SceneBuildError::ContentDescriptionChanged);
@@ -202,7 +206,7 @@ fn append_object_updates(
     extension: Option<&ExtendedObjectElement>,
     trim: Option<&TrimElement>,
     frame_offset: u64,
-    reference_screen: ReferenceScreen,
+    reference_screen: Option<ReferenceScreen>,
 ) -> Result<(), SceneBuildError> {
     if objects.objects.len() != anchors.len()
         || objects
@@ -268,7 +272,7 @@ fn append_object_updates(
 fn convert_position(
     anchor: ObjectAnchor,
     render: openjoc_oamd::ObjectRenderInfo,
-    reference_screen: ReferenceScreen,
+    reference_screen: Option<ReferenceScreen>,
 ) -> Result<Position, SceneBuildError> {
     Ok(match anchor {
         ObjectAnchor::Speaker(label) => Position::Speaker(convert_speaker(label)),
@@ -285,7 +289,9 @@ fn convert_position(
             coded: convert_coordinate(render.position),
             interpolated_room: convert_coordinate(
                 render
-                    .screen_position(reference_screen)?
+                    .screen_position(
+                        reference_screen.ok_or(SceneBuildError::MissingReferenceScreen)?,
+                    )?
                     .ok_or(SceneBuildError::MetadataShapeMismatch)?,
             ),
         },
