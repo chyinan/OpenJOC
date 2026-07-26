@@ -5,8 +5,9 @@
 mod audio_block;
 
 pub use audio_block::{
-    AudioBlockPrefix, SpectralExtensionCoordinates, SpectralExtensionInformation,
-    parse_first_audio_block_prefix,
+    AudioBlockPrefix, CouplingInformation, EnhancedCouplingInformation,
+    SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
+    StandardCouplingInformation, parse_first_audio_block_prefix,
 };
 
 use core::fmt;
@@ -73,6 +74,10 @@ pub enum Eac3Error {
     InvalidSpectralExtensionRange {
         begin: u8,
         end: u8,
+    },
+    InvalidCouplingRange {
+        begin: i16,
+        end: i16,
     },
     InvalidBlockStartDimensions {
         frame_size: usize,
@@ -190,6 +195,10 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 spectral-extension subband range {begin}..{end}"
             )),
+            Self::InvalidCouplingRange { begin, end } => Some(write!(
+                formatter,
+                "invalid E-AC-3 coupling subband range {begin}..{end}"
+            )),
             _ => None,
         }
     }
@@ -287,7 +296,8 @@ impl fmt::Display for Eac3Error {
             | Self::NonsequentialDependentSubstream { .. }
             | Self::DependentAfterConvertedSubstream { .. }
             | Self::InvalidSpectralExtensionCode { .. }
-            | Self::InvalidSpectralExtensionRange { .. } => {
+            | Self::InvalidSpectralExtensionRange { .. }
+            | Self::InvalidCouplingRange { .. } => {
                 unreachable!("handled E-AC-3 error message")
             }
         }

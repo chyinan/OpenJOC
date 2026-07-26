@@ -499,7 +499,7 @@ frame behavior is covered by integration tests.
   can underflow later band-structure loops. Traverse the first audio block
   from the exact `audfrm` cursor through block-switch, dither, dynamic-range,
   SPX strategy, active-channel, band-structure, and coordinate syntax; retain
-  raw coordinate fields and the exact next bit offset for the coupling stage.
+  raw coordinate fields while continuing the same cursor into coupling.
   Frame initialization uses Table E.1.10's structure, while transmitted bits
   replace only the active subband interval.
 - Validation: all 64 legal-width begin/end code combinations are checked
@@ -507,8 +507,30 @@ frame behavior is covered by integration tests.
   codes and every resulting non-forward range are rejected. A bounded
   one-block mono frame validates implicit SPX strategy/participation, default
   dither, explicit six-bit band structure, four coordinate bands, retained
-  blend/master/exponent/mantissa values, and the exact coupling-boundary bit
-  offset.
+  blend/master/exponent/mantissa values, and the exact post-SPX bit position.
+
+### Enhanced AC-3 coupling strategy and coordinates
+
+- Normative source: TS 102 366 clauses E.1.2.4, E.1.3.3.14 through
+  E.1.3.3.22, and E.2.5.5.1.
+- Official reference data: none. Syntax pages 120 and 121 and descriptive
+  pages 141 through 143 were rendered losslessly at 300 DPI using Poppler
+  26.02.0 and visually inspected before implementing standard/enhanced range,
+  band-structure, coordinate, amplitude, phase, and reserved-field traversal.
+- Design rationale: carry the validated SPX begin code into coupling so the
+  possibly negative standard `cplendf` and enhanced terminal subband are
+  derived exactly; initialize standard and enhanced structures from Tables
+  E.1.12 and E.1.13; treat zero structure entries as band starts and ones as
+  merges; retain raw standard coordinates, enhanced amplitudes, and phase
+  flags; and require every enhanced reserved bit to be zero. Checked ranges
+  prevent empty regions and array overrun before any structure loop.
+- Validation: a bounded stereo block covers standard coupling, both implicit
+  participating channels, explicit five-subband/three-band structure, two
+  complete coordinate sets, phase flags, and exact post-coordinate offset. A
+  bounded three-channel block covers enhanced coupling, sparse channel
+  participation, the piecewise begin/end mapping, `max(9, begin + 1)` syntax,
+  one merged subband, two complete five-band amplitude sets, 36 plus one
+  reserved bits, and the exact terminal offset.
 
 ### Enhanced AC-3 access-unit and substream ordering
 
@@ -678,6 +700,16 @@ no such terminator fields to read. OpenJOC follows the normative syntax table:
 the five zero ID bits terminate the loop immediately and are followed by
 protection data. A compatibility test against an authoritative encoded vector
 remains TODO; no decoder implementation was consulted to resolve the wording.
+
+Clause E.1.3.3.19 first initializes `necplbnd` to the number of active
+enhanced-coupling subbands, but its next printed pseudocode line assigns it
+the sum of `ecplbndstrc` merge bits. That assignment contradicts the same
+clause's prose, where zero starts a band and one merges into the previous
+band, and E.2.5.5.1's band-index algorithm, which increments only on zero.
+OpenJOC therefore computes the band count as active subbands minus the number
+of merge bits (equivalently, the number of zero entries in the active range).
+The enhanced-coupling test with six subbands and one merge records this
+derivation; no decoder implementation was consulted.
 
 No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,

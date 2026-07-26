@@ -1,9 +1,10 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, block_start_information_length, channel_end_mantissa,
-    channel_exponent_group_count, decode_exponents, decode_frame_exponent_strategy,
-    extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, group_access_units,
-    index_syncframes, parse_audio_frame, parse_bsi, parse_first_audio_block_prefix,
-    parse_joc_addbsi, parse_syncframe_header, spx_subband_range, validate_complexity_index,
+    CouplingInformation, Eac3Error, JocAddbsi, StreamType, block_start_information_length,
+    channel_end_mantissa, channel_exponent_group_count, decode_exponents,
+    decode_frame_exponent_strategy, extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata,
+    group_access_units, index_syncframes, parse_audio_frame, parse_bsi,
+    parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header, spx_subband_range,
+    validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -337,6 +338,142 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     assert_eq!(coordinate.blend, 17);
     assert_eq!(coordinate.master, 2);
     assert_eq!(coordinate.bands, vec![(1, 0), (2, 1), (3, 2), (4, 3)]);
+    assert_eq!(prefix.next_offset_bits, expected_offset);
+}
+
+#[test]
+fn parses_first_audio_block_standard_coupling_coordinates() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(63, 11); // 128-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(2, 3); // stereo
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(0, 7); // compact syntax flags
+    bits.push(1, 1); // coupling in use
+    bits.push(1, 2); // coupling D15
+    bits.push(1, 2); // left D15
+    bits.push(1, 2); // right D15
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(0, 10); // frame SNR offsets
+
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // SPX not in use
+    bits.push(0, 1); // standard coupling
+    bits.push(1, 1); // phase flags in use
+    bits.push(0, 4); // coupling begin frequency
+    bits.push(2, 4); // coupling end frequency: five subbands
+    bits.push(1, 1); // band structure exists
+    for value in [false, true, false, true] {
+        bits.push(u64::from(value), 1);
+    }
+    for (master, coordinates) in [
+        (1, [(1, 2), (3, 4), (5, 6)]),
+        (2, [(7, 8), (9, 10), (11, 12)]),
+    ] {
+        bits.push(master, 2);
+        for (exponent, mantissa) in coordinates {
+            bits.push(exponent, 4);
+            bits.push(mantissa, 4);
+        }
+    }
+    bits.push(0b101, 3); // one phase flag per coupling band
+    let expected_offset = bits.0.len();
+
+    let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("standard coupling");
+    let coupling = match prefix.coupling.expect("coupling state") {
+        CouplingInformation::Standard(value) => value,
+        CouplingInformation::Enhanced(_) => panic!("expected standard coupling"),
+    };
+    assert_eq!(coupling.channel_in_use, vec![true, true]);
+    assert!(coupling.phase_flags_in_use);
+    assert_eq!(coupling.begin_frequency_code, 0);
+    assert_eq!(coupling.end_frequency_code, 2);
+    assert_eq!(coupling.subband_count, 5);
+    assert_eq!(coupling.band_count, 3);
+    let left = coupling.coordinates[0].as_ref().expect("left coordinates");
+    assert_eq!(left.master, 1);
+    assert_eq!(left.bands, vec![(1, 2), (3, 4), (5, 6)]);
+    let right = coupling.coordinates[1].as_ref().expect("right coordinates");
+    assert_eq!(right.master, 2);
+    assert_eq!(right.bands, vec![(7, 8), (9, 10), (11, 12)]);
+    assert_eq!(coupling.phase_flags, vec![true, false, true]);
+    assert_eq!(prefix.next_offset_bits, expected_offset);
+}
+
+#[test]
+fn parses_first_audio_block_enhanced_coupling_coordinates() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(127, 11); // 256-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(3, 3); // three front channels
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(0, 7); // compact syntax flags
+    bits.push(1, 1); // coupling in use
+    bits.push(1, 2); // coupling D15
+    for _ in 0..3 {
+        bits.push(1, 2); // channel D15
+    }
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(0, 10); // frame SNR offsets
+
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // SPX not in use
+    bits.push(1, 1); // enhanced coupling
+    bits.push(0b101, 3); // channels 0 and 2 participate
+    bits.push(3, 4); // begin subband 5
+    bits.push(4, 4); // end subband 11
+    bits.push(1, 1); // band structure exists
+    bits.push(0, 1); // subband 9 starts a band
+    bits.push(1, 1); // subband 10 merges: five bands total
+    bits.push(0, 1); // leading reserved bit
+    for amplitude in [1, 2, 3, 4, 5] {
+        bits.push(amplitude, 5); // first participating channel
+    }
+    for amplitude in [6, 7, 8, 9, 10] {
+        bits.push(amplitude, 5); // later participating channel
+    }
+    bits.push(0, 36); // 9 * (necplbnd - 1) reserved bits
+    bits.push(0, 1); // trailing later-channel reserved bit
+    let expected_offset = bits.0.len();
+
+    let prefix = parse_first_audio_block_prefix(&bits.bytes(256)).expect("enhanced coupling");
+    let coupling = match prefix.coupling.expect("coupling state") {
+        CouplingInformation::Enhanced(value) => value,
+        CouplingInformation::Standard(_) => panic!("expected enhanced coupling"),
+    };
+    assert_eq!(coupling.channel_in_use, vec![true, false, true]);
+    assert_eq!(coupling.begin_subband, 5);
+    assert_eq!(coupling.end_subband, 11);
+    assert_eq!(coupling.band_count, 5);
+    assert_eq!(coupling.amplitudes[0], Some(vec![1, 2, 3, 4, 5]));
+    assert_eq!(coupling.amplitudes[1], None);
+    assert_eq!(coupling.amplitudes[2], Some(vec![6, 7, 8, 9, 10]));
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 
