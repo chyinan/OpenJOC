@@ -633,6 +633,21 @@ frame behavior is covered by integration tests.
   boundary. Frame syntax controls continue to prevent absent delta/skip
   branches from consuming bits.
 
+### Enhanced AC-3 exponent-to-PSD mapping
+
+- Normative source: TS 102 366 clause 6.2.2.2.
+- Official reference data: none. Page 57 was rendered losslessly at 300 DPI
+  using Poppler 26.02.0 and visually inspected before implementing the intact
+  fixed-point equation `psd[bin] = 3072 - (exp[bin] << 7)`.
+- Design rationale: expose the mapping as a pure checked function over decoded
+  exponents, preserve the normative signed integer domain, and reject values
+  above the clause 6.1.3 range before shifting.
+- Validation: an exhaustive test maps all 25 legal exponents from 0 through 24
+  and an explicit malformed case rejects 25. The subsequent clause 6.2.2.3
+  `logadd` operator is damaged in both the 300-DPI render and text extraction;
+  its ambiguity is recorded in `RESEARCH_NOTES.md` and it is not implemented
+  by inference.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

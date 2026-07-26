@@ -74,3 +74,16 @@ No legal real-world `.ec3`/`.eac3` JOC vector is currently present in the
 workspace. This does not block reference-core implementation, but it does block
 the Mandatory end-to-end acceptance gate until such a vector and its authoring
 ground truth are supplied or legally generated.
+
+## TS 102 366 page 58 rendering ambiguity
+
+The clause 6.2.2.3 `logadd(a, b)` pseudocode contains one layout-sensitive
+operator that Poppler 26.02.0 does not render. At 300 DPI the expression appears
+as `c = a [blank] b`; layout-preserving text extraction yields control character
+`0x01` at the same location. Poppler reports missing display fonts `Symbol` and
+`ArialUnicode`, including after a workspace-local Fontconfig mapping to the
+installed Windows fonts. OpenJOC does not infer this operator from surrounding
+prose. The `logadd` step remains unimplemented until the glyph can be visually
+recovered from the authorized specification or corroborated by an authorized
+ETSI artifact/test vector. Formula work that does not depend on this glyph may
+continue from separately inspected pages.

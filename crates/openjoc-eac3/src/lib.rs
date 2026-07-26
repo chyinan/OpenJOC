@@ -3,6 +3,7 @@
 //! Clean-room Enhanced AC-3 frontend from ETSI TS 102 366 Annex E.
 
 mod audio_block;
+mod bit_allocation;
 
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
@@ -11,6 +12,7 @@ pub use audio_block::{
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
     StandardCouplingInformation, parse_first_audio_block_prefix,
 };
+pub use bit_allocation::exponents_to_psd;
 
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
