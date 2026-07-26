@@ -4,6 +4,93 @@
 
 use crate::{BitAllocationParameters, Eac3Error};
 
+const BIT_ALLOCATION_BANDS: [BitAllocationBand; 50] = [
+    BitAllocationBand { start: 0, size: 1 },
+    BitAllocationBand { start: 1, size: 1 },
+    BitAllocationBand { start: 2, size: 1 },
+    BitAllocationBand { start: 3, size: 1 },
+    BitAllocationBand { start: 4, size: 1 },
+    BitAllocationBand { start: 5, size: 1 },
+    BitAllocationBand { start: 6, size: 1 },
+    BitAllocationBand { start: 7, size: 1 },
+    BitAllocationBand { start: 8, size: 1 },
+    BitAllocationBand { start: 9, size: 1 },
+    BitAllocationBand { start: 10, size: 1 },
+    BitAllocationBand { start: 11, size: 1 },
+    BitAllocationBand { start: 12, size: 1 },
+    BitAllocationBand { start: 13, size: 1 },
+    BitAllocationBand { start: 14, size: 1 },
+    BitAllocationBand { start: 15, size: 1 },
+    BitAllocationBand { start: 16, size: 1 },
+    BitAllocationBand { start: 17, size: 1 },
+    BitAllocationBand { start: 18, size: 1 },
+    BitAllocationBand { start: 19, size: 1 },
+    BitAllocationBand { start: 20, size: 1 },
+    BitAllocationBand { start: 21, size: 1 },
+    BitAllocationBand { start: 22, size: 1 },
+    BitAllocationBand { start: 23, size: 1 },
+    BitAllocationBand { start: 24, size: 1 },
+    BitAllocationBand { start: 25, size: 1 },
+    BitAllocationBand { start: 26, size: 1 },
+    BitAllocationBand { start: 27, size: 1 },
+    BitAllocationBand { start: 28, size: 3 },
+    BitAllocationBand { start: 31, size: 3 },
+    BitAllocationBand { start: 34, size: 3 },
+    BitAllocationBand { start: 37, size: 3 },
+    BitAllocationBand { start: 40, size: 3 },
+    BitAllocationBand { start: 43, size: 3 },
+    BitAllocationBand { start: 46, size: 3 },
+    BitAllocationBand { start: 49, size: 6 },
+    BitAllocationBand { start: 55, size: 6 },
+    BitAllocationBand { start: 61, size: 6 },
+    BitAllocationBand { start: 67, size: 6 },
+    BitAllocationBand { start: 73, size: 6 },
+    BitAllocationBand { start: 79, size: 6 },
+    BitAllocationBand {
+        start: 85,
+        size: 12,
+    },
+    BitAllocationBand {
+        start: 97,
+        size: 12,
+    },
+    BitAllocationBand {
+        start: 109,
+        size: 12,
+    },
+    BitAllocationBand {
+        start: 121,
+        size: 12,
+    },
+    BitAllocationBand {
+        start: 133,
+        size: 24,
+    },
+    BitAllocationBand {
+        start: 157,
+        size: 24,
+    },
+    BitAllocationBand {
+        start: 181,
+        size: 24,
+    },
+    BitAllocationBand {
+        start: 205,
+        size: 24,
+    },
+    BitAllocationBand {
+        start: 229,
+        size: 24,
+    },
+];
+
+/// One row of TS 102 366 Table 6.12.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BitAllocationBand {
+    pub start: u16,
+    pub size: u8,
+}
+
 /// Fixed-point values selected by TS 102 366 tables 6.6 through 6.11.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FixedBitAllocationParameters {
@@ -13,6 +100,35 @@ pub struct FixedBitAllocationParameters {
     pub db_per_bit: i16,
     pub floor: i16,
     pub fast_gain: i16,
+}
+
+/// Returns one normative bit-allocation band by band number.
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidBitAllocationTableIndex`] for band numbers above
+/// 49.
+pub fn bit_allocation_band(index: u8) -> Result<BitAllocationBand, Eac3Error> {
+    BIT_ALLOCATION_BANDS.get(usize::from(index)).copied().ok_or(
+        Eac3Error::InvalidBitAllocationTableIndex {
+            table: "band",
+            actual: u16::from(index),
+        },
+    )
+}
+
+/// Maps an audio transform bin to its normative Table 6.12 band number.
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidBitAllocationTableIndex`] for bins above 252.
+pub fn bit_allocation_band_for_bin(bin: u16) -> Result<u8, Eac3Error> {
+    BIT_ALLOCATION_BANDS
+        .iter()
+        .position(|band| bin >= band.start && bin < band.start + u16::from(band.size))
+        .and_then(|index| u8::try_from(index).ok())
+        .ok_or(Eac3Error::InvalidBitAllocationTableIndex {
+            table: "bin",
+            actual: bin,
+        })
 }
 
 /// Maps transmitted bit-allocation parameter codes through tables 6.6–6.11.

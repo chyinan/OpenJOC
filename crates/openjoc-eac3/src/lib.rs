@@ -13,7 +13,8 @@ pub use audio_block::{
     StandardCouplingInformation, parse_first_audio_block_prefix,
 };
 pub use bit_allocation::{
-    FixedBitAllocationParameters, decode_bit_allocation_parameters, exponents_to_psd,
+    BitAllocationBand, FixedBitAllocationParameters, bit_allocation_band,
+    bit_allocation_band_for_bin, decode_bit_allocation_parameters, exponents_to_psd,
 };
 
 use core::fmt;
@@ -49,6 +50,10 @@ pub enum Eac3Error {
     InvalidBitAllocationParameterCode {
         parameter: &'static str,
         actual: u8,
+    },
+    InvalidBitAllocationTableIndex {
+        table: &'static str,
+        actual: u16,
     },
     MissingJocExtensionFlag,
     ComplexityIndexOutOfRange {
@@ -216,6 +221,14 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 {parameter} bit allocation parameter code {actual}"
             )),
+            Self::InvalidBitAllocationTableIndex { table, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 bit allocation {table} index {actual}"
+            )),
+            Self::InvalidDeltaBitAllocationStrategy { actual } => Some(write!(
+                formatter,
+                "invalid first-block E-AC-3 delta bit allocation strategy {actual}"
+            )),
             _ => None,
         }
     }
@@ -267,10 +280,6 @@ impl fmt::Display for Eac3Error {
             Self::InvalidChannelBandwidthCode { actual } => {
                 write!(formatter, "invalid E-AC-3 channel bandwidth code {actual}")
             }
-            Self::InvalidDeltaBitAllocationStrategy { actual } => write!(
-                formatter,
-                "invalid first-block E-AC-3 delta bit allocation strategy {actual}"
-            ),
             Self::SubstreamTimingMismatch { frame } => {
                 write!(
                     formatter,
@@ -319,7 +328,9 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidSpectralExtensionCode { .. }
             | Self::InvalidSpectralExtensionRange { .. }
             | Self::InvalidCouplingRange { .. }
-            | Self::InvalidBitAllocationParameterCode { .. } => {
+            | Self::InvalidBitAllocationParameterCode { .. }
+            | Self::InvalidBitAllocationTableIndex { .. }
+            | Self::InvalidDeltaBitAllocationStrategy { .. } => {
                 unreachable!("handled E-AC-3 error message")
             }
         }

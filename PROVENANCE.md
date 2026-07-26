@@ -663,6 +663,19 @@ frame behavior is covered by integration tests.
   parameter combinations, and malformed tests reject every table's first
   out-of-range address with a parameter-specific error.
 
+### Enhanced AC-3 bit-allocation band structure
+
+- Normative source: TS 102 366 tables 6.12 and 6.13.
+- Official reference data: none. Pages 62 and 63 were rendered losslessly at
+  300 DPI with Poppler 26.02.0 and visually inspected before transcribing all
+  50 band starts and sizes. The legal audio-bin domain ends at bin 252.
+- Design rationale: retain Table 6.12 as the single normative band-layout
+  source and derive the equivalent bin-to-band lookup from its contiguous
+  ranges. Reject Table 6.13's non-audio padding addresses rather than exposing
+  their printed zero placeholders as valid bands.
+- Validation: all 50 rows and every bin from 0 through 252 are checked; band
+  50 and bin 253 are explicit malformed cases.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

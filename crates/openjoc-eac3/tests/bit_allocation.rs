@@ -1,6 +1,7 @@
 use openjoc_eac3::{
-    BitAllocationParameters, Eac3Error, FixedBitAllocationParameters,
-    decode_bit_allocation_parameters, exponents_to_psd,
+    BitAllocationBand, BitAllocationParameters, Eac3Error, FixedBitAllocationParameters,
+    bit_allocation_band, bit_allocation_band_for_bin, decode_bit_allocation_parameters,
+    exponents_to_psd,
 };
 
 #[test]
@@ -127,4 +128,46 @@ fn rejects_out_of_range_bit_allocation_parameter_codes() {
             Err(Eac3Error::InvalidBitAllocationParameterCode { parameter, actual })
         );
     }
+}
+
+#[test]
+fn maps_every_normative_bit_allocation_band_and_bin() {
+    let starts = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 31, 34, 37, 40, 43, 46, 49, 55, 61, 67, 73, 79, 85, 97, 109, 121, 133, 157,
+        181, 205, 229,
+    ];
+    let sizes = [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3,
+        3, 3, 3, 3, 3, 6, 6, 6, 6, 6, 6, 12, 12, 12, 12, 24, 24, 24, 24, 24,
+    ];
+
+    for (index, (&start, &size)) in starts.iter().zip(&sizes).enumerate() {
+        let band_index = u8::try_from(index).expect("50 bands fit u8");
+        assert_eq!(
+            bit_allocation_band(band_index),
+            Ok(BitAllocationBand { start, size })
+        );
+        for bin in start..start + u16::from(size) {
+            assert_eq!(bit_allocation_band_for_bin(bin), Ok(band_index));
+        }
+    }
+}
+
+#[test]
+fn rejects_bit_allocation_band_and_bin_outside_table_six_twelve() {
+    assert_eq!(
+        bit_allocation_band(50),
+        Err(Eac3Error::InvalidBitAllocationTableIndex {
+            table: "band",
+            actual: 50,
+        })
+    );
+    assert_eq!(
+        bit_allocation_band_for_bin(253),
+        Err(Eac3Error::InvalidBitAllocationTableIndex {
+            table: "bin",
+            actual: 253,
+        })
+    );
 }
