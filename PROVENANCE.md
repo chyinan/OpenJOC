@@ -411,6 +411,29 @@ frame behavior is covered by integration tests.
   group IDs, absent sample offset/duration, present codec data, frame alignment,
   zero duplicate flags, highest priority, and no-processing retention.
 
+### Enhanced AC-3 syncframe acquisition and JOC extension
+
+- Normative source: TS 102 366 clauses E.1.2.1, E.1.2.2, E.1.3.1.1 through
+  E.1.3.1.6 and tables E.1.1 through E.1.3; TS 103 420 clauses 8.3.1 and
+  8.3.2.
+- Official reference data: none. TS 102 366 pages 114, 126, and 127 and TS
+  103 420 pages 68 and 69 were rendered losslessly at 300 DPI using Poppler
+  26.02.0 and visually inspected. This verified the fixed acquisition-field
+  ordering, 16-bit-word frame-size relationship, sample-rate/block-count
+  tables, and exact 7+1+8-bit type-A extension layout.
+- Design rationale: parse the fixed prefix with the shared bounded MSB-first
+  reader; turn frame size into checked bytes before indexing; advance only by
+  declared sizes rather than scanning for sync patterns inside payload data;
+  derive frame sample count from the normative 256 new samples per audio
+  block; and parse the JOC `addbsi` extension as exactly two bytes with zero
+  reserved bits, a set extension flag, and complexity no greater than 16.
+- Validation: every sample-rate and block-count code, dependent identity and
+  substream ID, consecutive frame offsets, reserved stream/rate values,
+  invalid syncword, declared-frame truncation, extension length/flag/reserved
+  failures, and both maximum valid and first invalid complexity values are
+  tested. Full BSI, dependent-substream assembly, EMDF location, CRC, and audio
+  decoding remain explicitly incomplete.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the
