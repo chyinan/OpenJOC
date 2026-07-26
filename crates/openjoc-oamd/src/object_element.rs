@@ -1,11 +1,11 @@
 // pattern: Functional Core
 
 use crate::{
-    Distance, Extent3, Gain, MetadataTiming, OamdError, Position3, PositionCoding, RoomPosition,
-    StandardPositionBits, ZoneConstraint, decode_absolute_position, decode_depth_factor,
-    decode_differential_position, decode_distance_factor, decode_gain, decode_priority,
-    decode_screen_factor, decode_size, decode_zone_constraints, project_room_position,
-    timing::parse_metadata_timing_reader,
+    Distance, Extent3, Gain, MetadataTiming, OamdError, Position3, PositionCoding, ReferenceScreen,
+    RoomPosition, StandardPositionBits, ZoneConstraint, decode_absolute_position,
+    decode_depth_factor, decode_differential_position, decode_distance_factor, decode_gain,
+    decode_priority, decode_screen_factor, decode_size, decode_zone_constraints,
+    interpolate_screen_position, project_room_position, timing::parse_metadata_timing_reader,
 };
 use openjoc_bitio::{BitRead, BitReader};
 
@@ -70,6 +70,29 @@ impl ObjectRenderInfo {
     /// clause 5.2.1.2 projection ray or distance.
     pub fn room_position(self) -> Result<RoomPosition, OamdError> {
         project_room_position(self.position, self.distance)
+    }
+
+    /// Resolves a screen-anchored update using clause 5.2.1.3.
+    ///
+    /// Returns `None` for room-anchored updates.
+    ///
+    /// # Errors
+    /// Returns an OAMD error when the coded coordinates, factors, or supplied
+    /// reference-screen geometry are invalid.
+    pub fn screen_position(
+        self,
+        reference_screen: ReferenceScreen,
+    ) -> Result<Option<Position3>, OamdError> {
+        if !self.screen_anchor {
+            return Ok(None);
+        }
+        interpolate_screen_position(
+            self.position,
+            self.screen_factor,
+            self.depth_factor,
+            reference_screen,
+        )
+        .map(Some)
     }
 }
 

@@ -181,15 +181,17 @@ frame behavior is covered by integration tests.
 
 ### OAMD object position and spatial factors
 
-- Normative source: TS 103 420 clauses 5.2.1.2, 5.6.1.1.7 through
+- Normative source: TS 103 420 clauses 4.2.1, 4.2.2, 5.2.1.2,
+  5.2.1.3, 5.6.1.1.7 through
   5.6.1.1.20, tables 14 through 16, and clauses 5.6.6.4.3 through
   5.6.6.4.5, tables 44 through 46.
 - Official reference data: none; coordinates and factors are defined directly
   by the normative equations and tables. The layout-sensitive equations on
-  specification pages 19 through 20 and 38 through 41 and extension tables on
+  specification pages 14, 15, 19, 20, 38 through 41 and extension tables on
   page 54 were also visually verified from lossless 300 DPI PNG renders
-  produced by Poppler 26.02.0; text extraction was not used to infer ray
-  projection, fraction, or min/max grouping.
+  produced by Poppler 26.02.0; text extraction was not used to infer reference
+  screen geometry, matrix structure, exponents, ray projection, fraction, or
+  min/max grouping.
 - Design rationale: retain the previous standard-precision coordinate
   codewords explicitly for differential updates; decode three-bit deltas as
   two's-complement values; add extended-precision signed fifth-steps exactly;
@@ -199,13 +201,17 @@ frame behavior is covered by integration tests.
   ray representation, avoiding undefined floating-point infinity-times-zero
   components. The normative equation does not define a ray for an object
   exactly at the room centre with distance present, so that case is rejected
-  explicitly rather than inferred. Validate every raw value at its bit-width
-  boundary before arithmetic.
+  explicitly rather than inferred. Screen interpolation retains the two
+  normative diagonal transforms explicitly: screen-factor blending precedes
+  depth blending by `y` raised to `depth_factor`, using caller-supplied screen
+  bottom-left position, width, and height. Validate every raw value at its
+  bit-width boundary before arithmetic.
 - Validation: both absolute Z signs, all four extended-precision indices, X/Y
   upper clamping, exhaustive three-bit signed deltas, differential lower and
   upper coordinate clamping, invalid field widths, all 16 distance factors,
   finite and infinite room projection, undefined centre rays, invalid finite
-  factors, integrated render-info projection, all eight screen factors, and
+  factors, integrated render-info projection, exact screen/room endpoints and
+  a non-trivial screen/depth matrix evaluation, all eight screen factors, and
   all four depth factors are tested.
 
 ### OAMD object element and update/reuse semantics

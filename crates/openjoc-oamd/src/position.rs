@@ -10,6 +10,17 @@ pub struct Position3 {
     pub z: f64,
 }
 
+/// Reference-screen geometry from TS 103 420 clauses 4.2.1 and 4.2.2.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReferenceScreen {
+    /// Room-coordinate position of the bottom-left screen corner.
+    pub bottom_left: Position3,
+    /// Screen width in normalized room coordinates.
+    pub width: f64,
+    /// Screen height in normalized room coordinates.
+    pub height: f64,
+}
+
 /// Room distance signalled by clauses 5.6.1.1.15 through 5.6.1.1.17.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Distance {
@@ -164,6 +175,59 @@ pub fn decode_depth_factor(index: u8) -> Result<f64, OamdError> {
         .get(usize::from(index))
         .copied()
         .ok_or(OamdError::InvalidPropertyCode)
+}
+
+/// Evaluates the clause 5.2.1.3 screen/room interpolation matrices.
+///
+/// # Errors
+/// Returns [`OamdError::InvalidPropertyCode`] when coordinates, factors, or
+/// reference-screen geometry are outside their finite normative domains.
+pub fn interpolate_screen_position(
+    coded: Position3,
+    screen_factor: f64,
+    depth_factor: f64,
+    screen: ReferenceScreen,
+) -> Result<Position3, OamdError> {
+    let values = [
+        coded.x,
+        coded.y,
+        coded.z,
+        screen_factor,
+        depth_factor,
+        screen.bottom_left.x,
+        screen.bottom_left.y,
+        screen.bottom_left.z,
+        screen.width,
+        screen.height,
+    ];
+    if values.iter().any(|value| !value.is_finite())
+        || !(0.0..=1.0).contains(&coded.x)
+        || !(0.0..=1.0).contains(&coded.y)
+        || !(-1.0..=1.0).contains(&coded.z)
+        || !(0.0..=1.0).contains(&screen_factor)
+        || depth_factor < 0.0
+        || screen.width < 0.0
+        || screen.height < 0.0
+    {
+        return Err(OamdError::InvalidPropertyCode);
+    }
+
+    let room = Position3 {
+        x: screen.bottom_left.x + screen.width * coded.x,
+        y: screen.bottom_left.y + coded.y,
+        z: screen.bottom_left.z + screen.height * (coded.z + 1.0) / 2.0,
+    };
+    let depth_mix = coded.y.powf(depth_factor);
+    let screen_mix = Position3 {
+        x: screen_factor * coded.x + (1.0 - screen_factor) * room.x,
+        y: coded.y,
+        z: screen_factor * coded.z + (1.0 - screen_factor) * room.z,
+    };
+    Ok(Position3 {
+        x: depth_mix * screen_mix.x + (1.0 - depth_mix) * room.x,
+        y: coded.y,
+        z: depth_mix * screen_mix.z + (1.0 - depth_mix) * room.z,
+    })
 }
 
 /// Projects coded room coordinates through the room boundary per clause 5.2.1.2.

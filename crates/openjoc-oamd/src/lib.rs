@@ -33,10 +33,10 @@ pub use payload::{
     parse_oamd_payload, parse_oamd_payload_with_config,
 };
 pub use position::{
-    Distance, Position3, PositionCoding, RoomPosition, StandardPositionBits,
+    Distance, Position3, PositionCoding, ReferenceScreen, RoomPosition, StandardPositionBits,
     decode_absolute_position, decode_depth_factor, decode_differential_position,
     decode_distance_factor, decode_screen_factor, decode_signed_position_delta,
-    project_room_position,
+    interpolate_screen_position, project_room_position,
 };
 pub use timing::{
     MetadataBlockTiming, MetadataTimelineState, MetadataTiming, TimedMetadataBlock,

@@ -1,7 +1,8 @@
 use openjoc_oamd::{
-    Distance, OamdError, Position3, RoomPosition, StandardPositionBits, decode_absolute_position,
-    decode_depth_factor, decode_differential_position, decode_distance_factor,
-    decode_screen_factor, decode_signed_position_delta, project_room_position,
+    Distance, OamdError, Position3, ReferenceScreen, RoomPosition, StandardPositionBits,
+    decode_absolute_position, decode_depth_factor, decode_differential_position,
+    decode_distance_factor, decode_screen_factor, decode_signed_position_delta,
+    interpolate_screen_position, project_room_position,
 };
 
 fn assert_close(actual: f64, expected: f64) {
@@ -9,6 +10,12 @@ fn assert_close(actual: f64, expected: f64) {
         (actual - expected).abs() < 1.0e-12,
         "{actual} != {expected}"
     );
+}
+
+fn assert_position_close(actual: Position3, expected: Position3) {
+    assert_close(actual.x, expected.x);
+    assert_close(actual.y, expected.y);
+    assert_close(actual.z, expected.z);
 }
 
 #[test]
@@ -225,5 +232,46 @@ fn rejects_undefined_projection_rays_and_invalid_factors() {
             Distance::Finite(0.5),
         ),
         Err(OamdError::InvalidRoomDistanceFactor)
+    );
+}
+
+#[test]
+fn interpolates_screen_position_with_normative_diagonal_matrices() {
+    let reference_screen = ReferenceScreen {
+        bottom_left: Position3 {
+            x: 0.1,
+            y: 0.0,
+            z: -0.5,
+        },
+        width: 0.8,
+        height: 1.0,
+    };
+    let coded = Position3 {
+        x: 0.25,
+        y: 0.5,
+        z: 0.5,
+    };
+
+    assert_position_close(
+        interpolate_screen_position(coded, 0.5, 2.0, reference_screen)
+            .expect("valid screen interpolation"),
+        Position3 {
+            x: 0.29375,
+            y: 0.5,
+            z: 0.28125,
+        },
+    );
+    assert_position_close(
+        interpolate_screen_position(coded, 0.0, 2.0, reference_screen)
+            .expect("valid room-anchored endpoint"),
+        Position3 {
+            x: 0.3,
+            y: 0.5,
+            z: 0.25,
+        },
+    );
+    assert_eq!(
+        interpolate_screen_position(coded, 1.0, 0.0, reference_screen),
+        Ok(coded)
     );
 }

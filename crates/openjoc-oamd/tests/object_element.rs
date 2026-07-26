@@ -1,7 +1,7 @@
 use openjoc_oamd::{
     Distance, Extent3, Gain, MetadataBlockTiming, MetadataTiming, ObjectBasicInfo, ObjectClass,
-    ObjectElement, ObjectRenderInfo, ObjectUpdate, Position3, PositionCoding, RoomPosition,
-    StandardPositionBits, ZoneConstraint, parse_object_element,
+    ObjectElement, ObjectRenderInfo, ObjectUpdate, Position3, PositionCoding, ReferenceScreen,
+    RoomPosition, StandardPositionBits, ZoneConstraint, parse_object_element,
 };
 
 fn push(bits: &mut Vec<bool>, value: u64, width: u8) {
@@ -125,13 +125,31 @@ fn parses_a_full_dynamic_object_update() {
         })
     );
     assert_eq!(
-        decoded.expect("object element").objects[0][0]
+        decoded.as_ref().expect("object element").objects[0][0]
             .render
             .room_position(),
         Ok(RoomPosition::Finite(Position3 {
             x: 0.5,
             y: 1.3,
             z: 1.6,
+        }))
+    );
+    assert_eq!(
+        decoded.as_ref().expect("object element").objects[0][0]
+            .render
+            .screen_position(ReferenceScreen {
+                bottom_left: Position3 {
+                    x: 0.1,
+                    y: 0.0,
+                    z: -0.5,
+                },
+                width: 0.8,
+                height: 1.0,
+            }),
+        Ok(Some(Position3 {
+            x: 0.5,
+            y: 1.0,
+            z: 0.75,
         }))
     );
 }
