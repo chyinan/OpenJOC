@@ -1,8 +1,8 @@
 // pattern: Functional Core
 
 use crate::{
-    BedAssignment, ContentDescription, ExtendedObjectElement, OamdContentPrefix, OamdError,
-    ObjectClass, ObjectElement, TrimElement, content::parse_oamd_content_prefix_reader,
+    ExtendedObjectElement, OamdContentPrefix, OamdError, ObjectAnchor, ObjectClass, ObjectElement,
+    TrimElement, content::parse_oamd_content_prefix_reader,
     extended_object::parse_extended_object_element_reader,
     object_element::parse_object_element_reader, trim::parse_trim_element_reader,
     variable_bits_max,
@@ -156,73 +156,16 @@ pub fn parse_oamd_payload_with_config(
 }
 
 fn derive_object_classes(prefix: &OamdContentPrefix) -> Result<Vec<ObjectClass>, OamdError> {
-    let mut classes = Vec::with_capacity(usize::from(prefix.object_count));
-    match &prefix.content {
-        ContentDescription::DynamicOnly { lfe_present } => {
-            if *lfe_present && prefix.object_count < 2 {
-                return Err(OamdError::ObjectCountMismatch {
-                    declared: prefix.object_count,
-                    described: 2,
-                });
+    Ok(prefix
+        .object_anchors()?
+        .into_iter()
+        .map(|anchor| match anchor {
+            ObjectAnchor::Dynamic => ObjectClass::Dynamic,
+            ObjectAnchor::Speaker(_) | ObjectAnchor::IntermediateSpatial(_) => {
+                ObjectClass::BedOrIsf
             }
-            if *lfe_present {
-                classes.push(ObjectClass::BedOrIsf);
-            }
-            classes.resize(usize::from(prefix.object_count), ObjectClass::Dynamic);
-        }
-        ContentDescription::Mixed {
-            beds,
-            intermediate_spatial_format,
-            dynamic_objects,
-            ..
-        } => {
-            let bed_objects = beds.iter().try_fold(0_usize, |count, assignment| {
-                count
-                    .checked_add(bed_object_count(assignment))
-                    .ok_or(OamdError::ValueOverflow)
-            })?;
-            let isf_objects = intermediate_spatial_format.map_or(0, isf_object_count);
-            classes.resize(
-                bed_objects
-                    .checked_add(isf_objects)
-                    .ok_or(OamdError::ValueOverflow)?,
-                ObjectClass::BedOrIsf,
-            );
-            classes.resize(
-                classes
-                    .len()
-                    .checked_add(usize::from(dynamic_objects.unwrap_or(0)))
-                    .ok_or(OamdError::ValueOverflow)?,
-                ObjectClass::Dynamic,
-            );
-        }
-    }
-    if classes.len() != usize::from(prefix.object_count) {
-        return Err(OamdError::ObjectCountMismatch {
-            declared: prefix.object_count,
-            described: u16::try_from(classes.len())?,
-        });
-    }
-    Ok(classes)
-}
-
-fn bed_object_count(assignment: &BedAssignment) -> usize {
-    match assignment {
-        BedAssignment::LfeOnly => 1,
-        BedAssignment::Nonstandard(mask) => mask.count_ones() as usize,
-        BedAssignment::Standard(mask) => {
-            const COUNTS: [usize; 10] = [1, 2, 2, 2, 2, 2, 2, 1, 1, 2];
-            COUNTS
-                .into_iter()
-                .enumerate()
-                .filter_map(|(index, count)| (mask & (1 << index) != 0).then_some(count))
-                .sum()
-        }
-    }
-}
-
-fn isf_object_count(index: u8) -> usize {
-    [4, 8, 10, 14, 15, 30][usize::from(index)]
+        })
+        .collect())
 }
 
 fn consume_zero_padding(reader: &mut impl BitRead) -> Result<(), OamdError> {

@@ -18,7 +18,8 @@ pub use basic_properties::{
     decode_zone_constraints,
 };
 pub use content::{
-    BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
+    BedAssignment, ContentDescription, IsfLabel, IsfRing, OamdContentPrefix, ObjectAnchor,
+    SpeakerLabel, parse_oamd_content_prefix,
 };
 pub use extended_object::{
     ExtendedObjectElement, decode_object_divergence_code, decode_object_divergence_table,

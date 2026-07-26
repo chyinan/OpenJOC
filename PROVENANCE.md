@@ -130,16 +130,22 @@ the explicit maximum-group test records this interpretation for conformance.
 
 ### OAMD content-description prefix
 
-- Normative source: TS 103 420 clauses 5.5.2, 5.5.3, and 5.6.0; bed channel
-  masks are retained according to clauses 5.6.1.1.3–5.6.1.1.6.
+- Normative source: TS 103 420 clauses 5.5.2, 5.5.3, 5.6.0, 5.6.1.1.3–6,
+  and 5.6.4.8; Tables 11b, 12, and 13.
 - Official reference data: none; fields are decoded directly from normative
   syntax and semantics.
 - Design rationale: expose an explicitly named prefix parser until all
   `oa_element` bodies are implemented. Preserve bed masks losslessly, derive
   all `+1`/`+2` counts exactly, reject reserved ISF indices, and consume
-  reserved-program bytes using their declared bounded size.
+  reserved-program bytes using their declared bounded size. Expand the masks
+  and ISF index into the normative bed → MULZ ISF → dynamic object order from
+  one shared source used by both parsing and the decoder interface. Tables 11b,
+  12, and 13 were visually verified on specification pages 36–38 using
+  lossless 300 DPI Poppler 26.02.0 renders.
 - Validation: dynamic-only/LFE, extended syntax/object/element counts, mixed
-  ISF/dynamic content, standard bed assignment, and reserved ISF tests.
+  ISF/dynamic content, exhaustive full standard/nonstandard bed label order,
+  complete mixed bed/ISF/dynamic anchor order, standard bed assignment, and
+  reserved ISF tests.
 
 ### OAMD metadata timing
 

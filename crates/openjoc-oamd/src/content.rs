@@ -11,6 +11,181 @@ pub enum BedAssignment {
     Nonstandard(u32),
 }
 
+/// Speaker-coordinate label from clauses 5.2.1.4 and 5.6.1.1.4–5.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpeakerLabel {
+    RcL,
+    RcR,
+    RcC,
+    RcLfe,
+    RcLs,
+    RcRs,
+    RcLb,
+    RcRb,
+    RcTfl,
+    RcTfr,
+    RcTsl,
+    RcTsr,
+    RcTbl,
+    RcTbr,
+    RcLw,
+    RcRw,
+    RcLfe2,
+}
+
+/// Stacked-ring class in a Table 11b ISF label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IsfRing {
+    Middle,
+    Upper,
+    Lower,
+    Zenith,
+}
+
+/// One intermediate-spatial-format coordinate in MULZ order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IsfLabel {
+    pub ring: IsfRing,
+    pub index: u8,
+}
+
+/// Normative position-anchor identity for one content-description object.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObjectAnchor {
+    Speaker(SpeakerLabel),
+    IntermediateSpatial(IsfLabel),
+    Dynamic,
+}
+
+impl BedAssignment {
+    /// Expands Tables 12 and 13 in the required ascending bit-index order.
+    ///
+    /// # Errors
+    /// Returns an OAMD property error if a manually constructed assignment has
+    /// bits outside its normative 10- or 17-bit syntax width.
+    pub fn speaker_labels(&self) -> Result<Vec<SpeakerLabel>, OamdError> {
+        use SpeakerLabel::{
+            RcC, RcL, RcLb, RcLfe, RcLfe2, RcLs, RcLw, RcR, RcRb, RcRs, RcRw, RcTbl, RcTbr, RcTfl,
+            RcTfr, RcTsl, RcTsr,
+        };
+        const STANDARD: [&[SpeakerLabel]; 10] = [
+            &[RcLfe2],
+            &[RcLw, RcRw],
+            &[RcTbl, RcTbr],
+            &[RcTsl, RcTsr],
+            &[RcTfl, RcTfr],
+            &[RcLb, RcRb],
+            &[RcLs, RcRs],
+            &[RcLfe],
+            &[RcC],
+            &[RcL, RcR],
+        ];
+        const NONSTANDARD: [SpeakerLabel; 17] = [
+            RcLfe2, RcRw, RcLw, RcTbr, RcTbl, RcTsr, RcTsl, RcTfr, RcTfl, RcRb, RcLb, RcRs, RcLs,
+            RcLfe, RcC, RcR, RcL,
+        ];
+        match self {
+            Self::LfeOnly => Ok(vec![RcLfe]),
+            Self::Standard(mask) => {
+                if mask & !0x03ff != 0 {
+                    return Err(OamdError::InvalidPropertyCode);
+                }
+                Ok(STANDARD
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| mask & (1 << index) != 0)
+                    .flat_map(|(_, labels)| labels.iter().copied())
+                    .collect())
+            }
+            Self::Nonstandard(mask) => {
+                if mask & !0x1ffff != 0 {
+                    return Err(OamdError::InvalidPropertyCode);
+                }
+                Ok(NONSTANDARD
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter_map(|(index, label)| (mask & (1 << index) != 0).then_some(label))
+                    .collect())
+            }
+        }
+    }
+}
+
+impl OamdContentPrefix {
+    /// Expands clauses 5.6.0 and 5.6.4.8 into object-order anchor identities.
+    ///
+    /// # Errors
+    /// Returns an OAMD error for an invalid mask/index or a content-description
+    /// count inconsistent with `object_count`.
+    pub fn object_anchors(&self) -> Result<Vec<ObjectAnchor>, OamdError> {
+        let mut anchors = Vec::with_capacity(usize::from(self.object_count));
+        match &self.content {
+            ContentDescription::DynamicOnly { lfe_present } => {
+                if *lfe_present && self.object_count < 2 {
+                    return Err(OamdError::ObjectCountMismatch {
+                        declared: self.object_count,
+                        described: 2,
+                    });
+                }
+                if *lfe_present {
+                    anchors.push(ObjectAnchor::Speaker(SpeakerLabel::RcLfe));
+                }
+                anchors.resize(usize::from(self.object_count), ObjectAnchor::Dynamic);
+            }
+            ContentDescription::Mixed {
+                beds,
+                intermediate_spatial_format,
+                dynamic_objects,
+                ..
+            } => {
+                for bed in beds {
+                    anchors.extend(bed.speaker_labels()?.into_iter().map(ObjectAnchor::Speaker));
+                }
+                if let Some(index) = intermediate_spatial_format {
+                    anchors.extend(
+                        isf_labels(*index)?
+                            .into_iter()
+                            .map(ObjectAnchor::IntermediateSpatial),
+                    );
+                }
+                anchors.extend(std::iter::repeat_n(
+                    ObjectAnchor::Dynamic,
+                    usize::from(dynamic_objects.unwrap_or(0)),
+                ));
+            }
+        }
+        if anchors.len() != usize::from(self.object_count) {
+            return Err(OamdError::ObjectCountMismatch {
+                declared: self.object_count,
+                described: u16::try_from(anchors.len())?,
+            });
+        }
+        Ok(anchors)
+    }
+}
+
+fn isf_labels(index: u8) -> Result<Vec<IsfLabel>, OamdError> {
+    use IsfRing::{Lower, Middle, Upper, Zenith};
+    let counts = match index {
+        0 => [3, 1, 0, 0],
+        1 => [5, 3, 0, 0],
+        2 => [7, 3, 0, 0],
+        3 => [9, 5, 0, 0],
+        4 => [7, 5, 3, 0],
+        5 => [15, 9, 5, 1],
+        _ => return Err(OamdError::ReservedIntermediateSpatialFormat { index }),
+    };
+    let mut labels = Vec::new();
+    for (ring, count) in [Middle, Upper, Lower, Zenith].into_iter().zip(counts) {
+        labels.extend((1..=count).map(|label_index| IsfLabel {
+            ring,
+            index: label_index,
+        }));
+    }
+    Ok(labels)
+}
+
 /// Normative program-assignment alternatives from clause 5.6.0.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContentDescription {
