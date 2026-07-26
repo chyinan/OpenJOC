@@ -2,6 +2,13 @@
 
 //! Clean-room Enhanced AC-3 frontend from ETSI TS 102 366 Annex E.
 
+mod audio_block;
+
+pub use audio_block::{
+    AudioBlockPrefix, SpectralExtensionCoordinates, SpectralExtensionInformation,
+    parse_first_audio_block_prefix,
+};
+
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
 use openjoc_emdf::{

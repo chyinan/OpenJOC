@@ -489,16 +489,26 @@ frame behavior is covered by integration tests.
 ### Enhanced AC-3 spectral-extension dimensions
 
 - Normative source: TS 102 366 clauses E.1.2.4, E.1.3.3.5, and E.1.3.3.6.
-- Official reference data: none. Page 119 was rendered losslessly at 300 DPI
-  using Poppler 26.02.0 and visually inspected before implementing the two
-  layout-sensitive piecewise subband equations.
+- Official reference data: none. Pages 119 and 140 were rendered losslessly
+  at 300 DPI using Poppler 26.02.0 and visually inspected before implementing
+  the two layout-sensitive piecewise subband equations and Table E.1.10's
+  default banding structure.
 - Design rationale: map the two three-bit frequency codes directly to the
   half-open active-subband interval printed in `audblk`; reject wider codes
   at the public boundary and reject empty or reversed intervals before they
-  can underflow later band-structure loops.
+  can underflow later band-structure loops. Traverse the first audio block
+  from the exact `audfrm` cursor through block-switch, dither, dynamic-range,
+  SPX strategy, active-channel, band-structure, and coordinate syntax; retain
+  raw coordinate fields and the exact next bit offset for the coupling stage.
+  Frame initialization uses Table E.1.10's structure, while transmitted bits
+  replace only the active subband interval.
 - Validation: all 64 legal-width begin/end code combinations are checked
   against the two exhaustive piecewise mapping tables; both first over-width
-  codes and every resulting non-forward range are rejected.
+  codes and every resulting non-forward range are rejected. A bounded
+  one-block mono frame validates implicit SPX strategy/participation, default
+  dither, explicit six-bit band structure, four coordinate bands, retained
+  blend/master/exponent/mantissa values, and the exact coupling-boundary bit
+  offset.
 
 ### Enhanced AC-3 access-unit and substream ordering
 

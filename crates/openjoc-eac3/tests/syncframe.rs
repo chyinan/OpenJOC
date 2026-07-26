@@ -2,8 +2,8 @@ use openjoc_eac3::{
     Eac3Error, JocAddbsi, StreamType, block_start_information_length, channel_end_mantissa,
     channel_exponent_group_count, decode_exponents, decode_frame_exponent_strategy,
     extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, group_access_units,
-    index_syncframes, parse_audio_frame, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
-    spx_subband_range, validate_complexity_index,
+    index_syncframes, parse_audio_frame, parse_bsi, parse_first_audio_block_prefix,
+    parse_joc_addbsi, parse_syncframe_header, spx_subband_range, validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -275,6 +275,69 @@ fn parses_one_block_audio_frame_state_and_exact_block_offset() {
     assert_eq!(frame.coupling_in_use, [false]);
     assert_eq!(frame.channel_exponent_strategy, vec![vec![1]]);
     assert_eq!(frame.audio_blocks_offset_bits, expected_offset);
+}
+
+#[test]
+fn parses_first_audio_block_through_spectral_extension_coordinates() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(63, 11); // 128-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(1, 1); // block-switch syntax
+    bits.push(0, 1); // dither syntax disabled
+    bits.push(0, 5); // remaining syntax flags
+    bits.push(1, 2); // channel D15
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(0, 10); // frame SNR offsets
+
+    bits.push(1, 1); // block switch
+    bits.push(1, 1); // dynamic range exists
+    bits.push(0xa5, 8); // dynamic range
+    bits.push(1, 1); // SPX in use (strategy is implicit in block zero)
+    bits.push(2, 2); // start copy frequency code
+    bits.push(0, 3); // begin subband 2
+    bits.push(3, 3); // end subband 9
+    bits.push(1, 1); // band structure exists
+    for value in [false, true, false, true, true, false] {
+        bits.push(u64::from(value), 1); // subbands 3 through 8
+    }
+    bits.push(17, 5); // blend
+    bits.push(2, 2); // master coordinate
+    for (exponent, mantissa) in [(1, 0), (2, 1), (3, 2), (4, 3)] {
+        bits.push(exponent, 4);
+        bits.push(mantissa, 2);
+    }
+    let expected_offset = bits.0.len();
+
+    let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("valid block prefix");
+    assert_eq!(prefix.block_switch, vec![true]);
+    assert_eq!(prefix.dither, vec![true]);
+    assert_eq!(prefix.dynamic_range, Some(0xa5));
+    assert_eq!(prefix.dynamic_range_2, None);
+    let spx = prefix.spectral_extension.expect("SPX state");
+    assert_eq!(spx.channel_in_use, vec![true]);
+    assert_eq!(spx.start_copy_frequency_code, 2);
+    assert_eq!((spx.begin_subband, spx.end_subband), (2, 9));
+    assert_eq!(spx.band_count, 4);
+    let coordinate = spx.coordinates[0].as_ref().expect("channel coordinate");
+    assert_eq!(coordinate.blend, 17);
+    assert_eq!(coordinate.master, 2);
+    assert_eq!(coordinate.bands, vec![(1, 0), (2, 1), (3, 2), (4, 3)]);
+    assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 
 #[test]
