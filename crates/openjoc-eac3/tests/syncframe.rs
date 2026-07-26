@@ -1,6 +1,7 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, extract_aux_emdf, extract_auxdata, group_access_units,
-    index_syncframes, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
+    Eac3Error, JocAddbsi, StreamType, extract_aux_emdf, extract_aux_joc_access_unit,
+    extract_auxdata, group_access_units, index_syncframes, parse_bsi, parse_joc_addbsi,
+    parse_syncframe_header,
 };
 
 #[derive(Default)]
@@ -29,6 +30,11 @@ impl Bits {
         for (index, shift) in (0..width).rev().enumerate() {
             self.0[position + index] = (value >> shift) & 1 != 0;
         }
+    }
+
+    fn padded_bytes(self) -> Vec<u8> {
+        let length = self.0.len().div_ceil(8);
+        self.bytes(length)
     }
 }
 
@@ -309,4 +315,124 @@ fn parses_a_bounded_emdf_container_directly_from_auxdata() {
     assert_eq!(parsed.container.version, 0);
     assert!(parsed.container.payloads.is_empty());
     assert_eq!(parsed.bytes_consumed, 7);
+}
+
+fn joc_emdf() -> Vec<u8> {
+    let mut container = Bits::default();
+    container.push(0, 2);
+    container.push(0, 3);
+    for (id, payload) in [(11, 0xa5), (14, 0x5a)] {
+        container.push(id, 5);
+        container.push(0, 1); // no sample offset
+        container.push(0, 1); // no duration
+        container.push(1, 1); // group ID
+        container.push(1, 2);
+        container.push(0, 1); // variable-bits stop
+        container.push(1, 1); // codec data present
+        container.push(0, 8); // reserved codec data
+        container.push(0, 1); // retain unknown payload
+        container.push(1, 1); // frame aligned
+        container.push(0, 1); // create duplicate
+        container.push(0, 1); // remove duplicate
+        container.push(0, 5); // priority
+        container.push(0, 2); // proc_allowed
+        container.push(1, 8); // one payload byte
+        container.push(0, 1); // variable-bits stop
+        container.push(payload, 8);
+    }
+    container.push(0, 5);
+    container.push(1, 2);
+    container.push(0, 2);
+    container.push(0, 8);
+    let container = container.padded_bytes();
+    let mut emdf = vec![0x58, 0x38];
+    emdf.extend_from_slice(
+        &u16::try_from(container.len())
+            .expect("container length")
+            .to_be_bytes(),
+    );
+    emdf.extend_from_slice(&container);
+    emdf
+}
+
+fn joc_carrier_frame(stream_type: u8, substream_id: u8, emdf: Option<&[u8]>) -> Vec<u8> {
+    let size = 64;
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(u64::from(stream_type), 2);
+    bits.push(u64::from(substream_id), 3);
+    bits.push(31, 11);
+    bits.push(0, 2);
+    bits.push(3, 2);
+    bits.push(2, 3);
+    bits.push(0, 1);
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1);
+    if stream_type == 1 {
+        bits.push(0, 1); // no custom channel map
+    }
+    bits.push(0, 1);
+    bits.push(0, 1);
+    bits.push(u64::from(emdf.is_some()), 1);
+    if emdf.is_some() {
+        bits.push(1, 6);
+        bits.push(0x01, 8);
+        bits.push(2, 8);
+    }
+    bits.0.resize(size * 8, false);
+    if let Some(emdf) = emdf {
+        let length_position = size * 8 - 32;
+        bits.set(
+            length_position,
+            u64::try_from(emdf.len() * 8).expect("EMDF bits"),
+            14,
+        );
+        bits.set(size * 8 - 18, 1, 1);
+        let start = length_position - emdf.len() * 8;
+        for (index, byte) in emdf.iter().copied().enumerate() {
+            bits.set(start + index * 8, u64::from(byte), 8);
+        }
+    }
+    bits.bytes(size)
+}
+
+#[test]
+fn extracts_joc_profile_from_the_last_dependent_substream() {
+    let emdf = joc_emdf();
+    let bytes = [
+        joc_carrier_frame(0, 0, None),
+        joc_carrier_frame(1, 0, None),
+        joc_carrier_frame(1, 1, Some(&emdf)),
+    ]
+    .concat();
+    let frames = index_syncframes(&bytes).expect("frames");
+    let units = group_access_units(&frames).expect("unit");
+    let metadata = extract_aux_joc_access_unit(&bytes, &frames, units[0])
+        .expect("valid JOC carrier")
+        .expect("JOC metadata");
+    assert_eq!(metadata.carrier_frame, 2);
+    assert_eq!(metadata.complexity_index, 2);
+    assert_eq!(metadata.oamd, [0xa5]);
+    assert_eq!(metadata.joc, [0x5a]);
+}
+
+#[test]
+fn rejects_joc_profile_before_the_last_dependent_substream() {
+    let emdf = joc_emdf();
+    let bytes = [
+        joc_carrier_frame(0, 0, None),
+        joc_carrier_frame(1, 0, Some(&emdf)),
+        joc_carrier_frame(1, 1, None),
+    ]
+    .concat();
+    let frames = index_syncframes(&bytes).expect("frames");
+    let unit = group_access_units(&frames).expect("unit")[0];
+    assert_eq!(
+        extract_aux_joc_access_unit(&bytes, &frames, unit),
+        Err(Eac3Error::InvalidJocCarrierPlacement {
+            carrier_frame: 1,
+            required_frame: 2,
+        })
+    );
 }

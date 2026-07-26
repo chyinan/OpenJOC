@@ -4,7 +4,9 @@
 
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
-use openjoc_emdf::{EmdfError, ParsedEmdf, parse_emdf_sync};
+use openjoc_emdf::{
+    EmdfError, JOC_PAYLOAD_ID, OAMD_PAYLOAD_ID, ParsedEmdf, parse_emdf_sync, validate_joc_profile,
+};
 
 const EAC3_SYNCWORD: u16 = 0x0b77;
 
@@ -56,6 +58,15 @@ pub enum Eac3Error {
         bits: usize,
     },
     Emdf(EmdfError),
+    InvalidAccessUnitRange,
+    MultipleJocCarriers,
+    MissingJocAddbsi {
+        frame: usize,
+    },
+    InvalidJocCarrierPlacement {
+        carrier_frame: usize,
+        required_frame: usize,
+    },
 }
 
 impl fmt::Display for Eac3Error {
@@ -120,6 +131,20 @@ impl fmt::Display for Eac3Error {
                 "E-AC-3 EMDF auxiliary data is not byte-aligned: {bits} bits"
             ),
             Self::Emdf(error) => write!(formatter, "failed to decode carried EMDF: {error}"),
+            Self::InvalidAccessUnitRange => formatter.write_str("invalid E-AC-3 access-unit range"),
+            Self::MultipleJocCarriers => {
+                formatter.write_str("multiple JOC EMDF carriers in one E-AC-3 access unit")
+            }
+            Self::MissingJocAddbsi { frame } => {
+                write!(formatter, "missing JOC addbsi in carrier frame {frame}")
+            }
+            Self::InvalidJocCarrierPlacement {
+                carrier_frame,
+                required_frame,
+            } => write!(
+                formatter,
+                "JOC EMDF carrier frame {carrier_frame} is not required last dependent frame {required_frame}"
+            ),
         }
     }
 }
@@ -178,6 +203,17 @@ pub struct AccessUnitIndex {
 pub struct AuxiliaryData {
     pub bit_len: usize,
     pub bytes: Vec<u8>,
+}
+
+/// One validated TS 103 420 metadata frame extracted from E-AC-3.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JocMetadataFrame {
+    pub carrier_frame: usize,
+    pub sample_rate: u32,
+    pub samples: u16,
+    pub complexity_index: u8,
+    pub oamd: Vec<u8>,
+    pub joc: Vec<u8>,
 }
 
 /// TS 103 420 clause 8.3 type-A extension fields.
@@ -588,6 +624,91 @@ pub fn extract_aux_emdf(frame: &[u8]) -> Result<Option<ParsedEmdf>, Eac3Error> {
         });
     }
     Ok(Some(parse_emdf_sync(&auxdata.bytes)?))
+}
+
+/// Extracts and validates one TS 103 420 profile carried through `auxdata`.
+///
+/// # Errors
+/// Returns an error for invalid unit bounds, malformed frame/EMDF syntax,
+/// multiple profile carriers, missing same-frame `addbsi`, or violation of the
+/// mandatory last-dependent-substream placement rule.
+pub fn extract_aux_joc_access_unit(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+) -> Result<Option<JocMetadataFrame>, Eac3Error> {
+    let end_frame = unit
+        .first_frame
+        .checked_add(unit.frame_count)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    let unit_frames = frames
+        .get(unit.first_frame..end_frame)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    let required_dependent = unit_frames
+        .iter()
+        .enumerate()
+        .filter(|(_, frame)| frame.header.stream_type == StreamType::Dependent)
+        .map(|(relative, _)| unit.first_frame + relative)
+        .next_back();
+    let mut found = None;
+    for (relative, entry) in unit_frames.iter().enumerate() {
+        let frame_index = unit.first_frame + relative;
+        let frame = frame_bytes(stream, *entry)?;
+        let Some(parsed) = extract_aux_emdf(frame)? else {
+            continue;
+        };
+        let carries_profile = parsed
+            .container
+            .payloads
+            .iter()
+            .any(|payload| payload.id == OAMD_PAYLOAD_ID || payload.id == JOC_PAYLOAD_ID);
+        if !carries_profile {
+            continue;
+        }
+        if found.is_some() {
+            return Err(Eac3Error::MultipleJocCarriers);
+        }
+        found = Some((frame_index, frame, parsed));
+    }
+    let Some((carrier_frame, frame, parsed)) = found else {
+        return Ok(None);
+    };
+    if let Some(required_frame) = required_dependent
+        && carrier_frame != required_frame
+    {
+        return Err(Eac3Error::InvalidJocCarrierPlacement {
+            carrier_frame,
+            required_frame,
+        });
+    }
+    let bsi = parse_bsi(frame)?;
+    let addbsi = bsi.addbsi.as_deref().ok_or(Eac3Error::MissingJocAddbsi {
+        frame: carrier_frame,
+    })?;
+    let extension = parse_joc_addbsi(addbsi)?;
+    let payloads = validate_joc_profile(&parsed.container)?;
+    Ok(Some(JocMetadataFrame {
+        carrier_frame,
+        sample_rate: unit.sample_rate,
+        samples: unit.samples,
+        complexity_index: extension.complexity_index,
+        oamd: payloads.oamd.to_vec(),
+        joc: payloads.joc.to_vec(),
+    }))
+}
+
+fn frame_bytes(stream: &[u8], entry: SyncframeIndexEntry) -> Result<&[u8], Eac3Error> {
+    let end = entry
+        .offset
+        .checked_add(entry.header.frame_size)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    stream
+        .get(entry.offset..end)
+        .ok_or(Eac3Error::TruncatedFrame {
+            offset: entry.offset,
+            declared: entry.header.frame_size,
+            available: stream.len().saturating_sub(entry.offset),
+        })
 }
 
 fn bits_at(bytes: &[u8], position: usize, width: u8) -> u64 {

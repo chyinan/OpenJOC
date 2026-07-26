@@ -474,6 +474,24 @@ frame behavior is covered by integration tests.
   Audio-block `skipfld` carriage remains incomplete and is not conflated with
   this path.
 
+### JOC-profile access-unit extraction and placement
+
+- Normative source: TS 103 420 clauses 8.1 through 8.3 and tables 55 and 56;
+  TS 102 366 clauses E.1.3.1.2 and H.2.
+- Official reference data: none beyond the already documented 300 DPI renders
+  of TS 103 420 pages 68 and 69 and TS 102 366 Annex H pages.
+- Design rationale: inspect only the size-bounded `auxdata` of frames belonging
+  to one already validated access unit; identify containers carrying payload
+  ID 11 or 14; require one complete table-55/56 OAMD/JOC pair; require the
+  type-A `addbsi` in that same syncframe; and, whenever dependent substreams
+  exist, require that carrier to be the last dependent frame. Return owned
+  OAMD/JOC bytes together with exact frame rate/sample timing and complexity.
+- Validation: a three-frame independent/dependent/dependent access unit yields
+  OAMD and JOC bytes from dependent substream 1 with the same-frame complexity
+  index; moving the identical profile to dependent substream 0 is rejected
+  with the exact required carrier frame. Multiple carriers and missing
+  same-frame extension are structurally rejected by the public API.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the
