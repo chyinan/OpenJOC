@@ -1,5 +1,6 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, index_syncframes, parse_joc_addbsi, parse_syncframe_header,
+    Eac3Error, JocAddbsi, StreamType, index_syncframes, parse_bsi, parse_joc_addbsi,
+    parse_syncframe_header,
 };
 
 #[derive(Default)]
@@ -124,4 +125,70 @@ fn parses_and_bounds_the_type_a_addbsi_extension() {
         parse_joc_addbsi(&[0x01]),
         Err(Eac3Error::InvalidAddbsiLength { actual: 1 })
     );
+}
+
+#[test]
+fn parses_bsi_conditionals_to_extract_addbsi_without_scanning() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(31, 11); // 64-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(3, 2); // 6 blocks
+    bits.push(2, 3); // stereo
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // E-AC-3 version
+    bits.push(31, 5); // dialnorm
+    bits.push(0, 1); // no compression word
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(1, 1); // addbsi exists
+    bits.push(1, 6); // 2 bytes
+    bits.push(0x01, 8);
+    bits.push(0x05, 8);
+    let bytes = bits.bytes(64);
+
+    let bsi = parse_bsi(&bytes).expect("valid complete BSI");
+    assert_eq!(bsi.audio_coding_mode, 2);
+    assert!(!bsi.lfe_on);
+    assert_eq!(bsi.bitstream_id, 16);
+    assert_eq!(bsi.addbsi.as_deref(), Some(&[0x01, 0x05][..]));
+    assert_eq!(
+        parse_joc_addbsi(bsi.addbsi.as_deref().expect("addbsi")),
+        Ok(JocAddbsi {
+            complexity_index: 5,
+        })
+    );
+}
+
+#[test]
+fn mixing_option_four_length_includes_the_mixdeflen_field() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2);
+    bits.push(0, 3);
+    bits.push(31, 11);
+    bits.push(0, 2);
+    bits.push(3, 2);
+    bits.push(2, 3);
+    bits.push(0, 1);
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(1, 1); // mixmdate
+    bits.push(0, 1); // pgmscle
+    bits.push(0, 1); // extpgmscle
+    bits.push(3, 2); // mixdef option 4
+    bits.push(0, 5); // 2-byte mixdata, including these five bits
+    bits.push(0, 11); // mixdata2e, mixdata3e, and zero fill
+    bits.push(0, 1); // frmmixcfginfoe
+    bits.push(0, 1); // infomdate
+    bits.push(1, 1); // addbsie
+    bits.push(1, 6);
+    bits.push(0x01, 8);
+    bits.push(0x04, 8);
+
+    let bsi = parse_bsi(&bits.bytes(64)).expect("bounded option-four mixdata");
+    assert_eq!(bsi.addbsi, Some(vec![0x01, 0x04]));
 }

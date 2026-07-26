@@ -104,6 +104,16 @@ pub struct JocAddbsi {
     pub complexity_index: u8,
 }
 
+/// Decoded E.1.2.2 fields required by the JOC frontend.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BitstreamInformation {
+    pub header: SyncframeHeader,
+    pub audio_coding_mode: u8,
+    pub lfe_on: bool,
+    pub bitstream_id: u8,
+    pub addbsi: Option<Vec<u8>>,
+}
+
 /// Parses the fixed acquisition prefix from clauses E.1.2.1 and E.1.2.2.
 ///
 /// # Errors
@@ -111,6 +121,10 @@ pub struct JocAddbsi {
 /// values.
 pub fn parse_syncframe_header(bytes: &[u8]) -> Result<SyncframeHeader, Eac3Error> {
     let mut bits = BitReader::new(bytes);
+    Ok(parse_header_reader(&mut bits)?.0)
+}
+
+fn parse_header_reader(bits: &mut BitReader<'_>) -> Result<(SyncframeHeader, u8), Eac3Error> {
     let syncword = u16::try_from(bits.read_bits(16)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
     if syncword != EAC3_SYNCWORD {
         return Err(Eac3Error::InvalidSyncword { actual: syncword });
@@ -138,21 +152,194 @@ pub fn parse_syncframe_header(bytes: &[u8]) -> Result<SyncframeHeader, Eac3Error
         3 => return Err(Eac3Error::ReservedSampleRate),
         _ => unreachable!("two-bit field"),
     };
-    let audio_blocks = match bits.read_bits(2)? {
+    let num_blocks_code =
+        u8::try_from(bits.read_bits(2)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    let audio_blocks = match num_blocks_code {
         0 => 1,
         1 => 2,
         2 => 3,
         3 => 6,
         _ => unreachable!("two-bit field"),
     };
-    Ok(SyncframeHeader {
-        stream_type,
-        substream_id,
-        frame_size,
-        sample_rate,
-        audio_blocks,
-        samples: u16::from(audio_blocks) * 256,
+    Ok((
+        SyncframeHeader {
+            stream_type,
+            substream_id,
+            frame_size,
+            sample_rate,
+            audio_blocks,
+            samples: u16::from(audio_blocks) * 256,
+        },
+        num_blocks_code,
+    ))
+}
+
+/// Parses complete E.1.2.2 conditional syntax through the terminal `addbsi`.
+///
+/// # Errors
+/// Returns an error for any truncated conditional branch, invalid acquisition
+/// field, or frame shorter than its declared size.
+pub fn parse_bsi(bytes: &[u8]) -> Result<BitstreamInformation, Eac3Error> {
+    let header = parse_syncframe_header(bytes)?;
+    if header.frame_size > bytes.len() {
+        return Err(Eac3Error::TruncatedFrame {
+            offset: 0,
+            declared: header.frame_size,
+            available: bytes.len(),
+        });
+    }
+    let mut bits = BitReader::new(&bytes[..header.frame_size]);
+    let (header, num_blocks_code) = parse_header_reader(&mut bits)?;
+    let acmod = read_u8(&mut bits, 3)?;
+    let lfe_on = bits.read_bit()?;
+    let bitstream_id = read_u8(&mut bits, 5)?;
+    skip(&mut bits, 5)?; // dialnorm
+    if bits.read_bit()? {
+        skip(&mut bits, 8)?;
+    }
+    if acmod == 0 {
+        skip(&mut bits, 5)?;
+        if bits.read_bit()? {
+            skip(&mut bits, 8)?;
+        }
+    }
+    if header.stream_type == StreamType::Dependent && bits.read_bit()? {
+        skip(&mut bits, 16)?;
+    }
+    if bits.read_bit()? {
+        parse_mixing_metadata(
+            &mut bits,
+            header.stream_type,
+            acmod,
+            lfe_on,
+            num_blocks_code,
+        )?;
+    }
+    if bits.read_bit()? {
+        parse_informational_metadata(&mut bits, acmod)?;
+    }
+    if header.stream_type == StreamType::Independent && num_blocks_code != 3 {
+        skip(&mut bits, 1)?;
+    }
+    if header.stream_type == StreamType::ConvertedIndependent {
+        let block_id = num_blocks_code == 3 || bits.read_bit()?;
+        if block_id {
+            skip(&mut bits, 6)?;
+        }
+    }
+    let addbsi = if bits.read_bit()? {
+        let length = usize::from(read_u8(&mut bits, 6)?) + 1;
+        let mut data = Vec::with_capacity(length);
+        for _ in 0..length {
+            data.push(read_u8(&mut bits, 8)?);
+        }
+        Some(data)
+    } else {
+        None
+    };
+    Ok(BitstreamInformation {
+        header,
+        audio_coding_mode: acmod,
+        lfe_on,
+        bitstream_id,
+        addbsi,
     })
+}
+
+fn parse_mixing_metadata(
+    bits: &mut BitReader<'_>,
+    stream_type: StreamType,
+    acmod: u8,
+    lfe_on: bool,
+    num_blocks_code: u8,
+) -> Result<(), Eac3Error> {
+    if acmod > 2 {
+        skip(bits, 2)?;
+    }
+    if acmod & 1 != 0 && acmod > 2 {
+        skip(bits, 6)?;
+    }
+    if acmod & 4 != 0 {
+        skip(bits, 6)?;
+    }
+    if lfe_on && bits.read_bit()? {
+        skip(bits, 5)?;
+    }
+    if stream_type != StreamType::Independent {
+        return Ok(());
+    }
+    skip_optional(bits, 6)?;
+    if acmod == 0 {
+        skip_optional(bits, 6)?;
+    }
+    skip_optional(bits, 6)?;
+    match bits.read_bits(2)? {
+        0 => {}
+        1 => skip(bits, 5)?,
+        2 => skip(bits, 12)?,
+        3 => {
+            let length_code = usize::from(read_u8(bits, 5)?);
+            let region_bits = length_code
+                .checked_add(2)
+                .and_then(|bytes| bytes.checked_mul(8))
+                .and_then(|total| total.checked_sub(5))
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let _region = bits.take_bits(region_bits)?;
+        }
+        _ => unreachable!("two-bit field"),
+    }
+    if acmod < 2 {
+        skip_optional(bits, 14)?;
+        if acmod == 0 {
+            skip_optional(bits, 14)?;
+        }
+    }
+    if bits.read_bit()? {
+        if num_blocks_code == 0 {
+            skip(bits, 5)?;
+        } else {
+            for _ in 0..blocks_from_code(num_blocks_code) {
+                skip_optional(bits, 5)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_informational_metadata(bits: &mut BitReader<'_>, acmod: u8) -> Result<(), Eac3Error> {
+    skip(bits, 5)?;
+    if acmod == 2 {
+        skip(bits, 4)?;
+    }
+    if acmod >= 6 {
+        skip(bits, 2)?;
+    }
+    skip_optional(bits, 8)?;
+    if acmod == 0 {
+        skip_optional(bits, 8)?;
+    }
+    skip(bits, 1)?;
+    Ok(())
+}
+
+fn blocks_from_code(code: u8) -> u8 {
+    [1, 2, 3, 6][usize::from(code)]
+}
+
+fn skip_optional(bits: &mut BitReader<'_>, width: u8) -> Result<(), Eac3Error> {
+    if bits.read_bit()? {
+        skip(bits, width)?;
+    }
+    Ok(())
+}
+
+fn skip(bits: &mut BitReader<'_>, width: u8) -> Result<(), Eac3Error> {
+    let _ignored = bits.read_bits(width)?;
+    Ok(())
+}
+
+fn read_u8(bits: &mut BitReader<'_>, width: u8) -> Result<u8, Eac3Error> {
+    u8::try_from(bits.read_bits(width)?).map_err(|_| Eac3Error::FrameSizeOverflow)
 }
 
 /// Indexes a byte-concatenated sequence using declared frame sizes only.

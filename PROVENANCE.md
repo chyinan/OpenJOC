@@ -416,11 +416,12 @@ frame behavior is covered by integration tests.
 - Normative source: TS 102 366 clauses E.1.2.1, E.1.2.2, E.1.3.1.1 through
   E.1.3.1.6 and tables E.1.1 through E.1.3; TS 103 420 clauses 8.3.1 and
   8.3.2.
-- Official reference data: none. TS 102 366 pages 114, 126, and 127 and TS
+- Official reference data: none. TS 102 366 pages 114 through 116, 126, and 127 and TS
   103 420 pages 68 and 69 were rendered losslessly at 300 DPI using Poppler
   26.02.0 and visually inspected. This verified the fixed acquisition-field
   ordering, 16-bit-word frame-size relationship, sample-rate/block-count
-  tables, and exact 7+1+8-bit type-A extension layout.
+  tables, conditional BSI layout, mixing-option-4 byte-boundary equation, and
+  exact 7+1+8-bit type-A extension layout.
 - Design rationale: parse the fixed prefix with the shared bounded MSB-first
   reader; turn frame size into checked bytes before indexing; advance only by
   declared sizes rather than scanning for sync patterns inside payload data;
@@ -431,7 +432,9 @@ frame behavior is covered by integration tests.
   substream ID, consecutive frame offsets, reserved stream/rate values,
   invalid syncword, declared-frame truncation, extension length/flag/reserved
   failures, and both maximum valid and first invalid complexity values are
-  tested. Full BSI, dependent-substream assembly, EMDF location, CRC, and audio
+  tested. Conditional BSI parsing reaches `addbsi` without scanning, including
+  a regression proving the 2-to-33-byte option-4 region includes its five-bit
+  `mixdeflen` field. Dependent-substream assembly, EMDF location, CRC, and audio
   decoding remain explicitly incomplete.
 
 ## Ambiguities and open normative questions
