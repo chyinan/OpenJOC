@@ -11,6 +11,7 @@ mod object_element;
 mod payload;
 mod position;
 mod timing;
+mod trim;
 pub use basic_properties::{
     Extent3, Gain, ZoneConstraint, decode_gain, decode_priority, decode_size,
     decode_zone_constraints,
@@ -22,7 +23,10 @@ pub use object_element::{
     Distance, ObjectBasicInfo, ObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
     parse_object_element,
 };
-pub use payload::{OamdElement, OamdElementMetadata, OamdPayload, OpaqueBits, parse_oamd_payload};
+pub use payload::{
+    OamdDecoderConfig, OamdElement, OamdElementMetadata, OamdPayload, OpaqueBits,
+    parse_oamd_payload, parse_oamd_payload_with_config,
+};
 pub use position::{
     Position3, StandardPositionBits, decode_absolute_position, decode_depth_factor,
     decode_differential_position, decode_distance_factor, decode_screen_factor,
@@ -31,6 +35,10 @@ pub use position::{
 pub use timing::{
     MetadataBlockTiming, MetadataTimelineState, MetadataTiming, TimedMetadataBlock,
     parse_metadata_timing,
+};
+pub use trim::{
+    GlobalTrim, TrimConfiguration, TrimControls, TrimElement, WarpMode, decode_trim_centre,
+    decode_trim_surround_or_height, decode_y_balance, parse_trim_element,
 };
 
 /// Checked failures while decoding OAMD syntax.
@@ -70,6 +78,14 @@ pub enum OamdError {
     ReservedAlternateObjectData { id: u8 },
     /// A known normative element has not yet been connected to the payload parser.
     UnsupportedKnownElement { id: u8 },
+    /// TS 103 420 leaves the symbolic trim-configuration count undefined.
+    MissingTrimConfigurationCount,
+    /// Table 32 reserves warp modes 2 and 3.
+    ReservedWarpMode { code: u8 },
+    /// Table 33 reserves global trim mode 3.
+    ReservedGlobalTrimMode,
+    /// Tables 36 and 37 reserve surround/height codes 0 through 3.
+    ReservedTrimCode { code: u8 },
     /// A bounded known element or payload ended with a nonzero padding bit.
     NonzeroPadding,
 }
@@ -120,6 +136,16 @@ impl fmt::Display for OamdError {
             }
             Self::UnsupportedKnownElement { id } => {
                 write!(formatter, "unsupported known OAMD element {id}")
+            }
+            Self::MissingTrimConfigurationCount => {
+                formatter.write_str("missing OAMD trim configuration count")
+            }
+            Self::ReservedWarpMode { code } => {
+                write!(formatter, "reserved OAMD warp mode {code}")
+            }
+            Self::ReservedGlobalTrimMode => formatter.write_str("reserved OAMD global trim mode"),
+            Self::ReservedTrimCode { code } => {
+                write!(formatter, "reserved OAMD trim code {code}")
             }
             Self::NonzeroPadding => formatter.write_str("nonzero OAMD padding"),
         }

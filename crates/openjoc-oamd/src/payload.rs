@@ -2,10 +2,18 @@
 
 use crate::{
     BedAssignment, ContentDescription, OamdContentPrefix, OamdError, ObjectClass, ObjectElement,
-    content::parse_oamd_content_prefix_reader, object_element::parse_object_element_reader,
+    TrimElement, content::parse_oamd_content_prefix_reader,
+    object_element::parse_object_element_reader, trim::parse_trim_element_reader,
     variable_bits_max,
 };
 use openjoc_bitio::{BitRead, BitReader};
+use std::num::NonZeroU8;
+
+/// Configuration for standard constants left undefined by TS 103 420 V1.2.1.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OamdDecoderConfig {
+    pub trim_configuration_count: Option<NonZeroU8>,
+}
 
 /// Lossless representation of an opaque, MSB-first bit sequence.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -18,6 +26,7 @@ pub struct OpaqueBits {
 #[derive(Clone, Debug, PartialEq)]
 pub enum OamdElement {
     Objects(ObjectElement),
+    Trim(TrimElement),
     Unknown(OpaqueBits),
 }
 
@@ -49,6 +58,19 @@ pub struct OamdPayload {
 /// Returns [`OamdError`] for malformed content description, reserved alternate
 /// data, size/truncation errors, nonzero padding, or unfinished known elements.
 pub fn parse_oamd_payload(payload: &[u8]) -> Result<OamdPayload, OamdError> {
+    parse_oamd_payload_with_config(payload, OamdDecoderConfig::default())
+}
+
+/// Parses a top-level OAMD payload with explicit undefined standard constants.
+///
+/// # Errors
+///
+/// Returns an OAMD error for malformed syntax, bounded-element violations,
+/// or a trim element without an explicitly configured cardinality.
+pub fn parse_oamd_payload_with_config(
+    payload: &[u8],
+    config: OamdDecoderConfig,
+) -> Result<OamdPayload, OamdError> {
     let mut reader = BitReader::new(payload);
     let initial_bits = reader.bits_remaining();
     let prefix = parse_oamd_content_prefix_reader(&mut reader)?;
@@ -81,7 +103,16 @@ pub fn parse_oamd_payload(payload: &[u8]) -> Result<OamdPayload, OamdError> {
                 consume_zero_padding(&mut element_reader)?;
                 OamdElement::Objects(objects)
             }
-            2 | 5 => return Err(OamdError::UnsupportedKnownElement { id }),
+            2 => {
+                let count = config
+                    .trim_configuration_count
+                    .ok_or(OamdError::MissingTrimConfigurationCount)?;
+                let trim =
+                    parse_trim_element_reader(&mut element_reader, prefix.object_count, count)?;
+                consume_zero_padding(&mut element_reader)?;
+                OamdElement::Trim(trim)
+            }
+            5 => return Err(OamdError::UnsupportedKnownElement { id }),
             _ => OamdElement::Unknown(read_opaque(&mut element_reader)?),
         };
         elements.push(OamdElementMetadata {

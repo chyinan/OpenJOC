@@ -228,13 +228,35 @@ frame behavior is covered by integration tests.
   restrict each element to exactly `oa_element_size` bytes before reading its
   conditional alternate ID and discard flag; require zero remainder for known
   decoded elements; and retain genuinely unknown bodies as length-bearing bit
-  strings. IDs 2 and 5 are recognized as normative trim/extended elements and
-  fail explicitly until implemented instead of being mislabeled as unknown.
+  strings. ID 2 dispatches to the trim parser when its externally configured
+  cardinality is available; ID 5 remains explicitly unfinished instead of
+  being mislabeled as unknown.
 - Validation: complete unaligned object payload, declared-window truncation,
   nonzero known-element padding, unknown-bit retention, discard intent,
   reserved alternate object data, mixed bed/ISF/dynamic ordering, program/count
   mismatch, dynamic-plus-LFE ordering, and unfinished-known-ID rejection are
   tested.
+
+### OAMD trim element
+
+- Normative source: TS 103 420 clauses 5.5.12 and 5.6.5.1 through
+  5.6.5.12, tables 32 through 39.
+- Official reference data: none. Specification pages 49 through 52 were
+  rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected.
+  This verified the balance fractions, numerator grouping, sign tables,
+  trim-value tables, and reserved code ranges without relying on damaged
+  mathematical text extraction.
+- Design rationale: decode global/default/disabled/custom modes into explicit
+  types, retain each custom trim configuration independently, resolve absent
+  per-object disable flags to false, and reject every reserved mode, reserved
+  data field, and reserved surround/height code. Because the specification
+  leaves the loop cardinality undefined, the bounded parser accepts it as
+  explicit decoder configuration rather than hard-coding a guessed value.
+- Validation: exhaustive table 35 coverage; every valid and reserved table
+  36/37 code; all 32 sign/amount combinations for each sign; a complete custom
+  configuration with every optional control; per-object disable flags;
+  reserved warp/global modes and reserved bits; and configured top-level
+  element-ID 2 dispatch.
 
 ### 64-band complex QMF (in progress)
 
@@ -250,6 +272,15 @@ frame behavior is covered by integration tests.
   invented perfect-reconstruction threshold absent from clause 7.
 
 ## Ambiguities and open normative questions
+
+Clause 5.5.12 loops over `NUM_TRIM_CONFIGS`, but TS 103 420 V1.2.1 contains
+no definition of that symbol, TS 102 366 V1.4.1 contains no corresponding trim
+cardinality, and the official companion archive contains only JOC Huffman and
+QMF tables. OpenJOC therefore requires a nonzero trim-configuration count from
+the decoder configuration whenever element ID 2 is present. Parsing without
+that value returns an explicit error. A legal vector or future corrigendum is
+required to establish the intended profile value; a compatibility test should
+be added when authoritative evidence becomes available.
 
 Clause 5.6.0.5 defines a dynamic-only program as one or more dynamic objects
 plus an optional LFE, while clause 5.6.4.8 lists only bed, ISF, and dynamic

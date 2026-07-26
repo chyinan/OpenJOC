@@ -1,7 +1,9 @@
 use openjoc_oamd::{
-    ContentDescription, Gain, OamdContentPrefix, OamdElement, OamdError, ObjectBasicInfo,
-    ObjectClass, ObjectRenderInfo, OpaqueBits, parse_oamd_payload,
+    ContentDescription, Gain, OamdContentPrefix, OamdDecoderConfig, OamdElement, OamdError,
+    ObjectBasicInfo, ObjectClass, ObjectRenderInfo, OpaqueBits, parse_oamd_payload,
+    parse_oamd_payload_with_config,
 };
+use std::num::NonZeroU8;
 
 fn push(bits: &mut Vec<bool>, value: u64, width: u8) {
     for shift in (0..width).rev() {
@@ -232,15 +234,39 @@ fn derives_bed_isf_and_dynamic_classes_in_normative_order() {
 
 #[test]
 fn known_unfinished_elements_are_not_treated_as_unknown() {
-    for id in [2, 5] {
-        let mut bits = Vec::new();
-        dynamic_prefix(&mut bits, 0, 1);
-        push_element(&mut bits, id, 1, &[false]);
-        assert_eq!(
-            parse_oamd_payload(&pack(bits)),
-            Err(OamdError::UnsupportedKnownElement { id })
-        );
-    }
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    push_element(&mut bits, 5, 1, &[false]);
+    assert_eq!(
+        parse_oamd_payload(&pack(bits)),
+        Err(OamdError::UnsupportedKnownElement { id: 5 })
+    );
+}
+
+#[test]
+fn trim_element_requires_explicit_cardinality_and_is_then_decoded() {
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    let mut content = vec![false]; // discard unknown false
+    push(&mut content, 0, 2); // no warp
+    push(&mut content, 0, 2); // reserved
+    push(&mut content, 0, 2); // default global trim
+    push(&mut content, 0, 1); // no per-object flags
+    push_element(&mut bits, 2, 1, &content);
+    let bytes = pack(bits);
+
+    assert_eq!(
+        parse_oamd_payload(&bytes),
+        Err(OamdError::MissingTrimConfigurationCount)
+    );
+    let payload = parse_oamd_payload_with_config(
+        &bytes,
+        OamdDecoderConfig {
+            trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero configuration count")),
+        },
+    )
+    .expect("configured trim payload");
+    assert!(matches!(payload.elements[0].element, OamdElement::Trim(_)));
 }
 
 #[test]
