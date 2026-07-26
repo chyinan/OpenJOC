@@ -463,6 +463,20 @@ frame behavior is covered by integration tests.
   are covered by the 19 `openjoc-eac3` tests. Full E.1.2.4 audio-block,
   exponent, bit-allocation, and mantissa traversal remains incomplete.
 
+### Enhanced AC-3 audio-block dimensions
+
+- Normative source: TS 102 366 clauses 6.1.3 and E.2.3.3 through E.2.3.5.
+- Official reference data: none. Pages 53, 54, and 146 were rendered
+  losslessly at 300 DPI using Poppler 26.02.0 and visually inspected before
+  implementing the end-mantissa and exponent-group equations.
+- Design rationale: derive an uncoupled channel's `endmant` directly from its
+  bounded `chbwcod`, reject reserved codes 61 through 63, and apply the
+  distinct D15/D25/D45 integer group-count equations exactly as printed.
+- Validation: minimum and maximum legal channel bandwidth codes, the first
+  reserved code, all three exponent strategies at a common end mantissa, and
+  rejection of the reuse strategy are covered. Coupling, SPX, decoded
+  exponents, bit allocation, and mantissa traversal remain incomplete.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

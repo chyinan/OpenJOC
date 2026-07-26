@@ -40,6 +40,12 @@ pub enum Eac3Error {
     InvalidFrameExponentStrategy {
         actual: u8,
     },
+    InvalidExponentStrategy {
+        actual: u8,
+    },
+    InvalidChannelBandwidthCode {
+        actual: u8,
+    },
     InvalidBlockStartDimensions {
         frame_size: usize,
         audio_blocks: u8,
@@ -81,16 +87,34 @@ pub enum Eac3Error {
     },
 }
 
+impl Eac3Error {
+    fn static_message(&self) -> Option<&'static str> {
+        match self {
+            Self::ReservedStreamType => Some("reserved E-AC-3 stream type"),
+            Self::ReservedSampleRate => Some("reserved E-AC-3 sample-rate code"),
+            Self::FrameSizeOverflow => Some("E-AC-3 frame-size overflow"),
+            Self::NonzeroReservedData => Some("nonzero reserved E-AC-3 data"),
+            Self::MissingJocExtensionFlag => Some("missing E-AC-3 JOC extension flag"),
+            Self::ReservedSnrOffsetStrategy => Some("reserved E-AC-3 SNR offset strategy"),
+            Self::InvalidAccessUnitRange => Some("invalid E-AC-3 access-unit range"),
+            Self::MultipleJocCarriers => {
+                Some("multiple JOC EMDF carriers in one E-AC-3 access unit")
+            }
+            _ => None,
+        }
+    }
+}
+
 impl fmt::Display for Eac3Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(message) = self.static_message() {
+            return formatter.write_str(message);
+        }
         match self {
             Self::Bit(error) => write!(formatter, "failed to read E-AC-3 bitstream: {error}"),
             Self::InvalidSyncword { actual } => {
                 write!(formatter, "invalid E-AC-3 syncword 0x{actual:04x}")
             }
-            Self::ReservedStreamType => formatter.write_str("reserved E-AC-3 stream type"),
-            Self::ReservedSampleRate => formatter.write_str("reserved E-AC-3 sample-rate code"),
-            Self::FrameSizeOverflow => formatter.write_str("E-AC-3 frame-size overflow"),
             Self::TruncatedFrame {
                 offset,
                 declared,
@@ -101,10 +125,6 @@ impl fmt::Display for Eac3Error {
             ),
             Self::InvalidAddbsiLength { actual } => {
                 write!(formatter, "invalid JOC addbsi length {actual}; expected 2")
-            }
-            Self::NonzeroReservedData => formatter.write_str("nonzero reserved E-AC-3 data"),
-            Self::MissingJocExtensionFlag => {
-                formatter.write_str("missing E-AC-3 JOC extension flag")
             }
             Self::ComplexityIndexOutOfRange { actual } => {
                 write!(formatter, "E-AC-3 JOC complexity index {actual} exceeds 16")
@@ -119,6 +139,12 @@ impl fmt::Display for Eac3Error {
             Self::InvalidFrameExponentStrategy { actual } => {
                 write!(formatter, "invalid E-AC-3 frame exponent strategy {actual}")
             }
+            Self::InvalidExponentStrategy { actual } => {
+                write!(formatter, "invalid E-AC-3 exponent strategy {actual}")
+            }
+            Self::InvalidChannelBandwidthCode { actual } => {
+                write!(formatter, "invalid E-AC-3 channel bandwidth code {actual}")
+            }
             Self::InvalidBlockStartDimensions {
                 frame_size,
                 audio_blocks,
@@ -126,9 +152,6 @@ impl fmt::Display for Eac3Error {
                 formatter,
                 "invalid E-AC-3 block-start dimensions: {frame_size} frame bytes and {audio_blocks} blocks"
             ),
-            Self::ReservedSnrOffsetStrategy => {
-                formatter.write_str("reserved E-AC-3 SNR offset strategy")
-            }
             Self::MissingIndependentSubstreamZero { frame } => write!(
                 formatter,
                 "E-AC-3 access unit at frame {frame} does not begin with independent substream 0"
@@ -163,10 +186,6 @@ impl fmt::Display for Eac3Error {
                 "E-AC-3 EMDF auxiliary data is not byte-aligned: {bits} bits"
             ),
             Self::Emdf(error) => write!(formatter, "failed to decode carried EMDF: {error}"),
-            Self::InvalidAccessUnitRange => formatter.write_str("invalid E-AC-3 access-unit range"),
-            Self::MultipleJocCarriers => {
-                formatter.write_str("multiple JOC EMDF carriers in one E-AC-3 access unit")
-            }
             Self::MissingJocAddbsi { frame } => {
                 write!(formatter, "missing JOC addbsi in carrier frame {frame}")
             }
@@ -177,6 +196,14 @@ impl fmt::Display for Eac3Error {
                 formatter,
                 "JOC EMDF carrier frame {carrier_frame} is not required last dependent frame {required_frame}"
             ),
+            Self::ReservedStreamType
+            | Self::ReservedSampleRate
+            | Self::FrameSizeOverflow
+            | Self::NonzeroReservedData
+            | Self::MissingJocExtensionFlag
+            | Self::ReservedSnrOffsetStrategy
+            | Self::InvalidAccessUnitRange
+            | Self::MultipleJocCarriers => unreachable!("handled static E-AC-3 error message"),
         }
     }
 }
@@ -698,6 +725,37 @@ pub fn block_start_information_length(
                 .ok_or(Eac3Error::FrameSizeOverflow)?,
         )
         .ok_or(Eac3Error::FrameSizeOverflow)
+}
+
+/// Derives an uncoupled channel's end mantissa from clause 6.1.3.
+///
+/// # Errors
+/// Returns an error for the prohibited channel-bandwidth codes 61 through 63.
+pub fn channel_end_mantissa(channel_bandwidth_code: u8) -> Result<usize, Eac3Error> {
+    if channel_bandwidth_code > 60 {
+        return Err(Eac3Error::InvalidChannelBandwidthCode {
+            actual: channel_bandwidth_code,
+        });
+    }
+    Ok((usize::from(channel_bandwidth_code) + 12) * 3 + 37)
+}
+
+/// Derives the number of seven-bit exponent groups from clause 6.1.3.
+///
+/// Strategies 1, 2, and 3 denote D15, D25, and D45 respectively.
+///
+/// # Errors
+/// Returns an error when called with the reuse strategy or an invalid value.
+pub fn channel_exponent_group_count(
+    end_mantissa: usize,
+    exponent_strategy: u8,
+) -> Result<usize, Eac3Error> {
+    match exponent_strategy {
+        1 => Ok(end_mantissa.saturating_sub(1) / 3),
+        2 => Ok(end_mantissa.saturating_add(2) / 6),
+        3 => Ok(end_mantissa.saturating_add(8) / 12),
+        actual => Err(Eac3Error::InvalidExponentStrategy { actual }),
+    }
 }
 
 fn parse_mixing_metadata(

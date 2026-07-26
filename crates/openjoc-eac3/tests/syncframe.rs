@@ -1,8 +1,9 @@
 use openjoc_eac3::{
-    Eac3Error, JocAddbsi, StreamType, block_start_information_length,
-    decode_frame_exponent_strategy, extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata,
-    group_access_units, index_syncframes, parse_audio_frame, parse_bsi, parse_joc_addbsi,
-    parse_syncframe_header, validate_complexity_index,
+    Eac3Error, JocAddbsi, StreamType, block_start_information_length, channel_end_mantissa,
+    channel_exponent_group_count, decode_frame_exponent_strategy, extract_aux_emdf,
+    extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
+    parse_audio_frame, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
+    validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -470,6 +471,24 @@ fn computes_the_normative_block_start_information_length() {
             frame_size: 128,
             audio_blocks: 4,
         })
+    );
+}
+
+#[test]
+fn derives_channel_mantissa_and_exponent_group_counts() {
+    assert_eq!(channel_end_mantissa(0), Ok(73));
+    assert_eq!(channel_end_mantissa(60), Ok(253));
+    assert_eq!(
+        channel_end_mantissa(61),
+        Err(Eac3Error::InvalidChannelBandwidthCode { actual: 61 })
+    );
+
+    assert_eq!(channel_exponent_group_count(73, 1), Ok(24));
+    assert_eq!(channel_exponent_group_count(73, 2), Ok(12));
+    assert_eq!(channel_exponent_group_count(73, 3), Ok(6));
+    assert_eq!(
+        channel_exponent_group_count(73, 0),
+        Err(Eac3Error::InvalidExponentStrategy { actual: 0 })
     );
 }
 
