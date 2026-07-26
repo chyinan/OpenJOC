@@ -648,6 +648,21 @@ frame behavior is covered by integration tests.
   its ambiguity is recorded in `RESEARCH_NOTES.md` and it is not implemented
   by inference.
 
+### Enhanced AC-3 fixed bit-allocation parameter tables
+
+- Normative source: TS 102 366 tables 6.6 through 6.11.
+- Official reference data: none. Pages 61 and 62 were rendered losslessly at
+  300 DPI using Poppler 26.02.0 and visually inspected. This verified every
+  slow-decay, fast-decay, slow-gain, dB-per-bit, floor, and fast-gain entry,
+  including the signed fixed-point interpretation of floor value `0xf800`.
+- Design rationale: map the already parsed two- and three-bit codes through a
+  pure checked function, retaining signed fixed-point values for the later
+  excitation, masking, and pointer computations. Reject invalid public API
+  inputs even though conforming syntax cannot transmit them.
+- Validation: an exhaustive Cartesian-product test checks all 16,384 legal
+  parameter combinations, and malformed tests reject every table's first
+  out-of-range address with a parameter-specific error.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

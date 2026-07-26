@@ -87,3 +87,14 @@ prose. The `logadd` step remains unimplemented until the glyph can be visually
 recovered from the authorized specification or corroborated by an authorized
 ETSI artifact/test vector. Formula work that does not depend on this glyph may
 continue from separately inspected pages.
+
+## TS 102 366 bit-allocation page inspection
+
+Authorized pages 59 through 65 and Annex E pages 151 through 157 were rendered
+losslessly at 300 DPI with Poppler 26.02.0 and visually inspected. Pages 61 and
+62 make Tables 6.6 through 6.12 unambiguous. Pages 64 and 65 together complete
+Table 6.16: the continuation values are addresses 28 through 30 mapping to 9,
+31 mapping to 10, and addresses 60 through 63 mapping to 15. Annex E pages 152
+and 153 make the complete 64-entry `hebaptab` and hebap quantizer mapping
+legible. Layout-sensitive AHT/GAQ expressions on pages 154 through 157 were
+inspected but are not yet implemented.

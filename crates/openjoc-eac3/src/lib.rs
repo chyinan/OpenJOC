@@ -12,7 +12,9 @@ pub use audio_block::{
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
     StandardCouplingInformation, parse_first_audio_block_prefix,
 };
-pub use bit_allocation::exponents_to_psd;
+pub use bit_allocation::{
+    FixedBitAllocationParameters, decode_bit_allocation_parameters, exponents_to_psd,
+};
 
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
@@ -42,6 +44,10 @@ pub enum Eac3Error {
     },
     NonzeroReservedData,
     InvalidDeltaBitAllocationStrategy {
+        actual: u8,
+    },
+    InvalidBitAllocationParameterCode {
+        parameter: &'static str,
         actual: u8,
     },
     MissingJocExtensionFlag,
@@ -206,6 +212,10 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 coupling subband range {begin}..{end}"
             )),
+            Self::InvalidBitAllocationParameterCode { parameter, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 {parameter} bit allocation parameter code {actual}"
+            )),
             _ => None,
         }
     }
@@ -308,7 +318,8 @@ impl fmt::Display for Eac3Error {
             | Self::DependentAfterConvertedSubstream { .. }
             | Self::InvalidSpectralExtensionCode { .. }
             | Self::InvalidSpectralExtensionRange { .. }
-            | Self::InvalidCouplingRange { .. } => {
+            | Self::InvalidCouplingRange { .. }
+            | Self::InvalidBitAllocationParameterCode { .. } => {
                 unreachable!("handled E-AC-3 error message")
             }
         }
