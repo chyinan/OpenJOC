@@ -492,6 +492,22 @@ frame behavior is covered by integration tests.
   with the exact required carrier frame. Multiple carriers and missing
   same-frame extension are structurally rejected by the public API.
 
+### Direct Enhanced AC-3 inspection command
+
+- Normative source: TS 102 366 clauses E.1.2 and E.1.3.1.2 for syncframe
+  acquisition, timing, and substream ordering; TS 103 420 clauses 8.1 through
+  8.3 for the JOC profile.
+- Official reference data: none; the command composes the already documented
+  size-bounded parsers and does not introduce codec tables or equations.
+- Design rationale: read the complete byte stream once, index frames only by
+  declared sizes, group validated access units, and inspect each unit through
+  the bounded auxiliary EMDF/profile extractor. Report timing, carrier frame,
+  complexity, and payload sizes without searching mantissa bytes for metadata.
+- Validation: an actual CLI-process test supplies a bounded synthetic
+  Enhanced AC-3 access unit carrying the complete table 55/56 profile and
+  verifies frame count, access-unit count, rate, samples, carrier, complexity,
+  and both payload sizes.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the

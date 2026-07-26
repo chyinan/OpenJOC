@@ -12,7 +12,7 @@ use std::{
     process::ExitCode,
 };
 
-const USAGE: &str = "usage: openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -35,11 +35,46 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let mut arguments = env::args().skip(1);
-    if arguments.next().as_deref() != Some("decode-payload") {
-        return Err(usage_error().into());
+    match arguments.next().as_deref() {
+        Some("inspect") => {
+            let input = arguments.next().ok_or_else(usage_error)?;
+            if arguments.next().is_some() {
+                return Err(usage_error().into());
+            }
+            inspect(Path::new(&input))
+        }
+        Some("decode-payload") => {
+            let values = arguments.collect::<Vec<_>>();
+            decode_payload(&values)
+        }
+        _ => Err(usage_error().into()),
     }
-    let values = arguments.collect::<Vec<_>>();
-    let arguments = parse_decode_payload(&values)?;
+}
+
+fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
+    let stream = fs::read(input)?;
+    let frames = openjoc_eac3::index_syncframes(&stream)?;
+    let units = openjoc_eac3::group_access_units(&frames)?;
+    println!("frames: {}", frames.len());
+    println!("access units: {}", units.len());
+    for (unit_index, unit) in units.iter().copied().enumerate() {
+        println!("access unit {unit_index}:");
+        println!("  sample rate: {} Hz", unit.sample_rate);
+        println!("  samples: {}", unit.samples);
+        if let Some(metadata) = openjoc_eac3::extract_aux_joc_access_unit(&stream, &frames, unit)? {
+            println!("  carrier frame: {}", metadata.carrier_frame);
+            println!("  complexity index: {}", metadata.complexity_index);
+            println!("  OAMD bytes: {}", metadata.oamd.len());
+            println!("  JOC bytes: {}", metadata.joc.len());
+        } else {
+            println!("  JOC profile: absent");
+        }
+    }
+    Ok(())
+}
+
+fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
+    let arguments = parse_decode_payload(values)?;
     let downmix = decode(&fs::read(&arguments.downmix)?)?;
     let joc_payload = fs::read(&arguments.joc)?;
     let oamd_payload = fs::read(&arguments.oamd)?;

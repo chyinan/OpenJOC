@@ -284,6 +284,7 @@ dependencies = [
 name = "openjoc-cli"
 version = "0.1.0"
 dependencies = [
+ "openjoc-eac3",
  "openjoc-oamd",
  "openjoc-scene",
  "openjoc-wave",

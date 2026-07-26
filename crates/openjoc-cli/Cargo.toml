@@ -10,6 +10,7 @@ name = "openjoc"
 path = "src/main.rs"
 
 [dependencies]
+openjoc-eac3 = { path = "../openjoc-eac3" }
 openjoc-oamd = { path = "../openjoc-oamd" }
 openjoc-scene = { path = "../openjoc-scene" }
 openjoc-wave = { path = "../openjoc-wave" }
