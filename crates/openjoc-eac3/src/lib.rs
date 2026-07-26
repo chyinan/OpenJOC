@@ -59,6 +59,14 @@ pub enum Eac3Error {
     InvalidExponentDimensions {
         end_mantissa: usize,
     },
+    InvalidSpectralExtensionCode {
+        begin_code: u8,
+        end_code: u8,
+    },
+    InvalidSpectralExtensionRange {
+        begin: u8,
+        end: u8,
+    },
     InvalidBlockStartDimensions {
         frame_size: usize,
         audio_blocks: u8,
@@ -164,6 +172,17 @@ impl Eac3Error {
                 formatter,
                 "dependent E-AC-3 frame {frame} follows a converted independent substream"
             )),
+            Self::InvalidSpectralExtensionCode {
+                begin_code,
+                end_code,
+            } => Some(write!(
+                formatter,
+                "invalid E-AC-3 spectral-extension codes {begin_code}, {end_code}"
+            )),
+            Self::InvalidSpectralExtensionRange { begin, end } => Some(write!(
+                formatter,
+                "invalid E-AC-3 spectral-extension subband range {begin}..{end}"
+            )),
             _ => None,
         }
     }
@@ -259,7 +278,9 @@ impl fmt::Display for Eac3Error {
             | Self::MissingIndependentSubstreamZero { .. }
             | Self::NonsequentialIndependentSubstream { .. }
             | Self::NonsequentialDependentSubstream { .. }
-            | Self::DependentAfterConvertedSubstream { .. } => {
+            | Self::DependentAfterConvertedSubstream { .. }
+            | Self::InvalidSpectralExtensionCode { .. }
+            | Self::InvalidSpectralExtensionRange { .. } => {
                 unreachable!("handled E-AC-3 error message")
             }
         }
@@ -868,6 +889,34 @@ pub fn decode_exponents(
         }
     }
     Ok(decoded)
+}
+
+/// Derives the active SPX subband interval from clause E.1.2.4.
+///
+/// # Errors
+/// Returns an error for values wider than the two three-bit fields, or when
+/// the derived half-open interval is empty or reversed.
+pub fn spx_subband_range(begin_code: u8, end_code: u8) -> Result<(u8, u8), Eac3Error> {
+    if begin_code > 7 || end_code > 7 {
+        return Err(Eac3Error::InvalidSpectralExtensionCode {
+            begin_code,
+            end_code,
+        });
+    }
+    let begin = if begin_code < 6 {
+        begin_code + 2
+    } else {
+        begin_code * 2 - 3
+    };
+    let end = if end_code < 3 {
+        end_code + 5
+    } else {
+        end_code * 2 + 3
+    };
+    if begin >= end {
+        return Err(Eac3Error::InvalidSpectralExtensionRange { begin, end });
+    }
+    Ok((begin, end))
 }
 
 fn parse_mixing_metadata(

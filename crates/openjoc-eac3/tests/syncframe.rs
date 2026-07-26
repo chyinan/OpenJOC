@@ -3,7 +3,7 @@ use openjoc_eac3::{
     channel_exponent_group_count, decode_exponents, decode_frame_exponent_strategy,
     extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, group_access_units,
     index_syncframes, parse_audio_frame, parse_bsi, parse_joc_addbsi, parse_syncframe_header,
-    validate_complexity_index,
+    spx_subband_range, validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -521,6 +521,45 @@ fn rejects_malformed_grouped_exponents() {
         Err(Eac3Error::ExponentGroupCountMismatch {
             expected: 1,
             actual: 0,
+        })
+    );
+}
+
+#[test]
+fn derives_every_spectral_extension_subband_boundary() {
+    let expected_begin = [2, 3, 4, 5, 6, 7, 9, 11];
+    let expected_end = [5, 6, 7, 9, 11, 13, 15, 17];
+    for (begin_code, &begin) in expected_begin.iter().enumerate() {
+        for (end_code, &end) in expected_end.iter().enumerate() {
+            let begin_code = u8::try_from(begin_code).expect("three-bit begin code");
+            let end_code = u8::try_from(end_code).expect("three-bit end code");
+            let actual = spx_subband_range(begin_code, end_code);
+            if begin < end {
+                assert_eq!(actual, Ok((begin, end)));
+            } else {
+                assert_eq!(
+                    actual,
+                    Err(Eac3Error::InvalidSpectralExtensionRange { begin, end })
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn rejects_spectral_extension_codes_wider_than_the_normative_fields() {
+    assert_eq!(
+        spx_subband_range(8, 0),
+        Err(Eac3Error::InvalidSpectralExtensionCode {
+            begin_code: 8,
+            end_code: 0,
+        })
+    );
+    assert_eq!(
+        spx_subband_range(0, 8),
+        Err(Eac3Error::InvalidSpectralExtensionCode {
+            begin_code: 0,
+            end_code: 8,
         })
     );
 }

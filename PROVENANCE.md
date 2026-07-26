@@ -486,6 +486,20 @@ frame behavior is covered by integration tests.
   exponent underflow, and group-count mismatch are rejected. Coupling, SPX,
   bit allocation, and mantissa traversal remain incomplete.
 
+### Enhanced AC-3 spectral-extension dimensions
+
+- Normative source: TS 102 366 clauses E.1.2.4, E.1.3.3.5, and E.1.3.3.6.
+- Official reference data: none. Page 119 was rendered losslessly at 300 DPI
+  using Poppler 26.02.0 and visually inspected before implementing the two
+  layout-sensitive piecewise subband equations.
+- Design rationale: map the two three-bit frequency codes directly to the
+  half-open active-subband interval printed in `audblk`; reject wider codes
+  at the public boundary and reject empty or reversed intervals before they
+  can underflow later band-structure loops.
+- Validation: all 64 legal-width begin/end code combinations are checked
+  against the two exhaustive piecewise mapping tables; both first over-width
+  codes and every resulting non-forward range are rejected.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420
