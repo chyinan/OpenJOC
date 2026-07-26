@@ -310,6 +310,30 @@ frame behavior is covered by integration tests.
   The deterministic metrics are regression-checked rather than compared to an
   invented perfect-reconstruction threshold absent from clause 7.
 
+### Renderer-independent object scene
+
+- Normative source: TS 103 420 clauses 4.2 through 4.4 and 5.2 through 5.3.
+- Official reference data: none; this component preserves decoded interface
+  values and reconstructed samples rather than introducing codec tables.
+- Design rationale: retain stable object IDs, object class, f64 PCM, timed
+  metadata, anchor-specific positions (including explicit infinite room rays),
+  size, priority, gain, channel lock, zones, divergence, and trim-disable state.
+  JSON serialization is renderer-independent and rejects non-finite or
+  cross-object/duration-inconsistent data before export.
+- Validation: JSON roundtrip and invalid sample-rate, track-duration, and
+  metadata-object boundary tests.
+
+### Object WAV serialization
+
+- Normative source: engineering-spec decoder-interface export requirement;
+  RIFF/WAVE serialization is a container concern outside TS 103 420.
+- Official reference data: none.
+- Design rationale: emit mono 64-bit IEEE-float WAV so reference f64 object PCM
+  is preserved without clipping or sample-format quantization. All RIFF size
+  arithmetic is checked before allocation.
+- Validation: exact RIFF, format, rate, bit-depth, data-size, and sample-byte
+  assertions plus invalid-rate and non-finite-sample rejection.
+
 ## Ambiguities and open normative questions
 
 Clause 5.5.14 has two internally inconsistent branches: after decoding the

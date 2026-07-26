@@ -5,7 +5,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 
 | Normative source | Requirement | Production target | Required evidence | Status |
 | --- | --- | --- | --- | --- |
-| TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | scene model/API tests | planned |
+| TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | anchor-preserving scene model, JSON roundtrip, and invariant tests pass; OAMD conversion remains | implemented |
 | TS 103 420 5.1-5.4 | OAMD content, properties, timed update/reuse model | `openjoc-oamd` | multi-update and reuse integration tests | planned |
 | TS 103 420 5.5 | Complete OAMD bitstream syntax | `openjoc-oamd` | syntax vectors, truncation and malformed tests | planned |
 | TS 103 420 5.5.2-5.5.5, 5.6.4.2-5.6.4.5 | Top-level payload and bounded element metadata/dispatch | `openjoc-oamd` | integrated object/trim/extended elements, unaligned declared sizes, zero padding, unknown retention, discard/alternate IDs and object-class derivation pass | implemented |
@@ -40,7 +40,7 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 102 366 Annex H.2 | EMDF sync/container/config/protection | `openjoc-emdf` | variable-length, bounds, protection tests | planned |
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
-| Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene` | JSON roundtrip and timeline tests | planned |
+| Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | metadata-complete JSON roundtrip/invariant tests and lossless f64 WAV byte tests pass; OAMD/JOC integration remains | implemented |
 | Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | command integration/golden artifact tests | planned |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
 | Mandatory DoD | WAV stems, scene, timeline, debug artifacts from real JOC | end-to-end workspace | legal vector artifacts plus fidelity comparison | planned |

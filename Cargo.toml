@@ -4,6 +4,8 @@ members = [
     "crates/openjoc-joc",
     "crates/openjoc-oamd",
     "crates/openjoc-qmf",
+    "crates/openjoc-scene",
+    "crates/openjoc-wave",
     "tools/import-etsi-tables",
 ]
 resolver = "3"
