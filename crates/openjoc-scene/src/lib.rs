@@ -5,12 +5,55 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
+mod assembly;
+pub use assembly::{SceneBuildError, SceneBuilder};
+
 /// Cartesian decoder-interface coordinate.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Position3 {
     pub x: f64,
     pub y: f64,
     pub z: f64,
+}
+
+/// Speaker-coordinate label from TS 103 420 Tables 12 and 13.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerLabel {
+    RcL,
+    RcR,
+    RcC,
+    RcLfe,
+    RcLs,
+    RcRs,
+    RcLb,
+    RcRb,
+    RcTfl,
+    RcTfr,
+    RcTsl,
+    RcTsr,
+    RcTbl,
+    RcTbr,
+    RcLw,
+    RcRw,
+    RcLfe2,
+}
+
+/// Ring class for a Table 11b intermediate-spatial-format coordinate.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IsfRing {
+    Middle,
+    Upper,
+    Lower,
+    Zenith,
+}
+
+/// Typed MULZ intermediate-spatial-format label.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IsfLabel {
+    pub ring: IsfRing,
+    pub index: u8,
 }
 
 /// Decoder-interface position and its normative anchor semantics.
@@ -25,9 +68,8 @@ pub enum Position {
         coded: Position3,
         interpolated_room: Position3,
     },
-    Speaker {
-        assignment: String,
-    },
+    Speaker(SpeakerLabel),
+    IntermediateSpatial(IsfLabel),
 }
 
 /// Three-dimensional object extent.
@@ -251,6 +293,6 @@ fn position_is_finite(position: &Position) -> bool {
             coded,
             interpolated_room,
         } => finite(coded) && finite(interpolated_room),
-        Position::Speaker { .. } => true,
+        Position::Speaker(_) | Position::IntermediateSpatial(_) => true,
     }
 }

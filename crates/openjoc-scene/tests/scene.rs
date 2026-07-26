@@ -1,6 +1,6 @@
 use openjoc_scene::{
-    Extent3, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position, Position3,
-    SceneError, ZoneConstraint,
+    Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
+    Position3, SceneError, SpeakerLabel, ZoneConstraint,
 };
 
 fn scene() -> ObjectScene {
@@ -71,4 +71,45 @@ fn validation_rejects_inconsistent_scene_boundaries() {
         unknown_object.validate(),
         Err(SceneError::UnknownMetadataObject { object_id: 7 })
     );
+}
+
+#[test]
+fn scene_json_roundtrips_every_normative_position_anchor() {
+    let positions = [
+        Position::RoomAtInfinity {
+            boundary_intersection: Position3 {
+                x: 1.0,
+                y: 0.5,
+                z: 0.0,
+            },
+        },
+        Position::Screen {
+            coded: Position3 {
+                x: 0.25,
+                y: 0.5,
+                z: 0.75,
+            },
+            interpolated_room: Position3 {
+                x: 0.3,
+                y: 0.5,
+                z: 0.6,
+            },
+        },
+        Position::Speaker(SpeakerLabel::RcTfl),
+        Position::IntermediateSpatial(IsfLabel {
+            ring: IsfRing::Upper,
+            index: 2,
+        }),
+    ];
+    let mut expected = scene();
+    expected.metadata_timeline = positions
+        .into_iter()
+        .map(|position| MetadataUpdate {
+            position,
+            ..expected.metadata_timeline[0].clone()
+        })
+        .collect();
+
+    let json = expected.to_json_pretty().expect("all anchors serialize");
+    assert_eq!(ObjectScene::from_json(&json), Ok(expected));
 }
