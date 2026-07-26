@@ -582,7 +582,10 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(0, 1); // addbsie
     bits.push(0, 2); // frame SNR strategy
     bits.push(0, 1); // transient processing
-    bits.push(0, 7); // compact syntax flags
+    bits.push(0, 1); // block-switch syntax
+    bits.push(0, 1); // dither syntax
+    bits.push(1, 1); // bit-allocation syntax
+    bits.push(0, 4); // remaining compact syntax flags
     bits.push(1, 2); // channel D15
     bits.push(1, 1); // LFE D15
     bits.push(0, 1); // converter exponent strategy absent
@@ -599,6 +602,12 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(8, 4); // LFE absolute exponent
     bits.push(62, 7);
     bits.push(62, 7);
+    bits.push(1, 1); // new bit-allocation parameters
+    bits.push(3, 2); // slow decay
+    bits.push(2, 2); // fast decay
+    bits.push(1, 2); // slow gain
+    bits.push(0, 2); // dB per bit
+    bits.push(5, 3); // floor
     let expected_offset = bits.0.len();
 
     let prefix =
@@ -614,6 +623,14 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     assert_eq!((lfe.start_mantissa, lfe.end_mantissa), (0, 7));
     assert_eq!(lfe.decoded, vec![8; 7]);
     assert_eq!(lfe.gain_range, None);
+    let bit_allocation = prefix
+        .bit_allocation_parameters
+        .expect("bit-allocation parameters");
+    assert_eq!(bit_allocation.slow_decay_code, 3);
+    assert_eq!(bit_allocation.fast_decay_code, 2);
+    assert_eq!(bit_allocation.slow_gain_code, 1);
+    assert_eq!(bit_allocation.db_per_bit_code, 0);
+    assert_eq!(bit_allocation.floor_code, 5);
     assert_eq!(prefix.next_offset_bits, expected_offset);
 }
 

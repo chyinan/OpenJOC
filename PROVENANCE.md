@@ -568,6 +568,24 @@ frame behavior is covered by integration tests.
   presence, and the exact post-exponent bit offset. Together with malformed
   grouped-exponent tests, all 28 `openjoc-eac3` integration tests pass.
 
+### Enhanced AC-3 bit-allocation parameter syntax
+
+- Normative source: TS 102 366 clause E.1.2.4.
+- Official reference data: none. Page 122 was rendered losslessly at 300 DPI
+  using Poppler 26.02.0 and visually inspected to verify the conditional
+  nesting, field order, word sizes, and frame-default assignments.
+- Design rationale: when frame syntax enables bit-allocation updates, consume
+  `baie` and retain newly transmitted `sdcycod`, `fdcycod`, `sgaincod`,
+  `dbpbcod`, and `floorcod` without interpreting their later decoder-table
+  meaning. Represent `baie == 0` as no new parameter set so a later stateful
+  block decoder can perform normative reuse. When frame syntax disables the
+  fields, expose the printed effective defaults `2/1/1/2/7` without consuming
+  payload bits.
+- Validation: the bounded mono-plus-LFE first-block fixture enables `bamode`,
+  transmits all five non-default codes, verifies each retained value, and
+  checks the exact SNR-offset boundary. Existing syntax-disabled block cases
+  continue to reach the same boundary without consuming parameter bits.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420
