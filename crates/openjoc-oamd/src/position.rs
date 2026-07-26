@@ -18,6 +18,38 @@ pub struct StandardPositionBits {
     pub z: i8,
 }
 
+/// Standard-precision coding needed to apply a corresponding ID 5 extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PositionCoding {
+    Absolute(StandardPositionBits),
+    Differential {
+        previous: StandardPositionBits,
+        delta: [u8; 3],
+    },
+}
+
+impl PositionCoding {
+    /// Applies tables 44 through 46 in the coordinate equation's normative
+    /// pre-clamp position.
+    ///
+    /// # Errors
+    /// Returns an OAMD error for an invalid standard or extension codeword.
+    pub fn decode(self, extended: [Option<u8>; 3]) -> Result<Position3, OamdError> {
+        match self {
+            Self::Absolute(bits) => decode_absolute_position(
+                bits.x,
+                bits.y,
+                bits.z >= 0,
+                bits.z.unsigned_abs(),
+                extended,
+            ),
+            Self::Differential { previous, delta } => {
+                decode_differential_position(previous, delta, extended)
+            }
+        }
+    }
+}
+
 /// Decodes clauses 5.6.1.1.8 through 5.6.1.1.11.
 ///
 /// `z_positive` is true for `pos3D_Z_sign_bits == 1`. Optional extended

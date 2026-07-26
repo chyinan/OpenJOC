@@ -8,14 +8,14 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | scene model/API tests | planned |
 | TS 103 420 5.1-5.4 | OAMD content, properties, timed update/reuse model | `openjoc-oamd` | multi-update and reuse integration tests | planned |
 | TS 103 420 5.5 | Complete OAMD bitstream syntax | `openjoc-oamd` | syntax vectors, truncation and malformed tests | planned |
-| TS 103 420 5.5.2-5.5.5, 5.6.4.2-5.6.4.5 | Top-level payload and bounded element metadata/dispatch | `openjoc-oamd` | integrated object/trim elements, unaligned declared sizes, zero padding, unknown retention, discard/alternate IDs and object-class derivation pass; extended ID explicitly remains | implemented |
+| TS 103 420 5.5.2-5.5.5, 5.6.4.2-5.6.4.5 | Top-level payload and bounded element metadata/dispatch | `openjoc-oamd` | integrated object/trim/extended elements, unaligned declared sizes, zero padding, unknown retention, discard/alternate IDs and object-class derivation pass | implemented |
 | TS 103 420 5.5.5-5.5.11 | Object element, per-object updates, basic/render information | `openjoc-oamd` | full, inactive, bed/ISF, mixed/reuse, previous-object gain, bounded additional-data, truncation and reserved-bit tests pass | verified |
 | TS 103 420 5.6.0 | OAMD content-description semantics | `openjoc-oamd` | dynamic-only, LFE, bed, ISF, dynamic and extended-count prefix tests plus integrated object-class/count validation pass | verified |
 | TS 103 420 5.6.1 | Position, size, priority, gain, lock, zones | `openjoc-oamd` | boundary/exhaustive tables and integrated object-update tests pass; outside-room coordinate projection remains | implemented |
 | TS 103 420 5.6.1.3-5.6.1.4 | Priority and gain semantics | `openjoc-oamd` | exhaustive 32 priority and 64 gain codes, defaults, infinity and reuse pass | verified |
 | TS 103 420 5.6.1.2, 5.6.1.6 | Size and zone constraints | `openjoc-oamd` | all size modes/boundaries and every valid/reserved zone index pass | verified |
 | TS 103 420 5.6.2 | Metadata timing and ramp semantics | `openjoc-oamd` | four updates, offset arithmetic, all ramp forms, atomic 1,536-sample frame advancement and reset pass | verified |
-| TS 103 420 5.6.4-5.6.6 | Additional metadata, trim, divergence, precision extension | `openjoc-oamd` | extension/reuse/unknown-element tests | planned |
+| TS 103 420 5.6.4-5.6.6 | Additional metadata, trim, divergence, precision extension | `openjoc-oamd` | exhaustive divergence tables, reuse/default/reserved modes, extension presence/order, pre-clamp application, dimension and top-level dispatch tests pass | verified |
 | TS 103 420 5.5.12, 5.6.5, Tables 32-39 | Trim syntax, modes, controls, balance, and per-object disable | `openjoc-oamd` | exhaustive trim/balance tables, custom syntax, reserved-value rejection, explicit cardinality ambiguity, and ID 2 dispatch pass | verified |
 | TS 103 420 5.5.1 | Bounded `variable_bits_max` decoding | `openjoc-oamd` | group values, exact bound, truncation, invalid configuration, overflow tests pass | verified |
 | TS 103 420 6.2 | Complete JOC payload syntax | `openjoc-joc` | full/sparse retained-codeword vectors and padding tests pass | verified |

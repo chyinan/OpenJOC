@@ -233,13 +233,31 @@ fn derives_bed_isf_and_dynamic_classes_in_normative_order() {
 }
 
 #[test]
-fn known_unfinished_elements_are_not_treated_as_unknown() {
+fn extended_element_dispatches_only_with_preceding_object_state() {
     let mut bits = Vec::new();
-    dynamic_prefix(&mut bits, 0, 1);
-    push_element(&mut bits, 5, 1, &[false]);
+    dynamic_prefix(&mut bits, 0, 2);
+    let mut objects = vec![false]; // discard unknown false
+    objects.extend(inactive_object_element_body());
+    push_element(&mut bits, 1, 3, &objects);
+    let extension = vec![
+        false, // discard unknown false
+        false, // no divergence block
+        true,  // precision block present; inactive object consumes no bits
+    ];
+    push_element(&mut bits, 5, 1, &extension);
+
+    let payload = parse_oamd_payload(&pack(bits)).expect("extended payload");
+    assert!(matches!(
+        payload.elements[1].element,
+        OamdElement::Extended(_)
+    ));
+
+    let mut missing = Vec::new();
+    dynamic_prefix(&mut missing, 0, 1);
+    push_element(&mut missing, 5, 1, &[false, false, false]);
     assert_eq!(
-        parse_oamd_payload(&pack(bits)),
-        Err(OamdError::UnsupportedKnownElement { id: 5 })
+        parse_oamd_payload(&pack(missing)),
+        Err(OamdError::MissingObjectElementForExtension)
     );
 }
 

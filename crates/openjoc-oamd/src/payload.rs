@@ -1,8 +1,9 @@
 // pattern: Functional Core
 
 use crate::{
-    BedAssignment, ContentDescription, OamdContentPrefix, OamdError, ObjectClass, ObjectElement,
-    TrimElement, content::parse_oamd_content_prefix_reader,
+    BedAssignment, ContentDescription, ExtendedObjectElement, OamdContentPrefix, OamdError,
+    ObjectClass, ObjectElement, TrimElement, content::parse_oamd_content_prefix_reader,
+    extended_object::parse_extended_object_element_reader,
     object_element::parse_object_element_reader, trim::parse_trim_element_reader,
     variable_bits_max,
 };
@@ -27,6 +28,7 @@ pub struct OpaqueBits {
 pub enum OamdElement {
     Objects(ObjectElement),
     Trim(TrimElement),
+    Extended(ExtendedObjectElement),
     Unknown(OpaqueBits),
 }
 
@@ -75,7 +77,8 @@ pub fn parse_oamd_payload_with_config(
     let initial_bits = reader.bits_remaining();
     let prefix = parse_oamd_content_prefix_reader(&mut reader)?;
     let object_classes = derive_object_classes(&prefix)?;
-    let mut elements = Vec::with_capacity(usize::from(prefix.element_count));
+    let mut elements: Vec<OamdElementMetadata> =
+        Vec::with_capacity(usize::from(prefix.element_count));
     for _ in 0..prefix.element_count {
         let id = read_u8(&mut reader, 4)?;
         let size_minus_one = variable_bits_max(&mut reader, 4, 4)?;
@@ -112,7 +115,28 @@ pub fn parse_oamd_payload_with_config(
                 consume_zero_padding(&mut element_reader)?;
                 OamdElement::Trim(trim)
             }
-            5 => return Err(OamdError::UnsupportedKnownElement { id }),
+            5 => {
+                let object_index = elements
+                    .iter()
+                    .rposition(|metadata| matches!(metadata.element, OamdElement::Objects(_)))
+                    .ok_or(OamdError::MissingObjectElementForExtension)?;
+                let extension = {
+                    let OamdElement::Objects(objects) = &elements[object_index].element else {
+                        unreachable!();
+                    };
+                    parse_extended_object_element_reader(
+                        &mut element_reader,
+                        objects,
+                        &object_classes,
+                    )?
+                };
+                consume_zero_padding(&mut element_reader)?;
+                let OamdElement::Objects(objects) = &mut elements[object_index].element else {
+                    unreachable!();
+                };
+                extension.apply_positions(objects)?;
+                OamdElement::Extended(extension)
+            }
             _ => OamdElement::Unknown(read_opaque(&mut element_reader)?),
         };
         elements.push(OamdElementMetadata {

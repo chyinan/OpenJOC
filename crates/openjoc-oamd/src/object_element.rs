@@ -1,8 +1,8 @@
 // pattern: Functional Core
 
 use crate::{
-    Extent3, Gain, MetadataTiming, OamdError, Position3, StandardPositionBits, ZoneConstraint,
-    decode_absolute_position, decode_depth_factor, decode_differential_position,
+    Extent3, Gain, MetadataTiming, OamdError, Position3, PositionCoding, StandardPositionBits,
+    ZoneConstraint, decode_absolute_position, decode_depth_factor, decode_differential_position,
     decode_distance_factor, decode_gain, decode_priority, decode_screen_factor, decode_size,
     decode_zone_constraints, timing::parse_metadata_timing_reader,
 };
@@ -42,6 +42,7 @@ impl ObjectBasicInfo {
 pub struct ObjectRenderInfo {
     pub position: Position3,
     pub standard_position: StandardPositionBits,
+    pub position_coding: PositionCoding,
     pub distance: Distance,
     pub zones: [ZoneConstraint; 6],
     pub size: Extent3,
@@ -59,6 +60,7 @@ impl ObjectRenderInfo {
             z: 0.0,
         },
         standard_position: StandardPositionBits { x: 31, y: 31, z: 0 },
+        position_coding: PositionCoding::Absolute(StandardPositionBits { x: 31, y: 31, z: 0 }),
         distance: Distance::InsideRoom,
         zones: [ZoneConstraint::Include; 6],
         size: Extent3::ZERO,
@@ -220,7 +222,7 @@ fn parse_render_info(
     match status {
         0 => Ok(ObjectRenderInfo::DEFAULT),
         2 => previous
-            .map(|update| update.render)
+            .map(|update| as_current_absolute(update.render))
             .ok_or(OamdError::MissingPreviousObjectUpdate),
         1 | 3 => {
             let mask = if status == 1 {
@@ -228,15 +230,21 @@ fn parse_render_info(
             } else {
                 read_u8(bits, 4)?
             };
-            let mut render = previous.map_or(ObjectRenderInfo::DEFAULT, |update| update.render);
+            let mut render = previous.map_or(ObjectRenderInfo::DEFAULT, |update| {
+                as_current_absolute(update.render)
+            });
             if mask & 0b1000 != 0 {
                 let differential = block_index != 0 && bits.read_bit()?;
                 if differential {
+                    let previous_position = render.standard_position;
                     let delta = [read_u8(bits, 3)?, read_u8(bits, 3)?, read_u8(bits, 3)?];
                     render.position =
-                        decode_differential_position(render.standard_position, delta, [None; 3])?;
-                    render.standard_position =
-                        standard_after_delta(render.standard_position, delta)?;
+                        decode_differential_position(previous_position, delta, [None; 3])?;
+                    render.standard_position = standard_after_delta(previous_position, delta)?;
+                    render.position_coding = PositionCoding::Differential {
+                        previous: previous_position,
+                        delta,
+                    };
                 } else {
                     let x = read_u8(bits, 6)?;
                     let y = read_u8(bits, 6)?;
@@ -253,6 +261,7 @@ fn parse_render_info(
                             -i8::try_from(z_magnitude)?
                         },
                     };
+                    render.position_coding = PositionCoding::Absolute(render.standard_position);
                 }
                 render.distance = if bits.read_bit()? {
                     if bits.read_bit()? {
@@ -296,6 +305,11 @@ fn parse_render_info(
         }
         _ => Err(OamdError::InvalidPropertyCode),
     }
+}
+
+fn as_current_absolute(mut render: ObjectRenderInfo) -> ObjectRenderInfo {
+    render.position_coding = PositionCoding::Absolute(render.standard_position);
+    render
 }
 
 fn standard_after_delta(

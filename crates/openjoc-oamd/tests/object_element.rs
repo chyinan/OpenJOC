@@ -1,7 +1,7 @@
 use openjoc_oamd::{
     Distance, Extent3, Gain, MetadataBlockTiming, MetadataTiming, ObjectBasicInfo, ObjectClass,
-    ObjectElement, ObjectRenderInfo, ObjectUpdate, Position3, StandardPositionBits, ZoneConstraint,
-    parse_object_element,
+    ObjectElement, ObjectRenderInfo, ObjectUpdate, Position3, PositionCoding, StandardPositionBits,
+    ZoneConstraint, parse_object_element,
 };
 
 fn push(bits: &mut Vec<bool>, value: u64, width: u8) {
@@ -77,6 +77,11 @@ fn expected_full(gain: Gain) -> ObjectUpdate {
                 y: 62,
                 z: 15,
             },
+            position_coding: PositionCoding::Absolute(StandardPositionBits {
+                x: 31,
+                y: 62,
+                z: 15,
+            }),
             distance: Distance::Finite(1.6),
             zones: [Include, Exclude, Include, Include, Include, Exclude],
             size: Extent3 {

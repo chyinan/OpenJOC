@@ -7,6 +7,7 @@ use std::fmt;
 
 mod basic_properties;
 mod content;
+mod extended_object;
 mod object_element;
 mod payload;
 mod position;
@@ -19,6 +20,10 @@ pub use basic_properties::{
 pub use content::{
     BedAssignment, ContentDescription, OamdContentPrefix, parse_oamd_content_prefix,
 };
+pub use extended_object::{
+    ExtendedObjectElement, decode_object_divergence_code, decode_object_divergence_table,
+    parse_extended_object_element,
+};
 pub use object_element::{
     Distance, ObjectBasicInfo, ObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
     parse_object_element,
@@ -28,7 +33,7 @@ pub use payload::{
     parse_oamd_payload, parse_oamd_payload_with_config,
 };
 pub use position::{
-    Position3, StandardPositionBits, decode_absolute_position, decode_depth_factor,
+    Position3, PositionCoding, StandardPositionBits, decode_absolute_position, decode_depth_factor,
     decode_differential_position, decode_distance_factor, decode_screen_factor,
     decode_signed_position_delta,
 };
@@ -86,6 +91,16 @@ pub enum OamdError {
     ReservedGlobalTrimMode,
     /// Tables 36 and 37 reserve surround/height codes 0 through 3.
     ReservedTrimCode { code: u8 },
+    /// Table 40 reserves divergence mode 3.
+    ReservedObjectDivergenceMode,
+    /// Table 42 reserves divergence code zero.
+    ReservedObjectDivergenceCode,
+    /// Divergence reuse appeared in the first object information block.
+    MissingPreviousObjectDivergence,
+    /// ID 5 dimensions disagreed with the corresponding object element.
+    ExtendedObjectShapeMismatch,
+    /// An ID 5 element appeared before the object state it extends.
+    MissingObjectElementForExtension,
     /// A bounded known element or payload ended with a nonzero padding bit.
     NonzeroPadding,
 }
@@ -146,6 +161,21 @@ impl fmt::Display for OamdError {
             Self::ReservedGlobalTrimMode => formatter.write_str("reserved OAMD global trim mode"),
             Self::ReservedTrimCode { code } => {
                 write!(formatter, "reserved OAMD trim code {code}")
+            }
+            Self::ReservedObjectDivergenceMode => {
+                formatter.write_str("reserved OAMD object divergence mode")
+            }
+            Self::ReservedObjectDivergenceCode => {
+                formatter.write_str("reserved OAMD object divergence code")
+            }
+            Self::MissingPreviousObjectDivergence => {
+                formatter.write_str("missing previous OAMD object divergence")
+            }
+            Self::ExtendedObjectShapeMismatch => {
+                formatter.write_str("OAMD extended object shape mismatch")
+            }
+            Self::MissingObjectElementForExtension => {
+                formatter.write_str("missing OAMD object element for extension")
             }
             Self::NonzeroPadding => formatter.write_str("nonzero OAMD padding"),
         }

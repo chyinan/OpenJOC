@@ -229,8 +229,9 @@ frame behavior is covered by integration tests.
   conditional alternate ID and discard flag; require zero remainder for known
   decoded elements; and retain genuinely unknown bodies as length-bearing bit
   strings. ID 2 dispatches to the trim parser when its externally configured
-  cardinality is available; ID 5 remains explicitly unfinished instead of
-  being mislabeled as unknown.
+  cardinality is available. ID 5 binds to a preceding object element, decodes
+  its matching object/block grid, and applies high-precision position updates
+  without escaping the declared element window.
 - Validation: complete unaligned object payload, declared-window truncation,
   nonzero known-element padding, unknown-bit retention, discard intent,
   reserved alternate object data, mixed bed/ISF/dynamic ordering, program/count
@@ -258,6 +259,29 @@ frame behavior is covered by integration tests.
   reserved warp/global modes and reserved bits; and configured top-level
   element-ID 2 dispatch.
 
+### OAMD extended object element
+
+- Normative source: TS 103 420 clauses 5.5.13 through 5.5.15 and 5.6.6,
+  tables 40 through 46; high-precision coordinate application additionally
+  follows clauses 5.6.1.1.8 through 5.6.1.1.14.
+- Official reference data: none. Printed specification pages 34, 35, and 52
+  through 54 were rendered as lossless 300 DPI PNGs with Poppler 26.02.0 and
+  visually inspected. This established the exact nested syntax, six-bit table,
+  presence-bit ordering, reserved entries, and extended-precision semantics.
+- Design rationale: retain the ID 5 object-major/block-minor grids explicitly;
+  derive active state and object type from the corresponding decoded object
+  element; resolve divergence reuse only within the same object's immediately
+  preceding metadata block; and keep each position update's raw absolute or
+  differential standard-precision coding until the extension is available.
+  Position extension is therefore evaluated inside the normative coordinate
+  equation before min/max clamping, including boundary cases where applying it
+  to an already-clamped coordinate would produce a different answer.
+- Validation: all four table 41 entries and all 64 table 42 codes (including
+  reserved zero), coarse/fine/reuse modes, missing previous-block rejection,
+  reserved mode rejection, absent/inactive/bed zero behavior, X/Y/Z presence
+  ordering, pre-clamp differential extension, exact object/block dimensions,
+  required preceding object state, and bounded top-level ID 5 dispatch.
+
 ### 64-band complex QMF (in progress)
 
 - Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.
@@ -272,6 +296,20 @@ frame behavior is covered by integration tests.
   invented perfect-reconstruction threshold absent from clause 7.
 
 ## Ambiguities and open normative questions
+
+Clause 5.5.14 has two internally inconsistent branches: after decoding the
+table value for mode 0, a later independent conditional assigns divergence
+zero; it also reads the fine code for mode 3. Table 40 instead unambiguously
+defines mode 0 as table, mode 1 as previous-block reuse, mode 2 as code, and
+mode 3 as reserved. OpenJOC follows table 40 and rejects mode 3. The exhaustive
+table tests and parser-mode tests record this interpretation.
+
+The same pseudocode does not explicitly assign a value when the divergence
+presence flag is false. OpenJOC resolves it to zero, consistent with the flag
+meaning that divergence metadata is absent, the explicit inactive-object
+assignment, and the apparent intended zero-setting branch in the malformed
+pseudocode. A legal conformance vector remains the compatibility gate for this
+absent-property interpretation.
 
 Clause 5.5.12 loops over `NUM_TRIM_CONFIGS`, but TS 103 420 V1.2.1 contains
 no definition of that symbol, TS 102 366 V1.4.1 contains no corresponding trim
