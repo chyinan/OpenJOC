@@ -28,12 +28,12 @@ fn integrates_fine_psd_into_the_exact_nonuniform_bands() {
     let psd = vec![0_i16; 253];
     let integrated = integrate_psd(&psd, 0, 253).expect("valid PSD range");
     let mut expected = vec![0_i16; 50];
-    for index in 0..50 {
+    for (index, expected_value) in expected.iter_mut().enumerate() {
         let size = bit_allocation_band(u8::try_from(index).expect("50 bands fit u8"))
             .expect("normative band")
             .size;
         for _ in 1..size {
-            expected[index] = log_add(expected[index], 0);
+            *expected_value = log_add(*expected_value, 0);
         }
     }
     assert_eq!(integrated, expected);
