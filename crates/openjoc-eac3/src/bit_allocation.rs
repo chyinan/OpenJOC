@@ -96,6 +96,90 @@ const HIGH_EFFICIENCY_BIT_ALLOCATION_POINTERS: [u8; 64] = [
     18, 18, 18, 18, 19, 19, 19, 19, 19, 19, 19, 19, 19,
 ];
 
+// TS 102 366 V1.4.1 Table 6.14, indexed as 10 * A + B. The printed table
+// contains ten columns for A=0..25; addresses above 255 are unreachable
+// because the normative caller clamps the address to 255.
+const LOG_ADDITION_TABLE: [[i16; 10]; 26] = [
+    [
+        0x0040, 0x003f, 0x003e, 0x003d, 0x003c, 0x003b, 0x003a, 0x0039, 0x0038, 0x0037,
+    ],
+    [
+        0x0036, 0x0035, 0x0034, 0x0034, 0x0033, 0x0032, 0x0031, 0x0030, 0x002f, 0x002f,
+    ],
+    [
+        0x002e, 0x002d, 0x002c, 0x002c, 0x002b, 0x002a, 0x0029, 0x0029, 0x0028, 0x0027,
+    ],
+    [
+        0x0026, 0x0026, 0x0025, 0x0024, 0x0024, 0x0023, 0x0023, 0x0022, 0x0021, 0x0021,
+    ],
+    [
+        0x0020, 0x0020, 0x001f, 0x001e, 0x001e, 0x001d, 0x001d, 0x001c, 0x001c, 0x001b,
+    ],
+    [
+        0x001b, 0x001a, 0x001a, 0x0019, 0x0019, 0x0018, 0x0018, 0x0017, 0x0017, 0x0016,
+    ],
+    [
+        0x0016, 0x0015, 0x0015, 0x0015, 0x0014, 0x0014, 0x0013, 0x0013, 0x0013, 0x0012,
+    ],
+    [
+        0x0012, 0x0012, 0x0011, 0x0011, 0x0011, 0x0010, 0x0010, 0x0010, 0x000f, 0x000f,
+    ],
+    [
+        0x000f, 0x000e, 0x000e, 0x000e, 0x000d, 0x000d, 0x000d, 0x000d, 0x000c, 0x000c,
+    ],
+    [
+        0x000c, 0x000c, 0x000b, 0x000b, 0x000b, 0x000b, 0x000a, 0x000a, 0x000a, 0x000a,
+    ],
+    [
+        0x000a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0009, 0x0008, 0x0008, 0x0008, 0x0008,
+    ],
+    [
+        0x0008, 0x0008, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007, 0x0007, 0x0006, 0x0006,
+    ],
+    [
+        0x0006, 0x0006, 0x0006, 0x0006, 0x0006, 0x0006, 0x0005, 0x0005, 0x0005, 0x0005,
+    ],
+    [
+        0x0005, 0x0005, 0x0005, 0x0005, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0004,
+    ],
+    [
+        0x0004, 0x0004, 0x0004, 0x0004, 0x0004, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003,
+    ],
+    [
+        0x0003, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003, 0x0003, 0x0002,
+    ],
+    [
+        0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002,
+    ],
+    [
+        0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0002, 0x0001, 0x0001,
+    ],
+    [
+        0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001,
+    ],
+    [
+        0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001,
+    ],
+    [
+        0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001, 0x0001,
+    ],
+    [
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    ],
+    [
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    ],
+    [
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    ],
+    [
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    ],
+    [
+        0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    ],
+];
+
 /// One row of TS 102 366 Table 6.12.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BitAllocationBand {
@@ -112,6 +196,69 @@ pub struct FixedBitAllocationParameters {
     pub db_per_bit: i16,
     pub floor: i16,
     pub fast_gain: i16,
+}
+
+/// Applies TS 102 366 clause 6.2.2.3's `logadd(a, b)` operation.
+///
+/// The ETSI pseudocode prints the internal difference as a dedicated `~`
+/// glyph in the earlier official revisions and as a missing Type-3 glyph in
+/// V1.4.1. The surrounding normative text defines that value as the
+/// difference between the operands. This implementation therefore computes
+/// `c = a - b`, addresses Table 6.14 with `min(abs(c) >> 1, 255)`, and adds
+/// the table value to the larger operand.
+#[must_use]
+pub fn log_add(a: i16, b: i16) -> i16 {
+    let difference = i32::from(a) - i32::from(b);
+    let address = usize::try_from((difference.abs() >> 1).min(255)).unwrap_or(255);
+    let correction = LOG_ADDITION_TABLE[address / 10][address % 10];
+    if difference >= 0 {
+        a.saturating_add(correction)
+    } else {
+        b.saturating_add(correction)
+    }
+}
+
+/// Integrates a fine-grain PSD interval into the 50 Table 6.12 bands.
+///
+/// The returned vector always has one entry per normative band. Bands outside
+/// `start..end` remain zero; callers use the same interval to limit later
+/// excitation and masking stages. `end` is exclusive, so the largest legal
+/// end value is 253 (the last represented bin is 252).
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidPsdRange`] when the interval is empty, extends
+/// beyond the Table 6.12 audio-bin domain, or is not present in `psd`.
+pub fn integrate_psd(psd: &[i16], start: usize, end: usize) -> Result<Vec<i16>, Eac3Error> {
+    if start >= end || end > 253 || end > psd.len() {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let first_band = usize::from(bit_allocation_band_for_bin(
+        u16::try_from(start).map_err(|_| Eac3Error::InvalidPsdRange { start, end })?,
+    )?);
+    let mut integrated = vec![0_i16; BIT_ALLOCATION_BANDS.len()];
+    let mut bin = start;
+    let mut band = first_band;
+    while bin < end {
+        let definition = BIT_ALLOCATION_BANDS
+            .get(band)
+            .ok_or(Eac3Error::InvalidPsdRange { start, end })?;
+        let last_bin = (usize::from(definition.start) + usize::from(definition.size)).min(end);
+        let mut value = *psd
+            .get(bin)
+            .ok_or(Eac3Error::InvalidPsdRange { start, end })?;
+        bin += 1;
+        while bin < last_bin {
+            value = log_add(
+                value,
+                *psd.get(bin)
+                    .ok_or(Eac3Error::InvalidPsdRange { start, end })?,
+            );
+            bin += 1;
+        }
+        integrated[band] = value;
+        band += 1;
+    }
+    Ok(integrated)
 }
 
 /// Returns one normative bit-allocation band by band number.

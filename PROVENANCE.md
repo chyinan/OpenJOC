@@ -643,10 +643,28 @@ frame behavior is covered by integration tests.
   exponents, preserve the normative signed integer domain, and reject values
   above the clause 6.1.3 range before shifting.
 - Validation: an exhaustive test maps all 25 legal exponents from 0 through 24
-  and an explicit malformed case rejects 25. The subsequent clause 6.2.2.3
-  `logadd` operator is damaged in both the 300-DPI render and text extraction;
-  its ambiguity is recorded in `RESEARCH_NOTES.md` and it is not implemented
-  by inference.
+  and an explicit malformed case rejects 25.
+
+### Enhanced AC-3 PSD log-addition and integration
+
+- Normative source: TS 102 366 clause 6.2.2.3 and Table 6.14.
+- Official reference data: V1.4.1 page 58 was rendered with the installed
+  Poppler 26.02.0 `pdftoppm` at 300 DPI; page 63 was rendered separately for
+  Table 6.14. The V1.4.1 Type3 glyph is a missing square, so the same official
+  clause was cross-checked in ETSI V1.1.1 and V1.2.1, where the identical
+  embedded Type3 glyph visibly renders as `~`. Their prose states that the
+  operator computes the difference between operands. The official V1.3.1
+  artifact confirms the same source position despite extraction loss.
+- Design rationale: expose the operation as a pure `log_add` function, retain
+  the fixed-point Table 6.14 correction rather than replacing it with a
+  floating-point approximation, clamp the address to 255 exactly as printed,
+  and expose the clause's non-uniform Table 6.12 integration as a checked pure
+  function. The dedicated glyph is documented as a normative log-add operator;
+  its internal difference is implemented as `a - b` from the prose definition.
+- Validation: asymmetric, commutative, equal-operand, and saturated-address
+  log-add cases pass; a full 0..253 PSD interval is integrated across all 50
+  exact Table 6.12 bands; empty, out-of-domain, and truncated PSD ranges are
+  rejected with structured errors.
 
 ### Enhanced AC-3 fixed bit-allocation parameter tables
 

@@ -75,18 +75,27 @@ workspace. This does not block reference-core implementation, but it does block
 the Mandatory end-to-end acceptance gate until such a vector and its authoring
 ground truth are supplied or legally generated.
 
-## TS 102 366 page 58 rendering ambiguity
+## TS 102 366 page 58 operator recovery
 
-The clause 6.2.2.3 `logadd(a, b)` pseudocode contains one layout-sensitive
-operator that Poppler 26.02.0 does not render. At 300 DPI the expression appears
-as `c = a [blank] b`; layout-preserving text extraction yields control character
-`0x01` at the same location. Poppler reports missing display fonts `Symbol` and
-`ArialUnicode`, including after a workspace-local Fontconfig mapping to the
-installed Windows fonts. OpenJOC does not infer this operator from surrounding
-prose. The `logadd` step remains unimplemented until the glyph can be visually
-recovered from the authorized specification or corroborated by an authorized
-ETSI artifact/test vector. Formula work that does not depend on this glyph may
-continue from separately inspected pages.
+The clause 6.2.2.3 `logadd(a, b)` pseudocode uses a layout-sensitive operator.
+In V1.4.1 (local SHA-256
+`0229e151dfd9f8cec427f234798cac679a66fdec096feecc4d5ce455bb06c2796`) the
+300-DPI Poppler render shows a missing-glyph square and layout extraction emits
+control byte `0x01`; object inspection identifies embedded Type3 font `T13`
+with a solid 33x41 placeholder bitmap. This is not sufficient evidence on its
+own.
+
+As an independent authorized-artifact check, the official ETSI V1.1.1, V1.2.1,
+and V1.3.1 PDFs were downloaded from the ETSI delivery URLs and their matching
+clause pages were rendered at 300 DPI. V1.1.1 and V1.2.1 contain the same
+embedded 21x6 Type3 glyph, visibly rendered as the dedicated `~` operator;
+V1.3.1's extraction again loses it but retains the same operator position. The
+surrounding normative prose defines the operation as computing the difference
+between the operands, and the sign branch selects the larger operand. OpenJOC
+therefore models the glyph as the named `log_add` primitive with `c = a - b`,
+the clamped `abs(c) >> 1` address, and Table 6.14 correction. This records the
+dedicated glyph rather than silently treating it as an ordinary source-language
+operator; no decoder implementation was consulted.
 
 ## TS 102 366 bit-allocation page inspection
 

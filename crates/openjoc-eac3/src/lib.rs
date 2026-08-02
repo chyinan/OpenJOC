@@ -15,7 +15,7 @@ pub use audio_block::{
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, bit_allocation_band,
     bit_allocation_band_for_bin, bit_allocation_pointer, decode_bit_allocation_parameters,
-    exponents_to_psd, high_efficiency_bit_allocation_pointer,
+    exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add,
 };
 
 use core::fmt;
@@ -55,6 +55,10 @@ pub enum Eac3Error {
     InvalidBitAllocationTableIndex {
         table: &'static str,
         actual: u16,
+    },
+    InvalidPsdRange {
+        start: usize,
+        end: usize,
     },
     MissingJocExtensionFlag,
     ComplexityIndexOutOfRange {
@@ -226,6 +230,10 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 bit allocation {table} index {actual}"
             )),
+            Self::InvalidPsdRange { start, end } => Some(write!(
+                formatter,
+                "invalid E-AC-3 PSD integration range {start}..{end}"
+            )),
             Self::InvalidDeltaBitAllocationStrategy { actual } => Some(write!(
                 formatter,
                 "invalid first-block E-AC-3 delta bit allocation strategy {actual}"
@@ -331,6 +339,7 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidCouplingRange { .. }
             | Self::InvalidBitAllocationParameterCode { .. }
             | Self::InvalidBitAllocationTableIndex { .. }
+            | Self::InvalidPsdRange { .. }
             | Self::InvalidDeltaBitAllocationStrategy { .. } => {
                 unreachable!("handled E-AC-3 error message")
             }

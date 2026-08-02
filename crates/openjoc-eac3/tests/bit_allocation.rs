@@ -2,6 +2,7 @@ use openjoc_eac3::{
     BitAllocationBand, BitAllocationParameters, Eac3Error, FixedBitAllocationParameters,
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer,
     decode_bit_allocation_parameters, exponents_to_psd, high_efficiency_bit_allocation_pointer,
+    integrate_psd, log_add,
 };
 
 #[test]
@@ -12,6 +13,42 @@ fn maps_every_legal_exponent_to_normative_log_psd() {
         .collect::<Vec<_>>();
 
     assert_eq!(exponents_to_psd(&exponents), Ok(expected));
+}
+
+#[test]
+fn log_add_uses_the_normative_difference_address_and_latab() {
+    assert_eq!(log_add(100, 50), 142);
+    assert_eq!(log_add(50, 100), 142);
+    assert_eq!(log_add(0, 0), 64);
+    assert_eq!(log_add(3_072, 0), 3_072);
+}
+
+#[test]
+fn integrates_fine_psd_into_the_exact_nonuniform_bands() {
+    let psd = vec![0_i16; 253];
+    let integrated = integrate_psd(&psd, 0, 253).expect("valid PSD range");
+    let mut expected = vec![0_i16; 50];
+    for index in 0..50 {
+        let size = bit_allocation_band(u8::try_from(index).expect("50 bands fit u8"))
+            .expect("normative band")
+            .size;
+        for _ in 1..size {
+            expected[index] = log_add(expected[index], 0);
+        }
+    }
+    assert_eq!(integrated, expected);
+}
+
+#[test]
+fn rejects_invalid_psd_integration_ranges() {
+    assert_eq!(
+        integrate_psd(&[0; 4], 2, 2),
+        Err(Eac3Error::InvalidPsdRange { start: 2, end: 2 })
+    );
+    assert_eq!(
+        integrate_psd(&[0; 4], 0, 5),
+        Err(Eac3Error::InvalidPsdRange { start: 0, end: 5 })
+    );
 }
 
 #[test]
