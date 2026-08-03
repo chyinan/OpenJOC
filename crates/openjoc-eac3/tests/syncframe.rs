@@ -55,6 +55,100 @@ fn frame(stream_type: u8, substream_id: u8, size: usize, fscod: u8, blocks: u8) 
     bits.bytes(size)
 }
 
+fn six_block_mono_frame(
+    stream_type: u8,
+    channel_map: Option<u16>,
+    dynamic_range: Option<u8>,
+) -> Vec<u8> {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(u64::from(stream_type), 2);
+    bits.push(0, 3);
+    bits.push(2047, 11); // 4096-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(3, 2); // six audio blocks
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // E-AC-3 version
+    bits.push(31, 5); // dialnorm
+    bits.push(0, 1); // no compression metadata
+    if stream_type == 1 {
+        bits.push(u64::from(channel_map.is_some()), 1);
+        if let Some(channel_map) = channel_map {
+            bits.push(u64::from(channel_map), 16);
+        }
+    }
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // no addbsi
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(1, 1); // AHT syntax
+    bits.push(1, 2); // SNR strategy 1
+    bits.push(0, 1); // transient processing disabled
+    bits.push(16, 7); // bit-allocation syntax enabled
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 2); // D15 then reuse
+    }
+    if stream_type == 0 {
+        bits.push(0, 5); // converter exponent strategy
+    }
+    bits.push(1, 1); // mono channel uses AHT
+    bits.push(0, 1); // no block-start information
+
+    bits.push(u64::from(dynamic_range.is_some()), 1);
+    if let Some(dynamic_range) = dynamic_range {
+        bits.push(u64::from(dynamic_range), 8);
+    }
+    bits.push(0, 1); // no SPX
+    bits.push(0, 6); // chbwcod = 0 => endmant = 73
+    bits.push(15, 4); // initial exponent
+    bits.push(87, 7); // deltas +1, 0, 0
+    bits.push(87, 7); // deltas +1, 0, 0
+    for _ in 0..22 {
+        bits.push(62, 7); // grouped exponent deltas 0, 0, 0
+    }
+    bits.push(0, 2); // gain range
+    bits.push(1, 1); // new bit-allocation parameters
+    bits.push(0, 11); // all parameter codes zero
+    bits.push(63, 6); // coarse SNR
+    bits.push(15, 4); // fine SNR
+    if stream_type == 0 {
+        bits.push(0, 1); // converter SNR offset absent
+    }
+    bits.push(1, 2); // AHT mode 1
+    bits.push(0, 1); // hebap 9 gain 1
+    bits.push(1, 1); // hebap 8 gain 2
+    bits.push(0, 1); // hebap 8 gain 1
+    bits.push(1, 1); // hebap 8 gain 2
+    for width in [4_u8; 6] {
+        bits.push(0, width);
+    }
+    for width in [2_u8; 6] {
+        bits.push(0, width);
+    }
+    for width in [3_u8; 6] {
+        bits.push(0, width);
+    }
+    for width in [2_u8; 6] {
+        bits.push(0, width);
+    }
+    for _ in 0..69 {
+        bits.push(0, 5);
+    }
+    for _ in 1..6 {
+        bits.push(0, 1); // dynamic range absent/reused
+        bits.push(0, 1); // SPX strategy reused
+        bits.push(0, 6); // chbwcod remains explicit
+        bits.push(0, 1); // bit-allocation parameters reused
+        bits.push(0, 1); // block fine SNR offset absent
+        if stream_type == 0 {
+            bits.push(0, 1); // converter SNR offset absent
+        }
+    }
+    bits.bytes(4096)
+}
+
 #[test]
 fn parses_every_stream_rate_and_block_code() {
     let rates = [48_000, 44_100, 32_000];
@@ -191,59 +285,7 @@ fn parses_custom_channel_map_on_a_dependent_substream() {
 
 #[test]
 fn decodes_an_indexed_independent_joc_access_unit_to_pcm() {
-    let mut bits = Bits::default();
-    bits.push(0x0b77, 16);
-    bits.push(0, 2); // independent
-    bits.push(0, 3);
-    bits.push(63, 11); // 128-byte frame
-    bits.push(0, 2); // 48 kHz
-    bits.push(0, 2); // one block
-    bits.push(1, 3); // mono
-    bits.push(0, 1); // no LFE
-    bits.push(16, 5);
-    bits.push(31, 5);
-    bits.push(0, 1); // compre
-    bits.push(0, 1); // mixmdate
-    bits.push(0, 1); // infomdate
-    bits.push(0, 1); // convsync
-    bits.push(0, 1); // addbsie
-    bits.push(0, 2); // frame SNR strategy
-    bits.push(0, 1); // transient processing
-    bits.push(1, 1); // block-switch syntax
-    bits.push(0, 1); // dither syntax disabled
-    bits.push(0, 1); // bit-allocation syntax
-    bits.push(1, 1); // frame fast-gain syntax
-    bits.push(1, 1); // delta-bit-allocation syntax
-    bits.push(1, 1); // skip-field syntax
-    bits.push(0, 1); // SPX attenuation syntax
-    bits.push(1, 2); // channel exponent strategy D15
-    bits.push(0, 1); // converter exponent strategy absent
-    bits.push(32, 6); // frame coarse SNR offset
-    bits.push(7, 4); // frame fine SNR offset
-    bits.push(1, 1); // block switch
-    bits.push(1, 1); // dynamic range exists
-    bits.push(0xa5, 8);
-    bits.push(1, 1); // SPX in use
-    bits.push(2, 2); // start copy frequency
-    bits.push(0, 3); // begin subband
-    bits.push(3, 3); // end subband
-    bits.push(1, 1); // band structure exists
-    for value in [false, true, false, true, true, false] {
-        bits.push(u64::from(value), 1);
-    }
-    bits.push(17, 5); // blend
-    bits.push(2, 2); // master coordinate
-    for (exponent, mantissa) in [(1, 0), (2, 1), (3, 2), (4, 3)] {
-        bits.push(exponent, 4);
-        bits.push(mantissa, 2);
-    }
-    bits.push(10, 4); // channel absolute exponent
-    for _ in 0..16 {
-        bits.push(62, 7);
-    }
-    bits.push(1, 2); // gain range
-    bits.push(0, 1); // converter SNR offset absent
-    let bytes = bits.bytes(128);
+    let bytes = six_block_mono_frame(0, None, Some(0xa5));
     let frames = index_syncframes(&bytes).expect("indexed frame");
     let units = group_access_units(&frames).expect("access unit");
     let mut decoder = JocAccessUnitPcmDecoder::new();
@@ -251,9 +293,42 @@ fn decodes_an_indexed_independent_joc_access_unit_to_pcm() {
         .decode(&bytes, &frames, units[0], &[0.5; 49])
         .expect("independent access-unit PCM");
     assert_eq!(pcm.sample_rate, 48_000);
-    assert_eq!(pcm.samples, 256);
+    assert_eq!(pcm.samples, 1536);
     assert_eq!(pcm.channels.len(), 1);
-    assert_eq!(pcm.channels[0].len(), 256);
+    assert_eq!(pcm.channels[0].len(), 1536);
+    assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn decodes_a_raw_dependent_d0_custom_map_through_pcm_and_replaces_i0() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent = six_block_mono_frame(1, Some(0x4000), Some(0xa5)); // Centre replaces I0
+    let bytes = [independent.clone(), dependent].concat();
+    let frames = index_syncframes(&bytes).expect("indexed I0/D0 frames");
+    let units = group_access_units(&frames).expect("JOC access unit");
+    let mut decoder = JocAccessUnitPcmDecoder::new();
+    let pcm = decoder
+        .decode(&bytes, &frames, units[0], &[0.5; 512])
+        .expect("dependent D0 PCM");
+    assert_eq!(pcm.samples, 1536);
+    assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channels[0].len(), 1536);
+
+    let mut independent_decoder = JocAccessUnitPcmDecoder::new();
+    let independent_pcm = independent_decoder
+        .decode(
+            &independent,
+            &index_syncframes(&independent).expect("I0 index"),
+            openjoc_eac3::AccessUnitIndex {
+                first_frame: 0,
+                frame_count: 1,
+                sample_rate: 48_000,
+                samples: 1536,
+            },
+            &[0.5; 512],
+        )
+        .expect("independent PCM");
+    assert_ne!(pcm.channels[0], independent_pcm.channels[0]);
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
 }
 

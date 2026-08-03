@@ -98,6 +98,11 @@ impl JocAccessUnitPcmDecoder {
                 frame: unit.first_frame,
             });
         }
+        if first.header.audio_blocks != 6 {
+            return Err(Eac3Error::UnsupportedJocAudioBlockCount {
+                actual: first.header.audio_blocks,
+            });
+        }
 
         let mut independent_synth = self.independent.clone();
         let mut dependent_synth = self.dependent.clone();
@@ -114,6 +119,13 @@ impl JocAccessUnitPcmDecoder {
         {
             return Err(Eac3Error::SubstreamTimingMismatch {
                 frame: unit.first_frame + 1,
+            });
+        }
+        if let Some((info, _)) = &dependent
+            && info.header.audio_blocks != 6
+        {
+            return Err(Eac3Error::UnsupportedJocAudioBlockCount {
+                actual: info.header.audio_blocks,
             });
         }
         let output = merge_substreams(
@@ -183,13 +195,13 @@ fn standard_channel_locations(
         4 => vec![
             ChannelLocation::Left,
             ChannelLocation::Right,
-            ChannelLocation::Other(0),
+            ChannelLocation::Other(3), // Cs
         ],
         5 => vec![
             ChannelLocation::Left,
             ChannelLocation::Centre,
             ChannelLocation::Right,
-            ChannelLocation::Other(0),
+            ChannelLocation::Other(3), // Cs
         ],
         6 => vec![
             ChannelLocation::Left,

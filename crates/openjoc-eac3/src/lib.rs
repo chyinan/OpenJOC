@@ -275,6 +275,9 @@ pub enum Eac3Error {
     UnsupportedJocAccessUnitFrameCount {
         actual: usize,
     },
+    UnsupportedJocAudioBlockCount {
+        actual: u8,
+    },
     InvalidDependentChannelMap {
         expected: usize,
         actual: usize,
@@ -366,6 +369,10 @@ impl Eac3Error {
             Self::UnsupportedJocAccessUnitFrameCount { actual } => Some(write!(
                 formatter,
                 "JOC E-AC-3 access unit contains {actual} frames; expected one independent and at most one dependent frame"
+            )),
+            Self::UnsupportedJocAudioBlockCount { actual } => Some(write!(
+                formatter,
+                "JOC E-AC-3 syncframe contains {actual} audio blocks; expected six"
             )),
             Self::InvalidDependentChannelMap { expected, actual } => Some(write!(
                 formatter,
@@ -624,6 +631,7 @@ impl fmt::Display for Eac3Error {
             | Self::NonFiniteAhtCoefficient
             | Self::InvalidAccessUnitRange
             | Self::UnsupportedJocAccessUnitFrameCount { .. }
+            | Self::UnsupportedJocAudioBlockCount { .. }
             | Self::InvalidDependentChannelMap { .. }
             | Self::MultipleLfeChannels
             | Self::AccessUnitPcmSampleCountMismatch { .. }
