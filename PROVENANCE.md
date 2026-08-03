@@ -1377,6 +1377,11 @@ and a test or explicit TODO before implementation proceeds.
 - Environment evidence: Poppler 26.02.0 (`pdftoppm`, `pdftotext`, `pdfinfo`)
   and FFmpeg/FFprobe are available in the development environment. No
   proprietary decoder source was inspected.
+- Audit refresh: the supplied DEE M4A hash and size were rechecked, the
+  fixture-gated container integration test was run with
+  `OPENJOC_DEE_FIXTURE` set, and the release `inspect` command again reported
+  the ISO BMFF boundary and 7,773 access units. This confirms the container
+  increment only; it does not promote the fixture to a nonzero JOC/OAMD vector.
 
 ### User-supplied legal DEE fixture (acceptance lane remains open)
 

@@ -38,6 +38,21 @@ The MP4Box command is test-fixture tooling only; it is not an OpenJOC runtime
 dependency. Runtime container behavior uses FFprobe and FFmpeg as external
 black boxes and never uses their decoded PCM as object reconstruction.
 
+## Current container audit refresh
+
+The installed toolchain was rechecked on the current worktree: Poppler
+26.02.0 (`pdftoppm`, `pdftotext`, and `pdfinfo`) and FFmpeg/FFprobe are
+available on `PATH`. The supplied DEE file still has SHA-256
+`67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` and size
+32,138,978 bytes. Running
+`OPENJOC_DEE_FIXTURE=<that path> cargo test -p openjoc-cli --test container
+user_supplied_dee_fixture_uses_container_boundary_when_enabled` passed; the
+test independently demuxed and indexed all 7,773 access units. A release
+`inspect` run reports `ISO BMFF (stream-copied E-AC-3)`, 7,773 frames, and
+7,773 access units. The fixture still reports “JOC extension signaled ...
+EMDF profile absent”, so this refresh strengthens the container evidence only
+and does not change the open real-vector status.
+
 ## User-supplied DEE fixture evidence
 
 The legal fixture is intentionally not committed:
