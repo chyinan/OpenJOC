@@ -1,7 +1,7 @@
 use openjoc_eac3::{
     AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAddbsi, StreamType,
     block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
-    decode_audio_blocks, decode_exponents, decode_first_audio_block,
+    decode_audio_blocks, decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
     decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
     parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
@@ -448,6 +448,11 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
     assert_eq!(pcm.channels[0].len(), 512);
     assert!(pcm.lfe.is_none());
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
+
+    let mut direct_synthesizer = AudioPcmSynthesizer::new();
+    let direct = decode_audio_frame_pcm(&bytes, &[0.5; 146], &mut direct_synthesizer)
+        .expect("direct audio-frame PCM synthesis");
+    assert_eq!(direct, pcm);
 
     let mut stateful = AudioPcmSynthesizer::new();
     let first = stateful

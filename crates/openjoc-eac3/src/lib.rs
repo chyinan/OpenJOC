@@ -21,9 +21,9 @@ pub use audio_block::{
     DeltaBitAllocationElement, DeltaBitAllocationSegment, EnhancedCouplingInformation,
     EnhancedCouplingReconstruction, ExponentInformation, FastGainCodes, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
-    StandardCouplingInformation, decode_audio_blocks, decode_first_audio_block, inverse_aht_dct,
-    parse_first_audio_block_prefix, reconstruct_enhanced_coupling, reconstruct_standard_coupling,
-    synthesize_audio_blocks,
+    StandardCouplingInformation, decode_audio_blocks, decode_audio_frame_pcm,
+    decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
+    reconstruct_enhanced_coupling, reconstruct_standard_coupling, synthesize_audio_blocks,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,

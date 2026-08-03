@@ -639,6 +639,22 @@ pub fn decode_audio_blocks(
     decode_audio_blocks_until(bytes, dither_values, usize::MAX)
 }
 
+/// Decodes one complete E-AC-3 syncframe and emits its full-bandwidth/LFE PCM.
+///
+/// The caller owns the [`AudioPcmSynthesizer`] so overlap history can continue
+/// across syncframes. The state is not advanced when syntax or synthesis fails.
+///
+/// # Errors
+/// Returns a checked E-AC-3 syntax, coefficient, dimension, or transform error.
+pub fn decode_audio_frame_pcm(
+    bytes: &[u8],
+    dither_values: &[f64],
+    synthesizer: &mut AudioPcmSynthesizer,
+) -> Result<DecodedAudioPcm, Eac3Error> {
+    let blocks = decode_audio_blocks(bytes, dither_values)?;
+    synthesizer.synthesize(&blocks)
+}
+
 /// Stateful inverse-transform and overlap/add processor for E-AC-3 blocks.
 ///
 /// The delay history is retained across calls so consecutive syncframes remain

@@ -980,9 +980,10 @@ frame behavior is covered by integration tests.
   full-bandwidth PCM synthesis, block-switched synthesis, seven-bin LFE
   synthesis, cross-call delay retention, and reset behavior are covered by
   `crates/openjoc-eac3/tests/transform.rs` and
-  `crates/openjoc-eac3/tests/syncframe.rs`. The access-unit shell still uses
-  the replaceable external base E-AC-3 PCM boundary documented below; this
-  stage is the internal audio-block-to-PCM core.
+  `crates/openjoc-eac3/tests/syncframe.rs`. `decode_audio_frame_pcm` is the
+  direct bounded syncframe-to-PCM entry point. The access-unit shell still uses
+  the replaceable external base E-AC-3 PCM boundary documented below, so this
+  stage does not claim a complete independent/dependent-substream decoder.
 
 ### Enhanced AC-3 access-unit and substream ordering
 
