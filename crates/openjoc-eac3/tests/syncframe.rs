@@ -348,6 +348,7 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     assert_eq!(coordinate.master, 2);
     assert_eq!(coordinate.bands, vec![(1, 0), (2, 1), (3, 2), (4, 3)]);
     assert_eq!(prefix.channel_bandwidth_codes, vec![None]);
+    assert!(prefix.snr_offsets.is_none());
     let exponents = prefix.channel_exponents[0]
         .as_ref()
         .expect("channel exponents");

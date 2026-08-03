@@ -94,7 +94,7 @@ pub struct BitAllocationParameters {
     pub floor_code: u8,
 }
 
-/// Effective block SNR-offset codes.
+/// Newly transmitted block SNR-offset codes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SnrOffsets {
     pub coarse_code: u8,
@@ -249,10 +249,18 @@ pub fn decode_first_audio_block(
     let parameter_codes = prefix
         .bit_allocation_parameters
         .ok_or(Eac3Error::FrameSizeOverflow)?;
-    let snr = prefix
-        .snr_offsets
-        .as_ref()
-        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let snr = prefix.snr_offsets.clone().or_else(|| {
+        frame
+            .frame_coarse_snr_code
+            .zip(frame.frame_fine_snr_code)
+            .map(|(coarse_code, fine)| SnrOffsets {
+                coarse_code,
+                coupling_fine_code: prefix.coupling.as_ref().map(|_| fine),
+                channel_fine_codes: vec![fine; usize::from(frame.full_bandwidth_channels)],
+                lfe_fine_code: frame.bsi.lfe_on.then_some(fine),
+            })
+    });
+    let snr = snr.ok_or(Eac3Error::FrameSizeOverflow)?;
     let fast_gain = prefix
         .fast_gain_codes
         .as_ref()
@@ -793,18 +801,7 @@ fn parse_snr_offsets(
 ) -> Result<Option<SnrOffsets>, Eac3Error> {
     let strategy = frame.snr_offset_strategy;
     if strategy == 0 {
-        let coarse_code = frame
-            .frame_coarse_snr_code
-            .ok_or(Eac3Error::FrameSizeOverflow)?;
-        let fine = frame
-            .frame_fine_snr_code
-            .ok_or(Eac3Error::FrameSizeOverflow)?;
-        return Ok(Some(SnrOffsets {
-            coarse_code,
-            coupling_fine_code: coupling.map(|_| fine),
-            channel_fine_codes: vec![fine; channels],
-            lfe_fine_code: frame.bsi.lfe_on.then_some(fine),
-        }));
+        return Ok(None);
     }
     let coarse_code = read_u8(bits, 6)?;
     let (coupling_fine_code, channel_fine_codes, lfe_fine_code) = if strategy == 1 {
