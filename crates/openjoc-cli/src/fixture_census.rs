@@ -1160,4 +1160,19 @@ mod tests {
         assert_eq!(labels, ["a", "b"]);
         fs::remove_dir_all(root).expect("cleanup");
     }
+
+    #[test]
+    fn opt_in_external_manifest_runs_the_same_bounded_census() {
+        let Some(path) = std::env::var_os("OPENJOC_REAL_FIXTURE_MANIFEST") else {
+            return;
+        };
+        let report = run_census(std::path::Path::new(&path)).expect("external census");
+        assert!(!report.fixtures.is_empty());
+        assert!(
+            report
+                .fixtures
+                .windows(2)
+                .all(|pair| pair[0].label < pair[1].label)
+        );
+    }
 }
