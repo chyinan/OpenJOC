@@ -1,0 +1,217 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QDF Mode &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Using the qpdf Library" href="library.html" />
+    <link rel="prev" title="Running qpdf" href="cli.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">QDF Mode</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/qdf.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="qdf-mode">
+<span id="qdf"></span><h1>QDF Mode<a class="headerlink" href="#qdf-mode" title="Link to this heading"></a></h1>
+<p>In QDF mode, qpdf creates PDF files in what we call <em>QDF
+form</em>. A PDF file in QDF form, sometimes called a QDF
+file, is a completely valid PDF file that has <code class="docutils literal notranslate"><span class="pre">%QDF-1.0</span></code> as its third
+line (after the pdf header and binary characters) and has certain other
+characteristics. The purpose of QDF form is to make it possible to edit
+PDF files, with some restrictions, in an ordinary text editor. This can
+be very useful for experimenting with different PDF constructs or for
+making one-off edits to PDF files (though there are other reasons why
+this may not always work). Note that QDF mode does not support
+linearized files. If you enable linearization, QDF mode is automatically
+disabled.</p>
+<p>It is ordinarily very difficult to edit PDF files in a text editor for
+two reasons: most meaningful data in PDF files is compressed, and PDF
+files are full of offset and length information that makes it hard to
+add or remove data. A QDF file is organized in a manner such that, if
+edits are kept within certain constraints, the
+<strong class="command">fix-qdf</strong> program, distributed with qpdf, is
+able to restore edited files to a correct state.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>fix-qdf<span class="w"> </span><span class="o">[</span>infilename<span class="w"> </span><span class="o">[</span>outfilename<span class="o">]]</span>
+</pre></div>
+</div>
+<p>With no arguments, <strong class="command">fix-qdf</strong> reads the possibly-edited QDF
+file from standard input and writes a repaired file to standard
+output. You can also specify the input and output files as
+command-line arguments. With one argument, the argument is taken as an
+input file. With two arguments, the first argument is an input file,
+and the second is an output file.</p>
+<p>For another way to work with PDF files in an editor, see <a class="reference internal" href="json.html#json"><span class="std std-ref">qpdf JSON</span></a>.
+Using qpdf JSON format allows you to edit the PDF file semantically
+without having to be concerned about PDF syntax. However, QDF files
+are actually valid PDF files, so the feedback cycle may be faster if
+previewing with a PDF reader. Also, since QDF files are valid PDF, you
+can experiment with all aspects of the PDF file, including syntax.</p>
+<p>The following attributes characterize a QDF file:</p>
+<ul class="simple">
+<li><p>All objects appear in numerical order in the PDF file, including when
+objects appear in object streams.</p></li>
+<li><p>Objects are printed in an easy-to-read format, and all line endings
+are normalized to UNIX line endings.</p></li>
+<li><p>Unless specifically overridden, streams appear uncompressed (when
+qpdf supports the filters and they are compressed with a non-lossy
+compression scheme), and most content streams are normalized (line
+endings are converted to just a UNIX-style linefeeds).</p></li>
+<li><p>All streams lengths are represented as indirect objects, and the
+stream length object is always the next object after the stream. If
+the stream data does not end with a newline, an extra newline is
+inserted, and a special comment appears after the stream indicating
+that this has been done.</p></li>
+<li><p>If the PDF file contains object streams, if object stream <em>n</em>
+contains <em>k</em> objects, those objects are numbered from <em>n+1</em> through
+<em>n+k</em>, and the object number/offset pairs appear on a separate line
+for each object. Additionally, each object in the object stream is
+preceded by a comment indicating its object number and index. This
+makes it very easy to find objects in object streams.</p></li>
+<li><p>All beginnings of objects, <code class="docutils literal notranslate"><span class="pre">stream</span></code> tokens, <code class="docutils literal notranslate"><span class="pre">endstream</span></code> tokens,
+and <code class="docutils literal notranslate"><span class="pre">endobj</span></code> tokens appear on lines by themselves. A blank line
+follows every <code class="docutils literal notranslate"><span class="pre">endobj</span></code> token.</p></li>
+<li><p>If there is a cross-reference stream, it is unfiltered.</p></li>
+<li><p>Page dictionaries and page content streams are marked with special
+comments that make them easy to find.</p></li>
+<li><p>Comments precede each object indicating the object number of the
+corresponding object in the original file.</p></li>
+</ul>
+<p>When editing a QDF file, any edits can be made as long as the above
+constraints are maintained. This means that you can freely edit a page’s
+content without worrying about messing up the QDF file. It is also
+possible to add new objects so long as those objects are added after the
+last object in the file or subsequent objects are renumbered. If a QDF
+file has object streams in it, you can always add the new objects before
+the xref stream and then change the number of the xref stream, since
+nothing generally ever references it by number.</p>
+<p>It is not generally practical to remove objects from QDF files without
+messing up object numbering, but if you remove all references to an
+object without removing the object itself (by removing all indirect
+objects that point to it), this will leave the object unreferenced.
+Then you can run qpdf on the file (after running <strong class="command">fix-qdf</strong>),
+and qpdf will omit the now-orphaned object.</p>
+<p>When <strong class="command">fix-qdf</strong> is run, it goes through the file
+and recomputes the following parts of the file:</p>
+<ul class="simple">
+<li><p>the <code class="docutils literal notranslate"><span class="pre">/N</span></code>, <code class="docutils literal notranslate"><span class="pre">/W</span></code>, and <code class="docutils literal notranslate"><span class="pre">/First</span></code> keys of all object stream
+dictionaries</p></li>
+<li><p>the pairs of numbers representing object numbers and offsets of
+objects in object streams</p></li>
+<li><p>all stream lengths</p></li>
+<li><p>the cross-reference table or cross-reference stream</p></li>
+<li><p>the offset to the cross-reference table or cross-reference stream
+following the <code class="docutils literal notranslate"><span class="pre">startxref</span></code> token</p></li>
+</ul>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="cli.html" class="btn btn-neutral float-left" title="Running qpdf" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="library.html" class="btn btn-neutral float-right" title="Using the qpdf Library" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

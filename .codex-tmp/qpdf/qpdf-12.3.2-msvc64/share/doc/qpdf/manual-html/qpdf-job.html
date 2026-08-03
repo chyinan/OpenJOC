@@ -1,0 +1,369 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QPDFJob: a Job-Based Interface &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Linearization" href="linearization.html" />
+    <link rel="prev" title="Design and Library Notes" href="design.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">QPDFJob: a Job-Based Interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#id1">QPDFJob Design</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">QPDFJob: a Job-Based Interface</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/qpdf-job.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="qpdfjob-a-job-based-interface">
+<span id="qpdf-job"></span><h1>QPDFJob: a Job-Based Interface<a class="headerlink" href="#qpdfjob-a-job-based-interface" title="Link to this heading"></a></h1>
+<p>All of the functionality from the <strong class="command">qpdf</strong> command-line
+executable is available from inside the C++ library using the
+<code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> class. There are several ways to access this functionality:</p>
+<ul class="simple">
+<li><p>Command-line options</p>
+<ul>
+<li><p>Run the <strong class="command">qpdf</strong> command line</p></li>
+<li><p>Use from the C++ API with <code class="docutils literal notranslate"><span class="pre">QPDFJob::initializeFromArgv</span></code></p></li>
+<li><p>Use from the C API with <code class="docutils literal notranslate"><span class="pre">qpdfjob_run_from_argv</span></code> from
+<code class="file docutils literal notranslate"><span class="pre">qpdfjob-c.h</span></code>. If you are calling from a Windows-style main
+and have an argv array of <code class="docutils literal notranslate"><span class="pre">wchar_t</span></code>, you can use
+<code class="docutils literal notranslate"><span class="pre">qpdfjob_run_from_wide_argv</span></code>.</p></li>
+</ul>
+</li>
+<li><p>The job JSON file format</p>
+<ul>
+<li><p>Use from the CLI with the <a class="reference internal" href="cli.html#option-job-json-file" title="option-job-json-file"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--job-json-file</span></code></a> parameter</p></li>
+<li><p>Use from the C++ API with <code class="docutils literal notranslate"><span class="pre">QPDFJob::initializeFromJson</span></code></p></li>
+<li><p>Use from the C API with <code class="docutils literal notranslate"><span class="pre">qpdfjob_run_from_json</span></code> from <code class="file docutils literal notranslate"><span class="pre">qpdfjob-c.h</span></code></p></li>
+<li><p>Note: this is unrelated to <a class="reference internal" href="cli.html#option-json" title="option-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json</span></code></a> but can be combined
+with it. For more information on qpdf JSON (vs. QPDFJob JSON), see
+<a class="reference internal" href="json.html#json"><span class="std std-ref">qpdf JSON</span></a>.</p></li>
+</ul>
+</li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> C++ API</p></li>
+</ul>
+<p>If you can understand how to use the <strong class="command">qpdf</strong> CLI, you can
+understand the <code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> class and the JSON file. qpdf guarantees
+that all of the above methods are in sync. Here’s how it works:</p>
+<table class="docutils align-default" id="id2">
+<caption><span class="caption-text">QPDFJob Interfaces</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 33.3%" />
+<col style="width: 33.3%" />
+<col style="width: 33.3%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>CLI</p></th>
+<th class="head"><p>JSON</p></th>
+<th class="head"><p>C++</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">--some-option</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;someOption&quot;:</span> <span class="pre">&quot;&quot;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">config()-&gt;someOption()</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">--some-option=value</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;someOption&quot;:</span> <span class="pre">&quot;value&quot;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">config()-&gt;someOption(&quot;value&quot;)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>positional argument</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">&quot;otherOption&quot;:</span> <span class="pre">&quot;value&quot;</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">config()-&gt;otherOption(&quot;value&quot;)</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>In the JSON file, the JSON structure is an object (dictionary) whose
+keys are command-line flags converted to camelCase. Positional
+arguments have some corresponding key, which you can find by running
+<code class="docutils literal notranslate"><span class="pre">qpdf</span></code> with the <a class="reference internal" href="cli.html#option-job-json-help" title="option-job-json-help"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--job-json-help</span></code></a> flag. For example, input
+and output files are named by positional arguments on the CLI. In the
+JSON, they appear in the <code class="docutils literal notranslate"><span class="pre">&quot;inputFile&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;outputFile&quot;</span></code> keys.
+The following are equivalent:</p>
+<dl>
+<dt>CLI:</dt><dd><div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf infile.pdf outfile.pdf \
+   --pages . other.pdf --password=x 1-5 -- \
+   --encrypt user owner 256 --print=low -- \
+   --object-streams=generate
+</pre></div>
+</div>
+</dd>
+<dt>Job JSON:</dt><dd><div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;inputFile&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;infile.pdf&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;outputFile&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;outfile.pdf&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;pages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;file&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;.&quot;</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;file&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;other.pdf&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;password&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;x&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;range&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1-5&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;encrypt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;userPassword&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;ownerPassword&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;owner&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;256bit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;print&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;objectStreams&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;generate&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</dd>
+<dt>C++ code:</dt><dd><div class="highlight-c++ notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qpdf/QPDFJob.hh&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;qpdf/QPDFUsage.hh&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;iostream&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">argv</span><span class="p">[])</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">try</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">QPDFJob</span><span class="w"> </span><span class="n">j</span><span class="p">;</span>
+<span class="w">        </span><span class="n">j</span><span class="p">.</span><span class="n">config</span><span class="p">()</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">inputFile</span><span class="p">(</span><span class="s">&quot;infile.pdf&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">outputFile</span><span class="p">(</span><span class="s">&quot;outfile.pdf&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">pages</span><span class="p">()</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">pageSpec</span><span class="p">(</span><span class="s">&quot;.&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1-z&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">pageSpec</span><span class="p">(</span><span class="s">&quot;other.pdf&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;1-5&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;x&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">endPages</span><span class="p">()</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">encrypt</span><span class="p">(</span><span class="mi">256</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;owner&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">print</span><span class="p">(</span><span class="s">&quot;low&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">endEncrypt</span><span class="p">()</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">objectStreams</span><span class="p">(</span><span class="s">&quot;generate&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="o">-&gt;</span><span class="n">checkConfiguration</span><span class="p">();</span>
+<span class="w">        </span><span class="n">j</span><span class="p">.</span><span class="n">run</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">QPDFUsage</span><span class="o">&amp;</span><span class="w"> </span><span class="n">e</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">cerr</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;configuration error: &quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="n">what</span><span class="p">()</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">exception</span><span class="o">&amp;</span><span class="w"> </span><span class="n">e</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">cerr</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;other error: &quot;</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="n">what</span><span class="p">()</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+<p>Note the <code class="docutils literal notranslate"><span class="pre">QPDFUsage</span></code> exception above. This is thrown whenever a
+configuration error occurs. These exactly correspond to usage messages
+issued by the <strong class="command">qpdf</strong> CLI for things like omitting an output
+file, specifying <cite>–pages</cite> multiple times, or other invalid
+combinations of options. <code class="docutils literal notranslate"><span class="pre">QPDFUsage</span></code> is thrown by the argv and JSON
+interfaces as well as the native <code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> interface.</p>
+<p>It is also possible to mix and match command-line options and JSON
+from the CLI. For example, you could create a file called
+<code class="file docutils literal notranslate"><span class="pre">my-options.json</span></code> containing the following:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;encrypt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;userPassword&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;ownerPassword&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;owner&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;256bit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;objectStreams&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;generate&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>and use it with other options to create 256-bit encrypted (but
+unrestricted) files with object streams while specifying other
+parameters on the command line, such as</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf infile.pdf outfile.pdf --job-json-file=my-options.json
+</pre></div>
+</div>
+<p id="qpdfjob-design">See also <code class="file docutils literal notranslate"><span class="pre">examples/qpdf-job.cc</span></code> in the source distribution as
+well as comments in <code class="docutils literal notranslate"><span class="pre">QPDFJob.hh</span></code>.</p>
+<section id="id1">
+<h2>QPDFJob Design<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<p>This section describes some of the design rationale and history behind
+<code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code>.</p>
+<p>Documentation of <code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> is divided among three places:</p>
+<ul class="simple">
+<li><p>“HOW TO ADD A COMMAND-LINE ARGUMENT” in <code class="file docutils literal notranslate"><span class="pre">README-maintainer</span></code>
+provides a quick reminder of how to add a command-line argument.</p></li>
+<li><p>The source file <code class="file docutils literal notranslate"><span class="pre">generate_auto_job</span></code> has a detailed explanation
+about how <code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> and <code class="docutils literal notranslate"><span class="pre">generate_auto_job</span></code> work together.</p></li>
+<li><p>This chapter of the manual has other details.</p></li>
+</ul>
+<p>Prior to qpdf version 10.6.0, the qpdf CLI executable had a lot of
+functionality built into it that was not callable from the library as
+such. This created a number of problems:</p>
+<ul class="simple">
+<li><p>Some of the logic in <code class="file docutils literal notranslate"><span class="pre">qpdf.cc</span></code> was pretty complex, such as
+image optimization, generating JSON output, and many of the page
+manipulations. While those things could all be coded using the C++
+API, there would be a lot of duplicated code.</p></li>
+<li><p>Page splitting and merging will get more complicated over time as
+qpdf supports a wider range of document-level options. It would be
+nice to be able to expose this to library users instead of baking it
+all into the CLI.</p></li>
+<li><p>Users of other languages who just wanted an interface to do things
+that the CLI could do didn’t have a good way to do it, such as just
+handing a library call a set of command-line options or an
+equivalent JSON object that could be passed in as a string.</p></li>
+<li><p>The qpdf CLI itself was almost 8,000 lines of code. It needed to be
+refactored, cleaned up, and split.</p></li>
+<li><p>Exposing a new feature via the command-line required making lots of
+small edits to lots of small bits of code, and it was easy to forget
+something. Adding a code generator, while complex in some ways,
+greatly reduces the chances of error when extending qpdf.</p></li>
+</ul>
+<p>Here are a few notes on some design decisions about QPDFJob and its
+various interfaces.</p>
+<ul class="simple">
+<li><p>Bare command-line options (flags with no parameter) map to config
+functions that take no options and to JSON keys whose values are
+required to be the empty string. The rationale is that we can later
+change these bare options to options that take an optional parameter
+without breaking backward compatibility in the CLI or the JSON.
+Options that take optional parameters generate two config functions:
+one has no arguments, and one that has a <code class="docutils literal notranslate"><span class="pre">char const*</span></code> argument.
+This means that adding an optional parameter to a previously bare
+option also doesn’t break binary compatibility.</p></li>
+<li><p>Adding a new argument to <code class="file docutils literal notranslate"><span class="pre">job.yml</span></code> automatically triggers
+almost everything by declaring and referencing things that you have
+to implement. This way, once you get the code to compile and link,
+you know you haven’t forgotten anything. There are two tricky cases:</p>
+<ul>
+<li><p>If an argument handler has to do something special, like call a
+nested config method or select an option table, you have to
+implement it manually. This is discussed in
+<code class="file docutils literal notranslate"><span class="pre">generate_auto_job</span></code>.</p></li>
+<li><p>When you add an option that has optional parameters or choices,
+both of the handlers described above are declared, but only the
+one that takes an argument is referenced. You have to remember to
+implement the one that doesn’t take an argument or else people
+will get a linker error if they try to call it. The assumption is
+that things with optional parameters started out as bare, so the
+argument-less version is already there.</p></li>
+</ul>
+</li>
+<li><p>If you have to add a new option that requires its own option table,
+you will have to do some extra work including adding a new nested
+Config class, adding a config member variable to <code class="docutils literal notranslate"><span class="pre">ArgParser</span></code> in
+<code class="file docutils literal notranslate"><span class="pre">QPDFJob_argv.cc</span></code> and <code class="docutils literal notranslate"><span class="pre">Handlers</span></code> in <code class="file docutils literal notranslate"><span class="pre">QPDFJob_json.cc</span></code>,
+and make sure that manually implemented handlers are consistent with
+each other. It is best to add explicit test cases for all the
+various ways to get to the option.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="design.html" class="btn btn-neutral float-left" title="Design and Library Notes" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="linearization.html" class="btn btn-neutral float-right" title="Linearization" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

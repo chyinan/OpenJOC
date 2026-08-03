@@ -1,0 +1,269 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contributing to qpdf &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Design and Library Notes" href="design.html" />
+    <link rel="prev" title="qpdf JSON" href="json.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Contributing to qpdf</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#source-repository">Source Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#code-formatting">Code Formatting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#automated-tests">Automated Tests</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#coverage">Coverage</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#personal-comments">Personal Comments</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Contributing to qpdf</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/contributing.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="contributing-to-qpdf">
+<span id="contributing"></span><h1>Contributing to qpdf<a class="headerlink" href="#contributing-to-qpdf" title="Link to this heading"></a></h1>
+<section id="source-repository">
+<span id="id1"></span><h2>Source Repository<a class="headerlink" href="#source-repository" title="Link to this heading"></a></h2>
+<p>The qpdf source code lives at <a class="reference external" href="https://github.com/qpdf/qpdf">https://github.com/qpdf/qpdf</a>.</p>
+<p>Create issues (bug reports, feature requests) at
+<a class="reference external" href="https://github.com/qpdf/qpdf/issues">https://github.com/qpdf/qpdf/issues</a>. If you have a general question or
+topic for discussion, you can create a discussion at
+<a class="reference external" href="https://github.com/qpdf/qpdf/discussions">https://github.com/qpdf/qpdf/discussions</a>.</p>
+</section>
+<section id="code-formatting">
+<span id="id2"></span><h2>Code Formatting<a class="headerlink" href="#code-formatting" title="Link to this heading"></a></h2>
+<p>The qpdf source code is formatted using clang-format with a
+<code class="file docutils literal notranslate"><span class="pre">.clang-format</span></code> file at the top of the source tree. The
+<code class="file docutils literal notranslate"><span class="pre">format-code</span></code> script reformats all the source code in the
+repository. You must have <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> in your path, and it must
+be at least version 20.</p>
+<p>For emacs users, the <code class="file docutils literal notranslate"><span class="pre">.dir-locals.el</span></code> file configures emacs
+<code class="docutils literal notranslate"><span class="pre">cc-mode</span></code> for an indentation style that is similar to but not
+exactly like what <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> produces. When there are
+differences, <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> is authoritative. It is not possible to
+make <code class="docutils literal notranslate"><span class="pre">cc-mode</span></code> and <code class="docutils literal notranslate"><span class="pre">clang-format</span></code> exactly match since the syntax
+parser in emacs is not as sophisticated.</p>
+<p>Blocks of code that should not be formatted can be surrounded by the
+comments <code class="docutils literal notranslate"><span class="pre">//</span> <span class="pre">clang-format</span> <span class="pre">off</span></code> and <code class="docutils literal notranslate"><span class="pre">//</span> <span class="pre">clang-format</span> <span class="pre">on</span></code>. Sometimes
+clang-format tries to combine lines in ways that are undesirable. In
+this case, we follow a convention of adding a comment <code class="docutils literal notranslate"><span class="pre">//</span>
+<span class="pre">line-break</span></code> on its own line.</p>
+<p>For exact details, consult <code class="file docutils literal notranslate"><span class="pre">.clang-format</span></code>. Here is a broad,
+partial summary of the formatting rules:</p>
+<ul class="simple">
+<li><p>Use spaces, not tabs.</p></li>
+<li><p>Keep lines to 100 columns when possible.</p></li>
+<li><p>Braces are on their own lines after classes and functions (and
+similar top-level constructs) and are compact otherwise.</p></li>
+<li><p>Closing parentheses are attached to the previous material, not not
+their own lines.</p></li>
+</ul>
+<p>The <code class="file docutils literal notranslate"><span class="pre">README-maintainer</span></code> file has a few additional notes that are
+probably not important to anyone who is not making deep changes to
+qpdf.</p>
+</section>
+<section id="automated-tests">
+<span id="automated-testing"></span><h2>Automated Tests<a class="headerlink" href="#automated-tests" title="Link to this heading"></a></h2>
+<p>The testing style of qpdf has evolved over time. More recent tests
+call <code class="docutils literal notranslate"><span class="pre">assert()</span></code>. Older tests print stuff to standard output and
+compare the output against reference files. Many tests are a mixture
+of these techniques.</p>
+<p>The <a class="reference external" href="https://qtest.sourceforge.io">qtest</a> style of testing is to
+test everything through the application. So effectively most testing
+is “integration testing” or “end-to-end testing”.</p>
+<p>For details about <code class="docutils literal notranslate"><span class="pre">qtest</span></code>, consult the <a class="reference external" href="https://qtest.sourceforge.io/doc/qtest-manual.html">QTest Manual</a>. As you read
+it, keep in mind that, in spite of the recent date on the file, the
+vast majority of that documentation is from before 2007 and predates
+many test frameworks and approaches that are in use today.</p>
+<p>Notes on testing:</p>
+<ul class="simple">
+<li><p>In most cases, things in the code are tested through integration
+tests, though the test suite is very thorough. Many tests are driven
+through the <code class="docutils literal notranslate"><span class="pre">qpdf</span></code> CLI. Others are driven through other files in
+the <code class="docutils literal notranslate"><span class="pre">qpdf</span></code> directory, especially <code class="docutils literal notranslate"><span class="pre">test_driver.cc</span></code> and
+<code class="docutils literal notranslate"><span class="pre">qpdf-ctest.c</span></code>. These programs only use the public API.</p></li>
+<li><p>In some cases, there are true “unit tests”, but they are exercised
+through various stand-alone programs that exercise the library in
+particular ways, including some that have access to library
+internals. These are in the <code class="docutils literal notranslate"><span class="pre">libtests</span></code> directory.</p></li>
+</ul>
+<section id="coverage">
+<h3>Coverage<a class="headerlink" href="#coverage" title="Link to this heading"></a></h3>
+<p>You wil see calls to <code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> throughout the code. This is a
+“manual coverage” system described in depth in the qtest documentation
+linked above. It works by ensuring that <code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> is called sometime
+during the test in each configured way. In brief:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> takes two mandatory options and an optional one:</p>
+<ul>
+<li><p>The first two arguments must be <em>string literals</em>. This is because
+<code class="docutils literal notranslate"><span class="pre">qtest</span></code> finds coverage cases lexically.</p></li>
+<li><p>The first argument is the scope name, usually <code class="docutils literal notranslate"><span class="pre">qpdf</span></code>. This means
+there is a <code class="docutils literal notranslate"><span class="pre">qpdf.testcov</span></code> file in the source directory.</p></li>
+<li><p>The second argument is a case name. Each case name appears in
+<code class="docutils literal notranslate"><span class="pre">qpdf.testcov</span></code> with a number after it, usually <code class="docutils literal notranslate"><span class="pre">0</span></code>.</p></li>
+<li><p>If the third argument is present, it is a number. <code class="docutils literal notranslate"><span class="pre">qtest</span></code>
+ensures that the <code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> is called for that scope and case at
+least once with the third argument set to every value from <code class="docutils literal notranslate"><span class="pre">0</span></code>
+to <code class="docutils literal notranslate"><span class="pre">n</span></code> inclusive, where <code class="docutils literal notranslate"><span class="pre">n</span></code> is the number after the coverage
+call.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> does nothing unless certain environment variables are
+set. Therefore, <code class="docutils literal notranslate"><span class="pre">QTC:TC</span></code> calls should have no side effects. (In
+some languages, they may be disabled at compile-time, though qpdf
+does not actually do this.)</p></li>
+</ul>
+<p>So, for example, if you have this code:</p>
+<div class="highlight-C++ notranslate"><div class="highlight"><pre><span></span><span class="n">QTC</span><span class="o">::</span><span class="n">TC</span><span class="p">(</span><span class="s">&quot;qpdf&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;QPDF eof skipping spaces before xref&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">skipped_space</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>and this line in <cite>qpdf.testcov</cite>:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>QPDF eof skipping spaces before xref 1
+</pre></div>
+</div>
+<p>the test suite will only pass if that line of code was called at least
+once with <code class="docutils literal notranslate"><span class="pre">skipped_space</span> <span class="pre">==</span> <span class="pre">0</span></code> and at least once with <code class="docutils literal notranslate"><span class="pre">skipped_space</span>
+<span class="pre">==</span> <span class="pre">1</span></code>.</p>
+<p>The manual coverage approach ensures the reader that certain
+conditions were covered in testing. Use of <code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> is only part of
+the overall strategy.</p>
+<p>I do not require testing on pull requests, but they are appreciated,
+and I will not merge any code that is not tested. Often someone will
+submit a pull request that is not adequately tested but is a good
+contribution. In those cases, I will often take the code, add it with
+tests, and accept the changes that way rather than merging the pull
+request as submitted.</p>
+</section>
+</section>
+<section id="personal-comments">
+<h2>Personal Comments<a class="headerlink" href="#personal-comments" title="Link to this heading"></a></h2>
+<p>qpdf started as a work project in 2002. The first open source release
+was in 2008. While there have been a handful of contributors, the vast
+majority of the code was written by one person over many years as a
+side project.</p>
+<p>I maintain a very strong commitment to backward compatibility. As
+such, there are many aspects of the code that are showing their age.
+While I believe the codebase to have high quality, there are things
+that I would do differently if I were doing them from scratch today.
+Sometimes people will suggest changes that I like but can’t accept for
+backward compatibility reasons.</p>
+<p>While I welcome contributions and am eager to collaborate with
+contributors, I have a high bar. I only accept things I’m willing to
+maintain over the long haul, and I am happy to help people get
+submissions into that state.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="json.html" class="btn btn-neutral float-left" title="qpdf JSON" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="design.html" class="btn btn-neutral float-right" title="Design and Library Notes" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

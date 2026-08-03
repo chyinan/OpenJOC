@@ -1,0 +1,314 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weak Cryptography &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="qpdf JSON" href="json.html" />
+    <link rel="prev" title="Using the qpdf Library" href="library.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Weak Cryptography</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#definition-of-weak-cryptographic-algorithm">Definition of Weak Cryptographic Algorithm</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#uses-of-weak-encryption-in-qpdf">Uses of Weak Encryption in qpdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#uses-of-weak-hashing-in-qpdf">Uses of Weak Hashing In qpdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#api-breaking-changes-in-qpdf-11-0">API-Breaking Changes in qpdf 11.0</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Weak Cryptography</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/weak-crypto.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="weak-cryptography">
+<span id="weak-crypto"></span><h1>Weak Cryptography<a class="headerlink" href="#weak-cryptography" title="Link to this heading"></a></h1>
+<p>For help with compiler errors in qpdf 11.0 or newer, see
+<a class="reference internal" href="#breaking-crypto-api"><span class="std std-ref">API-Breaking Changes in qpdf 11.0</span></a>.</p>
+<p>Since 2006, the PDF specification has offered ways to create encrypted
+PDF files without using weak cryptography, though it took a few years
+for many PDF readers and writers to catch up. It is still necessary to
+support weak encryption algorithms to read encrypted PDF files that
+were created using weak encryption algorithms, including all PDF files
+created before the modern formats were introduced or widely supported.</p>
+<p>Starting with version 10.4, qpdf began taking steps to reduce the
+likelihood of a user <em>accidentally</em> creating PDF files with insecure
+cryptography but will continue to allow creation of such files
+indefinitely with explicit acknowledgment. The restrictions on use of
+weak cryptography were made stricter with qpdf 11.</p>
+<section id="definition-of-weak-cryptographic-algorithm">
+<h2>Definition of Weak Cryptographic Algorithm<a class="headerlink" href="#definition-of-weak-cryptographic-algorithm" title="Link to this heading"></a></h2>
+<p>We divide weak cryptographic algorithms into two categories: weak
+encryption and weak hashing. Encryption is encoding data such that a
+key of some sort is required to decode it. Hashing is creating a short
+value from data in such a way that it is extremely improbable to find
+two documents with the same hash (known has a hash collision) and
+extremely difficult to intentionally create a document with a specific
+hash or two documents with the same hash.</p>
+<p>When we say that an encryption algorithm is weak, we either mean that
+a mathematical flaw has been discovered that makes it inherently
+insecure or that it is sufficiently simple that modern computer
+technology makes it possible to use “brute force” to crack. For
+example, when 40-bit keys were originally introduced, it wasn’t
+practical to consider trying all possible keys, but today such a thing
+is possible.</p>
+<p>When we say that a hashing algorithm is weak, we mean that, either
+because of mathematical flaw or insufficient complexity, it is
+computationally feasible to intentionally construct a hash collision.</p>
+<p>While weak encryption should always be avoided, there are cases in
+which it is safe to use a weak hashing algorithm when security is not
+a factor. For example, a weak hashing algorithm should not be used as
+the only mechanism to test whether a file has been tampered with. In
+other words, you can’t use a weak hash as a digital signature. There
+is no harm, however, in using a weak hash as a way to sort or index
+documents as long as hash collisions are tolerated. It is also common
+to use weak hashes as checksums, which are often used a check that a
+file wasn’t damaged in transit or storage, though for true integrity,
+a strong hash would be better.</p>
+<p>Note that qpdf must always retain support for weak cryptographic
+algorithms since this is required for reading older PDF files that use
+it. Additionally, qpdf will always retain the ability to create files
+using weak cryptographic algorithms since, as a development tool, qpdf
+explicitly supports creating older or deprecated types of PDF files
+since these are sometimes needed to test or work with older versions of
+software. Even if other cryptography libraries drop support for RC4 or
+MD5, qpdf can always fall back to its internal implementations of those
+algorithms, so they are not going to disappear from qpdf.</p>
+</section>
+<section id="uses-of-weak-encryption-in-qpdf">
+<h2>Uses of Weak Encryption in qpdf<a class="headerlink" href="#uses-of-weak-encryption-in-qpdf" title="Link to this heading"></a></h2>
+<p>When PDF files are encrypted using 40-bit encryption or 128-bit
+encryption without AES, then the weak <em>RC4</em> algorithm is used. You can
+avoid using weak encryption in qpdf by always using 256-bit
+encryption. Unless you are trying to create files that need to be
+opened with PDF readers from before about 2010 (by which time most
+readers had added support for the stronger encryption algorithms) or
+are creating insecure files explicitly for testing or some similar
+purpose, there is no reason to use anything other than 256-bit
+encryption.</p>
+<p>By default, qpdf refuses to write a file that uses weak encryption.
+You can explicitly allow this by specifying the
+<a class="reference internal" href="cli.html#option-allow-weak-crypto" title="option-allow-weak-crypto"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--allow-weak-crypto</span></code></a> option.</p>
+<p>In qpdf 11, all library methods that could potentially cause files to
+be written with weak encryption were deprecated, and methods to enable
+weak encryption were either given explicit names indicating this or
+take required arguments to enable the insecure behavior.</p>
+<p>There is one exception: when encryption parameters are copied from the
+input file or another file to the output file, there is no prohibition
+or even warning against using insecure encryption. The reason is that
+many qpdf operations simply preserve whatever encryption is there, and
+requiring confirmation to <em>preserve</em> insecure encryption would cause
+qpdf to break when non-encryption-related operations were performed on
+files that happened to be encrypted. Failing or generating warnings in
+this case would likely have the effect of making people use the
+<a class="reference internal" href="cli.html#option-allow-weak-crypto" title="option-allow-weak-crypto"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--allow-weak-crypto</span></code></a> option blindly, which would be worse
+than just letting those files go so that explicit, conscious selection
+of weak crypto would be more likely to be noticed. Why, you might ask,
+does this apply to <a class="reference internal" href="cli.html#option-copy-encryption" title="option-copy-encryption"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--copy-encryption</span></code></a> as well as to the
+default behavior preserving encryption? The answer is that
+<a class="reference internal" href="cli.html#option-copy-encryption" title="option-copy-encryption"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--copy-encryption</span></code></a> works with an unencrypted file as input,
+which enables workflows where one may start with a file, decrypt it
+<em>just in case</em>, perform a series of operations, and then reapply the
+original encryption, <em>if any</em>. Also, one may have a template used for
+encryption that one may apply to a variety of output files, and it
+would be annoying to be warned about it for every output file.</p>
+</section>
+<section id="uses-of-weak-hashing-in-qpdf">
+<h2>Uses of Weak Hashing In qpdf<a class="headerlink" href="#uses-of-weak-hashing-in-qpdf" title="Link to this heading"></a></h2>
+<p>The PDF specification makes use the weak <em>MD5</em> hashing algorithm in
+several places. While it is used in the encryption algorithms,
+breaking MD5 would not be adequate to crack an encrypted file when
+256-bit encryption is in use, so using 256-bit encryption is adequate
+for avoiding the use of MD5 for anything security-sensitive.</p>
+<p>MD5 is used in the following non-security-sensitive ways:</p>
+<ul>
+<li><p>Generation of the document ID. The document ID is an input parameter
+to the document encryption but is not itself considered to be
+secure. They are supposed to be unique, but they are not
+tamper-resistant in non-encrypted PDF files, and hash collisions
+must be tolerated.</p>
+<p>The PDF specification recommends but does not require the use of MD5
+in generation of document IDs. Usually there is also a random
+component to document ID generation. There is a qpdf-specific
+feature of generating a <em>deterministic ID</em> (see
+<a class="reference internal" href="cli.html#option-deterministic-id" title="option-deterministic-id"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--deterministic-id</span></code></a>) which also uses MD5. While it would
+certainly be possible to change the deterministic ID algorithm to
+not use MD5, doing so would break all previous deterministic IDs
+(which would render the feature useless for many cases) and would
+offer very little benefit since even a securely generated document
+ID is not itself a security-sensitive value.</p>
+</li>
+<li><p>Checksums in embedded file streams – the PDF specification
+specifies the use of MD5.</p></li>
+</ul>
+<p>It is therefore not possible completely avoid the use of MD5 with
+qpdf, but as long as you are using 256-bit encryption, it is not used
+in a security-sensitive fashion.</p>
+</section>
+<section id="api-breaking-changes-in-qpdf-11-0">
+<span id="breaking-crypto-api"></span><h2>API-Breaking Changes in qpdf 11.0<a class="headerlink" href="#api-breaking-changes-in-qpdf-11-0" title="Link to this heading"></a></h2>
+<p>In qpdf 11, several deprecated functions and methods were removed.
+These methods provided an incomplete API. Alternatives were added in
+qpdf 8.4.0. The removed functions are</p>
+<ul class="simple">
+<li><p>C API: <code class="docutils literal notranslate"><span class="pre">qpdf_set_r3_encryption_parameters</span></code>,
+<code class="docutils literal notranslate"><span class="pre">qpdf_set_r4_encryption_parameters</span></code>,
+<code class="docutils literal notranslate"><span class="pre">qpdf_set_r5_encryption_parameters</span></code>,
+<code class="docutils literal notranslate"><span class="pre">qpdf_set_r6_encryption_parameters</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code>: overloaded versions of these methods with fewer
+arguments: <code class="docutils literal notranslate"><span class="pre">setR3EncryptionParameters</span></code>,
+<code class="docutils literal notranslate"><span class="pre">setR4EncryptionParameters</span></code>, <code class="docutils literal notranslate"><span class="pre">setR5EncryptionParameters</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">setR6EncryptionParameters</span></code></p></li>
+</ul>
+<p>Additionally, remaining functions/methods had their names changed to
+signal that they are insecure and to force developers to make a
+decision. If you intentionally want to continue to use insecure
+cryptographic algorithms and create insecure files, you can change
+your code just add <code class="docutils literal notranslate"><span class="pre">_insecure</span></code> or <code class="docutils literal notranslate"><span class="pre">Insecure</span></code> to the end of the
+function as needed. (Note the disappearance of <code class="docutils literal notranslate"><span class="pre">2</span></code> in some of the C
+functions as well.) Better, you should migrate your code to use more
+secure encryption as documented in <code class="file docutils literal notranslate"><span class="pre">QPDFWriter.hh</span></code>. Use the
+<code class="docutils literal notranslate"><span class="pre">R6</span></code> methods (or their corresponding C functions) to create files
+with 256-bit encryption.</p>
+<table class="docutils align-default" id="id1">
+<caption><span class="caption-text">Renamed Functions</span><a class="headerlink" href="#id1" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 50.0%" />
+<col style="width: 50.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Old Name</p></th>
+<th class="head"><p>New Name</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>qpdf_set_r2_encryption_parameters</p></td>
+<td><p>qpdf_set_r2_encryption_parameters_insecure</p></td>
+</tr>
+<tr class="row-odd"><td><p>qpdf_set_r3_encryption_parameters2</p></td>
+<td><p>qpdf_set_r3_encryption_parameters_insecure</p></td>
+</tr>
+<tr class="row-even"><td><p>qpdf_set_r4_encryption_parameters2</p></td>
+<td><p>qpdf_set_r2_encryption_parameters_insecure</p></td>
+</tr>
+<tr class="row-odd"><td><p>QPDFWriter::setR2EncryptionParameters</p></td>
+<td><p>QPDFWriter::setR2EncryptionParametersInsecure</p></td>
+</tr>
+<tr class="row-even"><td><p>QPDFWriter::setR3EncryptionParameters</p></td>
+<td><p>QPDFWriter::setR3EncryptionParametersInsecure</p></td>
+</tr>
+<tr class="row-odd"><td><p>QPDFWriter::setR4EncryptionParameters</p></td>
+<td><p>QPDFWriter::setR4EncryptionParametersInsecure</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="library.html" class="btn btn-neutral float-left" title="Using the qpdf Library" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="json.html" class="btn btn-neutral float-right" title="qpdf JSON" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

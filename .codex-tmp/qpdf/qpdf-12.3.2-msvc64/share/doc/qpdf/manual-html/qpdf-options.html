@@ -1,0 +1,929 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qpdf Command-line Options &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+ 
+
+    <script>
+      DOCUMENTATION_OPTIONS.COLLAPSE_INDEX = true;
+    </script>
+
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">qpdf Command-line Options</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+
+   <h1>qpdf Command-line Options</h1>
+
+   <div class="modindex-jumpbox">
+   <a href="#cap-a"><strong>a</strong></a> | 
+   <a href="#cap-b"><strong>b</strong></a> | 
+   <a href="#cap-c"><strong>c</strong></a> | 
+   <a href="#cap-d"><strong>d</strong></a> | 
+   <a href="#cap-e"><strong>e</strong></a> | 
+   <a href="#cap-f"><strong>f</strong></a> | 
+   <a href="#cap-g"><strong>g</strong></a> | 
+   <a href="#cap-h"><strong>h</strong></a> | 
+   <a href="#cap-i"><strong>i</strong></a> | 
+   <a href="#cap-j"><strong>j</strong></a> | 
+   <a href="#cap-k"><strong>k</strong></a> | 
+   <a href="#cap-l"><strong>l</strong></a> | 
+   <a href="#cap-m"><strong>m</strong></a> | 
+   <a href="#cap-n"><strong>n</strong></a> | 
+   <a href="#cap-o"><strong>o</strong></a> | 
+   <a href="#cap-p"><strong>p</strong></a> | 
+   <a href="#cap-q"><strong>q</strong></a> | 
+   <a href="#cap-r"><strong>r</strong></a> | 
+   <a href="#cap-s"><strong>s</strong></a> | 
+   <a href="#cap-t"><strong>t</strong></a> | 
+   <a href="#cap-u"><strong>u</strong></a> | 
+   <a href="#cap-v"><strong>v</strong></a> | 
+   <a href="#cap-w"><strong>w</strong></a> | 
+   <a href="#cap-z"><strong>z</strong></a>
+   </div>
+
+   <table class="indextable modindextable">
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-a"><td></td><td>
+       <strong>a</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-accessibility"><code class="xref">--accessibility</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-add-attachment"><code class="xref">--add-attachment</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-allow-insecure"><code class="xref">--allow-insecure</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-allow-weak-crypto"><code class="xref">--allow-weak-crypto</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-annotate"><code class="xref">--annotate</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-assemble"><code class="xref">--assemble</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-b"><td></td><td>
+       <strong>b</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-bits"><code class="xref">--bits</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-c"><td></td><td>
+       <strong>c</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-check"><code class="xref">--check</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-check-linearization"><code class="xref">--check-linearization</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-cleartext-metadata"><code class="xref">--cleartext-metadata</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-coalesce-contents"><code class="xref">--coalesce-contents</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-collate"><code class="xref">--collate</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-completion-bash"><code class="xref">--completion-bash</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-completion-zsh"><code class="xref">--completion-zsh</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-compress-streams"><code class="xref">--compress-streams</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-compression-level"><code class="xref">--compression-level</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-copy-attachments-from"><code class="xref">--copy-attachments-from</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-copy-encryption"><code class="xref">--copy-encryption</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-copyright"><code class="xref">--copyright</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-creationdate"><code class="xref">--creationdate</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-d"><td></td><td>
+       <strong>d</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-decode-level"><code class="xref">--decode-level</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-decrypt"><code class="xref">--decrypt</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-description"><code class="xref">--description</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-deterministic-id"><code class="xref">--deterministic-id</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-e"><td></td><td>
+       <strong>e</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-empty"><code class="xref">--empty</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-encrypt"><code class="xref">--encrypt</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-encryption-file-password"><code class="xref">--encryption-file-password</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-externalize-inline-images"><code class="xref">--externalize-inline-images</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-extract"><code class="xref">--extract</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-f"><td></td><td>
+       <strong>f</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-file"><code class="xref">--file</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-filename"><code class="xref">--filename</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-filtered-stream-data"><code class="xref">--filtered-stream-data</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-flatten-annotations"><code class="xref">--flatten-annotations</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-flatten-rotation"><code class="xref">--flatten-rotation</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-force-R5"><code class="xref">--force-R5</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-force-V4"><code class="xref">--force-V4</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-force-version"><code class="xref">--force-version</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-form"><code class="xref">--form</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-from"><code class="xref">--from</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-g"><td></td><td>
+       <strong>g</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-generate-appearances"><code class="xref">--generate-appearances</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-global"><code class="xref">--global</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-h"><td></td><td>
+       <strong>h</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-help"><code class="xref">--help</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-i"><td></td><td>
+       <strong>i</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-ignore-xref-streams"><code class="xref">--ignore-xref-streams</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-ii-min-bytes"><code class="xref">--ii-min-bytes</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-is-encrypted"><code class="xref">--is-encrypted</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-j"><td></td><td>
+       <strong>j</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-job-json-file"><code class="xref">--job-json-file</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-job-json-help"><code class="xref">--job-json-help</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-jpeg-quality"><code class="xref">--jpeg-quality</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json"><code class="xref">--json</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-help"><code class="xref">--json-help</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-input"><code class="xref">--json-input</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-key"><code class="xref">--json-key</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-object"><code class="xref">--json-object</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-output"><code class="xref">--json-output</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-stream-data"><code class="xref">--json-stream-data</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-json-stream-prefix"><code class="xref">--json-stream-prefix</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-k"><td></td><td>
+       <strong>k</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-keep-files-open"><code class="xref">--keep-files-open</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-keep-files-open-threshold"><code class="xref">--keep-files-open-threshold</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-keep-inline-images"><code class="xref">--keep-inline-images</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-key"><code class="xref">--key</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-l"><td></td><td>
+       <strong>l</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-linearize"><code class="xref">--linearize</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-linearize-pass1"><code class="xref">--linearize-pass1</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-list-attachments"><code class="xref">--list-attachments</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-m"><td></td><td>
+       <strong>m</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-max-stream-filters"><code class="xref">--max-stream-filters</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-mimetype"><code class="xref">--mimetype</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-min-version"><code class="xref">--min-version</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-moddate"><code class="xref">--moddate</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-modify"><code class="xref">--modify</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-modify-other"><code class="xref">--modify-other</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-n"><td></td><td>
+       <strong>n</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-newline-before-endstream"><code class="xref">--newline-before-endstream</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-no-default-limits"><code class="xref">--no-default-limits</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-no-original-object-ids"><code class="xref">--no-original-object-ids</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-no-warn"><code class="xref">--no-warn</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-normalize-content"><code class="xref">--normalize-content</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-o"><td></td><td>
+       <strong>o</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-object-streams"><code class="xref">--object-streams</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-oi-min-area"><code class="xref">--oi-min-area</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-oi-min-height"><code class="xref">--oi-min-height</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-oi-min-width"><code class="xref">--oi-min-width</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-optimize-images"><code class="xref">--optimize-images</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-overlay"><code class="xref">--overlay</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-owner-password"><code class="xref">--owner-password</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-p"><td></td><td>
+       <strong>p</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-pages"><code class="xref">--pages</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-parser-max-container-size"><code class="xref">--parser-max-container-size</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-parser-max-container-size-damaged"><code class="xref">--parser-max-container-size-damaged</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-parser-max-errors"><code class="xref">--parser-max-errors</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-parser-max-nesting"><code class="xref">--parser-max-nesting</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-password"><code class="xref">--password</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-password-file"><code class="xref">--password-file</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-password-is-hex-key"><code class="xref">--password-is-hex-key</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-password-mode"><code class="xref">--password-mode</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-prefix"><code class="xref">--prefix</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-preserve-unreferenced"><code class="xref">--preserve-unreferenced</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-preserve-unreferenced-resources"><code class="xref">--preserve-unreferenced-resources</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-print"><code class="xref">--print</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-progress"><code class="xref">--progress</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-q"><td></td><td>
+       <strong>q</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-qdf"><code class="xref">--qdf</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-r"><td></td><td>
+       <strong>r</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-range"><code class="xref">--range</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-raw-stream-data"><code class="xref">--raw-stream-data</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-recompress-flate"><code class="xref">--recompress-flate</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-acroform"><code class="xref">--remove-acroform</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-attachment"><code class="xref">--remove-attachment</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-info"><code class="xref">--remove-info</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-metadata"><code class="xref">--remove-metadata</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-page-labels"><code class="xref">--remove-page-labels</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-restrictions"><code class="xref">--remove-restrictions</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-structure"><code class="xref">--remove-structure</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-remove-unreferenced-resources"><code class="xref">--remove-unreferenced-resources</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-repeat"><code class="xref">--repeat</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-replace"><code class="xref">--replace</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-replace-input"><code class="xref">--replace-input</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-report-memory-usage"><code class="xref">--report-memory-usage</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-requires-password"><code class="xref">--requires-password</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-rotate"><code class="xref">--rotate</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-s"><td></td><td>
+       <strong>s</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-set-page-labels"><code class="xref">--set-page-labels</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-attachment"><code class="xref">--show-attachment</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-crypto"><code class="xref">--show-crypto</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-encryption"><code class="xref">--show-encryption</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-encryption-key"><code class="xref">--show-encryption-key</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-linearization"><code class="xref">--show-linearization</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-npages"><code class="xref">--show-npages</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-object"><code class="xref">--show-object</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-pages"><code class="xref">--show-pages</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-show-xref"><code class="xref">--show-xref</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-split-pages"><code class="xref">--split-pages</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-static-aes-iv"><code class="xref">--static-aes-iv</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-static-id"><code class="xref">--static-id</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-stream-data"><code class="xref">--stream-data</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-suppress-password-recovery"><code class="xref">--suppress-password-recovery</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-suppress-recovery"><code class="xref">--suppress-recovery</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-t"><td></td><td>
+       <strong>t</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-test-json-schema"><code class="xref">--test-json-schema</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-to"><code class="xref">--to</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-u"><td></td><td>
+       <strong>u</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-underlay"><code class="xref">--underlay</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-update-from-json"><code class="xref">--update-from-json</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-use-aes"><code class="xref">--use-aes</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-user-password"><code class="xref">--user-password</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-v"><td></td><td>
+       <strong>v</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-verbose"><code class="xref">--verbose</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-version"><code class="xref">--version</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-w"><td></td><td>
+       <strong>w</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-warning-exit-0"><code class="xref">--warning-exit-0</code></a></td><td>
+       <em></em></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-with-images"><code class="xref">--with-images</code></a></td><td>
+       <em></em></td></tr>
+     <tr class="pcap"><td></td><td>&#160;</td><td></td></tr>
+     <tr class="cap" id="cap-z"><td></td><td>
+       <strong>z</strong></td><td></td></tr>
+     <tr>
+       <td></td>
+       <td>
+       <a href="cli.html#option-zopfli"><code class="xref">--zopfli</code></a></td><td>
+       <em></em></td></tr>
+   </table>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

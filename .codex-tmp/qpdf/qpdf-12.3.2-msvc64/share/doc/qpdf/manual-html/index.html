@@ -1,0 +1,261 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qpdf version 12.3.2 &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="What is qpdf?" href="overview.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="#" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="#">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">qpdf version 12.3.2</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="qpdf-version-release">
+<h1>qpdf version 12.3.2<a class="headerlink" href="#qpdf-version-release" title="Link to this heading"></a></h1>
+<p>Welcome to the qpdf documentation! For the latest version of this
+documentation, please visit <a class="reference external" href="https://qpdf.readthedocs.io">https://qpdf.readthedocs.io</a>.</p>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#dependencies">Dependencies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#build-instructions">Build Instructions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#build-options">Build Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#crypto-providers">Crypto Providers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#building-with-zopfli-support">Building with zopfli support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#converting-from-autoconf-to-cmake">Converting From autoconf to cmake</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="packaging.html#build-options">Build Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="packaging.html#package-tests">Package Tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="packaging.html#packaging-documentation">Packaging Documentation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#basic-invocation">Basic Invocation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#exit-status">Exit Status</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#shell-completion">Shell Completion</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#help-information">Help/Information</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#general-options">General Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#advanced-control-options">Advanced Control Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#pdf-transformation">PDF Transformation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#page-ranges">Page Ranges</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#pdf-modification">PDF Modification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#encryption">Encryption</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#page-selection">Page Selection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#overlay-and-underlay">Overlay and Underlay</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#embedded-files-attachments">Embedded Files/Attachments</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#pdf-inspection">PDF Inspection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#json-options">JSON Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#global-options">Global Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#options-for-testing-or-debugging">Options for Testing or Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#unicode-passwords">Unicode Passwords</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#optimizing-file-size">Optimizing File Size</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#zopfli-compression-algorithm">Zopfli Compression Algorithm</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="library.html#using-qpdf-from-c">Using qpdf from C++</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library.html#using-qpdf-from-other-languages">Using qpdf from other languages</a></li>
+<li class="toctree-l2"><a class="reference internal" href="library.html#a-note-about-unicode-file-names">A Note About Unicode File Names</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="weak-crypto.html#definition-of-weak-cryptographic-algorithm">Definition of Weak Cryptographic Algorithm</a></li>
+<li class="toctree-l2"><a class="reference internal" href="weak-crypto.html#uses-of-weak-encryption-in-qpdf">Uses of Weak Encryption in qpdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="weak-crypto.html#uses-of-weak-hashing-in-qpdf">Uses of Weak Hashing In qpdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="weak-crypto.html#api-breaking-changes-in-qpdf-11-0">API-Breaking Changes in qpdf 11.0</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="json.html#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html#json-terminology">JSON Terminology</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html#what-qpdf-json-is-not">What qpdf JSON is not</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html#qpdf-json-format">qpdf JSON Format</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html#json-compatibility-guarantees">JSON Compatibility Guarantees</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html#json-special-considerations">JSON: Special Considerations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="json.html#changes-from-json-v1-to-v2">Changes from JSON v1 to v2</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="contributing.html#source-repository">Source Repository</a></li>
+<li class="toctree-l2"><a class="reference internal" href="contributing.html#code-formatting">Code Formatting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="contributing.html#automated-tests">Automated Tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="contributing.html#personal-comments">Personal Comments</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="design.html#introduction">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#inspection-mode">Inspection Mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#design-goals">Design Goals</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#helper-classes">Helper Classes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#implementation-notes">Implementation Notes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#qpdf-object-internals">qpdf Object Internals</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#casting-policy">Casting Policy</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#encryption">Encryption</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#random-number-generation">Random Number Generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#adding-and-removing-pages">Adding and Removing Pages</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#reserving-object-numbers">Reserving Object Numbers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#copying-objects-from-other-pdf-files">Copying Objects From Other PDF Files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#writing-pdf-files">Writing PDF Files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#filtered-streams">Filtered Streams</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#object-accessor-methods">Object Accessor Methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="design.html#smart-pointers">Smart Pointers</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="qpdf-job.html#id1">QPDFJob Design</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#basic-strategy-for-linearization">Basic Strategy for Linearization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#preparing-for-linearization">Preparing For Linearization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#optimization">Optimization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#writing-linearized-files">Writing Linearized Files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#calculating-linearization-data">Calculating Linearization Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#known-issues-with-linearization">Known Issues with Linearization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="linearization.html#debugging-note">Debugging Note</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="object-streams.html#object-streams">Object Streams</a></li>
+<li class="toctree-l2"><a class="reference internal" href="object-streams.html#cross-reference-streams">Cross-Reference Streams</a></li>
+<li class="toctree-l2"><a class="reference internal" href="object-streams.html#implications-for-linearized-files">Implications for Linearized Files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="object-streams.html#implementation-notes">Implementation Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="encryption.html#pdf-encryption-concepts">PDF Encryption Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="encryption.html#pdf-encryption-details">PDF Encryption Details</a></li>
+<li class="toctree-l2"><a class="reference internal" href="encryption.html#pdf-security-restrictions">PDF Security Restrictions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="encryption.html#how-qpdf-handles-security-restrictions">How qpdf handles security restrictions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="encryption.html#user-and-owner-passwords">User and Owner Passwords</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+</div>
+</section>
+<section id="indices">
+<h1>Indices<a class="headerlink" href="#indices" title="Link to this heading"></a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="qpdf-options.html"><span class="std std-ref">qpdf Command-line Options</span></a></p></li>
+</ul>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="overview.html" class="btn btn-neutral float-right" title="What is qpdf?" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

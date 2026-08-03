@@ -1,6 +1,7 @@
 [package]
 name = "openjoc-cli"
 version = "0.1.0"
+description = "Open-source JOC decoder"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -14,6 +15,7 @@ openjoc-eac3 = { path = "../openjoc-eac3" }
 openjoc-oamd = { path = "../openjoc-oamd" }
 openjoc-scene = { path = "../openjoc-scene" }
 openjoc-wave = { path = "../openjoc-wave" }
+terminal_size = "0.4"
 
 [dev-dependencies]
 openjoc-wave = { path = "../openjoc-wave" }

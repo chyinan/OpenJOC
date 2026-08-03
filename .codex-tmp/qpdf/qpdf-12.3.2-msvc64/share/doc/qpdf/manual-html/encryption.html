@@ -1,0 +1,541 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Encryption &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Release Notes" href="release-notes.html" />
+    <link rel="prev" title="Object and Cross-Reference Streams" href="object-streams.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">PDF Encryption</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#pdf-encryption-concepts">PDF Encryption Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pdf-encryption-details">PDF Encryption Details</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#pdf-security-restrictions">PDF Security Restrictions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-qpdf-handles-security-restrictions">How qpdf handles security restrictions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#user-and-owner-passwords">User and Owner Passwords</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">PDF Encryption</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/encryption.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="pdf-encryption">
+<span id="id1"></span><h1>PDF Encryption<a class="headerlink" href="#pdf-encryption" title="Link to this heading"></a></h1>
+<p>This chapter discusses PDF encryption in a general way with an angle
+toward how it works in <strong class="command">qpdf</strong>. This chapter is not intended
+to replace the PDF specification. Please consult the spec for full
+details.</p>
+<section id="pdf-encryption-concepts">
+<h2>PDF Encryption Concepts<a class="headerlink" href="#pdf-encryption-concepts" title="Link to this heading"></a></h2>
+<dl>
+<dt>Encryption</dt><dd><p>Encryption is the replacement of <em>clear text</em> with encrypted text,
+also known as <em>ciphertext</em>. The clear text may be retrieved from the
+ciphertext if the encryption key is known.</p>
+<p>PDF files consist of an object structure. PDF objects may be of a
+variety of types including (among others) numbers, boolean values,
+names, arrays, dictionaries, strings, and streams. In a PDF file,
+only strings and streams are encrypted.</p>
+</dd>
+<dt>Security Handler</dt><dd><p>Since the inception of PDF, there have been several modifications to
+the way files are encrypted. Encryption is handled by a <em>security
+handler</em>. The <em>standard security handler</em> is password-based. This is
+the only security handler implemented by qpdf, and this material is
+all focused on the standard security handler. There are various
+flags that control the specific details of encryption with the
+standard security handler. These are discussed below.</p>
+</dd>
+<dt>Encryption Key</dt><dd><p>This refers to the actual key used by the encryption and decryption
+algorithms. It is distinct from the password. The main encryption
+key is generated at random and stored encrypted in the PDF file. The
+passwords used to protect a PDF file, if any, are used to protect
+the encryption key. This design makes it possible to use different
+passwords (e.g., user and owner passwords) to retrieve the
+encryption key or even to change the password on a file without
+changing the encryption key. qpdf can expose the encryption key when
+run with the <a class="reference internal" href="cli.html#option-show-encryption-key" title="option-show-encryption-key"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--show-encryption-key</span></code></a> option and can accept
+a hex-encoded encryption key in place of a password when run with
+the <a class="reference internal" href="cli.html#option-password-is-hex-key" title="option-password-is-hex-key"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--password-is-hex-key</span></code></a> option.</p>
+</dd>
+<dt>Password Protection</dt><dd><p>Password protection is distinct from encryption. This point is often
+misunderstood. A PDF file can be encrypted without being
+password-protected. The intent of PDF encryption was that there
+would be two passwords: a <em>user password</em> and an <em>owner password</em>.
+Either password can be used to retrieve the encryption key. A
+conforming reader is supposed to obey the security restrictions
+if the file is opened using the user password but not if the file is
+opened with the owner password. <strong class="command">qpdf</strong> makes no distinction
+between which password is used to open the file. The distinction
+made by conforming readers between the user and owner password is
+what makes it common to create encrypted files with no password
+protection. This is done by using the empty string as the user
+password and some secret string as the owner password. When a user
+opens the PDF file, the empty string is used to retrieve the
+encryption key, making the file usable, but a conforming reader
+restricts certain operations from the user.</p>
+</dd>
+</dl>
+<p>What does all this mean? Here are a few things to realize.</p>
+<ul class="simple">
+<li><p>Since the user password and the owner password are both used to
+recover the single encryption key, there is <em>fundamentally no way</em>
+to prevent an application from disregarding the security
+restrictions on a file. Any software that can read the encrypted
+file at all has the encryption key. Therefore, the security of the
+restrictions placed on PDF files is solely enforced by the software.
+Any open source PDF reader could be trivially modified to ignore the
+security restrictions on a file. The PDF specification is clear
+about this point. This means that PDF restrictions on
+non-password-protected files only restrict users who don’t know how
+to circumvent them.</p></li>
+<li><p>If a file is password-protected, you have to know at least one of
+the user or owner password to retrieve the encryption key. However,
+in the case of 40-bit encryption, the actual encryption key is only
+5 bytes long and can be easily brute-forced. As such, files
+encrypted with 40-bit encryption are not secure regardless of how
+strong the password is. With 128-bit encryption, the default
+security handler uses RC4 encryption, which is also known to be
+insecure. As such, the only way to securely encrypt a PDF file using
+the standard security handler (as of the last review of this chapter
+in 2022) is to use AES encryption. This is the only supported
+algorithm with 256-bit encryption, and it can be selected to be used
+with 128-bit encryption as well. However there is no reason to use
+128-bit encryption with AES. If you are going to use AES, just use
+256-bit encryption instead. The security of a 256-bit AES-encrypted
+PDF file with a strong password is comparable to using a
+general-purpose encryption tool like <strong class="command">gpg</strong> or
+<strong class="command">openssl</strong> to encrypt the PDF file with the same password,
+but the advantage of using PDF encryption is that no software is
+required beyond a regular PDF viewer.</p></li>
+</ul>
+</section>
+<section id="pdf-encryption-details">
+<h2>PDF Encryption Details<a class="headerlink" href="#pdf-encryption-details" title="Link to this heading"></a></h2>
+<p>This section describes a few details about PDF encryption. It does not
+describe all the details. For that, read the PDF specification. The
+details presented here, however, should go a long way toward helping a
+casual user/developer understand what’s going on with encrypted PDF
+files.</p>
+<p>Here are more concepts to understand.</p>
+<dl>
+<dt>Algorithm parameters <code class="docutils literal notranslate"><span class="pre">V</span></code> and <code class="docutils literal notranslate"><span class="pre">R</span></code></dt><dd><p>There are two parameters that control the details of encryption
+using the standard security handler: <code class="docutils literal notranslate"><span class="pre">V</span></code> and <code class="docutils literal notranslate"><span class="pre">R</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">V</span></code> is a code specifying the algorithms that are used for
+encrypting the file, handling keys, etc. It may have any of the
+following values:</p>
+<table class="docutils align-default" id="id2">
+<caption><span class="caption-text">Encryption Algorithms: <code class="docutils literal notranslate"><span class="pre">V</span></code></span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 11.1%" />
+<col style="width: 88.9%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>V</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>The original algorithm, which encrypted files using 40-bit keys.</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>An extension of the original algorithm allowing longer keys.
+Introduced in PDF 1.4.</p></td>
+</tr>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>An unpublished algorithm that permits file encryption key
+lengths ranging from 40 to 128 bits. Introduced in PDF 1.4.
+qpdf is believed to be able to read files with <code class="docutils literal notranslate"><span class="pre">V</span></code> = 3 but
+does not write such files.</p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>An extension of the algorithm that allows it to be
+parameterized by additional rules for handling strings and
+streams. Introduced in PDF 1.5.</p></td>
+</tr>
+<tr class="row-even"><td><p>5</p></td>
+<td><p>An algorithm that allows specification of separate security
+handlers for strings and streams as well as embedded files,
+and which supports 256-bit keys. Introduced in PDF 1.7
+extension level 3 and later extended in extension level 8.
+This is the encryption system in the PDF 2.0 specification,
+ISO-32000.</p></td>
+</tr>
+</tbody>
+</table>
+<p><code class="docutils literal notranslate"><span class="pre">R</span></code> is a code specifying the revision of the standard handler. It
+is tightly coupled with the value of <code class="docutils literal notranslate"><span class="pre">V</span></code>. <code class="docutils literal notranslate"><span class="pre">R</span></code> may have any of
+the following values:</p>
+<table class="docutils align-default" id="id3">
+<caption><span class="caption-text">Relationship between <code class="docutils literal notranslate"><span class="pre">R</span></code> and <code class="docutils literal notranslate"><span class="pre">V</span></code></span><a class="headerlink" href="#id3" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 11.1%" />
+<col style="width: 88.9%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>R</p></th>
+<th class="head"><p>Expected V</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">V</span></code> must be 1</p></td>
+</tr>
+<tr class="row-odd"><td><p>3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">V</span></code> must be 2 or 3</p></td>
+</tr>
+<tr class="row-even"><td><p>4</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">V</span></code> must be 4</p></td>
+</tr>
+<tr class="row-odd"><td><p>5</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">V</span></code> must be 5; this extension was never fully specified and
+existed for a short time in some versions of Acrobat.
+<strong class="command">qpdf</strong> is able to read and write this format, but it
+should not be used for any purpose other than testing
+compatibility with the format.</p></td>
+</tr>
+<tr class="row-even"><td><p>6</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">V</span></code> must be 5. This is the only value that is not
+deprecated in the PDF 2.0 specification, ISO-32000.</p></td>
+</tr>
+</tbody>
+</table>
+</dd>
+<dt>Encryption Dictionary</dt><dd><p>Encrypted PDF files have an encryption dictionary. There are several
+fields, but these are the important ones for our purposes:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">V</span></code> and <code class="docutils literal notranslate"><span class="pre">R</span></code> as described above</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">O</span></code>, <code class="docutils literal notranslate"><span class="pre">U</span></code>, <code class="docutils literal notranslate"><span class="pre">OE</span></code>, <code class="docutils literal notranslate"><span class="pre">UE</span></code>: values used by the algorithms that
+recover the encryption key from the user and owner password. Which
+of these are defined and how they are used vary based on the value
+of <code class="docutils literal notranslate"><span class="pre">R</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">P</span></code>: a bit field that describes which restrictions are in place.
+This is discussed below in <a class="reference internal" href="#security-restrictions"><span class="std std-ref">PDF Security Restrictions</span></a></p></li>
+</ul>
+</dd>
+<dt>Encryption Algorithms</dt><dd><p>PDF files may be encrypted with the obsolete, insecure RC4 algorithm
+or the more secure AES algorithm. See also <a class="reference internal" href="weak-crypto.html#weak-crypto"><span class="std std-ref">Weak Cryptography</span></a> for a
+discussion. 40-bit encryption always uses RC4. 128-bit can use
+either RC4 (the default for compatibility reasons) or, starting with
+PDF 1.6, AES. 256-bit encryption always uses AES.</p>
+</dd>
+</dl>
+</section>
+<section id="pdf-security-restrictions">
+<span id="security-restrictions"></span><h2>PDF Security Restrictions<a class="headerlink" href="#pdf-security-restrictions" title="Link to this heading"></a></h2>
+<p>PDF security restrictions are described by a bit field whose value is
+stored in the <code class="docutils literal notranslate"><span class="pre">P</span></code> field in the encryption dictionary. The value of
+<code class="docutils literal notranslate"><span class="pre">P</span></code> is used by the algorithms to recover the encryption key given
+the password, which makes the value of <code class="docutils literal notranslate"><span class="pre">P</span></code> tamper-resistant.</p>
+<p><code class="docutils literal notranslate"><span class="pre">P</span></code> is a 32-bit integer, treated as a signed twos-complement number.
+A 1 in any bit position means the permission is granted. The PDF
+specification numbers the bits from 1 (least significant bit) to 32
+(most significant bit) rather than the more customary 0 to 31. For
+consistency with the spec, the remainder of this section uses the
+1-based numbering.</p>
+<p>Only bits 3, 4, 5, 6, 9, 10, 11, and 12 are used. All other bits are
+set to 1. Since bit 32 is always set to 1, the value of <code class="docutils literal notranslate"><span class="pre">P</span></code> is
+always a negative number. (<strong class="command">qpdf</strong> recognizes a positive
+number on behalf of buggy writers that treat <code class="docutils literal notranslate"><span class="pre">P</span></code> as unsigned. Such
+files have been seen in the wild.)</p>
+<p>Here are the meanings of the bit positions. All bits not listed must
+have the value 1 except bits 1 and 2, which must have the value 0.
+However, the values of bits other than those in the table are ignored,
+so having incorrect values probably doesn’t break anything in most
+cases. A value of 1 indicates that the permission is granted.</p>
+<table class="docutils align-default" id="id4">
+<caption><span class="caption-text"><code class="docutils literal notranslate"><span class="pre">P</span></code> Bit Values</span><a class="headerlink" href="#id4" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 11.1%" />
+<col style="width: 88.9%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Bit</p></th>
+<th class="head"><p>Meaning</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>3</p></td>
+<td><p>for <code class="docutils literal notranslate"><span class="pre">R</span></code> = 2 printing; for <code class="docutils literal notranslate"><span class="pre">R</span></code> ≥ 3, printing at low
+resolution</p></td>
+</tr>
+<tr class="row-odd"><td><p>4</p></td>
+<td><p>modifying the document except as controlled by bits 6,
+9, and 11</p></td>
+</tr>
+<tr class="row-even"><td><p>5</p></td>
+<td><p>extracting text and graphics for purposes other than
+accessibility to visually impaired users</p></td>
+</tr>
+<tr class="row-odd"><td><p>6</p></td>
+<td><p>add or modify annotations, fill in interactive form fields;
+if bit 4 is also set, create or modify interactive form fields</p></td>
+</tr>
+<tr class="row-even"><td><p>9</p></td>
+<td><p>for <code class="docutils literal notranslate"><span class="pre">R</span></code> ≥ 3, fill in interactive form fields even if bit 6 is
+clear</p></td>
+</tr>
+<tr class="row-odd"><td><p>10</p></td>
+<td><p>not used; formerly granted permission to extract material for
+accessibility, but the specification now disallows restriction of
+accessibility, and conforming readers are to treat this bit as if
+it is set regardless of its value</p></td>
+</tr>
+<tr class="row-even"><td><p>11</p></td>
+<td><p>for <code class="docutils literal notranslate"><span class="pre">R</span></code> ≥ 3, assemble document including inserting, rotating,
+or deleting pages or creating document outlines or thumbnail
+images</p></td>
+</tr>
+<tr class="row-odd"><td><p>12</p></td>
+<td><p>for <code class="docutils literal notranslate"><span class="pre">R</span></code> ≥ 3, allow printing at full resolution</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="how-qpdf-handles-security-restrictions">
+<span id="qpdf-p"></span><h2>How qpdf handles security restrictions<a class="headerlink" href="#how-qpdf-handles-security-restrictions" title="Link to this heading"></a></h2>
+<p>The section describes exactly what the qpdf library does with regard
+to <code class="docutils literal notranslate"><span class="pre">P</span></code> based on the various settings of different security options.</p>
+<ul>
+<li><p>Start with all bits set except bits 1 and 2, which are cleared</p></li>
+<li><p>Clear bits and described in the table below:</p>
+<table class="docutils align-default" id="id5">
+<caption><span class="caption-text">Command-line Arguments and <code class="docutils literal notranslate"><span class="pre">P</span></code> Bit Values</span><a class="headerlink" href="#id5" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 22.2%" />
+<col style="width: 27.8%" />
+<col style="width: 50.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>R</p></th>
+<th class="head"><p>Argument</p></th>
+<th class="head"><p>Bits Cleared</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>R = 2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--print=n</span></code></p></td>
+<td><p>3</p></td>
+</tr>
+<tr class="row-odd"><td><p>R = 2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--modify=n</span></code></p></td>
+<td><p>4</p></td>
+</tr>
+<tr class="row-even"><td><p>R = 2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--extract=n</span></code></p></td>
+<td><p>5</p></td>
+</tr>
+<tr class="row-odd"><td><p>R = 2</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--annotate=n</span></code></p></td>
+<td><p>6</p></td>
+</tr>
+<tr class="row-even"><td><p>R = 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--accessibility=n</span></code></p></td>
+<td><p>10</p></td>
+</tr>
+<tr class="row-odd"><td><p>R ≥ 4</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--accessibility=n</span></code></p></td>
+<td><p>ignored</p></td>
+</tr>
+<tr class="row-even"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--extract=n</span></code></p></td>
+<td><p>5</p></td>
+</tr>
+<tr class="row-odd"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--print=none</span></code></p></td>
+<td><p>3, 12</p></td>
+</tr>
+<tr class="row-even"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--print=low</span></code></p></td>
+<td><p>12</p></td>
+</tr>
+<tr class="row-odd"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--modify=none</span></code></p></td>
+<td><p>4, 6, 9, 11</p></td>
+</tr>
+<tr class="row-even"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--modify=assembly</span></code></p></td>
+<td><p>4, 6, 9</p></td>
+</tr>
+<tr class="row-odd"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--modify=form</span></code></p></td>
+<td><p>4, 6</p></td>
+</tr>
+<tr class="row-even"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--modify=annotate</span></code></p></td>
+<td><p>4</p></td>
+</tr>
+<tr class="row-odd"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--assemble=n</span></code></p></td>
+<td><p>11</p></td>
+</tr>
+<tr class="row-even"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--annotate=n</span></code></p></td>
+<td><p>6</p></td>
+</tr>
+<tr class="row-odd"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--form=n</span></code></p></td>
+<td><p>9</p></td>
+</tr>
+<tr class="row-even"><td><p>R ≥ 3</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">--modify-other=n</span></code></p></td>
+<td><p>4</p></td>
+</tr>
+</tbody>
+</table>
+</li>
+</ul>
+<p>Options to <strong class="command">qpdf</strong>, both at the CLI and library level, allow
+more granular clearing of permission bits than do most tools,
+including Adobe Acrobat. As such, PDF viewers may respond in
+surprising ways based on options passed to qpdf. If you observe this,
+it is probably not because of a bug in qpdf.</p>
+</section>
+<section id="user-and-owner-passwords">
+<span id="pdf-passwords"></span><h2>User and Owner Passwords<a class="headerlink" href="#user-and-owner-passwords" title="Link to this heading"></a></h2>
+<p>When you use qpdf to show encryption parameters and you open a file
+with the owner password, sometimes qpdf reveals the user password, and
+sometimes it doesn’t. Here’s why.</p>
+<p>For <code class="docutils literal notranslate"><span class="pre">V</span></code> &lt; 5, the user password is actually stored in the PDF file
+encrypted with a key that is derived from the owner password, and the
+main encryption key is encrypted using a key derived from the user
+password. When you open a PDF file, the reader first tries to treat
+the given password as the user password, using it to recover the
+encryption key. If that works, you’re in with restrictions (assuming
+the reader chooses to enforce them). If it doesn’t work, then the
+reader treats the password as the owner password, using it to recover
+the user password, and then uses the user password to retrieve the
+encryption key. This is why creating a file with the same user
+password and owner password with <code class="docutils literal notranslate"><span class="pre">V</span></code> &lt; 5 results in a file that some
+readers will never allow you to open as the owner. When an empty owner
+password is given at file creation, the user password is used as both
+the user and owner password. Typically when a reader encounters a file
+with <code class="docutils literal notranslate"><span class="pre">V</span></code> &lt; 5, it will first attempt to treat the empty string as a
+user password. If that works, the file is encrypted but not
+password-protected. If it doesn’t work, then a password prompt is
+given.</p>
+<p>For <code class="docutils literal notranslate"><span class="pre">V</span></code> ≥ 5, the main encryption key is independently encrypted
+using the user password and the owner password. There is no way to
+recover the user password from the owner password. Restrictions are
+imposed or not depending on which password was used. In this case, the
+password supplied, if any, is tried both as the user password and the
+owner password, and whichever works is used. Typically the password is
+tried as the owner password first. (This is what the PDF specification
+says to do.) As such, specifying a user password and leaving the owner
+password blank results in a file that is opened as owner with no
+password, effectively rendering the security restrictions useless.
+This is why <strong class="command">qpdf</strong> requires you to pass
+<a class="reference internal" href="cli.html#option-allow-insecure" title="option-allow-insecure"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--allow-insecure</span></code></a> to create a file with an empty owner
+password when 256-bit encryption is in use.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="object-streams.html" class="btn btn-neutral float-left" title="Object and Cross-Reference Streams" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="release-notes.html" class="btn btn-neutral float-right" title="Release Notes" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

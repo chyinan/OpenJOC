@@ -1,0 +1,11 @@
+prefix=C:/Program Files (x86)/qpdf
+exec_prefix=${prefix}
+libdir=C:/Program Files (x86)/qpdf/lib
+includedir=C:/Program Files (x86)/qpdf/include
+
+Name: libqpdf
+Description: PDF transformation library
+Version: 12.3.2
+Requires.private: zlib, libjpeg
+Libs: -L${libdir} -lqpdf
+Cflags: -I${includedir} -std=c++20

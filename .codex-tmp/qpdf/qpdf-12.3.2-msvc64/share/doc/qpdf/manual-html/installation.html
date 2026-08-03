@@ -1,0 +1,845 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Building and Installing qpdf &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Notes for Packagers" href="packaging.html" />
+    <link rel="prev" title="Downloading qpdf" href="download.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Installing qpdf</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#dependencies">Dependencies</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#basic-dependencies">Basic Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#test-dependencies">Test Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#maintainer-dependencies">Maintainer Dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#additional-requirements-on-windows">Additional Requirements on Windows</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#requirements-for-building-documentation">Requirements for Building Documentation</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#build-instructions">Build Instructions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#basic-build-invocation">Basic Build Invocation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#installation-and-packaging">Installation and Packaging</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#build-options">Build Options</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#basic-build-options">Basic Build Options</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#options-for-working-on-qpdf">Options for Working on qpdf</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#environment-specific-options">Environment-Specific Options</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#build-time-crypto-selection">Build-time Crypto Selection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#advanced-build-options">Advanced Build Options</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#building-without-wchar-t">Building without wchar_t</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#crypto-providers">Crypto Providers</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#runtime-crypto-provider-selection">Runtime Crypto Provider Selection</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#crypto-provider-information-for-developers">Crypto Provider Information for Developers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#crypto-provider-design-notes">Crypto Provider Design Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#building-with-zopfli-support">Building with zopfli support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#converting-from-autoconf-to-cmake">Converting From autoconf to cmake</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Building and Installing qpdf</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/installation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="building-and-installing-qpdf">
+<span id="installing"></span><h1>Building and Installing qpdf<a class="headerlink" href="#building-and-installing-qpdf" title="Link to this heading"></a></h1>
+<p>This chapter describes how to build and install qpdf. For information
+about installing a pre-built copy of qpdf, see
+[README.md](<a class="reference external" href="https://github.com/qpdf/qpdf/blob/main/README.md">https://github.com/qpdf/qpdf/blob/main/README.md</a>), the
+top-level README.md in the repository and source distribution.</p>
+<section id="dependencies">
+<span id="prerequisites"></span><h2>Dependencies<a class="headerlink" href="#dependencies" title="Link to this heading"></a></h2>
+<p>qpdf has few external dependencies. This section describes what you
+need to build qpdf in various circumstances.</p>
+<section id="basic-dependencies">
+<h3>Basic Dependencies<a class="headerlink" href="#basic-dependencies" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>A C++ compiler that supports C++-20</p></li>
+<li><p><a class="reference external" href="https://www.cmake.org">CMake</a> version 3.16 or later</p></li>
+<li><p><a class="reference external" href="https://www.zlib.net/">zlib</a> or a compatible zlib implementation</p></li>
+<li><p>A libjpeg-compatible library such as <a class="reference external" href="https://ijg.org/">jpeg</a> or
+<a class="reference external" href="https://libjpeg-turbo.org/">libjpeg-turbo</a></p></li>
+<li><p><em>Recommended but not required:</em> <a class="reference external" href="https://www.gnutls.org/">gnutls</a>
+to be able to use the gnutls crypto provider and/or <a class="reference external" href="https://openssl.org/">openssl</a> to be able to use the openssl crypto
+provider</p></li>
+<li><p>If the <code class="docutils literal notranslate"><span class="pre">ZOPFLI</span></code> build option is specified (off by default), the
+<a class="reference external" href="https://github.com/google/zopfli">zopfli</a> library.</p></li>
+</ul>
+<p>The qpdf source tree includes a few automatically generated files. The
+code generator uses Python 3. Automatic code generation is off by
+default. For a discussion, refer to <a class="reference internal" href="#build-options"><span class="std std-ref">Build Options</span></a>.</p>
+</section>
+<section id="test-dependencies">
+<h3>Test Dependencies<a class="headerlink" href="#test-dependencies" title="Link to this heading"></a></h3>
+<p>qpdf’s test suite is run by <code class="docutils literal notranslate"><span class="pre">ctest</span></code>, which is part of CMake, but
+the tests themselves are implemented using an embedded copy of <a class="reference external" href="https://qtest.sourceforge.io">qtest</a>, which is implemented in perl. On
+Windows, MSYS2’s perl is known to work.</p>
+<p>qtest requires <a class="reference external" href="http://www.gnu.org/software/diffutils/">GNU diffutils</a> or any other diff that
+supports <strong class="command">diff -u</strong>. The default <code class="docutils literal notranslate"><span class="pre">diff</span></code> command works on
+GNU/Linux and MacOS.</p>
+<p>Part of qpdf’s test suite does comparisons of the contents PDF files
+by converting them to images and comparing the images. The image
+comparison tests are disabled by default. Those tests are not required
+for determining correctness of a qpdf build since the test suite also
+contains expected output files that are compared literally. The image
+comparison tests provide an extra check to make sure that any content
+transformations don’t break the rendering of pages. Transformations
+that affect the content streams themselves are off by default and are
+only provided to help developers look into the contents of PDF files.
+If you are making deep changes to the library that cause changes in
+the contents of the files that qpdf generates, then you should enable
+the image comparison tests. Enable them by setting the
+<code class="docutils literal notranslate"><span class="pre">QPDF_TEST_COMPARE_IMAGES</span></code> environment variable to <code class="docutils literal notranslate"><span class="pre">1</span></code> before
+running tests. Image comparison tests add these additional
+requirements:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="http://www.simplesystems.org/libtiff/">libtiff</a> command-line
+utilities</p></li>
+<li><p><a class="reference external" href="https://www.ghostscript.com/">GhostScript</a> version 8.60 or newer</p></li>
+</ul>
+<p>Note: prior to qpdf 11, image comparison tests were enabled within
+<code class="file docutils literal notranslate"><span class="pre">qpdf.test</span></code>, and you had to <em>disable</em> them by setting
+<code class="docutils literal notranslate"><span class="pre">QPDF_SKIP_TEST_COMPARE_IMAGES</span></code> to <code class="docutils literal notranslate"><span class="pre">1</span></code>. This was done
+automatically by <code class="docutils literal notranslate"><span class="pre">./configure</span></code>. Now you have to <em>enable</em> image
+comparison tests by setting an environment variable. This change was
+made because developers have to set the environment variable
+themselves now rather than setting it through the build. Either way,
+they are off by default.</p>
+</section>
+<section id="maintainer-dependencies">
+<h3>Maintainer Dependencies<a class="headerlink" href="#maintainer-dependencies" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>To run ABI checks as a maintainer, you need <a class="reference external" href="https://github.com/CastXML/CastXML">castxml</a>, which is used by
+<code class="docutils literal notranslate"><span class="pre">check_abi</span></code> to generate sizes of all public classes.</p></li>
+</ul>
+</section>
+<section id="additional-requirements-on-windows">
+<h3>Additional Requirements on Windows<a class="headerlink" href="#additional-requirements-on-windows" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>To build qpdf with Visual Studio, there are no additional
+requirements when the default cmake options are used. You can build
+qpdf from a Visual C++ command-line shell.</p></li>
+<li><p>To build with mingw, MSYS2 is recommended with the mingw32 and/or
+mingw64 tool chains. You can also build with MSVC from an MSYS2
+environment.</p></li>
+<li><p>qpdf’s test suite can run within the MSYS2 environment for both
+mingw and MSVC-based builds.</p></li>
+</ul>
+<p>For additional notes, see <code class="file docutils literal notranslate"><span class="pre">README-windows.md</span></code> in the source
+distribution.</p>
+</section>
+<section id="requirements-for-building-documentation">
+<h3>Requirements for Building Documentation<a class="headerlink" href="#requirements-for-building-documentation" title="Link to this heading"></a></h3>
+<p>The qpdf manual is written in reStructured Text and built with <a class="reference external" href="https://www.sphinx-doc.org">Sphinx</a> using the <a class="reference external" href="https://sphinx-rtd-theme.readthedocs.io">Read the Docs Sphinx Theme</a>. Versions of sphinx prior
+to version 4.3.2 probably won’t work. Sphinx requires Python 3. In
+order to build the HTML documentation from source, you need to install
+sphinx and the theme, which you can typically do with <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span>
+<span class="pre">sphinx</span> <span class="pre">sphinx_rtd_theme</span></code>. To build the PDF version of the
+documentation, you need <code class="docutils literal notranslate"><span class="pre">pdflatex</span></code>, <code class="docutils literal notranslate"><span class="pre">latexmk</span></code>, and a fairly
+complete LaTeX installation. Detailed requirements can be found in the
+Sphinx documentation. To see how the documentation is built for the
+qpdf distribution, refer to the <code class="file docutils literal notranslate"><span class="pre">build-scripts/build-doc</span></code> file
+in the qpdf source distribution.</p>
+</section>
+</section>
+<section id="build-instructions">
+<span id="building"></span><h2>Build Instructions<a class="headerlink" href="#build-instructions" title="Link to this heading"></a></h2>
+<p>Starting with qpdf 11, qpdf is built with <a class="reference external" href="https://www.cmake.org">CMake</a>.</p>
+<section id="basic-build-invocation">
+<h3>Basic Build Invocation<a class="headerlink" href="#basic-build-invocation" title="Link to this heading"></a></h3>
+<p>qpdf uses cmake in an ordinary way, so refer to the CMake
+documentation for details about how to run <code class="docutils literal notranslate"><span class="pre">cmake</span></code>. Here is a
+brief summary.</p>
+<p>You can usually just run</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cmake -S . -B build
+cmake --build build
+</pre></div>
+</div>
+<p>If you are using a multi-configuration generator such as MSVC, you
+should pass <code class="docutils literal notranslate"><span class="pre">--config</span> <span class="pre">&lt;Config&gt;</span></code> (where <code class="docutils literal notranslate"><span class="pre">&lt;Config&gt;</span></code> is <code class="docutils literal notranslate"><span class="pre">Release</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Debug</span></code>, <code class="docutils literal notranslate"><span class="pre">RelWithDebInfo</span></code>, or <code class="docutils literal notranslate"><span class="pre">MinSizeRel</span></code> as discussed in the
+CMake documentation) to the <em>build</em> command. If you are running a
+single configuration generator such as the default Makefile generators
+in Linux or MSYS, you may want to pass <code class="docutils literal notranslate"><span class="pre">-DCMAKE_BUILD_TYPE=&lt;Config&gt;</span></code>
+to the original <code class="docutils literal notranslate"><span class="pre">cmake</span></code> command.</p>
+<p>Run <code class="docutils literal notranslate"><span class="pre">ctest</span></code> to run the test suite. Since the real tests are
+implemented with <a class="reference external" href="https://qtest.sourceforge.io/">qtest</a>, you will
+want to pass <code class="docutils literal notranslate"><span class="pre">--verbose</span></code> to <code class="docutils literal notranslate"><span class="pre">cmake</span></code> so you can see the individual
+test outputs. Otherwise, you will see a small number of <code class="docutils literal notranslate"><span class="pre">ctest</span></code>
+commands that take a very long to run. If you want to run only a
+specific test file in a specific test suite, you can set the <code class="docutils literal notranslate"><span class="pre">TESTS</span></code>
+environment variable (used by <code class="docutils literal notranslate"><span class="pre">qtest-driver</span></code>) and pass the <code class="docutils literal notranslate"><span class="pre">-R</span></code>
+parameter to <code class="docutils literal notranslate"><span class="pre">ctest</span></code>. For example:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>TESTS=qutil ctest --verbose -R libtests
+</pre></div>
+</div>
+<p>would run only <code class="docutils literal notranslate"><span class="pre">qutil.test</span></code> from the <code class="docutils literal notranslate"><span class="pre">libtests</span></code> test suite.</p>
+</section>
+<section id="installation-and-packaging">
+<span id="installation"></span><h3>Installation and Packaging<a class="headerlink" href="#installation-and-packaging" title="Link to this heading"></a></h3>
+<p>Installation can be performed using <code class="docutils literal notranslate"><span class="pre">cmake</span> <span class="pre">--install</span></code> or <code class="docutils literal notranslate"><span class="pre">cpack</span></code>.
+For most normal use cases, <code class="docutils literal notranslate"><span class="pre">cmake</span> <span class="pre">--install</span></code> or <code class="docutils literal notranslate"><span class="pre">cpack</span></code> can be run
+in the normal way as described in CMake documentation. qpdf follows
+all normal installation conventions and uses CMake-defined variables
+for standard behavior.</p>
+<p>There are several components that can be installed separately:</p>
+<table class="docutils align-default" id="id2">
+<caption><span class="caption-text">Installation Components</span><a class="headerlink" href="#id2" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 5.9%" />
+<col style="width: 94.1%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p>cli</p></td>
+<td><p>Command-line tools</p></td>
+</tr>
+<tr class="row-even"><td><p>lib</p></td>
+<td><p>The runtime libraries; required if you built with shared
+libraries</p></td>
+</tr>
+<tr class="row-odd"><td><p>dev</p></td>
+<td><p>Static libraries, header files, and other files needed by
+developers</p></td>
+</tr>
+<tr class="row-even"><td><p>doc</p></td>
+<td><p>Documentation and, if selected for installation, the manual</p></td>
+</tr>
+<tr class="row-odd"><td><p>examples</p></td>
+<td><p>Example source files</p></td>
+</tr>
+</tbody>
+</table>
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">lib</span></code> component installs only runtime libraries, not
+header files or other files/links needed to build against qpdf. For
+that, you need <code class="docutils literal notranslate"><span class="pre">dev</span></code>. If you are using shared libraries, the <code class="docutils literal notranslate"><span class="pre">dev</span></code>
+will install files or create symbolic links that depend on files
+installed by <code class="docutils literal notranslate"><span class="pre">lib</span></code>, so you will need to install both. If you wanted
+to build software against the qpdf library and only wanted to install
+the files you needed for that purpose, here are some examples:</p>
+<ul>
+<li><p>Install development files with static libraries only:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SHARED_LIBS=OFF
+cmake --build build --parallel --target libqpdf
+cmake --install build --component dev
+</pre></div>
+</div>
+</li>
+<li><p>Install development files with shared libraries only:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_STATIC_LIBS=OFF
+cmake --build build --parallel --target libqpdf
+cmake --install build --component lib
+cmake --install build --component dev
+</pre></div>
+</div>
+</li>
+<li><p>Install development files with shared and static libraries:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build --parallel --target libqpdf libqpdf_static
+cmake --install build --component lib
+cmake --install build --component dev
+</pre></div>
+</div>
+</li>
+</ul>
+<p>There are also separate options, discussed in <a class="reference internal" href="#build-options"><span class="std std-ref">Build Options</span></a>,
+that control how certain specific parts of the software are installed.</p>
+</section>
+</section>
+<section id="build-options">
+<span id="id1"></span><h2>Build Options<a class="headerlink" href="#build-options" title="Link to this heading"></a></h2>
+<p>All available build options are defined in the the top-level
+<code class="file docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> file and have help text. You can see them using
+any standard cmake front-end (like <code class="docutils literal notranslate"><span class="pre">cmake-gui</span></code> or <code class="docutils literal notranslate"><span class="pre">ccmake</span></code>). This
+section describes options that apply to most users. If you are trying
+to map autoconf options (from prior to qpdf 11) to cmake options,
+please see <a class="reference internal" href="#autoconf-to-cmake"><span class="std std-ref">Converting From autoconf to cmake</span></a>.</p>
+<p>If you are packaging qpdf for a distribution, you should also read
+<a class="reference internal" href="packaging.html#packaging"><span class="std std-ref">Notes for Packagers</span></a>.</p>
+<section id="basic-build-options">
+<h3>Basic Build Options<a class="headerlink" href="#basic-build-options" title="Link to this heading"></a></h3>
+<dl>
+<dt>BUILD_DOC</dt><dd><p>Whether to build documentation with sphinx. You must have the
+required tools installed.</p>
+</dd>
+<dt>BUILD_DOC_HTML</dt><dd><p>Visible when BUILD_DOC is selected. This option controls building
+HTML documentation separately from PDF documentation since
+the sphinx theme is only needed for the HTML documentation.</p>
+</dd>
+<dt>BUILD_DOC_PDF</dt><dd><p>Visible when BUILD_DOC is selected. This option controls building
+PDF documentation separately from HTML documentation since
+additional tools are required to build the PDF documentation.</p>
+</dd>
+<dt>BUILD_SHARED_LIBS, BUILD_STATIC_LIBS</dt><dd><p>You can configure whether to build shared libraries, static
+libraries, or both. You must select at least one of these options.
+For rapid iteration, select only one as this cuts the build time in
+half.</p>
+<p>On Windows, if you build with shared libraries, you must have the
+output directory for libqpdf (e.g. <code class="file docutils literal notranslate"><span class="pre">libqpdf/Release</span></code> or
+<code class="file docutils literal notranslate"><span class="pre">libqpdf</span></code> within the build directory) in your path so that the
+compiled executables can find the DLL. Updating your path is not
+necessary if you build with static libraries only.</p>
+</dd>
+<dt>FUTURE</dt><dd><p>This option enables changes planned for the next major release to be
+included. They are NOT part of the stable API. These changes are ABI
+breaking and are subject to change, which means code linked against
+a qpdf built with this option may not be binary compatible with
+installed qpdf libraries. Set this if you want to test your code
+with proposed qpdf API changes and provide feedback prior to the
+inclusion of those changes in a release. Packagers should never
+distribute packages built with this option.</p>
+</dd>
+<dt>QTEST_COLOR</dt><dd><p>Turn this on or off to control whether qtest uses color in its
+output.</p>
+</dd>
+<dt>ZOPFLI</dt><dd><p>Use the <a class="reference external" href="https://github.com/google/zopfli">zopfli</a> library for
+zlib-compatible compression. See <a class="reference internal" href="cli.html#zopfli"><span class="std std-ref">Zopfli Compression Algorithm</span></a>.</p>
+</dd>
+</dl>
+</section>
+<section id="options-for-working-on-qpdf">
+<h3>Options for Working on qpdf<a class="headerlink" href="#options-for-working-on-qpdf" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>ENABLE_COVERAGE</dt><dd><p>Compile with <code class="docutils literal notranslate"><span class="pre">--coverage</span></code>. See README-maintainer.md for
+information about generating coverage reports.</p>
+</dd>
+<dt>ENABLE_QTC</dt><dd><p>This is off by default, except in maintainer mode. When off,
+<code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> calls are compiled out by having <code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> be an empty
+inline function. The underlying <code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> remains in the library,
+so it is possible to build and package the qpdf library with
+<code class="docutils literal notranslate"><span class="pre">ENABLE_QTC</span></code> turned off while still allowing developer code to use
+<code class="docutils literal notranslate"><span class="pre">QTC::TC</span></code> if desired. If you are modifying qpdf code, it’s a good
+idea to have this on for more robust automated testing. Otherwise,
+there’s no reason to have it on.</p>
+</dd>
+<dt>GENERATE_AUTO_JOB</dt><dd><p>Some qpdf source files are automatically generated from
+<code class="file docutils literal notranslate"><span class="pre">job.yml</span></code> and the CLI documentation. If you are adding new
+command-line arguments to the qpdf CLI or updating
+<code class="file docutils literal notranslate"><span class="pre">manual/cli.rst</span></code> in the qpdf sources, you should turn this on.
+This option requires Python 3.</p>
+</dd>
+<dt>WERROR</dt><dd><p>Make any compiler warnings into errors. We want qpdf to compile free
+of warnings whenever possible, but there’s always a chance that a
+compiler upgrade or tool change may cause warnings to appear that
+weren’t there before. If you are testing qpdf with a new compiler,
+you should turn this on.</p>
+</dd>
+</dl>
+</section>
+<section id="environment-specific-options">
+<h3>Environment-Specific Options<a class="headerlink" href="#environment-specific-options" title="Link to this heading"></a></h3>
+<dl>
+<dt>SHOW_FAILED_TEST_OUTPUT</dt><dd><p>Ordinarily, qtest (which drives qpdf’s test suite) writes detailed
+information about its output to the file <code class="docutils literal notranslate"><span class="pre">qtest.log</span></code> in the build
+output directory. If you are running a build in a continuous
+integration or automated environment where you can’t get to those
+files, you should enable this option and also run <code class="docutils literal notranslate"><span class="pre">ctest</span>
+<span class="pre">--verbose</span></code> or <code class="docutils literal notranslate"><span class="pre">ctest</span> <span class="pre">--output-on-failure</span></code>. This will cause
+detailed test failure output to be written into the build log.</p>
+</dd>
+<dt>CI_MODE</dt><dd><p>Turning this on sets options used in qpdf’s continuous integration
+environment to ensure we catch as many problems as possible.
+Specifically, this option enables <code class="docutils literal notranslate"><span class="pre">SHOW_FAILED_TEST_OUTPUT</span></code> and
+<code class="docutils literal notranslate"><span class="pre">WERROR</span></code> and forces the native crypto provider to be built.</p>
+</dd>
+<dt>MAINTAINER_MODE</dt><dd><p>Turning this option on sets options that should be on if you are
+maintaining qpdf. In turns on the following:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">BUILD_DOC</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ENABLE_QTC</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GENERATE_AUTO_JOB</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">WERROR</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">REQUIRE_NATIVE_CRYPTO</span></code></p></li>
+</ul>
+<p>It is possible to turn <code class="docutils literal notranslate"><span class="pre">BUILD_DOC</span></code> off in maintainer mode so that
+the extra requirements for building documentation don’t have to be
+available.</p>
+</dd>
+</dl>
+</section>
+<section id="build-time-crypto-selection">
+<span id="crypto-build"></span><h3>Build-time Crypto Selection<a class="headerlink" href="#build-time-crypto-selection" title="Link to this heading"></a></h3>
+<p>Since version 9.1.0, qpdf can use external crypto providers in
+addition to its native provider. For a general discussion, see
+<a class="reference internal" href="#crypto"><span class="std std-ref">Crypto Providers</span></a>. This section discusses how to configure which crypto
+providers are compiled into qpdf.</p>
+<p>In nearly all cases, external crypto providers should be preferred
+over the native one. However, if you are not concerned about working
+with encrypted files and want to reduce the number of dependencies,
+the native crypto provider is fully supported.</p>
+<p>By default, qpdf’s build enables every external crypto providers whose
+dependencies are available and only enables the native crypto provider
+if no external providers are available. You can change this behavior
+with the options described here.</p>
+<dl class="simple">
+<dt>USE_IMPLICIT_CRYPTO</dt><dd><p>This is on by default. If turned off, only explicitly selected
+crypto providers will be built. You must use at least one of the
+<code class="docutils literal notranslate"><span class="pre">REQUIRE</span></code> options below.</p>
+</dd>
+<dt>ALLOW_CRYPTO_NATIVE</dt><dd><p>This option is only available when USE_IMPLICIT_CRYPTO is selected,
+in which case it is on by default. Turning it off prevents qpdf from
+falling back to the native crypto provider when no external provider
+is available.</p>
+</dd>
+<dt>REQUIRE_CRYPTO_NATIVE</dt><dd><p>Build the native crypto provider even if other options are
+available.</p>
+</dd>
+<dt>REQUIRE_CRYPTO_GNUTLS</dt><dd><p>Require the gnutls crypto provider. Turning this on makes in an
+error if the gnutls library is not available.</p>
+</dd>
+<dt>REQUIRE_CRYPTO_OPENSSL</dt><dd><p>Require the openssl crypto provider. Turning this on makes in an
+error if the openssl library is not available.</p>
+</dd>
+<dt>DEFAULT_CRYPTO</dt><dd><p>Explicitly select which crypto provider is used by default. See
+<a class="reference internal" href="#crypto-runtime"><span class="std std-ref">Runtime Crypto Provider Selection</span></a> for information about run-time selection of
+the crypto provider. If not specified, qpdf will pick gnutls if
+available, otherwise openssl if available, and finally native as a
+last priority.</p>
+</dd>
+</dl>
+<p>Example: if you wanted to build with only the gnutls crypto provider,
+you should run cmake with <code class="docutils literal notranslate"><span class="pre">-DUSE_IMPLICIT_CRYPTO=0</span>
+<span class="pre">-DREQUIRE_CRYPTO_GNUTLS=1</span></code>.</p>
+</section>
+<section id="advanced-build-options">
+<h3>Advanced Build Options<a class="headerlink" href="#advanced-build-options" title="Link to this heading"></a></h3>
+<p>These options are used only for special purposes and are not relevant
+to most users.</p>
+<dl>
+<dt>AVOID_WINDOWS_HANDLE</dt><dd><p>Disable use of the <code class="docutils literal notranslate"><span class="pre">HANDLE</span></code> type in Windows. This can be useful if
+you are building for certain embedded Windows environments. Some
+functionality won’t work, but you can still process PDF files from
+memory in this configuration.</p>
+</dd>
+<dt>BUILD_DOC_DIST, INSTALL_MANUAL</dt><dd><p>By default, installing qpdf does not include a pre-built copy of the
+manual. Instead, it installs a README file that tells people where
+to find the manual online. If you want to install the manual, you
+must enable the <code class="docutils literal notranslate"><span class="pre">INSTALL_MANUAL</span></code> option, and you must have a
+<code class="docutils literal notranslate"><span class="pre">doc-dist</span></code> directory in the manual directory of the build. The
+<code class="docutils literal notranslate"><span class="pre">doc-dist</span></code> directory is created if <code class="docutils literal notranslate"><span class="pre">BUILD_DOC_DIST</span></code> is selected
+and <code class="docutils literal notranslate"><span class="pre">BUILD_DOC_PDF</span></code> and <code class="docutils literal notranslate"><span class="pre">BUILD_DOC_HTML</span></code> are both on.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">BUILD_DOC_DIST</span></code> and <code class="docutils literal notranslate"><span class="pre">INSTALL_MANUAL</span></code> options are separate
+and independent because of the additional tools required to build
+documentation. In particular, for qpdf’s official release
+preparation, a <code class="docutils literal notranslate"><span class="pre">doc-dist</span></code> directory is built in Linux and then
+extracted into the Windows builds so that it can be included in the
+Windows installers. This prevents us from having to build the
+documentation in a Windows environment. For additional discussion,
+see <a class="reference internal" href="packaging.html#doc-packaging-rationale"><span class="std std-ref">Documentation Packaging Rationale</span></a>.</p>
+</dd>
+<dt>INSTALL_CMAKE_PACKAGE</dt><dd><p>Controls whether or not to install qpdf’s cmake configuration file
+(on by default).</p>
+</dd>
+<dt>INSTALL_EXAMPLES</dt><dd><p>Controls whether or not to install qpdf’s example source files with
+documentation (on by default).</p>
+</dd>
+<dt>INSTALL_PKGCONFIG</dt><dd><p>Controls whether or not to install qpdf’s pkg-config configuration
+file (on by default).</p>
+</dd>
+<dt>OSS_FUZZ</dt><dd><p>Turning this option on changes the build of the fuzzers in a manner
+specifically required by Google’s oss-fuzz project. There is no
+reason to turn this on for any other reason. It is enabled by the
+build script that builds qpdf from that context.</p>
+</dd>
+<dt>SKIP_OS_SECURE_RANDOM, USE_INSECURE_RANDOM</dt><dd><p>The native crypto implementation uses the operating systems’s secure
+random number source when available. It is not used when an external
+crypto provider is in use. If you are building in a very specialized
+environment where you are not using an external crypto provider but
+can’t use the OS-provided secure random number generator, you can
+turn both of these options on. This will cause qpdf to fall back to
+an insecure random number generator, which may generate guessable
+random numbers. The resulting qpdf is still secure, but encrypted
+files may be more subject to brute force attacks. Unless you know
+you need these options for a specialized purpose, you don’t need
+them. These options were added to qpdf in response to a special
+request from a user who needed to run a specialized PDF-related task
+in an embedded environment that didn’t have a secure random number
+source.</p>
+</dd>
+</dl>
+</section>
+<section id="building-without-wchar-t">
+<h3>Building without wchar_t<a class="headerlink" href="#building-without-wchar-t" title="Link to this heading"></a></h3>
+<p>It is possible to build qpdf on a system that doesn’t have
+<code class="docutils literal notranslate"><span class="pre">wchar_t</span></code>. The resulting build of qpdf is not API-compatible with a
+regular qpdf build, so this option cannot be selected from cmake. This
+option was added to qpdf to support installation on a very stripped
+down embedded environment that included only a partial implementation
+of the standard C++ library.</p>
+<p>You can disable use of <code class="docutils literal notranslate"><span class="pre">wchar_t</span></code> in qpdf’s code by defining the
+<code class="docutils literal notranslate"><span class="pre">QPDF_NO_WCHAR_T</span></code> preprocessor symbol in your build (e.g. by
+including <code class="docutils literal notranslate"><span class="pre">-DQPDF_NO_WCHAR_T</span></code> in <code class="docutils literal notranslate"><span class="pre">CFLAGS</span></code> and <code class="docutils literal notranslate"><span class="pre">CXXFLAGS</span></code>).</p>
+<p>While <code class="docutils literal notranslate"><span class="pre">wchar_t</span></code> is part of the C++ standard library and should be
+present on virtually every system, there are some stripped down
+systems, such as those targeting certain embedded environments, that
+lack <code class="docutils literal notranslate"><span class="pre">wchar_t</span></code>. Internally, qpdf uses UTF-8 encoding for everything,
+so there is nothing important in qpdf’s API that uses <code class="docutils literal notranslate"><span class="pre">wchar_t</span></code>.
+However, there are some helper methods for converting between
+<code class="docutils literal notranslate"><span class="pre">wchar_t*</span></code> and <code class="docutils literal notranslate"><span class="pre">char*</span></code>.</p>
+<p>If you are building in an environment that does not support
+<code class="docutils literal notranslate"><span class="pre">wchar_t</span></code>, you can define the preprocessor symbol
+<code class="docutils literal notranslate"><span class="pre">QPDF_NO_WCHAR_T</span></code> in your build. This will work whether you are
+building qpdf and need to avoid compiling the code that uses wchar_t
+or whether you are building client code that uses qpdf.</p>
+<p>Note that, when you build code with libqpdf, it is <em>not necessary</em> to
+have the definition of <code class="docutils literal notranslate"><span class="pre">QPDF_NO_WCHAR_T</span></code> in your build match what
+was defined when the library was built as long as you are not calling
+any of the methods that use <code class="docutils literal notranslate"><span class="pre">wchar_t</span></code>.</p>
+</section>
+</section>
+<section id="crypto-providers">
+<span id="crypto"></span><h2>Crypto Providers<a class="headerlink" href="#crypto-providers" title="Link to this heading"></a></h2>
+<p>Starting with qpdf 9.1.0, the qpdf library can be built with multiple
+implementations of providers of cryptographic functions, which we refer
+to as “crypto providers.” At the time of writing, a crypto
+implementation must provide MD5 and SHA2 (256, 384, and 512-bit) hashes
+and RC4 and AES256 with and without CBC encryption. In the future, if
+digital signature is added to qpdf, there may be additional requirements
+beyond this. Some of these are weak cryptographic algorithms. For a
+discussion of why they’re needed, see <a class="reference internal" href="weak-crypto.html#weak-crypto"><span class="std std-ref">Weak Cryptography</span></a>.</p>
+<p>The available crypto provider implementations are <code class="docutils literal notranslate"><span class="pre">gnutls</span></code>,
+<code class="docutils literal notranslate"><span class="pre">openssl</span></code>, and <code class="docutils literal notranslate"><span class="pre">native</span></code>. OpenSSL support was added in qpdf 10.0.0
+with support for OpenSSL added in 10.4.0. GnuTLS support was
+introduced in qpdf 9.1.0. Additional implementations can be added as
+needed. It is also possible for a developer to provide their own
+implementation without modifying the qpdf library.</p>
+<p>For information about selecting which crypto providers are compiled
+into qpdf, see <a class="reference internal" href="#crypto-build"><span class="std std-ref">Build-time Crypto Selection</span></a>.</p>
+<section id="runtime-crypto-provider-selection">
+<span id="crypto-runtime"></span><h3>Runtime Crypto Provider Selection<a class="headerlink" href="#runtime-crypto-provider-selection" title="Link to this heading"></a></h3>
+<p>You can use the <a class="reference internal" href="cli.html#option-show-crypto" title="option-show-crypto"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--show-crypto</span></code></a> option to <strong class="command">qpdf</strong> to
+get a list of available crypto providers. The default provider is
+always listed first, and the rest are listed in lexical order. Each
+crypto provider is listed on a line by itself with no other text,
+enabling the output of this command to be used easily in scripts.</p>
+<p>You can override which crypto provider is used by setting the
+<code class="docutils literal notranslate"><span class="pre">QPDF_CRYPTO_PROVIDER</span></code> environment variable. There are few reasons
+to ever do this, but you might want to do it if you were explicitly
+trying to compare behavior of two different crypto providers while
+testing performance or reproducing a bug. It could also be useful for
+people who are implementing their own crypto providers.</p>
+</section>
+<section id="crypto-provider-information-for-developers">
+<span id="crypto-develop"></span><h3>Crypto Provider Information for Developers<a class="headerlink" href="#crypto-provider-information-for-developers" title="Link to this heading"></a></h3>
+<p>If you are writing code that uses libqpdf and you want to force a
+certain crypto provider to be used, you can call the method
+<code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider::setDefaultProvider</span></code>. The argument is the name
+of a built-in or developer-supplied provider. To add your own crypto
+provider, you have to create a class derived from <code class="docutils literal notranslate"><span class="pre">QPDFCryptoImpl</span></code>
+and register it with <code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider</span></code>. For additional
+information, see comments in <code class="file docutils literal notranslate"><span class="pre">include/qpdf/QPDFCryptoImpl.hh</span></code>.</p>
+</section>
+<section id="crypto-provider-design-notes">
+<span id="crypto-design"></span><h3>Crypto Provider Design Notes<a class="headerlink" href="#crypto-provider-design-notes" title="Link to this heading"></a></h3>
+<p>This section describes a few bits of rationale for why the crypto
+provider interface was set up the way it was. You don’t need to know any
+of this information, but it’s provided for the record and in case it’s
+interesting.</p>
+<p>As a general rule, I want to avoid as much as possible including large
+blocks of code that are conditionally compiled such that, in most
+builds, some code is never built. This is dangerous because it makes it
+very easy for invalid code to creep in unnoticed. As such, I want it to
+be possible to build qpdf with all available crypto providers, and this
+is the way I build qpdf for local development. At the same time, if a
+particular packager feels that it is a security liability for qpdf to
+use crypto functionality from other than a library that gets
+considerable scrutiny for this specific purpose (such as gnutls,
+openssl, or nettle), then I want to give that packager the ability to
+completely disable qpdf’s native implementation. Or if someone wants to
+avoid adding a dependency on one of the external crypto providers, I
+don’t want the availability of the provider to impose additional
+external dependencies within that environment. Both of these are
+situations that I know to be true for some users of qpdf.</p>
+<p>I want registration and selection of crypto providers to be thread-safe,
+and I want it to work deterministically for a developer to provide their
+own crypto provider and be able to set it up as the default. This was
+the primary motivation behind requiring C++-11 as doing so enabled me to
+exploit the guaranteed thread safety of local block static
+initialization. The <code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider</span></code> class uses a singleton
+pattern with thread-safe initialization to create the singleton instance
+of <code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider</span></code> and exposes only static methods in its public
+interface. In this way, if a developer wants to call any
+<code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider</span></code> methods, the library guarantees the
+<code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider</span></code> is fully initialized and all built-in crypto
+providers are registered. Making <code class="docutils literal notranslate"><span class="pre">QPDFCryptoProvider</span></code> actually know
+about all the built-in providers may seem a bit sad at first, but this
+choice makes it extremely clear exactly what the initialization behavior
+is. There’s no question about provider implementations automatically
+registering themselves in a nondeterministic order. It also means that
+implementations do not need to know anything about the provider
+interface, which makes them easier to test in isolation. Another
+advantage of this approach is that a developer who wants to develop
+their own crypto provider can do so in complete isolation from the qpdf
+library and, with just two calls, can make qpdf use their provider in
+their application. If they decided to contribute their code, plugging it
+into the qpdf library would require a very small change to qpdf’s source
+code.</p>
+<p>The decision to make the crypto provider selectable at runtime was one I
+struggled with a little, but I decided to do it for various reasons.
+Allowing an end user to switch crypto providers easily could be very
+useful for reproducing a potential bug. If a user reports a bug that
+some cryptographic thing is broken, I can easily ask that person to try
+with the <code class="docutils literal notranslate"><span class="pre">QPDF_CRYPTO_PROVIDER</span></code> variable set to different values. The
+same could apply in the event of a performance problem. This also makes
+it easier for qpdf’s own test suite to exercise code with different
+providers without having to make every program that links with qpdf
+aware of the possibility of multiple providers. In qpdf’s continuous
+integration environment, the entire test suite is run for each supported
+crypto provider. This is made simple by being able to select the
+provider using an environment variable.</p>
+<p>Finally, making crypto providers selectable in this way establish a
+pattern that I may follow again in the future for stream filter
+providers. One could imagine a future enhancement where someone could
+provide their own implementations for basic filters like
+<code class="docutils literal notranslate"><span class="pre">/FlateDecode</span></code> or for other filters that qpdf doesn’t support.
+Implementing the registration functions and internal storage of
+registered providers was also easier using C++-11’s functional
+interfaces, which was another reason to require C++-11 at this time.</p>
+</section>
+</section>
+<section id="building-with-zopfli-support">
+<span id="build-zopfli"></span><h2>Building with zopfli support<a class="headerlink" href="#building-with-zopfli-support" title="Link to this heading"></a></h2>
+<p>If you compile with <code class="docutils literal notranslate"><span class="pre">-DZOPFLI=ON</span></code> and have the <a class="reference external" href="https://github.com/google/zopfli">zopfli</a> development files available,
+qpdf will be built with zopfli support. See <a class="reference internal" href="cli.html#zopfli"><span class="std std-ref">Zopfli Compression Algorithm</span></a> for
+information about using zopfli with qpdf.</p>
+</section>
+<section id="converting-from-autoconf-to-cmake">
+<span id="autoconf-to-cmake"></span><h2>Converting From autoconf to cmake<a class="headerlink" href="#converting-from-autoconf-to-cmake" title="Link to this heading"></a></h2>
+<p>Versions of qpdf before qpdf 11 were built with <code class="docutils literal notranslate"><span class="pre">autoconf</span></code> and a
+home-grown GNU Make-based build system. If you built qpdf with special
+<code class="docutils literal notranslate"><span class="pre">./configure</span></code> options, this section can help you switch them over to
+<code class="docutils literal notranslate"><span class="pre">cmake</span></code>.</p>
+<p>In most cases, there is a one-to-one mapping between configure options
+and cmake options. There are a few exceptions:</p>
+<ul class="simple">
+<li><p>The cmake build behaves differently with respect to whether or not
+to include support for the native crypto provider. Specifically, it
+is not implicitly enabled unless explicitly requested if there are
+other options available. You can force it to be included by enabling
+<code class="docutils literal notranslate"><span class="pre">REQUIRE_CRYPTO_NATIVE</span></code>. For details, see <a class="reference internal" href="#crypto-build"><span class="std std-ref">Build-time Crypto Selection</span></a>.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">--enable-external-libs</span></code> option is no longer available. The
+cmake build detects the presence of <code class="docutils literal notranslate"><span class="pre">external-libs</span></code> automatically.
+See <code class="file docutils literal notranslate"><span class="pre">README-windows.md</span></code> in the source distribution for a more
+in-depth discussion.</p></li>
+<li><p>The sense of the option representing use of the OS-provided secure
+random number generator has been reversed: the
+<code class="docutils literal notranslate"><span class="pre">--enable-os-secure-random</span></code>, which was on by default, has been
+replaced by the <code class="docutils literal notranslate"><span class="pre">SKIP_OS_SECURE_RANDOM</span></code> option, which is off by
+default. The option’s new name and behavior match the preprocessor
+symbol that it turns on.</p></li>
+<li><p>Non-default test configuration is selected with environment
+variables rather than cmake. The old <code class="docutils literal notranslate"><span class="pre">./configure</span></code> options just
+set environment variables. Note that the sense of the variable for
+image comparison tests has been reversed. It used to be that you had
+to set <code class="docutils literal notranslate"><span class="pre">QPDF_SKIP_TEST_COMPARE_IMAGES</span></code> to <code class="docutils literal notranslate"><span class="pre">1</span></code> to <em>disable</em> image
+comparison tests. This was done by default. Now you have to set
+<code class="docutils literal notranslate"><span class="pre">QPDF_TEST_COMPARE_IMAGES</span></code> to <code class="docutils literal notranslate"><span class="pre">1</span></code> to <em>enable</em> image comparison
+tests. Either way, they are off by default.</p></li>
+<li><p>Non-user-visible change: the preprocessor symbol that triggers the
+export of functions into the public ABI (application binary
+interface) has been changed from <code class="docutils literal notranslate"><span class="pre">DLL_EXPORT</span></code> to
+<code class="docutils literal notranslate"><span class="pre">libqpdf_EXPORTS</span></code>. This detail is encapsulated in the build and is
+only relevant to people who are building qpdf on their own or who
+may have previously needed to work around a collision between qpdf’s
+use of <code class="docutils literal notranslate"><span class="pre">DLL_EXPORT</span></code> and someone else’s use of the same symbol.</p></li>
+<li><p>A handful of options that were specific to autoconf or the old build
+system have been dropped.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cmake</span> <span class="pre">--install</span></code> installs example source code in
+<code class="docutils literal notranslate"><span class="pre">doc/qpdf/examples</span></code> in the <code class="docutils literal notranslate"><span class="pre">examples</span></code> installation component.
+Packagers are encouraged to package this with development files if
+there is no separate doc package. This can be turned off by
+disabling the <code class="docutils literal notranslate"><span class="pre">INSTALL_EXAMPLES</span></code> build option.</p></li>
+</ul>
+<p>There are some new options available in the cmake build that were not
+available in the autoconf build. This table shows the old options and
+their equivalents in cmake.</p>
+<table class="docutils align-default" id="id3">
+<caption><span class="caption-text">configure flags to cmake options</span><a class="headerlink" href="#id3" title="Link to this table"></a></caption>
+<colgroup>
+<col style="width: 40.0%" />
+<col style="width: 60.0%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p>enable-avoid-windows-handle</p></td>
+<td><p>AVOID_WINDOWS_HANDLE</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-check-autofiles</p></td>
+<td><p>none – not relevant to cmake</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-crypto-gnutls</p></td>
+<td><p>REQUIRE_CRYPTO_GNUTLS</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-crypto-native</p></td>
+<td><p>REQUIRE_CRYPTO_NATIVE (but see above)</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-crypto-openssl</p></td>
+<td><p>REQUIRE_CRYPTO_OPENSSL</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-doc-maintenance</p></td>
+<td><p>BUILD_DOC</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-external-libs</p></td>
+<td><p>none – detected automatically</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-html-doc</p></td>
+<td><p>BUILD_DOC_HTML</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-implicit-crypto</p></td>
+<td><p>USE_IMPLICIT_CRYPTO</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-insecure-random</p></td>
+<td><p>USE_INSECURE_RANDOM</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-ld-version-script</p></td>
+<td><p>none – detected automatically</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-maintainer-mode</p></td>
+<td><p>MAINTAINER_MODE (slight differences)</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-os-secure-random (on by default)</p></td>
+<td><p>SKIP_OS_SECURE_RANDOM (off by default)</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-oss-fuzz</p></td>
+<td><p>OSS_FUZZ</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-pdf-doc</p></td>
+<td><p>BUILD_DOC_PDF</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-rpath</p></td>
+<td><p>none – cmake handles rpath correctly</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-show-failed-test-output</p></td>
+<td><p>SHOW_FAILED_TEST_OUTPUT</p></td>
+</tr>
+<tr class="row-even"><td><p>enable-test-compare-images</p></td>
+<td><p>set the <code class="docutils literal notranslate"><span class="pre">QPDF_TEST_COMPARE_IMAGES</span></code> environment variable</p></td>
+</tr>
+<tr class="row-odd"><td><p>enable-werror</p></td>
+<td><p>WERROR</p></td>
+</tr>
+<tr class="row-even"><td><p>with-buildrules</p></td>
+<td><p>none – not relevant to cmake</p></td>
+</tr>
+<tr class="row-odd"><td><p>with-default-crypto</p></td>
+<td><p>DEFAULT_CRYPTO</p></td>
+</tr>
+<tr class="row-even"><td><p>large-file-test-path</p></td>
+<td><p>set the <code class="docutils literal notranslate"><span class="pre">QPDF_LARGE_FILE_TEST_PATH</span></code> environment variable</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="download.html" class="btn btn-neutral float-left" title="Downloading qpdf" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="packaging.html" class="btn btn-neutral float-right" title="Notes for Packagers" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

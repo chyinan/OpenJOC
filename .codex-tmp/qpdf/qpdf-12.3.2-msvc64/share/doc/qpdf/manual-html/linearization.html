@@ -1,0 +1,296 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Linearization &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Object and Cross-Reference Streams" href="object-streams.html" />
+    <link rel="prev" title="QPDFJob: a Job-Based Interface" href="qpdf-job.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Linearization</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#basic-strategy-for-linearization">Basic Strategy for Linearization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#preparing-for-linearization">Preparing For Linearization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#optimization">Optimization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#writing-linearized-files">Writing Linearized Files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#calculating-linearization-data">Calculating Linearization Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#known-issues-with-linearization">Known Issues with Linearization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#debugging-note">Debugging Note</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Linearization</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/linearization.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="linearization">
+<span id="id1"></span><h1>Linearization<a class="headerlink" href="#linearization" title="Link to this heading"></a></h1>
+<p>This chapter describes how <code class="docutils literal notranslate"><span class="pre">QPDF</span></code> and <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> implement
+creation and processing of linearized PDFs.</p>
+<section id="basic-strategy-for-linearization">
+<span id="linearization-strategy"></span><h2>Basic Strategy for Linearization<a class="headerlink" href="#basic-strategy-for-linearization" title="Link to this heading"></a></h2>
+<p>To avoid the incestuous problem of having the qpdf library validate its
+own linearized files, we have a special linearized file checking mode
+which can be invoked via <strong class="command">qpdf
+--check-linearization</strong> (or <strong class="command">qpdf
+--check</strong>). This mode reads the linearization parameter
+dictionary and the hint streams and validates that object ordering,
+parameters, and hint stream contents are correct. The validation code
+was first tested against linearized files created by external tools
+(Acrobat and pdlin) and then used to validate files created by
+<code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> itself.</p>
+</section>
+<section id="preparing-for-linearization">
+<span id="linearized-preparation"></span><h2>Preparing For Linearization<a class="headerlink" href="#preparing-for-linearization" title="Link to this heading"></a></h2>
+<p>Before creating a linearized PDF file from any other PDF file, the PDF
+file must be altered such that all page attributes are propagated down
+to the page level (and not inherited from parents in the <code class="docutils literal notranslate"><span class="pre">/Pages</span></code>
+tree). We also have to know which objects refer to which other objects,
+being concerned with page boundaries and a few other cases. We refer to
+this part of preparing the PDF file as
+<em>optimization</em>, discussed in
+<a class="reference internal" href="#optimization"><span class="std std-ref">Optimization</span></a>. Note the, in this context, the
+term <em>optimization</em> is a qpdf term, and the
+term <em>linearization</em> is a term from the PDF
+specification. Do not be confused by the fact that many applications
+refer to linearization as optimization or web optimization.</p>
+<p>When creating linearized PDF files from optimized PDF files, there are
+really only a few issues that need to be dealt with:</p>
+<ul class="simple">
+<li><p>Creation of hints tables</p></li>
+<li><p>Placing objects in the correct order</p></li>
+<li><p>Filling in offsets and byte sizes</p></li>
+</ul>
+</section>
+<section id="optimization">
+<span id="id2"></span><h2>Optimization<a class="headerlink" href="#optimization" title="Link to this heading"></a></h2>
+<p>In order to perform various operations such as linearization and
+splitting files into pages, it is necessary to know which objects are
+referenced by which pages, page thumbnails, and root and trailer
+dictionary keys. It is also necessary to ensure that all page-level
+attributes appear directly at the page level and are not inherited from
+parents in the pages tree.</p>
+<p>We refer to the process of enforcing these constraints as
+<em>optimization</em>. As mentioned above, note
+that some applications refer to linearization as optimization. Although
+this optimization was initially motivated by the need to create
+linearized files, we are using these terms separately.</p>
+<p>PDF file optimization is implemented in the
+<code class="file docutils literal notranslate"><span class="pre">QPDF_optimization.cc</span></code> source file. That file
+is richly commented and serves as the primary reference for the
+optimization process.</p>
+<p>After optimization has been completed, the private member variables
+<code class="docutils literal notranslate"><span class="pre">obj_user_to_objects</span></code> and <code class="docutils literal notranslate"><span class="pre">object_to_obj_users</span></code> in <code class="docutils literal notranslate"><span class="pre">QPDF</span></code> have
+been populated. Any object that has more than one value in the
+<code class="docutils literal notranslate"><span class="pre">object_to_obj_users</span></code> table is shared. Any object that has exactly one
+value in the <code class="docutils literal notranslate"><span class="pre">object_to_obj_users</span></code> table is private. To find all the
+private objects in a page or a trailer or root dictionary key, one
+merely has make this determination for each element in the
+<code class="docutils literal notranslate"><span class="pre">obj_user_to_objects</span></code> table for the given page or key.</p>
+<p>Note that pages and thumbnails have different object user types, so the
+above test on a page will not include objects referenced by the page’s
+thumbnail dictionary and nothing else.</p>
+</section>
+<section id="writing-linearized-files">
+<span id="linearization-writing"></span><h2>Writing Linearized Files<a class="headerlink" href="#writing-linearized-files" title="Link to this heading"></a></h2>
+<p>We will create files with only primary hint streams. We will never write
+overflow hint streams. (As of PDF version 1.4, Acrobat doesn’t either,
+and they are never necessary.) The hint streams contain offset
+information to objects that point to where they would be if the hint
+stream were not present. This means that we have to calculate all object
+positions before we can generate and write the hint table. This means
+that we have to generate the file in two passes. To make this reliable,
+<code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> in linearization mode invokes exactly the same code twice
+to write the file to a pipeline.</p>
+<p>In the first pass, the target pipeline is a count pipeline chained to a
+discard pipeline. The count pipeline simply passes its data through to
+the next pipeline in the chain but can return the number of bytes passed
+through it at any intermediate point. The discard pipeline is an end of
+line pipeline that just throws its data away. The hint stream is not
+written and dummy values with adequate padding are stored in the first
+cross reference table, linearization parameter dictionary, and /Prev key
+of the first trailer dictionary. All the offset, length, object
+renumbering information, and anything else we need for the second pass
+is stored.</p>
+<p>At the end of the first pass, this information is passed to the <code class="docutils literal notranslate"><span class="pre">QPDF</span></code>
+class which constructs a compressed hint stream in a memory buffer and
+returns it. <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> uses this information to write a complete
+hint stream object into a memory buffer. At this point, the length of
+the hint stream is known.</p>
+<p>In the second pass, the end of the pipeline chain is a regular file
+instead of a discard pipeline, and we have known values for all the
+offsets and lengths that we didn’t have in the first pass. We have to
+adjust offsets that appear after the start of the hint stream by the
+length of the hint stream, which is known. Anything that is of variable
+length is padded, with the padding code surrounding any writing code
+that differs in the two passes. This ensures that changes to the way
+things are represented never results in offsets that were gathered
+during the first pass becoming incorrect for the second pass.</p>
+<p>Using this strategy, we can write linearized files to a non-seekable
+output stream with only a single pass to disk or wherever the output is
+going.</p>
+</section>
+<section id="calculating-linearization-data">
+<span id="linearization-data"></span><h2>Calculating Linearization Data<a class="headerlink" href="#calculating-linearization-data" title="Link to this heading"></a></h2>
+<p>Once a file is optimized, we have information about which objects access
+which other objects. We can then process these tables to decide which
+part (as described in “Linearized PDF Document Structure” in the PDF
+specification) each object is contained within. This tells us the exact
+order in which objects are written. The <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> class asks for
+this information and enqueues objects for writing in the proper order.
+It also turns on a check that causes an exception to be thrown if an
+object is encountered that has not already been queued. (This could
+happen only if there were a bug in the traversal code used to calculate
+the linearization data.)</p>
+</section>
+<section id="known-issues-with-linearization">
+<span id="linearization-issues"></span><h2>Known Issues with Linearization<a class="headerlink" href="#known-issues-with-linearization" title="Link to this heading"></a></h2>
+<p>There are a handful of known issues with this linearization code. These
+issues do not appear to impact the behavior of linearized files which
+still work as intended: it is possible for a web browser to begin to
+display them before they are fully downloaded. In fact, it seems that
+various other programs that create linearized files have many of these
+same issues. These items make reference to terminology used in the
+linearization appendix of the PDF specification.</p>
+<ul class="simple">
+<li><p>Thread Dictionary information keys appear in part 4 with the rest of
+Threads instead of in part 9. Objects in part 9 are not grouped
+together functionally.</p></li>
+<li><p>We are not calculating numerators for shared object positions within
+content streams or interleaving them within content streams.</p></li>
+<li><p>We generate only page offset, shared object, and outline hint tables.
+It would be relatively easy to add some additional tables. We gather
+most of the information needed to create thumbnail hint tables. There
+are comments in the code about this.</p></li>
+</ul>
+</section>
+<section id="debugging-note">
+<span id="linearization-debugging"></span><h2>Debugging Note<a class="headerlink" href="#debugging-note" title="Link to this heading"></a></h2>
+<p>The <strong class="command">qpdf --show-linearization</strong> command can show
+the complete contents of linearization hint streams. To look at the raw
+data, you can extract the filtered contents of the linearization hint
+tables using <strong class="command">qpdf --show-object=n
+--filtered-stream-data</strong>. Then, to convert this into a bit
+stream (since linearization tables are bit streams written without
+regard to byte boundaries), you can pipe the resulting data through the
+following perl code:</p>
+<div class="highlight-perl notranslate"><div class="highlight"><pre><span></span><span class="k">use</span><span class="w"> </span><span class="nn">bytes</span><span class="p">;</span>
+<span class="nb">binmode</span><span class="w"> </span><span class="bp">STDIN</span><span class="p">;</span>
+<span class="nb">undef</span><span class="w"> </span><span class="vg">$/</span><span class="p">;</span>
+<span class="k">my</span><span class="w"> </span><span class="nv">$a</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="sr">&lt;STDIN&gt;</span><span class="p">;</span>
+<span class="k">my</span><span class="w"> </span><span class="nv">@ch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">split</span><span class="p">(</span><span class="sr">//</span><span class="p">,</span><span class="w"> </span><span class="nv">$a</span><span class="p">);</span>
+<span class="nb">map</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">printf</span><span class="p">(</span><span class="s">&quot;%08b&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">ord</span><span class="p">(</span><span class="nv">$_</span><span class="p">))</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="nv">@ch</span><span class="p">;</span>
+<span class="k">print</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">;</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="qpdf-job.html" class="btn btn-neutral float-left" title="QPDFJob: a Job-Based Interface" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="object-streams.html" class="btn btn-neutral float-right" title="Object and Cross-Reference Streams" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

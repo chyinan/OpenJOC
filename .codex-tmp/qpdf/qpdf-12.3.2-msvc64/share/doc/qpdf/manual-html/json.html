@@ -1,0 +1,946 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qpdf JSON &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Contributing to qpdf" href="contributing.html" />
+    <link rel="prev" title="Weak Cryptography" href="weak-crypto.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">qpdf JSON</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#json-terminology">JSON Terminology</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#what-qpdf-json-is-not">What qpdf JSON is not</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#qpdf-json-format">qpdf JSON Format</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#qpdf-json-object-representation">qpdf JSON Object Representation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qpdf-json-example">qpdf JSON Example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qpdf-json-input">qpdf JSON Input</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qpdf-json-workflow-cli">qpdf JSON Workflow: CLI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#qpdf-json-workflow-api">qpdf JSON Workflow: API</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#json-compatibility-guarantees">JSON Compatibility Guarantees</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#json-special-considerations">JSON: Special Considerations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#changes-from-json-v1-to-v2">Changes from JSON v1 to v2</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#motivation-for-qpdf-json-version-2">Motivation for qpdf JSON version 2</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="object-streams.html">Object and Cross-Reference Streams</a></li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">qpdf JSON</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/json.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="qpdf-json">
+<span id="json"></span><h1>qpdf JSON<a class="headerlink" href="#qpdf-json" title="Link to this heading"></a></h1>
+<section id="overview">
+<span id="json-overview"></span><h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
+<p>Beginning with qpdf version 11.0.0, the qpdf library and command-line
+program can produce a JSON representation of a PDF file. qpdf version
+11 introduces JSON format version 2. Prior to qpdf 11, versions 8.3.0
+onward had a more limited JSON representation accessible only from the
+command-line. For details on what changed, see <a class="reference internal" href="#json-v2-changes"><span class="std std-ref">Changes from JSON v1 to v2</span></a>.
+The rest of this chapter documents qpdf JSON version 2.</p>
+<p>Please note: this chapter discusses <em>qpdf JSON format</em>, which
+represents the contents of a PDF file. This is distinct from the
+<em>QPDFJob JSON format</em> which provides a higher-level interface
+interacting with qpdf the way the command-line tool does. For
+information about that, see <a class="reference internal" href="qpdf-job.html#qpdf-job"><span class="std std-ref">QPDFJob: a Job-Based Interface</span></a>.</p>
+<p>The qpdf JSON format is specific to qpdf. The <a class="reference internal" href="cli.html#option-json" title="option-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json</span></code></a>
+command-line flag causes creation of a JSON representation the objects
+in a PDF file along with JSON-formatted summaries of other information
+about the file. This functionality is built into <code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> and can
+be accessed from the <code class="docutils literal notranslate"><span class="pre">qpdf</span></code> command-line tool or from the
+<code class="docutils literal notranslate"><span class="pre">QPDFJob</span></code> C or C++ API.</p>
+<p>Starting with qpdf JSON version 2, from qpdf 11.0.0, the JSON output
+includes an unambiguous and complete representation of the PDF objects
+and header. The information without the JSON-formatted summaries of
+other information is also available using the <code class="docutils literal notranslate"><span class="pre">QPDF::writeJSON</span></code>
+method.</p>
+<p>By default, stream data is omitted from the JSON data, but it can be
+included by specifying the <a class="reference internal" href="cli.html#option-json-stream-data" title="option-json-stream-data"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-stream-data</span></code></a> option. With
+stream data included, the generated JSON file completely represents a
+PDF file. You can think of this as using JSON as an <em>alternative
+syntax</em> for representing a PDF file. Using qpdf JSON, it is possible
+to convert a PDF file to JSON, manipulate the structure or contents of
+the objects at a low level, and convert the results back to a PDF
+file. This functionality can be accessed from the command-line with
+the <a class="reference internal" href="cli.html#option-json-input" title="option-json-input"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-input</span></code></a>, and <a class="reference internal" href="cli.html#option-update-from-json" title="option-update-from-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--update-from-json</span></code></a>
+flags, or from the API using the <code class="docutils literal notranslate"><span class="pre">QPDF::createFromJSON</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">QPDF::updateFromJSON</span></code> methods. The <a class="reference internal" href="cli.html#option-json-output" title="option-json-output"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-output</span></code></a> flag
+changes a handful of defaults so that the resulting JSON is as close
+as possible to the original input and is ready for being converted
+back to PDF.</p>
+<p>The qpdf JSON data includes unreferenced objects. This may be
+addressed in a future version of qpdf. For now, that means that
+certain objects that are not useful in the JSON representation are
+included. This includes linearization and encryption dictionaries,
+linearization hint streams, object streams, and the cross-reference
+(xref) stream associated with the trailer dictionary where applicable.
+For the best experience with qpdf JSON, you can run the file through
+qpdf first to remove encryption, linearization, and object streams.
+For example:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf --decrypt --object-streams=disable in.pdf out.pdf
+qpdf --json-output out.pdf out.json
+</pre></div>
+</div>
+</section>
+<section id="json-terminology">
+<span id="id1"></span><h2>JSON Terminology<a class="headerlink" href="#json-terminology" title="Link to this heading"></a></h2>
+<p>Notes about terminology:</p>
+<ul class="simple">
+<li><p>In JavaScript and JSON, that thing that has keys and values is
+typically called an <em>object</em>.</p></li>
+<li><p>In PDF, that thing that has keys and values is typically called a
+<em>dictionary</em>. An <em>object</em> is a PDF object such as integer, real,
+boolean, null, string, array, dictionary, or stream.</p></li>
+<li><p>Some languages that use JSON call an <em>object</em> a <em>dictionary</em>, a
+<em>map</em>, or a <em>hash</em>.</p></li>
+<li><p>Sometimes, it’s called an <em>object</em> if it has fixed keys and a
+<em>dictionary</em> if it has variable keys.</p></li>
+</ul>
+<p>This manual is not entirely consistent about its use of <em>dictionary</em>
+vs. <em>object</em> because sometimes one term or another is clearer in
+context. Just be aware of the ambiguity when reading the manual. We
+frequently use the term <em>dictionary</em> to refer to a JSON object because
+of the consistency with PDF terminology, particular when referring to
+a dictionary that contains information PDF objects.</p>
+</section>
+<section id="what-qpdf-json-is-not">
+<span id="id2"></span><h2>What qpdf JSON is not<a class="headerlink" href="#what-qpdf-json-is-not" title="Link to this heading"></a></h2>
+<p>Please note that qpdf JSON offers a convenient syntax for manipulating
+PDF files at a low level using JSON syntax. JSON syntax is much easier
+to work with than native PDF syntax, and there are good JSON libraries
+in virtually every commonly used programming language. Working with
+PDF objects in JSON removes the need to worry about stream lengths,
+cross reference tables, and PDF-specific representations of Unicode or
+binary strings that appear outside of content streams. It does not
+eliminate the need to understand the semantic structure of PDF files.
+Working with qpdf JSON still requires familiarity with the PDF
+specification.</p>
+<p>In particular, qpdf JSON <em>does not</em> provide any of the following
+capabilities:</p>
+<ul class="simple">
+<li><p>Text extraction. While you could use qpdf JSON syntax to navigate to
+a page’s content streams and font structures, text within pages is
+still encoded using PDF syntax within content streams, and there is
+no assistance for text extraction.</p></li>
+<li><p>Reflowing text, document structure. qpdf JSON does not add any new
+information or insight into the content of PDF files. If you have a
+PDF file that lacks any structural information, qpdf JSON won’t help
+you solve any of those problems.</p></li>
+</ul>
+<p>This is what we mean when we say that JSON provides a <em>alternative
+syntax</em> for working with PDF data. Semantically, it is identical to
+native PDF.</p>
+</section>
+<section id="qpdf-json-format">
+<span id="id3"></span><h2>qpdf JSON Format<a class="headerlink" href="#qpdf-json-format" title="Link to this heading"></a></h2>
+<p>This section describes how qpdf represents PDF objects in JSON format.
+It also describes how to work with qpdf JSON to create or
+modify PDF files.</p>
+<section id="qpdf-json-object-representation">
+<span id="json-objects"></span><h3>qpdf JSON Object Representation<a class="headerlink" href="#qpdf-json-object-representation" title="Link to this heading"></a></h3>
+<p>This section describes the representation of PDF objects in qpdf JSON
+version 2. An example appears in <a class="reference internal" href="#json-example"><span class="std std-ref">qpdf JSON Example</span></a>.</p>
+<p>PDF objects are represented within the <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> entry of a qpdf JSON
+file. The <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> entry is a two-element array. The first element
+is a dictionary containing header-like information about the file such
+as the PDF version. The second element is a dictionary containing all
+the objects in the PDF file. We refer to this as the <em>objects
+dictionary</em>.</p>
+<p>The first element contains the following keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;jsonversion&quot;</span></code> – a number indicating the JSON version used for
+writing. This will always be <code class="docutils literal notranslate"><span class="pre">2</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;pdfversion&quot;</span></code> – a string containing PDF version as indicated in
+the PDF header (e.g. <code class="docutils literal notranslate"><span class="pre">&quot;1.7&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;2.0&quot;</span></code>)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pushedinheritedpageresources</span></code> – a boolean indicating whether the
+library pushed inherited resources down to the page level. Certain
+library calls cause this to happen, and qpdf needs to know when
+reading a JSON file back in whether it should do this as it may
+cause certain objects to be renumbered. This field is ignored when
+<a class="reference internal" href="cli.html#option-update-from-json" title="option-update-from-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--update-from-json</span></code></a> was not given.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">calledgetallpages</span></code> – a boolean indicating whether
+<code class="docutils literal notranslate"><span class="pre">getAllPages</span></code> was called prior to writing the JSON output. This
+method causes page tree repair to occur, which may renumber some
+objects (in very rare cases of corrupted page trees), so qpdf needs
+to know this information when reading a JSON file back in. This
+field is ignored when <a class="reference internal" href="cli.html#option-update-from-json" title="option-update-from-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--update-from-json</span></code></a> was not given.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;maxobjectid&quot;</span></code> – a number indicating the object ID of the
+highest numbered object in the file. This is provided to make it
+easier for software that wants to add new objects to the file as you
+can safely start with one above that number when creating new
+objects. Note that the value of <code class="docutils literal notranslate"><span class="pre">&quot;maxobjectid&quot;</span></code> may be higher than
+the actual maximum object that appears in the input PDF since it
+takes into consideration any dangling indirect object references
+from the original file. This prevents you from unwittingly creating
+an object that doesn’t exist but that is referenced, which may have
+unintended side effects. (The PDF specification explicitly allows
+dangling references and says to treat them as nulls. This can happen
+if objects are removed from a PDF file.)</p></li>
+</ul>
+<p>The second element is the objects dictionary. Each key in the objects
+dictionary is either <code class="docutils literal notranslate"><span class="pre">&quot;trailer&quot;</span></code> or a string of the form
+<code class="samp docutils literal notranslate"><span class="pre">&quot;obj:</span><em><span class="pre">O</span></em> <em><span class="pre">G</span></em> <span class="pre">R&quot;</span></code> where <code class="samp docutils literal notranslate"><em><span class="pre">O</span></em></code> and <code class="samp docutils literal notranslate"><em><span class="pre">G</span></em></code> are the
+object and generation numbers and <code class="docutils literal notranslate"><span class="pre">R</span></code> is the literal string <code class="docutils literal notranslate"><span class="pre">R</span></code>.
+This is the PDF syntax for the indirect object reference prepended by
+<code class="docutils literal notranslate"><span class="pre">obj:</span></code>. The value, representing the object itself, is a JSON object
+whose structure is described below.</p>
+<dl>
+<dt>Top-level Stream Objects</dt><dd><p>Stream objects are represented as a JSON object with the single key
+<code class="docutils literal notranslate"><span class="pre">&quot;stream&quot;</span></code>. The stream object has a key called <code class="docutils literal notranslate"><span class="pre">&quot;dict&quot;</span></code> whose
+value is the stream dictionary as an object value (described below)
+with the <code class="docutils literal notranslate"><span class="pre">&quot;/Length&quot;</span></code> key omitted. Other keys are determined by the
+value for json stream data (<a class="reference internal" href="cli.html#option-json-stream-data" title="option-json-stream-data"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-stream-data</span></code></a>, or a
+parameter of type <code class="docutils literal notranslate"><span class="pre">qpdf_json_stream_data_e</span></code>) as follows:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">none</span></code>: stream data is not represented; no other keys are
+present
+specified.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inline</span></code>: the stream data appears as a base64-encoded string as
+the value of the <code class="docutils literal notranslate"><span class="pre">&quot;data&quot;</span></code> key</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">file</span></code>: the stream data is written to a file, and the path to
+the file is stored in the <code class="docutils literal notranslate"><span class="pre">&quot;datafile&quot;</span></code> key. A relative path is
+interpreted as relative to the current directory when qpdf is
+invoked.</p></li>
+</ul>
+<p>Keys other than <code class="docutils literal notranslate"><span class="pre">&quot;dict&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;data&quot;</span></code>, and <code class="docutils literal notranslate"><span class="pre">&quot;datafile&quot;</span></code> are
+ignored. This is primarily for future compatibility in case a newer
+version of qpdf includes additional information.</p>
+<p>As with the native PDF representation, the stream data must be
+consistent with whatever filters and decode parameters are specified
+in the stream dictionary.</p>
+</dd>
+<dt>Top-level Non-stream Objects</dt><dd><p>Non-stream objects are represented as a dictionary with the single
+key <code class="docutils literal notranslate"><span class="pre">&quot;value&quot;</span></code>. Other keys are ignored for future compatibility.
+The value’s structure is described in “Object Values” below.</p>
+<p>Note: in files that use object streams, the trailer “dictionary” is
+actually a stream, but in the JSON representation, the value of the
+<code class="docutils literal notranslate"><span class="pre">&quot;trailer&quot;</span></code> key is always written as a dictionary (with a
+<code class="docutils literal notranslate"><span class="pre">&quot;value&quot;</span></code> key like other non-stream objects). There will also be a
+a stream object whose key is the object ID of the cross-reference
+stream, even though this stream will generally be unreferenced. This
+makes it possible to assume <code class="docutils literal notranslate"><span class="pre">&quot;trailer&quot;</span></code> points to a dictionary
+without having to consider whether the file uses object streams or
+not. It is also consistent with how <code class="docutils literal notranslate"><span class="pre">QPDF::getTrailer</span></code> behaves in
+the C++ API.</p>
+</dd>
+<dt>Object Values</dt><dd><p>Within <code class="docutils literal notranslate"><span class="pre">&quot;value&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;stream&quot;.&quot;dict&quot;</span></code>, PDF objects are
+represented as follows:</p>
+<ul>
+<li><p>Objects of type Boolean or null are represented as JSON objects of
+the same type.</p></li>
+<li><p>Objects that are numeric are represented as numeric in the JSON
+without regard to precision. Internally, qpdf stores numeric
+values as strings, so qpdf will preserve arbitrary precision
+numerical values when reading and writing JSON. It is likely that
+other JSON readers and writers will have implementation-dependent
+ways of handling numerical values that are out of range.</p></li>
+<li><p>Name objects are represented as JSON strings that start with <code class="docutils literal notranslate"><span class="pre">/</span></code>
+and are followed by the PDF name in canonical form with all PDF
+syntax resolved. For example, the name whose canonical form (per
+the PDF specification) is <code class="docutils literal notranslate"><span class="pre">text/plain</span></code> would be represented in
+JSON as <code class="docutils literal notranslate"><span class="pre">&quot;/text/plain&quot;</span></code> and in PDF as <code class="docutils literal notranslate"><span class="pre">&quot;/text#2fplain&quot;</span></code>.
+Starting with qpdf 11.7.0, the syntax <code class="docutils literal notranslate"><span class="pre">&quot;n:/pdf-syntax&quot;</span></code> is
+accepted as an alternative. This can be used for any name (e.g.
+<code class="docutils literal notranslate"><span class="pre">&quot;n:/text#2fplain&quot;</span></code>), but it is necessary when the name contains
+binary characters. For example, <code class="docutils literal notranslate"><span class="pre">/one#a0two</span></code> must be represented
+as <code class="docutils literal notranslate"><span class="pre">&quot;n:/one#a0two&quot;</span></code> since the single byte <code class="docutils literal notranslate"><span class="pre">a0</span></code> is not valid in
+JSON.</p></li>
+<li><p>Indirect object references are represented as JSON strings that
+look like a PDF indirect object reference and have the form
+<code class="samp docutils literal notranslate"><span class="pre">&quot;</span><em><span class="pre">O</span></em> <em><span class="pre">G</span></em> <span class="pre">R&quot;</span></code> where <code class="samp docutils literal notranslate"><em><span class="pre">O</span></em></code> and <code class="samp docutils literal notranslate"><em><span class="pre">G</span></em></code> are the
+object and generation numbers and <code class="docutils literal notranslate"><span class="pre">R</span></code> is the literal string
+<code class="docutils literal notranslate"><span class="pre">R</span></code>. For example, <code class="docutils literal notranslate"><span class="pre">&quot;3</span> <span class="pre">0</span> <span class="pre">R&quot;</span></code> would represent a reference to the
+object with object ID 3 and generation 0.</p></li>
+<li><p>PDF strings are represented as JSON strings in one of two ways:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;u:utf8-encoded-string&quot;</span></code>: this format is used when the PDF
+string can be unambiguously represented as a Unicode string and
+contains no unprintable characters. This is the case whether the
+input string is encoded as UTF-16, UTF-8 (as allowed by PDF
+2.0), or PDF doc encoding. Strings are only represented this way
+if they can be encoded without loss of information.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;b:hex-string&quot;</span></code>: this format is used to represent any binary
+string value that can’t be represented as a Unicode string.
+<code class="docutils literal notranslate"><span class="pre">hex-string</span></code> must have an even number of characters that range
+from <code class="docutils literal notranslate"><span class="pre">a</span></code> through <code class="docutils literal notranslate"><span class="pre">f</span></code>, <code class="docutils literal notranslate"><span class="pre">A</span></code> through <code class="docutils literal notranslate"><span class="pre">F</span></code>, or <code class="docutils literal notranslate"><span class="pre">0</span></code> through
+<code class="docutils literal notranslate"><span class="pre">9</span></code>.</p></li>
+</ul>
+<p>qpdf writes empty strings as <code class="docutils literal notranslate"><span class="pre">&quot;u:&quot;</span></code>, but both <code class="docutils literal notranslate"><span class="pre">&quot;b:&quot;</span></code> and
+<code class="docutils literal notranslate"><span class="pre">&quot;u:&quot;</span></code> are valid representations of the empty string.</p>
+<p>There is full support for UTF-16 surrogate pairs. Binary strings
+encoded with <code class="docutils literal notranslate"><span class="pre">&quot;b:...&quot;</span></code> are the internal PDF representations.
+As such, the following are equivalent:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;u:\ud83e\udd54&quot;</span></code> – representation of U+1F954 as a surrogate
+pair in JSON syntax</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;b:FEFFD83EDD54&quot;</span></code> – representation of U+1F954 as the bytes
+of a UTF-16 string in PDF syntax with the leading <code class="docutils literal notranslate"><span class="pre">FEFF</span></code>
+indicating UTF-16</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;b:efbbbff09fa594&quot;</span></code> – representation of U+1F954 as the
+bytes of a UTF-8 string in PDF syntax (as allowed by PDF 2.0)
+with the leading <code class="docutils literal notranslate"><span class="pre">EF</span></code>, <code class="docutils literal notranslate"><span class="pre">BB</span></code>, <code class="docutils literal notranslate"><span class="pre">BF</span></code> sequence (which is just
+UTF-8 encoding of <code class="docutils literal notranslate"><span class="pre">FEFF</span></code>).</p></li>
+<li><p>A JSON string whose contents are <code class="docutils literal notranslate"><span class="pre">u:</span></code> followed by the UTF-8
+representation of U+1F954. This is the potato emoji.
+Unfortunately, I am not able to render it in the PDF version
+of this manual.</p></li>
+</ul>
+</li>
+<li><p>PDF arrays are represented as JSON arrays of objects as described
+above</p></li>
+<li><p>PDF dictionaries are represented as JSON objects whose keys are
+the string representations of names and whose values are
+representations of PDF objects.</p></li>
+</ul>
+</dd>
+</dl>
+<p>Note that writing JSON output is done by <code class="docutils literal notranslate"><span class="pre">QPDF</span></code>, not <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code>.
+As such, none of the things <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> does apply. This includes
+recompression of streams, renumbering of objects, removal of
+unreferenced objects, encryption, decryption, linearization, QDF
+mode, etc. See <a class="reference internal" href="design.html#rewriting"><span class="std std-ref">Writing PDF Files</span></a> for a more in-depth discussion. This
+has a few noteworthy implications:</p>
+<ul class="simple">
+<li><p>Decryption is handled transparently by qpdf. As there are no qpdf
+APIs, even internal to the library, that allow retrieval of
+encrypted data in its raw, encrypted form, qpdf JSON always includes
+decrypted data. It is possible that a future version of qpdf may
+allow access to raw, encrypted string and stream data.</p></li>
+<li><p>Objects that are related to a PDF file’s structure, rather than its
+content, are included in the JSON output, even though they are not
+particularly useful. In a future version of qpdf, this may be fixed,
+and the <a class="reference internal" href="cli.html#option-preserve-unreferenced" title="option-preserve-unreferenced"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--preserve-unreferenced</span></code></a> flag may be able to be
+used to get the existing behavior. For now, to avoid this, run the
+file through <code class="docutils literal notranslate"><span class="pre">qpdf</span> <span class="pre">--decrypt</span> <span class="pre">--object-streams=disable</span> <span class="pre">in.pdf</span>
+<span class="pre">out.pdf</span></code> to generate a new PDF file that contains no unreferenced
+or structural objects.</p>
+<ul>
+<li><p>Linearized PDF files include a linearization dictionary which is not
+referenced from any other object and which references the
+linearization hint stream by offset. The JSON from a linearized PDF
+file contains both of these objects, even though they are not useful
+in the JSON. Offset information is not represented in the JSON, so
+there’s no way to find the linearization hint stream from the
+JSON. If a new PDF is created from JSON that was written, the
+objects will be read back in but will just be unreferenced objects
+that will be ignored by <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> when the file is rewritten.</p></li>
+<li><p>The JSON from a file with object streams will include the original
+object stream and will also include all the objects in the stream
+as top-level objects.</p></li>
+<li><p>In files with object streams, the trailer “dictionary” is a
+stream. In qpdf JSON files, the <code class="docutils literal notranslate"><span class="pre">&quot;trailer&quot;</span></code> key will contain a
+dictionary with all the keys in it relating to the stream, and the
+stream will also appear as an unreferenced object.</p></li>
+<li><p>Encrypted files are decrypted, but the encryption dictionary still
+appears in the JSON output.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="qpdf-json-example">
+<span id="json-example"></span><h3>qpdf JSON Example<a class="headerlink" href="#qpdf-json-example" title="Link to this heading"></a></h3>
+<p>The JSON below shows an example of a simple PDF file represented in
+qpdf JSON format.</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;qpdf&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;jsonversion&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;pdfversion&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.3&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;pushedinheritedpageresources&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;calledgetallpages&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;maxobjectid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;obj:1 0 R&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;/Pages&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;3 0 R&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Catalog&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;obj:2 0 R&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;/Author&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:Digits of π&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/CreationDate&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:D:20220731155308-05&#39;00&#39;&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Creator&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:A person typing in Emacs&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Keywords&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:potato, example&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/ModDate&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:D:20220731155308-05&#39;00&#39;&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Producer&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:qpdf&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Subject&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:Example&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;u:Something potato-related&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;obj:3 0 R&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;/Count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Kids&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="s2">&quot;4 0 R&quot;</span>
+<span class="w">          </span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;/Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Pages&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;obj:4 0 R&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;/Contents&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;5 0 R&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/MediaBox&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">612</span><span class="p">,</span>
+<span class="w">            </span><span class="mi">792</span>
+<span class="w">          </span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;/Parent&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;3 0 R&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Resources&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;/Font&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">&quot;/F1&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;6 0 R&quot;</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">          </span><span class="p">},</span>
+<span class="w">          </span><span class="nt">&quot;/Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Page&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;obj:5 0 R&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;stream&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;eJxzCuFSUNB3M1QwMlEISQOyzY2AyEAhJAXI1gjIL0ksyddUCMnicg3hAgDLAQnI&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;dict&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;/Filter&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/FlateDecode&quot;</span>
+<span class="w">          </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;obj:6 0 R&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;/BaseFont&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Helvetica&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Encoding&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/WinAnsiEncoding&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Subtype&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Type1&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/Font&quot;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">&quot;trailer&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;value&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;/ID&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="s2">&quot;b:98b5a26966fba4d3a769b715b2558da6&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s2">&quot;b:6bea23330e0b9ff0ddb47b6757fb002e&quot;</span>
+<span class="w">          </span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;/Info&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2 0 R&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Root&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1 0 R&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;/Size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">7</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="qpdf-json-input">
+<span id="json-input"></span><h3>qpdf JSON Input<a class="headerlink" href="#qpdf-json-input" title="Link to this heading"></a></h3>
+<p>The qpdf JSON output can be used in two different ways:</p>
+<ul class="simple">
+<li><p>By using the <a class="reference internal" href="cli.html#option-json-input" title="option-json-input"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-input</span></code></a> flag or calling
+<code class="docutils literal notranslate"><span class="pre">QPDF::createFromJSON</span></code> in place of <code class="docutils literal notranslate"><span class="pre">QPDF::processFile</span></code>, a qpdf
+JSON file can be used in place of a PDF file as the input to qpdf.</p></li>
+<li><p>By using the <a class="reference internal" href="cli.html#option-update-from-json" title="option-update-from-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--update-from-json</span></code></a> flag or calling
+<code class="docutils literal notranslate"><span class="pre">QPDF::updateFromJSON</span></code> on an initialized <code class="docutils literal notranslate"><span class="pre">QPDF</span></code> object, a qpdf
+JSON file can be used to apply changes to an existing <code class="docutils literal notranslate"><span class="pre">QPDF</span></code>
+object. That <code class="docutils literal notranslate"><span class="pre">QPDF</span></code> object can have come from any source including
+a PDF file, a qpdf JSON file, or the result of any other process
+that results in a valid, initialized <code class="docutils literal notranslate"><span class="pre">QPDF</span></code> object.</p></li>
+</ul>
+<p>Here are some important things to know about qpdf JSON input.</p>
+<ul>
+<li><p>When a qpdf JSON file is used as the primary input file, it must be
+complete. This means</p>
+<ul class="simple">
+<li><p>A JSON version number must be specified with the <code class="docutils literal notranslate"><span class="pre">&quot;jsonversion&quot;</span></code>
+key in the first array element</p></li>
+<li><p>A PDF version number must be specified with the <code class="docutils literal notranslate"><span class="pre">&quot;pdfversion&quot;</span></code>
+key in the first array element</p></li>
+<li><p>Stream data must be present for all streams</p></li>
+<li><p>The trailer dictionary must be present, though only the
+<code class="docutils literal notranslate"><span class="pre">&quot;/Root&quot;</span></code> key is required.</p></li>
+</ul>
+</li>
+<li><p>Certain fields from the input are ignored whether creating or
+updating from a JSON file:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;maxobjectid&quot;</span></code> is ignored, so it is not necessary to update it
+when adding new objects.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;/Length&quot;</span></code> is ignored in all stream dictionaries. qpdf doesn’t
+put it there when it creates JSON output, and it is not necessary
+to add it.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;/Size&quot;</span></code> is ignored if it appears in a trailer dictionary as
+that is always recomputed by <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code>.</p></li>
+<li><p>Unknown keys at the top level of the file, within <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code>, and
+at the top level of each individual PDF object (inside the
+dictionary that has the <code class="docutils literal notranslate"><span class="pre">&quot;value&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;stream&quot;</span></code> key) and
+directly within <code class="docutils literal notranslate"><span class="pre">&quot;stream&quot;</span></code> are ignored for future compatibility.
+This includes other top-level keys generated by <code class="docutils literal notranslate"><span class="pre">qpdf</span></code> itself
+(such as <code class="docutils literal notranslate"><span class="pre">&quot;pages&quot;</span></code>). As such, those keys don’t have to be
+consistent with the <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> key if modifying a JSON file for
+conversion back to PDF. If you wish to store application-specific
+metadata, you can do so by adding a key whose name starts with
+<code class="docutils literal notranslate"><span class="pre">x-</span></code>. qpdf is guaranteed not to add any of its own keys that
+starts with <code class="docutils literal notranslate"><span class="pre">x-</span></code>. Note that any <code class="docutils literal notranslate"><span class="pre">&quot;version&quot;</span></code> key at the top
+level is ignored. The JSON version is obtained from the
+<code class="docutils literal notranslate"><span class="pre">&quot;jsonversion&quot;</span></code> key of the first element of the <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code>
+field.</p></li>
+</ul>
+</li>
+<li><p>The values of <code class="docutils literal notranslate"><span class="pre">&quot;calledgetallpages&quot;</span></code> and
+<code class="docutils literal notranslate"><span class="pre">&quot;pushedinheritedpageresources&quot;</span></code> are ignored when creating a file.
+When updating a file, they are treated as <code class="docutils literal notranslate"><span class="pre">false</span></code> if omitted.</p></li>
+<li><p>When qpdf reads a PDF file, the internal object numbers are always
+preserved. However, when qpdf writes a file using <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code>,
+<code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code> does its own numbering and, in general, does not
+preserve input object numbers. That means that a qpdf JSON file that
+is used to update an existing PDF must have object numbers that
+match the input file it is modifying. In practical terms, this means
+that you can’t use a JSON file created from one PDF file to modify
+the <em>output of running qpdf on that file</em>.</p>
+<p>To put this more concretely, the following is valid:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf --json-output in.pdf pdf.json
+# edit pdf.json
+qpdf in.pdf out.pdf --update-from-json=pdf.json
+</pre></div>
+</div>
+<p>By contrast, the following will produce unpredictable and probably incorrect
+results because <code class="docutils literal notranslate"><span class="pre">out.pdf</span></code> won’t have the same object numbers as
+<code class="docutils literal notranslate"><span class="pre">pdf.json</span></code> and <code class="docutils literal notranslate"><span class="pre">in.pdf</span></code>.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf --json-output in.pdf pdf.json
+# edit pdf.json
+qpdf in.pdf out.pdf --update-from-json=pdf.json
+# edit pdf.json again
+# Don&#39;t do this
+qpdf out.pdf out2.pdf --update-from-json=pdf.json
+</pre></div>
+</div>
+</li>
+<li><p>When updating from a JSON file (<a class="reference internal" href="cli.html#option-update-from-json" title="option-update-from-json"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--update-from-json</span></code></a>,
+<code class="docutils literal notranslate"><span class="pre">QPDF::updateFromJSON</span></code>), existing objects are updated in place.
+This has the following implications:</p>
+<ul class="simple">
+<li><p>If the object you are updating is a stream, you may omit both
+<code class="docutils literal notranslate"><span class="pre">&quot;data&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;datafile&quot;</span></code>. In that case the original stream
+data is preserved. You must always provide a stream dictionary,
+but it may be empty. Note that an empty stream dictionary will
+clear the old dictionary. There is no way to indicate that an old
+stream dictionary should be left alone, so if your intention is to
+replace the stream data and preserve the dictionary, the original
+dictionary must appear in the JSON file.</p></li>
+<li><p>You can change one object type to another object type including
+replacing a stream with a non-stream or a non-stream with a
+stream. If you replace a non-stream with a stream, you must
+provide data for the stream.</p></li>
+<li><p>Objects that you do not wish to modify can be omitted from the
+JSON. That includes the trailer. That means you can use the output
+of a qpdf JSON file that was written using
+<a class="reference internal" href="cli.html#option-json-object" title="option-json-object"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-object</span></code></a> to have it include only the objects you
+intend to modify.</p></li>
+<li><p>You can omit the <code class="docutils literal notranslate"><span class="pre">&quot;pdfversion&quot;</span></code> key. The input PDF version will
+be preserved.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="qpdf-json-workflow-cli">
+<span id="json-workflow-cli"></span><h3>qpdf JSON Workflow: CLI<a class="headerlink" href="#qpdf-json-workflow-cli" title="Link to this heading"></a></h3>
+<p>This section includes a few examples of using qpdf JSON.</p>
+<ul>
+<li><p>Convert a PDF file to JSON format, edit the JSON, and convert back
+to PDF. This is an alternative to using QDF mode (see <a class="reference internal" href="qdf.html#qdf"><span class="std std-ref">QDF Mode</span></a>) to
+modify PDF files in a text editor. Each method has its own
+advantages and disadvantages.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf --json-output in.pdf pdf.json
+# edit pdf.json
+qpdf --json-input pdf.json out.pdf
+</pre></div>
+</div>
+</li>
+<li><p>Extract only a specific object into a JSON file, modify the object
+in JSON, and use the modified object to update the original PDF. In
+this case, we’re editing object 4, whatever that may happen to be.
+You would have to know through some other means which object you
+wanted to edit, such as by looking at other JSON output or using a
+tool (possibly but not necessarily qpdf) to identify the object.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf --json-output in.pdf pdf.json --json-object=4,0
+# edit pdf.json
+qpdf in.pdf --update-from-json=pdf.json out.pdf
+</pre></div>
+</div>
+<p>Rather than using <a class="reference internal" href="cli.html#option-json-object" title="option-json-object"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-object</span></code></a> as in the above example,
+you could edit the JSON file to remove the objects you didn’t need.
+You could also just leave them there, though the update process
+would be slower.</p>
+<p>You could also add new objects to a file by adding them to
+<code class="docutils literal notranslate"><span class="pre">pdf.json</span></code>. Just be sure the object number doesn’t conflict with
+an existing object. The <code class="docutils literal notranslate"><span class="pre">&quot;maxobjectid&quot;</span></code> field in the original
+output can help with this. You don’t have to update it if you add
+objects as it is ignored when the file is read back in.</p>
+</li>
+<li><p>Use <a class="reference internal" href="cli.html#option-json-input" title="option-json-input"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-input</span></code></a> and <a class="reference internal" href="cli.html#option-json-output" title="option-json-output"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-output</span></code></a> together
+to demonstrate preservation of object numbers. In this example,
+<code class="docutils literal notranslate"><span class="pre">a.json</span></code> and <code class="docutils literal notranslate"><span class="pre">b.json</span></code> will have the same objects and object
+numbers. The files may not be identical since strings may be
+normalized, fields may appear in a different order, etc. However
+<code class="docutils literal notranslate"><span class="pre">b.json</span></code> and <code class="docutils literal notranslate"><span class="pre">c.json</span></code> are probably identical.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>qpdf --json-output in.pdf a.json
+qpdf --json-input --json-output a.json b.json
+qpdf --json-input --json-output b.json c.json
+</pre></div>
+</div>
+</li>
+</ul>
+</section>
+<section id="qpdf-json-workflow-api">
+<span id="json-workflow-api"></span><h3>qpdf JSON Workflow: API<a class="headerlink" href="#qpdf-json-workflow-api" title="Link to this heading"></a></h3>
+<p>Everything that can be done using the qpdf CLI can be done using the
+C++ API. See comments in <code class="file docutils literal notranslate"><span class="pre">QPDF.hh</span></code> for <code class="docutils literal notranslate"><span class="pre">writeJSON</span></code>,
+<code class="docutils literal notranslate"><span class="pre">createFromJSON</span></code>, and <code class="docutils literal notranslate"><span class="pre">updateFromJSON</span></code> for details.</p>
+</section>
+</section>
+<section id="json-compatibility-guarantees">
+<span id="json-guarantees"></span><h2>JSON Compatibility Guarantees<a class="headerlink" href="#json-compatibility-guarantees" title="Link to this heading"></a></h2>
+<p>The qpdf JSON representation includes a JSON serialization of the raw
+objects in the PDF file as well as some computed information in a more
+easily extracted format. qpdf provides some guarantees about its JSON
+format. These guarantees are designed to simplify the experience of a
+developer working with the JSON format.</p>
+<dl>
+<dt>Compatibility</dt><dd><p>The top-level JSON object is a dictionary (JSON “object”). The JSON
+output contains various nested dictionaries and arrays. With the
+exception of dictionaries that are populated by the fields of
+PDF objects from the file, all instances of a dictionary are
+guaranteed to have exactly the same keys.</p>
+<p>The top-level JSON structure contains a <code class="docutils literal notranslate"><span class="pre">&quot;version&quot;</span></code> key whose
+value is simple integer. The value of the <code class="docutils literal notranslate"><span class="pre">version</span></code> key will be
+incremented if a non-compatible change is made. A non-compatible
+change would be any change that involves removal of a key, a change
+to the format of data pointed to by a key, or a semantic change
+that requires a different interpretation of a previously existing
+key. Note that, starting with version 2, the JSON version also
+appears in the <code class="docutils literal notranslate"><span class="pre">&quot;jsonversion&quot;</span></code> field of the first element of
+<code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> field.</p>
+<p>Within a specific qpdf JSON version, future versions of qpdf are
+free to add additional keys but not to remove keys or change the
+type of object that a key points to. That means that consumers of
+qpdf JSON should ignore keys they don’t know about.</p>
+</dd>
+<dt>Documentation</dt><dd><p>The <strong class="command">qpdf</strong> command can be invoked with the
+<a class="reference internal" href="cli.html#option-json-help" title="option-json-help"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-help</span></code></a> option. This will output a JSON
+structure that has the same structure as the JSON output that qpdf
+generates, except that each field in the help output is a description
+of the corresponding field in the JSON output. The specific
+guarantees are as follows:</p>
+<ul class="simple">
+<li><p>A dictionary in the help output means that the corresponding
+location in the actual JSON output is also a dictionary with
+exactly the same keys; that is, no keys present in help are
+absent in the real output, and no keys will be present in the
+real output that are not in help. It is possible for a key to be
+present and have a value that is explicitly <code class="docutils literal notranslate"><span class="pre">null</span></code>. As a
+special case, if the dictionary has a single key whose name
+starts with <code class="docutils literal notranslate"><span class="pre">&lt;</span></code> and ends with <code class="docutils literal notranslate"><span class="pre">&gt;</span></code>, it means that the JSON
+output is a dictionary that can have any value as a key. This is
+used for cases in which the keys of the dictionary are things
+like object IDs.</p></li>
+<li><p>A string in the help output is a description of the item that
+appears in the corresponding location of the actual output. The
+corresponding output can have any value including <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p></li>
+<li><p>A single-element array in the help output indicates that the
+corresponding location in the actual output is either a single
+item or is an array of any length. The single item or each
+element of the array has whatever format is implied by the single
+element of the help output’s array.</p></li>
+<li><p>A multi-element array in the help output indicates that the
+corresponding location in the actual output is an array of the
+same length. Each element of the output array has whatever format
+is implied by the corresponding element of the help output’s
+array.</p></li>
+</ul>
+<p>For example, the help output indicates includes a <code class="docutils literal notranslate"><span class="pre">&quot;pagelabels&quot;</span></code>
+key whose value is an array of one element. That element is a
+dictionary with keys <code class="docutils literal notranslate"><span class="pre">&quot;index&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;label&quot;</span></code>. In addition to
+describing the meaning of those keys, this tells you that the actual
+JSON output will contain a <code class="docutils literal notranslate"><span class="pre">pagelabels</span></code> array, each of whose
+elements is a dictionary that contains an <code class="docutils literal notranslate"><span class="pre">index</span></code> key, a <code class="docutils literal notranslate"><span class="pre">label</span></code>
+key, and no other keys.</p>
+</dd>
+<dt>Directness and Simplicity</dt><dd><p>The JSON output contains the value of every object in the file, but
+it also contains some summary data. This is analogous to how qpdf’s
+library interface works. The summary data is similar to the helper
+functions in that it allows you to look at certain aspects of the
+PDF file without having to understand all the nuances of the PDF
+specification, while the raw objects allow you to mine the PDF for
+anything that the higher-level interfaces are lacking. It is
+especially useful to create a JSON file with the <code class="docutils literal notranslate"><span class="pre">&quot;pages&quot;</span></code> and
+<code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> keys and to use the <code class="docutils literal notranslate"><span class="pre">&quot;pages&quot;</span></code> information to find a
+page rather than navigating the pages tree manually. This can be
+done safely, and changes can made to the objects dictionary without
+worrying about keeping <code class="docutils literal notranslate"><span class="pre">&quot;pages&quot;</span></code> up to date since it is ignored
+when reading the file back in.</p>
+</dd>
+</dl>
+</section>
+<section id="json-special-considerations">
+<span id="json-considerations"></span><h2>JSON: Special Considerations<a class="headerlink" href="#json-special-considerations" title="Link to this heading"></a></h2>
+<p>For the most part, the built-in JSON help tells you everything you need
+to know about the JSON format, but there are a few non-obvious things to
+be aware of:</p>
+<ul class="simple">
+<li><p>If a PDF file has certain types of errors in its pages tree (such as
+page objects that are direct or multiple pages sharing the same
+object ID), qpdf will automatically repair the pages tree. If you
+specify <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> (or, with qpdf JSON version 1, <code class="docutils literal notranslate"><span class="pre">&quot;objects&quot;</span></code> or
+<code class="docutils literal notranslate"><span class="pre">&quot;objectinfo&quot;</span></code>) without any other keys, you will see the original
+pages tree without any corrections. If you specify any of keys that
+require page tree traversal (for example, <code class="docutils literal notranslate"><span class="pre">&quot;pages&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;outlines&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">&quot;pagelabel&quot;</span></code>), then <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> (and
+<code class="docutils literal notranslate"><span class="pre">&quot;objects&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;objectinfo&quot;</span></code>) will show the repaired page
+tree so that object references will be consistent throughout the
+file. You can tell if this has happened by looking at the
+<code class="docutils literal notranslate"><span class="pre">&quot;calledgetallpages&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;pushedinheritedpageresources&quot;</span></code>
+fields in the first element of the <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> array.</p></li>
+<li><p>While qpdf guarantees that keys present in the help will be present
+in the output, those fields may be null or empty if the information
+is not known or absent in the file. Also, if you specify
+<a class="reference internal" href="cli.html#option-json-key" title="option-json-key"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-key</span></code></a>, the keys that are not listed
+will be excluded entirely except for those that
+<a class="reference internal" href="cli.html#option-json-help" title="option-json-help"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-help</span></code></a> says are always present.</p></li>
+<li><p>In a few places, there are keys with names containing
+<code class="docutils literal notranslate"><span class="pre">pageposfrom1</span></code>. The values of these keys are null or an integer. If
+an integer, they point to a page index within the file numbering from
+1. Note that JSON indexes from 0, and you would also use 0-based
+indexing using the API. However, 1-based indexing is easier in this
+case because the command-line syntax for specifying page ranges is
+1-based. If you were going to write a program that looked through
+the JSON for information about specific pages and then use the
+command-line to extract those pages, 1-based indexing is easier.
+Besides, it’s more convenient to subtract 1 in a real programming
+language than it is to add 1 in shell code.</p></li>
+<li><p>The image information included in the <code class="docutils literal notranslate"><span class="pre">page</span></code> section of the JSON
+output includes the key <code class="docutils literal notranslate"><span class="pre">&quot;filterable&quot;</span></code>. Note that the value of
+this field may depend on the <a class="reference internal" href="cli.html#option-decode-level" title="option-decode-level"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--decode-level</span></code></a> that you
+invoke qpdf with. The JSON output includes a top-level key
+<code class="docutils literal notranslate"><span class="pre">&quot;parameters&quot;</span></code> that indicates the decode level that was used for
+computing whether a stream was filterable. For example, jpeg images
+will be shown as not filterable by default, but they will be shown
+as filterable if you run <strong class="command">qpdf --json
+--decode-level=all</strong>.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">encrypt</span></code> key’s values will be populated for non-encrypted
+files. Some values will be null, and others will have values that
+apply to unencrypted files.</p></li>
+<li><p>The qpdf library itself never loads an entire PDF into memory. This
+remains true for PDF files represented in JSON format. In general,
+qpdf will hold the entire object structure in memory once a file has
+been fully read (objects are loaded into memory lazily but stay
+there once loaded), but it will never have more than two copies of a
+stream in memory at once. That said, if you ask qpdf to write JSON
+to memory, it will do so, so be careful about this if you are
+working with very large PDF files. There is nothing in the qpdf
+library itself that prevents working with PDF files much larger than
+available system memory. qpdf can both read and write such files in
+JSON format. If you need to work with a PDF file’s json
+representation in memory, it is recommended that you use either
+<code class="docutils literal notranslate"><span class="pre">none</span></code> or <code class="docutils literal notranslate"><span class="pre">file</span></code> as the argument to
+<a class="reference internal" href="cli.html#option-json-stream-data" title="option-json-stream-data"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--json-stream-data</span></code></a>, or if using the API, use
+<code class="docutils literal notranslate"><span class="pre">qpdf_sj_none</span></code> or <code class="docutils literal notranslate"><span class="pre">pdf_sj_file</span></code> as the json stream data value.
+If using <code class="docutils literal notranslate"><span class="pre">none</span></code>, you can use other means to obtain the stream
+data.</p></li>
+</ul>
+</section>
+<section id="changes-from-json-v1-to-v2">
+<span id="json-v2-changes"></span><h2>Changes from JSON v1 to v2<a class="headerlink" href="#changes-from-json-v1-to-v2" title="Link to this heading"></a></h2>
+<p>The following changes were made to qpdf’s JSON output format for
+version 2.</p>
+<ul class="simple">
+<li><p>The representation of objects has changed. For details, see
+<a class="reference internal" href="#json-objects"><span class="std std-ref">qpdf JSON Object Representation</span></a>.</p>
+<ul>
+<li><p>The representation of strings is now unambiguous for all strings.
+Strings a prefixed with either <code class="docutils literal notranslate"><span class="pre">u:</span></code> for Unicode strings or
+<code class="docutils literal notranslate"><span class="pre">b:</span></code> for byte strings.</p></li>
+<li><p>Names are shown in qpdf’s canonical form rather than in PDF
+syntax. (Example: the PDF-syntax name <code class="docutils literal notranslate"><span class="pre">/text#2fplain</span></code> appeared
+as <code class="docutils literal notranslate"><span class="pre">&quot;/text#2fplain&quot;</span></code> in v1 but appears as <code class="docutils literal notranslate"><span class="pre">&quot;/text/plain&quot;</span></code> in
+v2. In qpdf 11.7.0, a fix was made to accept <code class="docutils literal notranslate"><span class="pre">&quot;n:/pdf-syntax&quot;</span></code>
+for names containing binary characters.</p></li>
+<li><p>The top-level representation of an object in <code class="docutils literal notranslate"><span class="pre">&quot;objects&quot;</span></code> is a
+dictionary containing either a <code class="docutils literal notranslate"><span class="pre">&quot;value&quot;</span></code> key or a <code class="docutils literal notranslate"><span class="pre">&quot;stream&quot;</span></code>
+key, making it possible to distinguish streams from other objects.</p></li>
+</ul>
+</li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">&quot;objectinfo&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;objects&quot;</span></code> keys have been removed in
+favor of a representation in <code class="docutils literal notranslate"><span class="pre">&quot;qpdf&quot;</span></code> that includes header
+information and differentiates between a stream and other kinds of
+objects. In v1, it was not possible to tell a stream from a
+dictionary within <code class="docutils literal notranslate"><span class="pre">&quot;objects&quot;</span></code>, and the PDF version was not
+captured at all.</p></li>
+<li><p>Within the objects dictionary, keys are now <code class="samp docutils literal notranslate"><span class="pre">&quot;obj:</span><em><span class="pre">O</span></em> <em><span class="pre">G</span></em> <span class="pre">R&quot;</span></code>
+where <code class="samp docutils literal notranslate"><em><span class="pre">O</span></em></code> and <code class="samp docutils literal notranslate"><em><span class="pre">G</span></em></code> are the object and generation
+number. <code class="docutils literal notranslate"><span class="pre">&quot;trailer&quot;</span></code> remains the key for the trailer dictionary. In
+v1, the <code class="docutils literal notranslate"><span class="pre">obj:</span></code> prefix was not present. The rationale for this
+change is as follows:</p>
+<ul>
+<li><p>Having a unique prefix (<code class="docutils literal notranslate"><span class="pre">obj:</span></code>) makes it much easier to search
+in the JSON file for the definition of an object</p></li>
+<li><p>Having the key still contain <code class="docutils literal notranslate"><span class="pre">O</span> <span class="pre">G</span> <span class="pre">R</span></code> makes it much easier to
+construct the key from an indirect reference. You just have to
+prepend <code class="docutils literal notranslate"><span class="pre">obj:</span></code>. There is no need to parse the indirect object
+reference.</p></li>
+</ul>
+</li>
+<li><p>In the <code class="docutils literal notranslate"><span class="pre">&quot;encrypt&quot;</span></code> object, the <code class="docutils literal notranslate"><span class="pre">&quot;modifyannotations&quot;</span></code> was
+misspelled as <code class="docutils literal notranslate"><span class="pre">&quot;moddifyannotations&quot;</span></code> in v1. This has been
+corrected.</p></li>
+</ul>
+<section id="motivation-for-qpdf-json-version-2">
+<h3>Motivation for qpdf JSON version 2<a class="headerlink" href="#motivation-for-qpdf-json-version-2" title="Link to this heading"></a></h3>
+<p>qpdf JSON version 2 was created to make it possible to manipulate PDF
+files using JSON syntax instead of native PDF syntax. This makes it
+possible to make low-level updates to PDF files from just about any
+programming language or even to do so from the command-line using
+tools like <code class="docutils literal notranslate"><span class="pre">jq</span></code> or any editor that’s capable of working with JSON
+files. There were several limitations of JSON format version 1 that
+made this impossible:</p>
+<ul class="simple">
+<li><p>Strings, names, and indirect object references in the original PDF
+file were all converted to strings in the JSON representation. For
+casual human inspection, this was fine, but in the general case,
+there was no way to tell the difference between a string that looked
+like a name or indirect object reference from an actual name or
+indirect object reference.</p></li>
+<li><p>PDF strings were not unambiguously represented in the JSON format.
+The way qpdf JSON v1 represented a string was to try to convert the
+string to UTF-8. This was done by assuming a string that was not
+explicitly marked as Unicode was encoded in PDF doc encoding. The
+problem is that there is not a perfect bidirectional mapping between
+Unicode and PDF doc encoding, so if a binary string happened to
+contain characters that couldn’t be bidirectionally mapped, there
+would be no way to get back to the original PDF string. Even when
+possible, trying to map from the JSON representation of a binary
+string back to the original string required knowledge of the mapping
+between PDF doc encoding and Unicode.</p></li>
+<li><p>There was no representation of stream data. If you wanted to extract
+stream data, you could use <a class="reference internal" href="cli.html#option-show-object" title="option-show-object"><code class="xref qpdf qpdf-ref docutils literal notranslate"><span class="pre">--show-object</span></code></a>, so this wasn’t
+that important for inspection, but it was a blocker for being able
+to go from JSON back to PDF. qpdf JSON version 2 allows stream data
+to be included inline as base64-encoded data. There is also an
+option to write all stream data to external files, which makes it
+possible to work with very large PDF files in JSON format even with
+tools that try to read the entire JSON structure into memory.</p></li>
+<li><p>The PDF version from PDF header was not represented in qpdf JSON v1.</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="weak-crypto.html" class="btn btn-neutral float-left" title="Weak Cryptography" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="contributing.html" class="btn btn-neutral float-right" title="Contributing to qpdf" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

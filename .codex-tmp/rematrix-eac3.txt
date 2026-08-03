@@ -1,0 +1,247 @@
+                                               190                      ETSI TS 102 366 V1.4.1 (2017-09)
+
+
+index   val[index][0]   val[index][1]   val[index][2]   val[index][3]   val[index][4]   val[index][5]
+        (16-bit two's   (16-bit two's   (16-bit two's   (16-bit two's   (16-bit two's   (16-bit two's
+        complement)     complement)     complement)     complement)     complement)     complement)
+407        0xdc8d          0xbc80          0xf8d7          0x8d62          0xa16b          0xbf09
+408        0xf4e5          0x27b5          0xeb25          0xf4b8          0x5562          0xaca4
+409        0xc228          0x3a01          0xa31c          0x1440          0x2781          0xaf61
+410        0xb3b1          0xd39f          0x20dd          0x05ce          0xa396          0xe981
+411        0xe2a8          0x0403          0xaec6          0x35a4          0x4db4          0xaa52
+412        0xd09c          0xe492          0xb519          0xdd78          0x566d          0xbf96
+413        0x0791          0x145a          0xe752          0xa314          0x3355          0x2b4a
+414         0xff33         0x1794          0xfe84          0x21d2           0xff17         0x6d74
+415        0xea6d          0x1d35          0x1dd3          0x5c2b          0x2623          0xf5e2
+416        0x549a          0x9167           0xf3f2         0xfed4           0xfbf8         0x06d0
+417        0xa8b0          0x4106          0x00d0          0x1a09          0xbc08          0xf42c
+418        0x4832          0x2478           0xf54f         0xb454          0x0197          0xeedb
+419        0xeccf          0xbc26          0x4983          0xbb0a          0x3468          0x3b80
+420        0x1e45          0x18e0          0x5a5f          0xb902          0x1da0          0xef68
+421         0xfa2f         0xe685          0x024a          0xd853          0x3a74          0x63e0
+422        0x0f04          0xe7f4          0x1321          0xcd0b          0xa802          0x160f
+423        0xded5          0xf7c7          0x9f3a          0x0389          0xdb92          0x05b0
+424        0xf420          0xfa3c          0x048e          0xeeb4          0x2be4          0x23f4
+425        0x0d45          0xfa55          0x351e          0xc21f          0x5fdc          0x16bb
+426        0x2123           0xf44f         0x542b          0xbdec          0x1e3d          0x5dd2
+427        0xc5ac          0xa332          0xeb2c          0xe5f8          0xee6f          0x33d3
+428        0x4bb3          0x3274          0xf7a2           0xfd1f         0x526c          0xa9ab
+429        0x0d41          0xedeb          0x1667          0xb61f          0xe4c7          0x0a7f
+430        0x047c          0xc0ed          0xac47          0x9241          0xfd8a          0xc78f
+431        0x1c84          0x02a0          0x4862          0xbbd4          0xd85b          0x015f
+432        0x2c5c          0xd522          0x433c          0x1210          0x0091          0x457f
+433        0xfd39          0xf269          0xf742          0x3e0f          0x07eb          0x0000
+434        0x9270          0x0702           0xfdaf         0xf53a          0xaaa4          0x2d0f
+435        0xb31d          0x1349          0x55f4          0x5413          0xf3b4          0x06fe
+436        0x032d          0x2027          0x0a49          0x2ecd          0xf41d          0x56b9
+437        0x22f8          0x9f48          0xfd4e          0x3a19          0xf6c2          0xeb04
+438        0x20d6          0xeac1          0xfeee          0xfd7e           0xff6f         0x030a
+439        0xe633          0x1c5a          0x512c          0xa42d          0xb73f          0x58fe
+440        0xa690          0x9c70          0x2724          0xf9b2          0x05e4           0xfa8f
+441        0x1db7          0x0197          0x9f9a           0xbfff          0xf8f4         0xeda5
+442        0xd6a0          0xb53d          0x28de          0xf15d          0x2211          0xe4f9
+443        0x32d2          0x14ac          0xe7aa          0xecec          0xae58           0xf8fb
+444        0x41fb          0xca36           0xfe2f         0x4b8f          0xd60b          0xcd61
+445        0x6269          0xc631          0xe9cf           0xfdf7          0xfebf         0xfb45
+446        0x1b05          0xf3eb          0x4ed7          0x96e9          0xd106          0x050f
+447        0x0131          0x07c8          0x4c01          0xfc27          0x0019           0xfdf7
+448        0x1a33          0xf18e          0x20ad          0xde11          0x55a1          0x95e2
+449        0x123c          0x176d          0x1bcd          0x2db0          0x5f51          0xd5d6
+450        0x02e8          0xdb38          0x4db5          0x07ab          0x1ef2          0xd9a0
+451        0x0d66          0x5322          0xf938          0x2a5c          0x2275          0x6987
+452        0xdd93          0x05f1          0xa21a          0x0673          0x1e9e          0xfb48
+453        0x0f47          0xd42b          0x0cc9          0xcf03          0x1c00          0x47e2
+454        0x548a          0x239d          0xd2f0          0xeb78          0x1ba5          0x094e
+455        0x0064          0x0ee9          0xe5c7          0x04dc          0x05ee           0xfebf
+456        0x1f0a          0xb712          0x29ab          0xecfe          0x02d7          0x0308
+457        0xc1f5          0xe02a          0xf7d9          0x58d3          0x061f          0xf266
+458        0x111c          0xf551          0x2115          0xe48f          0xd360          0x0525
+459        0x695a          0x1129          0x1df1          0x4499          0xfd36          0x028a
+460        0xc0c1          0xfcbd          0x20ad          0x0703          0xc816          0x3fa9
+461        0x1198          0xd8c0          0x1dee          0x97be          0xbbec          0x0a14
+462        0x0030          0xf070          0x0234          0xe911          0x0a62          0xb71e
+463        0x3123          0x9a60          0xc2e6          0x0a70          0xfabd          0xfc89
+464        0xecaa          0x1070          0xe565          0x0a09          0xaf73          0xde2e
+465        0xf8d4          0xc61e          0xea3d          0xa4e6          0xc630          0x650b
+466        0x153a          0x9215          0xf6cb          0xf4bd          0xfdc6          0x097f
+467        0x3328          0xf52d          0x61a2          0xcf30          0x9f6d           0xfbff
+468        0xe9d4          0xef0d          0x0774          0x48c4          0xacb5          0x43d6
+
+
+
+
+                                               ETSI
+                                               191                      ETSI TS 102 366 V1.4.1 (2017-09)
+
+
+index   val[index][0]   val[index][1]   val[index][2]   val[index][3]   val[index][4]   val[index][5]
+        (16-bit two's   (16-bit two's   (16-bit two's   (16-bit two's   (16-bit two's   (16-bit two's
+        complement)     complement)     complement)     complement)     complement)     complement)
+469        0x6c0c          0x9307          0xc3cf          0x059c          0xe438           0xf73f
+470        0x1f53          0x0f07           0x5ff8         0xfe2b          0x25ca          0x29bb
+471        0xfc79          0xd85b          0x0709          0xacf4          0x12bb          0xddd1
+472        0x0462          0xda92          0x0a41          0x5907          0x03bc          0x0372
+473        0x1ec4          0x4a83          0xd954          0xa136          0x1d48          0x243d
+474        0x03d4          0x9774          0xeaf6          0x1514          0x043e          0x0670
+475        0x70a6          0xfb0a          0xfe41          0x0005          0xfe53           0xffec
+476        0xc44d          0x17f4          0x591c          0x04e4          0xd915           0x01ff
+477        0x0353          0x1ef5          0xfe37          0xd04e          0x10a5          0x1d9b
+478        0xee4e          0x2104          0xfb22          0x38a5          0x9e89          0xe980
+479        0xba6a          0xd619          0x269f          0xa287          0xcb88          0x0756
+480        0xc537          0x27b5          0x406b          0xc6f5          0xd240          0xad5c
+481        0xf30b          0x0348          0xe9cd          0x578d          0x07ca          0x024a
+482        0x5a76          0xe964          0xc53d          0xd77c          0xdbc9          0xcb2d
+483         0xfcfb         0xdadb          0xf067          0xa138          0x210f          0x16ac
+484        0xde9f          0xfd41          0xcf68           0xf06f         0x9dde          0x920d
+485        0xbeed          0x3e81          0x0aba          0x064b          0x13e9          0xfbed
+486        0x0029          0xe3f3          0x4dbf          0x7b43          0x8213          0x3667
+487        0xe9e6          0x034d          0xce1a          0x1649          0x4137           0xffaa
+488        0x14a2          0x3a1b          0x6992          0x5284          0x3da0          0xd713
+489        0x3978          0x4cc0          0xd321          0xcbcf          0xb11c          0xc483
+490        0x2195          0xdc4e          0xfd8e          0x2a8b          0xe881          0x18ca
+491        0xfa30          0xfb08          0xfa39          0xfae9          0xf188          0xea93
+492        0xf2d6          0x45cf          0xe634          0x6162          0x651e          0xf3c9
+493        0x20e0          0x6c87          0xfa97          0x14e6          0xef5c          0x4e19
+494        0x1638          0x016a          0x435e          0x0ee1          0xf352          0x0440
+495         0xff97         0x8c59          0x0abb          0x3b77           0xff59         0x0e8a
+496        0x0dae          0xf385          0x219a          0x1e5c          0xf9e2          0xfc6d
+497        0xfe15          0x0cb9          0xf689          0x1592          0x507e           0xff9c
+498        0xc984          0xd398          0xc3f1          0xaa96          0xdeb8          0x2fbd
+499        0xfd98          0x0978          0xf819          0x112e          0xf123          0x1fac
+500        0xe3dc          0x5233          0x52db          0xdb4d          0xb441          0x0380
+501        0xe997          0xc4c8          0xacce          0x42aa          0xfc12          0xfe92
+502        0x1875          0x0ca8          0xd15f          0xc0ab          0xc234          0x19b5
+503        0xf3ad          0x60dc          0x0aad          0xfb17          0xfc95          0xf9c3
+504        0xb00b          0x2b56          0x5e07          0xdce5          0x3738          0x08ac
+505        0xc8e6          0x2eb7          0xa821          0x1027          0xfbe1          0xead4
+506        0x0321          0xf5a1          0x003c          0xeb34          0xfcea          0x1731
+507        0xe334          0xf91c          0xa85f          0x9a34          0x54cb          0x1052
+508        0xe9ad          0xe608          0xc5c4          0x052d          0xa214          0x05d5
+509        0xe878          0xcf38          0x5d7a          0x0b86          0x0641          0x0495
+510        0x4a7b          0x44de          0x4609          0xd662          0x2ab0          0xeca2
+511        0x0c9f          0xf32c          0x6ac8          0x104e          0xf96d          0x01f1
+
+
+
+
+                                               ETSI
+                                                          192                        ETSI TS 102 366 V1.4.1 (2017-09)
+
+
+
+Annex F (normative):
+AC-3 and Enhanced AC-3 bit streams in the ISO Base
+Media File Format
+
+F.0           Scope
+The purpose of this annex is to define the necessary structures for the storage and identification of AC-3 and Enhanced
+AC-3 bit streams in a file format that is compliant with the ISO Base Media File Format. Examples of file formats that
+are derived from the ISO Base Media File Format include the MP4 file format and the 3GPP file format.
+
+
+
+F.1           AC-3 and Enhanced AC-3 Track definition
+In the terminology of the ISO Base Media File Format specification [i.9], AC-3 and Enhanced AC-3 tracks are both
+audio tracks. Therefore the following rules shall apply to the media box in the AC-3 or Enhanced AC-3 track:
+
+   •     In the Handler Reference Box, the handler_type field shall be set to "soun".
+
+   •     The Media Information Header Box shall contain a Sound Media Header Box.
+
+   •     The Sample Description Box shall contain a box derived from AudioSampleEntry. For AC-3 tracks, this box is
+         called AC3SampleEntry and is defined in clause F.3. For Enhanced AC-3 tracks this box is called
+         EC3SampleEntry and is defined in clause F.5.
+
+   •     The value of the timescale parameter in the Media Header Box, and the value of the SamplingRate
+         parameter in the AC3SampleEntry Box or EC3SampleEntry Box shall be equal to the sample rate (in Hz) of
+         the AC-3 or Enhanced AC-3 bit stream respectively.
+
+   •     AC-3 bit streams shall always be identified by using the AC3SampleEntry Box. The use of the
+         MP4AudioSampleEntry Box in combination with the Object Type Indicator value assigned for AC-3 to
+         identify AC-3 bit streams is prohibited.
+
+   •     Enhanced AC-3 bit streams shall always be identified by using the EC3SampleEntry Box. The use of the
+         MP4AudioSampleEntry Box in combination with the Object Type Indicator value assigned for Enhanced
+         AC-3 to identify Enhanced AC-3 bit streams is prohibited.
+
+   •     The following bit stream parameters shall remain constant within an AC-3 bit stream that is identified by the
+         AC3SampleEntry Box:
+
+         -    bsid
+
+         -    bsmod
+
+         -    acmod
+
+         -    lfeon
+
+         -    fscod
+
+         -    frmsizcod
+
+   •     The following bit stream parameters shall remain constant within an Enhanced AC-3 bit stream that is
+         identified by the EC3SampleEntry Box:
+
+         -    Number of independent substreams
+
+         -    Number of dependent substreams
+
+
+
+
+                                                         ETSI
+                                                          193                         ETSI TS 102 366 V1.4.1 (2017-09)
+
+
+         -    Within each independent substream:
+
+                    bsid
+
+                    bsmod
+
+                    acmod
+
+                    lfeon
+
+                    fscod
+
+         -    Within each dependent substream:
+
+                    bsid
+
+                    acmod
+
+                    lfeon
+
+                    fscod
+
+                    chanmap
+
+While the present document defines the AC-3 and Enhanced AC-3 bit stream syntax in big-endian byte order, it should
+be noted that little-endian byte order streams are valid and may be present within files that are compliant with the ISO
+Base Media File Format. The byte order of the AC-3 or Enhanced AC-3 bit stream can be determined from the order of
+the bytes in the syncword field at the start of each AC-3 or Enhanced AC-3 syncframe. A bit stream stored in big-
+endian byte order has a syncword value of 0x0B77, and a bit stream stored in little-endian byte order has a syncword
+value of 0x770B. It is strongly recommended that AC-3 and Enhanced AC-3 bit streams are stored within ISO Base
+Media Files in big-endian byte order.
+
+
+
+F.2           AC-3 and Enhanced AC-3 Sample definition
+AC-3 or Enhanced AC-3 Samples contain six audio blocks, equivalent in duration to 1 536 contiguous samples of PCM
+audio data. Consequently, the value of the sample_delta field in the Decoding Time to Sample Box shall be 1 536.
+
+An AC-3 Sample shall be defined as follows:
+
+   •     Exactly one AC-3 syncframe, as defined in clause 4.1 of the present document.
+
+An Enhanced AC-3 Sample shall be defined as follows:
+
+The number of Enhanced AC-3 syncframes required to deliver six blocks of audio data from every substream present in
+the Enhanced AC-3 bit stream, beginning with independent substream 0.
+
+
+
+
+                                                          ETSI
+

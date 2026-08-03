@@ -1,0 +1,278 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Object and Cross-Reference Streams &mdash; qpdf 12.3.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/css/wraptable.css?v=846ecf4c" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=133720b1"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="PDF Encryption" href="encryption.html" />
+    <link rel="prev" title="Linearization" href="linearization.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            qpdf
+              <img src="_static/qpdf.svg" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="overview.html">What is qpdf?</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Building and Installing qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="packaging.html">Notes for Packagers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">Running qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qdf.html">QDF Mode</a></li>
+<li class="toctree-l1"><a class="reference internal" href="library.html">Using the qpdf Library</a></li>
+<li class="toctree-l1"><a class="reference internal" href="weak-crypto.html">Weak Cryptography</a></li>
+<li class="toctree-l1"><a class="reference internal" href="json.html">qpdf JSON</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to qpdf</a></li>
+<li class="toctree-l1"><a class="reference internal" href="design.html">Design and Library Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="qpdf-job.html">QPDFJob: a Job-Based Interface</a></li>
+<li class="toctree-l1"><a class="reference internal" href="linearization.html">Linearization</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Object and Cross-Reference Streams</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#object-streams">Object Streams</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cross-reference-streams">Cross-Reference Streams</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#cross-reference-stream-data">Cross-Reference Stream Data</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#implications-for-linearized-files">Implications for Linearized Files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#implementation-notes">Implementation Notes</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="encryption.html">PDF Encryption</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-notes.html">Release Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="acknowledgement.html">Acknowledgments</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">qpdf</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Object and Cross-Reference Streams</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/object-streams.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="object-and-cross-reference-streams">
+<span id="object-and-xref-streams"></span><h1>Object and Cross-Reference Streams<a class="headerlink" href="#object-and-cross-reference-streams" title="Link to this heading"></a></h1>
+<p>This chapter provides information about the implementation of object
+stream and cross-reference stream support in qpdf.</p>
+<section id="object-streams">
+<span id="id1"></span><h2>Object Streams<a class="headerlink" href="#object-streams" title="Link to this heading"></a></h2>
+<p>Object streams can contain any regular object except the following:</p>
+<ul class="simple">
+<li><p>stream objects</p></li>
+<li><p>objects with generation &gt; 0</p></li>
+<li><p>the encryption dictionary</p></li>
+<li><p>objects containing the /Length of another stream</p></li>
+</ul>
+<p>In addition, Adobe reader (at least as of version 8.0.0) appears to not
+be able to handle having the document catalog appear in an object stream
+if the file is encrypted, though this is not specifically disallowed by
+the specification.</p>
+<p>There are additional restrictions for linearized files. See
+<a class="reference internal" href="#object-streams-linearization"><span class="std std-ref">Implications for Linearized Files</span></a> for details.</p>
+<p>The PDF specification refers to objects in object streams as “compressed
+objects” regardless of whether the object stream is compressed.</p>
+<p>The generation number of every object in an object stream must be zero.
+It is possible to delete and replace an object in an object stream with
+a regular object.</p>
+<p>The object stream dictionary has the following keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/N</span></code>: number of objects</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/First</span></code>: byte offset of first object</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/Extends</span></code>: indirect reference to stream that this extends</p></li>
+</ul>
+<p>Stream collections are formed with <code class="docutils literal notranslate"><span class="pre">/Extends</span></code>. They must form a
+directed acyclic graph. These can be used for semantic information and
+are not meaningful to the PDF document’s syntactic structure. Although
+qpdf preserves stream collections, it never generates them and doesn’t
+make use of this information in any way.</p>
+<p>The specification recommends limiting the number of objects in object
+stream for efficiency in reading and decoding. Acrobat 6 uses no more
+than 100 objects per object stream for linearized files and no more 200
+objects per stream for non-linearized files. <code class="docutils literal notranslate"><span class="pre">QPDFWriter</span></code>, in object
+stream generation mode, never puts more than 100 objects in an object
+stream.</p>
+<p>Object stream contents consists of <em>N</em> pairs of integers, each of which
+is the object number and the byte offset of the object relative to the
+first object in the stream, followed by the objects themselves,
+concatenated.</p>
+</section>
+<section id="cross-reference-streams">
+<span id="xref-streams"></span><h2>Cross-Reference Streams<a class="headerlink" href="#cross-reference-streams" title="Link to this heading"></a></h2>
+<p>For non-hybrid files, the value following <code class="docutils literal notranslate"><span class="pre">startxref</span></code> is the byte
+offset to the xref stream rather than the word <code class="docutils literal notranslate"><span class="pre">xref</span></code>.</p>
+<p>For hybrid files (files containing both xref tables and cross-reference
+streams), the xref table’s trailer dictionary contains the key
+<code class="docutils literal notranslate"><span class="pre">/XRefStm</span></code> whose value is the byte offset to a cross-reference stream
+that supplements the xref table. A PDF 1.5-compliant application should
+read the xref table first. Then it should replace any object that it has
+already seen with any defined in the xref stream. Then it should follow
+any <code class="docutils literal notranslate"><span class="pre">/Prev</span></code> pointer in the original xref table’s trailer dictionary.
+The specification is not clear about what should be done, if anything,
+with a <code class="docutils literal notranslate"><span class="pre">/Prev</span></code> pointer in the xref stream referenced by an xref table.
+The <code class="docutils literal notranslate"><span class="pre">QPDF</span></code> class ignores it, which is probably reasonable since, if
+this case were to appear for any sensible PDF file, the previous xref
+table would probably have a corresponding <code class="docutils literal notranslate"><span class="pre">/XRefStm</span></code> pointer of its
+own. For example, if a hybrid file were appended, the appended section
+would have its own xref table and <code class="docutils literal notranslate"><span class="pre">/XRefStm</span></code>. The appended xref table
+would point to the previous xref table which would point the
+<code class="docutils literal notranslate"><span class="pre">/XRefStm</span></code>, meaning that the new <code class="docutils literal notranslate"><span class="pre">/XRefStm</span></code> doesn’t have to point to
+it.</p>
+<p>Since xref streams must be read very early, they may not be encrypted,
+and the may not contain indirect objects for keys required to read them,
+which are these:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">/Type</span></code>: value <code class="docutils literal notranslate"><span class="pre">/XRef</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/Size</span></code>: value <em>n+1</em>: where <em>n</em> is highest object number (same as
+<code class="docutils literal notranslate"><span class="pre">/Size</span></code> in the trailer dictionary)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/Index</span></code> (optional): value
+<code class="docutils literal notranslate"><span class="pre">[:samp:`{n</span> <span class="pre">count}`</span> <span class="pre">...]</span></code> used to determine
+which objects’ information is stored in this stream. The default is
+<code class="docutils literal notranslate"><span class="pre">[0</span> <span class="pre">/Size]</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/Prev</span></code>: value <code class="samp docutils literal notranslate"><em><span class="pre">offset</span></em></code>: byte
+offset of previous xref stream (same as <code class="docutils literal notranslate"><span class="pre">/Prev</span></code> in the trailer
+dictionary)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/W</span> <span class="pre">[...]</span></code>: sizes of each field in the xref table</p></li>
+</ul>
+<p>The other fields in the xref stream, which may be indirect if desired,
+are the union of those from the xref table’s trailer dictionary.</p>
+<section id="cross-reference-stream-data">
+<span id="xref-stream-data"></span><h3>Cross-Reference Stream Data<a class="headerlink" href="#cross-reference-stream-data" title="Link to this heading"></a></h3>
+<p>The stream data is binary and encoded in big-endian byte order. Entries
+are concatenated, and each entry has a length equal to the total of the
+entries in <code class="docutils literal notranslate"><span class="pre">/W</span></code> above. Each entry consists of one or more fields, the
+first of which is the type of the field. The number of bytes for each
+field is given by <code class="docutils literal notranslate"><span class="pre">/W</span></code> above. A 0 in <code class="docutils literal notranslate"><span class="pre">/W</span></code> indicates that the field
+is omitted and has the default value. The default value for the field
+type is <code class="docutils literal notranslate"><span class="pre">1</span></code>. All other default values are <code class="docutils literal notranslate"><span class="pre">0</span></code>.</p>
+<p>PDF 1.5 has three field types:</p>
+<ul class="simple">
+<li><p>0: for free objects. Format: <code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">obj</span> <span class="pre">next-generation</span></code>, same as the
+free table in a traditional cross-reference table</p></li>
+<li><p>1: regular non-compressed object. Format: <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">offset</span> <span class="pre">generation</span></code></p></li>
+<li><p>2: for objects in object streams. Format: <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">object-stream-number</span>
+<span class="pre">index</span></code>, the number of object stream containing the object and the
+index within the object stream of the object.</p></li>
+</ul>
+<p>It seems standard to have the first entry in the table be <code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">0</span> <span class="pre">0</span></code>
+instead of <code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">0</span> <span class="pre">ffff</span></code> if there are no deleted objects.</p>
+</section>
+</section>
+<section id="implications-for-linearized-files">
+<span id="object-streams-linearization"></span><h2>Implications for Linearized Files<a class="headerlink" href="#implications-for-linearized-files" title="Link to this heading"></a></h2>
+<p>For linearized files, the linearization dictionary, document catalog,
+and page objects may not be contained in object streams.</p>
+<p>Objects stored within object streams are given the highest range of
+object numbers within the main and first-page cross-reference sections.</p>
+<p>It is okay to use cross-reference streams in place of regular xref
+tables. There are on special considerations.</p>
+<p>Hint data refers to object streams themselves, not the objects in the
+streams. Shared object references should also be made to the object
+streams. There are no reference in any hint tables to the object numbers
+of compressed objects (objects within object streams).</p>
+<p>When numbering objects, all shared objects within both the first and
+second halves of the linearized files must be numbered consecutively
+after all normal uncompressed objects in that half.</p>
+</section>
+<section id="implementation-notes">
+<span id="object-stream-implementation"></span><h2>Implementation Notes<a class="headerlink" href="#implementation-notes" title="Link to this heading"></a></h2>
+<p>There are three modes for writing object streams:
+<code class="samp docutils literal notranslate"><span class="pre">disable</span></code>, <code class="samp docutils literal notranslate"><span class="pre">preserve</span></code>, and
+<code class="samp docutils literal notranslate"><span class="pre">generate</span></code>. In disable mode, we do not generate
+any object streams, and we also generate an xref table rather than xref
+streams. This can be used to generate PDF files that are viewable with
+older readers. In preserve mode, we write object streams such that
+written object streams contain the same objects and <code class="docutils literal notranslate"><span class="pre">/Extends</span></code>
+relationships as in the original file. This is equal to disable if the
+file has no object streams. In generate, we create object streams
+ourselves by grouping objects that are allowed in object streams
+together in sets of no more than 100 objects. We also ensure that the
+PDF version is at least 1.5 in generate mode, but we preserve the
+version header in the other modes. The default is
+<code class="samp docutils literal notranslate"><span class="pre">preserve</span></code>.</p>
+<p>We do not support creation of hybrid files. When we write files, even in
+preserve mode, we will lose any xref tables and merge any appended
+sections.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="linearization.html" class="btn btn-neutral float-left" title="Linearization" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="encryption.html" class="btn btn-neutral float-right" title="PDF Encryption" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2005-2021 Jay Berkenbilt, 2022-2026 Jay Berkenbilt and Manfred Holger.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

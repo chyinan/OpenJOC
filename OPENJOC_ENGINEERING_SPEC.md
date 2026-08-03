@@ -120,8 +120,9 @@ ETSI PDF 与 companion archive 有其自身版权声明。项目不得擅自把�
 
 1. `references/etsi/` 默认由用户自行放置 PDF/ZIP，并加入 `.gitignore`；
 2. `tools/import-etsi-tables` 验证上面的 SHA-256；
-3. 解析 `ts_103420_tables.c` 并生成本地 `target/generated/etsi_tables.rs`；
-4. 是否把生成后的常量直接提交到公共仓库，必须在项目发布前单独确认许可/法律状态，不由 Codex 自行判断。
+   1. 解析 `ts_103420_tables.c` 并生成本地 `target/generated/etsi_tables.rs`；
+
+3. 是否把生成后的常量直接提交到公共仓库，必须在项目发布前单独确认许可/法律状态，不由 Codex 自行判断。
 
 ---
 
@@ -894,7 +895,7 @@ Cavern 与 OpenJOC 都先导出 object stems / metadata；不要先比较 binaur
 
 > 在同一 JOC bitstream 上，哪一个更接近原始 authoring object scene / reference object essence。
 
-只有 benchmark 明显优于 Cavern，README 才可以写“更高 reconstruction fidelity”；在那之前不要写“吊打”。
+只有 benchmark 明显优于 Cavern，README 才可以写“更高 reconstruction fidelity”；在那之前不要在README和Cavern做比较。
 
 ---
 

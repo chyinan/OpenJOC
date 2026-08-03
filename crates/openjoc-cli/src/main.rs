@@ -1,18 +1,23 @@
 // pattern: Imperative Shell
 
+mod banner;
 mod eac3_decode;
+mod terminal;
 
+use banner::{package_metadata, render_banner};
 use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{decode, encode_f64_mono};
 use std::{
     env,
     error::Error,
+    fmt::Write as _,
     fs, io,
     num::NonZeroU8,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
+use terminal::TerminalCapabilities;
 
 const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
@@ -43,24 +48,91 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let mut arguments = env::args().skip(1);
-    match arguments.next().as_deref() {
+    let mut arguments = env::args().skip(1).collect::<Vec<_>>();
+    let no_banner = arguments.iter().any(|argument| argument == "--no-banner");
+    arguments.retain(|argument| argument != "--no-banner");
+    let mut terminal = TerminalCapabilities::detect();
+    terminal.no_banner |= no_banner;
+
+    match arguments.first().map(String::as_str) {
+        None if terminal.is_tty => print_root_page(terminal, false),
+        Some("-h" | "--help") if arguments.len() == 1 => print_root_page(terminal, true),
         Some("inspect") => {
-            let input = arguments.next().ok_or_else(usage_error)?;
-            if arguments.next().is_some() {
+            let input = arguments.get(1).ok_or_else(usage_error)?;
+            if arguments.len() != 2 {
                 return Err(usage_error().into());
             }
             inspect(Path::new(&input))
         }
-        Some("decode-payload") => {
-            let values = arguments.collect::<Vec<_>>();
-            decode_payload(&values)
-        }
-        Some("decode") => {
-            let values = arguments.collect::<Vec<_>>();
-            decode_eac3(&parse_decode_eac3(&values)?)
-        }
+        Some("decode-payload") => decode_payload(&arguments[1..]),
+        Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
         _ => Err(usage_error().into()),
+    }
+}
+
+fn print_root_page(terminal: TerminalCapabilities, help: bool) -> Result<(), Box<dyn Error>> {
+    let metadata = package_metadata();
+    let context = terminal.banner_context(help, !help);
+    let mut output = render_banner(context, metadata);
+    if output.is_empty() {
+        writeln!(output, "OpenJOC {}", metadata.version)?;
+        writeln!(output, "{}", metadata.description)?;
+        writeln!(output, "Open the objects. Rebuild the space.\n")?;
+    } else {
+        output.push('\n');
+    }
+
+    if help {
+        append_help(&mut output, terminal.color_enabled())?;
+    } else {
+        append_home(&mut output, terminal.color_enabled())?;
+    }
+    io::Write::write_all(&mut io::stdout().lock(), output.as_bytes())?;
+    Ok(())
+}
+
+fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
+    append_heading(output, "USAGE", color)?;
+    output.push_str(concat!(
+        "  openjoc inspect <FILE>\n",
+        "  openjoc decode <FILE> -o <DIR>\n",
+        "  openjoc decode-payload [OPTIONS]\n",
+        "  openjoc --help\n",
+        "\n",
+        "Run 'openjoc --help' for all commands and options.\n",
+    ));
+    Ok(())
+}
+
+fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
+    append_heading(output, "USAGE", color)?;
+    output.push_str(concat!(
+        "  openjoc inspect <FILE>\n",
+        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
+        "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
+        "                         -o <DIR> [OPTIONS]\n",
+        "\n",
+    ));
+    append_heading(output, "COMMANDS", color)?;
+    output.push_str(concat!(
+        "  inspect         Inspect E-AC-3 access units and JOC metadata\n",
+        "  decode          Decode an E-AC-3 JOC stream into an object scene\n",
+        "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
+        "\n",
+    ));
+    append_heading(output, "OPTIONS", color)?;
+    output.push_str(concat!(
+        "  -h, --help       Print root command help\n",
+        "      --no-banner Disable the interactive startup banner\n",
+    ));
+    Ok(())
+}
+
+fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(), std::fmt::Error> {
+    if color {
+        writeln!(output, "\x1b[38;2;32;214;181m{heading}\x1b[0m")
+    } else {
+        writeln!(output, "{heading}")
     }
 }
 

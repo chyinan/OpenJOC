@@ -268,6 +268,8 @@ fn inspect_command_reports_timing_profile_payloads_and_complexity() {
     assert!(output.contains("complexity index: 2"));
     assert!(output.contains("OAMD bytes: 1"));
     assert!(output.contains("JOC bytes: 1"));
+    assert!(!output.contains("Open the objects"));
+    assert!(!output.contains("\x1b["));
 
     fs::remove_dir_all(&root).expect("remove test directory");
 }
@@ -327,6 +329,7 @@ fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
+    assert!(result.stdout.is_empty());
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/joc.txt").is_file());
@@ -372,6 +375,7 @@ fn decode_command_internal_base_reaches_object_scene_from_raw_eac3() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
+    assert!(result.stdout.is_empty());
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/reconstruction.txt").is_file());

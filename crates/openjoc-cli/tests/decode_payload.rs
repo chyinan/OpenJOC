@@ -96,6 +96,7 @@ fn decode_payload_command_writes_scene_stem_timeline_and_debug() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
+    assert!(result.stdout.is_empty());
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/joc.txt").is_file());
