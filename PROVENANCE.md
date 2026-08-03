@@ -860,6 +860,45 @@ frame behavior is covered by integration tests.
   expected transform energy scaling, and rejection of NaN input. No decoder
   implementation was consulted; full AHT VQ/GAQ integration remains pending.
 
+### Enhanced AC-3 GAQ gain-word expansion
+
+- Normative source: TS 102 366 V1.4.1 clauses E.2.4.4.2 and E.1.3.3.27
+  through E.1.3.3.34; Tables E.2.3 and E.2.4 define the active `hebap` ranges,
+  binary gains, and three-state composite mapping.
+- Official reference data: pages 155 and 156 of the authorized ETSI PDF were
+  rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected.
+  The rendered page was used for the composite `M1/M2/M3` arithmetic rather
+  than inferring it from prose extraction alone.
+- Design rationale: `expand_aht_gaq_gains` returns one attenuation gain per
+  six-coefficient section, maps mode 0 to unity, validates the exact word
+  count for modes 1–3, and discards only the unused tail of a final composite
+  triplet. It does not decode mantissa tags or perform remapping; those remain
+  separate normative stages.
+- Validation: AHT tests cover all four modes, unity/two/four gain mappings,
+  composite word 26, reserved mode rejection, invalid binary words, and the
+  existing AHT transform tests. No decoder implementation was consulted.
+
+### Enhanced AC-3 GAQ scalar dequantization
+
+- Normative source: TS 102 366 V1.4.1 clauses E.2.4.4.2 and E.2.4.4.2's
+  Tables E.2.5 and E.2.6; the `hebap`-dependent code lengths, switched gain
+  attenuation, signed fractional interpretation, and remapping constants are
+  all taken from those tables.
+- Official reference data: pages 155 and 156 of the authorized ETSI PDF were
+  rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected
+  before transcribing the fixed-point remapping constants, including the
+  negative-sign `b` entries and N/A rows.
+- Design rationale: `decode_aht_gaq_mantissa` is a pure post-tag primitive. It
+  validates the `hebap`/gain/code domain, decodes signed two's-complement
+  fractions at the exact small/large code length, attenuates only small
+  mantissas for gains two and four, and applies `y = x + a*x + b` only where
+  Table E.2.6 requires it. It deliberately does not consume tag bits or
+  invent a VQ table.
+- Validation: AHT tests cover gain-one unity decoding, a gain-two small code,
+  a gain-two large code with the signed table constant, and malformed
+  `hebap`, gain, and code inputs. Full GAQ tag traversal and VQ table lookup
+  remain pending and are not replaced with placeholders.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

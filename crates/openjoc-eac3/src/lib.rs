@@ -2,10 +2,12 @@
 
 //! Clean-room Enhanced AC-3 frontend from ETSI TS 102 366 Annex E.
 
+mod aht;
 mod audio_block;
 mod bit_allocation;
 mod mantissa;
 
+pub use aht::{decode_aht_gaq_mantissa, expand_aht_gaq_gains};
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
     DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
@@ -141,6 +143,21 @@ pub enum Eac3Error {
     ReservedSnrOffsetStrategy,
     UnsupportedAdaptiveHybridTransform,
     NonFiniteAhtCoefficient,
+    InvalidAhtGaqMode {
+        actual: u8,
+    },
+    InvalidAhtGaqGainWord {
+        actual: u8,
+    },
+    InvalidAhtGaqHebap {
+        actual: u8,
+    },
+    InvalidAhtGaqGain {
+        actual: u8,
+    },
+    InvalidAhtGaqCode {
+        actual: u16,
+    },
     MissingIndependentSubstreamZero {
         frame: usize,
     },
@@ -331,6 +348,21 @@ impl fmt::Display for Eac3Error {
             ),
             Self::InvalidAddbsiLength { actual } => {
                 write!(formatter, "invalid JOC addbsi length {actual}; expected 2")
+            }
+            Self::InvalidAhtGaqMode { actual } => {
+                write!(formatter, "invalid E-AC-3 AHT GAQ mode {actual}")
+            }
+            Self::InvalidAhtGaqGainWord { actual } => {
+                write!(formatter, "invalid E-AC-3 AHT GAQ gain word {actual}")
+            }
+            Self::InvalidAhtGaqHebap { actual } => {
+                write!(formatter, "invalid E-AC-3 AHT hebap {actual}")
+            }
+            Self::InvalidAhtGaqGain { actual } => {
+                write!(formatter, "invalid E-AC-3 AHT GAQ gain {actual}")
+            }
+            Self::InvalidAhtGaqCode { actual } => {
+                write!(formatter, "invalid E-AC-3 AHT GAQ code {actual}")
             }
             Self::ComplexityIndexOutOfRange { actual } => {
                 write!(formatter, "E-AC-3 JOC complexity index {actual} exceeds 16")
