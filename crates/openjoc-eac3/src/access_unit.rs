@@ -445,4 +445,33 @@ mod tests {
             vec![vec![9.0], vec![8.0], vec![2.0], vec![4.0], vec![5.0]]
         );
     }
+
+    #[test]
+    fn standard_mono_surround_and_custom_cs_share_a_location() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0]],
+            lfe: None,
+        };
+        let dependent = DecodedAudioPcm {
+            channels: vec![vec![9.0], vec![8.0], vec![7.0]],
+            lfe: None,
+        };
+        let dependent_info = info(4, None);
+        let output = merge_substreams(
+            AccessUnitIndex {
+                first_frame: 0,
+                frame_count: 2,
+                sample_rate: 48_000,
+                samples: 1,
+            },
+            &info(5, None),
+            independent,
+            Some((&dependent_info, &dependent)),
+        )
+        .expect("standard S channel replacement");
+        assert_eq!(
+            output.channels,
+            vec![vec![9.0], vec![8.0], vec![2.0], vec![7.0]]
+        );
+    }
 }

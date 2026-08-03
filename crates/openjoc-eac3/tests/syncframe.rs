@@ -333,6 +333,18 @@ fn decodes_a_raw_dependent_d0_custom_map_through_pcm_and_replaces_i0() {
 }
 
 #[test]
+fn rejects_non_six_block_joc_access_units() {
+    let bytes = frame(0, 0, 16, 0, 0);
+    let frames = index_syncframes(&bytes).expect("indexed one-block frame");
+    let units = group_access_units(&frames).expect("grouped one-block frame");
+    let mut decoder = JocAccessUnitPcmDecoder::new();
+    assert_eq!(
+        decoder.decode(&bytes, &frames, units[0], &[]),
+        Err(Eac3Error::UnsupportedJocAudioBlockCount { actual: 1 })
+    );
+}
+
+#[test]
 fn parses_bsi_conditionals_to_extract_addbsi_without_scanning() {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);

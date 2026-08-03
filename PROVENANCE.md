@@ -1018,9 +1018,9 @@ frame behavior is covered by integration tests.
 - Design rationale: `BitstreamInformation::channel_map` retains the optional
   16-bit dependent `chanmap` in its normative MSB-first representation.
   `JocAccessUnitPcmDecoder` enforces the JOC elementary-stream shape (I0 and
-  optional D0), decodes each source with independent TDAC history, reorders
+  optional D0) and the E.3 six-audio-block requirement, decodes each source with independent TDAC history, reorders
   the E-AC-3 Table 4.3 base order into the JOC Table 47 order, and replaces
-  matching dependent locations while appending the 7.X or 5.X+2 pair. LFE is
+  matching dependent locations (including standard `S`/custom `Cs`) while appending the 7.X or 5.X+2 pair. LFE is
   returned separately because Table 47 explicitly bypasses it in JOC.
   State is cloned and committed only after both source frames and the merge
   pass succeed. The CLI exposes this path through `--internal-base`; the
@@ -1031,8 +1031,11 @@ frame behavior is covered by integration tests.
   selection remains outside the JOC elementary-stream contract.
 - Validation: dependent custom `chanmap` parsing, replacement and supplement
   mapping, indexed I0 syncframe-to-PCM synthesis, channel ordering, sample
-  count, and finite PCM output checks are covered by
+  count, six-block enforcement, and finite PCM output checks are covered by
   `crates/openjoc-eac3/tests/syncframe.rs` and the access-unit module tests.
+  `crates/openjoc-cli/tests/inspect.rs` drives a legal synthetic five-channel
+  I0 frame with carried OAMD/JOC EMDF through `--internal-base` and verifies
+  the reconstructed ObjectScene/stem output.
 
 ### Enhanced AC-3 auxiliary EMDF carrier
 

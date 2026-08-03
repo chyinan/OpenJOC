@@ -116,6 +116,129 @@ fn joc_frame(emdf: &[u8], complexity: u8) -> Vec<u8> {
     bits.bytes(size)
 }
 
+fn absent_joc() -> Vec<u8> {
+    let mut bits = Vec::new();
+    push(&mut bits, 0, 3); // joc_dmx_config_idx: 5.X
+    push(&mut bits, 0, 6); // object count
+    push(&mut bits, 0, 3); // extension count
+    push(&mut bits, 0, 3 + 5 + 10); // reserved/header fields
+    push(&mut bits, 0, 1); // no matrix data
+    pack(bits)
+}
+
+fn inactive_oamd() -> Vec<u8> {
+    let mut bits = Vec::new();
+    for (value, width) in [
+        (0, 2),
+        (0, 5),
+        (1, 1),
+        (0, 1),
+        (0, 1),
+        (1, 4),
+        (1, 4),
+        (2, 4),
+        (0, 1),
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (0, 6),
+        (0, 2),
+        (1, 1),
+        (1, 1),
+        (0, 1),
+        (0, 7),
+    ] {
+        push(&mut bits, value, width);
+    }
+    pack(bits)
+}
+
+fn five_channel_audio_frame(emdf: &[u8]) -> Vec<u8> {
+    let size = 4096;
+    let mut bits = Bits::default();
+    for (value, width) in [
+        (0x0b77, 16),
+        (0, 2), // independent I0
+        (0, 3),
+        (2047, 11),
+        (0, 2), // 48 kHz
+        (3, 2), // six blocks
+        (7, 3), // 3/2: five full-bandwidth channels
+        (0, 1), // no LFE
+        (16, 5),
+        (31, 5),
+        (0, 1),    // no compression metadata
+        (0, 1),    // no mixing metadata
+        (0, 1),    // no informational metadata
+        (1, 1),    // addbsi exists
+        (1, 6),    // two addbsi bytes
+        (0x01, 8), // JOC extension flag
+        (1, 8),    // complexity index: one inactive object
+    ] {
+        bits.push(value, width);
+    }
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(0, 1); // no AHT syntax
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // no transient processing
+    bits.push(0, 7); // all optional frame syntax disabled
+    bits.push(0, 1); // coupling strategy absent in block 0
+    for _ in 1..6 {
+        bits.push(0, 1); // coupling strategy absent
+    }
+    for block in 0..6 {
+        for _ in 0..5 {
+            bits.push(u64::from(block == 0), 2); // D15, then reuse
+        }
+    }
+    for _ in 0..5 {
+        bits.push(0, 5); // converter exponent strategy
+    }
+    bits.push(0, 6); // frame coarse SNR
+    bits.push(0, 4); // frame fine SNR
+    bits.push(0, 1); // no block-start information
+
+    // First audio block: all BAPs become zero because the frame SNR offsets are
+    // zero. The exponents remain valid and provide the 73-bin channel extent.
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // no SPX
+    for _ in 0..5 {
+        bits.push(0, 6); // channel bandwidth code
+    }
+    for _ in 0..5 {
+        bits.push(0, 4); // initial exponent
+        for _ in 0..24 {
+            bits.push(62, 7); // zero D15 exponent deltas
+        }
+        bits.push(0, 2); // gain range
+    }
+    bits.push(0, 1); // converter SNR offset absent
+
+    // Following blocks reuse exponents and all optional state. They contain no
+    // mantissa words because the zero-SNR special case keeps every BAP zero.
+    for _ in 1..6 {
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX strategy reused
+        bits.push(0, 1); // converter SNR offset absent
+    }
+
+    bits.0.resize(size * 8, false);
+    let auxdatae_position = size * 8 - 18;
+    let length_position = auxdatae_position - 14;
+    bits.set(
+        length_position,
+        u64::try_from(emdf.len() * 8).expect("EMDF bit length"),
+        14,
+    );
+    bits.set(auxdatae_position, 1, 1);
+    let start = length_position - emdf.len() * 8;
+    for (index, byte) in emdf.iter().copied().enumerate() {
+        bits.set(start + index * 8, u64::from(byte), 8);
+    }
+    bits.bytes(size)
+}
+
 #[test]
 fn inspect_command_reports_timing_profile_payloads_and_complexity() {
     let nonce = SystemTime::now()
@@ -168,43 +291,6 @@ fn pack(mut bits: Vec<bool>) -> Vec<u8> {
     bytes
 }
 
-fn absent_joc() -> Vec<u8> {
-    let mut bits = Vec::new();
-    push(&mut bits, 0, 3);
-    push(&mut bits, 0, 6);
-    push(&mut bits, 0, 3);
-    push(&mut bits, 0, 3 + 5 + 10);
-    push(&mut bits, 0, 1);
-    pack(bits)
-}
-
-fn inactive_oamd() -> Vec<u8> {
-    let mut bits = Vec::new();
-    for (value, width) in [
-        (0, 2),
-        (0, 5),
-        (1, 1),
-        (0, 1),
-        (0, 1),
-        (1, 4),
-        (1, 4),
-        (2, 4),
-        (0, 1),
-        (0, 1),
-        (0, 2),
-        (0, 3),
-        (0, 6),
-        (0, 2),
-        (1, 1),
-        (1, 1),
-        (0, 1),
-        (0, 7),
-    ] {
-        push(&mut bits, value, width);
-    }
-    pack(bits)
-}
-
 #[test]
 fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
     let nonce = SystemTime::now()
@@ -246,6 +332,51 @@ fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
     assert!(output.join("debug/frame_000/joc.txt").is_file());
     let stem = decode(&fs::read(output.join("objects/object_000.wav")).expect("stem"))
         .expect("decode stem");
+    assert_eq!(stem.sample_rate, 48_000);
+    assert_eq!(stem.channels, vec![vec![0.0; 1536]]);
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn decode_command_internal_base_reaches_object_scene_from_raw_eac3() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-internal-decode-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("profile.ec3");
+    let output = root.join("output");
+    let oamd = inactive_oamd();
+    let joc = absent_joc();
+    let emdf = joc_emdf(&oamd, &joc);
+    let stream = five_channel_audio_frame(&emdf);
+    fs::write(&input, stream).expect("write E-AC-3");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--internal-base",
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run openjoc");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(output.join("scene.json").is_file());
+    assert!(output.join("metadata/timeline.json").is_file());
+    assert!(output.join("debug/frame_000/reconstruction.txt").is_file());
+    let stem = decode(&fs::read(output.join("objects/object_000.wav")).expect("stem"))
+        .expect("decode reconstructed stem");
     assert_eq!(stem.sample_rate, 48_000);
     assert_eq!(stem.channels, vec![vec![0.0; 1536]]);
 
