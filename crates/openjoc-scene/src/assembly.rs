@@ -2,7 +2,8 @@
 
 use crate::{
     Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, SceneError, SpeakerLabel, TrimUpdate, ZoneConstraint,
+    Position3, SceneError, SpeakerLabel, TrimUpdate, ZoneConstraint, metadata_is_finite,
+    trim_is_finite,
 };
 use openjoc_oamd::{
     ExtendedObjectElement, Gain, IsfRing as OamdIsfRing, OamdContentPrefix, OamdElement, OamdError,
@@ -134,15 +135,20 @@ impl SceneBuilder {
         if object_pcm.iter().any(|pcm| pcm.len() != frame_samples) {
             return Err(SceneBuildError::FrameLengthMismatch);
         }
-        let mut next = self.scene.clone();
-        let frame_offset = next.duration_samples;
+        let frame_offset = self.scene.duration_samples;
         let frame_samples_u64 =
             u64::try_from(frame_samples).map_err(|_| SceneBuildError::DurationOverflow)?;
-        next.duration_samples = frame_offset
+        let next_duration = frame_offset
             .checked_add(frame_samples_u64)
             .ok_or(SceneBuildError::DurationOverflow)?;
-        for (track, pcm) in next.objects.iter_mut().zip(object_pcm) {
-            track.pcm.extend_from_slice(pcm);
+        for (object_id, pcm) in object_pcm.iter().enumerate() {
+            if let Some(sample) = pcm.iter().position(|value| !value.is_finite()) {
+                return Err(SceneBuildError::Scene(SceneError::NonFiniteAudio {
+                    object_id: u32::try_from(object_id)
+                        .map_err(|_| SceneBuildError::DurationOverflow)?,
+                    sample,
+                }));
+            }
         }
 
         let trim = oamd.elements.iter().rev().find_map(|metadata| {
@@ -152,13 +158,13 @@ impl SceneBuilder {
                 None
             }
         });
+        let mut frame_metadata = Vec::new();
         for (element_index, metadata) in oamd.elements.iter().enumerate() {
             let OamdElement::Objects(objects) = &metadata.element else {
                 continue;
             };
             let extension = extension_after(&oamd.elements, element_index);
-            append_object_updates(
-                &mut next,
+            let updates = append_object_updates(
                 &self.anchors,
                 objects,
                 extension,
@@ -166,17 +172,53 @@ impl SceneBuilder {
                 frame_offset,
                 reference_screen,
             )?;
+            for update in &updates {
+                if update.start_sample >= next_duration {
+                    return Err(SceneBuildError::Scene(SceneError::MetadataOutsideScene {
+                        object_id: update.object_id,
+                        start_sample: update.start_sample,
+                    }));
+                }
+                if !metadata_is_finite(update) {
+                    return Err(SceneBuildError::Scene(SceneError::NonFiniteMetadata {
+                        object_id: update.object_id,
+                    }));
+                }
+            }
+            frame_metadata.extend(updates);
         }
+        let mut frame_trims = Vec::new();
         for metadata in &oamd.elements {
             if let OamdElement::Trim(trim) = &metadata.element {
-                next.trim_timeline.push(TrimUpdate {
+                if frame_offset >= next_duration {
+                    return Err(SceneBuildError::Scene(SceneError::TrimOutsideScene {
+                        start_sample: frame_offset,
+                    }));
+                }
+                if trim.disable_trim_per_object.len() != self.scene.objects.len() {
+                    return Err(SceneBuildError::Scene(
+                        SceneError::TrimObjectCountMismatch {
+                            expected: self.scene.objects.len(),
+                            actual: trim.disable_trim_per_object.len(),
+                        },
+                    ));
+                }
+                if !trim_is_finite(trim) {
+                    return Err(SceneBuildError::Scene(SceneError::NonFiniteTrim));
+                }
+                frame_trims.push(TrimUpdate {
                     start_sample: frame_offset,
                     trim: trim.clone(),
                 });
             }
         }
-        next.validate()?;
-        self.scene = next;
+        self.scene.duration_samples = next_duration;
+        for (track, pcm) in self.scene.objects.iter_mut().zip(object_pcm) {
+            track.pcm.extend_from_slice(pcm);
+        }
+        self.scene.metadata_timeline.extend(frame_metadata);
+        self.scene.trim_timeline.extend(frame_trims);
+        debug_assert!(self.scene.validate().is_ok());
         Ok(())
     }
 
@@ -209,14 +251,13 @@ fn extension_after(
 
 #[allow(clippy::too_many_arguments)]
 fn append_object_updates(
-    scene: &mut ObjectScene,
     anchors: &[ObjectAnchor],
     objects: &ObjectElement,
     extension: Option<&ExtendedObjectElement>,
     trim: Option<&TrimElement>,
     frame_offset: u64,
     reference_screen: Option<ReferenceScreen>,
-) -> Result<(), SceneBuildError> {
+) -> Result<Vec<MetadataUpdate>, SceneBuildError> {
     let mut resolved_objects = objects.clone();
     if let Some(extension) = extension {
         extension.apply_positions(&mut resolved_objects)?;
@@ -244,12 +285,13 @@ fn append_object_updates(
         return Err(SceneBuildError::MetadataShapeMismatch);
     }
 
+    let mut output = Vec::new();
     for (object_index, (anchor, updates)) in anchors.iter().zip(&objects.objects).enumerate() {
         for (block_index, (timing, update)) in objects.timing.blocks.iter().zip(updates).enumerate()
         {
             let object_id =
                 u32::try_from(object_index).map_err(|_| SceneBuildError::DurationOverflow)?;
-            scene.metadata_timeline.push(MetadataUpdate {
+            output.push(MetadataUpdate {
                 object_id,
                 start_sample: frame_offset
                     .checked_add(u64::from(timing.start_sample))
@@ -280,7 +322,7 @@ fn append_object_updates(
             });
         }
     }
-    Ok(())
+    Ok(output)
 }
 
 fn convert_position(

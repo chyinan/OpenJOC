@@ -386,7 +386,7 @@ impl ObjectScene {
     }
 }
 
-fn position_is_finite(position: &Position) -> bool {
+pub(crate) fn position_is_finite(position: &Position) -> bool {
     let finite =
         |value: &Position3| value.x.is_finite() && value.y.is_finite() && value.z.is_finite();
     match position {
@@ -402,7 +402,17 @@ fn position_is_finite(position: &Position) -> bool {
     }
 }
 
-fn trim_is_finite(trim: &TrimElement) -> bool {
+pub(crate) fn metadata_is_finite(update: &MetadataUpdate) -> bool {
+    position_is_finite(&update.position)
+        && update.size.width.is_finite()
+        && update.size.depth.is_finite()
+        && update.size.height.is_finite()
+        && update.priority.is_finite()
+        && update.gain_db.is_none_or(f64::is_finite)
+        && update.divergence.is_finite()
+}
+
+pub(crate) fn trim_is_finite(trim: &TrimElement) -> bool {
     let controls_are_finite = |controls: &openjoc_oamd::TrimControls| {
         [
             controls.centre_db,

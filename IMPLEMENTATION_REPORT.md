@@ -112,6 +112,16 @@ disable flags. CLI scene artifacts write this data to
 implied. Scene validation checks trim timing, object cardinality, and finite
 custom controls. Assembly and JSON roundtrip tests cover the retained state.
 
+## Frame-local atomic staging increment
+
+`SceneBuilder::append_frame` now stages the current frame's metadata and trim
+updates before mutating the accumulated scene. It validates PCM finiteness,
+timing bounds, trim cardinality, and numeric controls first, then appends PCM
+and metadata without cloning prior object audio. `PayloadDecoder` likewise
+uses the atomic builder in place; only its bounded JOC codec state is copied
+for retry semantics. A later CLI file-sink increment is still required to
+avoid retaining the complete input, base PCM, scene PCM, and debug frames.
+
 ## Verification commands
 
 The current container and diagnostic checks were run with:
@@ -138,6 +148,6 @@ offline release build, and a clean diff check.
 ## Known limitations and next goals
 
 The real-vector acceptance lane, FFmpeg-versus-internal-base fidelity report,
-and streaming/frame-local scene staging remain open. Speaker and binaural
+and streaming file sinks remain open. Speaker and binaural
 renderers are later non-normative components and are deliberately outside the
 current decoder increments.

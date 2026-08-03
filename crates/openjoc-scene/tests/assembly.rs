@@ -173,3 +173,22 @@ fn retains_complete_trim_state_in_the_renderer_independent_scene() {
         vec![true]
     );
 }
+
+#[test]
+fn failed_frame_staging_does_not_clone_or_mutate_committed_pcm() {
+    let first = payload();
+    let mut builder = SceneBuilder::new(48_000, &first.prefix).expect("valid content");
+    builder
+        .append_frame(&[vec![0.25, -0.5, 1.0]], &first, None)
+        .expect("first frame");
+
+    let mut invalid = payload();
+    if let OamdElement::Objects(objects) = &mut invalid.elements[0].element {
+        objects.timing.blocks[0].start_sample = 100;
+    }
+    assert!(builder.append_frame(&[vec![0.0]], &invalid, None).is_err());
+
+    let scene = builder.finish().expect("committed scene remains valid");
+    assert_eq!(scene.duration_samples, 3);
+    assert_eq!(scene.objects[0].pcm, vec![0.25, -0.5, 1.0]);
+}

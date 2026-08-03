@@ -332,10 +332,13 @@ frame behavior is covered by integration tests.
   including warp mode, global mode, all custom centre/surround/height trims,
   both balance controls, and per-object disable flags. JSON serialization is
   renderer-independent and rejects non-finite or cross-object/duration-
-  inconsistent data before export. Frame assembly clones scene state, applies
-  the following ID 5 extended-precision positions before converting every
+  inconsistent data before export. Frame assembly stages only the current
+  frame's PCM references, object updates, and trim snapshots, applies the
+  following ID 5 extended-precision positions before converting every
   object/block update at `frame_offset + start_sample`, associates extension
-  divergence and trim state, validates, then commits atomically.
+  divergence and trim state, validates, then commits atomically without
+  cloning previously accumulated object PCM. A later file sink will remove
+  the remaining accumulated-scene retention at the CLI boundary.
 - Validation: JSON roundtrips cover room, infinite-ray, screen, speaker, and
   ISF anchors; decoded-structure assembly covers PCM, timing, position, gain,
   zones, channel lock, ID 5 position refinement, and complete trim retention;
@@ -368,9 +371,12 @@ frame behavior is covered by integration tests.
   by the called JOC and QMF components; orchestration introduces no tables.
 - Design rationale: expose the engineering-spec `JocFrameInput` boundary with
   sample rate, channel-major downmix PCM, raw JOC/OAMD payloads, and frame
-  index. Parse both payloads, enforce their object-count agreement, clone JOC
-  and scene state, run analysis/reconstruction/synthesis and OAMD assembly,
-  then commit both only after the complete frame succeeds.
+  index. Parse both payloads, enforce their object-count agreement, clone
+  bounded JOC state, run analysis/reconstruction/synthesis and OAMD assembly,
+  then commit both only after the complete frame succeeds. The JOC decoder
+  state is cloned because it is bounded codec analysis/synthesis state; the
+  accumulated scene PCM and metadata are appended through SceneBuilder's
+  frame-local atomic staging and are not cloned per frame.
 - Validation: a raw absent-JOC/inactive-OAMD vector traverses both parsers,
   normative zero initial matrix, QMF reconstruction/synthesis, timed metadata,
   and ObjectScene PCM; malformed second-frame OAMD is rejected and the same

@@ -150,18 +150,19 @@ impl PayloadDecoder {
 
         let mut next_joc = self.joc.clone();
         let decoded = next_joc.decode_pcm_frame(&joc, input.downmix_pcm)?;
-        let mut next_builder = match &self.builder {
-            Some(builder) => builder.clone(),
-            None => SceneBuilder::new(input.sample_rate, &oamd.prefix)?,
-        };
-        next_builder.append_frame(&decoded.object_pcm, &oamd, self.config.reference_screen)?;
         let next_frame_index = self
             .next_frame_index
             .checked_add(1)
             .ok_or(PayloadDecodeError::FrameIndexOverflow)?;
+        if let Some(builder) = self.builder.as_mut() {
+            builder.append_frame(&decoded.object_pcm, &oamd, self.config.reference_screen)?;
+        } else {
+            let mut builder = SceneBuilder::new(input.sample_rate, &oamd.prefix)?;
+            builder.append_frame(&decoded.object_pcm, &oamd, self.config.reference_screen)?;
+            self.builder = Some(builder);
+        }
 
         self.joc = next_joc;
-        self.builder = Some(next_builder);
         self.sample_rate = Some(input.sample_rate);
         self.next_frame_index = next_frame_index;
         Ok(DecodedPayloadFrame { joc, oamd, decoded })

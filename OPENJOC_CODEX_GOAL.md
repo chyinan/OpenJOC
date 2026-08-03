@@ -57,6 +57,13 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
 3. Keep the real-vector acceptance lane and memory-scalability audit open until
    they have independent evidence and streaming staging tests.
 
+## Completed increment: frame-local atomic scene staging
+
+1. Stage per-frame object metadata, trim snapshots, and PCM validation before
+   commit; do not clone previously accumulated object audio.
+2. Preserve retry atomicity for both `SceneBuilder` and `PayloadDecoder` while
+   retaining only bounded JOC state copies.
+
 ## Explicit open goals after the current increment
 
 - Establish a user-supplied legal DEE real-vector lane without committing
@@ -74,7 +81,8 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
   imposing speaker or binaural rendering behavior. (Implemented; streaming
   staging remains open.)
 - Replace accumulated-scene PCM cloning and whole-input/debug retention with
-  frame-local atomic staging and streaming sinks.
+  frame-local atomic staging and streaming sinks. (Frame-local staging is
+  implemented; streaming sinks and the CLI retention audit remain open.)
 - Keep codec and rendering boundaries separate. Later speaker rendering targets
   stereo, 5.1, 5.1.2, 7.1.4, and 9.1.6. Later binaural rendering targets
   selectable public SOFA HRTFs. Neither is a Dolby reference or normative
