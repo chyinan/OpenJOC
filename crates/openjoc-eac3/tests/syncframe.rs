@@ -332,7 +332,8 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     bits.push(0, 1); // converter SNR offset absent
     let expected_offset = bits.0.len();
 
-    let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("valid block prefix");
+    let bytes = bits.bytes(128);
+    let prefix = parse_first_audio_block_prefix(&bytes).expect("valid block prefix");
     assert_eq!(prefix.block_switch, vec![true]);
     assert_eq!(prefix.dither, vec![true]);
     assert_eq!(prefix.dynamic_range, Some(0xa5));
@@ -354,6 +355,12 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     assert_eq!(exponents.decoded, vec![10; 49]);
     assert_eq!(exponents.gain_range, Some(1));
     assert_eq!(prefix.next_offset_bits, expected_offset);
+
+    let decoded =
+        decode_first_audio_block(&bytes, &[0.5; 49]).expect("dithered zero-bit mantissas");
+    assert_eq!(decoded.channel_baps[0], vec![0; 49]);
+    assert_eq!(decoded.channel_mantissas[0][0], 0.5 / 1024.0);
+    assert_eq!(decoded.mantissa_end_offset_bits, expected_offset);
 }
 
 #[test]
