@@ -1,0 +1,209 @@
+// pattern: Functional Core
+
+//! ETSI TS 102 366 clause 6.9 inverse TDAC transforms.
+
+use core::f64::consts::PI;
+
+use crate::Eac3Error;
+
+const TRANSFORM_COEFFICIENTS: usize = 256;
+const TRANSFORM_SAMPLES: usize = 512;
+const HALF_SAMPLES: usize = 256;
+const QUARTER_SAMPLES: usize = 128;
+const EIGHTH_SAMPLES: usize = 64;
+
+// ETSI TS 102 366 V1.4.1 Table 6.33, rendered and visually inspected on page
+// 86 at 300 DPI. The table address is (10 * A) + B.
+const TRANSFORM_WINDOW: [f64; HALF_SAMPLES] = [
+    0.00014, 0.00024, 0.00037, 0.00051, 0.00067, 0.00086, 0.00107, 0.00130, 0.00157, 0.00187,
+    0.00220, 0.00256, 0.00297, 0.00341, 0.00390, 0.00443, 0.00501, 0.00564, 0.00632, 0.00706,
+    0.00785, 0.00871, 0.00962, 0.01061, 0.01166, 0.01279, 0.01399, 0.01526, 0.01662, 0.01806,
+    0.01959, 0.02121, 0.02292, 0.02472, 0.02662, 0.02863, 0.03073, 0.03294, 0.03527, 0.03770,
+    0.04025, 0.04292, 0.04571, 0.04862, 0.05165, 0.05481, 0.05810, 0.06153, 0.06508, 0.06878,
+    0.07261, 0.07658, 0.08069, 0.08495, 0.08935, 0.09389, 0.09859, 0.10343, 0.10842, 0.11356,
+    0.11885, 0.12429, 0.12988, 0.13563, 0.14152, 0.14757, 0.15376, 0.16011, 0.16661, 0.17325,
+    0.18005, 0.18699, 0.19407, 0.20130, 0.20867, 0.21618, 0.22382, 0.23161, 0.23952, 0.24757,
+    0.25574, 0.26404, 0.27246, 0.28100, 0.28965, 0.29841, 0.30729, 0.31626, 0.32533, 0.33450,
+    0.34376, 0.35311, 0.36253, 0.37204, 0.38161, 0.39126, 0.40096, 0.41072, 0.42054, 0.43040,
+    0.44030, 0.45023, 0.46020, 0.47019, 0.48020, 0.49022, 0.50025, 0.51028, 0.52031, 0.53033,
+    0.54033, 0.55031, 0.56026, 0.57019, 0.58007, 0.58991, 0.59970, 0.60944, 0.61912, 0.62873,
+    0.63827, 0.64774, 0.65713, 0.66643, 0.67564, 0.68476, 0.69377, 0.70269, 0.71150, 0.72019,
+    0.72877, 0.73723, 0.74557, 0.75378, 0.76186, 0.76981, 0.77762, 0.78530, 0.79283, 0.80022,
+    0.80747, 0.81457, 0.82151, 0.82831, 0.83496, 0.84145, 0.84779, 0.85398, 0.86001, 0.86588,
+    0.87160, 0.87716, 0.88257, 0.88782, 0.89291, 0.89785, 0.90264, 0.90728, 0.91176, 0.91610,
+    0.92028, 0.92432, 0.92822, 0.93197, 0.93558, 0.93906, 0.94240, 0.94560, 0.94867, 0.95162,
+    0.95444, 0.95713, 0.95971, 0.96217, 0.96451, 0.96674, 0.96887, 0.97089, 0.97281, 0.97463,
+    0.97635, 0.97799, 0.97953, 0.98099, 0.98236, 0.98366, 0.98488, 0.98602, 0.98710, 0.98811,
+    0.98905, 0.98994, 0.99076, 0.99153, 0.99225, 0.99291, 0.99353, 0.99411, 0.99464, 0.99513,
+    0.99558, 0.99600, 0.99639, 0.99674, 0.99706, 0.99736, 0.99763, 0.99788, 0.99811, 0.99831,
+    0.99850, 0.99867, 0.99882, 0.99895, 0.99908, 0.99919, 0.99929, 0.99938, 0.99946, 0.99953,
+    0.99959, 0.99965, 0.99969, 0.99974, 0.99978, 0.99981, 0.99984, 0.99986, 0.99988, 0.99990,
+    0.99992, 0.99993, 0.99994, 0.99995, 0.99996, 0.99997, 0.99998, 0.99998, 0.99998, 0.99999,
+    0.99999, 0.99999, 0.99999, 1.00000, 1.00000, 1.00000, 1.00000, 1.00000, 1.00000, 1.00000,
+    1.00000, 1.00000, 1.00000, 1.00000, 1.00000, 1.00000,
+];
+
+#[derive(Clone, Copy, Default)]
+struct Complex {
+    real: f64,
+    imag: f64,
+}
+
+/// Applies the clause 6.9 inverse transform for one E-AC-3 audio block.
+///
+/// `coefficients` contains the 256 interleaved transform coefficients. With
+/// `block_switch == false`, clause 6.9.4.1 performs one 512-sample transform.
+/// With `block_switch == true`, clause 6.9.4.2 de-interleaves two 256-sample
+/// transforms and returns their 512-sample windowed block.
+pub fn inverse_transform(coefficients: &[f64], block_switch: bool) -> Result<Vec<f64>, Eac3Error> {
+    if coefficients.len() != TRANSFORM_COEFFICIENTS {
+        return Err(Eac3Error::InvalidTransformCoefficientLength {
+            expected: TRANSFORM_COEFFICIENTS,
+            actual: coefficients.len(),
+        });
+    }
+    for (index, coefficient) in coefficients.iter().enumerate() {
+        if !coefficient.is_finite() {
+            return Err(Eac3Error::NonFiniteTransformCoefficient { index });
+        }
+    }
+    if block_switch {
+        inverse_short(coefficients)
+    } else {
+        inverse_long(coefficients)
+    }
+}
+
+/// Performs the clause 6.9.4.1 overlap/add operation and advances its delay.
+pub fn overlap_add(windowed: &[f64], delay: &mut [f64]) -> Result<Vec<f64>, Eac3Error> {
+    if windowed.len() != TRANSFORM_SAMPLES || delay.len() != HALF_SAMPLES {
+        return Err(Eac3Error::InvalidTransformWindowLength {
+            actual: windowed.len(),
+        });
+    }
+    let mut pcm = vec![0.0; HALF_SAMPLES];
+    for index in 0..HALF_SAMPLES {
+        pcm[index] = 2.0 * (windowed[index] + delay[index]);
+        delay[index] = windowed[index + HALF_SAMPLES];
+    }
+    Ok(pcm)
+}
+
+fn inverse_long(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
+    let mut z = [Complex::default(); QUARTER_SAMPLES];
+    for k in 0..QUARTER_SAMPLES {
+        let angle = 2.0 * PI * (8.0 * k as f64 + 1.0) / (8.0 * TRANSFORM_SAMPLES as f64);
+        let cosine = -angle.cos();
+        let sine = -angle.sin();
+        let odd = coefficients[TRANSFORM_COEFFICIENTS - 2 * k - 1];
+        let even = coefficients[2 * k];
+        z[k] = Complex {
+            real: odd * cosine - even * sine,
+            imag: even * cosine + odd * sine,
+        };
+    }
+    let z = inverse_complex(&z, 8.0);
+    let mut y = [Complex::default(); QUARTER_SAMPLES];
+    for n in 0..QUARTER_SAMPLES {
+        let angle = 2.0 * PI * (8.0 * n as f64 + 1.0) / (8.0 * TRANSFORM_SAMPLES as f64);
+        let cosine = -angle.cos();
+        let sine = -angle.sin();
+        y[n] = Complex {
+            real: z[n].real * cosine - z[n].imag * sine,
+            imag: z[n].imag * cosine + z[n].real * sine,
+        };
+    }
+    let mut output = vec![0.0; TRANSFORM_SAMPLES];
+    for n in 0..EIGHTH_SAMPLES {
+        let n8 = EIGHTH_SAMPLES;
+        output[2 * n] = -y[n8 + n].imag * window(2 * n);
+        output[2 * n + 1] = y[n8 - n - 1].real * window(2 * n + 1);
+        output[QUARTER_SAMPLES + 2 * n] = -y[n].real * window(QUARTER_SAMPLES + 2 * n);
+        output[QUARTER_SAMPLES + 2 * n + 1] =
+            y[QUARTER_SAMPLES - n - 1].imag * window(QUARTER_SAMPLES + 2 * n + 1);
+        output[HALF_SAMPLES + 2 * n] = -y[n8 + n].real * window(HALF_SAMPLES - 2 * n - 1);
+        output[HALF_SAMPLES + 2 * n + 1] = y[n8 - n - 1].imag * window(HALF_SAMPLES - 2 * n - 2);
+        output[3 * QUARTER_SAMPLES + 2 * n] = y[n].imag * window(QUARTER_SAMPLES - 2 * n - 1);
+        output[3 * QUARTER_SAMPLES + 2 * n + 1] =
+            -y[QUARTER_SAMPLES - n - 1].real * window(QUARTER_SAMPLES - 2 * n - 2);
+    }
+    Ok(output)
+}
+
+fn inverse_short(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
+    let mut first = [0.0; QUARTER_SAMPLES];
+    let mut second = [0.0; QUARTER_SAMPLES];
+    for index in 0..QUARTER_SAMPLES {
+        first[index] = coefficients[2 * index];
+        second[index] = coefficients[2 * index + 1];
+    }
+    let z1 = pre_short(&first);
+    let z2 = pre_short(&second);
+    let raw_y1 = inverse_complex(&z1, 16.0);
+    let raw_y2 = inverse_complex(&z2, 16.0);
+    let y1 = (0..EIGHTH_SAMPLES)
+        .map(|index| post_short(raw_y1[index], index))
+        .collect::<Vec<_>>();
+    let y2 = (0..EIGHTH_SAMPLES)
+        .map(|index| post_short(raw_y2[index], index))
+        .collect::<Vec<_>>();
+    let mut output = vec![0.0; TRANSFORM_SAMPLES];
+    for n in 0..EIGHTH_SAMPLES {
+        let value1 = y1[n];
+        let value2 = y2[n];
+        output[2 * n] = -value1.imag * window(2 * n);
+        output[2 * n + 1] = y1[EIGHTH_SAMPLES - n - 1].real * window(2 * n + 1);
+        output[QUARTER_SAMPLES + 2 * n] = -value1.real * window(QUARTER_SAMPLES + 2 * n);
+        output[QUARTER_SAMPLES + 2 * n + 1] =
+            y1[EIGHTH_SAMPLES - n - 1].imag * window(QUARTER_SAMPLES + 2 * n + 1);
+        output[HALF_SAMPLES + 2 * n] = -value2.real * window(HALF_SAMPLES - 2 * n - 1);
+        output[HALF_SAMPLES + 2 * n + 1] =
+            y2[EIGHTH_SAMPLES - n - 1].imag * window(HALF_SAMPLES - 2 * n - 2);
+        output[3 * QUARTER_SAMPLES + 2 * n] = value2.imag * window(QUARTER_SAMPLES - 2 * n - 1);
+        output[3 * QUARTER_SAMPLES + 2 * n + 1] =
+            -y2[EIGHTH_SAMPLES - n - 1].real * window(QUARTER_SAMPLES - 2 * n - 2);
+    }
+    Ok(output)
+}
+
+fn pre_short(coefficients: &[f64; QUARTER_SAMPLES]) -> [Complex; EIGHTH_SAMPLES] {
+    let mut z = [Complex::default(); EIGHTH_SAMPLES];
+    for k in 0..EIGHTH_SAMPLES {
+        let angle = 2.0 * PI * (8.0 * k as f64 + 1.0) / (4.0 * TRANSFORM_SAMPLES as f64);
+        let cosine = -angle.cos();
+        let sine = -angle.sin();
+        let odd = coefficients[QUARTER_SAMPLES - 2 * k - 1];
+        let even = coefficients[2 * k];
+        z[k] = Complex {
+            real: odd * cosine - even * sine,
+            imag: even * cosine + odd * sine,
+        };
+    }
+    z
+}
+
+fn post_short(value: Complex, index: usize) -> Complex {
+    let angle = 2.0 * PI * (8.0 * index as f64 + 1.0) / (4.0 * TRANSFORM_SAMPLES as f64);
+    let cosine = -angle.cos();
+    let sine = -angle.sin();
+    Complex {
+        real: value.real * cosine - value.imag * sine,
+        imag: value.imag * cosine + value.real * sine,
+    }
+}
+
+fn inverse_complex(input: &[Complex], stride: f64) -> Vec<Complex> {
+    let mut output = vec![Complex::default(); input.len()];
+    for (n, value) in output.iter_mut().enumerate() {
+        for (k, input_value) in input.iter().enumerate() {
+            let angle = stride * PI * k as f64 * n as f64 / TRANSFORM_SAMPLES as f64;
+            value.real += input_value.real * angle.cos() - input_value.imag * angle.sin();
+            value.imag += input_value.real * angle.sin() + input_value.imag * angle.cos();
+        }
+    }
+    output
+}
+
+fn window(index: usize) -> f64 {
+    TRANSFORM_WINDOW[index]
+}

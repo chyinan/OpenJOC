@@ -6,6 +6,7 @@ mod aht;
 mod audio_block;
 mod bit_allocation;
 mod mantissa;
+mod transform;
 
 pub use aht::{
     decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
@@ -32,6 +33,7 @@ pub use mantissa::{
     MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer, shift_mantissa,
     ungroup_mantissa_code,
 };
+pub use transform::{inverse_transform, overlap_add};
 
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
@@ -167,6 +169,16 @@ pub enum Eac3Error {
     InvalidAhtVqIndex {
         hebap: u8,
         actual: u16,
+    },
+    InvalidTransformCoefficientLength {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidTransformWindowLength {
+        actual: usize,
+    },
+    NonFiniteTransformCoefficient {
+        index: usize,
     },
     MissingIndependentSubstreamZero {
         frame: usize,
@@ -327,6 +339,18 @@ impl Eac3Error {
                 formatter,
                 "missing E-AC-3 dither value at mantissa {index}"
             )),
+            Self::InvalidTransformCoefficientLength { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 transform coefficient length: expected {expected}, got {actual}"
+            )),
+            Self::InvalidTransformWindowLength { actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 transform window length {actual}"
+            )),
+            Self::NonFiniteTransformCoefficient { index } => Some(write!(
+                formatter,
+                "non-finite E-AC-3 transform coefficient at index {index}"
+            )),
             _ => None,
         }
     }
@@ -450,6 +474,9 @@ impl fmt::Display for Eac3Error {
             | Self::MantissaExponentLengthMismatch { .. }
             | Self::MantissaDitherLengthMismatch { .. }
             | Self::MissingDitherValue { .. }
+            | Self::InvalidTransformCoefficientLength { .. }
+            | Self::InvalidTransformWindowLength { .. }
+            | Self::NonFiniteTransformCoefficient { .. }
             | Self::InvalidBlockStartDimensions { .. }
             | Self::MissingIndependentSubstreamZero { .. }
             | Self::NonsequentialIndependentSubstream { .. }

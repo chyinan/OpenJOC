@@ -951,6 +951,32 @@ frame behavior is covered by integration tests.
   state reuse. Pure AHT tests cover modes 0–3 and large-mantissa tags;
   malformed/truncated syntax returns checked errors.
 
+### Enhanced AC-3 inverse TDAC transform and overlap/add primitives
+
+- Normative source: TS 102 366 V1.4.1 clauses 5.2.10, 5.2.11, and 6.9.4.1
+  through 6.9.4.2; Table 6.33 supplies the transform-window sequence.
+- Official reference data: pages 82 through 86 of
+  `references/etsi/ts_102366v010401p.pdf` were rendered as lossless PNG at
+  300 DPI with Poppler 26.02.0 and visually inspected. The implementation
+  follows the printed pre-IFFT, complex-IFFT, post-IFFT, window/de-interleave,
+  and overlap/add assignments; it does not infer the short-transform index
+  layout from damaged text extraction.
+- Design rationale: keep the transform as a pure bounded primitive over the
+  256 interleaved coefficients already exposed by the audio-block decoder.
+  `inverse_transform` returns the 512-sample windowed block for either one
+  512-sample transform or two interleaved 256-sample transforms. `overlap_add`
+  owns the 256-sample delay state, applies the normative factor of two, and
+  advances the delay only after validating both input dimensions. The current
+  implementation uses direct O(N²) complex sums for auditability; an optimized
+  FFT path is deferred until conformance vectors exist.
+- Validation: malformed coefficient dimensions, non-finite coefficients,
+  zero-valued long/short blocks, a nonzero DC coefficient against the rendered
+  ETSI equations and Table 6.33 values, and delay-state advancement are covered
+  by `crates/openjoc-eac3/tests/transform.rs`. Full channel de-coupling,
+  rematrixing, spectral-extension synthesis, and stateful PCM integration remain
+  separate stages; this primitive is not presented as a complete E-AC-3 PCM
+  decoder.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420
