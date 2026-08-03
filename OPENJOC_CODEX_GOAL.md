@@ -13,12 +13,14 @@ is currently:
 raw E-AC-3 elementary stream
   + aligned base-channel PCM
   + independently parsed JOC/OAMD/EMDF
-  -> renderer-independent ObjectScene and explicit reference-f64 object stems
+  -> renderer-independent ObjectScene
+  + default-f32 object stems
+  + optional explicit reference-f64 object stems
 ```
 
 This is not yet a complete real-world Atmos decoder or speaker/binaural
-renderer. In particular, the retained `debug/compatible_base.wav` is the
-FFmpeg-compatible base-channel reference PCM, not a final render.
+renderer. In particular, the retained `debug/compatible_base.wav` is explicit
+FFmpeg `pcm_f64le` compatible-base reference PCM, not a final render.
 
 ## Completed increment: input media and DEE containers
 
@@ -37,7 +39,7 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
 6. Verify with `cargo fmt`, strict clippy, all-feature tests, and a release
    build. Commit this increment as a resumable change.
 
-## Completed increment: explicit wave output semantics
+## Implemented increment: explicit wave output semantics
 
 1. Keep reconstructed scene PCM in f64 internally and expose a checked wave
    sink supporting f32, explicit reference-f64, s24, and s16.
@@ -48,23 +50,21 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
 4. Keep the compatible base-channel debug WAV explicitly named and f64; it is
    not a speaker or binaural render.
 
-## Current active increment: renderer-independent scene completeness
+## Implemented increment: renderer-independent trim retention
 
 1. Preserve decoded trim snapshots, including warp/global/custom controls,
    balances, and per-object disable flags, without choosing a render algorithm.
 2. Export trim state as a separate timed scene artifact and validate its
    object cardinality, timing, and finite numeric controls.
-3. Keep the real-vector acceptance lane and memory-scalability audit open until
-   they have independent evidence and streaming staging tests.
 
-## Completed increment: frame-local atomic scene staging
+## Implemented increment: frame-local atomic scene staging
 
 1. Stage per-frame object metadata, trim snapshots, and PCM validation before
    commit; do not clone previously accumulated object audio.
 2. Preserve retry atomicity for both `SceneBuilder` and `PayloadDecoder` while
    retaining only bounded JOC state copies.
 
-## Completed increment: borrowed frame sinks
+## Implemented increment: borrowed frame sinks
 
 1. Add `PayloadDecoder::decode_frame_with`, which lends one committed
    `DecodedPayloadFrame` to a callback without transferring ownership of an
@@ -82,9 +82,18 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
   nonzero reconstructed PCM, dynamic OAMD, multiple access units, state reuse,
   a moving object, and known stems or ADM-BWF ground truth.
 - The currently supplied DEE M4A is a container/diagnostic fixture only: its
-  `addbsi` complexity index is present, but all normative `auxdatae` bits are
-  zero and no EMDF OAMD/JOC carrier is present. Do not count it as the real
-  vector until those payloads and nonzero reconstructed stems are evidenced.
+  `addbsi` complexity index is present, but every currently inspected
+  frame-end `auxdatae` bit is zero and the validated frame-end extractor did
+  not locate OAMD/JOC EMDF. The CLI's literal “EMDF profile absent” wording is
+  bounded to those validated carrier paths. No separate metadata/JOC track or
+  recognized box was found, but audio-block `skipfld` carriage has not been
+  ruled out because full internal audio-block traversal fails before that lane
+  is completely validated. Do not infer that `skipfld` is present, and do not
+  count this as the real vector until all required payload and PCM evidence is
+  available.
+- Complete all-carrier EMDF integration, including bounded validation of
+  audio-block `skipfld` carriage, remains an open goal independent of the
+  completed frame-end carrier path.
 - Compare FFmpeg base-channel PCM with `--internal-base` on that legal vector,
   recording channel order/count, delay, peak, RMS, and numerical error. The
   internal base decoder is not verified until this succeeds.

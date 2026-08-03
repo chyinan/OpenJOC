@@ -1077,6 +1077,11 @@ frame behavior is covered by integration tests.
   variable-length mantissas; page 44 confirms the byte-count semantics. The
   carrier extractor continues to use only the normative frame-end location
   and never searches mantissa bytes for an EMDF syncword.
+- This implementation-level skip-field coverage does not settle the supplied
+  real fixture: its full internal audio-block traversal fails before that
+  carrier lane is completely validated. Audio-block `skipfld` carriage remains
+  an open possibility on that fixture, not an assertion that such carriage is
+  present.
 
 ### JOC-profile access-unit extraction and placement
 
@@ -1348,7 +1353,7 @@ and a test or explicit TODO before implementation proceeds.
   call. A bounded legacy syntax fixture contains a zero-width synthetic copy
   region (`spxstrtf == spxbegf`); the block shell preserves its parsed baseband
   rather than fabricating coefficients, pending a legal conformance vector.
-### Input-media boundary and ISO BMFF stream-copy demux (current increment)
+### Completed input-media boundary and ISO BMFF stream-copy demux
 
 - Normative codec sources: the elementary stream produced at this boundary is
   parsed by the existing TS 102 366 E-AC-3 frontend and TS 103 420 clause 8
@@ -1397,17 +1402,21 @@ and a test or explicit TODO before implementation proceeds.
   OpenJOC container demux produced byte-equivalent elementary bytes.
 - Current OpenJOC evidence: `inspect` accepts the container and reports 7,773
   E-AC-3 frames/access units at 1,536 samples each. Every frame has the
-  §8.3 `addbsi` extension `[0x01, 0x10]`, while the TS 102 366 E.1.2.5
-  `auxdatae` bit is zero in all 7,773 frame tails. Bento4 `mp4dump` and the
-  public BMFF structure show no second audio/metadata track or unknown JOC
-  box. OpenJOC therefore reports “JOC extension signaled ... EMDF profile
-  absent” and refuses reconstruction; the complexity index alone is not a
-  JOC payload. This follows TS 103 420 §8.2, which requires OAMD/JOC payloads
-  in an EMDF container, and avoids inferring a private carrier.
+  §8.3 `addbsi` extension `[0x01, 0x10]`, while every currently inspected
+  TS 102 366 E.1.2.5 frame-end `auxdatae` bit is zero. Bento4 `mp4dump` and
+  the public BMFF structure show no second audio/metadata track or recognized
+  JOC box. The current frame-end profile extractor therefore did not locate
+  OAMD/JOC EMDF in the validated carrier paths. The CLI literally reports
+  “JOC extension signaled ... EMDF profile absent”; that diagnostic is bounded
+  to those paths and does not prove that the complete E-AC-3 stream contains
+  no EMDF. Audio-block `skipfld` carriage has not been ruled out because the
+  full internal audio-block traversal fails before that real-fixture lane is
+  completely validated; no claim is made that `skipfld` carriage is present.
 - Default FFmpeg base extraction produces six-channel 48 kHz f64 PCM
   (11,939,328 samples/channel). `--internal-base` currently fails on this
-  real stream with `invalid E-AC-3 mantissa code 7 for bap 3`; internal-base
-  fidelity is therefore unverified. The supplied file is useful for the
+  real stream with `invalid E-AC-3 mantissa code 7 for bap 3`; the
+  FFmpeg-versus-internal-base comparison is failed/not available, so
+  internal-base fidelity is unverified. The supplied file is useful for the
   container and diagnostic lane, but is not yet a legal nonzero JOC/OAMD
   acceptance vector.
 - FFmpeg `astats` records the `5.1(side)` order (FL, FR, FC, LFE, SL, SR) and
@@ -1435,8 +1444,9 @@ and a test or explicit TODO before implementation proceeds.
   no longer constructed by the E-AC-3 command. Callback failure is surfaced as
   an actionable sink error; because the decoder state is already committed,
   callers must use a transactional output directory when retry/rollback is
-  required. The renderer-independent scene PCM and input/downmix retention
-  are intentionally not claimed solved by this increment.
+  required. Whole-input retention, compatible-base PCM retention, and
+  accumulated renderer-independent scene PCM remain intentionally unsolved;
+  metadata-only scene assembly and streaming PCM/file sinks are also open.
 - Validation: `crates/openjoc-scene/tests/payload_decoder.rs` proves a
   borrowed callback observes the decoded frame while `finish` retains the
   correct timing. `crates/openjoc-cli/tests/decode_payload.rs` and

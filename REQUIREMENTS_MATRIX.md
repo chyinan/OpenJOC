@@ -1,14 +1,24 @@
 # OpenJOC Requirements Matrix
 
-Status values are `planned`, `implemented`, or `verified`. A row may be marked
-`verified` only with fresh test or artifact evidence.
+Status values are `planned`, `implemented`, `verified`, or `completed`. A row
+may be marked `verified` only with fresh test or artifact evidence; `completed`
+marks an integrated milestone whose scoped acceptance boundary is closed.
 
 The matrix describes incremental evidence, not a claim that OpenJOC is already
 a complete real-world Atmos decoder or renderer. The currently evidenced codec
-boundary is raw E-AC-3 plus aligned base PCM plus JOC/OAMD extraction to a
-renderer-independent ObjectScene and f64 object stems. Container input is a
-separate first production increment; legal nonzero real-vector fidelity and
-rendering remain open.
+boundary is raw E-AC-3 plus aligned base PCM plus JOC/OAMD extraction to the
+following renderer-independent output boundary:
+
+```text
+renderer-independent ObjectScene
+  + default-f32 object stems
+  + optional explicit reference-f64 object stems
+```
+
+The compatible base reference remains explicit FFmpeg `pcm_f64le` PCM and is
+not a speaker or binaural render. Container input is a completed first
+production increment; legal nonzero real-vector fidelity and rendering remain
+open.
 
 | Normative source | Requirement | Production target | Required evidence | Status |
 | --- | --- | --- | --- | --- |
@@ -39,7 +49,8 @@ rendering remain open.
 | TS 103 420 7.4 | Per-object inverse-QMF integration | `openjoc-joc`, `openjoc-qmf` | sample-exact integrated/reference synthesis, continuity, and splice-reset tests pass | verified |
 | TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
 | TS 103 420 8.1, E.3 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3`, `openjoc-cli` | indexed six-block I0/optional D0 PCM assembly, normative replacement/supplement mapping, exact access-unit rate/sample alignment, and raw five-channel `--internal-base` ObjectScene integration; legal real-vector proof remains | implemented |
-| TS 103 420 8.2, Tables 55-56 | EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | bounded auxdata profile extraction, same-frame addbsi, last-dependent enforcement, exact `skipfld` retention, and explicit addbsi-without-EMDF diagnostics; merging all legal carrier locations remains | implemented |
+| TS 103 420 8.2, Tables 55-56 | Frame-end EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | bounded frame-end auxdata profile extraction, same-frame addbsi, last-dependent enforcement, exact `skipfld` retention, and explicit addbsi-without-EMDF diagnostics | implemented |
+| TS 103 420 8.2, Tables 55-56, TS 102 366 E.1.2.5 | All legal EMDF carrier locations, including audio-block `skipfld` carriage | `openjoc-emdf`, `openjoc-eac3` | bounded validation and integration of every authorized carrier path on a legal real vector; current frame-end extraction is insufficient and this lane remains open | planned |
 | TS 103 420 8.3 | `addbsi` extension type and complexity index | `openjoc-eac3` | exact 7+1+8 syntax, flag, reserved bits, 0..=16 bounds, and equality with total OAMD object count pass | verified |
 | TS 103 420 Annex B | OAMD-to-ADM conversion architecture | `openjoc-scene` | ADM export schema/golden tests | planned |
 | TS 102 366 6.7, Annex E.1.2, E.2.8.2 | E-AC-3 syncframe syntax and dynamic-range coefficient processing | `openjoc-eac3` | bounded acquisition header, conditional BSI/addbsi/channel-map extraction, option-4 mixdata bound, complete `audfrm` state, six-block channel/coupling/LFE mantissa traversal, clause 6.7 `dynrng/dynrng2` gain decoding with block reuse, exact skip-field retention pass, direct bounded syncframe-to-PCM entry point, and stateful I0/D0 merge with standard/custom Cs replacement | implemented |
@@ -52,12 +63,13 @@ rendering remain open.
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
 | Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3`/container `decode` write scene/timeline/default-f32 stems/debug artifacts; explicit `--reference-f64` retains reference output; `inspect` reports bounded profile timing/carrier details | implemented |
-| Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | verified |
-| Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | verified |
+| Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | completed |
+| Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | completed |
 | Legal DEE real-vector lane | Nonzero JOC/OAMD reconstruction and continuity acceptance | `openjoc-cli`, `openjoc-scene` | user-supplied fixture hash, nonzero side information/stems, dynamic OAMD, moving object, multiple access units, known-stem/ADM-BWF comparison | planned |
 | Legal DEE real-vector lane | FFmpeg base-channel versus `--internal-base` fidelity report | `openjoc-cli`, `openjoc-eac3` | per-channel count/order, delay, peak, RMS, and numerical-error comparison on the same legal stream | planned |
 | Engineering spec 5.7 | Renderer-independent trim and balance retention | `openjoc-scene`, `openjoc-oamd` | trim warp mode, global/centre/surround/height trims, balance controls, per-object disable flags, and timed trim snapshots preserved without rendering behavior | implemented |
-| Engineering spec 5.7 / scalability | Frame-local atomic staging and streaming output sinks | `openjoc-scene`, `openjoc-cli`, `openjoc-wave` | no per-frame clone of accumulated object PCM is implemented and tested; bounded input/debug retention and streaming object stems/scene metadata remain open | planned |
+| Engineering spec 5.7 / frame-local staging | Atomic frame-local SceneBuilder staging without accumulated PCM clones | `openjoc-scene` | no per-frame clone of previously accumulated object PCM; metadata/PCM validation occurs before commit; retry atomicity tests pass | implemented |
+| Engineering spec 5.7 / scalability | Bounded whole-input retention, metadata-only scene assembly, and streaming PCM/file sinks | `openjoc-scene`, `openjoc-cli`, `openjoc-wave` | bounded input/base PCM retention and streaming object stems/scene metadata; current implementation remains open | planned |
 | Engineering spec 5.7 / frame boundary | Borrowed per-frame sink for debug/artifact consumption | `openjoc-scene`, `openjoc-cli` | `PayloadDecoder::decode_frame_with` lends only the committed frame; aligned and internal E-AC-3 paths write debug artifacts without an all-frame `DecodedPayloadFrame` vector; sink/error and timing tests pass | implemented |
 | Engineering spec 5.7 / wave output | Explicit f32/f64/s24/s16 sample-format abstraction | `openjoc-wave`, `openjoc-cli` | f32 normal output, explicit reference-f64 option, defined clipping and dither tests; compatible base PCM name | implemented |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
