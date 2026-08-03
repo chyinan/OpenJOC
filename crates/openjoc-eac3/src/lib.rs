@@ -11,7 +11,8 @@ pub use audio_block::{
     DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
     EnhancedCouplingInformation, ExponentInformation, FastGainCodes, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
-    StandardCouplingInformation, decode_first_audio_block, parse_first_audio_block_prefix,
+    StandardCouplingInformation, decode_audio_blocks, decode_first_audio_block,
+    parse_first_audio_block_prefix,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -506,6 +507,8 @@ pub struct AudioFrameInformation {
     pub frame_fine_snr_code: Option<u8>,
     pub syntax: AudioFrameSyntaxFlags,
     pub coupling_in_use: Vec<bool>,
+    /// Whether `cplstre[blk]` introduces new coupling strategy fields.
+    pub coupling_strategy_exists: Vec<bool>,
     pub coupling_exponent_strategy: Vec<u8>,
     pub channel_exponent_strategy: Vec<Vec<u8>>,
     pub lfe_exponent_strategy: Vec<bool>,
@@ -839,6 +842,7 @@ pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Erro
         frame_fine_snr_code,
         syntax,
         coupling_in_use,
+        coupling_strategy_exists,
         coupling_exponent_strategy,
         channel_exponent_strategy,
         lfe_exponent_strategy,

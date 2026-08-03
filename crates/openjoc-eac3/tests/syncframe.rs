@@ -1,10 +1,10 @@
 use openjoc_eac3::{
     CouplingInformation, Eac3Error, JocAddbsi, StreamType, block_start_information_length,
-    channel_end_mantissa, channel_exponent_group_count, decode_exponents, decode_first_audio_block,
-    decode_frame_exponent_strategy, extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata,
-    group_access_units, index_syncframes, parse_audio_frame, parse_bsi,
-    parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header, spx_subband_range,
-    validate_complexity_index,
+    channel_end_mantissa, channel_exponent_group_count, decode_audio_blocks, decode_exponents,
+    decode_first_audio_block, decode_frame_exponent_strategy, extract_aux_emdf,
+    extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
+    parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
+    parse_syncframe_header, spx_subband_range, validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -362,6 +362,69 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     assert_eq!(decoded.channel_baps[0], vec![0; 49]);
     assert_eq!(decoded.channel_mantissas[0][0], 0.5 / 1024.0);
     assert_eq!(decoded.mantissa_end_offset_bits, expected_offset);
+}
+
+#[test]
+fn decodes_following_audio_block_with_normative_reuse_state() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(255, 11); // 512-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(1, 2); // two blocks
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(0, 7); // compact syntax flags
+    bits.push(1, 2); // block 0 channel D15
+    bits.push(0, 2); // block 1 channel reuse
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(0, 6); // frame coarse SNR offset
+    bits.push(0, 4); // frame fine SNR offset
+    bits.push(0, 1); // no block-start information
+
+    // Block 0: all conventional side information, no SPX, high exponents,
+    // default allocation, and no mantissa bits allocated.
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // SPX not in use
+    bits.push(0, 6); // channel bandwidth code: end mantissa 73
+    bits.push(15, 4); // channel absolute exponent
+    for _ in 0..24 {
+        bits.push(62, 7);
+    }
+    bits.push(0, 2); // gain range
+    bits.push(0, 1); // converter SNR offset absent
+
+    // Block 1: dynamic range absent, SPX strategy reused, exponent and
+    // channel bandwidth state reused, then only converter syntax remains.
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // spxstre = 0, reuse previous SPX state
+    bits.push(0, 1); // converter SNR offset absent
+
+    let bytes = bits.bytes(512);
+    let blocks = decode_audio_blocks(&bytes, &[0.0; 146]).expect("two-block conventional frame");
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].block_index, 0);
+    assert_eq!(blocks[1].block_index, 1);
+    assert_eq!(blocks[0].channel_baps[0], vec![0; 73]);
+    assert_eq!(blocks[1].channel_baps[0], vec![0; 73]);
+    assert_eq!(
+        blocks[1].prefix.channel_exponents[0],
+        blocks[0].prefix.channel_exponents[0]
+    );
+    assert!(blocks[1].prefix.channel_bandwidth_codes[0].is_none());
+    assert!(blocks[1].prefix.spectral_extension.is_none());
+    assert!(blocks[1].mantissa_end_offset_bits > blocks[0].mantissa_end_offset_bits);
 }
 
 #[test]

@@ -702,6 +702,28 @@ frame behavior is covered by integration tests.
   against a deterministic half-scale sample; parser tests verify frame-
   strategy-1 SNR values are retained.
 
+### Enhanced AC-3 complete conventional audio-block traversal
+
+- Normative source: TS 102 366 clauses E.1.2.4, E.1.3.2.30,
+  E.1.3.3.1 through E.1.3.3.35, 6.1.2 through 6.3, and E.2.4.2.
+  The block field order, reuse branches, and channel-major mantissa order were
+  independently checked against rendered Annex E syntax pages 119 through 125
+  at lossless 300 DPI with Poppler 26.02.0.
+- Official reference data: none beyond the fixed bit-allocation and mantissa
+  tables already recorded above.
+- Design rationale: retain a typed per-syncframe state for spectral extension,
+  coupling coordinates/amplitudes, exponent payloads, channel dimensions,
+  SNR offsets, bit-allocation parameters, coupling leakage, delta allocation,
+  and rematrix flags. Parse only fields authorized by the current block's
+  strategy, resolve `reuse` from the immediately preceding block, and advance
+  one checked bit cursor through all conventional mantissas. The public
+  `decode_audio_blocks` API returns every decoded block atomically; the legacy
+  first-block API remains bounded to block zero. AHT still returns the explicit
+  unsupported-feature error rather than being interpreted as scalar mantissas.
+- Validation: a two-block mono fixture exercises exponent, SPX, bandwidth,
+  parameter, and mantissa reuse with exact per-block offsets; all pre-existing
+  first-block coupling, SPX, LFE, delta, dither, and BAP tests remain green.
+
 ### Enhanced AC-3 PSD log-addition and integration
 
 - Normative source: TS 102 366 clause 6.2.2.3 and Table 6.14.
