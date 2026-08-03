@@ -80,6 +80,9 @@ pub struct DecodedAudioBlock {
     pub channel_mantissas: Vec<Vec<f64>>,
     pub coupling_bap: Option<Vec<u8>>,
     pub coupling_mantissas: Option<Vec<f64>>,
+    /// Enhanced-coupling channel coefficients reconstructed from the coupling
+    /// channel, when enhanced coupling is active in this block.
+    pub enhanced_coupling: Option<EnhancedCouplingReconstruction>,
     pub lfe_bap: Option<Vec<u8>>,
     pub lfe_mantissas: Option<Vec<f64>>,
     /// Absolute frame bit offset immediately after conventional mantissas.
@@ -201,6 +204,144 @@ pub struct EnhancedCouplingInformation {
     pub band_structure: [bool; 22],
     pub band_count: u8,
     pub amplitudes: Vec<Option<Vec<u8>>>,
+}
+
+/// Reconstructed transform coefficients for the active enhanced-coupling
+/// region. Each participating channel contains one coefficient per bin in
+/// `[begin_mantissa, end_mantissa)`; channels not in enhanced coupling are
+/// represented by `None`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnhancedCouplingReconstruction {
+    pub begin_mantissa: usize,
+    pub end_mantissa: usize,
+    pub channels: Vec<Option<Vec<f64>>>,
+}
+
+/// Reconstructs individual channel coefficients from an enhanced-coupling
+/// channel and its E.2.5.5 amplitude coordinates.
+///
+/// The amplitude table and sub-band starts are Table E.2.10 and Table E.2.9
+/// of ETSI TS 102 366 V1.4.1. The returned vectors are limited to the active
+/// enhanced-coupling region; callers combine them with the independently
+/// decoded low-frequency channel bins using `begin_mantissa`.
+///
+/// # Errors
+///
+/// Returns an E-AC-3 syntax or dimension error if the active sub-band range,
+/// coupling amplitudes, or mantissa count is inconsistent.
+pub fn reconstruct_enhanced_coupling(
+    coupling: &EnhancedCouplingInformation,
+    coupling_mantissas: &[f64],
+) -> Result<EnhancedCouplingReconstruction, Eac3Error> {
+    let begin = usize::from(coupling.begin_subband);
+    let end = usize::from(coupling.end_subband);
+    if begin >= end || end >= ENHANCED_COUPLING_SUBBAND_MANTISSA.len() {
+        return Err(Eac3Error::InvalidCouplingRange {
+            begin: i16::from(coupling.begin_subband),
+            end: i16::from(coupling.end_subband),
+        });
+    }
+    let begin_mantissa = ENHANCED_COUPLING_SUBBAND_MANTISSA[begin];
+    let end_mantissa = ENHANCED_COUPLING_SUBBAND_MANTISSA[end];
+    let expected_mantissas = end_mantissa
+        .checked_sub(begin_mantissa)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    if coupling_mantissas.len() != expected_mantissas {
+        return Err(Eac3Error::MantissaExponentLengthMismatch {
+            baps: expected_mantissas,
+            exponents: coupling_mantissas.len(),
+        });
+    }
+    if coupling.channel_in_use.len() != coupling.amplitudes.len() {
+        return Err(Eac3Error::FrameSizeOverflow);
+    }
+
+    let structure = &coupling.band_structure[begin..end];
+    let expected_band_count = usize::from(count_unmerged(structure)?);
+    if expected_band_count != usize::from(coupling.band_count) {
+        return Err(Eac3Error::FrameSizeOverflow);
+    }
+
+    let mut channel_gains = Vec::with_capacity(coupling.amplitudes.len());
+    for (in_use, amplitudes) in coupling
+        .channel_in_use
+        .iter()
+        .copied()
+        .zip(&coupling.amplitudes)
+    {
+        if !in_use {
+            if amplitudes.is_some() {
+                return Err(Eac3Error::FrameSizeOverflow);
+            }
+            channel_gains.push(None);
+            continue;
+        }
+        let amplitudes = amplitudes.as_ref().ok_or(Eac3Error::FrameSizeOverflow)?;
+        if amplitudes.len() != expected_band_count {
+            return Err(Eac3Error::FrameSizeOverflow);
+        }
+        let gains = amplitudes
+            .iter()
+            .copied()
+            .map(enhanced_coupling_amplitude)
+            .collect::<Result<Vec<_>, _>>()?;
+        channel_gains.push(Some(gains));
+    }
+
+    let mut channels = vec![None; coupling.channel_in_use.len()];
+    for (channel, in_use) in coupling.channel_in_use.iter().copied().enumerate() {
+        if !in_use {
+            continue;
+        }
+        let gains = channel_gains[channel]
+            .as_ref()
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let mut reconstructed = Vec::with_capacity(expected_mantissas);
+        let mut band = None;
+        for sbnd in begin..end {
+            if !coupling.band_structure[sbnd] {
+                let next = band.map_or(0, |value| value + 1);
+                band = Some(next);
+            }
+            let band = band.ok_or(Eac3Error::FrameSizeOverflow)?;
+            let start = ENHANCED_COUPLING_SUBBAND_MANTISSA[sbnd] - begin_mantissa;
+            let stop = ENHANCED_COUPLING_SUBBAND_MANTISSA[sbnd + 1] - begin_mantissa;
+            let gain = *gains.get(band).ok_or(Eac3Error::FrameSizeOverflow)?;
+            reconstructed.extend(
+                coupling_mantissas[start..stop]
+                    .iter()
+                    .map(|mantissa| *mantissa * gain),
+            );
+        }
+        if reconstructed.len() != expected_mantissas {
+            return Err(Eac3Error::FrameSizeOverflow);
+        }
+        channels[channel] = Some(reconstructed);
+    }
+
+    Ok(EnhancedCouplingReconstruction {
+        begin_mantissa,
+        end_mantissa,
+        channels,
+    })
+}
+
+fn enhanced_coupling_amplitude(code: u8) -> Result<f64, Eac3Error> {
+    const EXPONENT: [u8; 31] = [
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7,
+    ];
+    const MANTISSA: [u8; 31] = [
+        0x20, 0x1b, 0x17, 0x13, 0x10, 0x1b, 0x17, 0x13, 0x10, 0x1b, 0x17, 0x13, 0x10, 0x1b, 0x17,
+        0x13, 0x10, 0x1b, 0x17, 0x13, 0x10, 0x1b, 0x17, 0x13, 0x10, 0x1b, 0x17, 0x13, 0x10, 0x1b,
+        0x17,
+    ];
+    if code == 31 {
+        return Ok(0.0);
+    }
+    let index = usize::from(code);
+    let mantissa = *MANTISSA.get(index).ok_or(Eac3Error::FrameSizeOverflow)?;
+    let exponent = *EXPONENT.get(index).ok_or(Eac3Error::FrameSizeOverflow)?;
+    Ok(f64::from(mantissa) / 32.0 / 2_f64.powi(i32::from(exponent)))
 }
 
 /// Parses the first `audblk` through the optional skip field.
@@ -325,6 +466,13 @@ fn decode_audio_blocks_until(
                 &mut dither_index,
                 zero_bap,
             )?;
+        let enhanced_coupling = match prefix.coupling.as_ref() {
+            Some(CouplingInformation::Enhanced(info)) => coupling_mantissas
+                .as_deref()
+                .map(|mantissas| reconstruct_enhanced_coupling(info, mantissas))
+                .transpose()?,
+            _ => None,
+        };
         let (lfe_bap, lfe_mantissas) = decode_lfe_mantissas(
             &mut bits,
             &frame,
@@ -345,6 +493,7 @@ fn decode_audio_blocks_until(
             channel_mantissas,
             coupling_bap,
             coupling_mantissas,
+            enhanced_coupling,
             lfe_bap,
             lfe_mantissas,
             mantissa_end_offset_bits,

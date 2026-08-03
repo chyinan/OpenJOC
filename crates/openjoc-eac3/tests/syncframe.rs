@@ -4,7 +4,8 @@ use openjoc_eac3::{
     decode_first_audio_block, decode_frame_exponent_strategy, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
     parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
-    parse_syncframe_header, spx_subband_range, validate_complexity_index,
+    parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
+    validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -628,7 +629,8 @@ fn parses_first_audio_block_enhanced_coupling_coordinates() {
     bits.push(6, 3); // first coupling slow leak
     let expected_offset = bits.0.len();
 
-    let prefix = parse_first_audio_block_prefix(&bits.bytes(256)).expect("enhanced coupling");
+    let bytes = bits.clone().bytes(256);
+    let prefix = parse_first_audio_block_prefix(&bytes).expect("enhanced coupling");
     let coupling = match prefix.coupling.expect("coupling state") {
         CouplingInformation::Enhanced(value) => value,
         CouplingInformation::Standard(_) => panic!("expected enhanced coupling"),
@@ -671,6 +673,52 @@ fn parses_first_audio_block_enhanced_coupling_coordinates() {
     let leakage = prefix.coupling_leak.expect("coupling leakage");
     assert_eq!((leakage.fast_code, leakage.slow_code), (2, 6));
     assert_eq!(prefix.next_offset_bits, expected_offset);
+
+    let decoded =
+        decode_first_audio_block(&bytes, &[0.0; 256]).expect("enhanced coupling mantissas");
+    let reconstructed = decoded
+        .enhanced_coupling
+        .expect("enhanced coupling coefficients");
+    assert_eq!(
+        (reconstructed.begin_mantissa, reconstructed.end_mantissa),
+        (49, 121)
+    );
+    assert_eq!(reconstructed.channels[0].as_ref().expect("left").len(), 72);
+    assert!(reconstructed.channels[1].is_none());
+    assert_eq!(reconstructed.channels[2].as_ref().expect("right").len(), 72);
+}
+
+#[test]
+fn reconstructs_enhanced_coupling_coefficients_from_band_amplitudes() {
+    let coupling = openjoc_eac3::EnhancedCouplingInformation {
+        channel_in_use: vec![true, false, true],
+        begin_frequency_code: 3,
+        begin_subband: 5,
+        end_subband: 8,
+        band_structure: {
+            let mut value = [false; 22];
+            value[6] = true;
+            value
+        },
+        band_count: 2,
+        amplitudes: vec![Some(vec![0, 31]), None, Some(vec![1, 5])],
+    };
+    let coupling_mantissas = vec![1.0; 36];
+
+    let reconstructed = reconstruct_enhanced_coupling(&coupling, &coupling_mantissas)
+        .expect("enhanced coupling reconstruction");
+
+    assert_eq!(
+        (reconstructed.begin_mantissa, reconstructed.end_mantissa),
+        (49, 85)
+    );
+    let channel0 = reconstructed.channels[0].as_ref().expect("channel 0");
+    assert_eq!(&channel0[..24], vec![1.0; 24].as_slice());
+    assert_eq!(&channel0[24..], vec![0.0; 12].as_slice());
+    let channel2 = reconstructed.channels[2].as_ref().expect("channel 2");
+    assert_eq!(&channel2[..24], vec![27.0 / 32.0; 24].as_slice());
+    assert_eq!(&channel2[24..], vec![27.0 / 64.0; 12].as_slice());
+    assert!(reconstructed.channels[1].is_none());
 }
 
 #[test]

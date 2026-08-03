@@ -1004,6 +1004,33 @@ of merge bits (equivalently, the number of zero entries in the active range).
 The enhanced-coupling test with six subbands and one merge records this
 derivation; no decoder implementation was consulted.
 
+### Enhanced coupling coefficient reconstruction
+
+- Normative source: ETSI TS 102 366 V1.4.1 clauses E.2.5.3, E.2.5.5.1, and
+  E.2.5.5.2; Table E.2.9 supplies the enhanced-coupling subband transform
+  starts and Table E.2.10 supplies the amplitude mantissa/exponent pairs.
+- Official reference data: the authorized ETSI PDF
+  `references/etsi/ts_102366v010401p.pdf`, rendered at 300 DPI as
+  `.codex-tmp/enhanced-coupling-render/page159-159.png` and
+  `.codex-tmp/enhanced-coupling-render/page160-160.png`. The rendered pages
+  were visually inspected because the pseudo-code contains fixed-point
+  division and right-shift layout that is not safely recoverable from plain
+  text extraction.
+- Design rationale: `reconstruct_enhanced_coupling` keeps the decoded coupling
+  mantissas in their normalized floating-point representation and applies the
+  Table E.2.10 value as `mantissa / 32 / 2^exponent`. It expands each active
+  band over the exact Table E.2.9 bin interval, preserves the absolute
+  `[begin_mantissa, end_mantissa)` range, and returns `None` for channels not
+  marked as coupled. This leaves the independently decoded low-frequency
+  bins untouched while exposing the normative reconstructed region to the
+  later transform/audio pipeline.
+- Validation: `reconstructs_enhanced_coupling_coefficients_from_band_amplitudes`
+  covers a merged subband, unity gain, finite attenuation, minus-infinity
+  amplitude code 31, uncoupled-channel omission, and exact bin counts. The
+  enhanced-coupling frame fixture also checks that `DecodedAudioBlock` carries
+  the reconstructed 49..121 coefficient region. No existing decoder source
+  was consulted.
+
 No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,
 and a test or explicit TODO before implementation proceeds.

@@ -9,10 +9,10 @@ mod mantissa;
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
     DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
-    EnhancedCouplingInformation, ExponentInformation, FastGainCodes, SnrOffsets,
-    SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
-    StandardCouplingInformation, decode_audio_blocks, decode_first_audio_block,
-    parse_first_audio_block_prefix,
+    EnhancedCouplingInformation, EnhancedCouplingReconstruction, ExponentInformation,
+    FastGainCodes, SnrOffsets, SpectralExtensionCoordinates, SpectralExtensionInformation,
+    StandardCouplingCoordinates, StandardCouplingInformation, decode_audio_blocks,
+    decode_first_audio_block, parse_first_audio_block_prefix, reconstruct_enhanced_coupling,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
