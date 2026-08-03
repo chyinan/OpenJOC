@@ -1,6 +1,6 @@
 use openjoc_eac3::{
-    AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAddbsi, StreamType,
-    block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
+    AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAccessUnitPcmDecoder, JocAddbsi,
+    StreamType, block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
     decode_audio_blocks, decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
     decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
@@ -162,6 +162,99 @@ fn complexity_index_equals_the_oamd_program_object_count() {
             objects: 17,
         })
     );
+}
+
+#[test]
+fn parses_custom_channel_map_on_a_dependent_substream() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(1, 2); // dependent
+    bits.push(0, 3); // dependent substream zero
+    bits.push(7, 11); // 16-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(2, 3); // 2/0: two full-bandwidth channels
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // E-AC-3 version
+    bits.push(0, 5); // dialnorm
+    bits.push(0, 1); // no compression word
+    bits.push(1, 1); // custom channel map exists
+    bits.push(1 << 9, 16); // chanmap bit 6: Lb/Rb pair
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // no addbsi
+
+    let bsi = parse_bsi(&bits.bytes(16)).expect("valid dependent BSI");
+    assert_eq!(bsi.header.stream_type, StreamType::Dependent);
+    assert_eq!(bsi.channel_map, Some(1 << 9));
+}
+
+#[test]
+fn decodes_an_indexed_independent_joc_access_unit_to_pcm() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(63, 11); // 128-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(1, 1); // block-switch syntax
+    bits.push(0, 1); // dither syntax disabled
+    bits.push(0, 1); // bit-allocation syntax
+    bits.push(1, 1); // frame fast-gain syntax
+    bits.push(1, 1); // delta-bit-allocation syntax
+    bits.push(1, 1); // skip-field syntax
+    bits.push(0, 1); // SPX attenuation syntax
+    bits.push(1, 2); // channel exponent strategy D15
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(32, 6); // frame coarse SNR offset
+    bits.push(7, 4); // frame fine SNR offset
+    bits.push(1, 1); // block switch
+    bits.push(1, 1); // dynamic range exists
+    bits.push(0xa5, 8);
+    bits.push(1, 1); // SPX in use
+    bits.push(2, 2); // start copy frequency
+    bits.push(0, 3); // begin subband
+    bits.push(3, 3); // end subband
+    bits.push(1, 1); // band structure exists
+    for value in [false, true, false, true, true, false] {
+        bits.push(u64::from(value), 1);
+    }
+    bits.push(17, 5); // blend
+    bits.push(2, 2); // master coordinate
+    for (exponent, mantissa) in [(1, 0), (2, 1), (3, 2), (4, 3)] {
+        bits.push(exponent, 4);
+        bits.push(mantissa, 2);
+    }
+    bits.push(10, 4); // channel absolute exponent
+    for _ in 0..16 {
+        bits.push(62, 7);
+    }
+    bits.push(1, 2); // gain range
+    bits.push(0, 1); // converter SNR offset absent
+    let bytes = bits.bytes(128);
+    let frames = index_syncframes(&bytes).expect("indexed frame");
+    let units = group_access_units(&frames).expect("access unit");
+    let mut decoder = JocAccessUnitPcmDecoder::new();
+    let pcm = decoder
+        .decode(&bytes, &frames, units[0], &[0.5; 49])
+        .expect("independent access-unit PCM");
+    assert_eq!(pcm.sample_rate, 48_000);
+    assert_eq!(pcm.samples, 256);
+    assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channels[0].len(), 256);
+    assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
 }
 
 #[test]
@@ -485,9 +578,7 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
     let mut malformed = blocks.clone();
     malformed[1].channel_mantissas.clear();
     let mut atomic_state = AudioPcmSynthesizer::new();
-    atomic_state
-        .synthesize(&blocks)
-        .expect("atomic state seed");
+    atomic_state.synthesize(&blocks).expect("atomic state seed");
     assert!(atomic_state.synthesize(&malformed).is_err());
     assert_eq!(
         atomic_state

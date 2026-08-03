@@ -14,7 +14,7 @@ use std::{
     process::{Command, ExitCode},
 };
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -28,6 +28,7 @@ struct DecodePayloadArgs {
 struct DecodeEac3Args {
     input: PathBuf,
     downmix: Option<PathBuf>,
+    internal_base: bool,
     output: PathBuf,
 }
 
@@ -112,10 +113,16 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
 fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>> {
     let input = values.first().filter(|value| !value.starts_with('-'));
     let mut downmix = None;
+    let mut internal_base = false;
     let mut output = None;
     let mut index = 1;
     while index < values.len() {
         let flag = &values[index];
+        if flag == "--internal-base" {
+            internal_base = true;
+            index += 1;
+            continue;
+        }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
             "--downmix" => downmix = Some(PathBuf::from(value)),
@@ -124,31 +131,55 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         }
         index += 2;
     }
+    if internal_base && downmix.is_some() {
+        return Err(usage_error().into());
+    }
     Ok(DecodeEac3Args {
         input: PathBuf::from(input.ok_or_else(usage_error)?),
         downmix,
+        internal_base,
         output: output.ok_or_else(usage_error)?,
     })
 }
 
 fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     let stream = fs::read(&arguments.input)?;
-    let downmix_path = match &arguments.downmix {
-        Some(path) => path.clone(),
-        None => decode_base_audio(&arguments.input, &arguments.output)?,
-    };
-    let downmix = decode(&fs::read(downmix_path)?)?;
     let config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig {
             trim_configuration_count: None,
         },
     };
-    let decoded = eac3_decode::decode_aligned_eac3(&stream, &downmix, config)?;
+    let decoded = if arguments.internal_base {
+        let dither = deterministic_dither_values();
+        eac3_decode::decode_internal_eac3(&stream, config, &dither)?
+    } else {
+        let downmix_path = match &arguments.downmix {
+            Some(path) => path.clone(),
+            None => decode_base_audio(&arguments.input, &arguments.output)?,
+        };
+        let downmix = decode(&fs::read(downmix_path)?)?;
+        eac3_decode::decode_aligned_eac3(&stream, &downmix, config)?
+    };
     for (frame_index, frame) in decoded.frames.iter().enumerate() {
         write_debug(&arguments.output, frame_index, frame)?;
     }
     write_scene(&arguments.output, &decoded.scene)
+}
+
+fn deterministic_dither_values() -> Vec<f64> {
+    // TS 102 366 clause 6.3.4 permits any reasonably random sequence and
+    // accepts a +/-0.5 uniform range. A fixed xorshift stream makes CLI output
+    // reproducible while retaining the required non-zero noise behavior.
+    let mut state = 0x6d2b_79f5_u32;
+    (0..32_768)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (f64::from(state) / f64::from(u32::MAX) - 0.5) * 0.5
+        })
+        .collect()
 }
 
 fn decode_base_audio(input: &Path, output: &Path) -> Result<PathBuf, Box<dyn Error>> {

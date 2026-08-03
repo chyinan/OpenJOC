@@ -1005,6 +1005,35 @@ frame behavior is covered by integration tests.
   nonsequential independent and dependent IDs; sample-rate mismatch; and the
   resulting frame spans, rate, and sample count are tested.
 
+### JOC E-AC-3 access-unit PCM assembly
+
+- Normative source: TS 103 420 V1.2.1 clauses 4.3, 6.3.2.2-6.3.2.3,
+  8.1 and E.3; TS 102 366 V1.4.1 clauses E.1.3.1.7-E.1.3.1.8,
+  E.2.8.2, and Table 4.3.
+- Official reference data: searchable ETSI prose from pages 16, 68-69 of
+  `references/etsi/ts_103420v010201p.pdf` and pages 127-128 and 170-171 of
+  `references/etsi/ts_102366v010401p.pdf`. No damaged mathematical formula is
+  used by this channel-location mapping, so raster formula recovery was not
+  required.
+- Design rationale: `BitstreamInformation::channel_map` retains the optional
+  16-bit dependent `chanmap` in its normative MSB-first representation.
+  `JocAccessUnitPcmDecoder` enforces the JOC elementary-stream shape (I0 and
+  optional D0), decodes each source with independent TDAC history, reorders
+  the E-AC-3 Table 4.3 base order into the JOC Table 47 order, and replaces
+  matching dependent locations while appending the 7.X or 5.X+2 pair. LFE is
+  returned separately because Table 47 explicitly bypasses it in JOC.
+  State is cloned and committed only after both source frames and the merge
+  pass succeed. The CLI exposes this path through `--internal-base`; the
+  replaceable FFmpeg downmix boundary remains available by default.
+- Normative limitation: TS 103 420 E.3 permits at most one D0, so streams
+  with additional independent/dependent frames are rejected by this JOC
+  path rather than silently dropping audio. General TS 102 366 multi-program
+  selection remains outside the JOC elementary-stream contract.
+- Validation: dependent custom `chanmap` parsing, replacement and supplement
+  mapping, indexed I0 syncframe-to-PCM synthesis, channel ordering, sample
+  count, and finite PCM output checks are covered by
+  `crates/openjoc-eac3/tests/syncframe.rs` and the access-unit module tests.
+
 ### Enhanced AC-3 auxiliary EMDF carrier
 
 - Normative source: TS 102 366 clauses E.1.2.5, E.1.2.6, 4.4.4.1 through

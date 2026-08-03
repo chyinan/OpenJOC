@@ -2,6 +2,7 @@
 
 //! Clean-room Enhanced AC-3 frontend from ETSI TS 102 366 Annex E.
 
+mod access_unit;
 mod aht;
 mod audio_block;
 mod bit_allocation;
@@ -11,6 +12,7 @@ mod rematrix;
 mod spx;
 mod transform;
 
+pub use access_unit::{DecodedAccessUnitPcm, JocAccessUnitPcmDecoder};
 pub use aht::{
     decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
     expand_aht_gaq_gains,
@@ -270,6 +272,18 @@ pub enum Eac3Error {
     },
     Emdf(EmdfError),
     InvalidAccessUnitRange,
+    UnsupportedJocAccessUnitFrameCount {
+        actual: usize,
+    },
+    InvalidDependentChannelMap {
+        expected: usize,
+        actual: usize,
+    },
+    MultipleLfeChannels,
+    AccessUnitPcmSampleCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
     MultipleJocCarriers,
     MissingJocAddbsi {
         frame: usize,
@@ -294,6 +308,7 @@ impl Eac3Error {
             }
             Self::NonFiniteAhtCoefficient => Some("non-finite E-AC-3 AHT coefficient"),
             Self::InvalidAccessUnitRange => Some("invalid E-AC-3 access-unit range"),
+            Self::MultipleLfeChannels => Some("multiple E-AC-3 LFE channels are not supported"),
             Self::MultipleJocCarriers => {
                 Some("multiple JOC EMDF carriers in one E-AC-3 access unit")
             }
@@ -347,6 +362,18 @@ impl Eac3Error {
             Self::DependentAfterConvertedSubstream { frame } => Some(write!(
                 formatter,
                 "dependent E-AC-3 frame {frame} follows a converted independent substream"
+            )),
+            Self::UnsupportedJocAccessUnitFrameCount { actual } => Some(write!(
+                formatter,
+                "JOC E-AC-3 access unit contains {actual} frames; expected one independent and at most one dependent frame"
+            )),
+            Self::InvalidDependentChannelMap { expected, actual } => Some(write!(
+                formatter,
+                "dependent E-AC-3 channel map contains {expected} channels but audio carries {actual}"
+            )),
+            Self::AccessUnitPcmSampleCountMismatch { expected, actual } => Some(write!(
+                formatter,
+                "E-AC-3 access-unit PCM contains {actual} samples; expected {expected}"
             )),
             Self::InvalidSpectralExtensionCode {
                 begin_code,
@@ -596,6 +623,10 @@ impl fmt::Display for Eac3Error {
             | Self::UnsupportedAdaptiveHybridTransform
             | Self::NonFiniteAhtCoefficient
             | Self::InvalidAccessUnitRange
+            | Self::UnsupportedJocAccessUnitFrameCount { .. }
+            | Self::InvalidDependentChannelMap { .. }
+            | Self::MultipleLfeChannels
+            | Self::AccessUnitPcmSampleCountMismatch { .. }
             | Self::MultipleJocCarriers
             | Self::InvalidGroupedExponent { .. }
             | Self::ExponentOutOfRange { .. }
@@ -723,6 +754,9 @@ pub struct BitstreamInformation {
     pub audio_coding_mode: u8,
     pub lfe_on: bool,
     pub bitstream_id: u8,
+    /// Custom channel map for a dependent substream, in the MSB-first table
+    /// E.1.4 representation. `None` means the `acmod`/`lfeon` mapping applies.
+    pub channel_map: Option<u16>,
     pub addbsi: Option<Vec<u8>>,
 }
 
@@ -881,9 +915,11 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
             skip(bits, 8)?;
         }
     }
-    if header.stream_type == StreamType::Dependent && bits.read_bit()? {
-        skip(bits, 16)?;
-    }
+    let channel_map = if header.stream_type == StreamType::Dependent && bits.read_bit()? {
+        Some(u16::try_from(bits.read_bits(16)?).map_err(|_| Eac3Error::FrameSizeOverflow)?)
+    } else {
+        None
+    };
     if bits.read_bit()? {
         parse_mixing_metadata(bits, header.stream_type, acmod, lfe_on, num_blocks_code)?;
     }
@@ -915,6 +951,7 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
             audio_coding_mode: acmod,
             lfe_on,
             bitstream_id,
+            channel_map,
             addbsi,
         },
         num_blocks_code,

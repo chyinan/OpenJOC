@@ -1,8 +1,8 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    Eac3Error, extract_aux_joc_access_unit, group_access_units, index_syncframes,
-    validate_complexity_index,
+    Eac3Error, JocAccessUnitPcmDecoder, extract_aux_joc_access_unit, group_access_units,
+    index_syncframes, validate_complexity_index,
 };
 use openjoc_oamd::{OamdError, parse_oamd_payload_with_config};
 use openjoc_scene::{
@@ -145,6 +145,64 @@ pub fn decode_aligned_eac3(
             frame_index: frame_number,
         })?);
         sample_offset = end;
+    }
+    Ok(DecodedEac3 {
+        scene: decoder.finish()?,
+        frames: decoded_frames,
+    })
+}
+
+/// Decodes the normative JOC elementary-stream audio path without an external
+/// base decoder. TS 103 420 E.3 permits exactly I0 and optional D0; the
+/// E-AC-3 access-unit decoder merges those channel locations before the PCM is
+/// passed to the JOC/ObjectScene boundary.
+///
+/// # Errors
+/// Returns the same checked frontend, metadata, timing, PCM-shape, or
+/// reconstruction errors as [`decode_aligned_eac3`].
+pub fn decode_internal_eac3(
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    dither_values: &[f64],
+) -> Result<DecodedEac3, DecodeEac3Error> {
+    let frame_index = index_syncframes(stream)?;
+    let units = group_access_units(&frame_index)?;
+    if units.is_empty() {
+        return Err(DecodeEac3Error::EmptyStream);
+    }
+    let mut audio_decoder = JocAccessUnitPcmDecoder::new();
+    let mut decoder = PayloadDecoder::new(config);
+    let mut decoded_frames = Vec::with_capacity(units.len());
+    for (unit_index, unit) in units.into_iter().enumerate() {
+        let pcm = audio_decoder.decode(stream, &frame_index, unit, dither_values)?;
+        if pcm.sample_rate != unit.sample_rate
+            || pcm.samples != unit.samples
+            || pcm.channels.is_empty()
+            || pcm
+                .channels
+                .iter()
+                .any(|channel| channel.len() != usize::from(unit.samples))
+        {
+            return Err(DecodeEac3Error::InvalidPcmLength {
+                expected: usize::from(unit.samples),
+            });
+        }
+        let metadata = extract_aux_joc_access_unit(stream, &frame_index, unit)?.ok_or(
+            DecodeEac3Error::MissingMetadata {
+                access_unit: unit_index,
+            },
+        )?;
+        let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
+        validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let frame_number =
+            u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
+        decoded_frames.push(decoder.decode_frame(JocFrameInput {
+            sample_rate: unit.sample_rate,
+            downmix_pcm: &pcm.channels,
+            joc_payload: &metadata.joc,
+            oamd_payload: &metadata.oamd,
+            frame_index: frame_number,
+        })?);
     }
     Ok(DecodedEac3 {
         scene: decoder.finish()?,
