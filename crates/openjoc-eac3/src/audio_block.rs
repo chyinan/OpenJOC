@@ -344,6 +344,38 @@ fn enhanced_coupling_amplitude(code: u8) -> Result<f64, Eac3Error> {
     Ok(f64::from(mantissa) / 32.0 / 2_f64.powi(i32::from(exponent)))
 }
 
+/// Applies the six-point inverse AHT DCT from clause E.2.4.5.
+///
+/// Each input array contains the six AHT transform values for one spectral
+/// bin, ordered by transform index `j`. The output contains the six MDCT
+/// block coefficients ordered by block index `m`.
+///
+/// # Errors
+/// Returns [`Eac3Error::NonFiniteAhtCoefficient`] when any input coefficient
+/// is NaN or infinite.
+pub fn inverse_aht_dct(spectrum: &[[f64; 6]]) -> Result<Vec<[f64; 6]>, Eac3Error> {
+    let scale = 2.0_f64.sqrt();
+    let r0 = 0.5_f64.sqrt();
+    let mut coefficients = Vec::with_capacity(spectrum.len());
+    for input in spectrum {
+        if input.iter().any(|value| !value.is_finite()) {
+            return Err(Eac3Error::NonFiniteAhtCoefficient);
+        }
+        let mut output = [0.0_f64; 6];
+        for (m, value) in output.iter_mut().enumerate() {
+            let mut sum = 0.0_f64;
+            for (j, coefficient) in input.iter().enumerate() {
+                let r = if j == 0 { r0 } else { 1.0 };
+                let angle = (j as f64) * ((2 * m + 1) as f64) * core::f64::consts::PI / 12.0;
+                sum += r * coefficient * angle.cos();
+            }
+            *value = scale * sum;
+        }
+        coefficients.push(output);
+    }
+    Ok(coefficients)
+}
+
 /// Parses the first `audblk` through the optional skip field.
 ///
 /// This is the first stateful stage of full E.1.2.4 traversal. The returned

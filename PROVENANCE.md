@@ -843,6 +843,23 @@ frame behavior is covered by integration tests.
   rejection of address 64. The AHT mantissa traversal and inverse DCT remain
   explicitly pending and are not represented by a placeholder.
 
+### Enhanced AC-3 AHT inverse DCT primitive
+
+- Normative source: TS 102 366 V1.4.1 clause E.2.4.5 and the definition of
+  `Rj` immediately following its inverse-DCT equation.
+- Official reference data: pages 156 and 157 of the authorized ETSI PDF were
+  rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected
+  before transcribing the square-root, cosine, and piecewise `Rj` factors.
+- Design rationale: `inverse_aht_dct` is a pure six-point transform over one
+  spectral bin at a time. It validates finite input, keeps the normative
+  `sqrt(2)` and `R0 = 1/sqrt(2)` factors explicit, and returns block-major
+  coefficients without applying exponents prematurely. The function is kept
+  separate from conventional mantissa traversal until the VQ/GAQ syntax and
+  six-block state machine are implemented.
+- Validation: AHT tests cover DC reconstruction, a first-AC cosine sample,
+  expected transform energy scaling, and rejection of NaN input. No decoder
+  implementation was consulted; full AHT VQ/GAQ integration remains pending.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

@@ -12,7 +12,8 @@ pub use audio_block::{
     EnhancedCouplingInformation, EnhancedCouplingReconstruction, ExponentInformation,
     FastGainCodes, SnrOffsets, SpectralExtensionCoordinates, SpectralExtensionInformation,
     StandardCouplingCoordinates, StandardCouplingInformation, decode_audio_blocks,
-    decode_first_audio_block, parse_first_audio_block_prefix, reconstruct_enhanced_coupling,
+    decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
+    reconstruct_enhanced_coupling,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -139,6 +140,7 @@ pub enum Eac3Error {
     },
     ReservedSnrOffsetStrategy,
     UnsupportedAdaptiveHybridTransform,
+    NonFiniteAhtCoefficient,
     MissingIndependentSubstreamZero {
         frame: usize,
     },
@@ -187,6 +189,7 @@ impl Eac3Error {
             Self::UnsupportedAdaptiveHybridTransform => {
                 Some("E-AC-3 adaptive hybrid transform mantissas are not yet supported")
             }
+            Self::NonFiniteAhtCoefficient => Some("non-finite E-AC-3 AHT coefficient"),
             Self::InvalidAccessUnitRange => Some("invalid E-AC-3 access-unit range"),
             Self::MultipleJocCarriers => {
                 Some("multiple JOC EMDF carriers in one E-AC-3 access unit")
@@ -383,6 +386,7 @@ impl fmt::Display for Eac3Error {
             | Self::MissingJocExtensionFlag
             | Self::ReservedSnrOffsetStrategy
             | Self::UnsupportedAdaptiveHybridTransform
+            | Self::NonFiniteAhtCoefficient
             | Self::InvalidAccessUnitRange
             | Self::MultipleJocCarriers
             | Self::InvalidGroupedExponent { .. }
