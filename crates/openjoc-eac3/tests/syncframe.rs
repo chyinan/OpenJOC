@@ -474,6 +474,27 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
             .expect("stateful reset PCM synthesis"),
         first
     );
+
+    let mut expected_state = AudioPcmSynthesizer::new();
+    expected_state
+        .synthesize(&blocks)
+        .expect("expected state seed");
+    let expected_after_failure = expected_state
+        .synthesize(&blocks)
+        .expect("expected state continuation");
+    let mut malformed = blocks.clone();
+    malformed[1].channel_mantissas.clear();
+    let mut atomic_state = AudioPcmSynthesizer::new();
+    atomic_state
+        .synthesize(&blocks)
+        .expect("atomic state seed");
+    assert!(atomic_state.synthesize(&malformed).is_err());
+    assert_eq!(
+        atomic_state
+            .synthesize(&blocks)
+            .expect("atomic state continuation"),
+        expected_after_failure
+    );
 }
 
 #[test]
