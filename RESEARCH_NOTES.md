@@ -134,3 +134,13 @@ SNR-offset domain. The only dimensionally consistent reading is
 OpenJOC records this as an explicit normative ambiguity and uses that reading
 for the pure offset helper. A legal conformance vector or ETSI correction
 remains the compatibility gate; no decoder implementation was consulted.
+
+## Enhanced AC-3 AHT boundary
+
+TS 102 366 Annex E.2.4 defines Adaptive Hybrid Transform (AHT) vector/gain
+syntax separately from conventional mantissas. The current first-block decoder
+detects any frame/channel/coupling/LFE AHT flag and returns a structured
+unsupported-feature error before consuming mantissa bits. This is an explicit
+implementation boundary, not a conventional-mantissa fallback. AHT requires
+independent page-151 through page-156 formula inspection and conformance
+vectors before it can be added.
