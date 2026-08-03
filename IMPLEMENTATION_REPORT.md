@@ -89,7 +89,7 @@ validated against known ground truth.
 
 ## Verification commands
 
-The current container-focused checks were run with:
+The current container and diagnostic checks were run with:
 
 ```text
 cargo test -p openjoc-container
@@ -97,7 +97,7 @@ cargo test -p openjoc-cli --test container -- --nocapture
 cargo test -p openjoc-cli
 ```
 
-The final handoff still requires fresh full-workspace runs of:
+Fresh full-workspace quality gates for commit `c167e20` also passed:
 
 ```text
 cargo fmt --all -- --check
@@ -106,6 +106,9 @@ cargo test --workspace --all-features
 cargo build --workspace --release --offline
 git diff --check
 ```
+
+This includes the workspace-wide all-feature test suite, strict clippy, the
+offline release build, and a clean diff check.
 
 ## Known limitations and next goals
 
