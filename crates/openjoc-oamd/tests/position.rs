@@ -298,3 +298,26 @@ fn screen_interpolation_preserves_normative_extended_coordinate_overshoot() {
         Ok(coded)
     );
 }
+
+#[test]
+fn screen_interpolation_rejects_nonfinite_depth_mix() {
+    let coded = Position3 {
+        x: 0.5,
+        y: -1.0 / 310.0,
+        z: 0.0,
+    };
+    let screen = ReferenceScreen {
+        bottom_left: Position3 {
+            x: 0.0,
+            y: 0.0,
+            z: -0.5,
+        },
+        width: 1.0,
+        height: 1.0,
+    };
+
+    assert_eq!(
+        interpolate_screen_position(coded, 0.5, 0.25, screen),
+        Err(OamdError::InvalidPropertyCode)
+    );
+}

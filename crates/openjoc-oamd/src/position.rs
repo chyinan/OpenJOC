@@ -219,6 +219,9 @@ pub fn interpolate_screen_position(
         z: screen.bottom_left.z + screen.height * (coded.z + 1.0) / 2.0,
     };
     let depth_mix = coded.y.powf(depth_factor);
+    if !depth_mix.is_finite() {
+        return Err(OamdError::InvalidPropertyCode);
+    }
     let screen_mix = Position3 {
         x: screen_factor * coded.x + (1.0 - screen_factor) * room.x,
         y: coded.y,

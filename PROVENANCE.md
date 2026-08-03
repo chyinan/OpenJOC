@@ -221,8 +221,8 @@ frame behavior is covered by integration tests.
   finite and infinite room projection, undefined centre rays, invalid finite
   factors, integrated render-info projection, exact screen/room endpoints and
   a non-trivial screen/depth matrix evaluation, extended-coordinate overshoot
-  preservation, all eight screen factors, and all four depth factors are
-  tested.
+  preservation, non-finite depth-mix rejection, all eight screen factors, and
+  all four depth factors are tested.
 
 ### OAMD object element and update/reuse semantics
 
