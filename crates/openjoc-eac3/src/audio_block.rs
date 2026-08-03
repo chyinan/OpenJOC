@@ -273,6 +273,9 @@ pub fn reconstruct_enhanced_coupling(
             exponents: coupling_mantissas.len(),
         });
     }
+    if coupling_mantissas.iter().any(|value| !value.is_finite()) {
+        return Err(Eac3Error::NonFiniteCouplingCoefficient);
+    }
     if coupling.channel_in_use.len() != coupling.amplitudes.len() {
         return Err(Eac3Error::FrameSizeOverflow);
     }
@@ -345,6 +348,174 @@ pub fn reconstruct_enhanced_coupling(
         end_mantissa,
         channels,
     })
+}
+
+/// Reconstructs complete 256-bin channel spectra from standard coupling.
+///
+/// The input channel vectors contain the independently coded low-frequency
+/// bins; the coupling vector contains the contiguous coupled region beginning
+/// at transform coefficient `37 + 12 * cplbegf`. Coordinates are expanded from
+/// coupling bands to sub-bands according to `cplbndstrc` before applying the
+/// clause 6.4.3 scale and the clause 6.4.4 factor of eight.
+pub fn reconstruct_standard_coupling(
+    coupling: &StandardCouplingInformation,
+    coupling_mantissas: &[f64],
+    channel_mantissas: &[Vec<f64>],
+) -> Result<Vec<Vec<f64>>, Eac3Error> {
+    if coupling.channel_in_use.len() != channel_mantissas.len()
+        || coupling.coordinates.len() != coupling.channel_in_use.len()
+    {
+        return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+            expected: coupling.channel_in_use.len(),
+            actual: channel_mantissas.len(),
+        });
+    }
+    let subbands = usize::from(coupling.subband_count);
+    if subbands == 0 || subbands > 18 || usize::from(coupling.begin_frequency_code) > 17 {
+        return Err(Eac3Error::InvalidCouplingRange {
+            begin: i16::from(coupling.begin_frequency_code),
+            end: i16::from(coupling.end_frequency_code),
+        });
+    }
+    let begin_mantissa = 37_usize
+        .checked_add(
+            usize::from(coupling.begin_frequency_code)
+                .checked_mul(12)
+                .ok_or(Eac3Error::FrameSizeOverflow)?,
+        )
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let end_mantissa = begin_mantissa
+        .checked_add(
+            subbands
+                .checked_mul(12)
+                .ok_or(Eac3Error::FrameSizeOverflow)?,
+        )
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    if end_mantissa > 253 {
+        return Err(Eac3Error::InvalidCouplingRange {
+            begin: i16::try_from(begin_mantissa).unwrap_or(i16::MAX),
+            end: i16::try_from(end_mantissa).unwrap_or(i16::MAX),
+        });
+    }
+    let expected_mantissas = end_mantissa
+        .checked_sub(begin_mantissa)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    if coupling_mantissas.len() != expected_mantissas {
+        return Err(Eac3Error::MantissaExponentLengthMismatch {
+            baps: expected_mantissas,
+            exponents: coupling_mantissas.len(),
+        });
+    }
+    if coupling_mantissas.iter().any(|value| !value.is_finite()) {
+        return Err(Eac3Error::NonFiniteCouplingCoefficient);
+    }
+    let structure = &coupling.band_structure[..subbands];
+    if usize::from(coupling.band_count) != usize::from(count_unmerged(structure)?) {
+        return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+            expected: usize::from(count_unmerged(structure)?),
+            actual: usize::from(coupling.band_count),
+        });
+    }
+    if structure.first().copied() != Some(false) {
+        return Err(Eac3Error::InvalidCouplingRange {
+            begin: i16::from(coupling.begin_frequency_code),
+            end: i16::from(coupling.end_frequency_code),
+        });
+    }
+    if !coupling.phase_flags.is_empty()
+        && coupling.phase_flags.len() != usize::from(coupling.band_count)
+    {
+        return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+            expected: usize::from(coupling.band_count),
+            actual: coupling.phase_flags.len(),
+        });
+    }
+
+    let mut coordinates = Vec::with_capacity(coupling.channel_in_use.len());
+    for (channel, in_use) in coupling.channel_in_use.iter().copied().enumerate() {
+        if !in_use {
+            coordinates.push(None);
+            continue;
+        }
+        let coordinate = coupling.coordinates[channel]
+            .as_ref()
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if coordinate.bands.len() != usize::from(coupling.band_count) {
+            return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+                expected: usize::from(coupling.band_count),
+                actual: coordinate.bands.len(),
+            });
+        }
+        coordinates.push(Some(
+            coordinate
+                .bands
+                .iter()
+                .map(|&(exponent, mantissa)| {
+                    standard_coupling_coordinate(exponent, mantissa, coordinate.master)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ));
+    }
+
+    let mut output = channel_mantissas
+        .iter()
+        .map(|channel| {
+            if channel.len() > 256 {
+                return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+                    expected: 256,
+                    actual: channel.len(),
+                });
+            }
+            if channel.iter().any(|value| !value.is_finite()) {
+                return Err(Eac3Error::NonFiniteCouplingCoefficient);
+            }
+            let mut expanded = vec![0.0; 256];
+            let count = channel.len().min(expanded.len());
+            expanded[..count].copy_from_slice(&channel[..count]);
+            Ok(expanded)
+        })
+        .collect::<Result<Vec<_>, Eac3Error>>()?;
+    let mut band = None;
+    for subband in 0..subbands {
+        if !structure[subband] {
+            band = Some(band.map_or(0, |value| value + 1));
+        }
+        let band = band.ok_or(Eac3Error::FrameSizeOverflow)?;
+        let start = subband * 12;
+        let stop = start + 12;
+        for channel in 0..output.len() {
+            if !coupling.channel_in_use[channel] {
+                continue;
+            }
+            let coordinate = coordinates[channel]
+                .as_ref()
+                .and_then(|values| values.get(band))
+                .copied()
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let phase = channel == 1 && coupling.phase_flags.get(band).copied().unwrap_or(false);
+            for bin in start..stop {
+                let value = coupling_mantissas[bin] * coordinate * 8.0;
+                output[channel][begin_mantissa + bin] = if phase { -value } else { value };
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn standard_coupling_coordinate(exponent: u8, mantissa: u8, master: u8) -> Result<f64, Eac3Error> {
+    if exponent > 15 || mantissa > 15 || master > 3 {
+        return Err(Eac3Error::InvalidCouplingCoordinate {
+            exponent,
+            mantissa,
+            master,
+        });
+    }
+    let temporary = if exponent == 15 {
+        f64::from(mantissa) / 16.0
+    } else {
+        f64::from(mantissa + 16) / 32.0
+    };
+    Ok(temporary / 2_f64.powi(i32::from(exponent) + 3 * i32::from(master)))
 }
 
 fn enhanced_coupling_amplitude(code: u8) -> Result<f64, Eac3Error> {

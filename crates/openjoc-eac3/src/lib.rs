@@ -19,7 +19,7 @@ pub use audio_block::{
     ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
     SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
     decode_audio_blocks, decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
-    reconstruct_enhanced_coupling,
+    reconstruct_enhanced_coupling, reconstruct_standard_coupling,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -141,6 +141,16 @@ pub enum Eac3Error {
         begin: i16,
         end: i16,
     },
+    InvalidCouplingCoordinateDimensions {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidCouplingCoordinate {
+        exponent: u8,
+        mantissa: u8,
+        master: u8,
+    },
+    NonFiniteCouplingCoefficient,
     InvalidBlockStartDimensions {
         frame_size: usize,
         audio_blocks: u8,
@@ -299,6 +309,21 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 coupling subband range {begin}..{end}"
             )),
+            Self::InvalidCouplingCoordinateDimensions { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 coupling coordinate dimensions: expected {expected}, got {actual}"
+            )),
+            Self::InvalidCouplingCoordinate {
+                exponent,
+                mantissa,
+                master,
+            } => Some(write!(
+                formatter,
+                "invalid E-AC-3 coupling coordinate {exponent}/{mantissa}/{master}"
+            )),
+            Self::NonFiniteCouplingCoefficient => {
+                Some(write!(formatter, "non-finite E-AC-3 coupling coefficient"))
+            }
             Self::InvalidBitAllocationParameterCode { parameter, actual } => Some(write!(
                 formatter,
                 "invalid E-AC-3 {parameter} bit allocation parameter code {actual}"
@@ -485,6 +510,9 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidSpectralExtensionCode { .. }
             | Self::InvalidSpectralExtensionRange { .. }
             | Self::InvalidCouplingRange { .. }
+            | Self::InvalidCouplingCoordinateDimensions { .. }
+            | Self::InvalidCouplingCoordinate { .. }
+            | Self::NonFiniteCouplingCoefficient
             | Self::InvalidBitAllocationParameterCode { .. }
             | Self::InvalidBitAllocationTableIndex { .. }
             | Self::InvalidPsdRange { .. }

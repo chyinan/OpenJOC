@@ -1156,6 +1156,29 @@ of merge bits (equivalently, the number of zero entries in the active range).
 The enhanced-coupling test with six subbands and one merge records this
 derivation; no decoder implementation was consulted.
 
+### Standard coupling coordinate reconstruction
+
+- Normative source: TS 102 366 V1.4.1 clauses 6.4.2 through 6.4.4 and
+  Table 6.24. Clause 6.4.3 defines the exponent/mantissa/master coordinate
+  scale; clause 6.4.4 defines the factor-of-eight channel reconstruction and
+  clause 6.4.1 defines 2/0 right-channel phase restoration.
+- Official reference data: pages 69 and 70 of
+  `references/etsi/ts_102366v010401p.pdf` were rendered as lossless 300-DPI
+  PNGs in `.codex-tmp/coupling-render/` and visually inspected. The printed
+  pseudo-code, rather than text-extraction guesses, determines the local
+  sub-band expansion and coordinate arithmetic.
+- Design rationale: `reconstruct_standard_coupling` accepts the independently
+  decoded low-frequency channel vectors and the contiguous coupling vector,
+  validates all dimensions and coordinate domains, expands local coupling-band
+  coordinates through `cplbndstrc`, and returns complete 256-bin channel
+  spectra. Phase flags are applied only to channel index one, matching the
+  2/0 right-channel rule; no rematrix or spectral-extension behavior is hidden
+  inside this function.
+- Validation: a two-channel fixture checks coordinate value `0.5`, the
+  clause-6.4.4 factor of eight, exact 37..73 coupling placement, and negation
+  of the first right-channel sub-band. Full block-to-PCM integration remains
+  a separate stage.
+
 ### Enhanced coupling coefficient reconstruction
 
 - Normative source: ETSI TS 102 366 V1.4.1 clauses E.2.5.3, E.2.5.5.1, and
