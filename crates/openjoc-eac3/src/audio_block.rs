@@ -6,7 +6,8 @@ use openjoc_bitio::{BitRead, BitReader};
 
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
-    channel_exponent_group_count, decode_exponents, parse_audio_frame, spx_subband_range,
+    channel_exponent_group_count, compute_element_bap, decode_exponents, decode_mantissas,
+    parse_audio_frame, snr_offsets_are_zero, spx_subband_range,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -67,6 +68,22 @@ pub struct ExponentInformation {
     pub gain_range: Option<u8>,
 }
 
+/// First-block conventional mantissas decoded after the complete side-info
+/// prefix. Coupling is emitted once, at the first participating channel, in
+/// the same order as clause E.1.2.4's mantissa syntax.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DecodedAudioBlock {
+    pub prefix: AudioBlockPrefix,
+    pub channel_baps: Vec<Vec<u8>>,
+    pub channel_mantissas: Vec<Vec<f64>>,
+    pub coupling_bap: Option<Vec<u8>>,
+    pub coupling_mantissas: Option<Vec<f64>>,
+    pub lfe_bap: Option<Vec<u8>>,
+    pub lfe_mantissas: Option<Vec<f64>>,
+    /// Absolute frame bit offset immediately after conventional mantissas.
+    pub mantissa_end_offset_bits: usize,
+}
+
 /// E.1.2.4 bit-allocation parameter codes effective in this block.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BitAllocationParameters {
@@ -77,7 +94,7 @@ pub struct BitAllocationParameters {
     pub floor_code: u8,
 }
 
-/// Newly transmitted block SNR-offset codes.
+/// Effective block SNR-offset codes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SnrOffsets {
     pub coarse_code: u8,
@@ -198,6 +215,275 @@ pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, 
     let mut bits = BitReader::new(frame_bytes);
     let _consumed = bits.take_bits(frame.audio_blocks_offset_bits)?;
     parse_first_prefix_reader(&mut bits, &frame)
+}
+
+/// Decodes the first audio block's conventional bit allocation and mantissas.
+///
+/// This function starts at `AudioBlockPrefix::next_offset_bits`, computes the
+/// normative BAP array for every active element, and then consumes mantissa
+/// codewords in the syntax order: each full-bandwidth channel, one coupling
+/// channel at the first participating channel, and finally LFE. Adaptive
+/// Hybrid Transform payloads are rejected explicitly until their Annex E
+/// vector/gain syntax is implemented; no conventional bits are consumed for
+/// such a block.
+///
+/// `dither_values` is a deterministic caller-owned sequence used only for
+/// channel dither flags. Values are consumed in channel/LFE syntax order.
+///
+/// # Errors
+/// Returns a checked parser, bit-allocation, mantissa, or unsupported-AHT
+/// error. A failure does not expose a partially decoded block.
+pub fn decode_first_audio_block(
+    bytes: &[u8],
+    dither_values: &[f64],
+) -> Result<DecodedAudioBlock, Eac3Error> {
+    let frame = parse_audio_frame(bytes)?;
+    if frame.coupling_aht_in_use
+        || frame.channel_aht_in_use.iter().any(|in_use| *in_use)
+        || frame.lfe_aht_in_use
+    {
+        return Err(Eac3Error::UnsupportedAdaptiveHybridTransform);
+    }
+    let frame_bytes = &bytes[..frame.bsi.header.frame_size];
+    let prefix = parse_first_audio_block_prefix(bytes)?;
+    let parameter_codes = prefix
+        .bit_allocation_parameters
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let snr = prefix
+        .snr_offsets
+        .as_ref()
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let fast_gain = prefix
+        .fast_gain_codes
+        .as_ref()
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let mut fine_codes = Vec::with_capacity(frame.full_bandwidth_channels as usize + 2);
+    if let Some(code) = snr.coupling_fine_code {
+        fine_codes.push(code);
+    }
+    fine_codes.extend_from_slice(&snr.channel_fine_codes);
+    if let Some(code) = snr.lfe_fine_code {
+        fine_codes.push(code);
+    }
+    let zero_bap = snr_offsets_are_zero(snr.coarse_code, &fine_codes)?;
+    let fscod = match frame.bsi.header.sample_rate {
+        48_000 => 0,
+        44_100 => 1,
+        32_000 => 2,
+        _ => return Err(Eac3Error::ReservedSampleRate),
+    };
+
+    let mut bits = BitReader::new(frame_bytes);
+    let _ = bits.take_bits(prefix.next_offset_bits)?;
+    let mut dither_index = 0_usize;
+    let mut channel_baps = Vec::with_capacity(usize::from(frame.full_bandwidth_channels));
+    let mut channel_mantissas = Vec::with_capacity(usize::from(frame.full_bandwidth_channels));
+    let mut coupling_bap = None;
+    let mut coupling_mantissas = None;
+    let mut coupling_decoded = false;
+
+    for channel in 0..usize::from(frame.full_bandwidth_channels) {
+        let information = prefix.channel_exponents[channel]
+            .as_ref()
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let baps = element_baps(
+            information,
+            parameter_codes,
+            fast_gain.channels[channel],
+            snr.coarse_code,
+            *snr.channel_fine_codes
+                .get(channel)
+                .ok_or(Eac3Error::FrameSizeOverflow)?,
+            fscod,
+            prefix
+                .delta_bit_allocation
+                .as_ref()
+                .and_then(|delta| delta.channels.get(channel)),
+            None,
+            zero_bap,
+        )?;
+        let (baps, exponents) = active_baps_and_exponents(information, baps)?;
+        let dither = prefix.dither[channel];
+        let mantissas = decode_element_mantissas(
+            &mut bits,
+            &baps,
+            &exponents,
+            dither,
+            dither_values,
+            &mut dither_index,
+        )?;
+        channel_baps.push(baps);
+        channel_mantissas.push(mantissas);
+
+        if !coupling_decoded && channel_uses_coupling(prefix.coupling.as_ref(), channel) {
+            let information = prefix
+                .coupling_exponents
+                .as_ref()
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let leaks = prefix
+                .coupling_leak
+                .map(|leak| (leak.fast_code, leak.slow_code));
+            let baps = element_baps(
+                information,
+                parameter_codes,
+                fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
+                snr.coarse_code,
+                snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                fscod,
+                prefix
+                    .delta_bit_allocation
+                    .as_ref()
+                    .and_then(|delta| delta.coupling.as_ref()),
+                leaks,
+                zero_bap,
+            )?;
+            let (baps, exponents) = active_baps_and_exponents(information, baps)?;
+            let dither_flags = vec![false; baps.len()];
+            let mantissas = decode_mantissas(&mut bits, &baps, &exponents, &dither_flags, &[])?;
+            coupling_bap = Some(baps);
+            coupling_mantissas = Some(mantissas);
+            coupling_decoded = true;
+        }
+    }
+
+    let (lfe_bap, lfe_mantissas) = if let Some(information) = prefix.lfe_exponents.as_ref() {
+        let baps = element_baps(
+            information,
+            parameter_codes,
+            fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
+            snr.coarse_code,
+            snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+            fscod,
+            None,
+            None,
+            zero_bap,
+        )?;
+        let (baps, exponents) = active_baps_and_exponents(information, baps)?;
+        let dither_flags = vec![false; baps.len()];
+        let mantissas = decode_mantissas(&mut bits, &baps, &exponents, &dither_flags, &[])?;
+        (Some(baps), Some(mantissas))
+    } else {
+        (None, None)
+    };
+    let frame_bits = frame
+        .bsi
+        .header
+        .frame_size
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let mantissa_end_offset_bits = frame_bits
+        .checked_sub(bits.bits_remaining())
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    Ok(DecodedAudioBlock {
+        prefix,
+        channel_baps,
+        channel_mantissas,
+        coupling_bap,
+        coupling_mantissas,
+        lfe_bap,
+        lfe_mantissas,
+        mantissa_end_offset_bits,
+    })
+}
+
+fn element_baps(
+    information: &ExponentInformation,
+    parameter_codes: BitAllocationParameters,
+    fast_gain_code: u8,
+    coarse_snr_code: u8,
+    fine_snr_code: u8,
+    fscod: u8,
+    delta: Option<&DeltaBitAllocationElement>,
+    coupling_leaks: Option<(u8, u8)>,
+    zero_bap: bool,
+) -> Result<Vec<u8>, Eac3Error> {
+    let exponents = full_exponents(information)?;
+    if zero_bap {
+        return Ok(vec![0; information.end_mantissa]);
+    }
+    compute_element_bap(
+        &exponents,
+        information.start_mantissa,
+        information.end_mantissa,
+        parameter_codes,
+        fast_gain_code,
+        coarse_snr_code,
+        fine_snr_code,
+        fscod,
+        delta,
+        coupling_leaks,
+    )
+}
+
+fn full_exponents(information: &ExponentInformation) -> Result<Vec<u8>, Eac3Error> {
+    if information.start_mantissa > information.end_mantissa
+        || information.decoded.len()
+            != information
+                .end_mantissa
+                .saturating_sub(information.start_mantissa)
+    {
+        return Err(Eac3Error::MantissaExponentLengthMismatch {
+            baps: information
+                .end_mantissa
+                .saturating_sub(information.start_mantissa),
+            exponents: information.decoded.len(),
+        });
+    }
+    let mut exponents = vec![0_u8; information.end_mantissa];
+    exponents[information.start_mantissa..information.end_mantissa]
+        .copy_from_slice(&information.decoded);
+    Ok(exponents)
+}
+
+fn active_baps_and_exponents(
+    information: &ExponentInformation,
+    baps: Vec<u8>,
+) -> Result<(Vec<u8>, Vec<u8>), Eac3Error> {
+    let start = information.start_mantissa;
+    let end = information.end_mantissa;
+    let active_baps = baps
+        .get(start..end)
+        .ok_or(Eac3Error::MantissaExponentLengthMismatch {
+            baps: baps.len(),
+            exponents: end.saturating_sub(start),
+        })?
+        .to_vec();
+    Ok((active_baps, information.decoded.clone()))
+}
+
+fn decode_element_mantissas(
+    bits: &mut BitReader<'_>,
+    baps: &[u8],
+    exponents: &[u8],
+    dither: bool,
+    dither_values: &[f64],
+    dither_index: &mut usize,
+) -> Result<Vec<f64>, Eac3Error> {
+    let dither_flags = vec![dither; baps.len()];
+    let needed = if dither {
+        baps.iter().filter(|bap| **bap == 0).count()
+    } else {
+        0
+    };
+    let end = dither_index
+        .checked_add(needed)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let values = dither_values
+        .get(*dither_index..end)
+        .ok_or(Eac3Error::MissingDitherValue {
+            index: *dither_index,
+        })?;
+    let decoded = decode_mantissas(bits, baps, exponents, &dither_flags, values)?;
+    *dither_index = end;
+    Ok(decoded)
+}
+
+fn channel_uses_coupling(coupling: Option<&CouplingInformation>, channel: usize) -> bool {
+    match coupling {
+        Some(CouplingInformation::Standard(info)) => info.channel_in_use[channel],
+        Some(CouplingInformation::Enhanced(info)) => info.channel_in_use[channel],
+        None => false,
+    }
 }
 
 fn parse_first_prefix_reader(
@@ -507,7 +793,18 @@ fn parse_snr_offsets(
 ) -> Result<Option<SnrOffsets>, Eac3Error> {
     let strategy = frame.snr_offset_strategy;
     if strategy == 0 {
-        return Ok(None);
+        let coarse_code = frame
+            .frame_coarse_snr_code
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let fine = frame
+            .frame_fine_snr_code
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        return Ok(Some(SnrOffsets {
+            coarse_code,
+            coupling_fine_code: coupling.map(|_| fine),
+            channel_fine_codes: vec![fine; channels],
+            lfe_fine_code: frame.bsi.lfe_on.then_some(fine),
+        }));
     }
     let coarse_code = read_u8(bits, 6)?;
     let (coupling_fine_code, channel_fine_codes, lfe_fine_code) = if strategy == 1 {

@@ -1,6 +1,6 @@
 use openjoc_eac3::{
     CouplingInformation, Eac3Error, JocAddbsi, StreamType, block_start_information_length,
-    channel_end_mantissa, channel_exponent_group_count, decode_exponents,
+    channel_end_mantissa, channel_exponent_group_count, decode_exponents, decode_first_audio_block,
     decode_frame_exponent_strategy, extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata,
     group_access_units, index_syncframes, parse_audio_frame, parse_bsi,
     parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header, spx_subband_range,
@@ -275,6 +275,8 @@ fn parses_one_block_audio_frame_state_and_exact_block_offset() {
     assert!(!frame.syntax.spx_attenuation());
     assert_eq!(frame.coupling_in_use, [false]);
     assert_eq!(frame.channel_exponent_strategy, vec![vec![1]]);
+    assert_eq!(frame.frame_coarse_snr_code, Some(32));
+    assert_eq!(frame.frame_fine_snr_code, Some(7));
     assert_eq!(frame.audio_blocks_offset_bits, expected_offset);
 }
 
@@ -645,8 +647,8 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     bits.push(0xabcd, 16); // skipped data
     let expected_offset = bits.0.len();
 
-    let prefix =
-        parse_first_audio_block_prefix(&bits.bytes(256)).expect("channel and LFE exponents");
+    let bytes = bits.bytes(256);
+    let prefix = parse_first_audio_block_prefix(&bytes).expect("channel and LFE exponents");
     assert_eq!(prefix.channel_bandwidth_codes, vec![Some(0)]);
     let channel = prefix.channel_exponents[0]
         .as_ref()
@@ -704,6 +706,17 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
         })
     );
     assert_eq!(prefix.next_offset_bits, expected_offset);
+
+    let decoded =
+        decode_first_audio_block(&bytes, &[0.0; 73]).expect("conventional first-block mantissas");
+    assert_eq!(decoded.channel_baps[0].len(), 73);
+    assert_eq!(decoded.channel_mantissas[0].len(), 73);
+    assert_eq!(decoded.lfe_bap.as_ref().expect("LFE BAP").len(), 7);
+    assert_eq!(
+        decoded.lfe_mantissas.as_ref().expect("LFE mantissas").len(),
+        7
+    );
+    assert!(decoded.mantissa_end_offset_bits > decoded.prefix.next_offset_bits);
 }
 
 #[test]

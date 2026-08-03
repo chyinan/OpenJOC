@@ -8,10 +8,10 @@ mod mantissa;
 
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
-    DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
+    DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
     EnhancedCouplingInformation, ExponentInformation, FastGainCodes, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
-    StandardCouplingInformation, parse_first_audio_block_prefix,
+    StandardCouplingInformation, decode_first_audio_block, parse_first_audio_block_prefix,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -136,6 +136,7 @@ pub enum Eac3Error {
         audio_blocks: u8,
     },
     ReservedSnrOffsetStrategy,
+    UnsupportedAdaptiveHybridTransform,
     MissingIndependentSubstreamZero {
         frame: usize,
     },
@@ -181,6 +182,9 @@ impl Eac3Error {
             Self::NonzeroReservedData => Some("nonzero reserved E-AC-3 data"),
             Self::MissingJocExtensionFlag => Some("missing E-AC-3 JOC extension flag"),
             Self::ReservedSnrOffsetStrategy => Some("reserved E-AC-3 SNR offset strategy"),
+            Self::UnsupportedAdaptiveHybridTransform => {
+                Some("E-AC-3 adaptive hybrid transform mantissas are not yet supported")
+            }
             Self::InvalidAccessUnitRange => Some("invalid E-AC-3 access-unit range"),
             Self::MultipleJocCarriers => {
                 Some("multiple JOC EMDF carriers in one E-AC-3 access unit")
@@ -376,6 +380,7 @@ impl fmt::Display for Eac3Error {
             | Self::NonzeroReservedData
             | Self::MissingJocExtensionFlag
             | Self::ReservedSnrOffsetStrategy
+            | Self::UnsupportedAdaptiveHybridTransform
             | Self::InvalidAccessUnitRange
             | Self::MultipleJocCarriers
             | Self::InvalidGroupedExponent { .. }
@@ -495,6 +500,10 @@ pub struct AudioFrameInformation {
     pub bsi: BitstreamInformation,
     pub full_bandwidth_channels: u8,
     pub snr_offset_strategy: u8,
+    /// Frame-wide coarse SNR code used by strategy 1 (frame strategy 00).
+    pub frame_coarse_snr_code: Option<u8>,
+    /// Frame-wide fine SNR code used by strategy 1 (frame strategy 00).
+    pub frame_fine_snr_code: Option<u8>,
     pub syntax: AudioFrameSyntaxFlags,
     pub coupling_in_use: Vec<bool>,
     pub coupling_exponent_strategy: Vec<u8>,
@@ -793,9 +802,11 @@ pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Erro
             lfe_aht_in_use = bits.read_bit()?;
         }
     }
-    if snr_offset_strategy == 0 {
-        skip(&mut bits, 10)?;
-    }
+    let (frame_coarse_snr_code, frame_fine_snr_code) = if snr_offset_strategy == 0 {
+        (Some(read_u8(&mut bits, 6)?), Some(read_u8(&mut bits, 4)?))
+    } else {
+        (None, None)
+    };
     if transient_processing {
         for _ in 0..channel_count {
             if bits.read_bit()? {
@@ -824,6 +835,8 @@ pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Erro
         bsi,
         full_bandwidth_channels: channel_count,
         snr_offset_strategy,
+        frame_coarse_snr_code,
+        frame_fine_snr_code,
         syntax,
         coupling_in_use,
         coupling_exponent_strategy,

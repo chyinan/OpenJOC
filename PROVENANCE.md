@@ -681,6 +681,26 @@ frame behavior is covered by integration tests.
 - Validation: exhaustive legal coarse/fine boundary tests, an all-zero special
   case test, and a representative channel bit-allocation pipeline test.
 
+### Enhanced AC-3 first-block BAP and conventional mantissa traversal
+
+- Normative source: TS 102 366 clauses E.1.2.3, E.1.2.4, 6.2.2, and 6.3;
+  E.1.3.3.27 through E.1.3.3.35 and E.1.3.3.61 through E.1.3.3.63.
+- Official reference data: none beyond the fixed tables already recorded for
+  clauses 6.2 and 6.3. The mantissa ordering and skip-field placement were
+  checked from the searchable syntax and the authorized 300-DPI page-124/125
+  renders.
+- Design rationale: treat `next_offset_bits` as the exact boundary after all
+  first-block side information, compute each element's complete BAP array from
+  the pure bit-allocation pipeline, then consume conventional mantissas in the
+  normative channel-major order with coupling emitted once at its first
+  participating channel and LFE last. Frame-strategy-1 coarse/fine SNR codes
+  are retained explicitly. AHT syntax is rejected with a structured error
+  until its separate vector/gain side information is implemented; it is not
+  silently interpreted as conventional mantissas.
+- Validation: an uncoupled channel plus LFE fixture checks exact BAP/mantissa
+  lengths and a consumed offset beyond side information; parser tests verify
+  frame-strategy-1 SNR values are retained.
+
 ### Enhanced AC-3 PSD log-addition and integration
 
 - Normative source: TS 102 366 clause 6.2.2.3 and Table 6.14.
