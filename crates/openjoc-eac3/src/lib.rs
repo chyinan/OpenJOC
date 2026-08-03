@@ -7,22 +7,25 @@ mod audio_block;
 mod bit_allocation;
 mod mantissa;
 
-pub use aht::{decode_aht_gaq_mantissa, decode_aht_vq_vector, expand_aht_gaq_gains};
+pub use aht::{
+    decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
+    expand_aht_gaq_gains,
+};
 pub use audio_block::{
-    AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
-    DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
-    EnhancedCouplingInformation, EnhancedCouplingReconstruction, ExponentInformation,
-    FastGainCodes, SnrOffsets, SpectralExtensionCoordinates, SpectralExtensionInformation,
-    StandardCouplingCoordinates, StandardCouplingInformation, decode_audio_blocks,
-    decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
+    AhtQuantizationInformation, AudioBlockPrefix, BitAllocationParameters, CouplingInformation,
+    CouplingLeak, DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement,
+    DeltaBitAllocationSegment, EnhancedCouplingInformation, EnhancedCouplingReconstruction,
+    ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
+    SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
+    decode_audio_blocks, decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
     reconstruct_enhanced_coupling,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
     compute_bap, compute_element_bap, compute_excitation, compute_high_efficiency_bap,
-    compute_masking_curve, decode_bit_allocation_parameters, exponents_to_psd,
-    high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
+    compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
+    exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
     snr_offsets_are_zero,
 };
 pub use mantissa::{

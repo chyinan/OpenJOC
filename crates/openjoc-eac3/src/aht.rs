@@ -2,6 +2,8 @@
 
 //! Pure Adaptive Hybrid Transform support primitives.
 
+use openjoc_bitio::BitRead;
+
 use crate::Eac3Error;
 
 // ETSI TS 102 366 V1.4.1, Tables E.3.1-E.3.7 (visually inspected pages 175-191 at 300 DPI).
@@ -1003,6 +1005,151 @@ pub fn decode_aht_vq_vector(hebap: u8, index: u16) -> Result<[f64; 6], Eac3Error
         actual: index,
     })?;
     Ok(values.map(|value| f64::from(i16::from_be_bytes(value.to_be_bytes())) / 32768.0))
+}
+
+/// Reads and dequantizes one AHT element's first-block syntax.
+///
+/// The input is ordered by spectral bin. Each returned six-value array is in
+/// transform-index order; vector and GAQ bins carry all six coefficients,
+/// while the scalar fallback specified by E.1.2.4 carries its value in index
+/// zero and leaves the remaining transform coefficients at zero.
+pub fn decode_aht_element_mantissas<R: BitRead>(
+    bits: &mut R,
+    hebaps: &[u8],
+    mode: u8,
+) -> Result<Vec<[f64; 6]>, Eac3Error> {
+    Ok(decode_aht_element_mantissas_with_information(bits, hebaps, mode)?.values)
+}
+
+/// Decoded AHT payload together with the gain syntax consumed before it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct AhtElementMantissas {
+    pub values: Vec<[f64; 6]>,
+    pub gain_words: Vec<u8>,
+    pub gains: Vec<u8>,
+}
+
+pub(crate) fn decode_aht_element_mantissas_with_information<R: BitRead>(
+    bits: &mut R,
+    hebaps: &[u8],
+    mode: u8,
+) -> Result<AhtElementMantissas, Eac3Error> {
+    if mode > 3 {
+        return Err(Eac3Error::InvalidAhtGaqMode { actual: mode });
+    }
+    let endbap = if mode == 0 {
+        0
+    } else if mode < 2 {
+        12
+    } else {
+        17
+    };
+    let active = hebaps
+        .iter()
+        .map(|&hebap| mode != 0 && hebap > 7 && hebap < endbap)
+        .collect::<Vec<_>>();
+    let active_count = active.iter().filter(|value| **value).count();
+    let gain_words = match mode {
+        0 => Vec::new(),
+        1 | 2 => {
+            let mut words = Vec::with_capacity(active_count);
+            for _ in 0..active_count {
+                words.push(
+                    u8::try_from(bits.read_bits(1)?).map_err(|_| Eac3Error::FrameSizeOverflow)?,
+                );
+            }
+            words
+        }
+        3 => {
+            let sections = active_count
+                .checked_add(2)
+                .ok_or(Eac3Error::FrameSizeOverflow)?
+                / 3;
+            let mut words = Vec::with_capacity(sections);
+            for _ in 0..sections {
+                words.push(
+                    u8::try_from(bits.read_bits(5)?).map_err(|_| Eac3Error::FrameSizeOverflow)?,
+                );
+            }
+            words
+        }
+        _ => unreachable!("validated GAQ mode"),
+    };
+    let gains = expand_aht_gaq_gains(mode, &gain_words, active_count)?;
+    let mut gain_index = 0_usize;
+    let mut output = Vec::with_capacity(hebaps.len());
+    for (&hebap, is_active) in hebaps.iter().zip(active) {
+        if is_active {
+            let gain = *gains.get(gain_index).ok_or(Eac3Error::FrameSizeOverflow)?;
+            gain_index += 1;
+            let mut values = [0.0_f64; 6];
+            for value in &mut values {
+                *value = decode_aht_gaq_symbol(bits, hebap, gain)?;
+            }
+            output.push(values);
+            continue;
+        }
+        output.push(decode_aht_non_gaq_bin(bits, hebap)?);
+    }
+    if gain_index != active_count {
+        return Err(Eac3Error::FrameSizeOverflow);
+    }
+    Ok(AhtElementMantissas {
+        values: output,
+        gain_words,
+        gains,
+    })
+}
+
+fn decode_aht_non_gaq_bin<R: BitRead>(bits: &mut R, hebap: u8) -> Result<[f64; 6], Eac3Error> {
+    let mut values = [0.0_f64; 6];
+    match hebap {
+        0 => {}
+        1..=7 => {
+            let width = match hebap {
+                1 => 2,
+                2 => 3,
+                3 => 4,
+                4 => 5,
+                5 => 7,
+                6 => 8,
+                7 => 9,
+                _ => unreachable!("validated VQ hebap"),
+            };
+            let index =
+                u16::try_from(bits.read_bits(width)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            values = decode_aht_vq_vector(hebap, index)?;
+        }
+        8..=19 => {
+            let width = aht_gaq_code_bits(hebap, 1, false)?;
+            let code =
+                u16::try_from(bits.read_bits(width)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            values[0] = decode_aht_gaq_mantissa(hebap, 1, false, code)?;
+        }
+        actual => return Err(Eac3Error::InvalidAhtGaqHebap { actual }),
+    }
+    Ok(values)
+}
+
+fn decode_aht_gaq_symbol<R: BitRead>(bits: &mut R, hebap: u8, gain: u8) -> Result<f64, Eac3Error> {
+    if gain == 1 {
+        let width = aht_gaq_code_bits(hebap, gain, false)?;
+        let code =
+            u16::try_from(bits.read_bits(width)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+        return decode_aht_gaq_mantissa(hebap, gain, false, code);
+    }
+    let small_width = aht_gaq_code_bits(hebap, gain, false)?;
+    let small_code =
+        u16::try_from(bits.read_bits(small_width)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    let tag = 1_u16 << (small_width - 1);
+    if small_code == tag {
+        let large_width = aht_gaq_code_bits(hebap, gain, true)?;
+        let large_code = u16::try_from(bits.read_bits(large_width)?)
+            .map_err(|_| Eac3Error::FrameSizeOverflow)?;
+        decode_aht_gaq_mantissa(hebap, gain, true, large_code)
+    } else {
+        decode_aht_gaq_mantissa(hebap, gain, false, small_code)
+    }
 }
 
 /// Expands the E.2.3 GAQ gain words into one gain per six-bin DCT section.

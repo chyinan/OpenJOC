@@ -3,8 +3,8 @@ use openjoc_eac3::{
     DeltaBitAllocationSegment, Eac3Error, FixedBitAllocationParameters, apply_delta_bit_allocation,
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
     compute_bap, compute_element_bap, compute_excitation, compute_high_efficiency_bap,
-    compute_masking_curve, decode_bit_allocation_parameters, exponents_to_psd,
-    high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
+    compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
+    exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
     snr_offsets_are_zero,
 };
 
@@ -79,6 +79,22 @@ fn computes_high_efficiency_bap_with_the_aht_pointer_table() {
 
     assert_eq!(bap[0], 15);
     assert!(bap[1..].iter().all(|value| *value == 0));
+}
+
+#[test]
+fn computes_high_efficiency_element_bap_with_exponent_and_snr_inputs() {
+    let exponents = vec![0_u8; 49];
+    let codes = BitAllocationParameters {
+        slow_decay_code: 2,
+        fast_decay_code: 1,
+        slow_gain_code: 1,
+        db_per_bit_code: 2,
+        floor_code: 7,
+    };
+    let bap = compute_high_efficiency_element_bap(&exponents, 0, 49, codes, 0, 0, 0, 0, None, None)
+        .expect("high-efficiency element bap");
+    assert_eq!(bap.len(), 49);
+    assert!(bap.iter().all(|value| *value <= 19));
 }
 
 #[test]

@@ -4,10 +4,12 @@
 
 use openjoc_bitio::{BitRead, BitReader};
 
+use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
-    channel_exponent_group_count, compute_element_bap, decode_exponents, decode_mantissas,
-    parse_audio_frame, snr_offsets_are_zero, spx_subband_range,
+    channel_exponent_group_count, compute_element_bap, compute_high_efficiency_element_bap,
+    decode_exponents, decode_mantissas, parse_audio_frame, shift_mantissa, snr_offsets_are_zero,
+    spx_subband_range,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -85,8 +87,27 @@ pub struct DecodedAudioBlock {
     pub enhanced_coupling: Option<EnhancedCouplingReconstruction>,
     pub lfe_bap: Option<Vec<u8>>,
     pub lfe_mantissas: Option<Vec<f64>>,
+    /// AHT quantizer metadata decoded in this block's first AHT syntax pass.
+    pub channel_aht: Vec<Option<AhtQuantizationInformation>>,
+    pub coupling_aht: Option<AhtQuantizationInformation>,
+    pub lfe_aht: Option<AhtQuantizationInformation>,
     /// Absolute frame bit offset immediately after conventional mantissas.
     pub mantissa_end_offset_bits: usize,
+}
+
+/// AHT gain-adaptive quantizer state carried by one audio element.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AhtQuantizationInformation {
+    pub mode: u8,
+    pub gain_words: Vec<u8>,
+    pub gains: Vec<u8>,
+    pub hebaps: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct AhtElementState {
+    information: AhtQuantizationInformation,
+    coefficients: Vec<[f64; 6]>,
 }
 
 /// E.1.2.4 bit-allocation parameter codes effective in this block.
@@ -392,22 +413,21 @@ pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, 
     parse_first_prefix_reader(&mut bits, &frame)
 }
 
-/// Decodes the first audio block's conventional bit allocation and mantissas.
+/// Decodes the first audio block's bit allocation and mantissas.
 ///
 /// This function starts at `AudioBlockPrefix::next_offset_bits`, computes the
 /// normative BAP array for every active element, and then consumes mantissa
 /// codewords in the syntax order: each full-bandwidth channel, one coupling
-/// channel at the first participating channel, and finally LFE. Adaptive
-/// Hybrid Transform payloads are rejected explicitly until their Annex E
-/// vector/gain syntax is implemented; no conventional bits are consumed for
-/// such a block.
+/// channel at the first participating channel, and finally LFE. AHT payloads
+/// use the Annex E high-efficiency pointer, gain/VQ syntax, and six-block
+/// inverse transform before exponent shifts.
 ///
 /// `dither_values` is a deterministic caller-owned sequence used only for
 /// channel dither flags. Values are consumed in channel/LFE syntax order.
 ///
 /// # Errors
-/// Returns a checked parser, bit-allocation, mantissa, or unsupported-AHT
-/// error. A failure does not expose a partially decoded block.
+/// Returns a checked parser, bit-allocation, or mantissa error. A failure does
+/// not expose a partially decoded block.
 pub fn decode_first_audio_block(
     bytes: &[u8],
     dither_values: &[f64],
@@ -418,12 +438,13 @@ pub fn decode_first_audio_block(
         .ok_or(Eac3Error::FrameSizeOverflow)
 }
 
-/// Decodes every conventional-mantissa audio block in one E-AC-3 syncframe.
+/// Decodes every audio block in one E-AC-3 syncframe.
 ///
 /// State carried by the normative `reuse` syntax is maintained only within
 /// this syncframe.  The returned blocks are committed atomically: a malformed
 /// later block returns an error rather than exposing an earlier partial frame.
-/// Adaptive Hybrid Transform payloads remain an explicit unsupported boundary.
+/// AHT element state is decoded once and reused across the six block outputs,
+/// as required by clause E.1.2.4.
 pub fn decode_audio_blocks(
     bytes: &[u8],
     dither_values: &[f64],
@@ -437,12 +458,6 @@ fn decode_audio_blocks_until(
     max_blocks: usize,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
     let frame = parse_audio_frame(bytes)?;
-    if frame.coupling_aht_in_use
-        || frame.channel_aht_in_use.iter().any(|in_use| *in_use)
-        || frame.lfe_aht_in_use
-    {
-        return Err(Eac3Error::UnsupportedAdaptiveHybridTransform);
-    }
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
     let fscod = match frame.bsi.header.sample_rate {
         48_000 => 0,
@@ -470,11 +485,11 @@ fn decode_audio_blocks_until(
             .ok_or(Eac3Error::FrameSizeOverflow)?;
         let snr = state
             .snr_offsets
-            .as_ref()
+            .clone()
             .ok_or(Eac3Error::FrameSizeOverflow)?;
         let fast_gain = state
             .fast_gain_codes
-            .as_ref()
+            .clone()
             .ok_or(Eac3Error::FrameSizeOverflow)?;
         let mut fine_codes = Vec::with_capacity(frame.full_bandwidth_channels as usize + 2);
         if let Some(code) = snr.coupling_fine_code {
@@ -485,33 +500,35 @@ fn decode_audio_blocks_until(
             fine_codes.push(code);
         }
         let zero_bap = snr_offsets_are_zero(snr.coarse_code, &fine_codes)?;
-        let (channel_baps, channel_mantissas, coupling_bap, coupling_mantissas) =
-            decode_channel_mantissas(
-                &mut bits,
-                &frame,
-                &prefix,
-                &state,
-                parameter_codes,
-                snr,
-                fscod,
-                dither_values,
-                &mut dither_index,
-                zero_bap,
-            )?;
+        let channel_block = decode_channel_mantissas(
+            &mut bits,
+            &frame,
+            &prefix,
+            &mut state,
+            block_index,
+            parameter_codes,
+            &snr,
+            fscod,
+            dither_values,
+            &mut dither_index,
+            zero_bap,
+        )?;
         let enhanced_coupling = match prefix.coupling.as_ref() {
-            Some(CouplingInformation::Enhanced(info)) => coupling_mantissas
+            Some(CouplingInformation::Enhanced(info)) => channel_block
+                .coupling_mantissas
                 .as_deref()
                 .map(|mantissas| reconstruct_enhanced_coupling(info, mantissas))
                 .transpose()?,
             _ => None,
         };
-        let (lfe_bap, lfe_mantissas) = decode_lfe_mantissas(
+        let (lfe_bap, lfe_mantissas, lfe_aht) = decode_lfe_mantissas(
             &mut bits,
             &frame,
-            &state,
+            &mut state,
+            block_index,
             parameter_codes,
-            snr,
-            fast_gain,
+            &snr,
+            &fast_gain,
             fscod,
             zero_bap,
         )?;
@@ -521,13 +538,16 @@ fn decode_audio_blocks_until(
         blocks.push(DecodedAudioBlock {
             block_index,
             prefix,
-            channel_baps,
-            channel_mantissas,
-            coupling_bap,
-            coupling_mantissas,
+            channel_baps: channel_block.channel_baps,
+            channel_mantissas: channel_block.channel_mantissas,
+            coupling_bap: channel_block.coupling_bap,
+            coupling_mantissas: channel_block.coupling_mantissas,
             enhanced_coupling,
             lfe_bap,
             lfe_mantissas,
+            channel_aht: channel_block.channel_aht,
+            coupling_aht: channel_block.coupling_aht,
+            lfe_aht,
             mantissa_end_offset_bits,
         });
     }
@@ -599,6 +619,79 @@ fn active_baps_and_exponents(
     Ok((active_baps, information.decoded.clone()))
 }
 
+fn high_efficiency_element_baps(
+    information: &ExponentInformation,
+    parameter_codes: BitAllocationParameters,
+    fast_gain_code: u8,
+    coarse_snr_code: u8,
+    fine_snr_code: u8,
+    fscod: u8,
+    delta: Option<&DeltaBitAllocationElement>,
+    coupling_leaks: Option<(u8, u8)>,
+    zero_bap: bool,
+) -> Result<Vec<u8>, Eac3Error> {
+    let exponents = full_exponents(information)?;
+    let baps = if zero_bap {
+        vec![0; information.end_mantissa]
+    } else {
+        compute_high_efficiency_element_bap(
+            &exponents,
+            information.start_mantissa,
+            information.end_mantissa,
+            parameter_codes,
+            fast_gain_code,
+            coarse_snr_code,
+            fine_snr_code,
+            fscod,
+            delta,
+            coupling_leaks,
+        )?
+    };
+    active_baps_and_exponents(information, baps).map(|(baps, _)| baps)
+}
+
+fn decode_aht_values(
+    bits: &mut BitReader<'_>,
+    state: &mut Option<AhtElementState>,
+    hebaps: &[u8],
+    exponents: &[u8],
+    block_index: usize,
+) -> Result<(Vec<f64>, Option<AhtQuantizationInformation>), Eac3Error> {
+    let metadata = if state.is_none() {
+        let mode = read_u8(bits, 2)?;
+        let decoded = decode_aht_element_mantissas_with_information(bits, hebaps, mode)?;
+        let coefficients = inverse_aht_dct(&decoded.values)?;
+        let information = AhtQuantizationInformation {
+            mode,
+            gain_words: decoded.gain_words,
+            gains: decoded.gains,
+            hebaps: hebaps.to_vec(),
+        };
+        *state = Some(AhtElementState {
+            information: information.clone(),
+            coefficients,
+        });
+        Some(information)
+    } else {
+        None
+    };
+    let element = state.as_ref().ok_or(Eac3Error::FrameSizeOverflow)?;
+    if element.information.hebaps != hebaps || element.coefficients.len() != exponents.len() {
+        return Err(Eac3Error::MantissaExponentLengthMismatch {
+            baps: element.coefficients.len(),
+            exponents: exponents.len(),
+        });
+    }
+    let mut values = Vec::with_capacity(exponents.len());
+    for (coefficient, exponent) in element.coefficients.iter().zip(exponents) {
+        let value = *coefficient
+            .get(block_index)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        values.push(shift_mantissa(value, *exponent)?);
+    }
+    Ok((values, metadata))
+}
+
 fn decode_element_mantissas(
     bits: &mut BitReader<'_>,
     baps: &[u8],
@@ -634,6 +727,15 @@ fn channel_uses_coupling(coupling: Option<&CouplingInformation>, channel: usize)
     }
 }
 
+struct ChannelMantissaBlock {
+    channel_baps: Vec<Vec<u8>>,
+    channel_mantissas: Vec<Vec<f64>>,
+    channel_aht: Vec<Option<AhtQuantizationInformation>>,
+    coupling_bap: Option<Vec<u8>>,
+    coupling_mantissas: Option<Vec<f64>>,
+    coupling_aht: Option<AhtQuantizationInformation>,
+}
+
 #[derive(Clone, Debug)]
 struct AudioBlockState {
     spectral_extension: Option<SpectralExtensionInformation>,
@@ -652,6 +754,9 @@ struct AudioBlockState {
     coupling_leak: Option<CouplingLeak>,
     delta_bit_allocation: Option<DeltaBitAllocation>,
     rematrix_flags: Vec<bool>,
+    channel_aht: Vec<Option<AhtElementState>>,
+    coupling_aht: Option<AhtElementState>,
+    lfe_aht: Option<AhtElementState>,
 }
 
 impl AudioBlockState {
@@ -673,6 +778,9 @@ impl AudioBlockState {
             coupling_leak: None,
             delta_bit_allocation: None,
             rematrix_flags: Vec::new(),
+            channel_aht: vec![None; channels],
+            coupling_aht: None,
+            lfe_aht: None,
         }
     }
 
@@ -749,134 +857,233 @@ fn decode_channel_mantissas(
     bits: &mut BitReader<'_>,
     frame: &AudioFrameInformation,
     prefix: &AudioBlockPrefix,
-    state: &AudioBlockState,
+    state: &mut AudioBlockState,
+    block_index: usize,
     parameter_codes: BitAllocationParameters,
     snr: &SnrOffsets,
     fscod: u8,
     dither_values: &[f64],
     dither_index: &mut usize,
     zero_bap: bool,
-) -> Result<
-    (
-        Vec<Vec<u8>>,
-        Vec<Vec<f64>>,
-        Option<Vec<u8>>,
-        Option<Vec<f64>>,
-    ),
-    Eac3Error,
-> {
+) -> Result<ChannelMantissaBlock, Eac3Error> {
     let fast_gain = state
         .fast_gain_codes
-        .as_ref()
+        .clone()
         .ok_or(Eac3Error::FrameSizeOverflow)?;
     let mut channel_baps = Vec::with_capacity(usize::from(frame.full_bandwidth_channels));
     let mut channel_mantissas = Vec::with_capacity(usize::from(frame.full_bandwidth_channels));
+    let mut channel_aht = Vec::with_capacity(usize::from(frame.full_bandwidth_channels));
     let mut coupling_bap = None;
     let mut coupling_mantissas = None;
+    let mut coupling_aht = None;
     let mut coupling_decoded = false;
 
     for channel in 0..usize::from(frame.full_bandwidth_channels) {
         let information = state.channel_exponents[channel]
-            .as_ref()
+            .clone()
             .ok_or(Eac3Error::FrameSizeOverflow)?;
         let fine = *snr
             .channel_fine_codes
             .get(channel)
             .ok_or(Eac3Error::FrameSizeOverflow)?;
-        let baps = element_baps(
-            information,
-            parameter_codes,
-            *fast_gain
-                .channels
-                .get(channel)
-                .ok_or(Eac3Error::FrameSizeOverflow)?,
-            snr.coarse_code,
-            fine,
-            fscod,
-            state
-                .delta_bit_allocation
-                .as_ref()
-                .and_then(|delta| delta.channels.get(channel)),
-            None,
-            zero_bap,
-        )?;
-        let (baps, exponents) = active_baps_and_exponents(information, baps)?;
-        let dither = *prefix
-            .dither
+        let use_aht = *frame
+            .channel_aht_in_use
             .get(channel)
             .ok_or(Eac3Error::FrameSizeOverflow)?;
-        let mantissas =
-            decode_element_mantissas(bits, &baps, &exponents, dither, dither_values, dither_index)?;
-        channel_baps.push(baps);
-        channel_mantissas.push(mantissas);
-
-        if !coupling_decoded && channel_uses_coupling(state.coupling.as_ref(), channel) {
-            let information = state
-                .coupling_exponents
-                .as_ref()
-                .ok_or(Eac3Error::FrameSizeOverflow)?;
-            let leaks = state
-                .coupling_leak
-                .map(|leak| (leak.fast_code, leak.slow_code));
-            let baps = element_baps(
-                information,
+        let (baps, mantissas, aht_information) = if use_aht {
+            let baps = high_efficiency_element_baps(
+                &information,
                 parameter_codes,
-                fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
+                *fast_gain
+                    .channels
+                    .get(channel)
+                    .ok_or(Eac3Error::FrameSizeOverflow)?,
                 snr.coarse_code,
-                snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                fine,
                 fscod,
                 state
                     .delta_bit_allocation
                     .as_ref()
-                    .and_then(|delta| delta.coupling.as_ref()),
-                leaks,
+                    .and_then(|delta| delta.channels.get(channel)),
+                None,
                 zero_bap,
             )?;
-            let (baps, exponents) = active_baps_and_exponents(information, baps)?;
-            let dither_flags = vec![false; baps.len()];
-            let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])?;
+            let (mantissas, metadata) = decode_aht_values(
+                bits,
+                state
+                    .channel_aht
+                    .get_mut(channel)
+                    .ok_or(Eac3Error::FrameSizeOverflow)?,
+                &baps,
+                &information.decoded,
+                block_index,
+            )?;
+            (baps, mantissas, metadata)
+        } else {
+            let baps = element_baps(
+                &information,
+                parameter_codes,
+                *fast_gain
+                    .channels
+                    .get(channel)
+                    .ok_or(Eac3Error::FrameSizeOverflow)?,
+                snr.coarse_code,
+                fine,
+                fscod,
+                state
+                    .delta_bit_allocation
+                    .as_ref()
+                    .and_then(|delta| delta.channels.get(channel)),
+                None,
+                zero_bap,
+            )?;
+            let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
+            let dither = *prefix
+                .dither
+                .get(channel)
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let mantissas = decode_element_mantissas(
+                bits,
+                &baps,
+                &exponents,
+                dither,
+                dither_values,
+                dither_index,
+            )?;
+            (baps, mantissas, None)
+        };
+        channel_baps.push(baps);
+        channel_mantissas.push(mantissas);
+        channel_aht.push(aht_information);
+
+        if !coupling_decoded && channel_uses_coupling(state.coupling.as_ref(), channel) {
+            let information = state
+                .coupling_exponents
+                .clone()
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let leaks = state
+                .coupling_leak
+                .map(|leak| (leak.fast_code, leak.slow_code));
+            let use_aht = frame.coupling_aht_in_use;
+            let (baps, mantissas, metadata) = if use_aht {
+                let baps = high_efficiency_element_baps(
+                    &information,
+                    parameter_codes,
+                    fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    snr.coarse_code,
+                    snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    fscod,
+                    state
+                        .delta_bit_allocation
+                        .as_ref()
+                        .and_then(|delta| delta.coupling.as_ref()),
+                    leaks,
+                    zero_bap,
+                )?;
+                let (mantissas, metadata) = decode_aht_values(
+                    bits,
+                    &mut state.coupling_aht,
+                    &baps,
+                    &information.decoded,
+                    block_index,
+                )?;
+                (baps, mantissas, metadata)
+            } else {
+                let baps = element_baps(
+                    &information,
+                    parameter_codes,
+                    fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    snr.coarse_code,
+                    snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    fscod,
+                    state
+                        .delta_bit_allocation
+                        .as_ref()
+                        .and_then(|delta| delta.coupling.as_ref()),
+                    leaks,
+                    zero_bap,
+                )?;
+                let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
+                let dither_flags = vec![false; baps.len()];
+                let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])?;
+                (baps, mantissas, None)
+            };
             coupling_bap = Some(baps);
             coupling_mantissas = Some(mantissas);
+            coupling_aht = metadata;
             coupling_decoded = true;
         }
     }
-    Ok((
+    Ok(ChannelMantissaBlock {
         channel_baps,
         channel_mantissas,
+        channel_aht,
         coupling_bap,
         coupling_mantissas,
-    ))
+        coupling_aht,
+    })
 }
 
 fn decode_lfe_mantissas(
     bits: &mut BitReader<'_>,
     frame: &AudioFrameInformation,
-    state: &AudioBlockState,
+    state: &mut AudioBlockState,
+    block_index: usize,
     parameter_codes: BitAllocationParameters,
     snr: &SnrOffsets,
     fast_gain: &FastGainCodes,
     fscod: u8,
     zero_bap: bool,
-) -> Result<(Option<Vec<u8>>, Option<Vec<f64>>), Eac3Error> {
-    let Some(information) = state.lfe_exponents.as_ref() else {
-        return Ok((None, None));
+) -> Result<
+    (
+        Option<Vec<u8>>,
+        Option<Vec<f64>>,
+        Option<AhtQuantizationInformation>,
+    ),
+    Eac3Error,
+> {
+    let Some(information) = state.lfe_exponents.clone() else {
+        return Ok((None, None, None));
     };
-    let baps = element_baps(
-        information,
-        parameter_codes,
-        fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
-        snr.coarse_code,
-        snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
-        fscod,
-        None,
-        None,
-        zero_bap,
-    )?;
-    let (baps, exponents) = active_baps_and_exponents(information, baps)?;
-    let dither_flags = vec![false; baps.len()];
-    let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])?;
+    let (baps, mantissas, metadata) = if frame.lfe_aht_in_use {
+        let baps = high_efficiency_element_baps(
+            &information,
+            parameter_codes,
+            fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
+            snr.coarse_code,
+            snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+            fscod,
+            None,
+            None,
+            zero_bap,
+        )?;
+        let (mantissas, metadata) = decode_aht_values(
+            bits,
+            &mut state.lfe_aht,
+            &baps,
+            &information.decoded,
+            block_index,
+        )?;
+        (baps, mantissas, metadata)
+    } else {
+        let baps = element_baps(
+            &information,
+            parameter_codes,
+            fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
+            snr.coarse_code,
+            snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+            fscod,
+            None,
+            None,
+            zero_bap,
+        )?;
+        let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
+        let dither_flags = vec![false; baps.len()];
+        let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])?;
+        (baps, mantissas, None)
+    };
     let _ = frame;
-    Ok((Some(baps), Some(mantissas)))
+    Ok((Some(baps), Some(mantissas), metadata))
 }
 
 fn parse_audio_block_prefix_reader(

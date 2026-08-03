@@ -467,13 +467,74 @@ pub fn compute_element_bap(
         Some(delta) => apply_delta_bit_allocation(&mask, delta)?,
         None => mask,
     };
-    compute_bap(
+    compute_bap_with_pointer(
         &psd,
         &mask,
         start,
         end,
         snr_offset(coarse_snr_code, fine_snr_code)?,
         parameters.floor,
+        bit_allocation_pointer,
+    )
+}
+
+/// Computes one AHT element's clause E.2.4.3.1 `hebap[]` array.
+///
+/// This follows the complete conventional allocation pipeline through PSD,
+/// excitation, masking, delta allocation, SNR, and floor, replacing only the
+/// final pointer table with Annex E Table E.2.1.
+pub fn compute_high_efficiency_element_bap(
+    exponents: &[u8],
+    start: usize,
+    end: usize,
+    parameter_codes: crate::BitAllocationParameters,
+    fast_gain_code: u8,
+    coarse_snr_code: u8,
+    fine_snr_code: u8,
+    fscod: u8,
+    delta: Option<&crate::DeltaBitAllocationElement>,
+    coupling_leaks: Option<(u8, u8)>,
+) -> Result<Vec<u8>, Eac3Error> {
+    let psd = exponents_to_psd(exponents)?;
+    if start >= end || end > psd.len() || end > 253 {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let bndpsd = integrate_psd(&psd, start, end)?;
+    let parameters = decode_bit_allocation_parameters(parameter_codes, fast_gain_code)?;
+    let initial_leaks = coupling_leaks
+        .map(|(fast_code, slow_code)| {
+            if fast_code > 7 {
+                return Err(Eac3Error::InvalidBitAllocationParameterCode {
+                    parameter: "coupling fast leak",
+                    actual: fast_code,
+                });
+            }
+            if slow_code > 7 {
+                return Err(Eac3Error::InvalidBitAllocationParameterCode {
+                    parameter: "coupling slow leak",
+                    actual: slow_code,
+                });
+            }
+            Ok((
+                (i16::from(fast_code) << 8) + 768,
+                (i16::from(slow_code) << 8) + 768,
+            ))
+        })
+        .transpose()?;
+    let excite = compute_excitation(&psd, &bndpsd, start, end, parameters, initial_leaks)?;
+    let mask = compute_masking_curve(&bndpsd, &excite, start, end, fscod, parameters.db_per_bit)?;
+    let mask = match delta {
+        Some(delta) => apply_delta_bit_allocation(&mask, delta)?,
+        None => mask,
+    };
+    compute_bap_with_pointer(
+        &psd,
+        &mask,
+        start,
+        end,
+        snr_offset(coarse_snr_code, fine_snr_code)?,
+        parameters.floor,
+        high_efficiency_bit_allocation_pointer,
     )
 }
 

@@ -1189,6 +1189,323 @@ fn parses_aht_flags_only_for_single_exponent_regions() {
 }
 
 #[test]
+fn decodes_aht_channel_across_all_six_blocks_without_repeating_payload() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3); // substream id
+    bits.push(1023, 11); // 2048-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(3, 2); // six audio blocks
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // bitstream id
+    bits.push(0, 5); // dialnorm
+    bits.push(0, 1); // no compression metadata
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // no addbsi
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(1, 1); // AHT syntax
+    bits.push(1, 2); // SNR strategy 1
+    bits.push(0, 1); // transient processing disabled
+    bits.push(16, 7); // bit-allocation syntax enabled (syntax bit index 2)
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 2); // D15 then reuse
+    }
+    bits.push(0, 5); // converter exponent strategy
+    bits.push(1, 1); // mono channel uses AHT
+    bits.push(0, 1); // no block-start information
+
+    // First audio block prefix: no SPX, 73 channel bins, exponents step from
+    // 15 through 17, then remain constant,
+    // explicit allocation parameters, and no converter SNR offset.
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // no SPX
+    bits.push(0, 6); // chbwcod = 0 => endmant = 73
+    bits.push(15, 4); // initial exponent
+    bits.push(87, 7); // deltas +1, 0, 0
+    bits.push(87, 7); // deltas +1, 0, 0
+    for _ in 0..22 {
+        bits.push(62, 7); // grouped exponent deltas 0, 0, 0
+    }
+    bits.push(0, 2); // gain range
+    bits.push(1, 1); // new bit-allocation parameters
+    bits.push(0, 11); // all parameter codes zero
+    bits.push(63, 6); // coarse SNR
+    bits.push(15, 4); // fine SNR
+    bits.push(0, 1); // converter SNR offset absent
+    bits.push(1, 2); // AHT mode 1, one-bit GAQ gains for hebap 8..11
+    bits.push(0, 1); // hebap 9 gain 1
+    bits.push(1, 1); // hebap 8 gain 2
+    bits.push(0, 1); // hebap 8 gain 1
+    bits.push(1, 1); // hebap 8 gain 2
+
+    // With this exponent/SNR combination the normative hebap sequence starts
+    // [9, 8, 8, 8, 4, ...].  The first four bins carry six GAQ symbols,
+    // followed by 69 five-bit VQ indices.  Zero indices still reconstruct a
+    // non-zero ETSI Table E.3 vector, exercising both integrated paths.
+    for width in [4_u8; 6] {
+        bits.push(0, width); // hebap 9, gain 1
+    }
+    for width in [2_u8; 6] {
+        bits.push(0, width); // hebap 8, gain 2
+    }
+    for width in [3_u8; 6] {
+        bits.push(0, width); // hebap 8, gain 1
+    }
+    for width in [2_u8; 6] {
+        bits.push(0, width); // hebap 8, gain 2
+    }
+    for _ in 0..69 {
+        bits.push(0, 5);
+    }
+
+    // Following block prefixes reuse exponents and SNR offsets.  The AHT
+    // mantissa payload must not be repeated after block zero.
+    for _ in 1..6 {
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX strategy reused
+        bits.push(0, 6); // chbwcod remains explicit in this traversal
+        bits.push(0, 1); // bit-allocation parameters reused
+        bits.push(0, 1); // block fine SNR offset absent
+        bits.push(0, 1); // converter SNR offset absent
+    }
+
+    let bytes = bits.bytes(2048);
+    let blocks = decode_audio_blocks(&bytes, &[]).expect("AHT channel traversal");
+    assert_eq!(blocks.len(), 6);
+    assert_eq!(
+        blocks[0].channel_aht[0].as_ref().map(|info| info.mode),
+        Some(1)
+    );
+    assert_eq!(
+        blocks[0].channel_aht[0]
+            .as_ref()
+            .map(|info| (&info.gain_words, &info.gains)),
+        Some((&vec![0, 1, 0, 1], &vec![1, 2, 1, 2]))
+    );
+    assert!(
+        blocks[1..]
+            .iter()
+            .all(|block| block.channel_aht[0].is_none())
+    );
+    for block in blocks {
+        assert_eq!(block.channel_baps[0].len(), 73);
+        assert_eq!(&block.channel_baps[0][..5], &[9, 8, 8, 8, 4]);
+        assert!(
+            block.channel_mantissas[0]
+                .iter()
+                .any(|mantissa| mantissa.abs() > 1.0e-12)
+        );
+    }
+}
+
+#[test]
+fn decodes_aht_lfe_after_full_bandwidth_channel_in_syntax_order() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3); // substream id
+    bits.push(2047, 11); // 4096-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(3, 2); // six audio blocks
+    bits.push(1, 3); // mono full-bandwidth channel
+    bits.push(1, 1); // LFE present
+    bits.push(16, 5); // bitstream id
+    bits.push(0, 5); // dialnorm
+    bits.push(0, 1); // no compression metadata
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // no addbsi
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(1, 1); // AHT syntax
+    bits.push(1, 2); // SNR strategy 1
+    bits.push(0, 1); // transient processing disabled
+    bits.push(48, 7); // dither and bit-allocation syntax enabled
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 2); // channel D15 then reuse
+    }
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 1); // LFE D15 then reuse
+    }
+    bits.push(0, 5); // converter exponent strategy
+    bits.push(1, 1); // full-bandwidth channel uses AHT
+    bits.push(1, 1); // LFE uses AHT
+    bits.push(0, 1); // no block-start information
+
+    // First block: explicit dither-off, no SPX, full-bandwidth exponents,
+    // LFE exponents, explicit zero allocation parameters, and high SNR.
+    bits.push(0, 1); // channel dither flag
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // no SPX
+    bits.push(0, 6); // channel bandwidth code => endmant 73
+    bits.push(15, 4); // full-bandwidth channel initial exponent
+    bits.push(87, 7);
+    bits.push(87, 7);
+    for _ in 0..22 {
+        bits.push(62, 7);
+    }
+    bits.push(0, 2); // channel gain range
+    bits.push(15, 4); // LFE initial exponent
+    bits.push(87, 7);
+    bits.push(87, 7);
+    bits.push(1, 1); // new bit-allocation parameters
+    bits.push(0, 11); // all parameter codes zero
+    bits.push(63, 6); // coarse SNR
+    bits.push(15, 4); // fine SNR
+    bits.push(0, 1); // converter SNR offset absent
+    bits.push(0, 2); // channel AHT mode 0
+    bits.push(0, 2); // LFE AHT mode 0
+
+    // Zero payload is valid for every resulting VQ/scalar codeword; reserve
+    // ample bounded space so the following block prefixes remain zero-filled.
+    bits.0.extend(std::iter::repeat_n(false, 12_000));
+    for _ in 1..6 {
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX strategy reused
+        bits.push(0, 6); // chbwcod remains explicit
+        bits.push(0, 1); // bit-allocation parameters reused
+        bits.push(0, 1); // block fine SNR offset absent
+        bits.push(0, 1); // converter SNR offset absent
+    }
+
+    let bytes = bits.bytes(4096);
+    let blocks = decode_audio_blocks(&bytes, &[]).expect("AHT LFE traversal");
+    assert_eq!(blocks.len(), 6);
+    assert!(blocks[0].channel_aht[0].is_some());
+    assert!(blocks[0].lfe_aht.is_some());
+    assert!(
+        blocks[1..]
+            .iter()
+            .all(|block| block.channel_aht[0].is_none() && block.lfe_aht.is_none())
+    );
+    assert!(blocks.iter().all(|block| {
+        block.lfe_bap.as_ref().is_some_and(|baps| !baps.is_empty())
+            && block
+                .lfe_mantissas
+                .as_ref()
+                .is_some_and(|mantissas| mantissas.len() == 7)
+    }));
+}
+
+#[test]
+fn decodes_aht_coupling_after_the_first_participating_channel() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3); // substream id
+    bits.push(2047, 11); // 4096-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(3, 2); // six audio blocks
+    bits.push(2, 3); // stereo mode, two full-bandwidth channels
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // bitstream id
+    bits.push(0, 5); // dialnorm
+    bits.push(0, 1); // no compression metadata
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // no addbsi
+
+    bits.push(1, 1); // per-block exponent strategies
+    bits.push(1, 1); // AHT syntax
+    bits.push(1, 2); // SNR strategy 1
+    bits.push(0, 1); // transient processing disabled
+    bits.push(16, 7); // bit-allocation syntax enabled
+    bits.push(1, 1); // coupling in use in block zero
+    for _ in 1..6 {
+        bits.push(0, 1); // coupling-in-use state reused
+    }
+    for block in 0..6 {
+        bits.push(u64::from(block == 0), 2); // coupling D15 then reuse
+        for _ in 0..2 {
+            bits.push(u64::from(block == 0), 2); // channel D15 then reuse
+        }
+    }
+    bits.push(0, 10); // converter exponent strategy for two channels
+    bits.push(1, 1); // coupling uses AHT
+    bits.push(1, 1); // channel 0 uses AHT
+    bits.push(1, 1); // channel 1 uses AHT
+    bits.push(0, 1); // no block-start information
+
+    // First standard-coupling strategy: phase disabled, [begin,end] = [0,0],
+    // default three-band structure, and two coordinate sets.
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // no SPX
+    bits.push(0, 1); // standard coupling
+    bits.push(0, 1); // phase flags not in use
+    bits.push(0, 4); // begin frequency code
+    bits.push(0, 4); // end frequency code
+    bits.push(0, 1); // default band structure
+    for _ in 0..2 {
+        bits.push(0, 2); // coupling master
+        for _ in 0..3 {
+            bits.push(0, 4); // coupling coordinate exponent
+            bits.push(0, 4); // coupling coordinate mantissa
+        }
+    }
+    bits.push(0, 1); // rematrix band zero
+    bits.push(0, 1); // rematrix band one
+
+    // Coupling spans mantissas 37..73; each full-bandwidth channel spans 0..37.
+    bits.push(7, 4); // coupling exponent is doubled by parser
+    for _ in 0..12 {
+        bits.push(62, 7);
+    }
+    for _ in 0..2 {
+        bits.push(15, 4);
+        for _ in 0..12 {
+            bits.push(62, 7);
+        }
+        bits.push(0, 2); // channel gain range
+    }
+    bits.push(1, 1); // new bit-allocation parameters
+    bits.push(0, 11); // all parameter codes zero
+    bits.push(63, 6); // coarse SNR
+    bits.push(15, 4); // fine SNR
+    bits.push(0, 1); // converter SNR offset absent
+    bits.push(0, 3); // coupling leak fast/slow codes
+    bits.push(0, 2); // coupling AHT mode 0
+    bits.push(0, 2); // channel 0 AHT mode 0
+    bits.push(0, 2); // channel 1 AHT mode 0
+
+    // Reserve zero mantissa payload and following block side information.
+    bits.0.extend(std::iter::repeat_n(false, 12_000));
+    for _ in 1..6 {
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX strategy reused
+        bits.push(0, 1); // rematrix flags reused
+        bits.push(0, 1); // channel 0 coupling coordinates reused
+        bits.push(0, 1); // channel 1 coupling coordinates reused
+        bits.push(0, 1); // bit-allocation parameters reused
+        bits.push(0, 1); // block fine SNR offset absent
+        bits.push(0, 1); // converter SNR offset absent
+        bits.push(0, 1); // coupling leak reused
+    }
+
+    let bytes = bits.bytes(4096);
+    let blocks = decode_audio_blocks(&bytes, &[]).expect("AHT coupling traversal");
+    assert_eq!(blocks.len(), 6);
+    assert!(blocks[0].coupling_aht.is_some());
+    assert!(blocks[0].channel_aht.iter().all(Option::is_some));
+    assert!(blocks[1..].iter().all(|block| {
+        block.coupling_aht.is_none() && block.channel_aht.iter().all(Option::is_none)
+    }));
+    assert!(blocks.iter().all(|block| {
+        block
+            .coupling_bap
+            .as_ref()
+            .is_some_and(|baps| !baps.is_empty())
+            && block
+                .coupling_mantissas
+                .as_ref()
+                .is_some_and(|mantissas| mantissas.len() == 36)
+    }));
+}
+
+#[test]
 fn groups_sequential_independent_and_dependent_substreams_into_access_units() {
     let frames = [
         frame(0, 0, 16, 0, 3),

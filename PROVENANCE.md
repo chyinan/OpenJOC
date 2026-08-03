@@ -699,9 +699,9 @@ frame behavior is covered by integration tests.
   the pure bit-allocation pipeline, then consume conventional mantissas in the
   normative channel-major order with coupling emitted once at its first
   participating channel and LFE last. Frame-strategy-1 coarse/fine SNR codes
-  are retained explicitly. AHT syntax is rejected with a structured error
-  until its separate vector/gain side information is implemented; it is not
-  silently interpreted as conventional mantissas.
+  are retained explicitly. AHT syntax is handled by the separate Annex E
+  vector/gain state machine documented below; it is never silently interpreted
+  as conventional mantissas.
 - Validation: uncoupled channel plus LFE and standard-coupling fixtures check
   exact BAP/mantissa lengths and consumed offsets; dither scaling is checked
   against a deterministic half-scale sample; parser tests verify frame-
@@ -723,8 +723,8 @@ frame behavior is covered by integration tests.
   strategy, resolve `reuse` from the immediately preceding block, and advance
   one checked bit cursor through all conventional mantissas. The public
   `decode_audio_blocks` API returns every decoded block atomically; the legacy
-  first-block API remains bounded to block zero. AHT still returns the explicit
-  unsupported-feature error rather than being interpreted as scalar mantissas.
+  first-block API remains bounded to block zero. AHT metadata and reconstructed
+  mantissas are emitted in the same atomic block records.
 - Validation: a two-block mono fixture exercises exponent, SPX, bandwidth,
   parameter, and mantissa reuse with exact per-block offsets; all pre-existing
   first-block coupling, SPX, LFE, delta, dither, and BAP tests remain green.
@@ -836,12 +836,12 @@ frame behavior is covered by integration tests.
   delta arithmetic with conventional allocation, but inject the normative
   high-efficiency pointer lookup only at the final address mapping. This keeps
   `hebap[]` distinct from scalar `bap[]` and provides the checked primitive
-  needed by the remaining AHT VQ/GAQ mantissa path.
+  used by the integrated AHT VQ/GAQ mantissa path.
 - Validation: `computes_high_efficiency_bap_with_the_aht_pointer_table`
   exercises an address where Table E.2.1 differs from Table 6.16; the existing
   exhaustive high-efficiency pointer test covers all 64 legal addresses and
-  rejection of address 64. The AHT mantissa traversal and inverse DCT remain
-  explicitly pending and are not represented by a placeholder.
+  rejection of address 64. The integrated six-block traversal is validated by
+  the AHT channel fixture below.
 
 ### Enhanced AC-3 AHT inverse DCT primitive
 
@@ -854,11 +854,11 @@ frame behavior is covered by integration tests.
   spectral bin at a time. It validates finite input, keeps the normative
   `sqrt(2)` and `R0 = 1/sqrt(2)` factors explicit, and returns block-major
   coefficients without applying exponents prematurely. The function is kept
-  separate from conventional mantissa traversal until the VQ/GAQ syntax and
-  six-block state machine are implemented.
+  separate from conventional mantissa traversal so the decoder can apply it
+  before the clause-6.3 exponent shifts.
 - Validation: AHT tests cover DC reconstruction, a first-AC cosine sample,
   expected transform energy scaling, and rejection of NaN input. No decoder
-  implementation was consulted; full AHT VQ/GAQ integration remains pending.
+  implementation was consulted.
 
 ### Enhanced AC-3 GAQ gain-word expansion
 
@@ -895,9 +895,9 @@ frame behavior is covered by integration tests.
   Table E.2.6 requires it. It deliberately does not consume tag bits or
   invent a VQ table.
 - Validation: AHT tests cover gain-one unity decoding, a gain-two small code,
-  a gain-two large code with the signed table constant, and malformed
-  `hebap`, gain, and code inputs. Full GAQ tag traversal and VQ table lookup
-  remain pending and are not replaced with placeholders.
+  a gain-two large code with the signed table constant, malformed `hebap`,
+  gain, and code inputs, and the complete tag traversal across six transform
+  coefficients.
 
 ### Enhanced AC-3 AHT vector quantization tables
 
@@ -916,8 +916,40 @@ frame behavior is covered by integration tests.
 - Validation: AHT tests verify the visually transcribed Table E.3.1 first
   vector, the Table E.3.7 final vector, every supported table's bounds through
   the lookup contract, and rejection of non-VQ `hebap` and out-of-range
-  indices. Mantissa traversal still remains pending and is not replaced by a
-  placeholder.
+  indices. The integrated audio-block fixture exercises these vectors after
+  high-efficiency BAP calculation.
+
+### Enhanced AC-3 AHT mantissa traversal and six-block reconstruction
+
+- Normative source: TS 102 366 V1.4.1 clauses E.1.2.4 fields
+  `chgaqmod`/`pre_chmant`, `cplgaqmod`/`pre_cplmant`, and
+  `lfegaqmod`/`pre_lfemant`; clauses E.2.4.2 through E.2.4.5; Tables E.2.2
+  through E.2.6 and E.3.1 through E.3.7.
+- Official reference data: pages 144, 147 through 156 of
+  `references/etsi/ts_102366v010401p.pdf` were rendered to lossless PNG at
+  300 DPI with Poppler 26.02.0 and visually inspected. Page 156 was used for
+  the layout-sensitive IDCT equation and gain-remapping table; pages 148–151
+  were used for the GAQ active-bin and gain-section pseudocode.
+- Design rationale: maintain one typed AHT payload per channel, coupling
+  element, and LFE element. On the first participating mantissa position,
+  read the two-bit mode, gain words, and pre-mantissas once; inverse-transform
+  each spectral-bin vector; then select the current block coefficient and
+  apply the exponent shift. Later blocks consume no duplicate AHT payload.
+  Coupling is decoded immediately after the first participating channel and
+  LFE after all full-bandwidth channels, matching E.1.2.4 ordering. Public
+  block records preserve the active `hebap` values and first-pass gain
+  metadata.
+- Normative ambiguity: E.1.2.4 says that when `chgaqbin == 0`, only
+  `pre_chmant[0]` is transmitted, while E.2.4.4 describes six values across a
+  DCT block. OpenJOC follows the literal syntax: the transmitted value is
+  placed at transform index zero and the other five values are zero. This is
+  documented by the scalar-bin compatibility test and must be revisited if
+  ETSI publishes clarifying test vectors.
+- Validation: six-block AHT fixtures exercise a channel with mode-1 GAQ gains,
+  VQ bins, inverse DCT, exponent shifts, and exact no-repeat payload
+  consumption; separate coupling and LFE fixtures verify syntax ordering and
+  state reuse. Pure AHT tests cover modes 0–3 and large-mantissa tags;
+  malformed/truncated syntax returns checked errors.
 
 ### Enhanced AC-3 access-unit and substream ordering
 

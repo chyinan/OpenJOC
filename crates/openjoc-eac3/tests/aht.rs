@@ -1,6 +1,56 @@
+use openjoc_bitio::{BitRead, BitReader};
 use openjoc_eac3::{
-    Eac3Error, decode_aht_gaq_mantissa, decode_aht_vq_vector, expand_aht_gaq_gains, inverse_aht_dct,
+    Eac3Error, decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
+    expand_aht_gaq_gains, inverse_aht_dct,
 };
+
+fn packed(fields: &[(u16, u8)]) -> Vec<u8> {
+    let mut bits = Vec::new();
+    for &(value, width) in fields {
+        for shift in (0..width).rev() {
+            bits.push((value >> shift) & 1 != 0);
+        }
+    }
+    bits.resize(bits.len().div_ceil(8) * 8, false);
+    bits.chunks(8)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .fold(0_u8, |acc, bit| (acc << 1) | u8::from(*bit))
+        })
+        .collect()
+}
+
+#[test]
+fn decodes_aht_vq_and_scalar_bins_in_transform_order() {
+    let bytes = packed(&[(2, 2), (0, 3)]);
+    let mut bits = BitReader::new(&bytes);
+    let values = decode_aht_element_mantissas(&mut bits, &[1, 8], 0).expect("AHT bins");
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0], decode_aht_vq_vector(1, 2).expect("VQ vector"));
+    assert_eq!(values[1][0], 0.0);
+    assert_eq!(values[1][1..], [0.0; 5]);
+}
+
+#[test]
+fn decodes_gaq_tags_for_all_six_transform_coefficients() {
+    let bytes = packed(&[
+        (1, 1),
+        (0b10, 2),
+        (0, 2),
+        (1, 2),
+        (1, 2),
+        (1, 2),
+        (1, 2),
+        (1, 2),
+    ]);
+    let mut bits = BitReader::new(&bytes);
+    let values = decode_aht_element_mantissas(&mut bits, &[8], 1).expect("GAQ bin");
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0].len(), 6);
+    assert!(values[0][0].is_finite());
+    assert_eq!(bits.bits_remaining(), 1);
+}
 
 #[test]
 fn decodes_visual_etsi_vq_table_vectors_as_signed_fractions() {
