@@ -17,12 +17,13 @@ pub use aht::{
 };
 pub use audio_block::{
     AhtQuantizationInformation, AudioBlockPrefix, BitAllocationParameters, CouplingInformation,
-    CouplingLeak, DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement,
-    DeltaBitAllocationSegment, EnhancedCouplingInformation, EnhancedCouplingReconstruction,
-    ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
-    SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
-    decode_audio_blocks, decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
-    reconstruct_enhanced_coupling, reconstruct_standard_coupling,
+    CouplingLeak, DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation,
+    DeltaBitAllocationElement, DeltaBitAllocationSegment, EnhancedCouplingInformation,
+    EnhancedCouplingReconstruction, ExponentInformation, FastGainCodes, SnrOffsets,
+    SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
+    StandardCouplingInformation, decode_audio_blocks, decode_first_audio_block, inverse_aht_dct,
+    parse_first_audio_block_prefix, reconstruct_enhanced_coupling, reconstruct_standard_coupling,
+    synthesize_audio_blocks,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -227,6 +228,18 @@ pub enum Eac3Error {
     },
     InvalidTransformWindowLength {
         actual: usize,
+    },
+    InvalidAudioBlockChannelCount {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidAudioBlockSwitchCount {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidAudioBlockLfePresence {
+        expected: bool,
+        actual: bool,
     },
     NonFiniteTransformCoefficient {
         index: usize,
@@ -455,6 +468,18 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 transform window length {actual}"
             )),
+            Self::InvalidAudioBlockChannelCount { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 audio-block channel count: expected {expected}, got {actual}"
+            )),
+            Self::InvalidAudioBlockSwitchCount { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 audio-block switch count: expected {expected}, got {actual}"
+            )),
+            Self::InvalidAudioBlockLfePresence { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 audio-block LFE presence: expected {expected}, got {actual}"
+            )),
             Self::NonFiniteTransformCoefficient { index } => Some(write!(
                 formatter,
                 "non-finite E-AC-3 transform coefficient at index {index}"
@@ -584,6 +609,9 @@ impl fmt::Display for Eac3Error {
             | Self::MissingDitherValue { .. }
             | Self::InvalidTransformCoefficientLength { .. }
             | Self::InvalidTransformWindowLength { .. }
+            | Self::InvalidAudioBlockChannelCount { .. }
+            | Self::InvalidAudioBlockSwitchCount { .. }
+            | Self::InvalidAudioBlockLfePresence { .. }
             | Self::NonFiniteTransformCoefficient { .. }
             | Self::InvalidBlockStartDimensions { .. }
             | Self::MissingIndependentSubstreamZero { .. }

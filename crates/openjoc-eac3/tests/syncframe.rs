@@ -5,7 +5,7 @@ use openjoc_eac3::{
     extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
     parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
     parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
-    validate_complexity_index,
+    synthesize_audio_blocks, validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -366,6 +366,10 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
         (0.5 / 1024.0) * dynamic_range_gain(Some(0xa5))
     );
     assert_eq!(decoded.mantissa_end_offset_bits, expected_offset);
+    let pcm = synthesize_audio_blocks(&[decoded]).expect("block-switched PCM synthesis");
+    assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channels[0].len(), 256);
+    assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
 }
 
 #[test]
@@ -437,6 +441,12 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
     assert!(blocks[1].prefix.channel_bandwidth_codes[0].is_none());
     assert!(blocks[1].prefix.spectral_extension.is_none());
     assert!(blocks[1].mantissa_end_offset_bits > blocks[0].mantissa_end_offset_bits);
+
+    let pcm = synthesize_audio_blocks(&blocks).expect("two-block PCM synthesis");
+    assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channels[0].len(), 512);
+    assert!(pcm.lfe.is_none());
+    assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
 }
 
 #[test]
@@ -1420,6 +1430,15 @@ fn decodes_aht_lfe_after_full_bandwidth_channel_in_syntax_order() {
                 .as_ref()
                 .is_some_and(|mantissas| mantissas.len() == 7)
     }));
+    let pcm = synthesize_audio_blocks(&blocks).expect("LFE PCM synthesis");
+    assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channels[0].len(), 1536);
+    assert_eq!(pcm.lfe.as_ref().map(Vec::len), Some(1536));
+    assert!(
+        pcm.lfe
+            .as_ref()
+            .is_some_and(|channel| channel.iter().all(|sample| sample.is_finite()))
+    );
 }
 
 #[test]

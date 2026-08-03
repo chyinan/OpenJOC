@@ -7,6 +7,7 @@ use openjoc_bitio::{BitRead, BitReader};
 use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 use crate::rematrix::rematrix_channels;
+use crate::transform::{inverse_transform, overlap_add};
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
     channel_exponent_group_count, compute_element_bap, compute_high_efficiency_element_bap,
@@ -95,6 +96,19 @@ pub struct DecodedAudioBlock {
     pub lfe_aht: Option<AhtQuantizationInformation>,
     /// Absolute frame bit offset immediately after conventional mantissas.
     pub mantissa_end_offset_bits: usize,
+}
+
+/// PCM channels reconstructed from one or more decoded E-AC-3 audio blocks.
+///
+/// Full-bandwidth channels are returned first. The optional LFE channel is
+/// kept separate because it is not part of `nfchans` and has a fixed
+/// seven-coefficient spectrum in each block.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DecodedAudioPcm {
+    /// `[full_bandwidth_channel][sample]`, 256 samples per audio block.
+    pub channels: Vec<Vec<f64>>,
+    /// Optional LFE PCM, also 256 samples per audio block.
+    pub lfe: Option<Vec<f64>>,
 }
 
 /// AHT gain-adaptive quantizer state carried by one audio element.
@@ -623,6 +637,83 @@ pub fn decode_audio_blocks(
     dither_values: &[f64],
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
     decode_audio_blocks_until(bytes, dither_values, usize::MAX)
+}
+
+/// Applies the E-AC-3 inverse transform and overlap/add stages to decoded
+/// audio blocks.
+///
+/// This is the pure clause 5.2.10-5.2.11 / 6.9 boundary. Each full-bandwidth
+/// channel uses its own `blksw[ch]` flag and overlap history. The LFE channel
+/// has no block-switch flag in the syntax and therefore always uses the long
+/// transform; its seven decoded coefficients are zero-padded to the 256-bin
+/// transform input.
+///
+/// # Errors
+/// Returns an error if blocks disagree about channel or LFE dimensions, or if
+/// a spectrum contains more than the 256 transform coefficients permitted by
+/// clause 6.9.
+pub fn synthesize_audio_blocks(blocks: &[DecodedAudioBlock]) -> Result<DecodedAudioPcm, Eac3Error> {
+    let Some(first) = blocks.first() else {
+        return Ok(DecodedAudioPcm {
+            channels: Vec::new(),
+            lfe: None,
+        });
+    };
+    let channel_count = first.channel_mantissas.len();
+    let lfe_present = first.lfe_mantissas.is_some();
+    let mut channels = vec![Vec::with_capacity(blocks.len() * 256); channel_count];
+    let mut channel_delays = vec![vec![0.0; 256]; channel_count];
+    let mut lfe = lfe_present.then(|| Vec::with_capacity(blocks.len() * 256));
+    let mut lfe_delay = vec![0.0; 256];
+
+    for block in blocks {
+        if block.channel_mantissas.len() != channel_count {
+            return Err(Eac3Error::InvalidAudioBlockChannelCount {
+                expected: channel_count,
+                actual: block.channel_mantissas.len(),
+            });
+        }
+        if block.prefix.block_switch.len() != channel_count {
+            return Err(Eac3Error::InvalidAudioBlockSwitchCount {
+                expected: channel_count,
+                actual: block.prefix.block_switch.len(),
+            });
+        }
+        if block.lfe_mantissas.is_some() != lfe_present {
+            return Err(Eac3Error::InvalidAudioBlockLfePresence {
+                expected: lfe_present,
+                actual: block.lfe_mantissas.is_some(),
+            });
+        }
+
+        for channel in 0..channel_count {
+            let coefficients = padded_transform_coefficients(&block.channel_mantissas[channel])?;
+            let windowed = inverse_transform(&coefficients, block.prefix.block_switch[channel])?;
+            let pcm = overlap_add(&windowed, &mut channel_delays[channel])?;
+            channels[channel].extend_from_slice(&pcm);
+        }
+
+        if let (Some(lfe_output), Some(lfe_coefficients)) = (&mut lfe, &block.lfe_mantissas) {
+            let coefficients = padded_transform_coefficients(lfe_coefficients)?;
+            let windowed = inverse_transform(&coefficients, false)?;
+            let pcm = overlap_add(&windowed, &mut lfe_delay)?;
+            lfe_output.extend_from_slice(&pcm);
+        }
+    }
+
+    Ok(DecodedAudioPcm { channels, lfe })
+}
+
+fn padded_transform_coefficients(coefficients: &[f64]) -> Result<[f64; 256], Eac3Error> {
+    if coefficients.len() > 256 {
+        return Err(Eac3Error::InvalidTransformCoefficientLength {
+            expected: 256,
+            actual: coefficients.len(),
+        });
+    }
+    let mut padded = [0.0; 256];
+    padded[..coefficients.len()].copy_from_slice(coefficients);
+    Ok(padded)
 }
 
 fn decode_audio_blocks_until(
