@@ -102,9 +102,45 @@ fn decode_payload_command_writes_scene_stem_timeline_and_debug() {
     assert!(output.join("debug/frame_000/joc.txt").is_file());
     assert!(output.join("debug/frame_000/oamd.txt").is_file());
     assert!(output.join("debug/frame_000/reconstruction.txt").is_file());
-    let stem = decode(&fs::read(output.join("objects/object_000.wav")).expect("stem"))
-        .expect("decode stem");
+    let stem_bytes = fs::read(output.join("objects/object_000.wav")).expect("stem");
+    assert_eq!(
+        u16::from_le_bytes(stem_bytes[20..22].try_into().unwrap()),
+        3
+    );
+    assert_eq!(
+        u16::from_le_bytes(stem_bytes[34..36].try_into().unwrap()),
+        32
+    );
+    let stem = decode(&stem_bytes).expect("decode stem");
     assert_eq!(stem.channels, vec![vec![0.0; 64]]);
+
+    let reference_output = root.join("reference-output");
+    let reference_result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode-payload",
+            "--downmix",
+            downmix_path.to_str().expect("downmix path"),
+            "--joc",
+            joc_path.to_str().expect("JOC path"),
+            "--oamd",
+            oamd_path.to_str().expect("OAMD path"),
+            "-o",
+            reference_output.to_str().expect("output path"),
+            "--reference-f64",
+        ])
+        .output()
+        .expect("run reference output");
+    assert!(
+        reference_result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reference_result.stderr)
+    );
+    let reference_stem =
+        fs::read(reference_output.join("objects/object_000.wav")).expect("reference stem");
+    assert_eq!(
+        u16::from_le_bytes(reference_stem[34..36].try_into().unwrap()),
+        64
+    );
 
     fs::remove_dir_all(&root).expect("remove test directory");
 }

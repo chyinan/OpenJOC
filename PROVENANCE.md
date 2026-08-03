@@ -344,14 +344,19 @@ frame behavior is covered by integration tests.
 - Normative source: engineering-spec decoder-interface export requirement;
   RIFF/WAVE serialization is a container concern outside TS 103 420.
 - Official reference data: none.
-- Design rationale: emit mono 64-bit IEEE-float WAV so reference f64 object PCM
-  is preserved without clipping or sample-format quantization. Read PCM
-  16/24/32, IEEE-float 32/64, and extensible equivalents into channel-major
-  f64 for payload decoding. All RIFF/chunk/frame size arithmetic is checked
-  before allocation or slicing.
+- Design rationale: keep f64 as an explicit reference representation while the
+  normal CLI object-stem output is f32. The wave API also supports signed
+  24-bit and 16-bit PCM. Integer conversion is never silently applied: reject
+  or hard-clipping must be selected explicitly, and deterministic triangular
+  one-LSB dither is selected explicitly with a seed. Float output preserves
+  finite values without clipping or dither. Read PCM 16/24/32, IEEE-float
+  32/64, and extensible equivalents into channel-major f64 for payload input.
+  All RIFF/chunk/frame size arithmetic is checked before allocation or slicing.
 - Validation: exact RIFF, format, rate, bit-depth, data-size, and sample-byte
-  assertions, f64 mono/stereo roundtrips, PCM16 deinterleaving, and invalid-rate
-  and non-finite-sample rejection.
+  assertions, f64 mono/stereo roundtrips, PCM16 deinterleaving, f32/f64/s24/s16
+  format tests, explicit integer clipping rejection/hard-clipping tests,
+  deterministic dither reproducibility, and invalid-rate/non-finite-sample
+  rejection.
 
 ### Payload-to-scene orchestration
 

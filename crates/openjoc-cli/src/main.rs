@@ -9,7 +9,7 @@ use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_eac3::extract_joc_addbsi_access_unit;
 use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
-use openjoc_wave::{decode, encode_f64_mono};
+use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, decode, encode_channels};
 use std::{
     env,
     error::Error,
@@ -21,7 +21,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--reference-f64]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -30,6 +30,7 @@ struct DecodePayloadArgs {
     output: PathBuf,
     trim_count: Option<NonZeroU8>,
     reference_screen: Option<ReferenceScreen>,
+    output_format: SampleFormat,
 }
 
 struct DecodeEac3Args {
@@ -37,6 +38,7 @@ struct DecodeEac3Args {
     downmix: Option<PathBuf>,
     internal_base: bool,
     output: PathBuf,
+    output_format: SampleFormat,
 }
 
 fn main() -> ExitCode {
@@ -97,7 +99,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE>\n",
-        "  openjoc decode <FILE> -o <DIR>\n",
+        "  openjoc decode <FILE> -o <DIR> [--reference-f64]\n",
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc --help\n",
         "\n",
@@ -110,7 +112,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE>\n",
-        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
+        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--reference-f64]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [OPTIONS]\n",
         "\n",
@@ -126,6 +128,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  -h, --help       Print root command help\n",
         "      --no-banner Disable the interactive startup banner\n",
+        "      --reference-f64 Use explicit reference f64 object-stem output (default: f32)\n",
     ));
     Ok(())
 }
@@ -188,7 +191,7 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
         frame_index: 0,
     })?;
     let scene = decoder.finish()?;
-    write_scene(&arguments.output, &scene)?;
+    write_scene(&arguments.output, &scene, arguments.output_format)?;
     write_debug(&arguments.output, 0, &frame_output)?;
     Ok(())
 }
@@ -197,12 +200,18 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let input = values.first().filter(|value| !value.starts_with('-'));
     let mut downmix = None;
     let mut internal_base = false;
+    let mut reference_f64 = false;
     let mut output = None;
     let mut index = 1;
     while index < values.len() {
         let flag = &values[index];
         if flag == "--internal-base" {
             internal_base = true;
+            index += 1;
+            continue;
+        }
+        if flag == "--reference-f64" {
+            reference_f64 = true;
             index += 1;
             continue;
         }
@@ -222,6 +231,11 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         downmix,
         internal_base,
         output: output.ok_or_else(usage_error)?,
+        output_format: if reference_f64 {
+            SampleFormat::F64
+        } else {
+            SampleFormat::F32
+        },
     })
 }
 
@@ -248,7 +262,7 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     for (frame_index, frame) in decoded.frames.iter().enumerate() {
         write_debug(&arguments.output, frame_index, frame)?;
     }
-    write_scene(&arguments.output, &decoded.scene)
+    write_scene(&arguments.output, &decoded.scene, arguments.output_format)
 }
 
 fn deterministic_dither_values() -> Vec<f64> {
@@ -302,10 +316,16 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
     let mut oamd = None;
     let mut output = None;
     let mut trim_count = None;
+    let mut reference_f64 = false;
     let mut screen = [None; 5];
     let mut index = 0;
     while index < values.len() {
         let flag = &values[index];
+        if flag == "--reference-f64" {
+            reference_f64 = true;
+            index += 1;
+            continue;
+        }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
             "--downmix" => downmix = Some(PathBuf::from(value)),
@@ -343,10 +363,19 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
         output: output.ok_or_else(usage_error)?,
         trim_count,
         reference_screen,
+        output_format: if reference_f64 {
+            SampleFormat::F64
+        } else {
+            SampleFormat::F32
+        },
     })
 }
 
-fn write_scene(output: &Path, scene: &openjoc_scene::ObjectScene) -> Result<(), Box<dyn Error>> {
+fn write_scene(
+    output: &Path,
+    scene: &openjoc_scene::ObjectScene,
+    sample_format: SampleFormat,
+) -> Result<(), Box<dyn Error>> {
     let objects = output.join("objects");
     let metadata = output.join("metadata");
     fs::create_dir_all(&objects)?;
@@ -360,7 +389,15 @@ fn write_scene(output: &Path, scene: &openjoc_scene::ObjectScene) -> Result<(), 
         let filename = format!("object_{:03}.wav", object.object_id);
         fs::write(
             objects.join(filename),
-            encode_f64_mono(scene.sample_rate, &object.pcm)?,
+            encode_channels(
+                scene.sample_rate,
+                std::slice::from_ref(&object.pcm),
+                WaveEncodeOptions {
+                    sample_format,
+                    clipping: Clipping::Reject,
+                    dither: Dither::None,
+                },
+            )?,
         )?;
     }
     Ok(())

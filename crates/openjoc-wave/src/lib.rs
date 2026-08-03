@@ -9,6 +9,7 @@ use std::fmt;
 pub enum WaveError {
     InvalidSampleRate,
     NonFiniteSample { index: usize },
+    OutOfRangeSample { index: usize },
     SizeOverflow,
     InvalidRiff,
     Truncated,
@@ -24,6 +25,12 @@ impl fmt::Display for WaveError {
             Self::InvalidSampleRate => formatter.write_str("invalid WAV sample rate"),
             Self::NonFiniteSample { index } => {
                 write!(formatter, "non-finite WAV sample at index {index}")
+            }
+            Self::OutOfRangeSample { index } => {
+                write!(
+                    formatter,
+                    "WAV integer sample is outside [-1, 1] at index {index}"
+                )
             }
             Self::SizeOverflow => formatter.write_str("WAV data exceeds RIFF size limits"),
             Self::InvalidRiff => formatter.write_str("invalid RIFF/WAVE header"),
@@ -234,6 +241,69 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, WaveError> {
 
 impl std::error::Error for WaveError {}
 
+/// Output sample representation for a WAV sink.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SampleFormat {
+    /// 32-bit IEEE float. This is the normal user-facing output format.
+    F32,
+    /// 64-bit IEEE float. This is the explicit reference format.
+    F64,
+    /// Signed little-endian 24-bit PCM.
+    S24,
+    /// Signed little-endian 16-bit PCM.
+    S16,
+}
+
+/// Policy for normalized samples that cannot be represented by integer PCM.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Clipping {
+    /// Return [`WaveError::OutOfRangeSample`] instead of changing the sample.
+    Reject,
+    /// Clamp integer PCM input to the representable normalized range.
+    Hard,
+}
+
+/// Explicit quantization dither policy for integer PCM output.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Dither {
+    /// Do not add dither.
+    None,
+    /// Add deterministic triangular-PDF one-LSB dither derived from `seed`.
+    Triangular { seed: u64 },
+}
+
+/// Explicit WAV output policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WaveEncodeOptions {
+    pub sample_format: SampleFormat,
+    pub clipping: Clipping,
+    pub dither: Dither,
+}
+
+/// Encodes channel-major samples with an explicit format and quantization policy.
+///
+/// Float output preserves finite values and never clips or dithers. Integer
+/// output accepts normalized samples in `[-1, 1]`; [`Clipping::Reject`] reports
+/// an out-of-range value and [`Clipping::Hard`] clamps it. Dither is applied only
+/// to integer output and is deterministic for a given seed and sample index.
+pub fn encode_channels(
+    sample_rate: u32,
+    channels: &[Vec<f64>],
+    options: WaveEncodeOptions,
+) -> Result<Vec<u8>, WaveError> {
+    let frames = channels.first().map_or(0, Vec::len);
+    if channels.is_empty() || channels.iter().any(|channel| channel.len() != frames) {
+        return Err(WaveError::InvalidFormat);
+    }
+    encode_planar(
+        sample_rate,
+        channels.len(),
+        frames,
+        options,
+        |channel, frame| channels[channel][frame],
+    )
+}
+
 /// Encodes mono samples as a 64-bit IEEE-float RIFF/WAVE stream.
 ///
 /// This preserves reconstructed amplitudes without integer clipping or
@@ -243,10 +313,17 @@ impl std::error::Error for WaveError {}
 /// Returns [`WaveError`] for a zero rate, non-finite sample, or RIFF size
 /// overflow.
 pub fn encode_f64_mono(sample_rate: u32, samples: &[f64]) -> Result<Vec<u8>, WaveError> {
-    if let Some(index) = samples.iter().position(|sample| !sample.is_finite()) {
-        return Err(WaveError::NonFiniteSample { index });
-    }
-    encode_f64_planar(sample_rate, 1, samples.len(), |_, frame| samples[frame])
+    encode_planar(
+        sample_rate,
+        1,
+        samples.len(),
+        WaveEncodeOptions {
+            sample_format: SampleFormat::F64,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        },
+        |_, frame| samples[frame],
+    )
 }
 
 /// Encodes channel-major samples as a 64-bit IEEE-float RIFF/WAVE stream.
@@ -259,34 +336,39 @@ pub fn encode_f64_channels(sample_rate: u32, channels: &[Vec<f64>]) -> Result<Ve
     if channels.is_empty() || channels.iter().any(|channel| channel.len() != frames) {
         return Err(WaveError::InvalidFormat);
     }
-    for channel in channels {
-        if let Some(index) = channel.iter().position(|sample| !sample.is_finite()) {
-            return Err(WaveError::NonFiniteSample { index });
-        }
-    }
-    encode_f64_planar(sample_rate, channels.len(), frames, |channel, frame| {
-        channels[channel][frame]
-    })
+    encode_channels(
+        sample_rate,
+        channels,
+        WaveEncodeOptions {
+            sample_format: SampleFormat::F64,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        },
+    )
 }
 
-fn encode_f64_planar(
+fn encode_planar(
     sample_rate: u32,
     channels: usize,
     frames: usize,
+    options: WaveEncodeOptions,
     sample: impl Fn(usize, usize) -> f64,
 ) -> Result<Vec<u8>, WaveError> {
     if sample_rate == 0 {
         return Err(WaveError::InvalidSampleRate);
     }
     let channel_count = u16::try_from(channels).map_err(|_| WaveError::SizeOverflow)?;
+    let bytes_per_sample = options.sample_format.bytes_per_sample();
     let block_align = channel_count
-        .checked_mul(8)
+        .checked_mul(u16::try_from(bytes_per_sample).map_err(|_| WaveError::SizeOverflow)?)
         .ok_or(WaveError::SizeOverflow)?;
     let sample_count = frames
         .checked_mul(channels)
         .ok_or(WaveError::SizeOverflow)?;
     let sample_count = u32::try_from(sample_count).map_err(|_| WaveError::SizeOverflow)?;
-    let data_size = sample_count.checked_mul(8).ok_or(WaveError::SizeOverflow)?;
+    let data_size = sample_count
+        .checked_mul(u32::try_from(bytes_per_sample).map_err(|_| WaveError::SizeOverflow)?)
+        .ok_or(WaveError::SizeOverflow)?;
     let riff_size = data_size.checked_add(36).ok_or(WaveError::SizeOverflow)?;
     let byte_rate = sample_rate
         .checked_mul(u32::from(block_align))
@@ -302,18 +384,108 @@ fn encode_f64_planar(
     wav.extend_from_slice(b"WAVE");
     wav.extend_from_slice(b"fmt ");
     wav.extend_from_slice(&16_u32.to_le_bytes());
-    wav.extend_from_slice(&3_u16.to_le_bytes());
+    wav.extend_from_slice(&options.sample_format.encoding().to_le_bytes());
     wav.extend_from_slice(&channel_count.to_le_bytes());
     wav.extend_from_slice(&sample_rate.to_le_bytes());
     wav.extend_from_slice(&byte_rate.to_le_bytes());
     wav.extend_from_slice(&block_align.to_le_bytes());
-    wav.extend_from_slice(&64_u16.to_le_bytes());
+    wav.extend_from_slice(&options.sample_format.bits().to_le_bytes());
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_size.to_le_bytes());
     for frame in 0..frames {
         for channel in 0..channels {
-            wav.extend_from_slice(&sample(channel, frame).to_le_bytes());
+            let index = frame
+                .checked_mul(channels)
+                .and_then(|value| value.checked_add(channel))
+                .ok_or(WaveError::SizeOverflow)?;
+            encode_sample(&mut wav, sample(channel, frame), options, index)?;
         }
     }
     Ok(wav)
+}
+
+impl SampleFormat {
+    const fn encoding(self) -> u16 {
+        match self {
+            Self::F32 | Self::F64 => 3,
+            Self::S24 | Self::S16 => 1,
+        }
+    }
+
+    const fn bits(self) -> u16 {
+        match self {
+            Self::F32 => 32,
+            Self::F64 => 64,
+            Self::S24 => 24,
+            Self::S16 => 16,
+        }
+    }
+
+    const fn bytes_per_sample(self) -> usize {
+        (self.bits() / 8) as usize
+    }
+}
+
+fn encode_sample(
+    output: &mut Vec<u8>,
+    value: f64,
+    options: WaveEncodeOptions,
+    index: usize,
+) -> Result<(), WaveError> {
+    if !value.is_finite() {
+        return Err(WaveError::NonFiniteSample { index });
+    }
+    match options.sample_format {
+        SampleFormat::F32 => output.extend_from_slice(&(value as f32).to_le_bytes()),
+        SampleFormat::F64 => output.extend_from_slice(&value.to_le_bytes()),
+        SampleFormat::S16 => {
+            let value = quantize_integer(value, 16, options, index)?;
+            output.extend_from_slice(&value.to_le_bytes()[..2]);
+        }
+        SampleFormat::S24 => {
+            let value = quantize_integer(value, 24, options, index)?;
+            output.extend_from_slice(&value.to_le_bytes()[..3]);
+        }
+    }
+    Ok(())
+}
+
+fn quantize_integer(
+    value: f64,
+    bits: u32,
+    options: WaveEncodeOptions,
+    index: usize,
+) -> Result<i32, WaveError> {
+    let normalized = if (-1.0..=1.0).contains(&value) {
+        value
+    } else {
+        match options.clipping {
+            Clipping::Reject => return Err(WaveError::OutOfRangeSample { index }),
+            Clipping::Hard => value.clamp(-1.0, 1.0),
+        }
+    };
+    let scale = f64::from(1_u32 << (bits - 1));
+    let dither = match options.dither {
+        Dither::None => 0.0,
+        Dither::Triangular { seed } => triangular_dither(seed, index),
+    };
+    let minimum = -(1_i32 << (bits - 1));
+    let maximum = (1_i32 << (bits - 1)) - 1;
+    Ok((normalized * scale + dither)
+        .round()
+        .clamp(f64::from(minimum), f64::from(maximum)) as i32)
+}
+
+fn triangular_dither(seed: u64, index: usize) -> f64 {
+    let mut state = (seed as u32).wrapping_add(index as u32).wrapping_add(1);
+    let first = f64::from(next_dither(&mut state)) / 4_294_967_296.0;
+    let second = f64::from(next_dither(&mut state)) / 4_294_967_296.0;
+    first - second
+}
+
+fn next_dither(state: &mut u32) -> u32 {
+    *state ^= *state << 13;
+    *state ^= *state >> 17;
+    *state ^= *state << 5;
+    *state
 }

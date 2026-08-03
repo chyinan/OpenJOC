@@ -4,7 +4,8 @@
 
 The repository currently supports a clean-room raw E-AC-3 path with aligned
 base-channel PCM, JOC/OAMD extraction, renderer-independent `ObjectScene`, and
-f64 object stems. This report does not claim a complete real-world Atmos
+explicit reference-f64 object stems (the normal CLI stem format is f32). This
+report does not claim a complete real-world Atmos
 decoder or a speaker/binaural renderer.
 
 ## Current increment: input media and DEE containers
@@ -87,6 +88,20 @@ with actual EMDF OAMD/JOC payloads is supplied or independently located from
 authorized sources; the carrier extraction and internal base path must then be
 validated against known ground truth.
 
+## Wave output format increment
+
+`openjoc-wave` now exposes an explicit `SampleFormat` abstraction for f32, f64,
+s24, and s16. CLI object stems default to f32; `--reference-f64` selects the
+lossless reference representation. Integer output requires an explicit
+clipping policy (`Reject` or `Hard`) and an explicit dither policy (`None` or
+seeded triangular one-LSB dither); no integer clipping or dither is implicit.
+The compatible base-channel debug artifact remains an explicit FFmpeg
+`pcm_f64le` reference and is named `debug/compatible_base.wav`.
+
+Wave tests cover all four output formats, integer range handling, dither
+reproducibility, and f64 compatibility. This increment does not change the
+renderer-independent scene boundary or claim nonzero JOC/OAMD reconstruction.
+
 ## Verification commands
 
 The current container and diagnostic checks were run with:
@@ -113,7 +128,6 @@ offline release build, and a clean diff check.
 ## Known limitations and next goals
 
 The real-vector acceptance lane, FFmpeg-versus-internal-base fidelity report,
-streaming/frame-local scene staging, full renderer-independent trim retention,
-and f32/s24/s16 wave output abstraction remain planned. Speaker and binaural
-renderers are later non-normative components and are deliberately outside this
-container increment.
+streaming/frame-local scene staging, and full renderer-independent trim
+retention remain open. Speaker and binaural renderers are later non-normative
+components and are deliberately outside the current decoder increments.

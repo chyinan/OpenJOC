@@ -1,4 +1,7 @@
-use openjoc_wave::{WaveError, decode, encode_f64_channels, encode_f64_mono};
+use openjoc_wave::{
+    Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, decode, encode_channels,
+    encode_f64_channels, encode_f64_mono,
+};
 
 #[test]
 fn encodes_mono_ieee_float_wave_without_pcm_quantization() {
@@ -56,6 +59,82 @@ fn roundtrips_multichannel_f64_wave_for_downmix_input() {
 
     assert_eq!(wave.sample_rate, 48_000);
     assert_eq!(wave.channels, expected);
+}
+
+#[test]
+fn encodes_explicit_f32_reference_and_integer_sample_formats() {
+    let channels = vec![vec![-1.0, 0.0, 1.0]];
+    let f32_wav = encode_channels(
+        48_000,
+        &channels,
+        WaveEncodeOptions {
+            sample_format: SampleFormat::F32,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        },
+    )
+    .expect("f32 WAV");
+    assert_eq!(u16::from_le_bytes(f32_wav[20..22].try_into().unwrap()), 3);
+    assert_eq!(u16::from_le_bytes(f32_wav[34..36].try_into().unwrap()), 32);
+
+    for (format, bits) in [
+        (SampleFormat::F64, 64),
+        (SampleFormat::S24, 24),
+        (SampleFormat::S16, 16),
+    ] {
+        let wav = encode_channels(
+            48_000,
+            &channels,
+            WaveEncodeOptions {
+                sample_format: format,
+                clipping: Clipping::Reject,
+                dither: Dither::None,
+            },
+        )
+        .expect("explicit WAV");
+        assert_eq!(u16::from_le_bytes(wav[34..36].try_into().unwrap()), bits);
+    }
+}
+
+#[test]
+fn integer_output_requires_explicit_clipping_policy() {
+    let channels = vec![vec![1.25]];
+    let error = encode_channels(
+        48_000,
+        &channels,
+        WaveEncodeOptions {
+            sample_format: SampleFormat::S16,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        },
+    )
+    .expect_err("out-of-range integer sample");
+    assert_eq!(error, WaveError::OutOfRangeSample { index: 0 });
+
+    let wav = encode_channels(
+        48_000,
+        &channels,
+        WaveEncodeOptions {
+            sample_format: SampleFormat::S16,
+            clipping: Clipping::Hard,
+            dither: Dither::None,
+        },
+    )
+    .expect("explicit hard clipping");
+    assert_eq!(&wav[44..46], &i16::MAX.to_le_bytes());
+}
+
+#[test]
+fn explicit_triangular_dither_is_reproducible() {
+    let channels = vec![vec![0.25; 32]];
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::S16,
+        clipping: Clipping::Reject,
+        dither: Dither::Triangular { seed: 7 },
+    };
+    let first = encode_channels(48_000, &channels, options).expect("dithered WAV");
+    let second = encode_channels(48_000, &channels, options).expect("dithered WAV");
+    assert_eq!(first, second);
 }
 
 #[test]

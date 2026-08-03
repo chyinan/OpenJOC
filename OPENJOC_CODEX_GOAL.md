@@ -20,7 +20,7 @@ This is not yet a complete real-world Atmos decoder or speaker/binaural
 renderer. In particular, the retained `debug/compatible_base.wav` is the
 FFmpeg-compatible base-channel reference PCM, not a final render.
 
-## Current active increment: input media and DEE containers
+## Completed increment: input media and DEE containers
 
 1. Audit status claims and keep `REQUIREMENTS_MATRIX.md`, `PROVENANCE.md`, and
    `IMPLEMENTATION_REPORT.md` aligned with executable evidence.
@@ -36,6 +36,17 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
    unsupported tracks, malformed containers, inspect, and decode integration.
 6. Verify with `cargo fmt`, strict clippy, all-feature tests, and a release
    build. Commit this increment as a resumable change.
+
+## Current active increment: explicit wave output semantics
+
+1. Keep reconstructed scene PCM in f64 internally and expose a checked wave
+   sink supporting f32, explicit reference-f64, s24, and s16.
+2. Make default CLI object output f32 and require `--reference-f64` for the
+   reference representation.
+3. Define integer clipping and dither as explicit policies, with tests for
+   rejection, hard clipping, and deterministic seeded dither.
+4. Keep the compatible base-channel debug WAV explicitly named and f64; it is
+   not a speaker or binaural render.
 
 ## Explicit open goals after the current increment
 
@@ -56,7 +67,8 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
   frame-local atomic staging and streaming sinks.
 - Define wave output sample formats (`f32`, explicit reference `f64`, `s24`,
   `s16`) with documented clipping and dither behavior. Normal user output is
-  `f32`; reference output remains explicitly selectable.
+  `f32`; reference output remains explicitly selectable. (The format API is
+  implemented; streaming sinks remain open.)
 - Keep codec and rendering boundaries separate. Later speaker rendering targets
   stereo, 5.1, 5.1.2, 7.1.4, and 9.1.6. Later binaural rendering targets
   selectable public SOFA HRTFs. Neither is a Dolby reference or normative
