@@ -973,9 +973,8 @@ frame behavior is covered by integration tests.
   zero-valued long/short blocks, a nonzero DC coefficient against the rendered
   ETSI equations and Table 6.33 values, and delay-state advancement are covered
   by `crates/openjoc-eac3/tests/transform.rs`. Full channel de-coupling,
-  rematrixing, spectral-extension synthesis, and stateful PCM integration remain
-  separate stages; this primitive is not presented as a complete E-AC-3 PCM
-  decoder.
+  spectral-extension synthesis, and stateful PCM integration remain separate
+  stages; this primitive is not presented as a complete E-AC-3 PCM decoder.
 
 ### Enhanced AC-3 access-unit and substream ordering
 
@@ -1209,3 +1208,28 @@ derivation; no decoder implementation was consulted.
 No ambiguity has been resolved outside the normative sources. New ambiguities must
 be added here with the relevant clause, competing readings, selected derivation,
 and a test or explicit TODO before implementation proceeds.
+
+### Rematrix reconstruction
+
+- Normative source: ETSI TS 102 366 V1.4.1 clauses 6.5.2 through 6.5.4,
+  Tables 6.25 through 6.28, and Annex E clause E.2.3.2. Clause 6.5.4
+  requires `left = received left + received right` and
+  `right = received left - received right` for each flagged band, with
+  operation limited to the lower channel bandwidth. Annex E supplies the
+  piecewise rematrix-band count for standard/enhanced coupling and SPX.
+- Official reference data: PDF pages 70 through 73 and 145 through 146 of
+  `references/etsi/ts_102366v010401p.pdf` were rendered losslessly at 300 DPI
+  with Poppler 26.02.0 to `.codex-tmp/rematrix-render/` (the Annex E pages
+  were also text-checked) and visually inspected before coding. No third-party
+  decoder source was consulted.
+- Design rationale: `rematrix_channels` is a pure transform over two decoded
+  channel vectors. It derives the exact coefficient ranges from the four
+  normative tables, terminates a coupling band at the coupling start, accepts
+  every Annex E flag count including no-op flags beyond a short SPX bandwidth,
+  clips to the common channel length, validates all inputs for finiteness, and
+  leaves unflagged bins unchanged. The audio-block traversal calls it after
+  conventional channel mantissas are decoded and before the block is emitted.
+- Validation: `crates/openjoc-eac3/tests/coupling.rs` covers Table A and
+  standard-coupling boundaries, sum/difference restoration, lower-bandwidth
+  clipping behavior, wrong flag counts, and non-finite coefficient rejection;
+  the complete E-AC-3 test suite remains green.

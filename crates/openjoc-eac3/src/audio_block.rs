@@ -5,6 +5,7 @@
 use openjoc_bitio::{BitRead, BitReader};
 
 use crate::aht::decode_aht_element_mantissas_with_information;
+use crate::rematrix::rematrix_channels;
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
     channel_exponent_group_count, compute_element_bap, compute_high_efficiency_element_bap,
@@ -684,6 +685,16 @@ fn decode_audio_blocks_until(
             &mut dither_index,
             zero_bap,
         )?;
+        let channel_mantissas = if frame.bsi.audio_coding_mode == 2 {
+            rematrix_channels(
+                &channel_block.channel_mantissas,
+                &prefix.rematrix_flags,
+                prefix.coupling.as_ref(),
+                prefix.spectral_extension.as_ref(),
+            )?
+        } else {
+            channel_block.channel_mantissas.clone()
+        };
         let enhanced_coupling = match prefix.coupling.as_ref() {
             Some(CouplingInformation::Enhanced(info)) => channel_block
                 .coupling_mantissas
@@ -710,7 +721,7 @@ fn decode_audio_blocks_until(
             block_index,
             prefix,
             channel_baps: channel_block.channel_baps,
-            channel_mantissas: channel_block.channel_mantissas,
+            channel_mantissas,
             coupling_bap: channel_block.coupling_bap,
             coupling_mantissas: channel_block.coupling_mantissas,
             enhanced_coupling,

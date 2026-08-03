@@ -6,6 +6,7 @@ mod aht;
 mod audio_block;
 mod bit_allocation;
 mod mantissa;
+mod rematrix;
 mod transform;
 
 pub use aht::{
@@ -33,6 +34,7 @@ pub use mantissa::{
     MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer, shift_mantissa,
     ungroup_mantissa_code,
 };
+pub use rematrix::rematrix_channels;
 pub use transform::{inverse_transform, overlap_add};
 
 use core::fmt;
@@ -151,6 +153,17 @@ pub enum Eac3Error {
         master: u8,
     },
     NonFiniteCouplingCoefficient,
+    InvalidRematrixChannelCount {
+        actual: usize,
+    },
+    InvalidRematrixFlagCount {
+        expected: usize,
+        actual: usize,
+    },
+    NonFiniteRematrixCoefficient {
+        channel: usize,
+        index: usize,
+    },
     InvalidBlockStartDimensions {
         frame_size: usize,
         audio_blocks: u8,
@@ -324,6 +337,18 @@ impl Eac3Error {
             Self::NonFiniteCouplingCoefficient => {
                 Some(write!(formatter, "non-finite E-AC-3 coupling coefficient"))
             }
+            Self::InvalidRematrixFlagCount { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 rematrix flag count: expected {expected}, got {actual}"
+            )),
+            Self::InvalidRematrixChannelCount { actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 rematrix channel count {actual}; expected 2"
+            )),
+            Self::NonFiniteRematrixCoefficient { channel, index } => Some(write!(
+                formatter,
+                "non-finite E-AC-3 rematrix coefficient at channel {channel}, index {index}"
+            )),
             Self::InvalidBitAllocationParameterCode { parameter, actual } => Some(write!(
                 formatter,
                 "invalid E-AC-3 {parameter} bit allocation parameter code {actual}"
@@ -513,6 +538,9 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidCouplingCoordinateDimensions { .. }
             | Self::InvalidCouplingCoordinate { .. }
             | Self::NonFiniteCouplingCoefficient
+            | Self::InvalidRematrixChannelCount { .. }
+            | Self::InvalidRematrixFlagCount { .. }
+            | Self::NonFiniteRematrixCoefficient { .. }
             | Self::InvalidBitAllocationParameterCode { .. }
             | Self::InvalidBitAllocationTableIndex { .. }
             | Self::InvalidPsdRange { .. }
