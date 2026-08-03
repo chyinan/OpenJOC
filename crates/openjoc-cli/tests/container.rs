@@ -250,7 +250,11 @@ fn user_supplied_dee_fixture_uses_container_boundary_when_enabled() {
         .output()
         .expect("run inspect");
     assert!(inspect.status.success());
-    assert!(String::from_utf8_lossy(&inspect.stdout).contains("frames: 7773"));
+    let inspect_stdout = String::from_utf8_lossy(&inspect.stdout);
+    assert!(inspect_stdout.contains("frames: 7773"));
+    assert!(
+        inspect_stdout.contains("JOC extension signaled: complexity index 16; EMDF profile absent")
+    );
 
     let decode = Command::new(env!("CARGO_BIN_EXE_openjoc"))
         .args([

@@ -3,10 +3,11 @@ use openjoc_eac3::{
     StreamType, block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
     decode_audio_blocks, decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
     decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
-    extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
-    parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
-    parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
-    synthesize_audio_blocks, validate_complexity_index,
+    extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
+    group_access_units, index_syncframes, parse_audio_frame, parse_bsi,
+    parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header,
+    reconstruct_enhanced_coupling, spx_subband_range, synthesize_audio_blocks,
+    validate_complexity_index,
 };
 
 #[derive(Clone, Default)]
@@ -1991,6 +1992,30 @@ fn extracts_joc_profile_from_the_last_dependent_substream() {
     assert_eq!(metadata.complexity_index, 2);
     assert_eq!(metadata.oamd, [0xa5]);
     assert_eq!(metadata.joc, [0x5a]);
+}
+
+#[test]
+fn extracts_joc_addbsi_when_profile_payload_is_unavailable() {
+    let bytes = joc_carrier_frame(0, 0, None);
+    let frames = index_syncframes(&bytes).expect("frames");
+    let units = group_access_units(&frames).expect("unit");
+    assert_eq!(
+        extract_joc_addbsi_access_unit(&bytes, &frames, units[0])
+            .expect("addbsi")
+            .map(|value| value.complexity_index),
+        None
+    );
+
+    let emdf = joc_emdf();
+    let bytes = joc_carrier_frame(0, 0, Some(&emdf));
+    let frames = index_syncframes(&bytes).expect("frames");
+    let units = group_access_units(&frames).expect("unit");
+    assert_eq!(
+        extract_joc_addbsi_access_unit(&bytes, &frames, units[0])
+            .expect("addbsi")
+            .map(|value| value.complexity_index),
+        Some(2)
+    );
 }
 
 #[test]

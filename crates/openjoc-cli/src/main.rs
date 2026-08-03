@@ -6,6 +6,7 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use openjoc_container::{InputMediaKind, load_eac3};
+use openjoc_eac3::extract_joc_addbsi_access_unit;
 use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{decode, encode_f64_mono};
@@ -155,6 +156,12 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
             println!("  complexity index: {}", metadata.complexity_index);
             println!("  OAMD bytes: {}", metadata.oamd.len());
             println!("  JOC bytes: {}", metadata.joc.len());
+        } else if let Some(extension) = extract_joc_addbsi_access_unit(&media.bytes, &frames, unit)?
+        {
+            println!(
+                "  JOC extension signaled: complexity index {}; EMDF profile absent",
+                extension.complexity_index
+            );
         } else {
             println!("  JOC profile: absent");
         }

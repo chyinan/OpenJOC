@@ -43,6 +43,10 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
   copyrighted programme bytes. It must prove nonzero JOC side information,
   nonzero reconstructed PCM, dynamic OAMD, multiple access units, state reuse,
   a moving object, and known stems or ADM-BWF ground truth.
+- The currently supplied DEE M4A is a container/diagnostic fixture only: its
+  `addbsi` complexity index is present, but all normative `auxdatae` bits are
+  zero and no EMDF OAMD/JOC carrier is present. Do not count it as the real
+  vector until those payloads and nonzero reconstructed stems are evidenced.
 - Compare FFmpeg base-channel PCM with `--internal-base` on that legal vector,
   recording channel order/count, delay, peak, RMS, and numerical error. The
   internal base decoder is not verified until this succeeds.

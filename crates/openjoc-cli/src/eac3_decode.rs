@@ -1,8 +1,9 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    Eac3Error, JocAccessUnitPcmDecoder, extract_aux_joc_access_unit, group_access_units,
-    index_syncframes, validate_complexity_index,
+    Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame, extract_aux_joc_access_unit,
+    extract_joc_addbsi_access_unit, group_access_units, index_syncframes,
+    validate_complexity_index,
 };
 use openjoc_oamd::{OamdError, parse_oamd_payload_with_config};
 use openjoc_scene::{
@@ -24,9 +25,20 @@ pub enum DecodeEac3Error {
     Payload(PayloadDecodeError),
     EmptyStream,
     SampleCountOverflow,
-    InvalidPcmLength { expected: usize },
-    SampleRateMismatch { pcm: u32, stream: u32 },
-    MissingMetadata { access_unit: usize },
+    InvalidPcmLength {
+        expected: usize,
+    },
+    SampleRateMismatch {
+        pcm: u32,
+        stream: u32,
+    },
+    MissingMetadata {
+        access_unit: usize,
+    },
+    JocExtensionWithoutMetadata {
+        access_unit: usize,
+        complexity_index: u8,
+    },
     FrameIndexOverflow,
 }
 
@@ -54,6 +66,13 @@ impl fmt::Display for DecodeEac3Error {
                     "JOC metadata is absent from access unit {access_unit}"
                 )
             }
+            Self::JocExtensionWithoutMetadata {
+                access_unit,
+                complexity_index,
+            } => write!(
+                formatter,
+                "JOC extension complexity index {complexity_index} is signaled in access unit {access_unit}, but its required OAMD/JOC EMDF metadata is absent"
+            ),
             Self::FrameIndexOverflow => formatter.write_str("E-AC-3 frame index overflow"),
         }
     }
@@ -76,6 +95,24 @@ impl From<OamdError> for DecodeEac3Error {
 impl From<PayloadDecodeError> for DecodeEac3Error {
     fn from(value: PayloadDecodeError) -> Self {
         Self::Payload(value)
+    }
+}
+
+fn required_metadata(
+    stream: &[u8],
+    frames: &[openjoc_eac3::SyncframeIndexEntry],
+    unit: openjoc_eac3::AccessUnitIndex,
+    access_unit: usize,
+) -> Result<JocMetadataFrame, DecodeEac3Error> {
+    if let Some(metadata) = extract_aux_joc_access_unit(stream, frames, unit)? {
+        return Ok(metadata);
+    }
+    match extract_joc_addbsi_access_unit(stream, frames, unit)? {
+        Some(extension) => Err(DecodeEac3Error::JocExtensionWithoutMetadata {
+            access_unit,
+            complexity_index: extension.complexity_index,
+        }),
+        None => Err(DecodeEac3Error::MissingMetadata { access_unit }),
     }
 }
 
@@ -120,11 +157,7 @@ pub fn decode_aligned_eac3(
                 stream: unit.sample_rate,
             });
         }
-        let metadata = extract_aux_joc_access_unit(stream, &frame_index, unit)?.ok_or(
-            DecodeEac3Error::MissingMetadata {
-                access_unit: unit_index,
-            },
-        )?;
+        let metadata = required_metadata(stream, &frame_index, unit, unit_index)?;
         let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let end = sample_offset
@@ -187,11 +220,7 @@ pub fn decode_internal_eac3(
                 expected: usize::from(unit.samples),
             });
         }
-        let metadata = extract_aux_joc_access_unit(stream, &frame_index, unit)?.ok_or(
-            DecodeEac3Error::MissingMetadata {
-                access_unit: unit_index,
-            },
-        )?;
+        let metadata = required_metadata(stream, &frame_index, unit, unit_index)?;
         let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
@@ -208,4 +237,21 @@ pub fn decode_internal_eac3(
         scene: decoder.finish()?,
         frames: decoded_frames,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DecodeEac3Error;
+
+    #[test]
+    fn reports_signaled_extension_without_emdf_as_actionable_error() {
+        let error = DecodeEac3Error::JocExtensionWithoutMetadata {
+            access_unit: 4,
+            complexity_index: 16,
+        };
+        assert_eq!(
+            error.to_string(),
+            "JOC extension complexity index 16 is signaled in access unit 4, but its required OAMD/JOC EMDF metadata is absent"
+        );
+    }
 }

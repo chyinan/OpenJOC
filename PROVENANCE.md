@@ -1377,12 +1377,20 @@ and a test or explicit TODO before implementation proceeds.
   `2e155599e319d7a6f1ef655684bd872aaae1cd5f73d82097c589a32c572df86a`.
   OpenJOC container demux produced byte-equivalent elementary bytes.
 - Current OpenJOC evidence: `inspect` accepts the container and reports 7,773
-  E-AC-3 frames/access units at 1,536 samples each, but reports JOC profile
-  absent for every unit. Default FFmpeg base extraction produces six-channel
-  48 kHz f64 PCM (11,939,328 samples/channel). `--internal-base` currently
-  fails on this real stream with `invalid E-AC-3 mantissa code 7 for bap 3`;
-  internal-base fidelity is therefore unverified. This is an open decoder
-  acceptance issue, not evidence that the supplied programme lacks JOC.
+  E-AC-3 frames/access units at 1,536 samples each. Every frame has the
+  §8.3 `addbsi` extension `[0x01, 0x10]`, while the TS 102 366 E.1.2.5
+  `auxdatae` bit is zero in all 7,773 frame tails. Bento4 `mp4dump` and the
+  public BMFF structure show no second audio/metadata track or unknown JOC
+  box. OpenJOC therefore reports “JOC extension signaled ... EMDF profile
+  absent” and refuses reconstruction; the complexity index alone is not a
+  JOC payload. This follows TS 103 420 §8.2, which requires OAMD/JOC payloads
+  in an EMDF container, and avoids inferring a private carrier.
+- Default FFmpeg base extraction produces six-channel 48 kHz f64 PCM
+  (11,939,328 samples/channel). `--internal-base` currently fails on this
+  real stream with `invalid E-AC-3 mantissa code 7 for bap 3`; internal-base
+  fidelity is therefore unverified. The supplied file is useful for the
+  container and diagnostic lane, but is not yet a legal nonzero JOC/OAMD
+  acceptance vector.
 - FFmpeg `astats` records the `5.1(side)` order (FL, FR, FC, LFE, SL, SR) and
   dBFS peak/RMS pairs: FL `-14.066079/-29.027150`, FR `-11.644446/-27.419704`,
   FC `-3.850901/-21.360071`, LFE `-33.119901/-50.094647`, SL

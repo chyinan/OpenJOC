@@ -50,7 +50,13 @@ The legal fixture is intentionally not committed:
 - independent stream-copy EC-3: 31,838,208 bytes, SHA-256
   `2e155599e319d7a6f1ef655684bd872aaae1cd5f73d82097c589a32c572df86a`
 - OpenJOC `inspect`: 7,773 frames/access units, 1,536 samples each, container
-  accepted; current extraction reports JOC profile absent in every unit
+  accepted; every frame carries `addbsi=[0x01,0x10]`, but every normative
+  E.1.2.5 `auxdatae` bit is zero, so inspect reports “JOC extension signaled;
+  EMDF profile absent” and decode rejects the missing OAMD/JOC payload
+- MP4 inspection found one `ec-3` audio track, no dependent substream, and no
+  separate metadata/JOC box. Under TS 103 420 §8.2 the complexity index in
+  `addbsi` is not a substitute for the required EMDF payload; no private
+  carrier was inferred.
 - default FFmpeg base path: six-channel 48 kHz f64 PCM, 11,939,328 samples per
   channel (temporary WAV SHA-256
   `a065dc5d303b44e97943d3d8fa95e784559f157b2c220208112fd31b4a5997e2`)
@@ -75,9 +81,11 @@ unit, so delay, per-channel numerical error, and an internal peak/RMS vector
 are explicitly `not available`; this is the required comparison failure
 record, not a pass.
 
-This is a useful real-vector failure report, not a completion claim. The
-nonzero JOC/OAMD acceptance lane remains open until the carrier extraction and
-internal base path are corrected and compared against legal ground truth.
+This is a useful container/diagnostic failure report, not a completion claim.
+The nonzero JOC/OAMD acceptance lane remains open until a legal DEE fixture
+with actual EMDF OAMD/JOC payloads is supplied or independently located from
+authorized sources; the carrier extraction and internal base path must then be
+validated against known ground truth.
 
 ## Verification commands
 

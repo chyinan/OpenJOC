@@ -1701,6 +1701,38 @@ pub fn extract_aux_joc_access_unit(
     }))
 }
 
+/// Extracts the TS 103 420 `addbsi` extension from one E-AC-3 access unit.
+///
+/// This helper is intentionally independent of EMDF extraction. It is used by
+/// diagnostics to distinguish a stream that signals the JOC extension from a
+/// stream that actually carries the required OAMD/JOC EMDF payloads.
+///
+/// # Errors
+/// Returns an error for an invalid access-unit range, truncated frame, or
+/// malformed `addbsi` syntax.
+pub fn extract_joc_addbsi_access_unit(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+) -> Result<Option<JocAddbsi>, Eac3Error> {
+    let end_frame = unit
+        .first_frame
+        .checked_add(unit.frame_count)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    let unit_frames = frames
+        .get(unit.first_frame..end_frame)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    for entry in unit_frames {
+        let frame = frame_bytes(stream, *entry)?;
+        let bsi = parse_bsi(frame)?;
+        let Some(addbsi) = bsi.addbsi else {
+            continue;
+        };
+        return parse_joc_addbsi(&addbsi).map(Some);
+    }
+    Ok(None)
+}
+
 fn frame_bytes(stream: &[u8], entry: SyncframeIndexEntry) -> Result<&[u8], Eac3Error> {
     let end = entry
         .offset
