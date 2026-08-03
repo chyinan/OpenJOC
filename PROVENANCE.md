@@ -465,8 +465,10 @@ frame behavior is covered by integration tests.
   conditionals; reserved-SNR rejection; invalid block-start dimensions; exact
   55-bit retention; and the block-start equation at 128-byte/one-block,
   128-byte/six-block, 130-byte/six-block, and 256-byte/three-block boundaries
-  are covered by the 19 `openjoc-eac3` tests. Full E.1.2.4 audio-block,
-  exponent, bit-allocation, and mantissa traversal remains incomplete.
+  are covered by the 19 `openjoc-eac3` tests. The subsequent E.1.2.4
+  audio-block parser now consumes exponent, bit-allocation, mantissa, skip,
+  coupling, SPX, and AHT branches atomically; its direct syncframe-to-PCM
+  boundary is documented in the later transform section.
 
 ### Enhanced AC-3 audio-block dimensions
 
@@ -489,7 +491,8 @@ frame behavior is covered by integration tests.
   and increasing grouped-exponent examples validate differential accumulation
   and D15/D25/D45 replication; malformed dimensions, grouped code 125,
   exponent underflow, and group-count mismatch are rejected. Coupling, SPX,
-  bit allocation, and mantissa traversal remain incomplete.
+  bit allocation, and mantissa traversal are exercised by the complete
+  audio-block integration section below.
 
 ### Enhanced AC-3 mantissa expansion and traversal
 
@@ -1019,15 +1022,15 @@ frame behavior is covered by integration tests.
 - Validation: present and absent carriers, exact forward byte order, declared
   length exceeding the frame prefix, and an actual bounded EMDF synchronization
   header/container/protection unit carried inside an E-AC-3 frame are tested.
-  Audio-block `skipfld` carriage remains incomplete and is not conflated with
-  this path. For that remaining path, TS 102 366 pages 44 and 116 through 124
-  were rendered losslessly at 300 DPI with Poppler 26.02.0 and visually
-  inspected. Page 117 establishes the frame-level `skipflde`; page 124 places
-  `skiple`, the 9-bit byte count, and exactly `skipl × 8` data bits immediately
-  before variable-length mantissas; page 44 confirms the byte-count semantics.
-  Because later blocks can only be reached after consuming those mantissas,
-  the implementation shall use full normative audio-block traversal and shall
-  not search for an EMDF syncword or implement a first-block-only shortcut.
+  Audio-block `skipfld` carriage is handled by the full
+  `decode_audio_blocks` traversal and is not conflated with this reverse
+  carrier extraction path. TS 102 366 pages 44 and 116 through 124 were
+  rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected:
+  page 117 establishes frame-level `skipflde`; page 124 places `skiple`, the
+  9-bit byte count, and exactly `skipl × 8` data bits immediately before
+  variable-length mantissas; page 44 confirms the byte-count semantics. The
+  carrier extractor continues to use only the normative frame-end location
+  and never searches mantissa bytes for an EMDF syncword.
 
 ### JOC-profile access-unit extraction and placement
 
@@ -1188,8 +1191,8 @@ derivation; no decoder implementation was consulted.
   clause-6.4.4 factor of eight, exact 37..73 coupling placement, negation
   of the first right-channel sub-band, and 256-bin audio-block output. The
   enhanced-coupling fixture checks that both sparse reconstructed regions are
-  merged into complete channel vectors. Full block-to-PCM integration remains
-  a separate stage.
+  merged into complete channel vectors before the downstream transform and
+  PCM stages.
 
 ### Enhanced coupling coefficient reconstruction
 
