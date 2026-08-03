@@ -486,6 +486,28 @@ frame behavior is covered by integration tests.
   exponent underflow, and group-count mismatch are rejected. Coupling, SPX,
   bit allocation, and mantissa traversal remain incomplete.
 
+### Enhanced AC-3 mantissa expansion and traversal
+
+- Normative source: TS 102 366 clauses 6.3.1 through 6.3.5 and Tables 6.17
+  through 6.23.
+- Official reference data: none. Pages 65 through 68 of TS 102 366 V1.4.1
+  were rendered losslessly at 300 DPI using Poppler 26.02.0 and visually
+  inspected. The inspection verified the qntztab entries, fractional
+  two's-complement range, all symmetric lookup tables, and the layout-sensitive
+  triplet/pair ungrouping equations.
+- Design rationale: expose the normative quantizer table as typed data; decode
+  asymmetric words by sign-extending the qntztab-width word with the binary
+  point left of the MSB; decode symmetric tables as exact level fractions; and
+  consume a packed group only at its first mantissa while ignoring dummy values
+  in a final partial group. Dither is injected as caller-supplied deterministic
+  samples so the core does not impose a random-number implementation. Exponent
+  shifts are checked against the normative 0 through 24 range.
+- Validation: every Table 6.17/6.18 bap row, symmetric table endpoint,
+  asymmetric sign boundary, legal packed-group endpoint, cross-exponent-set
+  grouped traversal, bap-zero zero/dither behavior, malformed dimensions,
+  invalid codes, missing dither, and exponent overflow are covered by
+  `crates/openjoc-eac3/tests/mantissa.rs`.
+
 ### Enhanced AC-3 spectral-extension dimensions
 
 - Normative source: TS 102 366 clauses E.1.2.4, E.1.3.3.5, and E.1.3.3.6.

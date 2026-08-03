@@ -4,6 +4,7 @@
 
 mod audio_block;
 mod bit_allocation;
+mod mantissa;
 
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
@@ -17,6 +18,10 @@ pub use bit_allocation::{
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
     compute_bap, compute_excitation, compute_masking_curve, decode_bit_allocation_parameters,
     exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add,
+};
+pub use mantissa::{
+    MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer, shift_mantissa,
+    ungroup_mantissa_code,
 };
 
 use core::fmt;
@@ -90,6 +95,28 @@ pub enum Eac3Error {
     },
     InvalidExponentDimensions {
         end_mantissa: usize,
+    },
+    InvalidMantissaBap {
+        actual: u8,
+    },
+    InvalidMantissaCode {
+        bap: u8,
+        actual: u16,
+    },
+    InvalidMantissaGroupCode {
+        bap: u8,
+        actual: u16,
+    },
+    MantissaExponentLengthMismatch {
+        baps: usize,
+        exponents: usize,
+    },
+    MantissaDitherLengthMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    MissingDitherValue {
+        index: usize,
     },
     InvalidSpectralExtensionCode {
         begin_code: u8,
@@ -239,6 +266,30 @@ impl Eac3Error {
                 formatter,
                 "invalid first-block E-AC-3 delta bit allocation strategy {actual}"
             )),
+            Self::InvalidMantissaBap { actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 mantissa bit allocation pointer {actual}"
+            )),
+            Self::InvalidMantissaCode { bap, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 mantissa code {actual} for bap {bap}"
+            )),
+            Self::InvalidMantissaGroupCode { bap, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 mantissa group code {actual} for bap {bap}"
+            )),
+            Self::MantissaExponentLengthMismatch { baps, exponents } => Some(write!(
+                formatter,
+                "E-AC-3 mantissa/exponent length mismatch: {baps} baps and {exponents} exponents"
+            )),
+            Self::MantissaDitherLengthMismatch { expected, actual } => Some(write!(
+                formatter,
+                "E-AC-3 mantissa/dither length mismatch: expected {expected}, got {actual}"
+            )),
+            Self::MissingDitherValue { index } => Some(write!(
+                formatter,
+                "missing E-AC-3 dither value at mantissa {index}"
+            )),
             _ => None,
         }
     }
@@ -330,6 +381,12 @@ impl fmt::Display for Eac3Error {
             | Self::ExponentOutOfRange { .. }
             | Self::ExponentGroupCountMismatch { .. }
             | Self::InvalidExponentDimensions { .. }
+            | Self::InvalidMantissaBap { .. }
+            | Self::InvalidMantissaCode { .. }
+            | Self::InvalidMantissaGroupCode { .. }
+            | Self::MantissaExponentLengthMismatch { .. }
+            | Self::MantissaDitherLengthMismatch { .. }
+            | Self::MissingDitherValue { .. }
             | Self::InvalidBlockStartDimensions { .. }
             | Self::MissingIndependentSubstreamZero { .. }
             | Self::NonsequentialIndependentSubstream { .. }
