@@ -75,6 +75,34 @@ FFmpeg `pcm_f64le` compatible-base reference PCM, not a final render.
    explicitly open; this increment is not a claim of complete streaming scene
    assembly.
 
+## Implemented increment: multi-fixture real-DEE carrier census and first-failure diagnosis
+
+The local command `openjoc census [MANIFEST] -o DIR`, or the equivalent
+`OPENJOC_REAL_FIXTURE_MANIFEST` environment variable, processes multiple
+user-supplied raw EC3/M4A/MP4 descriptors without committing programme bytes.
+It verifies labels and optional SHA-256 values, uses the completed input-media
+boundary, and writes deterministic machine-readable and human-readable
+reports. Reports explicitly separate validated carrier paths from unresolved
+paths and include a comparison table, payload-ID distributions, skip-field
+reachability, and the first complete internal-base failure with bit offsets.
+
+The current external corpus is recorded by stable label, hash, and size in
+`PROVENANCE.md` and `IMPLEMENTATION_REPORT.md`:
+
+| label | bytes | source SHA-256 | frames/access units | state |
+| --- | ---: | --- | ---: | --- |
+| `forever_friends` | 32,138,978 | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 7,773/7,773 | carrier unresolved |
+| `hitchcock` | 29,370,578 | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 7,146/7,146 | carrier unresolved |
+| `grand_escape` | 44,175,378 | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 10,599/10,599 | carrier unresolved |
+| `brainrot` | 16,283,910 | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 3,910/3,910 | carrier unresolved |
+
+All four currently show `addbsi` complexity 16 and zero frame-end
+`auxdatae`; no IDs 11/14 were located in that validated carrier. The
+parse-only boundary reaches the first audio-block prefix and marks later
+blocks unresolved rather than claiming carrier absence. The corpus remains a
+diagnostic lane, not legal nonzero JOC/OAMD acceptance or internal-base
+fidelity evidence.
+
 ## Explicit open goals after the current increment
 
 - Establish a user-supplied legal DEE real-vector lane without committing
@@ -88,7 +116,8 @@ FFmpeg `pcm_f64le` compatible-base reference PCM, not a final render.
   bounded to those validated carrier paths. No separate metadata/JOC track or
   recognized box was found, but audio-block `skipfld` carriage has not been
   ruled out because full internal audio-block traversal fails before that lane
-  is completely validated. Do not infer that `skipfld` is present, and do not
+  is completely validated. This is not evidence about unvalidated legal
+  carrier paths. Do not infer that `skipfld` is present, and do not
   count this as the real vector until all required payload and PCM evidence is
   available.
 - Complete all-carrier EMDF integration, including bounded validation of

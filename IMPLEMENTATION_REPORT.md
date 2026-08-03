@@ -43,7 +43,8 @@ black boxes and never uses their decoded PCM as object reconstruction.
 
 The installed toolchain was rechecked on the current worktree: Poppler
 26.02.0 (`pdftoppm`, `pdftotext`, and `pdfinfo`) and FFmpeg/FFprobe are
-available on `PATH`. The supplied DEE file still has SHA-256
+available on `PATH`. The supplied external DEE fixture labelled
+`forever_friends` still has SHA-256
 `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` and size
 32,138,978 bytes. Running
 `OPENJOC_DEE_FIXTURE=<that path> cargo test -p openjoc-cli --test container
@@ -53,18 +54,62 @@ test independently demuxed and indexed all 7,773 access units. A release
 7,773 access units. The CLI's current diagnostic wording is “JOC extension
 signaled ... EMDF profile absent”. That wording means the currently validated
 frame-end auxiliary extractor did not locate a recognized OAMD/JOC EMDF pair;
-it does not prove that the complete E-AC-3 stream contains no EMDF. No
+it does not establish EMDF absence from every legal E-AC-3 carrier. No
 separate metadata or recognized JOC box was found at the ISO BMFF track/box
 level, while audio-block `skipfld` carriage remains unruled out because the
 full internal traversal fails before that real-fixture lane is completely
 validated. This refresh strengthens the container evidence only and does not
 change the open real-vector status.
 
+## Implemented increment: external multi-fixture carrier census
+
+`openjoc census [MANIFEST] -o DIR` (or
+`OPENJOC_REAL_FIXTURE_MANIFEST=<path>`) accepts a local JSON manifest of
+user-supplied raw EC3/M4A/MP4 fixtures. The manifest is gitignored by default;
+labels, optional SHA-256 values, and notes are checked before any demux. The
+command emits deterministic `census.json` and `census.txt` reports without
+copying programme bytes into the repository. Missing manifests/files, duplicate
+labels, hash mismatches, unsupported inputs, probe failures, and bounded demux
+failures are structured errors.
+
+Each fixture report records source and stream-copy hashes and sizes, selected
+track metadata, syncframe/access-unit/sample counts, substream topology,
+`addbsi` and complexity distributions, frame-end `auxdatae`/EMDF attempts,
+payload IDs 11/14, skip-field bytes reached, unresolved blocks, malformed
+carrier cases, and the first bounded failure. Carrier states distinguish
+“extension signaled but no EMDF in validated carriers” from “carrier
+unresolved”; the latter is not an EMDF-absence claim. The text report starts
+with a cross-fixture comparison table.
+
+The current opt-in external corpus contains four non-committed DEE outputs:
+
+| label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | payload 11/14 | state |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | false/false | carrier unresolved |
+| `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | false/false | carrier unresolved |
+| `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | false/false | carrier unresolved |
+| `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | false/false | carrier unresolved |
+
+All four are ISO BMFF files with one 48 kHz six-channel `eac3` stream and
+1,536 samples per access unit. No payload IDs 11 or 14 were located in the
+currently bounded frame-end carrier. The parse-only walker reaches each first
+audio-block prefix but leaves later blocks unresolved; it does not scan
+mantissa bytes for EMDF. The first complete internal-base failures are:
+
+```text
+forever_friends: bap 3, raw 7, channel 0, frame bit 2828
+hitchcock:       bap 3, raw 7, channel 0, frame bit 2084
+grand_escape:    bap 5, raw 15, channel 1, frame bit 1726
+brainrot:        bap 3, raw 7, channel 1, frame bit 1774
+```
+
+The diagnostics identify reproducible syntax failures; they do not establish
+nonzero JOC/OAMD reconstruction or internal-base fidelity.
+
 ## User-supplied DEE fixture evidence
 
-The legal fixture is intentionally not committed:
-
-`D:\DRV SA PROJECT\Dolby ATMOS\Forever Friends ~Dolby ATMOS Test2~ .m4a`
+The external fixture is intentionally not committed (stable label:
+`forever_friends`).
 
 - SHA-256: `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896`
 - size: 32,138,978 bytes
@@ -77,7 +122,7 @@ The legal fixture is intentionally not committed:
   inspected normative E.1.2.5 frame-end `auxdatae` bit is zero. The current
   diagnostic wording is “JOC extension signaled; EMDF profile absent”; this
   means that the validated frame-end auxiliary profile extractor did not locate
-  OAMD/JOC EMDF, not that the complete E-AC-3 stream contains no EMDF.
+  OAMD/JOC EMDF; this is not evidence about unvalidated legal carrier paths.
 - ISO BMFF inspection found one `ec-3` audio track, no dependent substream,
   and no separate metadata/JOC box or recognized metadata box. Under TS
   103 420 §8.2 the complexity index in `addbsi` is not a substitute for the
@@ -178,9 +223,9 @@ cargo test -p openjoc-cli --test container -- --nocapture
 cargo test -p openjoc-cli
 ```
 
-Recorded full-workspace quality gates for the borrowed frame-sink implementation
-working tree represented by commit
-`a2b96aa4475da3522794c82e189c5602046dcf3b` passed:
+The full-workspace quality gates were rerun at code HEAD
+`7f43db05d6876314d8d5ec5415840605c3204d54` (before this documentation-only
+commit) and passed:
 
 ```text
 cargo fmt --all -- --check
@@ -191,9 +236,9 @@ git diff --check
 ```
 
 This includes the workspace-wide all-feature test suite, strict clippy, the
-offline release build, and a clean diff check. The gates were recorded before
-the later container-audit and banner-only commits; they were not rerun for the
-current HEAD or this documentation-only change.
+offline release build, and a clean diff check. The later commit from this
+increment changes documentation only; no production source or test file is
+changed by that commit.
 
 ## Revision and verification ledger
 
@@ -202,6 +247,10 @@ current HEAD or this documentation-only change.
 - Trim retention: `2303f33a2b7e86656020992015a1f88ab5ec1e6f`.
 - Frame-local scene staging: `241cb0334ec735dde7516613db0987b101b86f06`.
 - Borrowed per-frame debug sink: `a2b96aa4475da3522794c82e189c5602046dcf3b`.
+- Bounded E-AC-3 carrier inspection and first-failure diagnostics:
+  `d38c00c81740db15062256d1c5651c40a295f279`.
+- External multi-fixture census harness and CLI report integration:
+  `7f43db05d6876314d8d5ec5415840605c3204d54`.
 - Container evidence/status audit: documentation-only commit
   `cf9dcd4bbb31e13dd6f47c807aba15f6e0460c30`.
 - Later status/documentation-only commits: container evidence/status audit

@@ -1068,9 +1068,11 @@ frame behavior is covered by integration tests.
 - Validation: present and absent carriers, exact forward byte order, declared
   length exceeding the frame prefix, and an actual bounded EMDF synchronization
   header/container/protection unit carried inside an E-AC-3 frame are tested.
-  Audio-block `skipfld` carriage is handled by the full
-  `decode_audio_blocks` traversal and is not conflated with this reverse
-  carrier extraction path. TS 102 366 pages 44 and 116 through 124 were
+  Audio-block `skipfld` carriage is not conflated with this reverse carrier
+  extraction path. The parse-only `inspect_audio_block_carriers` boundary
+  reaches the first block prefix without mantissa/PCM synthesis; the complete
+  `decode_audio_blocks` traversal remains the path used for full audio decode.
+  TS 102 366 pages 44 and 116 through 124 were
   rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected:
   page 117 establishes frame-level `skipflde`; page 124 places `skiple`, the
   9-bit byte count, and exactly `skipl × 8` data bits immediately before
@@ -1136,14 +1138,61 @@ frame behavior is covered by integration tests.
   channel-major PCM by each access unit's declared block timing; and pass each
   aligned frame through the existing atomic `PayloadDecoder`. The functional
   core accepts decoded PCM directly, while the CLI shell either reads a
-  caller-supplied WAV or invokes FFmpeg to create a retained
-  `debug/downmix.wav` artifact.
+  caller-supplied WAV or invokes FFmpeg to create the retained
+  `debug/compatible_base.wav` artifact.
 - Validation: an actual CLI-process test supplies one 1,536-sample access unit,
   five-channel aligned PCM, valid inactive OAMD, and valid absent-object JOC;
   the direct `.ec3` command writes a scene, timeline, per-frame debug dumps,
   and an exact 1,536-sample reconstructed object WAV. A legal encoded JOC
   vector and `skipfld` carriage remain required before this path is fully
   verified.
+
+### External real-DEE fixture census and first-failure diagnostics
+
+- Normative source: TS 102 366 clauses E.1.2, E.1.2.5, E.1.3.1.2, and
+  E.2.8.2 for bounded syncframe, access-unit, audio-block, and `skipfld`
+  traversal; TS 103 420 clauses 8.2 and 8.3 and Annex H for bounded EMDF,
+  OAMD, JOC, and `addbsi` interpretation.
+- External tools: FFprobe/FFmpeg are used only through the documented
+  input-media boundary for track probing, stream-copy demux, and compatible
+  base-channel reference PCM. No external decoder implementation is used to
+  interpret codec metadata.
+- Design rationale: `OPENJOC_REAL_FIXTURE_MANIFEST` (or an explicit manifest
+  argument) loads stable labels, optional hashes, and user notes without
+  copying programme bytes into the repository. Entries are sorted by label;
+  source and demuxed hashes, bounded frame/index counts, addbsi/complexity,
+  frame-end auxiliary attempts, reached first-block prefixes, unresolved later
+  blocks, payload IDs, and first failures are emitted to JSON and text reports.
+  The report uses explicit carrier states so “not found in validated paths”
+  cannot be confused with an untraversed carrier.
+- Parse-only boundary: `inspect_audio_block_carriers` follows the checked BSI
+  and `audfrm` cursor to the first `audblk` side-information prefix and its
+  declared skip field without mantissa decoding or PCM synthesis. Later block
+  starts remain `unresolved` until a normative mantissa cursor is proven; no
+  bytes are scanned for EMDF outside declared carrier ranges.
+- First-failure diagnostics: complete internal-base decode wraps invalid
+  mantissa code errors with element, channel, block, BAP, raw code, quantizer
+  width, grouped state, and frame-relative bit offset. The census additionally
+  records access-unit/syncframe and elementary-stream offsets. This is a
+  diagnosis aid, not a correction of the normative decoder.
+- Validation: unit tests cover duplicate/empty manifests, hash and missing
+  fixture errors, stable report ordering, carrier-state ordering, reached
+  prefixes versus unresolved blocks, and existing raw/container paths. An
+  opt-in four-fixture external corpus run produced the following evidence;
+  programme bytes are not committed:
+
+  | label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | state | first complete-decode failure |
+  | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+  | `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | carrier unresolved | bap 3, raw 7, channel 1, bit 1,774 |
+  | `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | carrier unresolved | bap 3, raw 7, channel 0, bit 2,828 |
+  | `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | carrier unresolved | bap 5, raw 15, channel 1, bit 1,726 |
+  | `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | carrier unresolved | bap 3, raw 7, channel 0, bit 2,084 |
+
+  All four inputs are ISO BMFF with one 48 kHz six-channel `eac3` stream and
+  1,536 samples per access unit. Every inspected frame has `addbsi` bytes
+  `01:10`; no payload IDs 11 or 14 were located in the currently bounded
+  frame-end carrier. All four reports retain unresolved audio-block carrier
+  counts, so they are not legal nonzero JOC/OAMD acceptance vectors.
 
 ## Ambiguities and open normative questions
 
@@ -1390,8 +1439,8 @@ and a test or explicit TODO before implementation proceeds.
 
 ### User-supplied legal DEE fixture (acceptance lane remains open)
 
-- Fixture is not committed to this repository. The supplied path was
-  `D:\DRV SA PROJECT\Dolby ATMOS\Forever Friends ~Dolby ATMOS Test2~ .m4a`.
+- Fixture is not committed to this repository. Stable label:
+  `forever_friends` (external user-supplied fixture).
 - Recorded SHA-256: `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896`.
   Size: 32,138,978 bytes. FFprobe reports ISO BMFF with one MJPEG video stream
   (index 0) and one `eac3` audio stream (index 1), 48 kHz, six channels,
@@ -1408,8 +1457,8 @@ and a test or explicit TODO before implementation proceeds.
   JOC box. The current frame-end profile extractor therefore did not locate
   OAMD/JOC EMDF in the validated carrier paths. The CLI literally reports
   “JOC extension signaled ... EMDF profile absent”; that diagnostic is bounded
-  to those paths and does not prove that the complete E-AC-3 stream contains
-  no EMDF. Audio-block `skipfld` carriage has not been ruled out because the
+  to those paths and does not establish EMDF absence from every legal carrier.
+  Audio-block `skipfld` carriage has not been ruled out because the
   full internal audio-block traversal fails before that real-fixture lane is
   completely validated; no claim is made that `skipfld` carriage is present.
 - Default FFmpeg base extraction produces six-channel 48 kHz f64 PCM
