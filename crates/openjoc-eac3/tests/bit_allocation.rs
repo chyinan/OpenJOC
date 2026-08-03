@@ -2,8 +2,9 @@ use openjoc_eac3::{
     BitAllocationBand, BitAllocationParameters, DeltaBitAllocationElement,
     DeltaBitAllocationSegment, Eac3Error, FixedBitAllocationParameters, apply_delta_bit_allocation,
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
-    compute_bap, compute_excitation, compute_masking_curve, decode_bit_allocation_parameters,
-    exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add,
+    compute_bap, compute_element_bap, compute_excitation, compute_masking_curve,
+    decode_bit_allocation_parameters, exponents_to_psd, high_efficiency_bit_allocation_pointer,
+    integrate_psd, log_add, snr_offset, snr_offsets_are_zero,
 };
 
 fn stage_parameters() -> FixedBitAllocationParameters {
@@ -76,6 +77,45 @@ fn maps_every_legal_exponent_to_normative_log_psd() {
         .collect::<Vec<_>>();
 
     assert_eq!(exponents_to_psd(&exponents), Ok(expected));
+}
+
+#[test]
+fn computes_normative_snr_offset_from_coarse_and_fine_codes() {
+    assert_eq!(snr_offset(0, 0), Ok(-960));
+    assert_eq!(snr_offset(15, 0), Ok(0));
+    assert_eq!(snr_offset(15, 15), Ok(60));
+    assert_eq!(snr_offset(63, 15), Ok(3132));
+}
+
+#[test]
+fn detects_the_all_zero_snr_special_case() {
+    assert_eq!(snr_offsets_are_zero(0, &[0, 0, 0]), Ok(true));
+    assert_eq!(snr_offsets_are_zero(0, &[0, 1, 0]), Ok(false));
+    assert_eq!(snr_offsets_are_zero(1, &[0, 0]), Ok(false));
+}
+
+#[test]
+fn computes_one_uncoupled_element_bap_from_exponents_through_final_pointer() {
+    let baps = compute_element_bap(
+        &[24; 7],
+        0,
+        7,
+        BitAllocationParameters {
+            slow_decay_code: 0,
+            fast_decay_code: 0,
+            slow_gain_code: 0,
+            db_per_bit_code: 0,
+            floor_code: 0,
+        },
+        0,
+        16,
+        0,
+        0,
+        None,
+        None,
+    )
+    .expect("one-bin element is valid");
+    assert_eq!(baps, vec![0; 7]);
 }
 
 #[test]

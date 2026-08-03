@@ -120,3 +120,17 @@ algorithm's branch structure requires the condition to govern the block.
 OpenJOC therefore implements the structured branch interpretation and keeps
 this as an explicit compatibility/TODO item pending an ETSI correction. No
 decoder implementation was consulted.
+
+## TS 102 366 SNR-offset shift ambiguity
+
+The initialization pseudocode on V1.4.1 page 57 prints the uncoupled,
+coupling, and LFE expressions as
+`((csnroffst - 15) << 4 + <fine>) << 2`. The same source layout is present in
+the inspected V1.1.1, V1.2.1, and V1.3.1 artifacts. In C-like precedence,
+the unparenthesized `+` would be part of the right shift count, which is not
+consistent with the defined coarse/fine fixed-point fields or the bounded
+SNR-offset domain. The only dimensionally consistent reading is
+`(((csnroffst - 15) << 4) + fine) << 2`, i.e. `(coarse - 15) * 64 + fine * 4`.
+OpenJOC records this as an explicit normative ambiguity and uses that reading
+for the pure offset helper. A legal conformance vector or ETSI correction
+remains the compatibility gate; no decoder implementation was consulted.

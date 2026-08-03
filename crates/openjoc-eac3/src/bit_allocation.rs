@@ -365,6 +365,118 @@ pub fn exponents_to_psd(exponents: &[u8]) -> Result<Vec<i16>, Eac3Error> {
         .collect()
 }
 
+/// Evaluates the clause 6.2.2.1 coarse/fine SNR-offset expression.
+///
+/// The V1.4.1 pseudocode prints `((coarse - 15) << 4 + fine) << 2` without
+/// grouping the addition. The field widths and fixed-point scale require the
+/// dimensionally consistent interpretation `(((coarse - 15) << 4) + fine) <<
+/// 2`, which is `(coarse - 15) * 64 + fine * 4`. This ambiguity is recorded in
+/// `RESEARCH_NOTES.md` and must remain visible until a legal conformance vector
+/// or ETSI correction settles it.
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidBitAllocationParameterCode`] when either code
+/// exceeds its normative field width.
+pub fn snr_offset(coarse_code: u8, fine_code: u8) -> Result<i16, Eac3Error> {
+    if coarse_code > 63 {
+        return Err(Eac3Error::InvalidBitAllocationParameterCode {
+            parameter: "coarse SNR offset",
+            actual: coarse_code,
+        });
+    }
+    if fine_code > 15 {
+        return Err(Eac3Error::InvalidBitAllocationParameterCode {
+            parameter: "fine SNR offset",
+            actual: fine_code,
+        });
+    }
+    Ok((i16::from(coarse_code) - 15) * 64 + i16::from(fine_code) * 4)
+}
+
+/// Checks the clause 6.2.2.1 all-zero SNR special case.
+///
+/// When the coarse code and every active fine code are zero, the normative
+/// decoder sets every element of `bap[]` to zero and skips the remaining
+/// parametric allocation stages for that block. The caller supplies all active
+/// fine codes, including coupling and LFE when present.
+///
+/// # Errors
+/// Returns [`Eac3Error::InvalidBitAllocationParameterCode`] for a value wider
+/// than its transmitted field.
+pub fn snr_offsets_are_zero(coarse_code: u8, fine_codes: &[u8]) -> Result<bool, Eac3Error> {
+    let _ = snr_offset(coarse_code, 0)?;
+    for &fine_code in fine_codes {
+        let _ = snr_offset(15, fine_code)?;
+    }
+    Ok(coarse_code == 0 && fine_codes.iter().all(|&fine| fine == 0))
+}
+
+/// Computes one element's complete clause 6.2.2 parametric `bap[]` array.
+///
+/// `exponents` is a full-bin exponent array; only `start..end` participates in
+/// this element. `coupling_leaks` selects the coupling initialization path and
+/// contains the transmitted three-bit fast and slow leak codes. `delta` is the
+/// optional element-specific delta-bit-allocation segment list. The caller is
+/// responsible for applying the all-zero SNR special case before invoking this
+/// function.
+///
+/// # Errors
+/// Returns a checked E-AC-3 error for malformed exponent dimensions, parameter
+/// codes, spectral ranges, or delta allocation.
+pub fn compute_element_bap(
+    exponents: &[u8],
+    start: usize,
+    end: usize,
+    parameter_codes: crate::BitAllocationParameters,
+    fast_gain_code: u8,
+    coarse_snr_code: u8,
+    fine_snr_code: u8,
+    fscod: u8,
+    delta: Option<&crate::DeltaBitAllocationElement>,
+    coupling_leaks: Option<(u8, u8)>,
+) -> Result<Vec<u8>, Eac3Error> {
+    let psd = exponents_to_psd(exponents)?;
+    if start >= end || end > psd.len() || end > 253 {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let bndpsd = integrate_psd(&psd, start, end)?;
+    let parameters = decode_bit_allocation_parameters(parameter_codes, fast_gain_code)?;
+    let initial_leaks = coupling_leaks
+        .map(|(fast_code, slow_code)| {
+            if fast_code > 7 {
+                return Err(Eac3Error::InvalidBitAllocationParameterCode {
+                    parameter: "coupling fast leak",
+                    actual: fast_code,
+                });
+            }
+            if slow_code > 7 {
+                return Err(Eac3Error::InvalidBitAllocationParameterCode {
+                    parameter: "coupling slow leak",
+                    actual: slow_code,
+                });
+            }
+            Ok((
+                (i16::from(fast_code) << 8) + 768,
+                (i16::from(slow_code) << 8) + 768,
+            ))
+        })
+        .transpose()?;
+    let excite = compute_excitation(&psd, &bndpsd, start, end, parameters, initial_leaks)?;
+    let mask = compute_masking_curve(&bndpsd, &excite, start, end, fscod, parameters.db_per_bit)?;
+    let mask = match delta {
+        Some(delta) => apply_delta_bit_allocation(&mask, delta)?,
+        None => mask,
+    };
+    compute_bap(
+        &psd,
+        &mask,
+        start,
+        end,
+        snr_offset(coarse_snr_code, fine_snr_code)?,
+        parameters.floor,
+    )
+}
+
 fn table_value<const N: usize>(
     table: &[i16; N],
     parameter: &'static str,

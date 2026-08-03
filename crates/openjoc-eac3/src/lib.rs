@@ -16,8 +16,9 @@ pub use audio_block::{
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
-    compute_bap, compute_excitation, compute_masking_curve, decode_bit_allocation_parameters,
-    exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add,
+    compute_bap, compute_element_bap, compute_excitation, compute_masking_curve,
+    decode_bit_allocation_parameters, exponents_to_psd, high_efficiency_bit_allocation_pointer,
+    integrate_psd, log_add, snr_offset, snr_offsets_are_zero,
 };
 pub use mantissa::{
     MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer, shift_mantissa,

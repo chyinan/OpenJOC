@@ -667,6 +667,20 @@ frame behavior is covered by integration tests.
 - Validation: an exhaustive test maps all 25 legal exponents from 0 through 24
   and an explicit malformed case rejects 25.
 
+### Enhanced AC-3 SNR-offset initialization
+
+- Normative source: TS 102 366 clause 6.2.2.1 and page-57 initialization
+  pseudocode for uncoupled, coupling, and LFE elements.
+- Official reference data: V1.4.1 page 57 and the matching V1.1.1, V1.2.1,
+  and V1.3.1 pages rendered with Poppler 26.02.0 at 300 DPI.
+- Design rationale: the printed `<< 4 + fine` grouping is ambiguous under
+  C-like operator precedence. The field widths and fixed-point scale require
+  `(((coarse - 15) << 4) + fine) << 2`, implemented as
+  `(coarse - 15) * 64 + fine * 4`; the ambiguity is retained explicitly in
+  `RESEARCH_NOTES.md` and must be checked against a legal vector or corrigendum.
+- Validation: exhaustive legal coarse/fine boundary tests, an all-zero special
+  case test, and a representative channel bit-allocation pipeline test.
+
 ### Enhanced AC-3 PSD log-addition and integration
 
 - Normative source: TS 102 366 clause 6.2.2.3 and Table 6.14.
