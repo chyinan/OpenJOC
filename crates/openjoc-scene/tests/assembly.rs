@@ -1,9 +1,9 @@
 use openjoc_oamd::{
-    ContentDescription, Distance, ExtendedObjectElement, Extent3 as OamdExtent3, Gain,
+    ContentDescription, Distance, ExtendedObjectElement, Extent3 as OamdExtent3, Gain, GlobalTrim,
     MetadataBlockTiming, MetadataTiming, OamdContentPrefix, OamdElement, OamdElementMetadata,
     OamdPayload, ObjectBasicInfo, ObjectClass as OamdObjectClass, ObjectElement, ObjectRenderInfo,
     ObjectUpdate, Position3 as OamdPosition3, PositionCoding, ReferenceScreen,
-    StandardPositionBits, ZoneConstraint as OamdZoneConstraint,
+    StandardPositionBits, TrimElement, WarpMode, ZoneConstraint as OamdZoneConstraint,
 };
 use openjoc_scene::{ObjectClass, Position, Position3, SceneBuilder, ZoneConstraint};
 
@@ -135,5 +135,41 @@ fn applies_extended_precision_before_scene_position_conversion() {
             y: 0.5,
             z: 0.0,
         })
+    );
+}
+
+#[test]
+fn retains_complete_trim_state_in_the_renderer_independent_scene() {
+    let mut oamd = payload();
+    if let OamdElement::Objects(objects) = &mut oamd.elements[0].element {
+        objects.timing.blocks[0].start_sample = 0;
+    }
+    oamd.elements.push(OamdElementMetadata {
+        id: 2,
+        alternate_data_id: None,
+        discard_unknown: false,
+        element: OamdElement::Trim(TrimElement {
+            warp_mode: WarpMode::DoubleY,
+            global_trim: GlobalTrim::Disabled,
+            disable_trim_per_object: vec![true],
+            consumed_bits: 9,
+        }),
+    });
+    let mut builder = SceneBuilder::new(48_000, &oamd.prefix).expect("valid content");
+    builder
+        .append_frame(&[vec![0.0]], &oamd, None)
+        .expect("aligned frame");
+    let scene = builder.finish().expect("valid scene");
+
+    assert_eq!(scene.trim_timeline.len(), 1);
+    assert_eq!(scene.trim_timeline[0].start_sample, 0);
+    assert_eq!(scene.trim_timeline[0].trim.warp_mode, WarpMode::DoubleY);
+    assert_eq!(
+        scene.trim_timeline[0].trim.global_trim,
+        GlobalTrim::Disabled
+    );
+    assert_eq!(
+        scene.trim_timeline[0].trim.disable_trim_per_object,
+        vec![true]
     );
 }

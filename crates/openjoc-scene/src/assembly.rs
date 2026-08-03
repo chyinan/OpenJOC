@@ -2,7 +2,7 @@
 
 use crate::{
     Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, SceneError, SpeakerLabel, ZoneConstraint,
+    Position3, SceneError, SpeakerLabel, TrimUpdate, ZoneConstraint,
 };
 use openjoc_oamd::{
     ExtendedObjectElement, Gain, IsfRing as OamdIsfRing, OamdContentPrefix, OamdElement, OamdError,
@@ -104,6 +104,7 @@ impl SceneBuilder {
                 duration_samples: 0,
                 objects,
                 metadata_timeline: Vec::new(),
+                trim_timeline: Vec::new(),
             },
             anchors,
         })
@@ -165,6 +166,14 @@ impl SceneBuilder {
                 frame_offset,
                 reference_screen,
             )?;
+        }
+        for metadata in &oamd.elements {
+            if let OamdElement::Trim(trim) = &metadata.element {
+                next.trim_timeline.push(TrimUpdate {
+                    start_sample: frame_offset,
+                    trim: trim.clone(),
+                });
+            }
         }
         next.validate()?;
         self.scene = next;

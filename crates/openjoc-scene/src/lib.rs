@@ -2,6 +2,7 @@
 
 //! Renderer-independent object-scene model for the TS 103 420 decoder interface.
 
+use openjoc_oamd::TrimElement;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
@@ -127,6 +128,13 @@ pub struct MetadataUpdate {
     pub trim_disabled: bool,
 }
 
+/// One timed, renderer-independent snapshot of decoded OAMD trim state.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct TrimUpdate {
+    pub start_sample: u64,
+    pub trim: TrimElement,
+}
+
 /// Renderer-independent scene produced by the `OpenJOC` codec core.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ObjectScene {
@@ -134,6 +142,7 @@ pub struct ObjectScene {
     pub duration_samples: u64,
     pub objects: Vec<ObjectTrack>,
     pub metadata_timeline: Vec<MetadataUpdate>,
+    pub trim_timeline: Vec<TrimUpdate>,
 }
 
 #[derive(Serialize)]
@@ -142,6 +151,7 @@ struct SceneManifest {
     duration_samples: u64,
     objects: Vec<ObjectManifest>,
     metadata_timeline: &'static str,
+    trim_timeline: &'static str,
 }
 
 #[derive(Serialize)]
@@ -177,6 +187,14 @@ pub enum SceneError {
     NonFiniteMetadata {
         object_id: u32,
     },
+    TrimOutsideScene {
+        start_sample: u64,
+    },
+    TrimObjectCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    NonFiniteTrim,
     Json(String),
 }
 
@@ -211,6 +229,17 @@ impl fmt::Display for SceneError {
             ),
             Self::NonFiniteMetadata { object_id } => {
                 write!(formatter, "object {object_id} contains non-finite metadata")
+            }
+            Self::TrimOutsideScene { start_sample } => write!(
+                formatter,
+                "trim metadata starts outside scene at sample {start_sample}"
+            ),
+            Self::TrimObjectCountMismatch { expected, actual } => write!(
+                formatter,
+                "trim metadata contains {actual} object flags, expected {expected}"
+            ),
+            Self::NonFiniteTrim => {
+                formatter.write_str("trim metadata contains non-finite controls")
             }
             Self::Json(message) => write!(formatter, "invalid scene JSON: {message}"),
         }
@@ -276,6 +305,22 @@ impl ObjectScene {
                 });
             }
         }
+        for update in &self.trim_timeline {
+            if update.start_sample >= self.duration_samples {
+                return Err(SceneError::TrimOutsideScene {
+                    start_sample: update.start_sample,
+                });
+            }
+            if update.trim.disable_trim_per_object.len() != self.objects.len() {
+                return Err(SceneError::TrimObjectCountMismatch {
+                    expected: self.objects.len(),
+                    actual: update.trim.disable_trim_per_object.len(),
+                });
+            }
+            if !trim_is_finite(&update.trim) {
+                return Err(SceneError::NonFiniteTrim);
+            }
+        }
         Ok(())
     }
 
@@ -307,6 +352,7 @@ impl ObjectScene {
                 })
                 .collect(),
             metadata_timeline: "metadata/timeline.json",
+            trim_timeline: "metadata/trim_timeline.json",
         };
         serde_json::to_string_pretty(&manifest).map_err(|error| SceneError::Json(error.to_string()))
     }
@@ -318,6 +364,13 @@ impl ObjectScene {
     pub fn to_timeline_json_pretty(&self) -> Result<String, SceneError> {
         self.validate()?;
         serde_json::to_string_pretty(&self.metadata_timeline)
+            .map_err(|error| SceneError::Json(error.to_string()))
+    }
+
+    /// Serializes the decoded trim state timeline separately from object updates.
+    pub fn to_trim_timeline_json_pretty(&self) -> Result<String, SceneError> {
+        self.validate()?;
+        serde_json::to_string_pretty(&self.trim_timeline)
             .map_err(|error| SceneError::Json(error.to_string()))
     }
 
@@ -346,5 +399,30 @@ fn position_is_finite(position: &Position) -> bool {
             interpolated_room,
         } => finite(coded) && finite(interpolated_room),
         Position::Speaker(_) | Position::IntermediateSpatial(_) => true,
+    }
+}
+
+fn trim_is_finite(trim: &TrimElement) -> bool {
+    let controls_are_finite = |controls: &openjoc_oamd::TrimControls| {
+        [
+            controls.centre_db,
+            controls.surround_db,
+            controls.height_db,
+            controls.top_bottom_y_balance,
+            controls.listener_y_balance,
+        ]
+        .into_iter()
+        .flatten()
+        .all(f64::is_finite)
+    };
+    match &trim.global_trim {
+        openjoc_oamd::GlobalTrim::Custom(configurations) => {
+            configurations.iter().all(|config| match config {
+                openjoc_oamd::TrimConfiguration::Custom(controls) => controls_are_finite(controls),
+                openjoc_oamd::TrimConfiguration::Default
+                | openjoc_oamd::TrimConfiguration::Disabled => true,
+            })
+        }
+        openjoc_oamd::GlobalTrim::Default | openjoc_oamd::GlobalTrim::Disabled => true,
     }
 }

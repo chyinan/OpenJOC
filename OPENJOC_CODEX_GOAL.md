@@ -13,7 +13,7 @@ is currently:
 raw E-AC-3 elementary stream
   + aligned base-channel PCM
   + independently parsed JOC/OAMD/EMDF
-  -> renderer-independent ObjectScene and f64 object stems
+  -> renderer-independent ObjectScene and explicit reference-f64 object stems
 ```
 
 This is not yet a complete real-world Atmos decoder or speaker/binaural
@@ -37,7 +37,7 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
 6. Verify with `cargo fmt`, strict clippy, all-feature tests, and a release
    build. Commit this increment as a resumable change.
 
-## Current active increment: explicit wave output semantics
+## Completed increment: explicit wave output semantics
 
 1. Keep reconstructed scene PCM in f64 internally and expose a checked wave
    sink supporting f32, explicit reference-f64, s24, and s16.
@@ -47,6 +47,15 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
    rejection, hard clipping, and deterministic seeded dither.
 4. Keep the compatible base-channel debug WAV explicitly named and f64; it is
    not a speaker or binaural render.
+
+## Current active increment: renderer-independent scene completeness
+
+1. Preserve decoded trim snapshots, including warp/global/custom controls,
+   balances, and per-object disable flags, without choosing a render algorithm.
+2. Export trim state as a separate timed scene artifact and validate its
+   object cardinality, timing, and finite numeric controls.
+3. Keep the real-vector acceptance lane and memory-scalability audit open until
+   they have independent evidence and streaming staging tests.
 
 ## Explicit open goals after the current increment
 
@@ -61,14 +70,11 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
 - Compare FFmpeg base-channel PCM with `--internal-base` on that legal vector,
   recording channel order/count, delay, peak, RMS, and numerical error. The
   internal base decoder is not verified until this succeeds.
-- Complete renderer-independent scene retention for every decoded trim mode,
-  global trim configuration, centre/surround/height trim, and balance control.
+- Preserve trim state in `ObjectScene` and `metadata/trim_timeline.json` without
+  imposing speaker or binaural rendering behavior. (Implemented; streaming
+  staging remains open.)
 - Replace accumulated-scene PCM cloning and whole-input/debug retention with
   frame-local atomic staging and streaming sinks.
-- Define wave output sample formats (`f32`, explicit reference `f64`, `s24`,
-  `s16`) with documented clipping and dither behavior. Normal user output is
-  `f32`; reference output remains explicitly selectable. (The format API is
-  implemented; streaming sinks remain open.)
 - Keep codec and rendering boundaries separate. Later speaker rendering targets
   stereo, 5.1, 5.1.2, 7.1.4, and 9.1.6. Later binaural rendering targets
   selectable public SOFA HRTFs. Neither is a Dolby reference or normative

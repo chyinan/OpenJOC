@@ -1,6 +1,7 @@
+use openjoc_oamd::{GlobalTrim, TrimElement, WarpMode};
 use openjoc_scene::{
     Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, SceneError, SpeakerLabel, ZoneConstraint,
+    Position3, SceneError, SpeakerLabel, TrimUpdate, ZoneConstraint,
 };
 
 fn scene() -> ObjectScene {
@@ -34,6 +35,15 @@ fn scene() -> ObjectScene {
             divergence: 0.0,
             trim_disabled: false,
         }],
+        trim_timeline: vec![TrimUpdate {
+            start_sample: 0,
+            trim: TrimElement {
+                warp_mode: WarpMode::DoubleY,
+                global_trim: GlobalTrim::Disabled,
+                disable_trim_per_object: vec![true],
+                consumed_bits: 9,
+            },
+        }],
     }
 }
 
@@ -58,6 +68,18 @@ fn artifact_json_references_wav_stems_and_separates_timeline() {
     assert!(!manifest.contains("\"pcm\""));
     assert!(manifest.contains("metadata/timeline.json"));
     assert!(timeline.contains("\"start_sample\": 1"));
+}
+
+#[test]
+fn artifact_json_retains_decoded_trim_state() {
+    let scene = scene();
+    let json = scene.to_trim_timeline_json_pretty().expect("trim timeline");
+    assert!(json.contains("double_y"));
+    assert!(json.contains("disable_trim_per_object"));
+    assert_eq!(
+        ObjectScene::from_json(&scene.to_json_pretty().unwrap()),
+        Ok(scene)
+    );
 }
 
 #[test]

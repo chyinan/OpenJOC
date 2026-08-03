@@ -328,16 +328,19 @@ frame behavior is covered by integration tests.
 - Design rationale: retain stable object IDs, object class, f64 PCM, timed
   metadata, anchor-specific positions (including explicit infinite room rays),
   size, priority, gain, channel lock, zones, divergence, and trim-disable state.
-  JSON serialization is renderer-independent and rejects non-finite or
-  cross-object/duration-inconsistent data before export. Frame assembly clones
-  scene state, applies the following ID 5 extended-precision positions before
-  converting every object/block update at `frame_offset + start_sample`,
-  associates the extension divergence and current trim-disable flags, validates,
-  then commits atomically.
+  Each decoded trim element is also retained in a timed `trim_timeline`,
+  including warp mode, global mode, all custom centre/surround/height trims,
+  both balance controls, and per-object disable flags. JSON serialization is
+  renderer-independent and rejects non-finite or cross-object/duration-
+  inconsistent data before export. Frame assembly clones scene state, applies
+  the following ID 5 extended-precision positions before converting every
+  object/block update at `frame_offset + start_sample`, associates extension
+  divergence and trim state, validates, then commits atomically.
 - Validation: JSON roundtrips cover room, infinite-ray, screen, speaker, and
   ISF anchors; decoded-structure assembly covers PCM, timing, position, gain,
-  zones, channel lock, and ID 5 position refinement; invalid sample-rate,
-  track-duration, and metadata-object boundaries are rejected.
+  zones, channel lock, ID 5 position refinement, and complete trim retention;
+  invalid sample-rate, track-duration, metadata-object, trim-object-count,
+  and trim-time boundaries are rejected.
 
 ### Object WAV serialization
 

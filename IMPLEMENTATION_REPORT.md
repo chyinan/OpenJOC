@@ -102,6 +102,16 @@ Wave tests cover all four output formats, integer range handling, dither
 reproducibility, and f64 compatibility. This increment does not change the
 renderer-independent scene boundary or claim nonzero JOC/OAMD reconstruction.
 
+## Renderer-independent trim retention increment
+
+`ObjectScene` now retains each decoded OAMD trim snapshot in a timed
+`trim_timeline`, including warp mode, global trim mode/configurations, centre,
+surround, height, top/bottom and listener-Y controls, and per-object trim
+disable flags. CLI scene artifacts write this data to
+`metadata/trim_timeline.json`; no speaker or binaural rendering behavior is
+implied. Scene validation checks trim timing, object cardinality, and finite
+custom controls. Assembly and JSON roundtrip tests cover the retained state.
+
 ## Verification commands
 
 The current container and diagnostic checks were run with:
@@ -128,6 +138,6 @@ offline release build, and a clean diff check.
 ## Known limitations and next goals
 
 The real-vector acceptance lane, FFmpeg-versus-internal-base fidelity report,
-streaming/frame-local scene staging, and full renderer-independent trim
-retention remain open. Speaker and binaural renderers are later non-normative
-components and are deliberately outside the current decoder increments.
+and streaming/frame-local scene staging remain open. Speaker and binaural
+renderers are later non-normative components and are deliberately outside the
+current decoder increments.

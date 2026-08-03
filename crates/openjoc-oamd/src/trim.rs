@@ -4,16 +4,18 @@ use std::num::NonZeroU8;
 
 use crate::OamdError;
 use openjoc_bitio::{BitRead, BitReader};
+use serde::{Deserialize, Serialize};
 
 /// Clause 5.6.5.1 object-Y adjustment applied before rendering.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WarpMode {
     None,
     DoubleY,
 }
 
 /// Optional custom controls for one trim configuration.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TrimControls {
     pub centre_db: Option<f64>,
     pub surround_db: Option<f64>,
@@ -23,7 +25,7 @@ pub struct TrimControls {
 }
 
 /// Resolved per-configuration trim mode.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TrimConfiguration {
     Default,
     Disabled,
@@ -31,7 +33,7 @@ pub enum TrimConfiguration {
 }
 
 /// Clause 5.6.5.2 global trim mode and custom configuration data.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum GlobalTrim {
     Default,
     Disabled,
@@ -39,7 +41,7 @@ pub enum GlobalTrim {
 }
 
 /// Decoded clause 5.5.12 trim element.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TrimElement {
     pub warp_mode: WarpMode,
     pub global_trim: GlobalTrim,

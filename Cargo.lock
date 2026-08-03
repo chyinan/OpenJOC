@@ -329,6 +329,7 @@ name = "openjoc-oamd"
 version = "0.1.0"
 dependencies = [
  "openjoc-bitio",
+ "serde",
 ]
 
 [[package]]

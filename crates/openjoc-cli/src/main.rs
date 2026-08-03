@@ -385,6 +385,10 @@ fn write_scene(
         metadata.join("timeline.json"),
         scene.to_timeline_json_pretty()?,
     )?;
+    fs::write(
+        metadata.join("trim_timeline.json"),
+        scene.to_trim_timeline_json_pretty()?,
+    )?;
     for object in &scene.objects {
         let filename = format!("object_{:03}.wav", object.object_id);
         fs::write(
