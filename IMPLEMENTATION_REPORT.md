@@ -223,8 +223,15 @@ cargo test -p openjoc-cli --test container -- --nocapture
 cargo test -p openjoc-cli
 ```
 
+With the local ignored manifest selected, the opt-in corpus test also passed:
+
+```text
+OPENJOC_REAL_FIXTURE_MANIFEST=<local manifest> cargo test -p openjoc-cli --all-features fixture_census -- --nocapture
+OPENJOC_REAL_FIXTURE_MANIFEST=<local manifest> cargo run -p openjoc-cli --release --offline -- --no-banner census <local manifest> -o <local report directory>
+```
+
 The full-workspace quality gates were rerun at code HEAD
-`7f43db05d6876314d8d5ec5415840605c3204d54` (before this documentation-only
+`b9cab25a5df0e8ab3b3344dd2cbad71f7c120017` (before this documentation-only
 commit) and passed:
 
 ```text
@@ -251,6 +258,8 @@ changed by that commit.
   `d38c00c81740db15062256d1c5651c40a295f279`.
 - External multi-fixture census harness and CLI report integration:
   `7f43db05d6876314d8d5ec5415840605c3204d54`.
+- Opt-in manifest-gated external census test:
+  `b9cab25a5df0e8ab3b3344dd2cbad71f7c120017`.
 - Container evidence/status audit: documentation-only commit
   `cf9dcd4bbb31e13dd6f47c807aba15f6e0460c30`.
 - Later status/documentation-only commits: container evidence/status audit
