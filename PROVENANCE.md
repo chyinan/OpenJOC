@@ -825,6 +825,24 @@ frame behavior is covered by integration tests.
 - Validation: all 64 addresses are checked exhaustively and address 64 is
   rejected with a table-specific error.
 
+### Enhanced AC-3 high-efficiency BAP computation
+
+- Normative source: TS 102 366 V1.4.1 clauses E.2.4.3.1 and E.2.4.3.2,
+  including the AHT masking/floor address calculation and Table E.2.1.
+- Official reference data: pages 151 and 152 of the authorized ETSI PDF were
+  rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected;
+  page 153 was rendered for the continuation of Table E.2.1.
+- Design rationale: share the already validated PSD, masking, SNR, floor, and
+  delta arithmetic with conventional allocation, but inject the normative
+  high-efficiency pointer lookup only at the final address mapping. This keeps
+  `hebap[]` distinct from scalar `bap[]` and provides the checked primitive
+  needed by the remaining AHT VQ/GAQ mantissa path.
+- Validation: `computes_high_efficiency_bap_with_the_aht_pointer_table`
+  exercises an address where Table E.2.1 differs from Table 6.16; the existing
+  exhaustive high-efficiency pointer test covers all 64 legal addresses and
+  rejection of address 64. The AHT mantissa traversal and inverse DCT remain
+  explicitly pending and are not represented by a placeholder.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420

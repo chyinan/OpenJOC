@@ -733,6 +733,55 @@ pub fn compute_bap(
     snroffset: i16,
     floor: i16,
 ) -> Result<Vec<u8>, Eac3Error> {
+    compute_bap_with_pointer(
+        psd,
+        mask,
+        start,
+        end,
+        snroffset,
+        floor,
+        bit_allocation_pointer,
+    )
+}
+
+/// Computes the clause E.2.4.3.1 high-efficiency `hebap[]` array.
+///
+/// This uses the same PSD, masking, SNR, and floor arithmetic as conventional
+/// allocation, but maps each clamped six-bit address through Table E.2.1.
+/// The returned five-bit pointers are consumed by the AHT VQ/GAQ mantissa
+/// path; they must not be passed to the conventional scalar quantizer.
+///
+/// # Errors
+/// Returns a checked E-AC-3 error for malformed PSD/mask dimensions or an
+/// invalid table address.
+pub fn compute_high_efficiency_bap(
+    psd: &[i16],
+    mask: &[i16],
+    start: usize,
+    end: usize,
+    snroffset: i16,
+    floor: i16,
+) -> Result<Vec<u8>, Eac3Error> {
+    compute_bap_with_pointer(
+        psd,
+        mask,
+        start,
+        end,
+        snroffset,
+        floor,
+        high_efficiency_bit_allocation_pointer,
+    )
+}
+
+fn compute_bap_with_pointer(
+    psd: &[i16],
+    mask: &[i16],
+    start: usize,
+    end: usize,
+    snroffset: i16,
+    floor: i16,
+    pointer: fn(u8) -> Result<u8, Eac3Error>,
+) -> Result<Vec<u8>, Eac3Error> {
     let (bndstrt, bndend) = active_band_range(start, end, psd.len(), mask.len())?;
     if mask.len() < 50 {
         return Err(Eac3Error::InvalidPsdRange { start, end });
@@ -750,7 +799,7 @@ pub fn compute_bap(
         .min(end);
         while bin < last {
             let address = ((i32::from(psd[bin]) - adjusted) >> 5).clamp(0, 63) as u8;
-            bap[bin] = bit_allocation_pointer(address)?;
+            bap[bin] = pointer(address)?;
             bin += 1;
         }
     }

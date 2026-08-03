@@ -2,9 +2,10 @@ use openjoc_eac3::{
     BitAllocationBand, BitAllocationParameters, DeltaBitAllocationElement,
     DeltaBitAllocationSegment, Eac3Error, FixedBitAllocationParameters, apply_delta_bit_allocation,
     bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
-    compute_bap, compute_element_bap, compute_excitation, compute_masking_curve,
-    decode_bit_allocation_parameters, exponents_to_psd, high_efficiency_bit_allocation_pointer,
-    integrate_psd, log_add, snr_offset, snr_offsets_are_zero,
+    compute_bap, compute_element_bap, compute_excitation, compute_high_efficiency_bap,
+    compute_masking_curve, decode_bit_allocation_parameters, exponents_to_psd,
+    high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
+    snr_offsets_are_zero,
 };
 
 fn stage_parameters() -> FixedBitAllocationParameters {
@@ -66,6 +67,17 @@ fn computes_bap_from_fine_psd_and_band_mask() {
     let mask = vec![0_i16; 50];
     let bap = compute_bap(&psd, &mask, 0, 1, 0, 0).expect("valid bap range");
     assert_eq!(bap[0], 10);
+    assert!(bap[1..].iter().all(|value| *value == 0));
+}
+
+#[test]
+fn computes_high_efficiency_bap_with_the_aht_pointer_table() {
+    let psd = vec![1120_i16; 253];
+    let mask = vec![0_i16; 50];
+
+    let bap = compute_high_efficiency_bap(&psd, &mask, 0, 1, 0, 0).expect("valid AHT bap range");
+
+    assert_eq!(bap[0], 15);
     assert!(bap[1..].iter().all(|value| *value == 0));
 }
 
