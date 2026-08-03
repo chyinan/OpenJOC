@@ -707,6 +707,28 @@ frame behavior is covered by integration tests.
 - Validation: all 64 addresses are checked exhaustively and address 64 is
   rejected.
 
+### Enhanced AC-3 excitation, masking, delta allocation, and BAP computation
+
+- Normative source: TS 102 366 clauses 6.2.2.4 through 6.2.2.7 and Tables
+  6.15 and 6.16.
+- Official reference data: V1.4.1 pages 57 through 65 were rendered with
+  Poppler 26.02.0 at 300 DPI and visually inspected. The same
+  `calc_lowcomp` pseudocode was checked in the authorized V1.1.1, V1.2.1,
+  and V1.3.1 PDFs. All four revisions print a semicolon after
+  `if ((b0 + 256) == b1);`; taken as C syntax it makes the following block
+  unconditional and conflicts with its `else if`. No official corrigendum was
+  found in the authorized artifacts. This is recorded as a normative ambiguity.
+- Design rationale: implement the only syntactically structured branch
+  interpretation for `calc_lowcomp`, preserving the threshold values 384 and
+  320 and the decay clamps from the surrounding normative algorithm. Keep the
+  excitation, masking, delta, and BAP stages as pure functions over bounded
+  fixed-point arrays. The BAP mask truncation uses the rendered `& 0x1fe0`
+  operation and Table 6.16's exact 64-entry pointer mapping.
+- Validation: tests cover the structured lowcomp branches, uncoupled
+  excitation, knee/hearing-threshold masking, positive delta segments, and a
+  representative BAP address. A compatibility test remains required if ETSI
+  publishes a correction clarifying the semicolon.
+
 ### Enhanced AC-3 high-efficiency bit-allocation pointers
 
 - Normative source: TS 102 366 clauses E.2.4.3.1 and E.2.4.3.2, table E.2.1.

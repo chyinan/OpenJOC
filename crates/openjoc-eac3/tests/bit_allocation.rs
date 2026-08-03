@@ -1,9 +1,72 @@
 use openjoc_eac3::{
-    BitAllocationBand, BitAllocationParameters, Eac3Error, FixedBitAllocationParameters,
-    bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer,
-    decode_bit_allocation_parameters, exponents_to_psd, high_efficiency_bit_allocation_pointer,
-    integrate_psd, log_add,
+    BitAllocationBand, BitAllocationParameters, DeltaBitAllocationElement,
+    DeltaBitAllocationSegment, Eac3Error, FixedBitAllocationParameters, apply_delta_bit_allocation,
+    bit_allocation_band, bit_allocation_band_for_bin, bit_allocation_pointer, calc_lowcomp,
+    compute_bap, compute_excitation, compute_masking_curve, decode_bit_allocation_parameters,
+    exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add,
 };
+
+fn stage_parameters() -> FixedBitAllocationParameters {
+    FixedBitAllocationParameters {
+        slow_decay: 0,
+        fast_decay: 0,
+        slow_gain: 0,
+        db_per_bit: 0,
+        floor: 0,
+        fast_gain: 0,
+    }
+}
+
+#[test]
+fn calc_lowcomp_uses_the_structured_branch_interpretation() {
+    assert_eq!(calc_lowcomp(0, 100, 356, 0), 384);
+    assert_eq!(calc_lowcomp(500, 100, 356, 0), 384);
+    assert_eq!(calc_lowcomp(320, 500, 400, 7), 256);
+    assert_eq!(calc_lowcomp(100, 500, 400, 20), 0);
+}
+
+#[test]
+fn computes_uncoupled_excitation_over_the_active_bands() {
+    let psd = vec![1000_i16; 7];
+    let bndpsd = vec![1000_i16; 50];
+    let excite = compute_excitation(&psd, &bndpsd, 0, 7, stage_parameters(), None)
+        .expect("valid uncoupled range");
+    assert_eq!(&excite[..7], &[1000; 7]);
+    assert!(excite[7..].iter().all(|value| *value == 0));
+}
+
+#[test]
+fn computes_masking_curve_with_hearing_threshold_and_knee() {
+    let bndpsd = vec![100, 200, 400];
+    let excite = vec![100, 50, 400];
+    let mask = compute_masking_curve(&bndpsd, &excite, 0, 3, 0, 300).expect("valid mask range");
+    assert_eq!(&mask[..3], &[0x04d0, 0x04d0, 0x0440]);
+}
+
+#[test]
+fn applies_delta_segments_to_the_masking_curve() {
+    let mask = vec![0_i16; 50];
+    let delta = DeltaBitAllocationElement {
+        strategy: 1,
+        segments: vec![DeltaBitAllocationSegment {
+            offset: 2,
+            length: 2,
+            delta: 5,
+        }],
+    };
+    let adjusted = apply_delta_bit_allocation(&mask, &delta).expect("valid delta segment");
+    assert_eq!(&adjusted[0..2], &[0, 0]);
+    assert_eq!(&adjusted[2..4], &[256, 256]);
+}
+
+#[test]
+fn computes_bap_from_fine_psd_and_band_mask() {
+    let psd = vec![1024_i16; 253];
+    let mask = vec![0_i16; 50];
+    let bap = compute_bap(&psd, &mask, 0, 1, 0, 0).expect("valid bap range");
+    assert_eq!(bap[0], 10);
+    assert!(bap[1..].iter().all(|value| *value == 0));
+}
 
 #[test]
 fn maps_every_legal_exponent_to_normative_log_psd() {

@@ -107,3 +107,16 @@ Table 6.16: the continuation values are addresses 28 through 30 mapping to 9,
 and 153 make the complete 64-entry `hebaptab` and hebap quantizer mapping
 legible. Layout-sensitive AHT/GAQ expressions on pages 154 through 157 were
 inspected but are not yet implemented.
+
+## TS 102 366 `calc_lowcomp` ambiguity
+
+The excitation-function pages were independently rendered at 300 DPI with
+Poppler 26.02.0: V1.1.1 page 53, V1.2.1 page 54, V1.3.1 page 58, and V1.4.1
+pages 58-59. Every render visibly prints `if ((b0 + 256) == b1);` in the
+first `bin < 7` branch, while the corresponding `bin < 20` branch omits the
+semicolon and uses a normal `else if`. Literal C interpretation would make
+the first block unconditional and leave an invalid `else if`; the normative
+algorithm's branch structure requires the condition to govern the block.
+OpenJOC therefore implements the structured branch interpretation and keeps
+this as an explicit compatibility/TODO item pending an ETSI correction. No
+decoder implementation was consulted.

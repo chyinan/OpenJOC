@@ -378,3 +378,269 @@ fn table_value<const N: usize>(
             actual: code,
         })
 }
+
+/// Evaluates TS 102 366 clause 6.2.2.4's low-frequency compensation helper.
+///
+/// Every published TS 102 366 revision inspected for this implementation
+/// prints a semicolon after the first `if` condition. Taken literally that
+/// would make the following block unconditional and make its `else` invalid;
+/// the surrounding structure and the V1.3.1/V1.4.1 pseudocode therefore leave
+/// a documented specification ambiguity. OpenJOC uses the only structured
+/// branch interpretation, while retaining this note for a future corrigendum.
+#[must_use]
+pub fn calc_lowcomp(a: i16, b0: i16, b1: i16, bin: usize) -> i16 {
+    let value = if bin < 7 {
+        if i32::from(b0) + 256 == i32::from(b1) {
+            384
+        } else if b0 > b1 {
+            i32::from(a) - 64
+        } else {
+            i32::from(a)
+        }
+    } else if bin < 20 {
+        if i32::from(b0) + 256 == i32::from(b1) {
+            320
+        } else if b0 > b1 {
+            i32::from(a) - 64
+        } else {
+            i32::from(a)
+        }
+    } else {
+        i32::from(a) - 128
+    };
+    i16::try_from(value.max(0)).unwrap_or(i16::MAX)
+}
+
+fn active_band_range(
+    start: usize,
+    end: usize,
+    psd_len: usize,
+    band_len: usize,
+) -> Result<(usize, usize), Eac3Error> {
+    if start >= end || end > 253 || end > psd_len {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let first = usize::from(bit_allocation_band_for_bin(
+        u16::try_from(start).map_err(|_| Eac3Error::InvalidPsdRange { start, end })?,
+    )?);
+    let last = usize::from(bit_allocation_band_for_bin(
+        u16::try_from(end - 1).map_err(|_| Eac3Error::InvalidPsdRange { start, end })?,
+    )?) + 1;
+    if last > band_len {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    Ok((first, last))
+}
+
+/// Computes the clause 6.2.2.4 excitation function.
+///
+/// `None` selects the uncoupled fbw/lfe path and requires an active range
+/// beginning in band zero. `Some((fastleak, slowleak))` selects the coupling
+/// path and supplies its clause 6.2.2.1 leak initialization values. The result
+/// is a 50-band array with inactive entries left at zero.
+pub fn compute_excitation(
+    psd: &[i16],
+    bndpsd: &[i16],
+    start: usize,
+    end: usize,
+    parameters: FixedBitAllocationParameters,
+    initial_leaks: Option<(i16, i16)>,
+) -> Result<Vec<i16>, Eac3Error> {
+    let (bndstrt, bndend) = active_band_range(start, end, psd.len(), bndpsd.len())?;
+    if bndpsd.len() < 50 {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let mut excite = vec![0_i16; 50];
+    if let Some((mut fastleak, mut slowleak)) = initial_leaks {
+        for bin in bndstrt..bndend {
+            fastleak = fastleak.saturating_sub(parameters.fast_decay);
+            fastleak = fastleak.max(bndpsd[bin].saturating_sub(parameters.fast_gain));
+            slowleak = slowleak.saturating_sub(parameters.slow_decay);
+            slowleak = slowleak.max(bndpsd[bin].saturating_sub(parameters.slow_gain));
+            excite[bin] = fastleak.max(slowleak);
+        }
+        return Ok(excite);
+    }
+    if bndstrt != 0 || bndend < 7 {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+
+    let mut lowcomp = 0_i16;
+    lowcomp = calc_lowcomp(lowcomp, bndpsd[0], bndpsd[1], 0);
+    excite[0] = bndpsd[0]
+        .saturating_sub(parameters.fast_gain)
+        .saturating_sub(lowcomp);
+    lowcomp = calc_lowcomp(lowcomp, bndpsd[1], bndpsd[2], 1);
+    excite[1] = bndpsd[1]
+        .saturating_sub(parameters.fast_gain)
+        .saturating_sub(lowcomp);
+
+    let mut begin = 7_usize;
+    let mut fastleak = 0_i16;
+    let mut slowleak = 0_i16;
+    for bin in 2..7 {
+        if bndend != 7 || bin != 6 {
+            lowcomp = calc_lowcomp(lowcomp, bndpsd[bin], bndpsd[bin + 1], bin);
+        }
+        fastleak = bndpsd[bin].saturating_sub(parameters.fast_gain);
+        slowleak = bndpsd[bin].saturating_sub(parameters.slow_gain);
+        excite[bin] = fastleak.saturating_sub(lowcomp);
+        if (bndend != 7 || bin != 6) && bndpsd[bin] <= bndpsd[bin + 1] {
+            begin = bin + 1;
+            break;
+        }
+    }
+    for bin in begin..bndend.min(22) {
+        if bndend != 7 || bin != 6 {
+            lowcomp = calc_lowcomp(lowcomp, bndpsd[bin], bndpsd[bin + 1], bin);
+        }
+        fastleak = fastleak
+            .saturating_sub(parameters.fast_decay)
+            .max(bndpsd[bin].saturating_sub(parameters.fast_gain));
+        slowleak = slowleak
+            .saturating_sub(parameters.slow_decay)
+            .max(bndpsd[bin].saturating_sub(parameters.slow_gain));
+        excite[bin] = fastleak.saturating_sub(lowcomp).max(slowleak);
+    }
+    for bin in 22..bndend {
+        fastleak = fastleak
+            .saturating_sub(parameters.fast_decay)
+            .max(bndpsd[bin].saturating_sub(parameters.fast_gain));
+        slowleak = slowleak
+            .saturating_sub(parameters.slow_decay)
+            .max(bndpsd[bin].saturating_sub(parameters.slow_gain));
+        excite[bin] = fastleak.max(slowleak);
+    }
+    Ok(excite)
+}
+
+/// Computes TS 102 366 clause 6.2.2.5's 50-band masking curve.
+pub fn compute_masking_curve(
+    bndpsd: &[i16],
+    excite: &[i16],
+    start: usize,
+    end: usize,
+    fscod: u8,
+    dbknee: i16,
+) -> Result<Vec<i16>, Eac3Error> {
+    let (bndstrt, bndend) = active_band_range(start, end, 253, bndpsd.len())?;
+    if excite.len() < bndend {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let hearing = match fscod {
+        0 => [
+            0x04d0, 0x04d0, 0x0440, 0x0400, 0x03e0, 0x03c0, 0x03b0, 0x03b0, 0x03a0, 0x03a0, 0x03a0,
+            0x03a0, 0x03a0, 0x0390, 0x0390, 0x0390, 0x0380, 0x0380, 0x0370, 0x0370, 0x0360, 0x0360,
+            0x0350, 0x0350, 0x0340, 0x0340, 0x0330, 0x0320, 0x0310, 0x0300, 0x02f0, 0x02f0, 0x02f0,
+            0x02f0, 0x0300, 0x0310, 0x0340, 0x0390, 0x03e0, 0x0420, 0x0460, 0x0490, 0x04a0, 0x0460,
+            0x0440, 0x0440, 0x0520, 0x0800, 0x0840, 0x0840,
+        ],
+        1 => [
+            0x04f0, 0x04f0, 0x0460, 0x0410, 0x03e0, 0x03d0, 0x03c0, 0x03b0, 0x03b0, 0x03a0, 0x03a0,
+            0x03a0, 0x03a0, 0x03a0, 0x0390, 0x0390, 0x0390, 0x0380, 0x0380, 0x0380, 0x0370, 0x0370,
+            0x0360, 0x0360, 0x0350, 0x0350, 0x0340, 0x0340, 0x0320, 0x0310, 0x0300, 0x02f0, 0x02f0,
+            0x02f0, 0x02f0, 0x0300, 0x0320, 0x0350, 0x0390, 0x03e0, 0x0420, 0x0450, 0x04a0, 0x0490,
+            0x0460, 0x0440, 0x0480, 0x0630, 0x0840, 0x0840,
+        ],
+        2 => [
+            0x0580, 0x0580, 0x04b0, 0x0450, 0x0420, 0x03f0, 0x03e0, 0x03d0, 0x03c0, 0x03b0, 0x03b0,
+            0x03b0, 0x03a0, 0x03a0, 0x03a0, 0x03a0, 0x03a0, 0x03a0, 0x03a0, 0x03a0, 0x0390, 0x0390,
+            0x0390, 0x0390, 0x0380, 0x0380, 0x0380, 0x0370, 0x0360, 0x0350, 0x0340, 0x0330, 0x0320,
+            0x0310, 0x0300, 0x02f0, 0x02f0, 0x02f0, 0x0300, 0x0310, 0x0330, 0x0350, 0x03c0, 0x0410,
+            0x0470, 0x04a0, 0x0460, 0x0440, 0x0450, 0x04e0,
+        ],
+        _ => return Err(Eac3Error::ReservedSampleRate),
+    };
+    let mut mask = vec![0_i16; 50];
+    for band in bndstrt..bndend {
+        let knee = if bndpsd[band] < dbknee {
+            (i32::from(dbknee) - i32::from(bndpsd[band])) >> 2
+        } else {
+            0
+        };
+        let value = i32::from(excite[band]) + knee;
+        mask[band] = i16::try_from(value.max(i32::from(hearing[band]))).unwrap_or(i16::MAX);
+    }
+    Ok(mask)
+}
+
+/// Applies one channel's clause 6.2.2.6 delta-bit-allocation segments.
+pub fn apply_delta_bit_allocation(
+    mask: &[i16],
+    delta: &crate::DeltaBitAllocationElement,
+) -> Result<Vec<i16>, Eac3Error> {
+    if mask.len() < 50 {
+        return Err(Eac3Error::InvalidPsdRange {
+            start: mask.len(),
+            end: 50,
+        });
+    }
+    if delta.strategy == 2 {
+        return Ok(mask.to_vec());
+    }
+    if delta.strategy != 1 {
+        return Err(Eac3Error::InvalidDeltaBitAllocationStrategy {
+            actual: delta.strategy,
+        });
+    }
+    let mut adjusted = mask.to_vec();
+    let mut band = 0_usize;
+    for segment in &delta.segments {
+        band = band
+            .checked_add(usize::from(segment.offset))
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let length = usize::from(segment.length);
+        let end = band
+            .checked_add(length)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if end > 50 || segment.delta > 7 {
+            return Err(Eac3Error::InvalidPsdRange {
+                start: band,
+                end: band.saturating_add(length),
+            });
+        }
+        let delta_value = if segment.delta >= 4 {
+            (i16::from(segment.delta) - 3) << 7
+        } else {
+            (i16::from(segment.delta) - 4) << 7
+        };
+        for value in &mut adjusted[band..end] {
+            *value = value.saturating_add(delta_value);
+        }
+        band = end;
+    }
+    Ok(adjusted)
+}
+
+/// Computes the clause 6.2.2.7 conventional `bap[]` array.
+pub fn compute_bap(
+    psd: &[i16],
+    mask: &[i16],
+    start: usize,
+    end: usize,
+    snroffset: i16,
+    floor: i16,
+) -> Result<Vec<u8>, Eac3Error> {
+    let (bndstrt, bndend) = active_band_range(start, end, psd.len(), mask.len())?;
+    if mask.len() < 50 {
+        return Err(Eac3Error::InvalidPsdRange { start, end });
+    }
+    let mut bap = vec![0_u8; psd.len()];
+    let mut bin = start;
+    for band in bndstrt..bndend {
+        let mut adjusted = i32::from(mask[band]) - i32::from(snroffset) - i32::from(floor);
+        if adjusted < 0 {
+            adjusted = 0;
+        }
+        adjusted = (adjusted & 0x1fe0) + i32::from(floor);
+        let last = (usize::from(bit_allocation_band(band as u8)?.start)
+            + usize::from(bit_allocation_band(band as u8)?.size))
+        .min(end);
+        while bin < last {
+            let address = ((i32::from(psd[bin]) - adjusted) >> 5).clamp(0, 63) as u8;
+            bap[bin] = bit_allocation_pointer(address)?;
+            bin += 1;
+        }
+    }
+    Ok(bap)
+}
