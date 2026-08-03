@@ -1,9 +1,9 @@
 use openjoc_oamd::{
-    ContentDescription, Distance, Extent3 as OamdExtent3, Gain, MetadataBlockTiming,
-    MetadataTiming, OamdContentPrefix, OamdElement, OamdElementMetadata, OamdPayload,
-    ObjectBasicInfo, ObjectClass as OamdObjectClass, ObjectElement, ObjectRenderInfo, ObjectUpdate,
-    Position3 as OamdPosition3, PositionCoding, ReferenceScreen, StandardPositionBits,
-    ZoneConstraint as OamdZoneConstraint,
+    ContentDescription, Distance, ExtendedObjectElement, Extent3 as OamdExtent3, Gain,
+    MetadataBlockTiming, MetadataTiming, OamdContentPrefix, OamdElement, OamdElementMetadata,
+    OamdPayload, ObjectBasicInfo, ObjectClass as OamdObjectClass, ObjectElement, ObjectRenderInfo,
+    ObjectUpdate, Position3 as OamdPosition3, PositionCoding, ReferenceScreen,
+    StandardPositionBits, ZoneConstraint as OamdZoneConstraint,
 };
 use openjoc_scene::{ObjectClass, Position, Position3, SceneBuilder, ZoneConstraint};
 
@@ -104,4 +104,36 @@ fn assembles_reconstructed_pcm_and_timed_oamd_into_scene() {
     assert_eq!(update.gain_db, Some(-6.0));
     assert_eq!(update.zones, [ZoneConstraint::Include; 6]);
     assert!(update.channel_lock);
+}
+
+#[test]
+fn applies_extended_precision_before_scene_position_conversion() {
+    let mut oamd = payload();
+    if let OamdElement::Objects(objects) = &mut oamd.elements[0].element {
+        objects.timing.blocks[0].start_sample = 0;
+    }
+    oamd.elements.push(OamdElementMetadata {
+        id: 5,
+        alternate_data_id: None,
+        discard_unknown: false,
+        element: OamdElement::Extended(ExtendedObjectElement {
+            divergence: None,
+            extended_precision: Some(vec![vec![[Some(1), None, None]]]),
+            consumed_bits: 0,
+        }),
+    });
+    let mut builder = SceneBuilder::new(48_000, &oamd.prefix).expect("valid content");
+    builder
+        .append_frame(&[vec![0.0]], &oamd, None)
+        .expect("aligned frame");
+    let scene = builder.finish().expect("valid scene");
+
+    assert_eq!(
+        scene.metadata_timeline[0].position,
+        Position::Room(Position3 {
+            x: 31.0 / 62.0 + 2.0 / 310.0,
+            y: 0.5,
+            z: 0.0,
+        })
+    );
 }

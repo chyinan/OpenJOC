@@ -330,13 +330,14 @@ frame behavior is covered by integration tests.
   size, priority, gain, channel lock, zones, divergence, and trim-disable state.
   JSON serialization is renderer-independent and rejects non-finite or
   cross-object/duration-inconsistent data before export. Frame assembly clones
-  scene state, appends equal-length object PCM, converts every object/block
-  update at `frame_offset + start_sample`, associates the following ID 5
-  divergence and current trim-disable flags, validates, then commits atomically.
+  scene state, applies the following ID 5 extended-precision positions before
+  converting every object/block update at `frame_offset + start_sample`,
+  associates the extension divergence and current trim-disable flags, validates,
+  then commits atomically.
 - Validation: JSON roundtrips cover room, infinite-ray, screen, speaker, and
   ISF anchors; decoded-structure assembly covers PCM, timing, position, gain,
-  zones, and channel lock; invalid sample-rate, track-duration, and
-  metadata-object boundaries are rejected.
+  zones, channel lock, and ID 5 position refinement; invalid sample-rate,
+  track-duration, and metadata-object boundaries are rejected.
 
 ### Object WAV serialization
 

@@ -208,6 +208,11 @@ fn append_object_updates(
     frame_offset: u64,
     reference_screen: Option<ReferenceScreen>,
 ) -> Result<(), SceneBuildError> {
+    let mut resolved_objects = objects.clone();
+    if let Some(extension) = extension {
+        extension.apply_positions(&mut resolved_objects)?;
+    }
+    let objects = &resolved_objects;
     if objects.objects.len() != anchors.len()
         || objects
             .objects
