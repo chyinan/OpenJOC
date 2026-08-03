@@ -5,6 +5,7 @@
 use openjoc_bitio::{BitRead, BitReader};
 
 use crate::aht::decode_aht_element_mantissas_with_information;
+use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 use crate::rematrix::rematrix_channels;
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
@@ -695,9 +696,23 @@ fn decode_audio_blocks_until(
         } else {
             channel_block.channel_mantissas.clone()
         };
+        let primary_gain = dynamic_range_gain(state.dynamic_range);
+        let secondary_gain = dynamic_range_gain(state.dynamic_range_2);
+        let channel_gains = if frame.bsi.audio_coding_mode == 0 {
+            vec![primary_gain, secondary_gain]
+        } else {
+            vec![primary_gain; channel_mantissas.len()]
+        };
+        let channel_mantissas = apply_dynamic_range_gains(&channel_mantissas, &channel_gains)?;
+        let coupling_mantissas = channel_block
+            .coupling_mantissas
+            .as_deref()
+            .map(|mantissas| apply_dynamic_range_gains(&[mantissas.to_vec()], &[primary_gain]))
+            .transpose()?
+            .map(|mut values| values.pop().ok_or(Eac3Error::FrameSizeOverflow))
+            .transpose()?;
         let enhanced_coupling = match prefix.coupling.as_ref() {
-            Some(CouplingInformation::Enhanced(info)) => channel_block
-                .coupling_mantissas
+            Some(CouplingInformation::Enhanced(info)) => coupling_mantissas
                 .as_deref()
                 .map(|mantissas| reconstruct_enhanced_coupling(info, mantissas))
                 .transpose()?,
@@ -714,6 +729,12 @@ fn decode_audio_blocks_until(
             fscod,
             zero_bap,
         )?;
+        let lfe_mantissas = lfe_mantissas
+            .as_deref()
+            .map(|mantissas| apply_dynamic_range_gains(&[mantissas.to_vec()], &[primary_gain]))
+            .transpose()?
+            .map(|mut values| values.pop().ok_or(Eac3Error::FrameSizeOverflow))
+            .transpose()?;
         let mantissa_end_offset_bits = frame_bits
             .checked_sub(bits.bits_remaining())
             .ok_or(Eac3Error::FrameSizeOverflow)?;
@@ -723,7 +744,7 @@ fn decode_audio_blocks_until(
             channel_baps: channel_block.channel_baps,
             channel_mantissas,
             coupling_bap: channel_block.coupling_bap,
-            coupling_mantissas: channel_block.coupling_mantissas,
+            coupling_mantissas,
             enhanced_coupling,
             lfe_bap,
             lfe_mantissas,
@@ -920,6 +941,8 @@ struct ChannelMantissaBlock {
 
 #[derive(Clone, Debug)]
 struct AudioBlockState {
+    dynamic_range: Option<u8>,
+    dynamic_range_2: Option<u8>,
     spectral_extension: Option<SpectralExtensionInformation>,
     coupling: Option<CouplingInformation>,
     first_spx_coordinates: Vec<bool>,
@@ -944,6 +967,8 @@ struct AudioBlockState {
 impl AudioBlockState {
     fn new(channels: usize) -> Self {
         Self {
+            dynamic_range: None,
+            dynamic_range_2: None,
             spectral_extension: None,
             coupling: None,
             first_spx_coordinates: vec![true; channels],
@@ -971,6 +996,12 @@ impl AudioBlockState {
         prefix: &AudioBlockPrefix,
         frame: &AudioFrameInformation,
     ) -> Result<(), Eac3Error> {
+        self.dynamic_range = prefix.dynamic_range.or(Some(0));
+        self.dynamic_range_2 = if frame.bsi.audio_coding_mode == 0 {
+            prefix.dynamic_range_2.or(Some(0))
+        } else {
+            None
+        };
         self.spectral_extension = prefix.spectral_extension.clone();
         self.coupling = prefix.coupling.clone();
         self.channel_bandwidth_codes = prefix.channel_bandwidth_codes.clone();
@@ -1286,6 +1317,12 @@ fn parse_audio_block_prefix_reader(
     let dynamic_range = read_optional_u8(bits, 8)?;
     let dynamic_range_2 = if frame.bsi.audio_coding_mode == 0 {
         read_optional_u8(bits, 8)?
+    } else {
+        None
+    };
+    state.dynamic_range = dynamic_range.or(previous.dynamic_range).or(Some(0));
+    state.dynamic_range_2 = if frame.bsi.audio_coding_mode == 0 {
+        dynamic_range_2.or(previous.dynamic_range_2).or(Some(0))
     } else {
         None
     };

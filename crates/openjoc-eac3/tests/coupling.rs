@@ -1,6 +1,7 @@
 use openjoc_eac3::{
     CouplingInformation, Eac3Error, StandardCouplingCoordinates, StandardCouplingInformation,
-    reconstruct_standard_coupling, rematrix_channels,
+    apply_dynamic_range_gains, dynamic_range_gain, reconstruct_standard_coupling,
+    rematrix_channels,
 };
 
 #[test]
@@ -145,4 +146,22 @@ fn rematrix_rejects_wrong_flag_count_and_nonfinite_coefficients() {
             index: 13,
         })
     );
+}
+
+#[test]
+fn dynamic_range_gain_matches_the_rendered_table_and_fraction() {
+    assert_eq!(dynamic_range_gain(None), 1.0);
+    assert_eq!(dynamic_range_gain(Some(0x00)), 1.0);
+    assert_eq!(dynamic_range_gain(Some(0x60)), 8.0);
+    assert_eq!(dynamic_range_gain(Some(0x7f)), 15.75);
+    assert_eq!(dynamic_range_gain(Some(0x80)), 0.0625);
+    assert_eq!(dynamic_range_gain(Some(0xff)), 63.0 / 64.0);
+}
+
+#[test]
+fn dynamic_range_applies_independent_linear_gains_without_mutating_input() {
+    let input = vec![vec![1.0, -2.0], vec![3.0, 4.0]];
+    let output = apply_dynamic_range_gains(&input, &[2.0, 0.5]).expect("dynamic range");
+    assert_eq!(output, vec![vec![2.0, -4.0], vec![1.5, 2.0]]);
+    assert_eq!(input, vec![vec![1.0, -2.0], vec![3.0, 4.0]]);
 }

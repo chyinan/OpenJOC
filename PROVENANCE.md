@@ -1233,3 +1233,25 @@ and a test or explicit TODO before implementation proceeds.
   standard-coupling boundaries, sum/difference restoration, lower-bandwidth
   clipping behavior, wrong flag counts, and non-finite coefficient rejection;
   the complete E-AC-3 test suite remains green.
+
+### Dynamic-range gain processing
+
+- Normative source: ETSI TS 102 366 V1.4.1 clauses 5.2.9 and 6.7.2.1 through
+  6.7.2.2, including Table 6.29. The three-bit signed field selects the
+  arithmetic-shift factor `2^(X+1)` and the five-bit field selects the
+  fractional factor `(32 + Y) / 64`; the product is the coefficient gain.
+  `dynrng2` is independent only in `acmod == 0`, and an absent later-block
+  word reuses the previous effective word while block zero defaults to zero.
+- Official reference data: PDF pages 74 and 75 of
+  `references/etsi/ts_102366v010401p.pdf` were rendered losslessly at 300 DPI
+  with Poppler 26.02.0 to `.codex-tmp/dynrng-render/` and visually inspected;
+  Table 6.29 and the bit-field layout were checked against the rendered page.
+- Design rationale: `dynamic_range_gain` is a pure word-to-linear conversion;
+  `apply_dynamic_range_gains` validates dimensions and finite values and
+  returns new vectors. Audio-block traversal stores effective dynrng state,
+  applies the primary/secondary gains after rematrixing, and scales coupling
+  and LFE mantissas with the primary gain before enhanced-coupling expansion.
+- Validation: gain endpoints and the fractional mapping are covered by
+  `crates/openjoc-eac3/tests/coupling.rs`; the two-block syncframe fixture
+  proves a present word is applied and reused when the next block omits it,
+  while the existing 0xa5 SPX fixture validates the applied non-unity gain.

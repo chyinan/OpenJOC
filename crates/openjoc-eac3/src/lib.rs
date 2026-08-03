@@ -5,6 +5,7 @@
 mod aht;
 mod audio_block;
 mod bit_allocation;
+mod dynamic_range;
 mod mantissa;
 mod rematrix;
 mod transform;
@@ -30,6 +31,7 @@ pub use bit_allocation::{
     exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
     snr_offsets_are_zero,
 };
+pub use dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 pub use mantissa::{
     MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer, shift_mantissa,
     ungroup_mantissa_code,
@@ -153,6 +155,14 @@ pub enum Eac3Error {
         master: u8,
     },
     NonFiniteCouplingCoefficient,
+    InvalidDynamicRangeGainCount {
+        expected: usize,
+        actual: usize,
+    },
+    NonFiniteDynamicRangeCoefficient {
+        channel: usize,
+        index: usize,
+    },
     InvalidRematrixChannelCount {
         actual: usize,
     },
@@ -344,6 +354,14 @@ impl Eac3Error {
             Self::InvalidRematrixChannelCount { actual } => Some(write!(
                 formatter,
                 "invalid E-AC-3 rematrix channel count {actual}; expected 2"
+            )),
+            Self::InvalidDynamicRangeGainCount { expected, actual } => Some(write!(
+                formatter,
+                "invalid E-AC-3 dynamic-range gain count: expected {expected}, got {actual}"
+            )),
+            Self::NonFiniteDynamicRangeCoefficient { channel, index } => Some(write!(
+                formatter,
+                "non-finite E-AC-3 dynamic-range coefficient at channel {channel}, index {index}"
             )),
             Self::NonFiniteRematrixCoefficient { channel, index } => Some(write!(
                 formatter,
@@ -540,6 +558,8 @@ impl fmt::Display for Eac3Error {
             | Self::NonFiniteCouplingCoefficient
             | Self::InvalidRematrixChannelCount { .. }
             | Self::InvalidRematrixFlagCount { .. }
+            | Self::InvalidDynamicRangeGainCount { .. }
+            | Self::NonFiniteDynamicRangeCoefficient { .. }
             | Self::NonFiniteRematrixCoefficient { .. }
             | Self::InvalidBitAllocationParameterCode { .. }
             | Self::InvalidBitAllocationTableIndex { .. }

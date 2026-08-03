@@ -1,7 +1,7 @@
 use openjoc_eac3::{
     CouplingInformation, Eac3Error, JocAddbsi, StreamType, block_start_information_length,
     channel_end_mantissa, channel_exponent_group_count, decode_audio_blocks, decode_exponents,
-    decode_first_audio_block, decode_frame_exponent_strategy, extract_aux_emdf,
+    decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
     parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
     parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
@@ -361,7 +361,10 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     let decoded =
         decode_first_audio_block(&bytes, &[0.5; 49]).expect("dithered zero-bit mantissas");
     assert_eq!(decoded.channel_baps[0], vec![0; 49]);
-    assert_eq!(decoded.channel_mantissas[0][0], 0.5 / 1024.0);
+    assert_eq!(
+        decoded.channel_mantissas[0][0],
+        (0.5 / 1024.0) * dynamic_range_gain(Some(0xa5))
+    );
     assert_eq!(decoded.mantissa_end_offset_bits, expected_offset);
 }
 
@@ -395,8 +398,10 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
     bits.push(0, 1); // no block-start information
 
     // Block 0: all conventional side information, no SPX, high exponents,
-    // default allocation, and no mantissa bits allocated.
-    bits.push(0, 1); // dynamic range absent
+    // default allocation, and no mantissa bits allocated. A non-unity
+    // dynamic-range word is reused by block 1.
+    bits.push(1, 1); // dynamic range present
+    bits.push(0x60, 8); // +18.06 dB arithmetic-shift term
     bits.push(0, 1); // SPX not in use
     bits.push(0, 6); // channel bandwidth code: end mantissa 73
     bits.push(15, 4); // channel absolute exponent
@@ -413,10 +418,16 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
     bits.push(0, 1); // converter SNR offset absent
 
     let bytes = bits.bytes(512);
-    let blocks = decode_audio_blocks(&bytes, &[0.0; 146]).expect("two-block conventional frame");
+    let blocks = decode_audio_blocks(&bytes, &[0.5; 146]).expect("two-block conventional frame");
     assert_eq!(blocks.len(), 2);
     assert_eq!(blocks[0].block_index, 0);
     assert_eq!(blocks[1].block_index, 1);
+    assert_eq!(blocks[0].prefix.dynamic_range, Some(0x60));
+    assert_eq!(blocks[1].prefix.dynamic_range, None);
+    assert_eq!(
+        blocks[0].channel_mantissas[0][0],
+        blocks[1].channel_mantissas[0][0]
+    );
     assert_eq!(blocks[0].channel_baps[0], vec![0; 73]);
     assert_eq!(blocks[1].channel_baps[0], vec![0; 73]);
     assert_eq!(
