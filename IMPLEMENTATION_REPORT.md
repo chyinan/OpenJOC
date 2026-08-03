@@ -57,6 +57,24 @@ The legal fixture is intentionally not committed:
 - `--internal-base`: currently fails with `invalid E-AC-3 mantissa code 7 for
   bap 3`; internal-base fidelity is not verified
 
+FFmpeg `astats` on that reference WAV reports the expected `5.1(side)` order
+(FL, FR, FC, LFE, SL, SR), 11,939,328 samples/channel, and these peak/RMS
+levels in dBFS:
+
+```text
+FL  peak -14.066079  RMS -29.027150
+FR  peak -11.644446  RMS -27.419704
+FC  peak  -3.850901  RMS -21.360071
+LFE peak -33.119901  RMS -50.094647
+SL  peak  -3.784534  RMS -20.646557
+SR  peak  -1.605351  RMS -20.007338
+```
+
+The internal decoder emitted no PCM because it failed in the first access
+unit, so delay, per-channel numerical error, and an internal peak/RMS vector
+are explicitly `not available`; this is the required comparison failure
+record, not a pass.
+
 This is a useful real-vector failure report, not a completion claim. The
 nonzero JOC/OAMD acceptance lane remains open until the carrier extraction and
 internal base path are corrected and compared against legal ground truth.

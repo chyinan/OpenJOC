@@ -1383,6 +1383,12 @@ and a test or explicit TODO before implementation proceeds.
   fails on this real stream with `invalid E-AC-3 mantissa code 7 for bap 3`;
   internal-base fidelity is therefore unverified. This is an open decoder
   acceptance issue, not evidence that the supplied programme lacks JOC.
+- FFmpeg `astats` records the `5.1(side)` order (FL, FR, FC, LFE, SL, SR) and
+  dBFS peak/RMS pairs: FL `-14.066079/-29.027150`, FR `-11.644446/-27.419704`,
+  FC `-3.850901/-21.360071`, LFE `-33.119901/-50.094647`, SL
+  `-3.784534/-20.646557`, SR `-1.605351/-20.007338`. The internal decoder
+  emitted no PCM, so delay, internal peak/RMS, and numerical error are not
+  available and must not be treated as zero or equivalent.
 - The real-vector lane must not be marked verified until nonzero JOC side
   information, dynamic OAMD, nonzero object PCM, moving-object continuity, and
   known-stem/ADM-BWF comparisons are demonstrated.
