@@ -8,6 +8,7 @@ mod bit_allocation;
 mod dynamic_range;
 mod mantissa;
 mod rematrix;
+mod spx;
 mod transform;
 
 pub use aht::{
@@ -37,6 +38,7 @@ pub use mantissa::{
     ungroup_mantissa_code,
 };
 pub use rematrix::rematrix_channels;
+pub use spx::synthesize_spectral_extension;
 pub use transform::{inverse_transform, overlap_add};
 
 use core::fmt;
@@ -140,6 +142,22 @@ pub enum Eac3Error {
     InvalidSpectralExtensionRange {
         begin: u8,
         end: u8,
+    },
+    InvalidSpectralExtensionCoordinateDimensions {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidSpectralExtensionCoordinate {
+        exponent: u8,
+        mantissa: u8,
+        master: u8,
+    },
+    MissingSpectralExtensionNoise {
+        expected: usize,
+        actual: usize,
+    },
+    NonFiniteSpectralExtensionCoefficient {
+        index: usize,
     },
     InvalidCouplingRange {
         begin: i16,
@@ -335,6 +353,28 @@ impl Eac3Error {
             Self::InvalidCouplingCoordinateDimensions { expected, actual } => Some(write!(
                 formatter,
                 "invalid E-AC-3 coupling coordinate dimensions: expected {expected}, got {actual}"
+            )),
+            Self::InvalidSpectralExtensionCoordinateDimensions { expected, actual } => {
+                Some(write!(
+                    formatter,
+                    "invalid E-AC-3 spectral-extension coordinate dimensions: expected {expected}, got {actual}"
+                ))
+            }
+            Self::InvalidSpectralExtensionCoordinate {
+                exponent,
+                mantissa,
+                master,
+            } => Some(write!(
+                formatter,
+                "invalid E-AC-3 spectral-extension coordinate {exponent}/{mantissa}/{master}"
+            )),
+            Self::MissingSpectralExtensionNoise { expected, actual } => Some(write!(
+                formatter,
+                "missing E-AC-3 spectral-extension noise: expected {expected}, got {actual}"
+            )),
+            Self::NonFiniteSpectralExtensionCoefficient { index } => Some(write!(
+                formatter,
+                "non-finite E-AC-3 spectral-extension coefficient at index {index}"
             )),
             Self::InvalidCouplingCoordinate {
                 exponent,
@@ -556,6 +596,10 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidCouplingCoordinateDimensions { .. }
             | Self::InvalidCouplingCoordinate { .. }
             | Self::NonFiniteCouplingCoefficient
+            | Self::InvalidSpectralExtensionCoordinateDimensions { .. }
+            | Self::InvalidSpectralExtensionCoordinate { .. }
+            | Self::MissingSpectralExtensionNoise { .. }
+            | Self::NonFiniteSpectralExtensionCoefficient { .. }
             | Self::InvalidRematrixChannelCount { .. }
             | Self::InvalidRematrixFlagCount { .. }
             | Self::InvalidDynamicRangeGainCount { .. }
@@ -674,6 +718,9 @@ pub struct AudioFrameInformation {
     pub coupling_aht_in_use: bool,
     pub channel_aht_in_use: Vec<bool>,
     pub lfe_aht_in_use: bool,
+    /// Frame-level `chinspxatten`/`spxattencod` values from E.1.3.2.24-25.
+    /// `None` means the five-tap spectral-extension attenuation notch is off.
+    pub spx_attenuation_codes: Vec<Option<u8>>,
     pub block_start_information: Option<AuxiliaryData>,
     pub audio_blocks_offset_bits: usize,
 }
@@ -976,13 +1023,19 @@ pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Erro
             }
         }
     }
-    if syntax.spx_attenuation() {
-        for _ in 0..channel_count {
-            if bits.read_bit()? {
-                skip(&mut bits, 5)?;
-            }
-        }
-    }
+    let spx_attenuation_codes = if syntax.spx_attenuation() {
+        (0..channel_count)
+            .map(|_| {
+                if bits.read_bit()? {
+                    Ok(Some(read_u8(&mut bits, 5)?))
+                } else {
+                    Ok(None)
+                }
+            })
+            .collect::<Result<Vec<_>, Eac3Error>>()?
+    } else {
+        vec![None; usize::from(channel_count)]
+    };
     let block_start_information = if num_blocks_code != 0 && bits.read_bit()? {
         let length =
             block_start_information_length(bsi.header.frame_size, bsi.header.audio_blocks)?;
@@ -1008,6 +1061,7 @@ pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Erro
         coupling_aht_in_use,
         channel_aht_in_use,
         lfe_aht_in_use,
+        spx_attenuation_codes,
         block_start_information,
         audio_blocks_offset_bits,
     })

@@ -1255,3 +1255,34 @@ and a test or explicit TODO before implementation proceeds.
   `crates/openjoc-eac3/tests/coupling.rs`; the two-block syncframe fixture
   proves a present word is applied and reused when the next block omits it,
   while the existing 0xa5 SPX fixture validates the applied non-unity gain.
+
+### Spectral-extension coefficient synthesis
+
+- Normative source: ETSI TS 102 366 clauses E.1.3.2.24 through E.1.3.2.25,
+  E.1.3.3.4 through E.1.3.3.13, and E.2.6.2 through E.2.6.4.3; Tables
+  E.1.10, E.2.11, and E.2.12.
+- Official reference data: pages 139–140 and 161–167 of
+  `references/etsi/ts_102366v010401p.pdf` were rendered losslessly at
+  300 DPI with Poppler 26.02.0 to `.codex-tmp/spx-syntax-render/` and
+  `.codex-tmp/spx-render/`, then visually inspected. Table E.2.11's low
+  transform-coefficient column resolves the previously noted `spxstrtf`
+  mapping: the two-bit value indexes the first four entries of the same
+  `spxbandtable` used by E.2.6.4.1. Table E.2.12 values were transcribed from
+  the rendered rows 0–31, including the continuation on page 166.
+- Design rationale: `synthesize_spectral_extension` is a pure, checked
+  implementation of the normative ordering: derive 12-coefficient band
+  sizes, translate with copy-region wrapping, compute RMS before attenuation,
+  apply the symmetric five-tap notch at the baseband and wrap borders, blend
+  translated coefficients with caller-provided unit-variance noise, then
+  apply each floating-point coordinate and the final factor 32. The parser
+  now retains frame-level `chinspxatten`/`spxattencod` values. The integrated
+  block path supplies a deterministic zero-mean/unit-variance uniform noise
+  sequence because the standard specifies the `noise()` contract but no
+  mandated generator; this choice is isolated from the pure synthesis core.
+- Validation: `crates/openjoc-eac3/tests/spx.rs` checks table-indexed
+  translation, per-band noise blending, coordinate scaling, and the exact
+  five-tap attenuation symmetry. The syncframe fixture asserts retention of
+  frame attenuation code 17, and workspace tests cover the integrated block
+  call. A bounded legacy syntax fixture contains a zero-width synthetic copy
+  region (`spxstrtf == spxbegf`); the block shell preserves its parsed baseband
+  rather than fabricating coefficients, pending a legal conformance vector.

@@ -948,6 +948,10 @@ fn parses_six_block_coupling_lfe_converter_and_optional_frame_data() {
         [true, false, false, false, false, false]
     );
     assert_eq!(
+        frame.spx_attenuation_codes,
+        vec![Some(17), None, None, None, None]
+    );
+    assert_eq!(
         frame.block_start_information,
         Some(openjoc_eac3::AuxiliaryData {
             bit_len: 55,

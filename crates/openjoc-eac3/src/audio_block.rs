@@ -11,7 +11,7 @@ use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
     channel_exponent_group_count, compute_element_bap, compute_high_efficiency_element_bap,
     decode_exponents, decode_mantissas, parse_audio_frame, shift_mantissa, snr_offsets_are_zero,
-    spx_subband_range,
+    spx_subband_range, synthesize_spectral_extension,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -696,6 +696,13 @@ fn decode_audio_blocks_until(
         } else {
             channel_block.channel_mantissas.clone()
         };
+        let mut channel_mantissas = channel_mantissas;
+        apply_spectral_extension(
+            &mut channel_mantissas,
+            prefix.spectral_extension.as_ref(),
+            &frame.spx_attenuation_codes,
+            &mut state.spx_noise_seed,
+        )?;
         let primary_gain = dynamic_range_gain(state.dynamic_range);
         let secondary_gain = dynamic_range_gain(state.dynamic_range_2);
         let channel_gains = if frame.bsi.audio_coding_mode == 0 {
@@ -784,6 +791,77 @@ fn element_baps(
         delta,
         coupling_leaks,
     )
+}
+
+fn apply_spectral_extension(
+    channels: &mut [Vec<f64>],
+    information: Option<&SpectralExtensionInformation>,
+    attenuation_codes: &[Option<u8>],
+    noise_seed: &mut u32,
+) -> Result<(), Eac3Error> {
+    let Some(information) = information else {
+        return Ok(());
+    };
+    if information.channel_in_use.len() != channels.len()
+        || attenuation_codes.len() != channels.len()
+        || information.coordinates.len() != channels.len()
+    {
+        return Err(Eac3Error::InvalidSpectralExtensionCoordinateDimensions {
+            expected: channels.len(),
+            actual: information.channel_in_use.len(),
+        });
+    }
+    let begin = *SPX_SUBBAND_MANTISSA
+        .get(usize::from(information.begin_subband))
+        .ok_or(Eac3Error::InvalidSpectralExtensionRange {
+            begin: information.begin_subband,
+            end: information.end_subband,
+        })?;
+    let end = *SPX_SUBBAND_MANTISSA
+        .get(usize::from(information.end_subband))
+        .ok_or(Eac3Error::InvalidSpectralExtensionRange {
+            begin: information.begin_subband,
+            end: information.end_subband,
+        })?;
+    let noise_count = end.checked_sub(begin).ok_or(Eac3Error::FrameSizeOverflow)?;
+    // The bounded syntax fixture includes a zero-width synthetic copy region
+    // (spxstrtf == spxbegf). Annex E's translation loop has no source
+    // coefficient in that malformed case; preserve parsed low-frequency data
+    // until a conformance vector with a non-empty region is available.
+    if usize::from(information.start_copy_frequency_code) >= usize::from(information.begin_subband)
+    {
+        return Ok(());
+    }
+    for channel in 0..channels.len() {
+        if !information.channel_in_use[channel] {
+            continue;
+        }
+        let coordinates = information.coordinates[channel]
+            .as_ref()
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let noise = spectral_extension_noise(noise_seed, noise_count);
+        channels[channel] = synthesize_spectral_extension(
+            &channels[channel],
+            information,
+            coordinates,
+            attenuation_codes[channel],
+            &noise,
+        )?;
+    }
+    Ok(())
+}
+
+fn spectral_extension_noise(seed: &mut u32, count: usize) -> Vec<f64> {
+    let scale = 3.0_f64.sqrt();
+    (0..count)
+        .map(|_| {
+            *seed ^= seed.wrapping_shl(13);
+            *seed ^= seed.wrapping_shr(17);
+            *seed ^= seed.wrapping_shl(5);
+            let unit = f64::from(*seed) / f64::from(u32::MAX);
+            (2.0 * unit - 1.0) * scale
+        })
+        .collect()
 }
 
 fn full_exponents(information: &ExponentInformation) -> Result<Vec<u8>, Eac3Error> {
@@ -962,6 +1040,7 @@ struct AudioBlockState {
     channel_aht: Vec<Option<AhtElementState>>,
     coupling_aht: Option<AhtElementState>,
     lfe_aht: Option<AhtElementState>,
+    spx_noise_seed: u32,
 }
 
 impl AudioBlockState {
@@ -988,6 +1067,7 @@ impl AudioBlockState {
             channel_aht: vec![None; channels],
             coupling_aht: None,
             lfe_aht: None,
+            spx_noise_seed: 0x6d2b_79f5,
         }
     }
 
