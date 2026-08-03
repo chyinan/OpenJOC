@@ -275,3 +275,26 @@ fn interpolates_screen_position_with_normative_diagonal_matrices() {
         Ok(coded)
     );
 }
+
+#[test]
+fn screen_interpolation_preserves_normative_extended_coordinate_overshoot() {
+    let coded = Position3 {
+        x: -2.0 / 310.0,
+        y: 1.0,
+        z: 1.0 + 1.0 / 75.0,
+    };
+    let screen = ReferenceScreen {
+        bottom_left: Position3 {
+            x: 0.1,
+            y: 0.0,
+            z: -0.5,
+        },
+        width: 0.8,
+        height: 1.0,
+    };
+
+    assert_eq!(
+        interpolate_screen_position(coded, 1.0, 0.25, screen),
+        Ok(coded)
+    );
+}

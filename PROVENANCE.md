@@ -210,15 +210,19 @@ frame behavior is covered by integration tests.
   explicitly rather than inferred. Screen interpolation retains the two
   normative diagonal transforms explicitly: screen-factor blending precedes
   depth blending by `y` raised to `depth_factor`, using caller-supplied screen
-  bottom-left position, width, and height. Validate every raw value at its
-  bit-width boundary before arithmetic.
+  bottom-left position, width, and height. Interpolation does not impose a
+  second coordinate clamp: the absolute equations only clamp X/Y above at one,
+  and legal negative/positive extended-precision fifth-steps can therefore
+  remain slightly outside the nominal interval. Validate every raw value at
+  its bit-width boundary before arithmetic.
 - Validation: both absolute Z signs, all four extended-precision indices, X/Y
   upper clamping, exhaustive three-bit signed deltas, differential lower and
   upper coordinate clamping, invalid field widths, all 16 distance factors,
   finite and infinite room projection, undefined centre rays, invalid finite
   factors, integrated render-info projection, exact screen/room endpoints and
-  a non-trivial screen/depth matrix evaluation, all eight screen factors, and
-  all four depth factors are tested.
+  a non-trivial screen/depth matrix evaluation, extended-coordinate overshoot
+  preservation, all eight screen factors, and all four depth factors are
+  tested.
 
 ### OAMD object element and update/reuse semantics
 

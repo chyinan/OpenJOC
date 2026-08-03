@@ -181,7 +181,11 @@ pub fn decode_depth_factor(index: u8) -> Result<f64, OamdError> {
 ///
 /// # Errors
 /// Returns [`OamdError::InvalidPropertyCode`] when coordinates, factors, or
-/// reference-screen geometry are outside their finite normative domains.
+/// reference-screen geometry are non-finite or when the decoded factors
+/// fall outside their normative domains. Coordinate bounds are intentionally
+/// not re-applied here: clauses 5.6.1.1.8 through 5.6.1.1.14 define the
+/// coordinate clamps, and legal extended-precision values may overshoot the
+/// nominal screen interval before the clause 5.2.1.3 matrix operation.
 pub fn interpolate_screen_position(
     coded: Position3,
     screen_factor: f64,
@@ -201,9 +205,6 @@ pub fn interpolate_screen_position(
         screen.height,
     ];
     if values.iter().any(|value| !value.is_finite())
-        || !(0.0..=1.0).contains(&coded.x)
-        || !(0.0..=1.0).contains(&coded.y)
-        || !(-1.0..=1.0).contains(&coded.z)
         || !(0.0..=1.0).contains(&screen_factor)
         || depth_factor < 0.0
         || screen.width < 0.0
