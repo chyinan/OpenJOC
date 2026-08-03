@@ -967,16 +967,19 @@ frame behavior is covered by integration tests.
   512-sample transform or two interleaved 256-sample transforms. `overlap_add`
   owns the 256-sample delay state, applies the normative factor of two, and
   advances the delay only after validating both input dimensions. The new
-  `synthesize_audio_blocks` stage pads the bounded channel/LFE spectra to 256
-  bins, applies each full-bandwidth `blksw[ch]`, uses the mandatory long
-  transform for LFE, and keeps independent overlap histories. The current
-  implementation uses direct O(N²) complex sums for auditability; an optimized
-  FFT path is deferred until conformance vectors exist.
+  `AudioPcmSynthesizer` stage pads the bounded channel/LFE spectra to 256 bins,
+  applies each full-bandwidth `blksw[ch]`, uses the mandatory long transform
+  for LFE, and keeps independent overlap histories across syncframe calls. Its
+  state is committed only after a complete block sequence succeeds; the
+  `synthesize_audio_blocks` convenience API starts from zero history. The
+  current implementation uses direct O(N²) complex sums for auditability; an
+  optimized FFT path is deferred until conformance vectors exist.
 - Validation: malformed coefficient dimensions, non-finite coefficients,
   zero-valued long/short blocks, a nonzero DC coefficient against the rendered
   ETSI equations and Table 6.33 values, delay-state advancement, two-block
-  full-bandwidth PCM synthesis, block-switched synthesis, and seven-bin LFE
-  synthesis are covered by `crates/openjoc-eac3/tests/transform.rs` and
+  full-bandwidth PCM synthesis, block-switched synthesis, seven-bin LFE
+  synthesis, cross-call delay retention, and reset behavior are covered by
+  `crates/openjoc-eac3/tests/transform.rs` and
   `crates/openjoc-eac3/tests/syncframe.rs`. The access-unit shell still uses
   the replaceable external base E-AC-3 PCM boundary documented below; this
   stage is the internal audio-block-to-PCM core.

@@ -1,7 +1,8 @@
 use openjoc_eac3::{
-    CouplingInformation, Eac3Error, JocAddbsi, StreamType, block_start_information_length,
-    channel_end_mantissa, channel_exponent_group_count, decode_audio_blocks, decode_exponents,
-    decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
+    AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAddbsi, StreamType,
+    block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
+    decode_audio_blocks, decode_exponents, decode_first_audio_block,
+    decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, group_access_units, index_syncframes,
     parse_audio_frame, parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi,
     parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
@@ -447,6 +448,27 @@ fn decodes_following_audio_block_with_normative_reuse_state() {
     assert_eq!(pcm.channels[0].len(), 512);
     assert!(pcm.lfe.is_none());
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
+
+    let mut stateful = AudioPcmSynthesizer::new();
+    let first = stateful
+        .synthesize(&blocks)
+        .expect("stateful first PCM synthesis");
+    let second = stateful
+        .synthesize(&blocks)
+        .expect("stateful second PCM synthesis");
+    assert!(
+        first.channels[0]
+            .iter()
+            .zip(&second.channels[0])
+            .any(|(left, right)| left != right)
+    );
+    stateful.reset();
+    assert_eq!(
+        stateful
+            .synthesize(&blocks)
+            .expect("stateful reset PCM synthesis"),
+        first
+    );
 }
 
 #[test]

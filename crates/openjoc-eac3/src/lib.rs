@@ -16,8 +16,8 @@ pub use aht::{
     expand_aht_gaq_gains,
 };
 pub use audio_block::{
-    AhtQuantizationInformation, AudioBlockPrefix, BitAllocationParameters, CouplingInformation,
-    CouplingLeak, DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation,
+    AhtQuantizationInformation, AudioBlockPrefix, AudioPcmSynthesizer, BitAllocationParameters,
+    CouplingInformation, CouplingLeak, DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation,
     DeltaBitAllocationElement, DeltaBitAllocationSegment, EnhancedCouplingInformation,
     EnhancedCouplingReconstruction, ExponentInformation, FastGainCodes, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,

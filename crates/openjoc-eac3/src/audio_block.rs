@@ -639,69 +639,140 @@ pub fn decode_audio_blocks(
     decode_audio_blocks_until(bytes, dither_values, usize::MAX)
 }
 
-/// Applies the E-AC-3 inverse transform and overlap/add stages to decoded
-/// audio blocks.
+/// Stateful inverse-transform and overlap/add processor for E-AC-3 blocks.
 ///
-/// This is the pure clause 5.2.10-5.2.11 / 6.9 boundary. Each full-bandwidth
-/// channel uses its own `blksw[ch]` flag and overlap history. The LFE channel
-/// has no block-switch flag in the syntax and therefore always uses the long
-/// transform; its seven decoded coefficients are zero-padded to the 256-bin
-/// transform input.
-///
-/// # Errors
-/// Returns an error if blocks disagree about channel or LFE dimensions, or if
-/// a spectrum contains more than the 256 transform coefficients permitted by
-/// clause 6.9.
-pub fn synthesize_audio_blocks(blocks: &[DecodedAudioBlock]) -> Result<DecodedAudioPcm, Eac3Error> {
-    let Some(first) = blocks.first() else {
-        return Ok(DecodedAudioPcm {
-            channels: Vec::new(),
-            lfe: None,
-        });
-    };
-    let channel_count = first.channel_mantissas.len();
-    let lfe_present = first.lfe_mantissas.is_some();
-    let mut channels = vec![Vec::with_capacity(blocks.len() * 256); channel_count];
-    let mut channel_delays = vec![vec![0.0; 256]; channel_count];
-    let mut lfe = lfe_present.then(|| Vec::with_capacity(blocks.len() * 256));
-    let mut lfe_delay = vec![0.0; 256];
+/// The delay history is retained across calls so consecutive syncframes remain
+/// TDAC-continuous. A failed call leaves both the histories and the channel
+/// configuration unchanged.
+#[derive(Clone, Debug, Default)]
+pub struct AudioPcmSynthesizer {
+    channel_delays: Vec<Vec<f64>>,
+    lfe_delay: Vec<f64>,
+    lfe_present: Option<bool>,
+}
 
-    for block in blocks {
-        if block.channel_mantissas.len() != channel_count {
-            return Err(Eac3Error::InvalidAudioBlockChannelCount {
-                expected: channel_count,
-                actual: block.channel_mantissas.len(),
-            });
-        }
-        if block.prefix.block_switch.len() != channel_count {
-            return Err(Eac3Error::InvalidAudioBlockSwitchCount {
-                expected: channel_count,
-                actual: block.prefix.block_switch.len(),
-            });
-        }
-        if block.lfe_mantissas.is_some() != lfe_present {
-            return Err(Eac3Error::InvalidAudioBlockLfePresence {
-                expected: lfe_present,
-                actual: block.lfe_mantissas.is_some(),
-            });
-        }
-
-        for channel in 0..channel_count {
-            let coefficients = padded_transform_coefficients(&block.channel_mantissas[channel])?;
-            let windowed = inverse_transform(&coefficients, block.prefix.block_switch[channel])?;
-            let pcm = overlap_add(&windowed, &mut channel_delays[channel])?;
-            channels[channel].extend_from_slice(&pcm);
-        }
-
-        if let (Some(lfe_output), Some(lfe_coefficients)) = (&mut lfe, &block.lfe_mantissas) {
-            let coefficients = padded_transform_coefficients(lfe_coefficients)?;
-            let windowed = inverse_transform(&coefficients, false)?;
-            let pcm = overlap_add(&windowed, &mut lfe_delay)?;
-            lfe_output.extend_from_slice(&pcm);
-        }
+impl AudioPcmSynthesizer {
+    /// Creates a processor with zero overlap history.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    Ok(DecodedAudioPcm { channels, lfe })
+    /// Clears all overlap history and channel configuration.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Applies clauses 5.2.10-5.2.11 and 6.9 to one decoded block sequence.
+    ///
+    /// Each full-bandwidth channel uses its own `blksw[ch]` flag. The LFE
+    /// channel has no block-switch flag in the syntax and therefore always
+    /// uses the long transform; its seven decoded coefficients are zero-padded
+    /// to the 256-bin transform input.
+    ///
+    /// # Errors
+    /// Returns an error if blocks disagree about channel or LFE dimensions, if
+    /// the sequence changes after initialization, or if a spectrum contains
+    /// more than the 256 transform coefficients permitted by clause 6.9.
+    pub fn synthesize(
+        &mut self,
+        blocks: &[DecodedAudioBlock],
+    ) -> Result<DecodedAudioPcm, Eac3Error> {
+        let Some(first) = blocks.first() else {
+            return Ok(DecodedAudioPcm {
+                channels: Vec::new(),
+                lfe: self
+                    .lfe_present
+                    .filter(|present| *present)
+                    .map(|_| Vec::new()),
+            });
+        };
+        let channel_count = first.channel_mantissas.len();
+        let lfe_present = first.lfe_mantissas.is_some();
+        if !self.channel_delays.is_empty() && self.channel_delays.len() != channel_count {
+            return Err(Eac3Error::InvalidAudioBlockChannelCount {
+                expected: self.channel_delays.len(),
+                actual: channel_count,
+            });
+        }
+        if let Some(expected) = self.lfe_present {
+            if expected != lfe_present {
+                return Err(Eac3Error::InvalidAudioBlockLfePresence {
+                    expected,
+                    actual: lfe_present,
+                });
+            }
+        }
+
+        let mut channel_delays = if self.channel_delays.is_empty() {
+            vec![vec![0.0; 256]; channel_count]
+        } else {
+            self.channel_delays.clone()
+        };
+        let mut lfe_delay = if lfe_present {
+            if self.lfe_delay.is_empty() {
+                vec![0.0; 256]
+            } else {
+                self.lfe_delay.clone()
+            }
+        } else {
+            Vec::new()
+        };
+        let mut channels = vec![Vec::with_capacity(blocks.len() * 256); channel_count];
+        let mut lfe = lfe_present.then(|| Vec::with_capacity(blocks.len() * 256));
+
+        for block in blocks {
+            if block.channel_mantissas.len() != channel_count {
+                return Err(Eac3Error::InvalidAudioBlockChannelCount {
+                    expected: channel_count,
+                    actual: block.channel_mantissas.len(),
+                });
+            }
+            if block.prefix.block_switch.len() != channel_count {
+                return Err(Eac3Error::InvalidAudioBlockSwitchCount {
+                    expected: channel_count,
+                    actual: block.prefix.block_switch.len(),
+                });
+            }
+            if block.lfe_mantissas.is_some() != lfe_present {
+                return Err(Eac3Error::InvalidAudioBlockLfePresence {
+                    expected: lfe_present,
+                    actual: block.lfe_mantissas.is_some(),
+                });
+            }
+
+            for channel in 0..channel_count {
+                let coefficients =
+                    padded_transform_coefficients(&block.channel_mantissas[channel])?;
+                let windowed =
+                    inverse_transform(&coefficients, block.prefix.block_switch[channel])?;
+                let pcm = overlap_add(&windowed, &mut channel_delays[channel])?;
+                channels[channel].extend_from_slice(&pcm);
+            }
+
+            if let (Some(lfe_output), Some(lfe_coefficients)) = (&mut lfe, &block.lfe_mantissas) {
+                let coefficients = padded_transform_coefficients(lfe_coefficients)?;
+                let windowed = inverse_transform(&coefficients, false)?;
+                let pcm = overlap_add(&windowed, &mut lfe_delay)?;
+                lfe_output.extend_from_slice(&pcm);
+            }
+        }
+
+        self.channel_delays = channel_delays;
+        self.lfe_delay = lfe_delay;
+        self.lfe_present = Some(lfe_present);
+        Ok(DecodedAudioPcm { channels, lfe })
+    }
+}
+
+/// Applies the inverse transform and overlap/add stages to one block sequence
+/// with a fresh zero delay history.
+///
+/// # Errors
+/// Returns the same checked dimension and coefficient errors as
+/// [`AudioPcmSynthesizer::synthesize`].
+pub fn synthesize_audio_blocks(blocks: &[DecodedAudioBlock]) -> Result<DecodedAudioPcm, Eac3Error> {
+    AudioPcmSynthesizer::new().synthesize(blocks)
 }
 
 fn padded_transform_coefficients(coefficients: &[f64]) -> Result<[f64; 256], Eac3Error> {
