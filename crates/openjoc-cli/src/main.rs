@@ -5,6 +5,7 @@ mod eac3_decode;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
+use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{decode, encode_f64_mono};
@@ -137,16 +138,19 @@ fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(),
 }
 
 fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
-    let stream = fs::read(input)?;
-    let frames = openjoc_eac3::index_syncframes(&stream)?;
+    let media = load_eac3(input)?;
+    let frames = openjoc_eac3::index_syncframes(&media.bytes)?;
     let units = openjoc_eac3::group_access_units(&frames)?;
+    println!("input: {}", media_kind_name(media.kind));
     println!("frames: {}", frames.len());
     println!("access units: {}", units.len());
     for (unit_index, unit) in units.iter().copied().enumerate() {
         println!("access unit {unit_index}:");
         println!("  sample rate: {} Hz", unit.sample_rate);
         println!("  samples: {}", unit.samples);
-        if let Some(metadata) = openjoc_eac3::extract_aux_joc_access_unit(&stream, &frames, unit)? {
+        if let Some(metadata) =
+            openjoc_eac3::extract_aux_joc_access_unit(&media.bytes, &frames, unit)?
+        {
             println!("  carrier frame: {}", metadata.carrier_frame);
             println!("  complexity index: {}", metadata.complexity_index);
             println!("  OAMD bytes: {}", metadata.oamd.len());
@@ -215,7 +219,8 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
 }
 
 fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
-    let stream = fs::read(&arguments.input)?;
+    let media = load_eac3(&arguments.input)?;
+    let stream = &media.bytes;
     let config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig {
@@ -224,14 +229,14 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     };
     let decoded = if arguments.internal_base {
         let dither = deterministic_dither_values();
-        eac3_decode::decode_internal_eac3(&stream, config, &dither)?
+        eac3_decode::decode_internal_eac3(stream, config, &dither)?
     } else {
         let downmix_path = match &arguments.downmix {
             Some(path) => path.clone(),
             None => decode_base_audio(&arguments.input, &arguments.output)?,
         };
         let downmix = decode(&fs::read(downmix_path)?)?;
-        eac3_decode::decode_aligned_eac3(&stream, &downmix, config)?
+        eac3_decode::decode_aligned_eac3(stream, &downmix, config)?
     };
     for (frame_index, frame) in decoded.frames.iter().enumerate() {
         write_debug(&arguments.output, frame_index, frame)?;
@@ -257,12 +262,14 @@ fn deterministic_dither_values() -> Vec<f64> {
 fn decode_base_audio(input: &Path, output: &Path) -> Result<PathBuf, Box<dyn Error>> {
     let debug = output.join("debug");
     fs::create_dir_all(&debug)?;
-    let downmix = debug.join("downmix.wav");
+    // pcm_f64le is an explicit reference/debug format. It is compatible
+    // base-channel PCM, not a final speaker or binaural render.
+    let base_pcm = debug.join("compatible_base.wav");
     let result = Command::new("ffmpeg")
         .args(["-v", "error", "-y", "-i"])
         .arg(input)
         .args(["-map", "0:a:0", "-c:a", "pcm_f64le"])
-        .arg(&downmix)
+        .arg(&base_pcm)
         .output()?;
     if !result.status.success() {
         return Err(io::Error::other(format!(
@@ -271,7 +278,15 @@ fn decode_base_audio(input: &Path, output: &Path) -> Result<PathBuf, Box<dyn Err
         ))
         .into());
     }
-    Ok(downmix)
+    Ok(base_pcm)
+}
+
+fn media_kind_name(kind: InputMediaKind) -> &'static str {
+    match kind {
+        InputMediaKind::RawEac3 => "raw E-AC-3",
+        InputMediaKind::IsoBmff => "ISO BMFF (stream-copied E-AC-3)",
+        InputMediaKind::Unknown => "unknown",
+    }
 }
 
 fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn Error>> {

@@ -1334,3 +1334,55 @@ and a test or explicit TODO before implementation proceeds.
   call. A bounded legacy syntax fixture contains a zero-width synthetic copy
   region (`spxstrtf == spxbegf`); the block shell preserves its parsed baseband
   rather than fabricating coefficients, pending a legal conformance vector.
+### Input-media boundary and ISO BMFF stream-copy demux (current increment)
+
+- Normative codec sources: the elementary stream produced at this boundary is
+  parsed by the existing TS 102 366 E-AC-3 frontend and TS 103 420 clause 8
+  EMDF/JOC/OAMD path. ISO BMFF box syntax and `ec-3` sample carriage are used
+  only as container interoperability concerns; they do not define codec
+  decoding behavior here.
+- External tool provenance: FFmpeg/FFprobe are invoked as black-box container
+  tools only. FFprobe selects and reports the audio stream; FFmpeg is invoked
+  with `-c:a copy -f eac3` and therefore performs no audio re-encoding. The
+  resulting bytes are bounded, then independently indexed and grouped by
+  `openjoc-eac3` before any JOC/OAMD decode. No FFmpeg decoder output is used
+  as reconstructed object audio.
+- Design rationale: inspect the first 12 bytes before calling
+  `index_syncframes`; recognize the E-AC-3 syncword only for raw input and the
+  ISO BMFF `ftyp`/top-level box signature for containers. Exactly one audio
+  stream with codec `eac3` is accepted. Missing, multiple, unsupported, probe,
+  demux, oversized, empty, and invalid-elementary-stream conditions have
+  distinct errors. Raw `.ec3` bytes retain the pre-existing OpenJOC parser and
+  error path.
+- Validation: `crates/openjoc-container/tests/input_media.rs` covers pure
+  signatures and FFprobe-row parsing. `crates/openjoc-cli/tests/container.rs`
+  exercises FFmpeg/MP4Box-generated ISO BMFF, byte-equivalent stream-copy
+  output, raw classification, inspect/decode routing, malformed input, and
+  missing/multiple audio-track diagnostics. MP4Box is test-fixture tooling
+  only and is not an implementation dependency.
+- Environment evidence: Poppler 26.02.0 (`pdftoppm`, `pdftotext`, `pdfinfo`)
+  and FFmpeg/FFprobe are available in the development environment. No
+  proprietary decoder source was inspected.
+
+### User-supplied legal DEE fixture (acceptance lane remains open)
+
+- Fixture is not committed to this repository. The supplied path was
+  `D:\DRV SA PROJECT\Dolby ATMOS\Forever Friends ~Dolby ATMOS Test2~ .m4a`.
+- Recorded SHA-256: `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896`.
+  Size: 32,138,978 bytes. FFprobe reports ISO BMFF with one MJPEG video stream
+  (index 0) and one `eac3` audio stream (index 1), 48 kHz, six channels,
+  `5.1(side)`, duration 248.736 seconds.
+- Independent FFmpeg stream-copy artifact (temporary, not committed):
+  31,838,208 bytes, SHA-256
+  `2e155599e319d7a6f1ef655684bd872aaae1cd5f73d82097c589a32c572df86a`.
+  OpenJOC container demux produced byte-equivalent elementary bytes.
+- Current OpenJOC evidence: `inspect` accepts the container and reports 7,773
+  E-AC-3 frames/access units at 1,536 samples each, but reports JOC profile
+  absent for every unit. Default FFmpeg base extraction produces six-channel
+  48 kHz f64 PCM (11,939,328 samples/channel). `--internal-base` currently
+  fails on this real stream with `invalid E-AC-3 mantissa code 7 for bap 3`;
+  internal-base fidelity is therefore unverified. This is an open decoder
+  acceptance issue, not evidence that the supplied programme lacks JOC.
+- The real-vector lane must not be marked verified until nonzero JOC side
+  information, dynamic OAMD, nonzero object PCM, moving-object continuity, and
+  known-stem/ADM-BWF comparisons are demonstrated.

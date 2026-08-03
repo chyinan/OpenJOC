@@ -3,6 +3,13 @@
 Status values are `planned`, `implemented`, or `verified`. A row may be marked
 `verified` only with fresh test or artifact evidence.
 
+The matrix describes incremental evidence, not a claim that OpenJOC is already
+a complete real-world Atmos decoder or renderer. The currently evidenced codec
+boundary is raw E-AC-3 plus aligned base PCM plus JOC/OAMD extraction to a
+renderer-independent ObjectScene and f64 object stems. Container input is a
+separate first production increment; legal nonzero real-vector fidelity and
+rendering remain open.
+
 | Normative source | Requirement | Production target | Required evidence | Status |
 | --- | --- | --- | --- | --- |
 | TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | anchor-preserving scene model, all-anchor JSON roundtrips, atomic decoded-OAMD/PCM assembly, and invariant tests pass | implemented |
@@ -45,6 +52,13 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
 | Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3` `decode` write scene/timeline/f64 stem/debug artifacts; `inspect` reports bounded profile timing/carrier details; dump commands remain | implemented |
+| Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | implemented |
+| Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | verified |
+| Legal DEE real-vector lane | Nonzero JOC/OAMD reconstruction and continuity acceptance | `openjoc-cli`, `openjoc-scene` | user-supplied fixture hash, nonzero side information/stems, dynamic OAMD, moving object, multiple access units, known-stem/ADM-BWF comparison | planned |
+| Legal DEE real-vector lane | FFmpeg base-channel versus `--internal-base` fidelity report | `openjoc-cli`, `openjoc-eac3` | per-channel count/order, delay, peak, RMS, and numerical-error comparison on the same legal stream | planned |
+| Engineering spec 5.7 | Renderer-independent trim and balance retention | `openjoc-scene`, `openjoc-oamd` | trim warp mode, global/centre/surround/height trims, balance controls preserved in scene manifest without rendering behavior | planned |
+| Engineering spec 5.7 / scalability | Frame-local atomic staging and streaming output sinks | `openjoc-scene`, `openjoc-cli`, `openjoc-wave` | no per-frame clone of accumulated object PCM; bounded input/debug retention; streaming object stems and scene metadata | planned |
+| Engineering spec 5.7 / wave output | Explicit f32/f64/s24/s16 sample-format abstraction | `openjoc-wave`, `openjoc-cli` | f32 normal output, explicit reference-f64 option, defined clipping and dither tests; compatible base PCM name | planned |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
 | Mandatory DoD | WAV stems, scene, timeline, debug artifacts from real JOC | end-to-end workspace | legal vector artifacts plus fidelity comparison | planned |
 | Mandatory DoD | Windows/Linux/macOS CI | `.github/workflows` | all platform jobs green | planned |
@@ -58,4 +72,6 @@ Status values are `planned`, `implemented`, or `verified`. A row may be marked
 - zero `unsafe` in the initial reference implementation
 - no `unwrap`/`expect` on external input paths
 - `IMPLEMENTATION_REPORT.md` records exact commands, results, QMF metrics,
-  real-vector outcomes, remaining gaps, and known limitations
+  real-vector outcomes, remaining gaps, and known limitations. Current real
+  fixture evidence is recorded as an open/failed fidelity lane, not as decoder
+  completion.

@@ -1,0 +1,90 @@
+# OpenJOC implementation report
+
+## Evidence boundary
+
+The repository currently supports a clean-room raw E-AC-3 path with aligned
+base-channel PCM, JOC/OAMD extraction, renderer-independent `ObjectScene`, and
+f64 object stems. This report does not claim a complete real-world Atmos
+decoder or a speaker/binaural renderer.
+
+## Current increment: input media and DEE containers
+
+Implemented in `openjoc-container` and `openjoc-cli`:
+
+- signature classification distinguishes raw E-AC-3 (`0b77`) from ISO BMFF
+  (`ftyp`/recognized top-level box) before `index_syncframes`;
+- FFprobe selects exactly one audio stream and requires codec `eac3`;
+- FFmpeg is invoked only for `-c:a copy -f eac3` stream-copy demux;
+- stdout is bounded, empty/oversized output is rejected, and OpenJOC indexes
+  and groups the demuxed elementary stream independently;
+- `inspect` and `decode` use the same boundary; raw `.ec3` remains direct;
+- container, missing-track, multiple-track, unsupported-codec, malformed, and
+  failed-demux diagnostics are structured and do not collapse to syncword
+  errors;
+- the generated compatible base-channel reference is now named
+  `debug/compatible_base.wav`; it remains explicit `pcm_f64le` reference PCM,
+  not a final render.
+
+## Tests added
+
+- `crates/openjoc-container/tests/input_media.rs`: raw/ISO/unknown signatures
+  and probe-row parsing.
+- `crates/openjoc-cli/tests/container.rs`: FFmpeg + MP4Box fixture demux,
+  byte-equivalent stream-copy comparison, raw classification, inspect/decode
+  routing, malformed container, AAC-only track, and multiple-track errors.
+
+The MP4Box command is test-fixture tooling only; it is not an OpenJOC runtime
+dependency. Runtime container behavior uses FFprobe and FFmpeg as external
+black boxes and never uses their decoded PCM as object reconstruction.
+
+## User-supplied DEE fixture evidence
+
+The legal fixture is intentionally not committed:
+
+`D:\DRV SA PROJECT\Dolby ATMOS\Forever Friends ~Dolby ATMOS Test2~ .m4a`
+
+- SHA-256: `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896`
+- size: 32,138,978 bytes
+- FFprobe: one MJPEG video stream and one `eac3` audio stream (index 1), 48
+  kHz, six channels, `5.1(side)`, 248.736 seconds
+- independent stream-copy EC-3: 31,838,208 bytes, SHA-256
+  `2e155599e319d7a6f1ef655684bd872aaae1cd5f73d82097c589a32c572df86a`
+- OpenJOC `inspect`: 7,773 frames/access units, 1,536 samples each, container
+  accepted; current extraction reports JOC profile absent in every unit
+- default FFmpeg base path: six-channel 48 kHz f64 PCM, 11,939,328 samples per
+  channel (temporary WAV SHA-256
+  `a065dc5d303b44e97943d3d8fa95e784559f157b2c220208112fd31b4a5997e2`)
+- `--internal-base`: currently fails with `invalid E-AC-3 mantissa code 7 for
+  bap 3`; internal-base fidelity is not verified
+
+This is a useful real-vector failure report, not a completion claim. The
+nonzero JOC/OAMD acceptance lane remains open until the carrier extraction and
+internal base path are corrected and compared against legal ground truth.
+
+## Verification commands
+
+The current container-focused checks were run with:
+
+```text
+cargo test -p openjoc-container
+cargo test -p openjoc-cli --test container -- --nocapture
+cargo test -p openjoc-cli
+```
+
+The final handoff still requires fresh full-workspace runs of:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo build --workspace --release --offline
+git diff --check
+```
+
+## Known limitations and next goals
+
+The real-vector acceptance lane, FFmpeg-versus-internal-base fidelity report,
+streaming/frame-local scene staging, full renderer-independent trim retention,
+and f32/s24/s16 wave output abstraction remain planned. Speaker and binaural
+renderers are later non-normative components and are deliberately outside this
+container increment.
