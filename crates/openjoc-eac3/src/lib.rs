@@ -45,13 +45,14 @@ pub use aht::{
     expand_aht_gaq_gains,
 };
 pub use audio_block::{
-    AhtQuantizationInformation, AudioBlockPrefix, AudioPcmSynthesizer, BitAllocationParameters,
-    CouplingInformation, CouplingLeak, DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation,
-    DeltaBitAllocationElement, DeltaBitAllocationSegment, EnhancedCouplingInformation,
-    EnhancedCouplingReconstruction, ExponentInformation, FastGainCodes, SnrOffsets,
-    SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
-    StandardCouplingInformation, decode_audio_blocks, decode_audio_frame_pcm,
-    decode_first_audio_block, inverse_aht_dct, parse_first_audio_block_prefix,
+    AhtQuantizationInformation, AudioBlockCarrier, AudioBlockCarrierReport, AudioBlockPrefix,
+    AudioPcmSynthesizer, BitAllocationParameters, CouplingInformation, CouplingLeak,
+    DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation, DeltaBitAllocationElement,
+    DeltaBitAllocationSegment, EnhancedCouplingInformation, EnhancedCouplingReconstruction,
+    ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
+    SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
+    decode_audio_blocks, decode_audio_frame_pcm, decode_first_audio_block,
+    inspect_audio_block_carriers, inverse_aht_dct, parse_first_audio_block_prefix,
     reconstruct_enhanced_coupling, reconstruct_standard_coupling, synthesize_audio_blocks,
 };
 pub use bit_allocation::{
@@ -78,6 +79,14 @@ use openjoc_emdf::{
 };
 
 const EAC3_SYNCWORD: u16 = 0x0b77;
+
+/// Spectral element that owns a conventional mantissa codeword.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MantissaElement {
+    Channel,
+    Coupling,
+    Lfe,
+}
 
 /// Checked frontend failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -153,6 +162,21 @@ pub enum Eac3Error {
     InvalidMantissaGroupCode {
         bap: u8,
         actual: u16,
+    },
+    InvalidMantissaDiagnostic {
+        element: MantissaElement,
+        channel: Option<u8>,
+        block: usize,
+        bap: u8,
+        actual: u16,
+        bit_width: u8,
+        bit_offset_bits: usize,
+        grouped: bool,
+        spx_active: bool,
+        coupling_active: bool,
+        enhanced_coupling_active: bool,
+        rematrix_active: bool,
+        aht_active: bool,
     },
     MantissaExponentLengthMismatch {
         baps: usize,
@@ -509,6 +533,24 @@ impl Eac3Error {
                 formatter,
                 "invalid E-AC-3 mantissa group code {actual} for bap {bap}"
             )),
+            Self::InvalidMantissaDiagnostic {
+                element,
+                channel,
+                block,
+                bap,
+                actual,
+                bit_width,
+                bit_offset_bits,
+                grouped,
+                spx_active,
+                coupling_active,
+                enhanced_coupling_active,
+                rematrix_active,
+                aht_active,
+            } => Some(write!(
+                formatter,
+                "invalid E-AC-3 mantissa code {actual} for bap {bap}; element {element:?}, channel {channel:?}, block {block}, width {bit_width}, bit offset {bit_offset_bits}, grouped {grouped}, spx {spx_active}, coupling {coupling_active}, enhanced coupling {enhanced_coupling_active}, rematrix {rematrix_active}, aht {aht_active}"
+            )),
             Self::MantissaExponentLengthMismatch { baps, exponents } => Some(write!(
                 formatter,
                 "E-AC-3 mantissa/exponent length mismatch: {baps} baps and {exponents} exponents"
@@ -670,6 +712,7 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidMantissaBap { .. }
             | Self::InvalidMantissaCode { .. }
             | Self::InvalidMantissaGroupCode { .. }
+            | Self::InvalidMantissaDiagnostic { .. }
             | Self::MantissaExponentLengthMismatch { .. }
             | Self::MantissaDitherLengthMismatch { .. }
             | Self::MissingDitherValue { .. }

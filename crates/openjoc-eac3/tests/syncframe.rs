@@ -4,8 +4,8 @@ use openjoc_eac3::{
     decode_audio_blocks, decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
     decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
-    group_access_units, index_syncframes, parse_audio_frame, parse_bsi,
-    parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header,
+    group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
+    parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header,
     reconstruct_enhanced_coupling, spx_subband_range, synthesize_audio_blocks,
     validate_complexity_index,
 };
@@ -148,6 +148,20 @@ fn six_block_mono_frame(
         }
     }
     bits.bytes(4096)
+}
+
+#[test]
+fn parse_only_carrier_inspection_reports_reached_prefixes_and_unresolved_blocks() {
+    let bytes = six_block_mono_frame(0, None, None);
+    let mut callbacks = 0;
+    let report = inspect_audio_block_carriers(&bytes, |carrier| {
+        callbacks += 1;
+        assert_eq!(carrier.block_index, 0);
+    })
+    .expect("first audio-block prefix is bounded");
+    assert_eq!(callbacks, 1);
+    assert_eq!(report.examined_blocks, 1);
+    assert_eq!(report.unresolved_blocks, 5);
 }
 
 #[test]

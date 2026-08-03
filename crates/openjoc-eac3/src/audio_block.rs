@@ -9,10 +9,11 @@ use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 use crate::rematrix::rematrix_channels;
 use crate::transform::{inverse_transform, overlap_add};
 use crate::{
-    AudioFrameInformation, AuxiliaryData, Eac3Error, StreamType, channel_end_mantissa,
-    channel_exponent_group_count, compute_element_bap, compute_high_efficiency_element_bap,
-    decode_exponents, decode_mantissas, parse_audio_frame, shift_mantissa, snr_offsets_are_zero,
-    spx_subband_range, synthesize_spectral_extension,
+    AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
+    channel_end_mantissa, channel_exponent_group_count, compute_element_bap,
+    compute_high_efficiency_element_bap, decode_exponents, decode_mantissas, mantissa_quantizer,
+    parse_audio_frame, shift_mantissa, snr_offsets_are_zero, spx_subband_range,
+    synthesize_spectral_extension,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -59,6 +60,39 @@ pub struct AudioBlockPrefix {
     pub skip_field: Option<AuxiliaryData>,
     /// Absolute frame bit offset immediately after the optional skip field.
     pub next_offset_bits: usize,
+}
+
+/// One audio-block carrier reached by the parse-only side-information walker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioBlockCarrier {
+    /// Zero-based block index within the syncframe.
+    pub block_index: usize,
+    /// Optional bounded `skipfld` bytes declared by this block.
+    pub skip_field: Option<AuxiliaryData>,
+    /// Absolute frame bit offset where this block's side information starts.
+    pub prefix_start_offset_bits: usize,
+    /// Absolute frame bit offset immediately after this block's `skipfld`.
+    pub next_offset_bits: usize,
+}
+
+/// Result of the parse-only audio-block carrier walk.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioBlockCarrierReport {
+    /// Number of blocks whose side-information prefix was completely reached.
+    pub examined_blocks: usize,
+    /// Number of blocks not reached because mantissa traversal is still needed
+    /// to prove the next block's starting cursor.
+    pub unresolved_blocks: usize,
+}
+
+#[allow(clippy::struct_excessive_bools)] // Independent syntax features are reported verbatim.
+#[derive(Clone, Copy, Debug, Default)]
+struct MantissaFeatureState {
+    spx_active: bool,
+    coupling_active: bool,
+    enhanced_coupling_active: bool,
+    rematrix_active: bool,
+    aht_active: bool,
 }
 
 /// One newly transmitted E.1.2.4 exponent payload and its decoded bins.
@@ -600,6 +634,42 @@ pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, 
     parse_first_prefix_reader(&mut bits, &frame)
 }
 
+/// Walks the bounded side-information prefix before conventional mantissas.
+///
+/// The first block is always reachable without consuming mantissas. Later
+/// blocks are reported as unresolved until a normative mantissa cursor walker
+/// is available; they are never reported as skip-field absence. This boundary
+/// intentionally does not synthesize PCM or invent mantissa values.
+///
+/// # Errors
+/// Returns an error if the acquisition/frame or first block side-information
+/// syntax cannot be proven within the declared syncframe boundary.
+pub fn inspect_audio_block_carriers<F>(
+    bytes: &[u8],
+    mut callback: F,
+) -> Result<AudioBlockCarrierReport, Eac3Error>
+where
+    F: FnMut(&AudioBlockCarrier),
+{
+    let frame = parse_audio_frame(bytes)?;
+    let frame_bytes = &bytes[..frame.bsi.header.frame_size];
+    let mut bits = BitReader::new(frame_bytes);
+    bits.take_bits(frame.audio_blocks_offset_bits)?;
+    let mut state = AudioBlockState::new(usize::from(frame.full_bandwidth_channels));
+    let prefix = parse_audio_block_prefix_reader(&mut bits, &frame, 0, &mut state)?;
+    let carrier = AudioBlockCarrier {
+        block_index: 0,
+        skip_field: prefix.skip_field.clone(),
+        prefix_start_offset_bits: frame.audio_blocks_offset_bits,
+        next_offset_bits: prefix.next_offset_bits,
+    };
+    callback(&carrier);
+    Ok(AudioBlockCarrierReport {
+        examined_blocks: 1,
+        unresolved_blocks: usize::from(frame.bsi.header.audio_blocks).saturating_sub(1),
+    })
+}
+
 /// Decodes the first audio block's bit allocation and mantissas.
 ///
 /// This function starts at `AudioBlockPrefix::next_offset_bits`, computes the
@@ -863,6 +933,7 @@ fn decode_audio_blocks_until(
             dither_values,
             &mut dither_index,
             zero_bap,
+            frame_bits,
         )?;
         let channel_mantissas = if frame.bsi.audio_coding_mode == 2 {
             rematrix_channels(
@@ -924,6 +995,8 @@ fn decode_audio_blocks_until(
             &fast_gain,
             fscod,
             zero_bap,
+            frame_bits,
+            frame.lfe_aht_in_use,
         )?;
         let lfe_mantissas = lfe_mantissas
             .as_deref()
@@ -1237,6 +1310,44 @@ fn decode_element_mantissas(
     Ok(decoded)
 }
 
+fn mantissa_error_context(
+    error: Eac3Error,
+    bits: &BitReader<'_>,
+    frame_bits: usize,
+    block: usize,
+    element: MantissaElement,
+    channel: Option<u8>,
+    features: MantissaFeatureState,
+) -> Eac3Error {
+    let (bap, actual, grouped) = match error {
+        Eac3Error::InvalidMantissaCode { bap, actual } => (bap, actual, false),
+        Eac3Error::InvalidMantissaGroupCode { bap, actual } => (bap, actual, true),
+        other => return other,
+    };
+    let Ok(quantizer) = mantissa_quantizer(bap) else {
+        return error;
+    };
+    let bit_width = quantizer.group_bits;
+    let bit_offset_bits = frame_bits
+        .saturating_sub(bits.bits_remaining())
+        .saturating_sub(usize::from(bit_width));
+    Eac3Error::InvalidMantissaDiagnostic {
+        element,
+        channel,
+        block,
+        bap,
+        actual,
+        bit_width,
+        bit_offset_bits,
+        grouped,
+        spx_active: features.spx_active,
+        coupling_active: features.coupling_active,
+        enhanced_coupling_active: features.enhanced_coupling_active,
+        rematrix_active: features.rematrix_active,
+        aht_active: features.aht_active,
+    }
+}
+
 fn channel_uses_coupling(coupling: Option<&CouplingInformation>, channel: usize) -> bool {
     match coupling {
         Some(CouplingInformation::Standard(info)) => info.channel_in_use[channel],
@@ -1395,6 +1506,7 @@ fn decode_channel_mantissas(
     dither_values: &[f64],
     dither_index: &mut usize,
     zero_bap: bool,
+    frame_bits: usize,
 ) -> Result<ChannelMantissaBlock, Eac3Error> {
     let fast_gain = state
         .fast_gain_codes
@@ -1479,7 +1591,27 @@ fn decode_channel_mantissas(
                 dither,
                 dither_values,
                 dither_index,
-            )?;
+            )
+            .map_err(|error| {
+                mantissa_error_context(
+                    error,
+                    bits,
+                    frame_bits,
+                    block_index,
+                    MantissaElement::Channel,
+                    u8::try_from(channel).ok(),
+                    MantissaFeatureState {
+                        spx_active: prefix.spectral_extension.is_some(),
+                        coupling_active: prefix.coupling.is_some(),
+                        enhanced_coupling_active: matches!(
+                            prefix.coupling.as_ref(),
+                            Some(CouplingInformation::Enhanced(_))
+                        ),
+                        rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
+                        aht_active: use_aht,
+                    },
+                )
+            })?;
             (baps, mantissas, None)
         };
         channel_baps.push(baps);
@@ -1535,7 +1667,27 @@ fn decode_channel_mantissas(
                 )?;
                 let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
                 let dither_flags = vec![false; baps.len()];
-                let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])?;
+                let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])
+                    .map_err(|error| {
+                        mantissa_error_context(
+                            error,
+                            bits,
+                            frame_bits,
+                            block_index,
+                            MantissaElement::Coupling,
+                            u8::try_from(channel).ok(),
+                            MantissaFeatureState {
+                                spx_active: prefix.spectral_extension.is_some(),
+                                coupling_active: true,
+                                enhanced_coupling_active: matches!(
+                                    prefix.coupling.as_ref(),
+                                    Some(CouplingInformation::Enhanced(_))
+                                ),
+                                rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
+                                aht_active: use_aht,
+                            },
+                        )
+                    })?;
                 (baps, mantissas, None)
             };
             coupling_bap = Some(baps);
@@ -1564,6 +1716,8 @@ fn decode_lfe_mantissas(
     fast_gain: &FastGainCodes,
     fscod: u8,
     zero_bap: bool,
+    frame_bits: usize,
+    aht_active: bool,
 ) -> Result<
     (
         Option<Vec<u8>>,
@@ -1609,7 +1763,21 @@ fn decode_lfe_mantissas(
         )?;
         let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
         let dither_flags = vec![false; baps.len()];
-        let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])?;
+        let mantissas =
+            decode_mantissas(bits, &baps, &exponents, &dither_flags, &[]).map_err(|error| {
+                mantissa_error_context(
+                    error,
+                    bits,
+                    frame_bits,
+                    block_index,
+                    MantissaElement::Lfe,
+                    None,
+                    MantissaFeatureState {
+                        aht_active,
+                        ..MantissaFeatureState::default()
+                    },
+                )
+            })?;
         (baps, mantissas, None)
     };
     let _ = frame;
