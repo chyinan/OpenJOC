@@ -696,13 +696,7 @@ fn decode_audio_blocks_until(
         } else {
             channel_block.channel_mantissas.clone()
         };
-        let mut channel_mantissas = channel_mantissas;
-        apply_spectral_extension(
-            &mut channel_mantissas,
-            prefix.spectral_extension.as_ref(),
-            &frame.spx_attenuation_codes,
-            &mut state.spx_noise_seed,
-        )?;
+        let channel_mantissas = channel_mantissas;
         let primary_gain = dynamic_range_gain(state.dynamic_range);
         let secondary_gain = dynamic_range_gain(state.dynamic_range_2);
         let channel_gains = if frame.bsi.audio_coding_mode == 0 {
@@ -710,7 +704,7 @@ fn decode_audio_blocks_until(
         } else {
             vec![primary_gain; channel_mantissas.len()]
         };
-        let channel_mantissas = apply_dynamic_range_gains(&channel_mantissas, &channel_gains)?;
+        let mut channel_mantissas = apply_dynamic_range_gains(&channel_mantissas, &channel_gains)?;
         let coupling_mantissas = channel_block
             .coupling_mantissas
             .as_deref()
@@ -725,6 +719,23 @@ fn decode_audio_blocks_until(
                 .transpose()?,
             _ => None,
         };
+        if let Some(coupling) = prefix.coupling.as_ref() {
+            channel_mantissas = match (coupling, coupling_mantissas.as_deref()) {
+                (CouplingInformation::Standard(info), Some(mantissas)) => {
+                    reconstruct_standard_coupling(info, mantissas, &channel_mantissas)?
+                }
+                (CouplingInformation::Enhanced(_), _) => {
+                    merge_enhanced_coupling(&channel_mantissas, enhanced_coupling.as_ref())?
+                }
+                (_, None) => channel_mantissas,
+            };
+        }
+        apply_spectral_extension(
+            &mut channel_mantissas,
+            prefix.spectral_extension.as_ref(),
+            &frame.spx_attenuation_codes,
+            &mut state.spx_noise_seed,
+        )?;
         let (lfe_bap, lfe_mantissas, lfe_aht) = decode_lfe_mantissas(
             &mut bits,
             &frame,
@@ -849,6 +860,54 @@ fn apply_spectral_extension(
         )?;
     }
     Ok(())
+}
+
+fn merge_enhanced_coupling(
+    channels: &[Vec<f64>],
+    reconstruction: Option<&EnhancedCouplingReconstruction>,
+) -> Result<Vec<Vec<f64>>, Eac3Error> {
+    let Some(reconstruction) = reconstruction else {
+        return Ok(channels.to_vec());
+    };
+    if reconstruction.channels.len() != channels.len()
+        || reconstruction.begin_mantissa > reconstruction.end_mantissa
+        || reconstruction.end_mantissa > 256
+    {
+        return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+            expected: channels.len(),
+            actual: reconstruction.channels.len(),
+        });
+    }
+    let region_len = reconstruction
+        .end_mantissa
+        .checked_sub(reconstruction.begin_mantissa)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let mut output = Vec::with_capacity(channels.len());
+    for (channel, source) in channels.iter().enumerate() {
+        if source.len() > 256 {
+            return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+                expected: 256,
+                actual: source.len(),
+            });
+        }
+        if source.iter().any(|value| !value.is_finite()) {
+            return Err(Eac3Error::NonFiniteCouplingCoefficient);
+        }
+        let mut expanded = vec![0.0; 256];
+        expanded[..source.len()].copy_from_slice(source);
+        if let Some(region) = reconstruction.channels[channel].as_ref() {
+            if region.len() != region_len {
+                return Err(Eac3Error::InvalidCouplingCoordinateDimensions {
+                    expected: region_len,
+                    actual: region.len(),
+                });
+            }
+            expanded[reconstruction.begin_mantissa..reconstruction.end_mantissa]
+                .copy_from_slice(region);
+        }
+        output.push(expanded);
+    }
+    Ok(output)
 }
 
 fn spectral_extension_noise(seed: &mut u32, count: usize) -> Vec<f64> {

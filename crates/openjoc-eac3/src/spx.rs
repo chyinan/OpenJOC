@@ -86,7 +86,7 @@ pub fn synthesize_spectral_extension(
                 begin_code: information.start_copy_frequency_code,
                 end_code: information.end_subband,
             })?;
-    if begin >= end || copy_start >= copy_end || base.len() != copy_end {
+    if begin >= end || copy_start >= copy_end || base.len() < copy_end {
         return Err(Eac3Error::InvalidSpectralExtensionRange {
             begin: information.begin_subband,
             end: information.end_subband,
@@ -132,7 +132,7 @@ pub fn synthesize_spectral_extension(
         }
     }
 
-    let mut output = vec![0.0; insert_end];
+    let mut output = vec![0.0; base.len().max(insert_end)];
     output[..base.len()].copy_from_slice(base);
     let mut copy_index = copy_start;
     let mut insert_index = copy_end;

@@ -572,6 +572,14 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
             .len(),
         60
     );
+    assert_eq!(
+        decoded
+            .channel_mantissas
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        vec![256, 256]
+    );
     assert_eq!(decoded.mantissa_end_offset_bits, expected_offset);
 }
 
@@ -697,6 +705,14 @@ fn parses_first_audio_block_enhanced_coupling_coordinates() {
     assert_eq!(reconstructed.channels[0].as_ref().expect("left").len(), 72);
     assert!(reconstructed.channels[1].is_none());
     assert_eq!(reconstructed.channels[2].as_ref().expect("right").len(), 72);
+    assert_eq!(
+        decoded
+            .channel_mantissas
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
+        vec![256, 256, 256]
+    );
 }
 
 #[test]

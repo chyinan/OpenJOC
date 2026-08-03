@@ -1172,10 +1172,14 @@ derivation; no decoder implementation was consulted.
   coordinates through `cplbndstrc`, and returns complete 256-bin channel
   spectra. Phase flags are applied only to channel index one, matching the
   2/0 right-channel rule; no rematrix or spectral-extension behavior is hidden
-  inside this function.
+  inside this function. The audio-block path now applies this standard result,
+  and merges enhanced-coupling regions into the same bounded 256-bin channel
+  vectors before SPX synthesis.
 - Validation: a two-channel fixture checks coordinate value `0.5`, the
-  clause-6.4.4 factor of eight, exact 37..73 coupling placement, and negation
-  of the first right-channel sub-band. Full block-to-PCM integration remains
+  clause-6.4.4 factor of eight, exact 37..73 coupling placement, negation
+  of the first right-channel sub-band, and 256-bin audio-block output. The
+  enhanced-coupling fixture checks that both sparse reconstructed regions are
+  merged into complete channel vectors. Full block-to-PCM integration remains
   a separate stage.
 
 ### Enhanced coupling coefficient reconstruction
