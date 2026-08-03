@@ -423,7 +423,8 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
     bits.push(5, 3); // first coupling slow leak
     let expected_offset = bits.0.len();
 
-    let prefix = parse_first_audio_block_prefix(&bits.bytes(128)).expect("standard coupling");
+    let bytes = bits.bytes(128);
+    let prefix = parse_first_audio_block_prefix(&bytes).expect("standard coupling");
     let coupling = match prefix.coupling.expect("coupling state") {
         CouplingInformation::Standard(value) => value,
         CouplingInformation::Enhanced(_) => panic!("expected standard coupling"),
@@ -465,6 +466,23 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
     let leakage = prefix.coupling_leak.expect("coupling leakage");
     assert_eq!((leakage.fast_code, leakage.slow_code), (3, 5));
     assert_eq!(prefix.next_offset_bits, expected_offset);
+
+    let decoded = decode_first_audio_block(&bytes, &[0.0; 74])
+        .expect("standard coupling mantissas");
+    assert_eq!(
+        decoded.channel_baps.iter().map(Vec::len).collect::<Vec<_>>(),
+        vec![37, 37]
+    );
+    assert_eq!(decoded.coupling_bap.as_ref().expect("coupling BAP").len(), 60);
+    assert_eq!(
+        decoded
+            .coupling_mantissas
+            .as_ref()
+            .expect("coupling mantissas")
+            .len(),
+        60
+    );
+    assert_eq!(decoded.mantissa_end_offset_bits, expected_offset);
 }
 
 #[test]

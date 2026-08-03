@@ -697,8 +697,8 @@ frame behavior is covered by integration tests.
   are retained explicitly. AHT syntax is rejected with a structured error
   until its separate vector/gain side information is implemented; it is not
   silently interpreted as conventional mantissas.
-- Validation: an uncoupled channel plus LFE fixture checks exact BAP/mantissa
-  lengths and a consumed offset beyond side information; parser tests verify
+- Validation: uncoupled channel plus LFE and standard-coupling fixtures check
+  exact BAP/mantissa lengths and consumed offsets; parser tests verify
   frame-strategy-1 SNR values are retained.
 
 ### Enhanced AC-3 PSD log-addition and integration
