@@ -286,9 +286,13 @@ version = "0.1.0"
 dependencies = [
  "openjoc-container",
  "openjoc-eac3",
+ "openjoc-emdf",
  "openjoc-oamd",
  "openjoc-scene",
  "openjoc-wave",
+ "serde",
+ "serde_json",
+ "sha2",
  "terminal_size",
 ]
 

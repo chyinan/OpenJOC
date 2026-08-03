@@ -1,0 +1,8 @@
+[
+  {
+    "label": "local-dee-example",
+    "path": "C:/path/to/user-supplied-output.m4a",
+    "sha256": "",
+    "note": "External fixture; do not commit programme bytes."
+  }
+]

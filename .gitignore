@@ -1,3 +1,5 @@
 /target/
 /references/etsi/*.pdf
 /references/etsi/*.zip
+/real-fixtures.local.json
+/real-census/

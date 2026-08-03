@@ -2,6 +2,7 @@
 
 mod banner;
 mod eac3_decode;
+mod fixture_census;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
@@ -21,7 +22,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--reference-f64]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -70,6 +71,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         Some("decode-payload") => decode_payload(&arguments[1..]),
         Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
+        Some("census") => run_census(&arguments[1..]),
         _ => Err(usage_error().into()),
     }
 }
@@ -100,6 +102,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE>\n",
         "  openjoc decode <FILE> -o <DIR> [--reference-f64]\n",
+        "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc --help\n",
         "\n",
@@ -113,6 +116,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE>\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--reference-f64]\n",
+        "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [OPTIONS]\n",
         "\n",
@@ -121,6 +125,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  inspect         Inspect E-AC-3 access units and JOC metadata\n",
         "  decode          Decode an E-AC-3 JOC stream into an object scene\n",
+        "  census          Census bounded metadata carriers from external fixtures\n",
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
         "\n",
     ));
@@ -148,6 +153,63 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
     println!("input: {}", media_kind_name(media.kind));
     println!("frames: {}", frames.len());
     println!("access units: {}", units.len());
+    let mut aux_present = 0_usize;
+    let mut aux_absent = 0_usize;
+    let mut emdf_attempts = 0_usize;
+    let mut emdf_parsed = 0_usize;
+    let mut skip_examined = 0_usize;
+    let mut skip_observed = 0_usize;
+    let mut skip_unresolved = 0_usize;
+    let mut skip_errors = Vec::new();
+    for entry in &frames {
+        let end = entry
+            .offset
+            .checked_add(entry.header.frame_size)
+            .ok_or_else(|| io::Error::other("E-AC-3 frame offset overflow"))?;
+        let frame = media.bytes.get(entry.offset..end).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "truncated indexed E-AC-3 frame",
+            )
+        })?;
+        match openjoc_eac3::extract_auxdata(frame)? {
+            Some(_) => {
+                aux_present += 1;
+                emdf_attempts += 1;
+                if openjoc_eac3::extract_aux_emdf(frame)?.is_some() {
+                    emdf_parsed += 1;
+                }
+            }
+            None => aux_absent += 1,
+        }
+        match openjoc_eac3::inspect_audio_block_carriers(frame, |value| {
+            skip_examined += 1;
+            if value.skip_field.is_some() {
+                skip_observed += 1;
+            }
+        }) {
+            Ok(carrier) => skip_unresolved += carrier.unresolved_blocks,
+            Err(error) => {
+                skip_unresolved += usize::from(entry.header.audio_blocks);
+                skip_errors.push(error.to_string());
+            }
+        }
+    }
+    println!("carrier paths examined:");
+    println!("  frame-end auxdatae: {aux_present} present, {aux_absent} absent");
+    println!("  frame-end EMDF: {emdf_parsed} parsed from {emdf_attempts} bounded attempts");
+    println!(
+        "  audio-block skipfld: {skip_observed} observed in {skip_examined} reached first-block prefixes; {skip_unresolved} later blocks unresolved pending mantissa cursor traversal"
+    );
+    if !skip_errors.is_empty() {
+        println!(
+            "  audio-block carrier traversal errors: {}",
+            skip_errors.len()
+        );
+        for error in skip_errors.iter().take(3) {
+            println!("    {error}");
+        }
+    }
     for (unit_index, unit) in units.iter().copied().enumerate() {
         println!("access unit {unit_index}:");
         println!("  sample rate: {} Hz", unit.sample_rate);
@@ -162,13 +224,51 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
         } else if let Some(extension) = extract_joc_addbsi_access_unit(&media.bytes, &frames, unit)?
         {
             println!(
-                "  JOC extension signaled: complexity index {}; EMDF profile absent",
+                "  JOC extension signaled: complexity index {}; EMDF profile absent in currently validated frame-end auxdata; other bounded carrier paths may remain unresolved",
                 extension.complexity_index
             );
         } else {
             println!("  JOC profile: absent");
         }
     }
+    Ok(())
+}
+
+fn run_census(values: &[String]) -> Result<(), Box<dyn Error>> {
+    let mut manifest = None;
+    let mut output = None;
+    let mut index = 0;
+    while index < values.len() {
+        let value = &values[index];
+        if value == "-o" || value == "--output" {
+            let path = values.get(index + 1).ok_or_else(usage_error)?;
+            output = Some(PathBuf::from(path));
+            index += 2;
+        } else if value.starts_with('-') {
+            return Err(usage_error().into());
+        } else if manifest.is_none() {
+            manifest = Some(PathBuf::from(value));
+            index += 1;
+        } else {
+            return Err(usage_error().into());
+        }
+    }
+    let manifest = manifest
+        .or_else(|| env::var_os("OPENJOC_REAL_FIXTURE_MANIFEST").map(PathBuf::from))
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "missing fixture manifest; pass MANIFEST or set OPENJOC_REAL_FIXTURE_MANIFEST",
+            )
+        })?;
+    let output = output.ok_or_else(usage_error)?;
+    let report = fixture_census::run_census(&manifest)?;
+    fixture_census::write_reports(&report, &output)?;
+    println!(
+        "census: {} fixtures written to {}",
+        report.fixtures.len(),
+        output.display()
+    );
     Ok(())
 }
 
