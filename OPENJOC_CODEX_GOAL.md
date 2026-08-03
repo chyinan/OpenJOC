@@ -64,6 +64,17 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
 2. Preserve retry atomicity for both `SceneBuilder` and `PayloadDecoder` while
    retaining only bounded JOC state copies.
 
+## Completed increment: borrowed frame sinks
+
+1. Add `PayloadDecoder::decode_frame_with`, which lends one committed
+   `DecodedPayloadFrame` to a callback without transferring ownership of an
+   accumulated frame list.
+2. Route aligned and internal E-AC-3 CLI debug export through that callback so
+   debug structures are written and dropped frame by frame.
+3. Keep the remaining input, base-WAV, and accumulated-scene PCM retention
+   explicitly open; this increment is not a claim of complete streaming scene
+   assembly.
+
 ## Explicit open goals after the current increment
 
 - Establish a user-supplied legal DEE real-vector lane without committing
@@ -81,8 +92,9 @@ FFmpeg-compatible base-channel reference PCM, not a final render.
   imposing speaker or binaural rendering behavior. (Implemented; streaming
   staging remains open.)
 - Replace accumulated-scene PCM cloning and whole-input/debug retention with
-  frame-local atomic staging and streaming sinks. (Frame-local staging is
-  implemented; streaming sinks and the CLI retention audit remain open.)
+  frame-local atomic staging and streaming sinks. (Frame-local staging and the
+  borrowed debug-frame sink are implemented; streaming input/base/object PCM
+  sinks and the CLI retention audit remain open.)
 - Keep codec and rendering boundaries separate. Later speaker rendering targets
   stereo, 5.1, 5.1.2, 7.1.4, and 9.1.6. Later binaural rendering targets
   selectable public SOFA HRTFs. Neither is a Dolby reference or normative

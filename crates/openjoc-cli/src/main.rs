@@ -183,16 +183,18 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
             trim_configuration_count: arguments.trim_count,
         },
     });
-    let frame_output = decoder.decode_frame(JocFrameInput {
-        sample_rate: downmix.sample_rate,
-        downmix_pcm: &downmix.channels,
-        joc_payload: &joc_payload,
-        oamd_payload: &oamd_payload,
-        frame_index: 0,
-    })?;
+    decoder.decode_frame_with(
+        JocFrameInput {
+            sample_rate: downmix.sample_rate,
+            downmix_pcm: &downmix.channels,
+            joc_payload: &joc_payload,
+            oamd_payload: &oamd_payload,
+            frame_index: 0,
+        },
+        |frame| write_debug(&arguments.output, 0, frame),
+    )?;
     let scene = decoder.finish()?;
     write_scene(&arguments.output, &scene, arguments.output_format)?;
-    write_debug(&arguments.output, 0, &frame_output)?;
     Ok(())
 }
 
@@ -248,21 +250,35 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             trim_configuration_count: None,
         },
     };
-    let decoded = if arguments.internal_base {
+    let sink_output = arguments.output.clone();
+    let scene = if arguments.internal_base {
         let dither = deterministic_dither_values();
-        eac3_decode::decode_internal_eac3(stream, config, &dither)?
+        eac3_decode::decode_internal_eac3_with_sink(
+            stream,
+            config,
+            &dither,
+            |frame_index, frame| {
+                write_debug(&sink_output, frame_index, frame)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+            },
+        )?
     } else {
         let downmix_path = match &arguments.downmix {
             Some(path) => path.clone(),
             None => decode_base_audio(&arguments.input, &arguments.output)?,
         };
         let downmix = decode(&fs::read(downmix_path)?)?;
-        eac3_decode::decode_aligned_eac3(stream, &downmix, config)?
+        eac3_decode::decode_aligned_eac3_with_sink(
+            stream,
+            &downmix,
+            config,
+            |frame_index, frame| {
+                write_debug(&sink_output, frame_index, frame)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+            },
+        )?
     };
-    for (frame_index, frame) in decoded.frames.iter().enumerate() {
-        write_debug(&arguments.output, frame_index, frame)?;
-    }
-    write_scene(&arguments.output, &decoded.scene, arguments.output_format)
+    write_scene(&arguments.output, &scene, arguments.output_format)
 }
 
 fn deterministic_dither_values() -> Vec<f64> {

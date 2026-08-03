@@ -122,6 +122,24 @@ uses the atomic builder in place; only its bounded JOC codec state is copied
 for retry semantics. A later CLI file-sink increment is still required to
 avoid retaining the complete input, base PCM, scene PCM, and debug frames.
 
+## Borrowed frame-sink increment
+
+`PayloadDecoder::decode_frame_with` now lends each committed
+`DecodedPayloadFrame` to a callback instead of requiring callers to retain an
+owned frame result. The E-AC-3 aligned and `--internal-base` command paths use
+the callback to write `debug/frame_NNN` artifacts immediately, so the CLI no
+longer builds a complete `Vec<DecodedPayloadFrame>` before writing debug
+output. The callback is invoked only after codec, OAMD, JOC state, and scene
+staging commit; sink failures are reported explicitly and do not claim to
+roll back committed decoder state.
+
+This is a bounded-retention increment, not the complete streaming design. The
+current CLI still loads the elementary stream and compatible base WAV into
+memory, and `SceneBuilder` still retains the complete reconstructed scene PCM
+for the renderer-independent `ObjectScene`. Metadata-only scene assembly and
+streaming WAV sinks remain open and are tracked separately in the requirements
+matrix.
+
 ## Verification commands
 
 The current container and diagnostic checks were run with:
@@ -132,7 +150,8 @@ cargo test -p openjoc-cli --test container -- --nocapture
 cargo test -p openjoc-cli
 ```
 
-Fresh full-workspace quality gates for commit `241cb03` also passed:
+Fresh full-workspace quality gates for the borrowed frame-sink working tree
+also passed:
 
 ```text
 cargo fmt --all -- --check
@@ -148,6 +167,7 @@ offline release build, and a clean diff check.
 ## Known limitations and next goals
 
 The real-vector acceptance lane, FFmpeg-versus-internal-base fidelity report,
-and streaming file sinks remain open. Speaker and binaural
+metadata-only scene assembly, and streaming PCM file sinks remain open. The
+borrowed frame sink only removes the all-frame debug vector. Speaker and binaural
 renderers are later non-normative components and are deliberately outside the
 current decoder increments.

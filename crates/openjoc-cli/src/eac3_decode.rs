@@ -13,11 +13,6 @@ use openjoc_scene::{
 use openjoc_wave::WavePcm;
 use std::fmt;
 
-pub struct DecodedEac3 {
-    pub scene: ObjectScene,
-    pub frames: Vec<DecodedPayloadFrame>,
-}
-
 #[derive(Debug)]
 pub enum DecodeEac3Error {
     Eac3(Eac3Error),
@@ -39,6 +34,7 @@ pub enum DecodeEac3Error {
         access_unit: usize,
         complexity_index: u8,
     },
+    Sink(String),
     FrameIndexOverflow,
 }
 
@@ -73,6 +69,12 @@ impl fmt::Display for DecodeEac3Error {
                 formatter,
                 "JOC extension complexity index {complexity_index} is signaled in access unit {access_unit}, but its required OAMD/JOC EMDF metadata is absent"
             ),
+            Self::Sink(message) => {
+                write!(
+                    formatter,
+                    "failed to write streaming decode artifact: {message}"
+                )
+            }
             Self::FrameIndexOverflow => formatter.write_str("E-AC-3 frame index overflow"),
         }
     }
@@ -118,14 +120,27 @@ fn required_metadata(
 
 /// Aligns already decoded channel PCM with size-bounded E-AC-3 JOC metadata.
 ///
+/// Aligns decoded channel PCM with E-AC-3 JOC metadata and lends each
+/// successfully reconstructed frame to a sink immediately.
+///
+/// The codec scene still retains its renderer-independent PCM until the
+/// separate metadata-only/PCM-file-sink increment lands. This API removes the
+/// additional all-frame `DecodedPayloadFrame` retention from callers such as
+/// the CLI debug exporter.
+///
 /// # Errors
-/// Returns a checked frontend, metadata, timing, PCM-shape, or reconstruction
-/// error without advancing partially decoded scene state.
-pub fn decode_aligned_eac3(
+/// Returns the same checked frontend, metadata, timing, PCM-shape, or
+/// reconstruction error as this module's E-AC-3 frontend, or the sink error after a
+/// frame has been committed.
+pub fn decode_aligned_eac3_with_sink<S>(
     stream: &[u8],
     downmix: &WavePcm,
     config: PayloadDecoderConfig,
-) -> Result<DecodedEac3, DecodeEac3Error> {
+    mut sink: S,
+) -> Result<ObjectScene, DecodeEac3Error>
+where
+    S: FnMut(usize, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+{
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
     if units.is_empty() {
@@ -148,7 +163,6 @@ pub fn decode_aligned_eac3(
     }
 
     let mut decoder = PayloadDecoder::new(config);
-    let mut decoded_frames = Vec::with_capacity(units.len());
     let mut sample_offset = 0_usize;
     for (unit_index, unit) in units.into_iter().enumerate() {
         if unit.sample_rate != downmix.sample_rate {
@@ -170,19 +184,19 @@ pub fn decode_aligned_eac3(
             .collect::<Vec<_>>();
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
-        decoded_frames.push(decoder.decode_frame(JocFrameInput {
-            sample_rate: unit.sample_rate,
-            downmix_pcm: &frame_pcm,
-            joc_payload: &metadata.joc,
-            oamd_payload: &metadata.oamd,
-            frame_index: frame_number,
-        })?);
+        decoder.decode_frame_with(
+            JocFrameInput {
+                sample_rate: unit.sample_rate,
+                downmix_pcm: &frame_pcm,
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: frame_number,
+            },
+            |frame| sink(unit_index, frame),
+        )?;
         sample_offset = end;
     }
-    Ok(DecodedEac3 {
-        scene: decoder.finish()?,
-        frames: decoded_frames,
-    })
+    Ok(decoder.finish()?)
 }
 
 /// Decodes the normative JOC elementary-stream audio path without an external
@@ -190,14 +204,19 @@ pub fn decode_aligned_eac3(
 /// E-AC-3 access-unit decoder merges those channel locations before the PCM is
 /// passed to the JOC/ObjectScene boundary.
 ///
-/// # Errors
-/// Returns the same checked frontend, metadata, timing, PCM-shape, or
-/// reconstruction errors as [`decode_aligned_eac3`].
-pub fn decode_internal_eac3(
+/// Decodes the normative E-AC-3 base path and lends each reconstructed JOC
+/// frame to a sink immediately. The base decoder remains an independently
+/// implemented, fidelity-unverified path until a legal real vector passes the
+/// required comparison.
+pub fn decode_internal_eac3_with_sink<S>(
     stream: &[u8],
     config: PayloadDecoderConfig,
     dither_values: &[f64],
-) -> Result<DecodedEac3, DecodeEac3Error> {
+    mut sink: S,
+) -> Result<ObjectScene, DecodeEac3Error>
+where
+    S: FnMut(usize, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+{
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
     if units.is_empty() {
@@ -205,7 +224,6 @@ pub fn decode_internal_eac3(
     }
     let mut audio_decoder = JocAccessUnitPcmDecoder::new();
     let mut decoder = PayloadDecoder::new(config);
-    let mut decoded_frames = Vec::with_capacity(units.len());
     for (unit_index, unit) in units.into_iter().enumerate() {
         let pcm = audio_decoder.decode(stream, &frame_index, unit, dither_values)?;
         if pcm.sample_rate != unit.sample_rate
@@ -225,18 +243,18 @@ pub fn decode_internal_eac3(
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
-        decoded_frames.push(decoder.decode_frame(JocFrameInput {
-            sample_rate: unit.sample_rate,
-            downmix_pcm: &pcm.channels,
-            joc_payload: &metadata.joc,
-            oamd_payload: &metadata.oamd,
-            frame_index: frame_number,
-        })?);
+        decoder.decode_frame_with(
+            JocFrameInput {
+                sample_rate: unit.sample_rate,
+                downmix_pcm: &pcm.channels,
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: frame_number,
+            },
+            |frame| sink(unit_index, frame),
+        )?;
     }
-    Ok(DecodedEac3 {
-        scene: decoder.finish()?,
-        frames: decoded_frames,
-    })
+    Ok(decoder.finish()?)
 }
 
 #[cfg(test)]

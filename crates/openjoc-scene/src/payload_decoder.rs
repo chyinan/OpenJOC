@@ -168,6 +168,31 @@ impl PayloadDecoder {
         Ok(DecodedPayloadFrame { joc, oamd, decoded })
     }
 
+    /// Decodes one frame and lends the committed frame result to a sink.
+    ///
+    /// The sink is called only after the JOC state, scene state, sample rate,
+    /// and frame counter have been committed. This keeps the codec's atomic
+    /// retry guarantee while allowing callers to consume debug or PCM data
+    /// immediately instead of retaining every frame result. A sink failure is
+    /// returned to the caller; it cannot roll back an already committed codec
+    /// frame, so callers should write into a transactional output directory.
+    ///
+    /// # Errors
+    /// Returns [`PayloadDecodeError`] (converted into `E`) for decoder failure,
+    /// or the sink's own error after a successful frame commit.
+    pub fn decode_frame_with<S, E>(
+        &mut self,
+        input: JocFrameInput<'_>,
+        mut sink: S,
+    ) -> Result<(), E>
+    where
+        S: FnMut(&DecodedPayloadFrame) -> Result<(), E>,
+        E: From<PayloadDecodeError>,
+    {
+        let frame = self.decode_frame(input).map_err(E::from)?;
+        sink(&frame)
+    }
+
     /// Finalizes the accumulated renderer-independent object scene.
     ///
     /// # Errors

@@ -1414,3 +1414,27 @@ and a test or explicit TODO before implementation proceeds.
 - The real-vector lane must not be marked verified until nonzero JOC side
   information, dynamic OAMD, nonzero object PCM, moving-object continuity, and
   known-stem/ADM-BWF comparisons are demonstrated.
+
+### Borrowed frame sink for CLI debug consumption
+
+- Normative/engineering source: the renderer-independent frame boundary in
+  ETSI TS 103 420 clause 6.4, together with OpenJOC engineering specification
+  section 5.7's atomic frame-staging and bounded-retention requirements.
+- Official reference data: no additional codec tables are used. The sink is
+  an ownership/lifetime boundary around already decoded normative frame data;
+  it does not alter JOC, OAMD, E-AC-3, or QMF behavior.
+- Design rationale: `PayloadDecoder::decode_frame_with` commits the same
+  checked frame state as `decode_frame`, then lends the single
+  `DecodedPayloadFrame` to a callback. `openjoc-cli` uses the callback to write
+  each debug directory immediately, while the former all-frame debug vector is
+  no longer constructed by the E-AC-3 command. Callback failure is surfaced as
+  an actionable sink error; because the decoder state is already committed,
+  callers must use a transactional output directory when retry/rollback is
+  required. The renderer-independent scene PCM and input/downmix retention
+  are intentionally not claimed solved by this increment.
+- Validation: `crates/openjoc-scene/tests/payload_decoder.rs` proves a
+  borrowed callback observes the decoded frame while `finish` retains the
+  correct timing. `crates/openjoc-cli/tests/decode_payload.rs` and
+  `crates/openjoc-cli/tests/inspect.rs` remain green after the CLI switches to
+  immediate frame debug writes. Full workspace format, strict clippy,
+  all-feature tests, and offline release build are required before commit.

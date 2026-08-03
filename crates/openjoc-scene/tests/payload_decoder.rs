@@ -1,5 +1,7 @@
 use openjoc_oamd::{OamdDecoderConfig, Position3 as OamdPosition3, ReferenceScreen};
-use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig, Position, Position3};
+use openjoc_scene::{
+    JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig, Position, Position3,
+};
 
 fn push(bits: &mut Vec<bool>, value: u64, width: u8) {
     for shift in (0..width).rev() {
@@ -99,6 +101,43 @@ fn decodes_raw_payloads_and_downmix_into_an_object_scene() {
             y: 0.5,
             z: 0.0,
         })
+    );
+}
+
+#[test]
+fn consumes_a_decoded_frame_through_a_borrowed_sink() {
+    let joc = absent_joc_payload(0);
+    let oamd = inactive_oamd_payload();
+    let downmix = vec![vec![1.0; 64]; 5];
+    let mut decoder = PayloadDecoder::new(PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::default(),
+    });
+    let mut observed = Vec::new();
+
+    decoder
+        .decode_frame_with(
+            JocFrameInput {
+                sample_rate: 48_000,
+                downmix_pcm: &downmix,
+                joc_payload: &joc,
+                oamd_payload: &oamd,
+                frame_index: 0,
+            },
+            |frame| {
+                observed.push((
+                    frame.joc.header.object_count,
+                    frame.decoded.object_pcm.len(),
+                ));
+                Ok::<(), PayloadDecodeError>(())
+            },
+        )
+        .expect("valid payload frame");
+
+    assert_eq!(observed, vec![(1, 1)]);
+    assert_eq!(
+        decoder.finish().expect("complete scene").duration_samples,
+        64
     );
 }
 
