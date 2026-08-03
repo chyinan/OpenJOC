@@ -122,7 +122,7 @@ cargo test -p openjoc-cli --test container -- --nocapture
 cargo test -p openjoc-cli
 ```
 
-Fresh full-workspace quality gates for commit `c167e20` also passed:
+Fresh full-workspace quality gates for commit `2303f33` also passed:
 
 ```text
 cargo fmt --all -- --check
