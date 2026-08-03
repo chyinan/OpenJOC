@@ -7,7 +7,7 @@ mod audio_block;
 mod bit_allocation;
 mod mantissa;
 
-pub use aht::{decode_aht_gaq_mantissa, expand_aht_gaq_gains};
+pub use aht::{decode_aht_gaq_mantissa, decode_aht_vq_vector, expand_aht_gaq_gains};
 pub use audio_block::{
     AudioBlockPrefix, BitAllocationParameters, CouplingInformation, CouplingLeak,
     DecodedAudioBlock, DeltaBitAllocation, DeltaBitAllocationElement, DeltaBitAllocationSegment,
@@ -156,6 +156,13 @@ pub enum Eac3Error {
         actual: u8,
     },
     InvalidAhtGaqCode {
+        actual: u16,
+    },
+    InvalidAhtVqHebap {
+        actual: u8,
+    },
+    InvalidAhtVqIndex {
+        hebap: u8,
         actual: u16,
     },
     MissingIndependentSubstreamZero {
@@ -363,6 +370,15 @@ impl fmt::Display for Eac3Error {
             }
             Self::InvalidAhtGaqCode { actual } => {
                 write!(formatter, "invalid E-AC-3 AHT GAQ code {actual}")
+            }
+            Self::InvalidAhtVqHebap { actual } => {
+                write!(formatter, "invalid E-AC-3 AHT VQ hebap {actual}")
+            }
+            Self::InvalidAhtVqIndex { hebap, actual } => {
+                write!(
+                    formatter,
+                    "invalid E-AC-3 AHT VQ index {actual} for hebap {hebap}"
+                )
             }
             Self::ComplexityIndexOutOfRange { actual } => {
                 write!(formatter, "E-AC-3 JOC complexity index {actual} exceeds 16")

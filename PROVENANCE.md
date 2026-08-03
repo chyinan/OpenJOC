@@ -899,6 +899,26 @@ frame behavior is covered by integration tests.
   `hebap`, gain, and code inputs. Full GAQ tag traversal and VQ table lookup
   remain pending and are not replaced with placeholders.
 
+### Enhanced AC-3 AHT vector quantization tables
+
+- Normative source: TS 102 366 V1.4.1 clauses E.2.4.4.1 and E.2.4.4.1's
+  Table E.2.2 index widths; Tables E.3.1 through E.3.7 provide the complete
+  16-bit two's-complement six-value vectors.
+- Official reference data: `references/etsi/ts_102366v010401p.pdf`, pages
+  175 through 191 rendered as lossless 300 DPI PNGs with Poppler 26.02.0 and
+  visually inspected before transcription. The seven table cardinalities are
+  4, 8, 16, 32, 128, 256, and 512 entries respectively.
+- Design rationale: retain the ETSI hexadecimal words as `u16` constants, check
+  the `hebap`-specific index cardinality before indexing, reinterpret each word
+  as a signed 16-bit two's-complement fraction with denominator 2^15, and
+  return transform-index order without applying exponents. No vector table is
+  generated from an implementation-specific or third-party source.
+- Validation: AHT tests verify the visually transcribed Table E.3.1 first
+  vector, the Table E.3.7 final vector, every supported table's bounds through
+  the lookup contract, and rejection of non-VQ `hebap` and out-of-range
+  indices. Mantissa traversal still remains pending and is not replaced by a
+  placeholder.
+
 ### Enhanced AC-3 access-unit and substream ordering
 
 - Normative source: TS 102 366 clause E.1.3.1.2 and E.2.8; TS 103 420
