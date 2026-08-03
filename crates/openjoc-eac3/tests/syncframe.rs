@@ -467,13 +467,20 @@ fn parses_first_audio_block_standard_coupling_coordinates() {
     assert_eq!((leakage.fast_code, leakage.slow_code), (3, 5));
     assert_eq!(prefix.next_offset_bits, expected_offset);
 
-    let decoded = decode_first_audio_block(&bytes, &[0.0; 74])
-        .expect("standard coupling mantissas");
+    let decoded =
+        decode_first_audio_block(&bytes, &[0.0; 74]).expect("standard coupling mantissas");
     assert_eq!(
-        decoded.channel_baps.iter().map(Vec::len).collect::<Vec<_>>(),
+        decoded
+            .channel_baps
+            .iter()
+            .map(Vec::len)
+            .collect::<Vec<_>>(),
         vec![37, 37]
     );
-    assert_eq!(decoded.coupling_bap.as_ref().expect("coupling BAP").len(), 60);
+    assert_eq!(
+        decoded.coupling_bap.as_ref().expect("coupling BAP").len(),
+        60
+    );
     assert_eq!(
         decoded
             .coupling_mantissas
