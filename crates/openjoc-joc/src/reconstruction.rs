@@ -388,13 +388,13 @@ pub fn interpolate_matrix(
         .last()
         .ok_or(ReconstructionError::InvalidDataPointCount { count: 0 })?;
     let mut next_previous = vec![[0.0; QMF_SUBBANDS]; channels];
-    for channel in 0..channels {
-        for subband in 0..QMF_SUBBANDS {
+    for (channel_output, channel_last) in next_previous.iter_mut().zip(last) {
+        for (subband, output) in channel_output.iter_mut().enumerate() {
             let parameter_band = usize::from(qmf_subband_to_parameter_band(
                 band_count,
                 u8::try_from(subband).unwrap_or(u8::MAX),
             )?);
-            next_previous[channel][subband] = last[channel][parameter_band];
+            *output = channel_last[parameter_band];
         }
     }
     Ok(InterpolatedMatrix {

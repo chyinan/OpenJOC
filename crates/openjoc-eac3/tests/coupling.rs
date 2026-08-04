@@ -66,17 +66,27 @@ fn rematrix_restores_sum_and_difference_only_inside_each_flagged_band() {
     let restored = rematrix_channels(&[left, right], &[true, false, false, false], None, None)
         .expect("rematrix");
 
-    for index in 0..13 {
-        assert_eq!(restored[0][index], index as f64);
-        assert_eq!(restored[1][index], (100 + index) as f64);
+    for (index, (&left, &right)) in restored[0].iter().zip(&restored[1]).take(13).enumerate() {
+        assert_eq!(left, index as f64);
+        assert_eq!(right, (100 + index) as f64);
     }
-    for index in 13..25 {
-        assert_eq!(restored[0][index], (100 + 2 * index) as f64);
-        assert_eq!(restored[1][index], -100.0);
+    for (offset, (&left, &right)) in restored[0][13..25]
+        .iter()
+        .zip(&restored[1][13..25])
+        .enumerate()
+    {
+        let index = offset + 13;
+        assert_eq!(left, (100 + 2 * index) as f64);
+        assert_eq!(right, -100.0);
     }
-    for index in 25..80 {
-        assert_eq!(restored[0][index], index as f64);
-        assert_eq!(restored[1][index], (100 + index) as f64);
+    for (offset, (&left, &right)) in restored[0][25..80]
+        .iter()
+        .zip(&restored[1][25..80])
+        .enumerate()
+    {
+        let index = offset + 25;
+        assert_eq!(left, index as f64);
+        assert_eq!(right, (100 + index) as f64);
     }
 }
 
