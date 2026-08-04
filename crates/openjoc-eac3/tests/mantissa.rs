@@ -1,7 +1,7 @@
 use openjoc_bitio::{BitRead, BitReader};
 use openjoc_eac3::{
-    Eac3Error, MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer,
-    ungroup_mantissa_code,
+    decode_mantissa_code, decode_mantissas, mantissa_quantizer, ungroup_mantissa_code, Eac3Error,
+    MantissaQuantizer,
 };
 
 fn packed(fields: &[(u16, u8)]) -> Vec<u8> {
@@ -201,6 +201,25 @@ fn traverses_grouped_words_across_an_exponent_set_boundary() {
     assert!((values[2] - (2.0 / 3.0) / 4.0).abs() < 1.0e-12);
     assert!((values[3] - (-2.0 / 3.0) / 8.0).abs() < 1.0e-12);
     assert_eq!(reader.bits_remaining(), 6);
+}
+
+#[test]
+fn shares_group_state_when_other_bap_interleaves_the_group() {
+    // TS 102 366 clause 6.3.5 keeps a partial grouped quantizer alive while
+    // the frequency-ordered stream visits a different bap. One bap=1 group
+    // therefore supplies bins 0, 2, and 3; bap=3 bin 1 has its own word.
+    let bytes = packed(&[(26, 5), (3, 3)]);
+    let mut reader = BitReader::new(&bytes);
+    let values = decode_mantissas(
+        &mut reader,
+        &[1, 3, 1, 1],
+        &[0, 0, 0, 0],
+        &[false, false, false, false],
+        &[],
+    )
+    .expect("interleaved grouped mantissas");
+    assert_eq!(values, vec![2.0 / 3.0, 0.0, 2.0 / 3.0, 2.0 / 3.0]);
+    assert_eq!(reader.bits_remaining(), 0);
 }
 
 #[test]

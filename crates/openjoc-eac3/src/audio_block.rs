@@ -6,16 +6,16 @@ use openjoc_bitio::{BitRead, BitReader};
 
 use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
+use crate::mantissa::{decode_mantissas_with_state, MantissaGroupingState};
 use crate::rematrix::rematrix_channels;
 use crate::transform::{inverse_transform, overlap_add};
 use crate::{
-    AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
     apply_delta_bit_allocation, bit_allocation_band_for_bin, channel_end_mantissa,
     channel_exponent_group_count, compute_element_bap, compute_excitation,
     compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
-    decode_exponents, decode_mantissas, exponents_to_psd, integrate_psd, mantissa_quantizer,
-    parse_audio_frame, shift_mantissa, snr_offsets_are_zero, spx_subband_range,
-    synthesize_spectral_extension,
+    decode_exponents, exponents_to_psd, integrate_psd, mantissa_quantizer, parse_audio_frame,
+    shift_mantissa, snr_offsets_are_zero, spx_subband_range, synthesize_spectral_extension,
+    AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -136,38 +136,26 @@ struct MantissaDiagnosticInput<'a> {
     dither: bool,
     block_switch: bool,
     exponent_reused: bool,
+    grouping_state: MantissaGroupingState,
 }
 
 fn mantissa_position(
     baps: &[u8],
     start_offset_bits: usize,
     target_offset_bits: usize,
+    grouping_state: MantissaGroupingState,
 ) -> Option<(usize, u8)> {
     let mut offset = start_offset_bits;
+    let mut grouping = grouping_state;
     let mut index = 0_usize;
     while index < baps.len() {
         let bap = baps[index];
-        let quantizer = mantissa_quantizer(bap).ok()?;
-        if bap == 0 {
-            index += 1;
-            continue;
+        let (width, group_position) = grouping.next_width(bap).ok()?;
+        if width > 0 && offset == target_offset_bits {
+            return Some((index, group_position));
         }
-        let run_end = if quantizer.group_size == 1 {
-            index + 1
-        } else {
-            let mut end = index + 1;
-            while end < baps.len() && baps[end] == bap {
-                end += 1;
-            }
-            end
-        };
-        while index < run_end {
-            if offset == target_offset_bits {
-                return Some((index, 0));
-            }
-            offset = offset.checked_add(usize::from(quantizer.group_bits))?;
-            index = index.checked_add(usize::from(quantizer.group_size).min(run_end - index))?;
-        }
+        offset = offset.checked_add(usize::from(width))?;
+        index += 1;
     }
     None
 }
@@ -777,6 +765,7 @@ pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, 
 
 fn consume_conventional_mantissas(
     bits: &mut BitReader<'_>,
+    grouping: &mut MantissaGroupingState,
     baps: &[u8],
     information: &ExponentInformation,
     element: MantissaElement,
@@ -800,41 +789,28 @@ fn consume_conventional_mantissas(
             index += 1;
             continue;
         }
-        let run_end = if quantizer.group_size == 1 {
-            index + 1
-        } else {
-            let mut end = index + 1;
-            while end < baps.len() && baps[end] == bap {
-                end += 1;
-            }
-            end
-        };
-        while index < run_end {
-            let bit_offset_bits = frame_bits
-                .checked_sub(bits.bits_remaining())
-                .ok_or(Eac3Error::FrameSizeOverflow)?;
-            let raw_code = u16::try_from(bits.read_bits(quantizer.group_bits)?)
-                .map_err(|_| Eac3Error::FrameSizeOverflow)?;
-            let max_code = quantizer
-                .levels
-                .checked_pow(u32::from(quantizer.group_size))
-                .ok_or(Eac3Error::FrameSizeOverflow)?;
-            if u32::from(raw_code) >= max_code {
-                let error = if quantizer.group_size == 1 {
-                    Eac3Error::InvalidMantissaCode {
-                        bap,
-                        actual: raw_code,
-                    }
-                } else {
-                    Eac3Error::InvalidMantissaGroupCode {
-                        bap,
-                        actual: raw_code,
-                    }
-                };
+        let bit_offset_bits = frame_bits
+            .checked_sub(bits.bits_remaining())
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let code = match grouping.next_code(bits, bap) {
+            Ok(code) => code,
+            Err(
+                error @ (Eac3Error::InvalidMantissaCode { .. }
+                | Eac3Error::InvalidMantissaGroupCode { .. }),
+            ) => {
                 *malformed_mantissa_count = malformed_mantissa_count
                     .checked_add(1)
                     .ok_or(Eac3Error::FrameSizeOverflow)?;
                 if first_mantissa_failure.is_none() {
+                    let (Eac3Error::InvalidMantissaCode {
+                        actual: raw_code, ..
+                    }
+                    | Eac3Error::InvalidMantissaGroupCode {
+                        actual: raw_code, ..
+                    }) = error
+                    else {
+                        unreachable!("matched mantissa error");
+                    };
                     *first_mantissa_failure = Some(AudioBlockMantissaFailure {
                         block_index,
                         element,
@@ -850,10 +826,10 @@ fn consume_conventional_mantissas(
                 }
                 return Ok(false);
             }
-            index = index
-                .checked_add(usize::from(quantizer.group_size).min(run_end - index))
-                .ok_or(Eac3Error::FrameSizeOverflow)?;
-        }
+            Err(error) => return Err(error),
+        };
+        let _ = code;
+        index += 1;
     }
     Ok(true)
 }
@@ -877,6 +853,7 @@ fn consume_audio_block_mantissas(
         .clone()
         .ok_or(Eac3Error::FrameSizeOverflow)?;
     let mut coupling_decoded = false;
+    let mut grouping = MantissaGroupingState::default();
     for channel in 0..usize::from(frame.full_bandwidth_channels) {
         let information = state
             .channel_exponents
@@ -940,6 +917,7 @@ fn consume_audio_block_mantissas(
             let (baps, _) = active_baps_and_exponents(&information, baps)?;
             if !consume_conventional_mantissas(
                 bits,
+                &mut grouping,
                 &baps,
                 &information,
                 MantissaElement::Channel,
@@ -1000,6 +978,7 @@ fn consume_audio_block_mantissas(
                 let (baps, _) = active_baps_and_exponents(&information, baps)?;
                 if !consume_conventional_mantissas(
                     bits,
+                    &mut grouping,
                     &baps,
                     &information,
                     MantissaElement::Coupling,
@@ -1052,6 +1031,7 @@ fn consume_audio_block_mantissas(
             let (baps, _) = active_baps_and_exponents(&information, baps)?;
             if !consume_conventional_mantissas(
                 bits,
+                &mut grouping,
                 &baps,
                 &information,
                 MantissaElement::Lfe,
@@ -1414,6 +1394,7 @@ fn decode_audio_blocks_until(
             fine_codes.push(code);
         }
         let zero_bap = snr_offsets_are_zero(snr.coarse_code, &fine_codes)?;
+        let mut grouping = MantissaGroupingState::default();
         let channel_block = decode_channel_mantissas(
             &mut bits,
             &frame,
@@ -1428,6 +1409,7 @@ fn decode_audio_blocks_until(
             zero_bap,
             frame_bits,
             block_start_offset_bits,
+            &mut grouping,
         )?;
         let channel_mantissas = if frame.bsi.audio_coding_mode == 2 {
             rematrix_channels(
@@ -1492,6 +1474,7 @@ fn decode_audio_blocks_until(
             frame_bits,
             frame.lfe_aht_in_use,
             block_start_offset_bits,
+            &mut grouping,
         )?;
         let lfe_mantissas = lfe_mantissas
             .as_deref()
@@ -1785,6 +1768,7 @@ fn decode_element_mantissas(
     dither: bool,
     dither_values: &[f64],
     dither_index: &mut usize,
+    grouping: &mut MantissaGroupingState,
 ) -> Result<Vec<f64>, Eac3Error> {
     let dither_flags = vec![dither; baps.len()];
     let needed = if dither {
@@ -1800,7 +1784,8 @@ fn decode_element_mantissas(
         .ok_or(Eac3Error::MissingDitherValue {
             index: *dither_index,
         })?;
-    let decoded = decode_mantissas(bits, baps, exponents, &dither_flags, values)?;
+    let decoded =
+        decode_mantissas_with_state(bits, baps, exponents, &dither_flags, values, grouping)?;
     *dither_index = end;
     Ok(decoded)
 }
@@ -1831,6 +1816,7 @@ fn mantissa_error_context(
         input.baps,
         input.mantissa_start_offset_bits,
         bit_offset_bits,
+        input.grouping_state,
     ) else {
         return error;
     };
@@ -2032,6 +2018,7 @@ fn decode_channel_mantissas(
     zero_bap: bool,
     frame_bits: usize,
     block_start_offset_bits: usize,
+    grouping: &mut MantissaGroupingState,
 ) -> Result<ChannelMantissaBlock, Eac3Error> {
     let fast_gain = state
         .fast_gain_codes
@@ -2134,6 +2121,7 @@ fn decode_channel_mantissas(
                     .and_then(|strategies| strategies.get(channel))
                     .copied()
                     == Some(0),
+                grouping_state: *grouping,
             };
             let mantissas = decode_element_mantissas(
                 bits,
@@ -2142,6 +2130,7 @@ fn decode_channel_mantissas(
                 dither,
                 dither_values,
                 dither_index,
+                grouping,
             )
             .map_err(|error| {
                 mantissa_error_context(
@@ -2240,29 +2229,37 @@ fn decode_channel_mantissas(
                     block_switch: false,
                     exponent_reused: frame.coupling_exponent_strategy.get(block_index).copied()
                         == Some(0),
+                    grouping_state: *grouping,
                 };
-                let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])
-                    .map_err(|error| {
-                        mantissa_error_context(
-                            error,
-                            bits,
-                            frame_bits,
-                            block_index,
-                            MantissaElement::Coupling,
-                            u8::try_from(channel).ok(),
-                            MantissaFeatureState {
-                                spx_active: prefix.spectral_extension.is_some(),
-                                coupling_active: true,
-                                enhanced_coupling_active: matches!(
-                                    prefix.coupling.as_ref(),
-                                    Some(CouplingInformation::Enhanced(_))
-                                ),
-                                rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
-                                aht_active: use_aht,
-                            },
-                            diagnostic_input,
-                        )
-                    })?;
+                let mantissas = decode_mantissas_with_state(
+                    bits,
+                    &baps,
+                    &exponents,
+                    &dither_flags,
+                    &[],
+                    grouping,
+                )
+                .map_err(|error| {
+                    mantissa_error_context(
+                        error,
+                        bits,
+                        frame_bits,
+                        block_index,
+                        MantissaElement::Coupling,
+                        u8::try_from(channel).ok(),
+                        MantissaFeatureState {
+                            spx_active: prefix.spectral_extension.is_some(),
+                            coupling_active: true,
+                            enhanced_coupling_active: matches!(
+                                prefix.coupling.as_ref(),
+                                Some(CouplingInformation::Enhanced(_))
+                            ),
+                            rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
+                            aht_active: use_aht,
+                        },
+                        diagnostic_input,
+                    )
+                })?;
                 (baps, mantissas, None)
             };
             coupling_bap = Some(baps);
@@ -2294,6 +2291,7 @@ fn decode_lfe_mantissas(
     frame_bits: usize,
     aht_active: bool,
     block_start_offset_bits: usize,
+    grouping: &mut MantissaGroupingState,
 ) -> Result<
     (
         Option<Vec<u8>>,
@@ -2359,23 +2357,25 @@ fn decode_lfe_mantissas(
             dither: false,
             block_switch: false,
             exponent_reused: frame.lfe_exponent_strategy.get(block_index).copied() == Some(false),
+            grouping_state: *grouping,
         };
         let mantissas =
-            decode_mantissas(bits, &baps, &exponents, &dither_flags, &[]).map_err(|error| {
-                mantissa_error_context(
-                    error,
-                    bits,
-                    frame_bits,
-                    block_index,
-                    MantissaElement::Lfe,
-                    None,
-                    MantissaFeatureState {
-                        aht_active,
-                        ..MantissaFeatureState::default()
-                    },
-                    diagnostic_input,
-                )
-            })?;
+            decode_mantissas_with_state(bits, &baps, &exponents, &dither_flags, &[], grouping)
+                .map_err(|error| {
+                    mantissa_error_context(
+                        error,
+                        bits,
+                        frame_bits,
+                        block_index,
+                        MantissaElement::Lfe,
+                        None,
+                        MantissaFeatureState {
+                            aht_active,
+                            ..MantissaFeatureState::default()
+                        },
+                        diagnostic_input,
+                    )
+                })?;
         (baps, mantissas, None)
     };
     let _ = frame;
@@ -2745,7 +2745,11 @@ fn parse_following_coupling_strategy(
         let end_frequency_code = if let Some(spx) = spx {
             let code =
                 i8::try_from(spx.begin_frequency_code).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-            if code < 6 { code - 2 } else { code * 2 - 7 }
+            if code < 6 {
+                code - 2
+            } else {
+                code * 2 - 7
+            }
         } else {
             i8::try_from(read_u8(bits, 4)?).map_err(|_| Eac3Error::FrameSizeOverflow)?
         };
@@ -3823,7 +3827,11 @@ fn parse_standard_coupling(
     let end_frequency_code = if let Some(spx) = spx {
         let code =
             i8::try_from(spx.begin_frequency_code).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-        if code < 6 { code - 2 } else { code * 2 - 7 }
+        if code < 6 {
+            code - 2
+        } else {
+            code * 2 - 7
+        }
     } else {
         i8::try_from(read_u8(bits, 4)?).map_err(|_| Eac3Error::FrameSizeOverflow)?
     };
@@ -4000,7 +4008,7 @@ fn read_u8(bits: &mut BitReader<'_>, width: u8) -> Result<u8, Eac3Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioBlockMantissaFailure, ExponentInformation, consume_conventional_mantissas};
+    use super::{consume_conventional_mantissas, AudioBlockMantissaFailure, ExponentInformation};
     use crate::{Eac3Error, MantissaElement};
     use openjoc_bitio::{BitRead, BitReader};
 
@@ -4018,8 +4026,10 @@ mod tests {
         };
         let mut malformed = 0;
         let mut first = None;
+        let mut grouping = super::MantissaGroupingState::default();
         let reached = consume_conventional_mantissas(
             &mut bits,
+            &mut grouping,
             &[3],
             &information,
             MantissaElement::Channel,
@@ -4065,8 +4075,10 @@ mod tests {
         };
         let mut malformed = 0;
         let mut first = None;
+        let mut grouping = super::MantissaGroupingState::default();
         let reached = consume_conventional_mantissas(
             &mut bits,
+            &mut grouping,
             &[1, 1, 1],
             &information,
             MantissaElement::Channel,
@@ -4097,8 +4109,10 @@ mod tests {
         };
         let mut malformed = 0;
         let mut first = None;
+        let mut grouping = super::MantissaGroupingState::default();
         let error = consume_conventional_mantissas(
             &mut bits,
+            &mut grouping,
             &[3],
             &information,
             MantissaElement::Channel,
@@ -4110,6 +4124,67 @@ mod tests {
         )
         .expect_err("truncated mantissa must remain a structured error");
         assert!(matches!(error, Eac3Error::Bit(_)));
+        assert_eq!(malformed, 0);
+        assert!(first.is_none());
+    }
+
+    #[test]
+    fn parse_only_mantissa_cursor_carries_group_across_exponent_sets() {
+        // The first exponent set consumes the five-bit bap=1 packed word and
+        // leaves two of its three values pending. The next exponent set
+        // interleaves a three-bit bap=3 code before consuming those pending
+        // values without reading another bap=1 word.
+        let mut bits = BitReader::new(&[0b1101_0011]);
+        let first_information = ExponentInformation {
+            strategy: 1,
+            initial_exponent: 0,
+            grouped_exponents: Vec::new(),
+            start_mantissa: 0,
+            end_mantissa: 1,
+            decoded: vec![0],
+            gain_range: None,
+        };
+        let second_information = ExponentInformation {
+            strategy: 1,
+            initial_exponent: 0,
+            grouped_exponents: Vec::new(),
+            start_mantissa: 0,
+            end_mantissa: 3,
+            decoded: vec![0; 3],
+            gain_range: None,
+        };
+        let mut malformed = 0;
+        let mut first = None;
+        let mut grouping = super::MantissaGroupingState::default();
+
+        assert!(consume_conventional_mantissas(
+            &mut bits,
+            &mut grouping,
+            &[1],
+            &first_information,
+            MantissaElement::Channel,
+            Some(0),
+            0,
+            8,
+            &mut malformed,
+            &mut first,
+        )
+        .expect("first exponent set is bounded"));
+        assert!(consume_conventional_mantissas(
+            &mut bits,
+            &mut grouping,
+            &[3, 1, 1],
+            &second_information,
+            MantissaElement::Channel,
+            Some(0),
+            0,
+            8,
+            &mut malformed,
+            &mut first,
+        )
+        .expect("continued exponent set is bounded"));
+
+        assert_eq!(bits.bits_remaining(), 0);
         assert_eq!(malformed, 0);
         assert!(first.is_none());
     }

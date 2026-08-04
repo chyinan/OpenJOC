@@ -230,14 +230,138 @@ pub fn ungroup_mantissa_code(bap: u8, group_code: u16) -> Result<Vec<u16>, Eac3E
     Ok(values)
 }
 
+/// Carries grouped mantissa state across exponent sets in one audio block.
+///
+/// TS 102 366 clause 6.3.5 says that a partial bap 1/2/4 group is shared with
+/// the next exponent set. The state is reset by the audio-block caller, not by
+/// each channel or exponent-set slice.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct MantissaGroupingState {
+    values: [[u16; 3]; 16],
+    raw_codes: [u16; 16],
+    positions: [u8; 16],
+}
+
+/// One quantized mantissa value and the packed word that supplied it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct MantissaCode {
+    pub(crate) value: u16,
+    pub(crate) raw_code: u16,
+    pub(crate) grouped: bool,
+    pub(crate) group_position: u8,
+}
+
+impl MantissaGroupingState {
+    /// Reads or reuses one mantissa code in clause 6.3.5 frequency order.
+    ///
+    /// Grouped codewords are tracked independently for bap 1, 2, and 4, so a
+    /// different bap may occur between values in the same pending group.
+    pub(crate) fn next_code<R: BitRead>(
+        &mut self,
+        bits: &mut R,
+        bap: u8,
+    ) -> Result<MantissaCode, Eac3Error> {
+        let quantizer = mantissa_quantizer(bap)?;
+        if bap == 0 {
+            return Ok(MantissaCode {
+                value: 0,
+                raw_code: 0,
+                grouped: false,
+                group_position: 0,
+            });
+        }
+        if quantizer.group_size == 1 {
+            let raw_code = u16::try_from(bits.read_bits(quantizer.group_bits)?)
+                .map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            if u32::from(raw_code) >= quantizer.levels {
+                return Err(Eac3Error::InvalidMantissaCode {
+                    bap,
+                    actual: raw_code,
+                });
+            }
+            return Ok(MantissaCode {
+                value: raw_code,
+                raw_code,
+                grouped: false,
+                group_position: 0,
+            });
+        }
+
+        let index = usize::from(bap);
+        let group_position = self.positions[index];
+        let raw_code = if group_position == 0 {
+            let raw_code = u16::try_from(bits.read_bits(quantizer.group_bits)?)
+                .map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            let max_code = quantizer
+                .levels
+                .checked_pow(u32::from(quantizer.group_size))
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            if u32::from(raw_code) >= max_code {
+                return Err(Eac3Error::InvalidMantissaGroupCode {
+                    bap,
+                    actual: raw_code,
+                });
+            }
+            let values = ungroup_mantissa_code(bap, raw_code)?;
+            for (slot, value) in values.into_iter().enumerate() {
+                self.values[index][slot] = value;
+            }
+            self.raw_codes[index] = raw_code;
+            raw_code
+        } else {
+            // The pending packed word is reused without consuming bits.
+            self.raw_codes[index]
+        };
+        let value = self.values[index][usize::from(group_position)];
+        let next_position = group_position + 1;
+        self.positions[index] = if next_position == quantizer.group_size {
+            0
+        } else {
+            next_position
+        };
+        Ok(MantissaCode {
+            value,
+            raw_code,
+            grouped: true,
+            group_position,
+        })
+    }
+
+    /// Advances a copy of this state without reading bits, returning the bit
+    /// width and group position for one frequency-ordered mantissa.
+    pub(crate) fn next_width(&mut self, bap: u8) -> Result<(u8, u8), Eac3Error> {
+        let quantizer = mantissa_quantizer(bap)?;
+        if bap == 0 {
+            return Ok((0, 0));
+        }
+        if quantizer.group_size == 1 {
+            return Ok((quantizer.group_bits, 0));
+        }
+        let index = usize::from(bap);
+        let group_position = self.positions[index];
+        let width = if group_position == 0 {
+            quantizer.group_bits
+        } else {
+            0
+        };
+        let next_position = group_position + 1;
+        self.positions[index] = if next_position == quantizer.group_size {
+            0
+        } else {
+            next_position
+        };
+        Ok((width, group_position))
+    }
+}
+
 /// Traverses a channel's mantissa words in frequency order.
 ///
 /// `baps`, `exponents`, and `dither_flags` are parallel arrays. For a dithered
 /// bap-zero bin, the next value in `dither_values` is used; the caller owns the
 /// random sequence and may choose any sequence allowed by clause 6.3.4.
-/// Grouped words are kept within contiguous runs of the same bap. A final
-/// partial group consumes its packed code and ignores dummy values, as
-/// required by clause 6.3.5.
+/// Grouped words are shared across interleaved bap values and exponent-set
+/// calls. A final partial group consumes its packed code and ignores dummy
+/// values, as required by clause 6.3.5.
 ///
 /// # Errors
 ///
@@ -249,6 +373,27 @@ pub fn decode_mantissas<R: BitRead>(
     exponents: &[u8],
     dither_flags: &[bool],
     dither_values: &[f64],
+) -> Result<Vec<f64>, Eac3Error> {
+    let mut grouping = MantissaGroupingState::default();
+    decode_mantissas_with_state(
+        bits,
+        baps,
+        exponents,
+        dither_flags,
+        dither_values,
+        &mut grouping,
+    )
+}
+
+/// Decodes one exponent-set slice while retaining grouped state supplied by
+/// the audio-block caller.
+pub(crate) fn decode_mantissas_with_state<R: BitRead>(
+    bits: &mut R,
+    baps: &[u8],
+    exponents: &[u8],
+    dither_flags: &[bool],
+    dither_values: &[f64],
+    grouping: &mut MantissaGroupingState,
 ) -> Result<Vec<f64>, Eac3Error> {
     if baps.len() != exponents.len() {
         return Err(Eac3Error::MantissaExponentLengthMismatch {
@@ -278,7 +423,6 @@ pub fn decode_mantissas<R: BitRead>(
     let mut dither_index = 0;
     while index < baps.len() {
         let bap = baps[index];
-        let quantizer = mantissa_quantizer(bap)?;
         if bap == 0 {
             let value = if dither_flags[index] {
                 let value = *dither_values
@@ -294,34 +438,10 @@ pub fn decode_mantissas<R: BitRead>(
             continue;
         }
 
-        let run_end = if quantizer.group_size == 1 {
-            index + 1
-        } else {
-            let mut end = index + 1;
-            while end < baps.len() && baps[end] == bap {
-                end += 1;
-            }
-            end
-        };
-        while index < run_end {
-            let code = u16::try_from(bits.read_bits(quantizer.group_bits)?)
-                .map_err(|_| Eac3Error::FrameSizeOverflow)?;
-            if quantizer.group_size == 1 {
-                let value = decode_mantissa_code(bap, code)?;
-                values.push(shift_mantissa(value, exponents[index])?);
-                index += 1;
-            } else {
-                let codes = ungroup_mantissa_code(bap, code)?;
-                for code in codes {
-                    if index == run_end {
-                        break;
-                    }
-                    let value = decode_mantissa_code(bap, code)?;
-                    values.push(shift_mantissa(value, exponents[index])?);
-                    index += 1;
-                }
-            }
-        }
+        let code = grouping.next_code(bits, bap)?;
+        let value = decode_mantissa_code(bap, code.value)?;
+        values.push(shift_mantissa(value, exponents[index])?);
+        index += 1;
     }
     Ok(values)
 }
