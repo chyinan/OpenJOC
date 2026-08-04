@@ -150,6 +150,30 @@ incomplete profile state. Legal nonzero JOC/OAMD acceptance, resolved
 skip-field carriage semantics, complete legal-carrier coverage, and
 internal-base fidelity remain open.
 
+## Controlled Logic vector result
+
+The first controlled production attempt is now complete through the strict
+profile gate. A private Logic Pro 12.3 project uses deterministic 48 kHz PCM24
+sources, a stereo bed, one moving 997 Hz object, 30 explicit automation events,
+and no creative processing. The accepted ADM export is exactly four seconds;
+its object channel is sample-identical to the known source and its ADM metadata
+contains 197 position blocks. Private sources, project media, ADM, DD+ output,
+manifests, reports, and screenshots remain outside the repository.
+
+The final DD+ Atmos export yields 126 E-AC-3 access units. OpenJOC reaches all
+six audio-block prefixes in every access unit and parses one exact bounded
+`skipfld` Annex H candidate with IDs 11/14/2/1. The new census configuration
+inventory proves that IDs 11 and 14 both carry `codecdatae=0`, while ID 11 is
+also not frame aligned. Strict TS 103 420 Table 56 validation therefore rejects
+all 126 profiles. The validator is unchanged; OAMD/JOC parsing,
+reconstruction, continuity, and internal-base comparison are deliberately not
+entered after this blocker. Two release census runs are byte-identical.
+
+This result changes the next evidence need: another authorized encoder/version
+or an authoritative carriage/profile clarification is required. A vendor
+divergence is observed; commercial intent is not established and must not be
+assumed.
+
 ## Explicit open goals after the current increment
 
 - Establish a user-supplied legal DEE real-vector lane without committing

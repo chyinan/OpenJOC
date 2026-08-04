@@ -1530,6 +1530,49 @@ and a test or explicit TODO before implementation proceeds.
   the ISO BMFF boundary and 7,773 access units. This confirms the container
   increment only; it does not promote the fixture to a nonzero JOC/OAMD vector.
 
+### Controlled Logic Pro vector production and strict acceptance
+
+- Production provenance: Logic Pro 12.3 on macOS produced a new four-second,
+  48 kHz controlled Atmos project from deterministic PCM24 sources. The
+  project has one stereo bed, one mono 997 Hz object, unity routing, no
+  creative plug-ins, Smart Tempo and Flex disabled, and 30 explicit object
+  position automation events. Project media were hash-checked against the
+  deterministic sources after correcting an initially detected 44.1/48 kHz
+  import-rate mismatch. The rejected pre-correction exports remain isolated
+  outside the repository.
+- ADM ground truth: the final 11-channel PCM24 ADM BWF contains exactly
+  192,000 samples at 48 kHz, two ADM objects, 11 track UIDs, and 197 object
+  position blocks. The object channel is sample-identical to the 997 Hz source
+  (`correlation=1`, `gain=1`, zero residual), while the bed remains distributed
+  through the ten-channel bed by Logic's panner. These are source and authoring
+  checks, not proof that the encoded EMDF profile is standards-conformant.
+- Encoded artifact: the non-committed 768 kbit/s DD+ Atmos MP4 has SHA-256
+  `704545f313148412d019a8e7e739fccc0ead345ba7afb4b3b32199fde7b79af0`;
+  its independent stream-copy EC-3 is 387,072 bytes with SHA-256
+  `7ed23a04628c62300a3cc4cee846a308077f8a9117e96366d2b018e6b3ec2249`.
+  FFprobe identifies the codec profile as Dolby Digital Plus + Dolby Atmos,
+  48 kHz, six channels, `5.1(side)`.
+- Strict census result: all 126 access units contain `addbsi` complexity 16,
+  have no frame-end `auxdatae`, and expose one exact bounded `skipfld` Annex H
+  candidate after complete six-block traversal. Each candidate contains IDs
+  11, 14, 2, and 1. IDs 11 and 14 use group 0 and no duration, but both set
+  `codecdatae=0`; ID 11 also sets `payload_frame_aligned=0`. ID 14 is frame
+  aligned with duplicate flags false, priority zero, and processing allowed
+  zero. This fails TS 103 420 Table 56 in every access unit; no profile is
+  accepted and no OAMD/JOC bytes enter reconstruction.
+- Reproducibility: two independent release census runs are byte-identical.
+  Their JSON SHA-256 is
+  `02dec9bb84ae88aac9abb276f95c13467997afda46964bd50d8bd00847d8b78d`;
+  the text SHA-256 is
+  `4fab15ce9c736ab4083d1ebffa1936fe373bed6d4f796780b683f2eb28d55e0e`.
+  The census now retains all per-payload configuration fields in JSON and
+  prints the first parsed carrier's configurations in the text report.
+- Interpretation boundary: this is evidence of a systematic mismatch between
+  this vendor export and the public Table 56 profile constraints, not evidence
+  of intent, hidden commercial protection, or permission to relax validation.
+  `skipfld` remains a bounded diagnostic candidate because TS 102 366 calls it
+  dummy data and TS 103 420 does not expressly designate it as a JOC carrier.
+
 ### User-supplied legal DEE fixture (acceptance lane remains open)
 
 - Fixture is not committed to this repository. Stable label:

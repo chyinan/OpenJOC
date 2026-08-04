@@ -120,6 +120,59 @@ reset at exponent-set boundaries; they are now regression-covered and absent
 from the four-fixture census. This is not evidence of nonzero JOC/OAMD
 reconstruction or internal-base fidelity.
 
+## Controlled Logic Pro vector: production complete, profile gate failed
+
+On 2026-08-04 the first controlled private vector was produced in Logic Pro
+12.3 from deterministic PCM24 sources. The final project is 48 kHz and four
+seconds, with a stereo bed, a mono 997 Hz Atmos object, unity routing, no
+creative plug-ins, Smart Tempo/Flex disabled, and 30 explicit object-position
+automation events. An initially detected 44.1/48 kHz package-media mismatch
+was corrected before the accepted exports; rejected outputs were quarantined.
+
+The final ADM BWF is 11-channel PCM24, 48 kHz, and exactly 192,000 samples. Its
+ADM inventory contains two audio objects, 11 track UIDs, one direct-speaker
+pack, one object pack, and 197 object position blocks. The known 997 Hz source
+matches ADM channel 11 sample-for-sample (`correlation=1`, `gain=1`, residual
+RMS 0), proving that the final source/project/ADM path is controlled. Logic's
+bed panner distributes the stereo bed across the ten-channel bed, so no
+unsupported sample-identity claim is made for the bed channels.
+
+The final 768 kbit/s DD+ Atmos MP4 is 390,839 bytes, SHA-256
+`704545f313148412d019a8e7e739fccc0ead345ba7afb4b3b32199fde7b79af0`.
+Its independent stream-copy EC-3 is 387,072 bytes, SHA-256
+`7ed23a04628c62300a3cc4cee846a308077f8a9117e96366d2b018e6b3ec2249`,
+with 126 access units of 1,536 samples. The stream's frame-aligned duration is
+4.032 seconds; the authored/ADM duration is exactly four seconds.
+
+OpenJOC reaches all 756 audio-block prefixes with zero unresolved blocks and
+classifies one exact `skipfld` Annex H candidate per access unit. Every
+candidate parses cleanly with payload IDs 11, 14, 2, and 1. The complete
+per-payload configuration inventory shows, consistently across all 126 access
+units:
+
+```text
+ID 11: group=0 duration=none codecdatae=0 frame_aligned=0
+ID 14: group=0 duration=none codecdatae=0 frame_aligned=1
+       create_duplicate=0 remove_duplicate=0 priority=0 proc_allowed=0
+```
+
+TS 103 420 Table 56 requires `codecdatae=1` and frame alignment for the
+profile payloads. Therefore `valid_joc_profile_count=0`,
+`complete_joc_profile_count=0`, and
+`invalid_or_incomplete_profile_count=126`; the carrier state is
+`emdf_profile_incomplete`. Two final release census runs are byte-identical:
+JSON SHA-256
+`02dec9bb84ae88aac9abb276f95c13467997afda46964bd50d8bd00847d8b78d`
+and text SHA-256
+`4fab15ce9c736ab4083d1ebffa1936fe373bed6d4f796780b683f2eb28d55e0e`.
+
+This is the first normative blocker. No OAMD parse, JOC parse, object-stem
+reconstruction, continuity comparison, or `--internal-base` fidelity run was
+performed, and the validator was not weakened. The result is compatible with
+a vendor-specific convention, encoder/version defect, or an unresolved public
+specification/carriage interpretation; it does not establish deliberate
+commercial obfuscation.
+
 ### Normative skip-field carrier audit
 
 The authorized raster evidence was rechecked before this increment: TS 102 366
@@ -290,20 +343,18 @@ cargo test -p openjoc-cli --test container -- --nocapture
 cargo test -p openjoc-cli
 ```
 
-With the local ignored manifest selected, the opt-in corpus test also passed:
+With the local ignored manifest selected, the opt-in corpus test also passed.
+The controlled Logic vector was then run twice through the release census:
 
 ```text
 OPENJOC_REAL_FIXTURE_MANIFEST=<local manifest> cargo test -p openjoc-cli --all-features fixture_census -- --nocapture
 OPENJOC_REAL_FIXTURE_MANIFEST=<local manifest> cargo run -p openjoc-cli --release --offline -- --no-banner census <local manifest> -o <local report directory>
 ```
 
-The latest full tracked-workspace quality gates were rerun in a temporary clean
-worktree at code HEAD `4b3d061c540b8e9f43df12632b7cda4a43a6c692` and passed.
-The official ETSI reference inputs were copied into that temporary worktree;
-no programme bytes, manifest, or user diagnostic files were copied. The test
-and build commands used `CARGO_BUILD_JOBS=1` and serialized test execution to
-avoid the known Windows linker/PDB and temporary-fixture races; these are
-environment workarounds, not codec behavior changes:
+The latest full tracked-workspace quality gates were rerun in the main worktree
+on 2026-08-04 and passed. No private source, project, ADM, encoded programme,
+manifest, census output, or screenshot was added to the repository. The test
+and build commands used `CARGO_BUILD_JOBS=1` and serialized test execution:
 
 ```text
 cargo fmt --all -- --check
@@ -314,13 +365,10 @@ git diff --check
 ```
 
 This includes the workspace-wide all-feature test suite, strict clippy, the
-offline release build, and a clean diff check. The untracked
-`crates/openjoc-eac3/tests/_real_debug.rs` was not part of that clean tracked
-worktree. In the main worktree it was exercised separately with an existing
-external raw-EC3 path through `OPENJOC_DEBUG_EC3`; the literal main-worktree
-format/clippy commands are blocked only by that untracked file's formatting and
-lint warnings. The current change is documentation-only; it does not change
-production source, APIs, CLI behavior, or tracked tests.
+offline release build, and a clean diff check. Rust 1.94's new
+`needless_range_loop` findings were corrected mechanically in coupling tests
+and interpolation state assembly; behavior is unchanged. The production
+diagnostic change adds per-payload configuration fields to census JSON/text.
 
 ## Revision and verification ledger
 
@@ -337,6 +385,10 @@ production source, APIs, CLI behavior, or tracked tests.
   `b9cab25a5df0e8ab3b3344dd2cbad71f7c120017`.
 - Grouped mantissa carry and complete four-fixture audio-block traversal:
   `2c524d107ae7451b2a6c838e7ca64159a51b375b`.
+- Controlled Logic vector census configuration inventory:
+  `79e659b6f2cc654c6f7eba5a21165f0a277b88c5`.
+- Rust 1.94 clippy compatibility cleanup:
+  `fbfc56b8d4f317017bab348559a687a66ca1201d`.
 - Grouped traversal evidence/documentation: documentation-only commit
   `a8e736eb7097fb1d2e76be52f9dca68b58d0cfaa`.
 - Container evidence/status audit: documentation-only commit
@@ -355,11 +407,11 @@ production source, APIs, CLI behavior, or tracked tests.
   `c1f3fa621f9712df04cd3ebfcffed80f83619f1d`,
   `3662b21549ed387d487f92dd12a86fe26e6f8920`, and
   `4b3d061c540b8e9f43df12632b7cda4a43a6c692`.
-- The latest quality-gate evidence above is tied to code HEAD
-  `4b3d061c540b8e9f43df12632b7cda4a43a6c692`; the documentation-only commit
-  containing this report update is intentionally recorded separately after it
-  is created. Implementation commits and status/documentation commits remain
-  distinct.
+- The previous quality-gate ledger remains tied to code HEAD
+  `4b3d061c540b8e9f43df12632b7cda4a43a6c692`. The 2026-08-04 quality-gate
+  evidence applies to code HEAD
+  `fbfc56b8d4f317017bab348559a687a66ca1201d`. Implementation and
+  status/documentation commits remain distinct.
 
 ## Known limitations and next goals
 

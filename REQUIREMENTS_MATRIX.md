@@ -50,9 +50,9 @@ open.
 | TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
 | TS 103 420 8.1, E.3 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3`, `openjoc-cli` | indexed six-block I0/optional D0 PCM assembly, normative replacement/supplement mapping, exact access-unit rate/sample alignment, and raw five-channel `--internal-base` ObjectScene integration; legal real-vector proof remains | implemented |
 | TS 103 420 8.2, Tables 55-56 | Frame-end EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | bounded frame-end auxdata profile extraction, same-frame addbsi, last-dependent enforcement, and explicit addbsi-without-profile diagnostics | implemented |
-| TS 103 420 8.2, Tables 55-56, TS 102 366 E.1.2.5, Annex H | Bounded audio-block `skipfld` EMDF candidate classification and profile inventory | `openjoc-emdf`, `openjoc-eac3` | exact declared skip-field range, frame-relative/elementary-stream offsets, no byte scanning or cross-carrier concatenation, exact-start Annex H classification, payload-ID/size/group inventory, malformed/trailing distinction, and access-unit profile extraction API; TS 102 366 calls `skipfld` dummy bytes and TS 103 420 does not expressly designate it as a JOC carrier, so this is diagnostic candidate evidence; four external fixtures failed Table 56 profile validation (`codecdatae=0` on ID 11) | implemented |
+| TS 103 420 8.2, Tables 55-56, TS 102 366 E.1.2.5, Annex H | Bounded audio-block `skipfld` EMDF candidate classification and profile inventory | `openjoc-emdf`, `openjoc-eac3` | exact declared skip-field range, frame-relative/elementary-stream offsets, no byte scanning or cross-carrier concatenation, exact-start Annex H classification, payload-ID/size/group and complete per-payload configuration inventory, malformed/trailing distinction, and access-unit profile extraction API; TS 102 366 calls `skipfld` dummy bytes and TS 103 420 does not expressly designate it as a JOC carrier, so this is diagnostic candidate evidence; four historical external fixtures and the controlled Logic Pro vector fail Table 56 profile validation | implemented |
 | TS 103 420 8.2, Tables 55-56, TS 102 366 E.1.2.5, Annex H | All legal EMDF carrier locations and legal nonzero profile acceptance | `openjoc-emdf`, `openjoc-eac3` | complete bounded coverage of every authorized carrier on an authorized real vector, resolved skip-field carriage semantics, valid Table 55/56 pair, dynamic OAMD/JOC parsing, and nonzero reconstruction; current census coverage and invalid real profiles do not close this lane | planned |
-| TS 103 420 8.2-8.3, TS 102 366 E.1.2/E.1.2.5/E.1.3.1.2 | External multi-fixture carrier census | `openjoc-cli`, `openjoc-eac3` | gitignored or environment-selected manifest; checked hashes; deterministic per-fixture JSON/text reports; frame-end and skip-field attempts; per-carrier payload distributions; explicit non-EMDF/valid/malformed/unsupported/profile states; no committed programme bytes | implemented |
+| TS 103 420 8.2-8.3, TS 102 366 E.1.2/E.1.2.5/E.1.3.1.2 | External multi-fixture carrier census | `openjoc-cli`, `openjoc-eac3` | gitignored or environment-selected manifest; checked hashes; deterministic per-fixture JSON/text reports; frame-end and skip-field attempts; per-carrier payload distributions and configuration fields; explicit non-EMDF/valid/malformed/unsupported/profile states; no committed programme bytes | implemented |
 | TS 102 366 E.1.2/E.2.8.2 | Parse-only audio-block carrier traversal | `openjoc-eac3` | BSI→audfrm→all six `audblk` prefixes and exact declared `skipfld` ranges reached on the four external fixtures without PCM synthesis; grouped mantissa cursor traversal reaches every block with zero malformed/unresolved counts; unsupported syntax remains explicit | implemented |
 | TS 102 366 6.3.5, Tables 6.17-6.23 | Grouped mantissa carry across exponent sets and interleaved BAP values | `openjoc-eac3` | packed bap 1/2/4 state is retained across exponent-set calls and channel/coupling/LFE syntax within an audio block; boundary, interleaving, truncation, and four-fixture regression tests pass | implemented |
 | TS 102 366 6.3.5, E.2.8.2 | Internal-base first-failure diagnosis | `openjoc-eac3`, `openjoc-cli` | structured element/channel/block/BAP/raw-code/width/grouped/bit-offset context and access-unit/stream offsets; no expansion of legal code domains without normative proof | implemented |
@@ -80,6 +80,29 @@ open.
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
 | Mandatory DoD | WAV stems, scene, timeline, debug artifacts from real JOC | end-to-end workspace | legal vector artifacts plus fidelity comparison | planned |
 | Mandatory DoD | Windows/Linux/macOS CI | `.github/workflows` | all platform jobs green | planned |
+
+## Controlled Logic Pro vector gate result
+
+The first reproducible Logic Pro 12.3 production vector is retained outside
+the repository. Its controlled 48 kHz, four-second project contains a stereo
+bed and one 997 Hz moving object. The ADM export contains 192,000 PCM samples,
+11 channels, two ADM objects, and 197 object-position blocks; its object
+channel is sample-identical to the known source stem. This closes the source,
+project, ADM-export, and ground-truth inventory portions of the production
+procedure, but not the legal JOC reconstruction lane.
+
+The final 768 kbit/s DD+ Atmos MP4 has SHA-256
+`704545f313148412d019a8e7e739fccc0ead345ba7afb4b3b32199fde7b79af0`.
+Its stream-copied EC-3 is 387,072 bytes with SHA-256
+`7ed23a04628c62300a3cc4cee846a308077f8a9117e96366d2b018e6b3ec2249`.
+OpenJOC reaches all 126 access units and all 756 audio-block prefixes, with no
+unresolved or malformed carrier traversal. Every access unit has one bounded
+Annex H candidate containing payload IDs 11, 14, 2, and 1. IDs 11 and 14 share
+group 0, but both set `codecdatae=0`; ID 11 also sets
+`payload_frame_aligned=0`. These fields fail the strict TS 103 420 Table 56
+profile before OAMD/JOC extraction. Therefore OAMD parsing, JOC parsing,
+object reconstruction, continuity, and `--internal-base` fidelity remain
+`planned`; no permissive compatibility path is used.
 
 The `skipfld` implementation above is intentionally a bounded candidate path.
 TS 102 366 describes its bytes as dummy data, and TS 103 420 does not state
