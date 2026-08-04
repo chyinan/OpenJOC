@@ -1,7 +1,8 @@
 use openjoc_eac3::{
     AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAccessUnitPcmDecoder, JocAddbsi,
     StreamType, block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
-    classify_aux_emdf, decode_audio_blocks, decode_audio_frame_pcm, decode_exponents,
+    classify_aux_emdf, classify_skip_field_emdf, decode_audio_blocks, decode_audio_frame_pcm,
+    decode_exponents,
     decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
     group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
@@ -148,6 +149,54 @@ fn six_block_mono_frame(
         }
     }
     bits.bytes(4096)
+}
+
+fn skip_field_joc_frame(emdf: &[u8]) -> Vec<u8> {
+    let size = 512;
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(u64::try_from(size / 2 - 1).expect("frame words"), 11);
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // no compression metadata
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // convsync
+    bits.push(1, 1); // addbsie
+    bits.push(1, 6); // two addbsi bytes
+    bits.push(0x01, 8); // JOC extension flag
+    bits.push(1, 8); // complexity index
+
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(2, 7); // skip-field syntax only
+    bits.push(1, 2); // channel D15
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(0, 6); // frame coarse SNR offset
+    bits.push(0, 4); // frame fine SNR offset
+
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // SPX not in use
+    bits.push(0, 6); // channel bandwidth code: end mantissa 73
+    bits.push(15, 4); // channel absolute exponent
+    for _ in 0..24 {
+        bits.push(62, 7); // neutral D15 groups
+    }
+    bits.push(0, 2); // gain range
+    bits.push(0, 1); // converter SNR offset absent
+    bits.push(1, 1); // skiple exists
+    bits.push(u64::try_from(emdf.len()).expect("skip-field length"), 9);
+    for byte in emdf {
+        bits.push(u64::from(*byte), 8);
+    }
+
+    bits.bytes(size)
 }
 
 #[test]
@@ -1977,6 +2026,41 @@ fn classifies_frame_end_auxdata_without_scanning_or_accepting_trailing_bytes() {
     ));
 }
 
+#[test]
+fn classifies_exact_skip_field_ranges_without_scanning_or_padding() {
+    let non_emdf = openjoc_eac3::AuxiliaryData {
+        bit_len: 32,
+        bytes: vec![0, 0, 0, 0],
+    };
+    assert_eq!(
+        classify_skip_field_emdf(&non_emdf),
+        openjoc_emdf::CarrierClassification::NonEmdf
+    );
+
+    let emdf = joc_emdf();
+    let exact = openjoc_eac3::AuxiliaryData {
+        bit_len: emdf.len() * 8,
+        bytes: emdf.clone(),
+    };
+    assert!(matches!(
+        classify_skip_field_emdf(&exact),
+        openjoc_emdf::CarrierClassification::Parsed(_)
+    ));
+
+    let mut trailing = emdf;
+    trailing.push(0);
+    assert_eq!(
+        classify_skip_field_emdf(&openjoc_eac3::AuxiliaryData {
+            bit_len: trailing.len() * 8,
+            bytes: trailing,
+        }),
+        openjoc_emdf::CarrierClassification::TrailingData {
+            container_bytes: exact.bytes.len(),
+            carrier_bytes: exact.bytes.len() + 1,
+        }
+    );
+}
+
 fn joc_emdf() -> Vec<u8> {
     let mut container = Bits::default();
     container.push(0, 2);
@@ -2075,6 +2159,42 @@ fn extracts_joc_profile_from_the_last_dependent_substream() {
     assert_eq!(metadata.complexity_index, 2);
     assert_eq!(metadata.oamd, [0xa5]);
     assert_eq!(metadata.joc, [0x5a]);
+}
+
+#[test]
+fn extracts_joc_profile_from_an_exact_audio_block_skip_field() {
+    let emdf = joc_emdf();
+    let bytes = skip_field_joc_frame(&emdf);
+    let frames = index_syncframes(&bytes).expect("frame");
+    let unit = group_access_units(&frames).expect("unit")[0];
+    let metadata = openjoc_eac3::extract_joc_access_unit(&bytes, &frames, unit)
+        .expect("valid bounded skip-field profile")
+        .expect("JOC metadata");
+    assert_eq!(metadata.carrier_frame, 0);
+    assert_eq!(metadata.complexity_index, 1);
+    assert_eq!(metadata.oamd, [0xa5]);
+    assert_eq!(metadata.joc, [0x5a]);
+
+    let mut carriers = Vec::new();
+    let report = inspect_audio_block_carriers(&bytes, |carrier| {
+        carriers.push((
+            carrier.block_index,
+            carrier.skip_field_start_offset_bits,
+            carrier.skip_field.clone(),
+        ));
+    })
+    .expect("bounded audio-block traversal");
+    assert_eq!(report.examined_blocks, 1);
+    assert_eq!(report.unresolved_blocks, 0);
+    assert_eq!(carriers.len(), 1);
+    assert_eq!(carriers[0].0, 0);
+    assert_eq!(
+        carriers[0].2,
+        Some(openjoc_eac3::AuxiliaryData {
+            bit_len: emdf.len() * 8,
+            bytes: emdf,
+        })
+    );
 }
 
 #[test]
