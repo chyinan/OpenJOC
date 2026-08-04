@@ -787,6 +787,7 @@ fn inspect_first_audio_block(
     entry: openjoc_eac3::SyncframeIndexEntry,
     frame: &[u8],
 ) {
+    let examined_before = report.audio_block_skip_field_examined_count;
     let result = inspect_audio_block_carriers(frame, |carrier| {
         report.audio_block_skip_field_examined_count += 1;
         if let Some(skip) = carrier.skip_field.clone() {
@@ -845,8 +846,11 @@ fn inspect_first_audio_block(
             }
         }
         Err(error) => {
+            let examined_in_frame = report
+                .audio_block_skip_field_examined_count
+                .saturating_sub(examined_before);
             report.audio_block_skip_field_unresolved_count +=
-                usize::from(entry.header.audio_blocks);
+                usize::from(entry.header.audio_blocks).saturating_sub(examined_in_frame);
             record_failure(
                 report,
                 access_unit,
