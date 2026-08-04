@@ -88,8 +88,10 @@ six-block traversal: malformed mantissa count is zero and unresolved block
 count is zero. The later bounded-carrier integration in `d900ef1` classifies
 one exact skip-field range per access unit as an Annex H EMDF candidate. Each
 candidate exposes payload IDs 11, 14, 2, and 1, but the ID-11 Table 56
-configuration is invalid (`codecdatae=0`, `payload_frame_aligned=0`), so no
-complete JOC profile is accepted. TS 102 366 describes `skipfld` as dummy
+configuration fails the strict profile (`codecdatae=0`,
+`payload_frame_aligned=0`), so no complete ETSI_STRICT profile is accepted.
+The observed Logic/Dolby pattern is admitted only by the explicit vendor
+profile and only with deviations. TS 102 366 describes `skipfld` as dummy
 bytes to ignore, and TS 103 420 does not expressly designate that field as a
 JOC carrier; this is a bounded diagnostic candidate result, not proof of
 normative skip-field carriage.
@@ -160,18 +162,53 @@ TS 103 420 Table 56 requires `codecdatae=1` and frame alignment for the
 profile payloads. Therefore `valid_joc_profile_count=0`,
 `complete_joc_profile_count=0`, and
 `invalid_or_incomplete_profile_count=126`; the carrier state is
-`emdf_profile_incomplete`. Two final release census runs are byte-identical:
+`emdf_profile_incomplete`. DOLBY_VENDOR_COMPAT accepts this exact pattern with
+seven recorded deviations and preserves the bytes for the decoder layer. Two
+final release census runs are byte-identical:
 JSON SHA-256
-`02dec9bb84ae88aac9abb276f95c13467997afda46964bd50d8bd00847d8b78d`
+`52302b6fee68e5ad4bcf1c3bbc4c526077efb223126a975c37a732b010035432`
 and text SHA-256
-`4fab15ce9c736ab4083d1ebffa1936fe373bed6d4f796780b683f2eb28d55e0e`.
+`5b94f9d45faba8f62a2260fb9ad34857c62a82fd60f8871e29cb75cb2f04f928`.
 
-This is the first normative blocker. No OAMD parse, JOC parse, object-stem
-reconstruction, continuity comparison, or `--internal-base` fidelity run was
-performed, and the validator was not weakened. The result is compatible with
-a vendor-specific convention, encoder/version defect, or an unresolved public
-specification/carriage interpretation; it does not establish deliberate
-commercial obfuscation.
+At the initial strict-only gate this was the first normative blocker: no OAMD
+parse, JOC parse, object-stem reconstruction, continuity comparison, or
+`--internal-base` fidelity run could begin, and the validator was not weakened.
+The result is compatible with a vendor-specific convention, encoder/version
+defect, or an unresolved public specification/carriage interpretation; it does
+not establish deliberate commercial obfuscation.
+
+## Implemented increment: explicit ETSI/vendor profile boundary
+
+The Logic result is now represented by two independent validations over the
+same parsed, unmodified EMDF container:
+
+```text
+parse -> ParsedJocAccessUnit/JocPayload
+      -> validate(ETSI_STRICT)
+      -> validate(DOLBY_VENDOR_COMPAT)
+      -> decode
+```
+
+For all 126 access units, `ETSI_STRICT` fails with seven evidence records:
+`codecdatae=0` on payloads 11 and 14; `payload_frame_aligned=0` on payload 11;
+and absent payload-11 duplicate, priority, and processing controls where the
+strict profile requires zero. The vendor profile reports the same seven
+deviations and returns `accepted_with_deviation`. No bytes are rewritten and
+no decoder branch inspects vendor flags to silently normalize them.
+
+The private manifest declares these expected results. The release census was
+run twice against the same SHA-256-pinned MP4; both JSON and text reports were
+byte-identical. The manifest schema also accepts the same two expected profile
+results for future Dolby Encoding Engine fixtures, while keeping all media
+outside the repository.
+
+The raw Logic EC-3 then reaches the decoder's OAMD boundary under
+`DOLBY_VENDOR_COMPAT`. E-AC-3 `decode` now accepts the caller-defined
+`--trim-config-count N` explicitly, matching the existing payload decoder API.
+Across controlled candidate counts 1, 2, 3, 4, 5, 6, 8, and 10, the first
+downstream error is the same reserved OAMD warp mode 3. This is an OAMD syntax
+boundary, not a JOC profile failure; no count or compatibility fallback is
+guessed or hidden.
 
 ### Normative skip-field carrier audit
 
@@ -235,7 +272,8 @@ The external fixture is intentionally not committed (stable label:
   E.1.2.5 frame-end `auxdatae` bit is zero, and the bounded `skipfld` path
   examines one exact candidate range per access unit. Each range parses as an
   Annex H candidate exposing payload IDs 11, 14, 2, and 1; the ID-11
-  configuration fails Table 56, so no complete profile is accepted. TS 102
+  configuration fails the ETSI_STRICT Table 56 profile, so no complete strict
+  profile is accepted. TS 102
   366 calls these bytes dummy data, and TS 103 420 does not expressly assign
   them as a JOC carrier. If the CLI prints the compatibility phrase “EMDF
   profile absent”, it is bounded to the profile validator and must be read
@@ -252,8 +290,9 @@ The external fixture is intentionally not committed (stable label:
   channel (temporary WAV SHA-256
   `a065dc5d303b44e97943d3d8fa95e784559f157b2c220208112fd31b4a5997e2`)
 - `--internal-base`: the current command stops before base synthesis because
-  the required OAMD/JOC EMDF profile is not located in the currently validated
-  carriers. The earlier mantissa-code failure is resolved, but the
+  the required ETSI_STRICT OAMD/JOC EMDF profile is not located in the
+  currently validated carriers. The earlier mantissa-code failure is resolved,
+  but the
   FFmpeg-versus-internal-base comparison is still not available and
   internal-base fidelity is not verified
 

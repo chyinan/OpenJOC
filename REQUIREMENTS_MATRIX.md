@@ -20,6 +20,17 @@ not a speaker or binaural render. Container input is a completed first
 production increment; legal nonzero real-vector fidelity and rendering remain
 open.
 
+The JOC interoperability boundary is explicit:
+
+```text
+parse what exists -> JocPayload/ParsedJocAccessUnit
+                 -> validate(ETSI_STRICT | DOLBY_VENDOR_COMPAT)
+                 -> decode only an accepted representation
+```
+
+The parser never normalizes vendor metadata, the strict validator retains all
+normative failures, and the decoder has no profile-specific signaling hacks.
+
 | Normative source | Requirement | Production target | Required evidence | Status |
 | --- | --- | --- | --- | --- |
 | TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | anchor-preserving scene model, all-anchor JSON roundtrips, atomic decoded-OAMD/PCM assembly, and invariant tests pass | implemented |
@@ -49,7 +60,7 @@ open.
 | TS 103 420 7.4 | Per-object inverse-QMF integration | `openjoc-joc`, `openjoc-qmf` | sample-exact integrated/reference synthesis, continuity, and splice-reset tests pass | verified |
 | TS 103 420 7.4 | Official `prot64` coefficients | importer, `openjoc-qmf` | importer hash/count/provenance tests pass; QMF use remains | implemented |
 | TS 103 420 8.1, E.3 | Required E-AC-3 downmix and substream behavior | `openjoc-eac3`, `openjoc-cli` | indexed six-block I0/optional D0 PCM assembly, normative replacement/supplement mapping, exact access-unit rate/sample alignment, and raw five-channel `--internal-base` ObjectScene integration; legal real-vector proof remains | implemented |
-| TS 103 420 8.2, Tables 55-56 | Frame-end EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | bounded frame-end auxdata profile extraction, same-frame addbsi, last-dependent enforcement, and explicit addbsi-without-profile diagnostics | implemented |
+| TS 103 420 8.2, Tables 55-56 | Frame-end EMDF OAMD=11/JOC=14 restrictions and placement | `openjoc-emdf`, `openjoc-eac3` | bounded frame-end auxdata profile extraction, same-frame addbsi, last-dependent enforcement, explicit addbsi-without-profile diagnostics, and strict Table 55/56 validation | implemented |
 | TS 103 420 8.2, Tables 55-56, TS 102 366 E.1.2.5, Annex H | Bounded audio-block `skipfld` EMDF candidate classification and profile inventory | `openjoc-emdf`, `openjoc-eac3` | exact declared skip-field range, frame-relative/elementary-stream offsets, no byte scanning or cross-carrier concatenation, exact-start Annex H classification, payload-ID/size/group and complete per-payload configuration inventory, malformed/trailing distinction, and access-unit profile extraction API; TS 102 366 calls `skipfld` dummy bytes and TS 103 420 does not expressly designate it as a JOC carrier, so this is diagnostic candidate evidence; four historical external fixtures and the controlled Logic Pro vector fail Table 56 profile validation | implemented |
 | TS 103 420 8.2, Tables 55-56, TS 102 366 E.1.2.5, Annex H | All legal EMDF carrier locations and legal nonzero profile acceptance | `openjoc-emdf`, `openjoc-eac3` | complete bounded coverage of every authorized carrier on an authorized real vector, resolved skip-field carriage semantics, valid Table 55/56 pair, dynamic OAMD/JOC parsing, and nonzero reconstruction; current census coverage and invalid real profiles do not close this lane | planned |
 | TS 103 420 8.2-8.3, TS 102 366 E.1.2/E.1.2.5/E.1.3.1.2 | External multi-fixture carrier census | `openjoc-cli`, `openjoc-eac3` | gitignored or environment-selected manifest; checked hashes; deterministic per-fixture JSON/text reports; frame-end and skip-field attempts; per-carrier payload distributions and configuration fields; explicit non-EMDF/valid/malformed/unsupported/profile states; no committed programme bytes | implemented |
@@ -67,7 +78,8 @@ open.
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
-| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3`/container `decode` write scene/timeline/default-f32 stems/debug artifacts; explicit `--reference-f64` retains reference output; `inspect` reports bounded profile timing/carrier details | implemented |
+| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3`/container `decode` write scene/timeline/default-f32 stems/debug artifacts; explicit `--reference-f64` retains reference output; `inspect` reports bounded profile timing/carrier details, `decode --validation-profile` selects the explicit profile, and `--trim-config-count` remains caller-supplied | implemented |
+| Engineering spec 6 / interoperability boundary | Explicit ETSI and vendor-compatibility profiles | `openjoc-emdf`, `openjoc-eac3`, `openjoc-cli` | parser retains original EMDF; `ETSI_STRICT` never relaxes Table 55/56; `DOLBY_VENDOR_COMPAT` accepts only the observed Logic/Dolby pattern, records every deviation, and manifest expectations gate Logic/future DEE regressions | implemented |
 | Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | completed |
 | Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | completed |
 | Legal DEE real-vector lane | Nonzero JOC/OAMD reconstruction and continuity acceptance | `openjoc-cli`, `openjoc-scene` | user-supplied fixture hash, nonzero side information/stems, dynamic OAMD, moving object, multiple access units, known-stem/ADM-BWF comparison | planned |
@@ -99,10 +111,14 @@ OpenJOC reaches all 126 access units and all 756 audio-block prefixes, with no
 unresolved or malformed carrier traversal. Every access unit has one bounded
 Annex H candidate containing payload IDs 11, 14, 2, and 1. IDs 11 and 14 share
 group 0, but both set `codecdatae=0`; ID 11 also sets
-`payload_frame_aligned=0`. These fields fail the strict TS 103 420 Table 56
-profile before OAMD/JOC extraction. Therefore OAMD parsing, JOC parsing,
-object reconstruction, continuity, and `--internal-base` fidelity remain
-`planned`; no permissive compatibility path is used.
+`payload_frame_aligned=0`. `ETSI_STRICT` therefore fails with seven recorded
+normative deviations per access unit. `DOLBY_VENDOR_COMPAT` accepts the exact
+observed pattern as `accepted_with_deviation`, preserving the original EMDF
+configuration and all seven evidence records. Two independent release census
+runs produced byte-identical JSON/TXT reports. This establishes the
+interoperability boundary; it does not claim that ETSI is wrong or that the
+commercial encoder is wrong. OAMD/JOC reconstruction and `--internal-base`
+fidelity remain open beyond the profile gate.
 
 The `skipfld` implementation above is intentionally a bounded candidate path.
 TS 102 366 describes its bytes as dummy data, and TS 103 420 does not state

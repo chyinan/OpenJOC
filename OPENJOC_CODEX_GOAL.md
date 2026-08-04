@@ -22,6 +22,29 @@ This is not yet a complete real-world Atmos decoder or speaker/binaural
 renderer. In particular, the retained `debug/compatible_base.wav` is explicit
 FFmpeg `pcm_f64le` compatible-base reference PCM, not a final render.
 
+## Current interoperability boundary: two explicit JOC profiles
+
+The parser, validator, and decoder are separate layers. Parsing retains the
+complete original EMDF container and payload configuration. Validation then
+selects one of two explicit profiles:
+
+- `ETSI_STRICT`: published TS 103 420 Table 55/56 requirements remain
+  normative; `codecdatae=1`, frame alignment, placement, and all conditional
+  controls are enforced. A violation is a failure with evidence.
+- `DOLBY_VENDOR_COMPAT`: accepts only the stable Logic/Dolby signaling pattern
+  observed in controlled production vectors. It preserves every original bit
+  and reports each deviation as `accepted_with_deviation`; it is not a claim
+  of ETSI compliance.
+
+The decoder consumes a validated representation and contains no hidden
+compatibility normalization. `inspect` reports both profiles. `decode` uses
+`--validation-profile etsi-strict|dolby-vendor-compat`, defaulting to strict;
+the caller-defined OAMD cardinality can be supplied explicitly with
+`--trim-config-count N`.
+External fixture manifests can declare expected profile results, so the
+controlled Logic vector and future Dolby Encoding Engine vectors remain
+regression-gated without committing private media.
+
 ## Completed increment: input media and DEE containers
 
 1. Audit status claims and keep `REQUIREMENTS_MATRIX.md`, `PROVENANCE.md`, and
@@ -153,7 +176,8 @@ internal-base fidelity remain open.
 ## Controlled Logic vector result
 
 The first controlled production attempt is now complete through the strict
-profile gate. A private Logic Pro 12.3 project uses deterministic 48 kHz PCM24
+profile gate and the explicit vendor-compatible validation gate. A private
+Logic Pro 12.3 project uses deterministic 48 kHz PCM24
 sources, a stereo bed, one moving 997 Hz object, 30 explicit automation events,
 and no creative processing. The accepted ADM export is exactly four seconds;
 its object channel is sample-identical to the known source and its ADM metadata
@@ -165,9 +189,13 @@ six audio-block prefixes in every access unit and parses one exact bounded
 `skipfld` Annex H candidate with IDs 11/14/2/1. The new census configuration
 inventory proves that IDs 11 and 14 both carry `codecdatae=0`, while ID 11 is
 also not frame aligned. Strict TS 103 420 Table 56 validation therefore rejects
-all 126 profiles. The validator is unchanged; OAMD/JOC parsing,
-reconstruction, continuity, and internal-base comparison are deliberately not
-entered after this blocker. Two release census runs are byte-identical.
+all 126 profiles with seven recorded deviations per access unit. The explicit
+vendor profile accepts the same exact pattern with those deviations preserved.
+The raw stream reaches the OAMD decoder boundary under vendor compatibility.
+With explicit trim-count candidates, the first downstream failure is the
+reserved OAMD warp mode 3; no count or compatibility fallback is guessed.
+Object reconstruction, continuity, and internal-base comparison remain open.
+Two release census runs are byte-identical.
 
 This result changes the next evidence need: another authorized encoder/version
 or an authoritative carriage/profile clarification is required. A vendor
@@ -185,7 +213,9 @@ assumed.
   is zero, and each reached skip-field range parses as a bounded EMDF candidate
   with IDs 11, 14, 2, and 1. TS 102 366 calls these bytes dummy data and TS
   103 420 does not expressly assign them as a JOC carrier. The ID-11 Table 56
-  configuration is invalid, so no complete profile enters OAMD/JOC extraction.
+  configuration is invalid under ETSI_STRICT; vendor compatibility may accept
+  only an explicitly observed pattern with deviations. No complete strict
+  profile enters OAMD/JOC extraction.
   The CLI's literal “EMDF profile absent” wording is compatibility text bounded
   to profile validation; census output names the carrier kind and
   incomplete-profile error. No separate metadata/JOC track or recognized box

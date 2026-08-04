@@ -5,6 +5,35 @@ from the public normative specifications listed below, the official ETSI
 companion archive, and public mathematical/DSP literature where explicitly
 recorded. No existing JOC decoder source code is an implementation reference.
 
+### JOC interoperability profile provenance
+
+The profile split is an architectural boundary, not a standards judgment.
+The parser records the EMDF fields exactly as carried. `ETSI_STRICT` applies
+the published TS 103 420 Table 55/56 constraints and retains normative failure
+evidence. `DOLBY_VENDOR_COMPAT` is an explicitly named observational profile
+for stable Logic Pro/Dolby ecosystem signaling; it accepts only the documented
+pattern, preserves the original metadata, and emits one deviation record per
+observed field. The decoder receives a validated representation and contains
+no hidden compatibility normalization.
+
+The controlled Logic Pro vector is a private, SHA-256-pinned regression input.
+Its manifest expects `ETSI_STRICT=failed` and
+`DOLBY_VENDOR_COMPAT=accepted_with_deviation`. Future Dolby Encoding Engine
+vectors use the same optional manifest fields, so profile outcomes are
+regression assertions without placing proprietary media in the repository.
+
+The observed compatibility allowance is deliberately narrow: payload 11 and
+payload 14 carry `codecdatae=0`; payload 11 carries
+`payload_frame_aligned=0`; payload 11 omits `create_duplicate`,
+`remove_duplicate`, `priority`, and `proc_allowed` where strict validation
+expects zero. No other deviation is admitted by the vendor profile.
+
+The E-AC-3 CLI exposes the caller-defined OAMD trim cardinality as
+`--trim-config-count N`; it is never inferred from vendor metadata. On the
+controlled raw Logic stream, candidate counts 1, 2, 3, 4, 5, 6, 8, and 10 all
+reach the same first OAMD error (`reserved OAMD warp mode 3`). This downstream
+syntax result is kept separate from the accepted-with-deviation JOC profile.
+
 ## Forbidden-source policy
 
 Cavern source code, forks, mirrors, and all other existing JOC decoders are
@@ -1530,7 +1559,7 @@ and a test or explicit TODO before implementation proceeds.
   the ISO BMFF boundary and 7,773 access units. This confirms the container
   increment only; it does not promote the fixture to a nonzero JOC/OAMD vector.
 
-### Controlled Logic Pro vector production and strict acceptance
+### Controlled Logic Pro vector production and dual-profile acceptance
 
 - Production provenance: Logic Pro 12.3 on macOS produced a new four-second,
   48 kHz controlled Atmos project from deterministic PCM24 sources. The
@@ -1558,13 +1587,15 @@ and a test or explicit TODO before implementation proceeds.
   11, 14, 2, and 1. IDs 11 and 14 use group 0 and no duration, but both set
   `codecdatae=0`; ID 11 also sets `payload_frame_aligned=0`. ID 14 is frame
   aligned with duplicate flags false, priority zero, and processing allowed
-  zero. This fails TS 103 420 Table 56 in every access unit; no profile is
-  accepted and no OAMD/JOC bytes enter reconstruction.
+  zero. This fails TS 103 420 Table 56 in every access unit; no ETSI_STRICT
+  profile is accepted. The explicit DOLBY_VENDOR_COMPAT profile accepts the
+  same observed pattern with seven deviations and preserves the original bytes
+  for the decoder layer.
 - Reproducibility: two independent release census runs are byte-identical.
   Their JSON SHA-256 is
-  `02dec9bb84ae88aac9abb276f95c13467997afda46964bd50d8bd00847d8b78d`;
+  `52302b6fee68e5ad4bcf1c3bbc4c526077efb223126a975c37a732b010035432`;
   the text SHA-256 is
-  `4fab15ce9c736ab4083d1ebffa1936fe373bed6d4f796780b683f2eb28d55e0e`.
+  `5b94f9d45faba8f62a2260fb9ad34857c62a82fd60f8871e29cb75cb2f04f928`.
   The census now retains all per-payload configuration fields in JSON and
   prints the first parsed carrier's configurations in the text report.
 - Interpretation boundary: this is evidence of a systematic mismatch between
@@ -1596,8 +1627,8 @@ and a test or explicit TODO before implementation proceeds.
   and 1. TS 102 366 calls `skipfld` dummy data and TS 103 420 does not
   expressly assign it as a JOC carrier, so this result is diagnostic evidence,
   not a normative carriage conclusion. The ID-11 Table 56 configuration
-  (`codecdatae=0`, `payload_frame_aligned=0`) is invalid, so the access-unit
-  profile extractor returns no complete profile. If the CLI prints “JOC
+  (`codecdatae=0`, `payload_frame_aligned=0`) is invalid under ETSI_STRICT, so
+  the strict access-unit profile extractor returns no complete profile. If the CLI prints “JOC
   extension signaled ... EMDF profile absent”, that compatibility wording is
   bounded to profile validation and must be read with the carrier counts; it is
   not a claim that the complete stream contains no EMDF.
