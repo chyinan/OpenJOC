@@ -273,6 +273,7 @@ pub struct CarrierAttempt {
     pub syncframe: usize,
     pub substream_id: u8,
     pub audio_block: Option<usize>,
+    pub frame_relative_start_bit: usize,
     pub start_bit: usize,
     pub length_bits: usize,
     pub result: String,
@@ -770,7 +771,8 @@ fn inspect_frame_end_carrier(
         Ok(Some(aux)) => {
             report.auxdatae_present_count += 1;
             report.bounded_frame_end_auxiliary_containers += 1;
-            let (start_bit, length_bits) = auxiliary_span(entry, aux.bit_len);
+            let (frame_relative_start_bit, start_bit, length_bits) =
+                auxiliary_span(entry, aux.bit_len);
             let classification = if aux.bit_len % 8 != 0 {
                 Err(Eac3Error::AuxDataNotByteAligned { bits: aux.bit_len })
             } else {
@@ -784,6 +786,7 @@ fn inspect_frame_end_carrier(
                         syncframe: frame_index,
                         substream_id: entry.header.substream_id,
                         audio_block: None,
+                        frame_relative_start_bit,
                         start_bit,
                         length_bits,
                         result: "non_emdf".to_owned(),
@@ -825,6 +828,7 @@ fn inspect_frame_end_carrier(
                         syncframe: frame_index,
                         substream_id: entry.header.substream_id,
                         audio_block: None,
+                        frame_relative_start_bit,
                         start_bit,
                         length_bits,
                         result: "parsed".to_owned(),
@@ -842,6 +846,7 @@ fn inspect_frame_end_carrier(
                         syncframe: frame_index,
                         substream_id: entry.header.substream_id,
                         audio_block: None,
+                        frame_relative_start_bit,
                         start_bit,
                         length_bits,
                         result: "failed".to_owned(),
@@ -874,6 +879,7 @@ fn inspect_frame_end_carrier(
                         syncframe: frame_index,
                         substream_id: entry.header.substream_id,
                         audio_block: None,
+                        frame_relative_start_bit,
                         start_bit,
                         length_bits,
                         result: "malformed_emdf_trailing_data".to_owned(),
@@ -900,6 +906,7 @@ fn inspect_frame_end_carrier(
                         syncframe: frame_index,
                         substream_id: entry.header.substream_id,
                         audio_block: None,
+                        frame_relative_start_bit,
                         start_bit,
                         length_bits,
                         result: "failed".to_owned(),
@@ -1040,6 +1047,7 @@ fn inspect_skip_field_carrier(
                 .and_then(|start| offset.checked_add(start))
         })
         .unwrap_or(0);
+    let frame_relative_start_bit = carrier.skip_field_start_offset_bits.unwrap_or(0);
     let length_bits = skip.bit_len;
     let mut attempt = CarrierAttempt {
         location: "audio_block_skipfld".to_owned(),
@@ -1047,6 +1055,7 @@ fn inspect_skip_field_carrier(
         syncframe: frame_index,
         substream_id: entry.header.substream_id,
         audio_block: Some(carrier.block_index),
+        frame_relative_start_bit,
         start_bit,
         length_bits,
         result: String::new(),
@@ -1216,10 +1225,13 @@ fn record_failure(
     }
 }
 
-fn auxiliary_span(entry: openjoc_eac3::SyncframeIndexEntry, length_bits: usize) -> (usize, usize) {
+fn auxiliary_span(
+    entry: openjoc_eac3::SyncframeIndexEntry,
+    length_bits: usize,
+) -> (usize, usize, usize) {
     let frame_bits = entry.header.frame_size * 8;
     let start = frame_bits.saturating_sub(18 + 14 + length_bits);
-    (entry.offset * 8 + start, length_bits)
+    (start, entry.offset * 8 + start, length_bits)
 }
 
 fn frame_bytes(
@@ -1568,8 +1580,9 @@ fn render_text_report(report: &CensusReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        FixtureManifest, FixtureManifestError, MantissaFailureContext, mantissa_failure_context,
-        parse_manifest, payload_inventory, report_status_order, run_census,
+        CarrierAttempt, FixtureManifest, FixtureManifestError, MantissaFailureContext,
+        mantissa_failure_context, parse_manifest, payload_inventory, report_status_order,
+        run_census,
     };
     use openjoc_eac3::{Eac3Error, MantissaElement};
     use openjoc_emdf::{EmdfContainer, EmdfPayload, EmdfPayloadConfig, EmdfProtection, ParsedEmdf};
@@ -1685,6 +1698,27 @@ mod tests {
             payload_inventory(&parsed),
             (vec![11, 99], vec![2, 1], vec![Some(1), None])
         );
+    }
+
+    #[test]
+    fn carrier_attempt_retains_frame_relative_and_absolute_offsets() {
+        let attempt = CarrierAttempt {
+            location: "audio_block_skipfld".to_owned(),
+            access_unit: 0,
+            syncframe: 2,
+            substream_id: 0,
+            audio_block: Some(1),
+            frame_relative_start_bit: 137,
+            start_bit: 8_329,
+            length_bits: 16,
+            result: "non_emdf".to_owned(),
+            payload_ids: Vec::new(),
+            payload_sizes: Vec::new(),
+            payload_group_ids: Vec::new(),
+            error: None,
+        };
+        assert_eq!(attempt.frame_relative_start_bit, 137);
+        assert_eq!(attempt.start_bit, 8_329);
     }
 
     #[test]
