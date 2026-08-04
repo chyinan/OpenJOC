@@ -6,16 +6,16 @@ use openjoc_bitio::{BitRead, BitReader};
 
 use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
-use crate::mantissa::{decode_mantissas_with_state, MantissaGroupingState};
+use crate::mantissa::{MantissaGroupingState, decode_mantissas_with_state};
 use crate::rematrix::rematrix_channels;
 use crate::transform::{inverse_transform, overlap_add};
 use crate::{
+    AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
     apply_delta_bit_allocation, bit_allocation_band_for_bin, channel_end_mantissa,
     channel_exponent_group_count, compute_element_bap, compute_excitation,
     compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
     decode_exponents, exponents_to_psd, integrate_psd, mantissa_quantizer, parse_audio_frame,
     shift_mantissa, snr_offsets_are_zero, spx_subband_range, synthesize_spectral_extension,
-    AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
 };
 
 const ENHANCED_COUPLING_SUBBAND_MANTISSA: [usize; 23] = [
@@ -2745,11 +2745,7 @@ fn parse_following_coupling_strategy(
         let end_frequency_code = if let Some(spx) = spx {
             let code =
                 i8::try_from(spx.begin_frequency_code).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-            if code < 6 {
-                code - 2
-            } else {
-                code * 2 - 7
-            }
+            if code < 6 { code - 2 } else { code * 2 - 7 }
         } else {
             i8::try_from(read_u8(bits, 4)?).map_err(|_| Eac3Error::FrameSizeOverflow)?
         };
@@ -3827,11 +3823,7 @@ fn parse_standard_coupling(
     let end_frequency_code = if let Some(spx) = spx {
         let code =
             i8::try_from(spx.begin_frequency_code).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-        if code < 6 {
-            code - 2
-        } else {
-            code * 2 - 7
-        }
+        if code < 6 { code - 2 } else { code * 2 - 7 }
     } else {
         i8::try_from(read_u8(bits, 4)?).map_err(|_| Eac3Error::FrameSizeOverflow)?
     };
@@ -4008,7 +4000,7 @@ fn read_u8(bits: &mut BitReader<'_>, width: u8) -> Result<u8, Eac3Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{consume_conventional_mantissas, AudioBlockMantissaFailure, ExponentInformation};
+    use super::{AudioBlockMantissaFailure, ExponentInformation, consume_conventional_mantissas};
     use crate::{Eac3Error, MantissaElement};
     use openjoc_bitio::{BitRead, BitReader};
 
@@ -4157,32 +4149,36 @@ mod tests {
         let mut first = None;
         let mut grouping = super::MantissaGroupingState::default();
 
-        assert!(consume_conventional_mantissas(
-            &mut bits,
-            &mut grouping,
-            &[1],
-            &first_information,
-            MantissaElement::Channel,
-            Some(0),
-            0,
-            8,
-            &mut malformed,
-            &mut first,
-        )
-        .expect("first exponent set is bounded"));
-        assert!(consume_conventional_mantissas(
-            &mut bits,
-            &mut grouping,
-            &[3, 1, 1],
-            &second_information,
-            MantissaElement::Channel,
-            Some(0),
-            0,
-            8,
-            &mut malformed,
-            &mut first,
-        )
-        .expect("continued exponent set is bounded"));
+        assert!(
+            consume_conventional_mantissas(
+                &mut bits,
+                &mut grouping,
+                &[1],
+                &first_information,
+                MantissaElement::Channel,
+                Some(0),
+                0,
+                8,
+                &mut malformed,
+                &mut first,
+            )
+            .expect("first exponent set is bounded")
+        );
+        assert!(
+            consume_conventional_mantissas(
+                &mut bits,
+                &mut grouping,
+                &[3, 1, 1],
+                &second_information,
+                MantissaElement::Channel,
+                Some(0),
+                0,
+                8,
+                &mut malformed,
+                &mut first,
+            )
+            .expect("continued exponent set is bounded")
+        );
 
         assert_eq!(bits.bits_remaining(), 0);
         assert_eq!(malformed, 0);

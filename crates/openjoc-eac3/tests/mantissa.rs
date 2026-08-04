@@ -1,7 +1,7 @@
 use openjoc_bitio::{BitRead, BitReader};
 use openjoc_eac3::{
-    decode_mantissa_code, decode_mantissas, mantissa_quantizer, ungroup_mantissa_code, Eac3Error,
-    MantissaQuantizer,
+    Eac3Error, MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer,
+    ungroup_mantissa_code,
 };
 
 fn packed(fields: &[(u16, u8)]) -> Vec<u8> {
