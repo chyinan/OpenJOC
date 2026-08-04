@@ -84,24 +84,43 @@ It verifies labels and optional SHA-256 values, uses the completed input-media
 boundary, and writes deterministic machine-readable and human-readable
 reports. Reports explicitly separate validated carrier paths from unresolved
 paths and include a comparison table, payload-ID distributions, skip-field
-reachability, and the first complete internal-base failure with bit offsets.
+reachability, and structured first-failure fields with bit offsets. The
+grouped-mantissa correction now lets the parse-only walker reach all six blocks
+on each current fixture; no malformed mantissa or unresolved block remains.
 
 The current external corpus is recorded by stable label, hash, and size in
 `PROVENANCE.md` and `IMPLEMENTATION_REPORT.md`:
 
-| label | bytes | source SHA-256 | frames/access units | state |
-| --- | ---: | --- | ---: | --- |
-| `forever_friends` | 32,138,978 | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 7,773/7,773 | carrier unresolved |
-| `hitchcock` | 29,370,578 | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 7,146/7,146 | carrier unresolved |
-| `grand_escape` | 44,175,378 | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 10,599/10,599 | carrier unresolved |
-| `brainrot` | 16,283,910 | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 3,910/3,910 | carrier unresolved |
+| label | bytes | source SHA-256 | frames/access units | skip observed/examined/unresolved | state |
+| --- | ---: | --- | ---: | ---: | --- |
+| `forever_friends` | 32,138,978 | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 7,773/7,773 | 7,773/46,638/0 | extension no EMDF in validated carriers |
+| `hitchcock` | 29,370,578 | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 7,146/7,146 | 7,146/42,876/0 | extension no EMDF in validated carriers |
+| `grand_escape` | 44,175,378 | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 10,599/10,599 | 10,599/63,594/0 | extension no EMDF in validated carriers |
+| `brainrot` | 16,283,910 | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 3,910/3,910 | 3,910/23,460/0 | extension no EMDF in validated carriers |
 
 All four currently show `addbsi` complexity 16 and zero frame-end
 `auxdatae`; no IDs 11/14 were located in that validated carrier. The
-parse-only boundary reaches the first audio-block prefix and marks later
-blocks unresolved rather than claiming carrier absence. The corpus remains a
-diagnostic lane, not legal nonzero JOC/OAMD acceptance or internal-base
-fidelity evidence.
+parse-only boundary reaches every six-block prefix and records declared
+skip-field lengths without passing those ranges to the Annex H parser. The
+state therefore means “no EMDF in currently implemented validated carriers,”
+not “the complete stream contains no EMDF.” The corpus remains a diagnostic
+lane, not legal nonzero JOC/OAMD acceptance or internal-base fidelity evidence.
+
+## Implemented increment: normative grouped mantissa traversal
+
+TS 102 366 V1.4.1 clause 6.3.5 requires bap 1/2/4 packed groups to survive
+exponent-set boundaries and interleaved BAP values. OpenJOC now carries that
+state across conventional channel, coupling, and LFE syntax within each audio
+block, while resetting it at the block boundary. The complete decoder and the
+parse-only carrier walker use the same bounded state; no legal code domain was
+expanded and no arbitrary byte scan was added. A focused regression covers a
+group split across separate exponent-set calls with an interleaved bap=3 code.
+
+This correction moves all four current fixtures from `carrier_unresolved` to
+`extension_no_emdf_in_validated_carriers`: every six-block cursor is reached,
+skip fields are observed, malformed mantissa count is zero, and unresolved
+block count is zero. EMDF parsing from those bounded skip-field ranges, legal
+nonzero JOC/OAMD acceptance, and internal-base fidelity remain open.
 
 ## Explicit open goals after the current increment
 
@@ -109,16 +128,16 @@ fidelity evidence.
   copyrighted programme bytes. It must prove nonzero JOC side information,
   nonzero reconstructed PCM, dynamic OAMD, multiple access units, state reuse,
   a moving object, and known stems or ADM-BWF ground truth.
-- The currently supplied DEE M4A is a container/diagnostic fixture only: its
-  `addbsi` complexity index is present, but every currently inspected
-  frame-end `auxdatae` bit is zero and the validated frame-end extractor did
+- The currently supplied DEE M4A corpus is a container/diagnostic fixture set:
+  every fixture signals `addbsi` complexity 16, every currently inspected
+  frame-end `auxdatae` bit is zero, and the validated frame-end extractor did
   not locate OAMD/JOC EMDF. The CLI's literal “EMDF profile absent” wording is
   bounded to those validated carrier paths. No separate metadata/JOC track or
-  recognized box was found, but audio-block `skipfld` carriage has not been
-  ruled out because full internal audio-block traversal fails before that lane
-  is completely validated. This is not evidence about unvalidated legal
-  carrier paths. Do not infer that `skipfld` is present, and do not
-  count this as the real vector until all required payload and PCM evidence is
+  recognized box was found. The audio-block walker now reaches and records
+  `skipfld`, but those ranges are not yet passed to Annex H, so all-carrier
+  discovery remains open. This is not evidence about unvalidated legal carrier
+  paths. Do not infer that `skipfld` is an EMDF carrier, and do not count this
+  corpus as the real vector until all required payload and PCM evidence is
   available.
 - Complete all-carrier EMDF integration, including bounded validation of
   audio-block `skipfld` carriage, remains an open goal independent of the

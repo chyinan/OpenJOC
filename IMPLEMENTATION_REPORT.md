@@ -39,7 +39,7 @@ The MP4Box command is test-fixture tooling only; it is not an OpenJOC runtime
 dependency. Runtime container behavior uses FFprobe and FFmpeg as external
 black boxes and never uses their decoded PCM as object reconstruction.
 
-## Current container audit refresh
+## Completed increment: container audit evidence refresh
 
 The installed toolchain was rechecked on the current worktree: Poppler
 26.02.0 (`pdftoppm`, `pdftotext`, and `pdfinfo`) and FFmpeg/FFprobe are
@@ -56,10 +56,12 @@ signaled ... EMDF profile absent”. That wording means the currently validated
 frame-end auxiliary extractor did not locate a recognized OAMD/JOC EMDF pair;
 it does not establish EMDF absence from every legal E-AC-3 carrier. No
 separate metadata or recognized JOC box was found at the ISO BMFF track/box
-level, while audio-block `skipfld` carriage remains unruled out because the
-full internal traversal fails before that real-fixture lane is completely
-validated. This refresh strengthens the container evidence only and does not
-change the open real-vector status.
+level. The grouped-mantissa correction now lets the bounded audio-block
+walker reach all six blocks on the supplied fixture and observe its declared
+`skipfld` fields. Those skip-field ranges are not yet passed to the Annex H
+EMDF parser, so all-carrier discovery remains open. This refresh strengthens
+the container and traversal evidence only and does not change the open
+real-vector status.
 
 ## Implemented increment: external multi-fixture carrier census
 
@@ -81,30 +83,45 @@ carrier cases, and the first bounded failure. Carrier states distinguish
 unresolved”; the latter is not an EMDF-absence claim. The text report starts
 with a cross-fixture comparison table.
 
-The current opt-in external corpus contains four non-committed DEE outputs:
+The current opt-in external corpus contains four non-committed DEE outputs.
+The grouped-mantissa correction in commit
+`2c524d107ae7451b2a6c838e7ca64159a51b375b` changes every report from
+`carrier_unresolved` to `extension_no_emdf_in_validated_carriers`: all six
+audio blocks are bounded, malformed mantissa count is zero, and unresolved
+block count is zero.
 
-| label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | payload 11/14 | state |
-| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-| `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | false/false | carrier unresolved |
-| `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | false/false | carrier unresolved |
-| `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | false/false | carrier unresolved |
-| `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | false/false | carrier unresolved |
+| label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | skip observed/examined/unresolved | payload 11/14 | state |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | 7,773/46,638/0 | false/false | extension no EMDF in validated carriers |
+| `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | 7,146/42,876/0 | false/false | extension no EMDF in validated carriers |
+| `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | 10,599/63,594/0 | false/false | extension no EMDF in validated carriers |
+| `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | 3,910/23,460/0 | false/false | extension no EMDF in validated carriers |
 
 All four are ISO BMFF files with one 48 kHz six-channel `eac3` stream and
 1,536 samples per access unit. No payload IDs 11 or 14 were located in the
-currently bounded frame-end carrier. The parse-only walker reaches each first
-audio-block prefix but leaves later blocks unresolved; it does not scan
-mantissa bytes for EMDF. The first complete internal-base failures are:
+currently bounded frame-end carrier. The parse-only walker reaches all six
+audio-block prefixes and declared skip fields without scanning mantissa bytes
+for EMDF. The earlier `bap` 3/5 mantissa failures were caused by grouped state
+being reset at exponent-set boundaries; they are now regression-covered and
+absent from the four-fixture census. This is not evidence of nonzero JOC/OAMD
+reconstruction or internal-base fidelity.
 
-```text
-forever_friends: bap 3, raw 7, channel 0, frame bit 2828
-hitchcock:       bap 3, raw 7, channel 0, frame bit 2084
-grand_escape:    bap 5, raw 15, channel 1, frame bit 1726
-brainrot:        bap 3, raw 7, channel 1, frame bit 1774
-```
+## Implemented increment: normative grouped mantissa carry
 
-The diagnostics identify reproducible syntax failures; they do not establish
-nonzero JOC/OAMD reconstruction or internal-base fidelity.
+TS 102 366 V1.4.1 clause 6.3.5 requires packed bap 1/2/4 groups to continue
+across exponent-set boundaries and interleaved other BAP values, with state
+reset at each audio-block boundary. `MantissaGroupingState` now retains one
+pending group per grouped BAP and is shared by conventional channel, coupling,
+and LFE traversal in both complete decode and parse-only carrier inspection.
+No code-domain was widened and no arbitrary byte scan was introduced.
+
+Regression coverage includes grouped endpoints, an interleaved bap=3 value,
+separate parse-only exponent-set calls, truncation, and malformed code
+diagnostics. On the four external DEE fixtures, all six blocks per syncframe
+are now bounded, skip-field presence and byte lengths are recorded, and both
+malformed mantissa and unresolved-block counts are zero. The resulting census
+state is `extension_no_emdf_in_validated_carriers`; skip-field ranges are not
+yet passed to the Annex H EMDF parser, so all-carrier discovery remains open.
 
 ## User-supplied DEE fixture evidence
 
@@ -126,16 +143,18 @@ The external fixture is intentionally not committed (stable label:
 - ISO BMFF inspection found one `ec-3` audio track, no dependent substream,
   and no separate metadata/JOC box or recognized metadata box. Under TS
   103 420 §8.2 the complexity index in `addbsi` is not a substitute for the
-  required EMDF payload. Audio-block `skipfld` carriage has not been ruled out
-  on this fixture because the full internal audio-block traversal fails before
-  that lane is completely validated; no claim is made that `skipfld` carriage
-  is present.
+  required EMDF payload. The bounded audio-block walker now reaches all six
+  blocks and records the declared `skipfld` lengths, but the current census
+  does not yet pass those ranges to the Annex H EMDF parser. No claim is made
+  that a skip field carries EMDF, and all-carrier discovery remains open.
 - default FFmpeg base path: six-channel 48 kHz f64 PCM, 11,939,328 samples per
   channel (temporary WAV SHA-256
   `a065dc5d303b44e97943d3d8fa95e784559f157b2c220208112fd31b4a5997e2`)
-- `--internal-base`: currently fails with `invalid E-AC-3 mantissa code 7 for
-  bap 3`; the FFmpeg-versus-internal-base comparison is failed/not available,
-  and internal-base fidelity is not verified
+- `--internal-base`: the current command stops before base synthesis because
+  the required OAMD/JOC EMDF profile is not located in the currently validated
+  carriers. The earlier mantissa-code failure is resolved, but the
+  FFmpeg-versus-internal-base comparison is still not available and
+  internal-base fidelity is not verified
 
 FFmpeg `astats` on that reference WAV reports the expected `5.1(side)` order
 (FL, FR, FC, LFE, SL, SR), 11,939,328 samples/channel, and these peak/RMS
@@ -150,10 +169,10 @@ SL  peak  -3.784534  RMS -20.646557
 SR  peak  -1.605351  RMS -20.007338
 ```
 
-The internal decoder emitted no PCM because it failed in the first access
-unit, so delay, per-channel numerical error, and an internal peak/RMS vector
-are explicitly `not available`; this is the required comparison failure
-record, not a pass.
+The internal decoder emitted no PCM because the required JOC/OAMD profile is
+absent from the currently validated carriers, so delay, per-channel numerical
+error, and an internal peak/RMS vector are explicitly `not available`; this is
+the required comparison failure record, not a pass.
 
 This is a useful container/diagnostic failure report, not a completion claim.
 The nonzero JOC/OAMD acceptance lane remains open until a legal DEE fixture
@@ -230,22 +249,25 @@ OPENJOC_REAL_FIXTURE_MANIFEST=<local manifest> cargo test -p openjoc-cli --all-f
 OPENJOC_REAL_FIXTURE_MANIFEST=<local manifest> cargo run -p openjoc-cli --release --offline -- --no-banner census <local manifest> -o <local report directory>
 ```
 
-The full-workspace quality gates were rerun at code HEAD
-`b9cab25a5df0e8ab3b3344dd2cbad71f7c120017` (before this documentation-only
-commit) and passed:
+The latest full-workspace quality gates were rerun on the worktree at code
+HEAD `4c3bf990a24bb1b01d6949eba6c79d4f81032430` and passed. The test and build
+commands used `CARGO_BUILD_JOBS=1` for the workspace test/build steps to avoid
+the known Windows linker/PDB parallel-write failure; this is an environment
+workaround, not a codec behavior change:
 
 ```text
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-cargo build --workspace --release --offline
+CARGO_BUILD_JOBS=1 cargo test --workspace --all-features
+CARGO_BUILD_JOBS=1 cargo build --workspace --release --offline
 git diff --check
 ```
 
 This includes the workspace-wide all-feature test suite, strict clippy, the
-offline release build, and a clean diff check. The later commit from this
-increment changes documentation only; no production source or test file is
-changed by that commit.
+offline release build, and a clean diff check. The untracked
+`crates/openjoc-eac3/tests/_real_debug.rs` user diagnostic test was not part of
+the normal tracked test inputs. The current change is documentation-only; it
+does not change production source, APIs, CLI behavior, or tracked tests.
 
 ## Revision and verification ledger
 
@@ -260,12 +282,15 @@ changed by that commit.
   `7f43db05d6876314d8d5ec5415840605c3204d54`.
 - Opt-in manifest-gated external census test:
   `b9cab25a5df0e8ab3b3344dd2cbad71f7c120017`.
+- Grouped mantissa carry and complete four-fixture audio-block traversal:
+  `2c524d107ae7451b2a6c838e7ca64159a51b375b`.
 - Container evidence/status audit: documentation-only commit
   `cf9dcd4bbb31e13dd6f47c807aba15f6e0460c30`.
-- Later status/documentation-only commits: container evidence/status audit
-  `cf9dcd4bbb31e13dd6f47c807aba15f6e0460c30`; current HEAD before this
-  documentation-only increment is banner-only commit
-  `957bbd685506d664073a4f66433a0b0e7b2d8769`.
+- Later status/documentation-only commits include the container evidence audit
+  above and the earlier banner-only commit
+  `957bbd685506d664073a4f66433a0b0e7b2d8769`. The documentation commit for
+  this evidence update is recorded after it is created; implementation and
+  documentation history are kept distinct.
 
 ## Known limitations and next goals
 

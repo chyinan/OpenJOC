@@ -521,14 +521,23 @@ frame behavior is covered by integration tests.
   asymmetric words by sign-extending the qntztab-width word with the binary
   point left of the MSB; decode symmetric tables as exact level fractions; and
   consume a packed group only at its first mantissa while ignoring dummy values
-  in a final partial group. Dither is injected as caller-supplied deterministic
-  samples so the core does not impose a random-number implementation. Exponent
-  shifts are checked against the normative 0 through 24 range.
+  in a final partial group. Per TS 102 366 clause 6.3.5, pending bap 1/2/4
+  groups are retained across exponent-set boundaries and interleaved other BAP
+  values. The grouping state is reset at each audio-block boundary and shared
+  by the normative channel, coupling, and LFE mantissa order. Dither is
+  injected as caller-supplied deterministic samples so the core does not
+  impose a random-number implementation. Exponent shifts are checked against
+  the normative 0 through 24 range.
 - Validation: every Table 6.17/6.18 bap row, symmetric table endpoint,
   asymmetric sign boundary, legal packed-group endpoint, cross-exponent-set
-  grouped traversal, bap-zero zero/dither behavior, malformed dimensions,
-  invalid codes, missing dither, and exponent overflow are covered by
-  `crates/openjoc-eac3/tests/mantissa.rs`.
+  grouped traversal, interleaved-BAP traversal, and separate exponent-set
+  parse-only calls are covered by `crates/openjoc-eac3/tests/mantissa.rs` and
+  the audio-block unit tests. Bap-zero zero/dither behavior, malformed
+  dimensions, invalid codes, missing dither, exponent overflow, and the four
+  external DEE fixtures' complete six-block traversal are also covered. The
+  four fixtures now produce zero malformed mantissa codewords and zero
+  unresolved audio blocks; this is decoder/cursor evidence only, not JOC/OAMD
+  fidelity evidence.
 
 ### Enhanced AC-3 spectral-extension dimensions
 
@@ -738,13 +747,19 @@ frame behavior is covered by integration tests.
   SNR offsets, bit-allocation parameters, coupling leakage, delta allocation,
   and rematrix flags. Parse only fields authorized by the current block's
   strategy, resolve `reuse` from the immediately preceding block, and advance
-  one checked bit cursor through all conventional mantissas. The public
-  `decode_audio_blocks` API returns every decoded block atomically; the legacy
-  first-block API remains bounded to block zero. AHT metadata and reconstructed
-  mantissas are emitted in the same atomic block records.
+  one checked bit cursor through all conventional mantissas. The cursor uses
+  the clause-6.3.5 grouping state across exponent-set calls and resets it only
+  at an audio-block boundary. The public `decode_audio_blocks` API returns
+  every decoded block atomically; the legacy first-block API remains bounded
+  to block zero. AHT metadata and reconstructed mantissas are emitted in the
+  same atomic block records.
 - Validation: a two-block mono fixture exercises exponent, SPX, bandwidth,
-  parameter, and mantissa reuse with exact per-block offsets; all pre-existing
-  first-block coupling, SPX, LFE, delta, dither, and BAP tests remain green.
+  parameter, and mantissa reuse with exact per-block offsets; a focused
+  parse-only test covers a grouped word split across separate exponent-set
+  calls with an interleaved bap=3 code; and all pre-existing first-block
+  coupling, SPX, LFE, delta, dither, and BAP tests remain green. The four
+  external DEE fixtures now reach all six blocks with zero malformed or
+  unresolved cursor outcomes.
 
 ### Enhanced AC-3 PSD log-addition and integration
 
@@ -1079,11 +1094,12 @@ frame behavior is covered by integration tests.
   variable-length mantissas; page 44 confirms the byte-count semantics. The
   carrier extractor continues to use only the normative frame-end location
   and never searches mantissa bytes for an EMDF syncword.
-- This implementation-level skip-field coverage does not settle the supplied
-  real fixture: its full internal audio-block traversal fails before that
-  carrier lane is completely validated. Audio-block `skipfld` carriage remains
-  an open possibility on that fixture, not an assertion that such carriage is
-  present.
+- The four supplied real fixtures now reach every six-block `audfrm` cursor;
+  their bounded `skipfld` fields are observed and their byte lengths are
+  recorded. The current census has not yet fed those skip-field ranges to the
+  Annex H EMDF parser, so all-carrier EMDF discovery remains open. This is
+  evidence that the syntax path is traversable, not evidence that a skip-field
+  carries EMDF, nor proof that the complete stream has no other legal carrier.
 
 ### JOC-profile access-unit extraction and placement
 
@@ -1144,8 +1160,8 @@ frame behavior is covered by integration tests.
   five-channel aligned PCM, valid inactive OAMD, and valid absent-object JOC;
   the direct `.ec3` command writes a scene, timeline, per-frame debug dumps,
   and an exact 1,536-sample reconstructed object WAV. A legal encoded JOC
-  vector and `skipfld` carriage remain required before this path is fully
-  verified.
+  vector and bounded EMDF parsing from every legal `skipfld` carrier remain
+  required before this path is fully verified.
 
 ### External real-DEE fixture census and first-failure diagnostics
 
@@ -1161,15 +1177,17 @@ frame behavior is covered by integration tests.
   argument) loads stable labels, optional hashes, and user notes without
   copying programme bytes into the repository. Entries are sorted by label;
   source and demuxed hashes, bounded frame/index counts, addbsi/complexity,
-  frame-end auxiliary attempts, reached first-block prefixes, unresolved later
-  blocks, payload IDs, and first failures are emitted to JSON and text reports.
+  frame-end auxiliary attempts, all reached block prefixes, skip-field lengths,
+  payload IDs, and first failures are emitted to JSON and text reports.
   The report uses explicit carrier states so “not found in validated paths”
   cannot be confused with an untraversed carrier.
 - Parse-only boundary: `inspect_audio_block_carriers` follows the checked BSI
-  and `audfrm` cursor to the first `audblk` side-information prefix and its
-  declared skip field without mantissa decoding or PCM synthesis. Later block
-  starts remain `unresolved` until a normative mantissa cursor is proven; no
-  bytes are scanned for EMDF outside declared carrier ranges.
+  and `audfrm` cursor through all six `audblk` side-information prefixes and
+  declared skip fields on the four external fixtures without PCM synthesis.
+  The clause-6.3.5 grouping state keeps the mantissa cursor bounded across
+  exponent sets and interleaved BAP values. No bytes are scanned for EMDF
+  outside declared carrier ranges, and no skip-field bytes are yet passed to
+  the Annex H parser.
 - First-failure diagnostics: complete internal-base decode wraps invalid
   mantissa code errors with element, channel, block, BAP, raw code, quantizer
   width, grouped state, and frame-relative bit offset. The census additionally
@@ -1179,20 +1197,27 @@ frame behavior is covered by integration tests.
   fixture errors, stable report ordering, carrier-state ordering, reached
   prefixes versus unresolved blocks, and existing raw/container paths. An
   opt-in four-fixture external corpus run produced the following evidence;
-  programme bytes are not committed:
+  programme bytes are not committed. The grouped-mantissa correction in
+  commit `2c524d107ae7451b2a6c838e7ca64159a51b375b` changed all four reports
+  from `carrier_unresolved` to `extension_no_emdf_in_validated_carriers`:
+  every six-block cursor is examined, malformed mantissa count is zero, and
+  unresolved block count is zero. This does not make the skip-field EMDF lane
+  complete.
 
-  | label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | state | first complete-decode failure |
-  | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-  | `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | carrier unresolved | bap 3, raw 7, channel 1, bit 1,774 |
-  | `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | carrier unresolved | bap 3, raw 7, channel 0, bit 2,828 |
-  | `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | carrier unresolved | bap 5, raw 15, channel 1, bit 1,726 |
-  | `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | carrier unresolved | bap 3, raw 7, channel 0, bit 2,084 |
+  | label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | skip observed/examined/unresolved | state | decoder first failure after correction |
+  | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+  | `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | 3,910/23,460/0 | extension no EMDF in validated carriers | none |
+  | `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | 7,773/46,638/0 | extension no EMDF in validated carriers | none |
+  | `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | 10,599/63,594/0 | extension no EMDF in validated carriers | none |
+  | `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | 7,146/42,876/0 | extension no EMDF in validated carriers | none |
 
   All four inputs are ISO BMFF with one 48 kHz six-channel `eac3` stream and
   1,536 samples per access unit. Every inspected frame has `addbsi` bytes
   `01:10`; no payload IDs 11 or 14 were located in the currently bounded
-  frame-end carrier. All four reports retain unresolved audio-block carrier
-  counts, so they are not legal nonzero JOC/OAMD acceptance vectors.
+  frame-end carrier. All four reports have zero malformed mantissa codewords
+  and zero unresolved audio blocks. No payload IDs 11 or 14 were located, and
+  no report contains a valid JOC profile; they are therefore still not legal
+  nonzero JOC/OAMD acceptance vectors.
 
 ## Ambiguities and open normative questions
 
@@ -1458,16 +1483,19 @@ and a test or explicit TODO before implementation proceeds.
   OAMD/JOC EMDF in the validated carrier paths. The CLI literally reports
   “JOC extension signaled ... EMDF profile absent”; that diagnostic is bounded
   to those paths and does not establish EMDF absence from every legal carrier.
-  Audio-block `skipfld` carriage has not been ruled out because the
-  full internal audio-block traversal fails before that real-fixture lane is
-  completely validated; no claim is made that `skipfld` carriage is present.
+  The grouped-mantissa correction now lets the parse-only walker reach all six
+  audio blocks on this fixture; bounded `skipfld` fields are observed and
+  counted. Those skip-field byte ranges have not yet been passed to the Annex
+  H EMDF parser, so all-carrier discovery remains open. No claim is made that
+  a skip field carries EMDF, and the fixture is not yet a legal nonzero
+  JOC/OAMD acceptance vector.
 - Default FFmpeg base extraction produces six-channel 48 kHz f64 PCM
-  (11,939,328 samples/channel). `--internal-base` currently fails on this
-  real stream with `invalid E-AC-3 mantissa code 7 for bap 3`; the
-  FFmpeg-versus-internal-base comparison is failed/not available, so
-  internal-base fidelity is unverified. The supplied file is useful for the
-  container and diagnostic lane, but is not yet a legal nonzero JOC/OAMD
-  acceptance vector.
+  (11,939,328 samples/channel). The current `--internal-base` command stops
+  before base synthesis because the required OAMD/JOC EMDF profile is not
+  located in the currently validated carriers; the earlier mantissa-code
+  failure was corrected by the grouped-state increment. The
+  FFmpeg-versus-internal-base comparison is therefore not available and
+  internal-base fidelity remains unverified.
 - FFmpeg `astats` records the `5.1(side)` order (FL, FR, FC, LFE, SL, SR) and
   dBFS peak/RMS pairs: FL `-14.066079/-29.027150`, FR `-11.644446/-27.419704`,
   FC `-3.850901/-21.360071`, LFE `-33.119901/-50.094647`, SL
