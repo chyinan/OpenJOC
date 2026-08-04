@@ -214,21 +214,30 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
         println!("access unit {unit_index}:");
         println!("  sample rate: {} Hz", unit.sample_rate);
         println!("  samples: {}", unit.samples);
-        if let Some(metadata) =
-            openjoc_eac3::extract_aux_joc_access_unit(&media.bytes, &frames, unit)?
-        {
-            println!("  carrier frame: {}", metadata.carrier_frame);
-            println!("  complexity index: {}", metadata.complexity_index);
-            println!("  OAMD bytes: {}", metadata.oamd.len());
-            println!("  JOC bytes: {}", metadata.joc.len());
-        } else if let Some(extension) = extract_joc_addbsi_access_unit(&media.bytes, &frames, unit)?
-        {
-            println!(
-                "  JOC extension signaled: complexity index {}; EMDF profile absent in currently validated frame-end auxdata; other bounded carrier paths may remain unresolved",
-                extension.complexity_index
-            );
-        } else {
-            println!("  JOC profile: absent");
+        match openjoc_eac3::extract_joc_access_unit(&media.bytes, &frames, unit) {
+            Ok(Some(metadata)) => {
+                println!("  carrier frame: {}", metadata.carrier_frame);
+                println!("  complexity index: {}", metadata.complexity_index);
+                println!("  OAMD bytes: {}", metadata.oamd.len());
+                println!("  JOC bytes: {}", metadata.joc.len());
+            }
+            Ok(None) => {
+                if let Some(extension) =
+                    extract_joc_addbsi_access_unit(&media.bytes, &frames, unit)?
+                {
+                    println!(
+                        "  JOC extension signaled: complexity index {}; no profile in examined frame-end/skipfld carriers",
+                        extension.complexity_index
+                    );
+                } else {
+                    println!("  JOC profile: absent");
+                }
+            }
+            Err(error) => {
+                println!(
+                    "  JOC profile candidate found but validation failed in examined carriers: {error}"
+                );
+            }
         }
     }
     Ok(())

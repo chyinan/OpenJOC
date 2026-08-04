@@ -75,7 +75,8 @@ pub use transform::{inverse_transform, overlap_add};
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
 use openjoc_emdf::{
-    EmdfError, JOC_PAYLOAD_ID, OAMD_PAYLOAD_ID, ParsedEmdf, parse_emdf_sync, validate_joc_profile,
+    CarrierClassification, EmdfError, JOC_PAYLOAD_ID, OAMD_PAYLOAD_ID, ParsedEmdf,
+    classify_emdf_carrier, parse_emdf_sync, validate_joc_profile,
 };
 
 const EAC3_SYNCWORD: u16 = 0x0b77;
@@ -335,6 +336,17 @@ pub enum Eac3Error {
     },
     AuxDataNotByteAligned {
         bits: usize,
+    },
+    /// A bounded skip-field began with an EMDF container that ended before
+    /// the declared carrier range. Annex H does not define implicit carrier
+    /// padding for this API, so the candidate is not accepted.
+    EmdfCarrierTrailingData {
+        container_bytes: usize,
+        carrier_bytes: usize,
+    },
+    AudioBlockCarrierTraversalUnresolved {
+        examined_blocks: usize,
+        unresolved_blocks: usize,
     },
     Emdf(EmdfError),
     InvalidAccessUnitRange,
@@ -710,6 +722,20 @@ impl fmt::Display for Eac3Error {
                 "E-AC-3 EMDF auxiliary data is not byte-aligned: {bits} bits"
             ),
             Self::Emdf(error) => write!(formatter, "failed to decode carried EMDF: {error}"),
+            Self::EmdfCarrierTrailingData {
+                container_bytes,
+                carrier_bytes,
+            } => write!(
+                formatter,
+                "EMDF carrier has {carrier_bytes} bytes but its bounded container ends at {container_bytes} bytes"
+            ),
+            Self::AudioBlockCarrierTraversalUnresolved {
+                examined_blocks,
+                unresolved_blocks,
+            } => write!(
+                formatter,
+                "audio-block carrier traversal reached {examined_blocks} blocks and left {unresolved_blocks} unresolved"
+            ),
             Self::MissingJocAddbsi { frame } => {
                 write!(formatter, "missing JOC addbsi in carrier frame {frame}")
             }
@@ -1703,6 +1729,14 @@ pub fn extract_aux_emdf(frame: &[u8]) -> Result<Option<ParsedEmdf>, Eac3Error> {
     Ok(Some(parse_emdf_sync(&auxdata.bytes)?))
 }
 
+/// Classifies one exact audio-block `skipfld` byte range using the bounded
+/// Annex H parser. The bytes have already been unpacked from their declared
+/// bit range; no frame or neighbouring carrier data is visible here.
+#[must_use]
+pub fn classify_skip_field_emdf(auxdata: &AuxiliaryData) -> CarrierClassification {
+    classify_emdf_carrier(&auxdata.bytes)
+}
+
 /// Extracts and validates one TS 103 420 profile carried through `auxdata`.
 ///
 /// # Errors
@@ -1713,6 +1747,31 @@ pub fn extract_aux_joc_access_unit(
     stream: &[u8],
     frames: &[SyncframeIndexEntry],
     unit: AccessUnitIndex,
+) -> Result<Option<JocMetadataFrame>, Eac3Error> {
+    extract_joc_access_unit_impl(stream, frames, unit, false)
+}
+
+/// Extracts and validates one TS 103 420 profile from all currently
+/// implemented bounded E-AC-3 carriers: frame-end `auxdata` and each reached
+/// audio-block `skipfld`.
+///
+/// `extract_aux_joc_access_unit` remains available for callers that explicitly
+/// need the historical frame-end-only boundary. This function never combines
+/// payloads from separate carriers; a duplicate or incomplete placement is a
+/// structured error.
+pub fn extract_joc_access_unit(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+) -> Result<Option<JocMetadataFrame>, Eac3Error> {
+    extract_joc_access_unit_impl(stream, frames, unit, true)
+}
+
+fn extract_joc_access_unit_impl(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+    include_skip_fields: bool,
 ) -> Result<Option<JocMetadataFrame>, Eac3Error> {
     let end_frame = unit
         .first_frame
@@ -1727,27 +1786,18 @@ pub fn extract_aux_joc_access_unit(
         .filter(|(_, frame)| frame.header.stream_type == StreamType::Dependent)
         .map(|(relative, _)| unit.first_frame + relative)
         .next_back();
-    let mut found = None;
+    let mut found: Option<(usize, ParsedEmdf)> = None;
     for (relative, entry) in unit_frames.iter().enumerate() {
         let frame_index = unit.first_frame + relative;
         let frame = frame_bytes(stream, *entry)?;
-        let Some(parsed) = extract_aux_emdf(frame)? else {
-            continue;
-        };
-        let carries_profile = parsed
-            .container
-            .payloads
-            .iter()
-            .any(|payload| payload.id == OAMD_PAYLOAD_ID || payload.id == JOC_PAYLOAD_ID);
-        if !carries_profile {
-            continue;
+        if let Some(parsed) = extract_aux_emdf(frame)? {
+            register_joc_carrier(&mut found, frame_index, parsed)?;
         }
-        if found.is_some() {
-            return Err(Eac3Error::MultipleJocCarriers);
+        if include_skip_fields {
+            inspect_skip_joc_carriers(frame, frame_index, &mut found)?;
         }
-        found = Some((frame_index, frame, parsed));
     }
-    let Some((carrier_frame, frame, parsed)) = found else {
+    let Some((carrier_frame, parsed)) = found else {
         return Ok(None);
     };
     if let Some(required_frame) = required_dependent
@@ -1758,6 +1808,10 @@ pub fn extract_aux_joc_access_unit(
             required_frame,
         });
     }
+    let carrier_entry = frames
+        .get(carrier_frame)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    let frame = frame_bytes(stream, *carrier_entry)?;
     let bsi = parse_bsi(frame)?;
     let addbsi = bsi.addbsi.as_deref().ok_or(Eac3Error::MissingJocAddbsi {
         frame: carrier_frame,
@@ -1772,6 +1826,76 @@ pub fn extract_aux_joc_access_unit(
         oamd: payloads.oamd.to_vec(),
         joc: payloads.joc.to_vec(),
     }))
+}
+
+fn register_joc_carrier(
+    found: &mut Option<(usize, ParsedEmdf)>,
+    frame_index: usize,
+    parsed: ParsedEmdf,
+) -> Result<(), Eac3Error> {
+    let carries_profile = parsed
+        .container
+        .payloads
+        .iter()
+        .any(|payload| payload.id == OAMD_PAYLOAD_ID || payload.id == JOC_PAYLOAD_ID);
+    if !carries_profile {
+        return Ok(());
+    }
+    if found.is_some() {
+        return Err(Eac3Error::MultipleJocCarriers);
+    }
+    *found = Some((frame_index, parsed));
+    Ok(())
+}
+
+fn inspect_skip_joc_carriers(
+    frame: &[u8],
+    frame_index: usize,
+    found: &mut Option<(usize, ParsedEmdf)>,
+) -> Result<(), Eac3Error> {
+    if !parse_audio_frame(frame)?.syntax.skip_field() {
+        return Ok(());
+    }
+    let mut carrier_error = None;
+    let report = inspect_audio_block_carriers(frame, |carrier| {
+        let Some(skip) = carrier.skip_field.as_ref() else {
+            return;
+        };
+        match classify_skip_field_emdf(skip) {
+            CarrierClassification::NonEmdf => {}
+            CarrierClassification::Parsed(parsed) => {
+                if carrier_error.is_none() {
+                    carrier_error = register_joc_carrier(found, frame_index, parsed).err();
+                }
+            }
+            CarrierClassification::Malformed(error) => {
+                if carrier_error.is_none() {
+                    carrier_error = Some(Eac3Error::Emdf(error));
+                }
+            }
+            CarrierClassification::TrailingData {
+                container_bytes,
+                carrier_bytes,
+            } => {
+                if carrier_error.is_none() {
+                    carrier_error = Some(Eac3Error::EmdfCarrierTrailingData {
+                        container_bytes,
+                        carrier_bytes,
+                    });
+                }
+            }
+        }
+    })?;
+    if let Some(error) = carrier_error {
+        return Err(error);
+    }
+    if report.unresolved_blocks != 0 {
+        return Err(Eac3Error::AudioBlockCarrierTraversalUnresolved {
+            examined_blocks: report.examined_blocks,
+            unresolved_blocks: report.unresolved_blocks,
+        });
+    }
+    Ok(())
 }
 
 /// Extracts the TS 103 420 `addbsi` extension from one E-AC-3 access unit.

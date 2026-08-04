@@ -1,7 +1,7 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame, extract_aux_joc_access_unit,
+    Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame, extract_joc_access_unit,
     extract_joc_addbsi_access_unit, group_access_units, index_syncframes,
     validate_complexity_index,
 };
@@ -106,7 +106,7 @@ fn required_metadata(
     unit: openjoc_eac3::AccessUnitIndex,
     access_unit: usize,
 ) -> Result<JocMetadataFrame, DecodeEac3Error> {
-    if let Some(metadata) = extract_aux_joc_access_unit(stream, frames, unit)? {
+    if let Some(metadata) = extract_joc_access_unit(stream, frames, unit)? {
         return Ok(metadata);
     }
     match extract_joc_addbsi_access_unit(stream, frames, unit)? {

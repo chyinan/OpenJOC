@@ -1094,6 +1094,7 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
     }
     bits.push(1, 1); // skip length exists
     bits.push(2, 9); // two skipped bytes
+    let expected_skip_start = bits.0.len();
     bits.push(0xabcd, 16); // skipped data
     let expected_offset = bits.0.len();
 
@@ -1154,6 +1155,10 @@ fn parses_uncoupled_channel_and_lfe_exponents() {
             bit_len: 16,
             bytes: vec![0xab, 0xcd],
         })
+    );
+    assert_eq!(
+        prefix.skip_field_start_offset_bits,
+        Some(expected_skip_start)
     );
     assert_eq!(prefix.next_offset_bits, expected_offset);
 

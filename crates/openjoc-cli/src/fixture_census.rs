@@ -4,9 +4,11 @@
 
 use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_eac3::{
-    Eac3Error, extract_aux_emdf, extract_auxdata, group_access_units, index_syncframes,
-    inspect_audio_block_carriers, parse_bsi, parse_joc_addbsi,
+    Eac3Error, classify_skip_field_emdf, extract_aux_emdf, extract_auxdata,
+    extract_joc_access_unit, group_access_units, index_syncframes, inspect_audio_block_carriers,
+    parse_bsi, parse_joc_addbsi,
 };
+use openjoc_emdf::{CarrierClassification, EmdfError};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -145,8 +147,12 @@ impl std::error::Error for FixtureManifestError {}
 #[serde(rename_all = "snake_case")]
 pub enum CarrierState {
     JocExtensionNotSignaled,
+    #[allow(dead_code)]
     ExtensionNoEmdfInValidatedCarriers,
+    ValidatedCarriersContainNoEmdf,
     CarrierUnresolved,
+    MalformedEmdfCandidate,
+    ValidEmdfNoJocProfile,
     EmdfProfileIncomplete,
     ValidProfileFound,
     /// Reserved for the conditional real-vector reconstruction lane.
@@ -162,7 +168,10 @@ impl CarrierState {
         match self {
             Self::JocExtensionNotSignaled => "joc_extension_not_signaled",
             Self::ExtensionNoEmdfInValidatedCarriers => "extension_no_emdf_in_validated_carriers",
+            Self::ValidatedCarriersContainNoEmdf => "validated_carriers_contain_no_emdf",
             Self::CarrierUnresolved => "carrier_unresolved",
+            Self::MalformedEmdfCandidate => "malformed_emdf_candidate",
+            Self::ValidEmdfNoJocProfile => "valid_emdf_no_joc_profile",
             Self::EmdfProfileIncomplete => "emdf_profile_incomplete",
             Self::ValidProfileFound => "valid_profile_found",
             Self::ReconstructionAttempted => "reconstruction_attempted",
@@ -179,11 +188,14 @@ pub fn report_status_order(status: &str) -> u8 {
     match status {
         "joc_extension_not_signaled" => 1,
         "extension_no_emdf_in_validated_carriers" => 2,
+        "validated_carriers_contain_no_emdf" => 2,
         "carrier_unresolved" => 3,
-        "emdf_profile_incomplete" => 4,
-        "valid_profile_found" => 5,
-        "reconstruction_attempted" => 6,
-        "reconstruction_verified" => 7,
+        "malformed_emdf_candidate" => 4,
+        "valid_emdf_no_joc_profile" => 5,
+        "emdf_profile_incomplete" => 6,
+        "valid_profile_found" => 7,
+        "reconstruction_attempted" => 8,
+        "reconstruction_verified" => 9,
         _ => 0,
     }
 }
@@ -217,15 +229,28 @@ pub struct FixtureReport {
     pub audio_block_skip_field_examined_count: usize,
     pub audio_block_skip_field_unresolved_count: usize,
     pub skip_field_byte_lengths: BTreeMap<usize, usize>,
+    pub skip_field_examined_as_carrier_candidate_count: usize,
+    pub skip_field_non_emdf_count: usize,
+    pub skip_field_valid_emdf_container_count: usize,
+    pub skip_field_malformed_emdf_candidate_count: usize,
+    pub skip_field_unsupported_emdf_count: usize,
+    pub frame_end_valid_emdf_container_count: usize,
     pub audio_block_malformed_mantissa_count: usize,
     pub audio_block_first_mantissa_failure: Option<AudioBlockMantissaFailureReport>,
     pub emdf_attempts: Vec<CarrierAttempt>,
     pub emdf_payload_id_distribution: BTreeMap<u64, usize>,
+    pub frame_end_emdf_payload_id_distribution: BTreeMap<u64, usize>,
+    pub skip_field_emdf_payload_id_distribution: BTreeMap<u64, usize>,
+    pub payload_id_11_count: usize,
+    pub payload_id_14_count: usize,
     pub payload_id_11_located: bool,
     pub payload_id_14_located: bool,
     pub valid_joc_profile_count: usize,
+    pub complete_joc_profile_count: usize,
     pub invalid_or_incomplete_profile_count: usize,
     pub malformed_or_truncated_carrier_count: usize,
+    pub first_malformed_candidate: Option<CarrierAttempt>,
+    pub first_complete_profile: Option<CarrierAttempt>,
     pub first_failure: Option<FirstFailure>,
     pub decoder_first_failure: Option<FirstFailure>,
     pub carrier_state: CarrierState,
@@ -488,15 +513,28 @@ fn census_fixture(
         audio_block_skip_field_examined_count: 0,
         audio_block_skip_field_unresolved_count: 0,
         skip_field_byte_lengths: BTreeMap::new(),
+        skip_field_examined_as_carrier_candidate_count: 0,
+        skip_field_non_emdf_count: 0,
+        skip_field_valid_emdf_container_count: 0,
+        skip_field_malformed_emdf_candidate_count: 0,
+        skip_field_unsupported_emdf_count: 0,
+        frame_end_valid_emdf_container_count: 0,
         audio_block_malformed_mantissa_count: 0,
         audio_block_first_mantissa_failure: None,
         emdf_attempts: Vec::new(),
         emdf_payload_id_distribution: BTreeMap::new(),
+        frame_end_emdf_payload_id_distribution: BTreeMap::new(),
+        skip_field_emdf_payload_id_distribution: BTreeMap::new(),
+        payload_id_11_count: 0,
+        payload_id_14_count: 0,
         payload_id_11_located: false,
         payload_id_14_located: false,
         valid_joc_profile_count: 0,
+        complete_joc_profile_count: 0,
         invalid_or_incomplete_profile_count: 0,
         malformed_or_truncated_carrier_count: 0,
+        first_malformed_candidate: None,
+        first_complete_profile: None,
         first_failure: None,
         decoder_first_failure: None,
         carrier_state: CarrierState::JocExtensionNotSignaled,
@@ -548,6 +586,38 @@ fn census_fixture(
         let frame =
             frame_bytes(&media.bytes, *first).map_err(|error| census_error(entry, error))?;
         diagnose_first_complete_audio_block(&mut report, *first, frame);
+    }
+    if report.valid_joc_profile_count != 0 {
+        for (unit_index, unit) in units.iter().enumerate() {
+            match extract_joc_access_unit(&media.bytes, &frames, *unit) {
+                Ok(Some(metadata)) => {
+                    report.complete_joc_profile_count += 1;
+                    if report.first_complete_profile.is_none() {
+                        report.first_complete_profile = report
+                            .emdf_attempts
+                            .iter()
+                            .find(|attempt| {
+                                attempt.syncframe == metadata.carrier_frame
+                                    && attempt.payload_ids.contains(&11)
+                                    && attempt.payload_ids.contains(&14)
+                            })
+                            .cloned();
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    record_failure(
+                        &mut report,
+                        unit_index,
+                        unit.first_frame,
+                        None,
+                        None,
+                        "joc_profile_extraction",
+                        error.to_string(),
+                    );
+                }
+            }
+        }
     }
     report.carrier_state = determine_state(&report);
     Ok(report)
@@ -701,6 +771,7 @@ fn inspect_frame_end_carrier(
             let (start_bit, length_bits) = auxiliary_span(entry, aux.bit_len);
             match extract_aux_emdf(frame) {
                 Ok(Some(parsed)) => {
+                    report.frame_end_valid_emdf_container_count += 1;
                     let payload_ids = parsed
                         .container
                         .payloads
@@ -709,9 +780,15 @@ fn inspect_frame_end_carrier(
                         .collect::<Vec<_>>();
                     for id in &payload_ids {
                         *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
+                        *report
+                            .frame_end_emdf_payload_id_distribution
+                            .entry(*id)
+                            .or_default() += 1;
                     }
                     let has_oamd = payload_ids.contains(&11);
                     let has_joc = payload_ids.contains(&14);
+                    report.payload_id_11_count += usize::from(has_oamd);
+                    report.payload_id_14_count += usize::from(has_joc);
                     report.payload_id_11_located |= has_oamd;
                     report.payload_id_14_located |= has_joc;
                     if has_oamd && has_joc {
@@ -796,6 +873,7 @@ fn inspect_first_audio_block(
                 .skip_field_byte_lengths
                 .entry(skip.bytes.len())
                 .or_default() += 1;
+            inspect_skip_field_carrier(report, access_unit, frame_index, entry, carrier, &skip);
         }
     });
     match result {
@@ -864,17 +942,150 @@ fn inspect_first_audio_block(
     }
 }
 
+fn inspect_skip_field_carrier(
+    report: &mut FixtureReport,
+    access_unit: usize,
+    frame_index: usize,
+    entry: openjoc_eac3::SyncframeIndexEntry,
+    carrier: &openjoc_eac3::AudioBlockCarrier,
+    skip: &openjoc_eac3::AuxiliaryData,
+) {
+    report.skip_field_examined_as_carrier_candidate_count += 1;
+    let start_bit = entry
+        .offset
+        .checked_mul(8)
+        .and_then(|offset| {
+            carrier
+                .skip_field_start_offset_bits
+                .and_then(|start| offset.checked_add(start))
+        })
+        .unwrap_or(0);
+    let length_bits = skip.bit_len;
+    let mut attempt = CarrierAttempt {
+        location: "audio_block_skipfld".to_owned(),
+        access_unit,
+        syncframe: frame_index,
+        substream_id: entry.header.substream_id,
+        audio_block: Some(carrier.block_index),
+        start_bit,
+        length_bits,
+        result: String::new(),
+        payload_ids: Vec::new(),
+        error: None,
+    };
+    match classify_skip_field_emdf(skip) {
+        CarrierClassification::NonEmdf => {
+            report.skip_field_non_emdf_count += 1;
+            attempt.result = "non_emdf".to_owned();
+        }
+        CarrierClassification::Parsed(parsed) => {
+            report.skip_field_valid_emdf_container_count += 1;
+            let payload_ids = parsed
+                .container
+                .payloads
+                .iter()
+                .map(|payload| payload.id)
+                .collect::<Vec<_>>();
+            attempt.payload_ids.clone_from(&payload_ids);
+            for id in &payload_ids {
+                *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
+                *report
+                    .skip_field_emdf_payload_id_distribution
+                    .entry(*id)
+                    .or_default() += 1;
+            }
+            let has_oamd = payload_ids.contains(&11);
+            let has_joc = payload_ids.contains(&14);
+            report.payload_id_11_count += usize::from(has_oamd);
+            report.payload_id_14_count += usize::from(has_joc);
+            report.payload_id_11_located |= has_oamd;
+            report.payload_id_14_located |= has_joc;
+            if has_oamd && has_joc {
+                if let Err(error) = openjoc_emdf::validate_joc_profile(&parsed.container) {
+                    report.invalid_or_incomplete_profile_count += 1;
+                    attempt.result = "parsed_incomplete_profile".to_owned();
+                    attempt.error = Some(error.to_string());
+                } else {
+                    report.valid_joc_profile_count += 1;
+                    attempt.result = "parsed_complete_profile_container".to_owned();
+                    if report.first_complete_profile.is_none() {
+                        report.first_complete_profile = Some(attempt.clone());
+                    }
+                }
+            } else if has_oamd || has_joc {
+                report.invalid_or_incomplete_profile_count += 1;
+                attempt.result = "parsed_incomplete_profile".to_owned();
+            } else {
+                attempt.result = "parsed_non_profile".to_owned();
+            }
+        }
+        CarrierClassification::Malformed(error) => {
+            report.skip_field_malformed_emdf_candidate_count += 1;
+            report.malformed_or_truncated_carrier_count += 1;
+            report.skip_field_unsupported_emdf_count += usize::from(is_unsupported_emdf(&error));
+            attempt.result = if is_unsupported_emdf(&error) {
+                "unsupported_emdf".to_owned()
+            } else {
+                "malformed_emdf".to_owned()
+            };
+            attempt.error = Some(error.to_string());
+            record_skip_failure(report, &attempt);
+        }
+        CarrierClassification::TrailingData {
+            container_bytes,
+            carrier_bytes,
+        } => {
+            report.skip_field_malformed_emdf_candidate_count += 1;
+            report.malformed_or_truncated_carrier_count += 1;
+            attempt.result = "malformed_emdf_trailing_data".to_owned();
+            attempt.error = Some(format!(
+                "EMDF container consumed {container_bytes} of {carrier_bytes} carrier bytes"
+            ));
+            record_skip_failure(report, &attempt);
+        }
+    }
+    report.emdf_attempts.push(attempt);
+}
+
+fn is_unsupported_emdf(error: &EmdfError) -> bool {
+    matches!(error, EmdfError::UnsupportedVersion { .. })
+}
+
+fn record_skip_failure(report: &mut FixtureReport, attempt: &CarrierAttempt) {
+    if report.first_malformed_candidate.is_none() {
+        report.first_malformed_candidate = Some(attempt.clone());
+    }
+    record_failure(
+        report,
+        attempt.access_unit,
+        attempt.syncframe,
+        attempt.audio_block,
+        Some(attempt.start_bit),
+        "audio_block_skipfld_emdf",
+        attempt
+            .error
+            .clone()
+            .unwrap_or_else(|| attempt.result.clone()),
+    );
+}
+
 fn determine_state(report: &FixtureReport) -> CarrierState {
     if report.addbsi_presence_count == 0 {
         CarrierState::JocExtensionNotSignaled
-    } else if report.valid_joc_profile_count > 0 {
+    } else if report.complete_joc_profile_count > 0 {
         CarrierState::ValidProfileFound
+    } else if report.skip_field_malformed_emdf_candidate_count > 0 {
+        CarrierState::MalformedEmdfCandidate
     } else if report.payload_id_11_located || report.payload_id_14_located {
         CarrierState::EmdfProfileIncomplete
     } else if report.audio_block_skip_field_unresolved_count > 0 {
         CarrierState::CarrierUnresolved
+    } else if report.skip_field_valid_emdf_container_count > 0
+        || report.frame_end_valid_emdf_container_count > 0
+    {
+        CarrierState::ValidEmdfNoJocProfile
     } else {
-        CarrierState::ExtensionNoEmdfInValidatedCarriers
+        CarrierState::ValidatedCarriersContainNoEmdf
     }
 }
 
@@ -1054,7 +1265,7 @@ fn render_text_report(report: &CensusReport) -> String {
     let mut text = String::new();
     text.push_str("comparison:\n");
     text.push_str(
-        "  label | syncframes/access-units | complexity | auxdatae present/absent | skip observed/examined/unresolved | payload 11/14 | state\n",
+        "  label | syncframes/access-units | complexity | auxdatae present/absent | skip observed/examined/unresolved | skip EMDF non/valid/malformed/unsupported | payload 11/14 | state\n",
     );
     for fixture in &report.fixtures {
         let complexity = fixture
@@ -1065,7 +1276,7 @@ fn render_text_report(report: &CensusReport) -> String {
             .join(",");
         let _ = writeln!(
             text,
-            "  {} | {}/{} | {} | {}/{} | {}/{}/{} | {}/{} | {}",
+            "  {} | {}/{} | {} | {}/{} | {}/{}/{} | {}/{}/{}/{} | {}/{} | {}",
             fixture.label,
             fixture.syncframe_count,
             fixture.access_unit_count,
@@ -1079,6 +1290,10 @@ fn render_text_report(report: &CensusReport) -> String {
             fixture.audio_block_skip_field_presence_count,
             fixture.audio_block_skip_field_examined_count,
             fixture.audio_block_skip_field_unresolved_count,
+            fixture.skip_field_non_emdf_count,
+            fixture.skip_field_valid_emdf_container_count,
+            fixture.skip_field_malformed_emdf_candidate_count,
+            fixture.skip_field_unsupported_emdf_count,
             fixture.payload_id_11_located,
             fixture.payload_id_14_located,
             fixture.carrier_state.status_name(),
@@ -1124,6 +1339,21 @@ fn render_text_report(report: &CensusReport) -> String {
         );
         let _ = writeln!(
             text,
+            "  skip-field carrier candidates examined/non-EMDF/valid/malformed/unsupported: {}/{}/{}/{}/{}",
+            fixture.skip_field_examined_as_carrier_candidate_count,
+            fixture.skip_field_non_emdf_count,
+            fixture.skip_field_valid_emdf_container_count,
+            fixture.skip_field_malformed_emdf_candidate_count,
+            fixture.skip_field_unsupported_emdf_count,
+        );
+        let _ = writeln!(
+            text,
+            "  valid EMDF containers frame-end/skip-field: {}/{}",
+            fixture.frame_end_valid_emdf_container_count,
+            fixture.skip_field_valid_emdf_container_count,
+        );
+        let _ = writeln!(
+            text,
             "  parse-only malformed mantissa codewords: {}",
             fixture.audio_block_malformed_mantissa_count
         );
@@ -1131,6 +1361,13 @@ fn render_text_report(report: &CensusReport) -> String {
             text,
             "  payload IDs 11/14 located: {}/{}",
             fixture.payload_id_11_located, fixture.payload_id_14_located
+        );
+        let _ = writeln!(
+            text,
+            "  payload IDs 11/14 count: {}/{}; complete access-unit profiles: {}",
+            fixture.payload_id_11_count,
+            fixture.payload_id_14_count,
+            fixture.complete_joc_profile_count,
         );
         if let Some(failure) = &fixture.first_failure {
             let _ = writeln!(
@@ -1268,7 +1505,7 @@ mod tests {
 
     #[test]
     fn report_status_order_is_stable_and_distinguishes_unresolved_carriers() {
-        assert_eq!(report_status_order("valid_profile_found"), 5);
+        assert_eq!(report_status_order("valid_profile_found"), 7);
         assert!(
             report_status_order("carrier_unresolved") < report_status_order("valid_profile_found")
         );

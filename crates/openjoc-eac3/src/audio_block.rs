@@ -60,6 +60,8 @@ pub struct AudioBlockPrefix {
     pub coupling_leak: Option<CouplingLeak>,
     pub delta_bit_allocation: Option<DeltaBitAllocation>,
     pub skip_field: Option<AuxiliaryData>,
+    /// Frame-relative bit offset at the first bit of `skipfld` data.
+    pub skip_field_start_offset_bits: Option<usize>,
     /// Absolute frame bit offset immediately after the optional skip field.
     pub next_offset_bits: usize,
 }
@@ -71,6 +73,8 @@ pub struct AudioBlockCarrier {
     pub block_index: usize,
     /// Optional bounded `skipfld` bytes declared by this block.
     pub skip_field: Option<AuxiliaryData>,
+    /// Frame-relative bit offset at the first bit of `skipfld` data.
+    pub skip_field_start_offset_bits: Option<usize>,
     /// Absolute frame bit offset where this block's side information starts.
     pub prefix_start_offset_bits: usize,
     /// Absolute frame bit offset immediately after this block's `skipfld`.
@@ -1111,6 +1115,7 @@ where
         callback(&AudioBlockCarrier {
             block_index,
             skip_field: prefix.skip_field.clone(),
+            skip_field_start_offset_bits: prefix.skip_field_start_offset_bits,
             prefix_start_offset_bits,
             next_offset_bits: prefix.next_offset_bits,
         });
@@ -2545,7 +2550,7 @@ fn parse_audio_block_prefix_reader(
         channels,
         previous.delta_bit_allocation.as_ref(),
     )?;
-    let skip_field = parse_skip_field(bits, frame)?;
+    let (skip_field, skip_field_start_offset_bits) = parse_skip_field(bits, frame)?;
     let frame_bits = frame
         .bsi
         .header
@@ -2591,6 +2596,7 @@ fn parse_audio_block_prefix_reader(
         coupling_leak: state.coupling_leak,
         delta_bit_allocation,
         skip_field,
+        skip_field_start_offset_bits,
         next_offset_bits,
     })
 }
@@ -3315,7 +3321,7 @@ fn parse_first_prefix_reader(
     let coupling_leak = parse_first_coupling_leak(bits, coupling.as_ref())?;
     let delta_bit_allocation =
         parse_delta_bit_allocation(bits, frame, coupling.as_ref(), channels)?;
-    let skip_field = parse_skip_field(bits, frame)?;
+    let (skip_field, skip_field_start_offset_bits) = parse_skip_field(bits, frame)?;
     let frame_bits = frame
         .bsi
         .header
@@ -3344,6 +3350,7 @@ fn parse_first_prefix_reader(
         coupling_leak,
         delta_bit_allocation,
         skip_field,
+        skip_field_start_offset_bits,
         next_offset_bits,
     })
 }
@@ -3710,18 +3717,30 @@ fn no_delta_allocation() -> DeltaBitAllocationElement {
 fn parse_skip_field(
     bits: &mut BitReader<'_>,
     frame: &AudioFrameInformation,
-) -> Result<Option<AuxiliaryData>, Eac3Error> {
+) -> Result<(Option<AuxiliaryData>, Option<usize>), Eac3Error> {
     if !frame.syntax.skip_field() || !bits.read_bit()? {
-        return Ok(None);
+        return Ok((None, None));
     }
     let byte_len = usize::try_from(bits.read_bits(9)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    let frame_bits = frame
+        .bsi
+        .header
+        .frame_size
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let start_offset_bits = frame_bits
+        .checked_sub(bits.bits_remaining())
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
     let bit_len = byte_len
         .checked_mul(8)
         .ok_or(Eac3Error::FrameSizeOverflow)?;
     let bytes = (0..byte_len)
         .map(|_| read_u8(bits, 8))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(AuxiliaryData { bit_len, bytes }))
+    Ok((
+        Some(AuxiliaryData { bit_len, bytes }),
+        Some(start_offset_bits),
+    ))
 }
 
 fn rematrix_band_count(
