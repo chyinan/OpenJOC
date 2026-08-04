@@ -266,7 +266,7 @@ pub struct FirstFailure {
 }
 
 #[allow(clippy::struct_excessive_bools)] // These flags are independent diagnostic facts.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MantissaFailureContext {
     pub element: String,
     pub channel: Option<u8>,
@@ -281,6 +281,23 @@ pub struct MantissaFailureContext {
     pub enhanced_coupling_active: bool,
     pub rematrix_active: bool,
     pub aht_active: bool,
+    pub bin_index: usize,
+    pub exponent: u8,
+    pub psd: Option<i16>,
+    pub mask: Option<i16>,
+    pub quantizer_levels: u32,
+    pub quantizer_group_size: u8,
+    pub quantizer_group_bits: u8,
+    pub quantizer_symmetric: bool,
+    pub group_position: u8,
+    pub dither: bool,
+    pub block_switch: bool,
+    pub exponent_strategy: u8,
+    pub exponent_reused: bool,
+    pub block_start_offset_bits: usize,
+    pub element_start_offset_bits: usize,
+    pub block_relative_bit_offset: usize,
+    pub element_relative_bit_offset: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -566,6 +583,21 @@ fn mantissa_failure_context(error: Eac3Error) -> Option<MantissaFailureContext> 
         enhanced_coupling_active,
         rematrix_active,
         aht_active,
+        bin_index,
+        exponent,
+        psd,
+        mask,
+        quantizer_levels,
+        quantizer_group_size,
+        quantizer_group_bits,
+        quantizer_symmetric,
+        group_position,
+        dither,
+        block_switch,
+        exponent_strategy,
+        exponent_reused,
+        block_start_offset_bits,
+        element_start_offset_bits,
     } = error
     else {
         return None;
@@ -584,6 +616,23 @@ fn mantissa_failure_context(error: Eac3Error) -> Option<MantissaFailureContext> 
         enhanced_coupling_active,
         rematrix_active,
         aht_active,
+        bin_index,
+        exponent,
+        psd,
+        mask,
+        quantizer_levels,
+        quantizer_group_size,
+        quantizer_group_bits,
+        quantizer_symmetric,
+        group_position,
+        dither,
+        block_switch,
+        exponent_strategy,
+        exponent_reused,
+        block_start_offset_bits,
+        element_start_offset_bits,
+        block_relative_bit_offset: bit_offset_bits.saturating_sub(block_start_offset_bits),
+        element_relative_bit_offset: bit_offset_bits.saturating_sub(element_start_offset_bits),
     })
 }
 
@@ -1015,24 +1064,41 @@ fn render_text_report(report: &CensusReport) -> String {
             if let Some(mantissa) = &failure.mantissa {
                 let _ = writeln!(
                     text,
-                    "  mantissa context: element={} channel={:?} block={} bap={} raw={} width={} bit={} grouped={}",
+                    "  mantissa context: element={} channel={:?} block={} bin={} exponent={} bap={} raw={} width={} bit={} block_rel={} element_rel={} grouped={} group_pos={} levels={} group={}x{} symmetric={} psd={:?} mask={:?}",
                     mantissa.element,
                     mantissa.channel,
                     mantissa.block,
+                    mantissa.bin_index,
+                    mantissa.exponent,
                     mantissa.bap,
                     mantissa.raw_code,
                     mantissa.bit_width,
                     mantissa.bit_offset_bits,
-                    mantissa.grouped
+                    mantissa.block_relative_bit_offset,
+                    mantissa.element_relative_bit_offset,
+                    mantissa.grouped,
+                    mantissa.group_position,
+                    mantissa.quantizer_levels,
+                    mantissa.quantizer_group_size,
+                    mantissa.quantizer_group_bits,
+                    mantissa.quantizer_symmetric,
+                    mantissa.psd,
+                    mantissa.mask
                 );
                 let _ = writeln!(
                     text,
-                    "  state: spx={} coupling={} enhanced_coupling={} rematrix={} aht={}",
+                    "  state: spx={} coupling={} enhanced_coupling={} rematrix={} aht={} dither={} block_switch={} exponent_strategy={} reused={} block_start={} element_start={}",
                     mantissa.spx_active,
                     mantissa.coupling_active,
                     mantissa.enhanced_coupling_active,
                     mantissa.rematrix_active,
                     mantissa.aht_active,
+                    mantissa.dither,
+                    mantissa.block_switch,
+                    mantissa.exponent_strategy,
+                    mantissa.exponent_reused,
+                    mantissa.block_start_offset_bits,
+                    mantissa.element_start_offset_bits,
                 );
             }
         }
@@ -1044,8 +1110,10 @@ fn render_text_report(report: &CensusReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        FixtureManifest, FixtureManifestError, parse_manifest, report_status_order, run_census,
+        FixtureManifest, FixtureManifestError, MantissaFailureContext, mantissa_failure_context,
+        parse_manifest, report_status_order, run_census,
     };
+    use openjoc_eac3::{Eac3Error, MantissaElement};
     use std::{
         fs,
         path::PathBuf,
@@ -1105,6 +1173,76 @@ mod tests {
             report_status_order("carrier_unresolved") < report_status_order("valid_profile_found")
         );
         let _: Option<FixtureManifest> = None;
+    }
+
+    #[test]
+    fn retains_normative_mantissa_context_in_fixture_reports() {
+        let error = Eac3Error::InvalidMantissaDiagnostic {
+            element: MantissaElement::Channel,
+            channel: Some(2),
+            block: 0,
+            bap: 3,
+            actual: 7,
+            bit_width: 3,
+            bit_offset_bits: 2828,
+            grouped: false,
+            spx_active: false,
+            coupling_active: false,
+            enhanced_coupling_active: false,
+            rematrix_active: false,
+            aht_active: false,
+            bin_index: 94,
+            exponent: 24,
+            psd: Some(0),
+            mask: Some(1120),
+            quantizer_levels: 7,
+            quantizer_group_size: 1,
+            quantizer_group_bits: 3,
+            quantizer_symmetric: true,
+            group_position: 0,
+            dither: true,
+            block_switch: false,
+            exponent_strategy: 1,
+            exponent_reused: false,
+            block_start_offset_bits: 198,
+            element_start_offset_bits: 2345,
+        };
+        let context = mantissa_failure_context(error).expect("diagnostic context");
+        assert_eq!(
+            context,
+            MantissaFailureContext {
+                element: "Channel".to_owned(),
+                channel: Some(2),
+                block: 0,
+                bap: 3,
+                raw_code: 7,
+                bit_width: 3,
+                bit_offset_bits: 2828,
+                grouped: false,
+                spx_active: false,
+                coupling_active: false,
+                enhanced_coupling_active: false,
+                rematrix_active: false,
+                aht_active: false,
+                bin_index: 94,
+                exponent: 24,
+                psd: Some(0),
+                mask: Some(1120),
+                quantizer_levels: 7,
+                quantizer_group_size: 1,
+                quantizer_group_bits: 3,
+                quantizer_symmetric: true,
+                group_position: 0,
+                dither: true,
+                block_switch: false,
+                exponent_strategy: 1,
+                exponent_reused: false,
+                block_start_offset_bits: 198,
+                element_start_offset_bits: 2345,
+                block_relative_bit_offset: 2630,
+                element_relative_bit_offset: 483,
+            }
+        );
     }
 
     #[test]

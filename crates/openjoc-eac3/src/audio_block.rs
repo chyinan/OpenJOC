@@ -10,8 +10,10 @@ use crate::rematrix::rematrix_channels;
 use crate::transform::{inverse_transform, overlap_add};
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
-    channel_end_mantissa, channel_exponent_group_count, compute_element_bap,
-    compute_high_efficiency_element_bap, decode_exponents, decode_mantissas, mantissa_quantizer,
+    apply_delta_bit_allocation, bit_allocation_band_for_bin, channel_end_mantissa,
+    channel_exponent_group_count, compute_element_bap, compute_excitation,
+    compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
+    decode_exponents, decode_mantissas, exponents_to_psd, integrate_psd, mantissa_quantizer,
     parse_audio_frame, shift_mantissa, snr_offsets_are_zero, spx_subband_range,
     synthesize_spectral_extension,
 };
@@ -93,6 +95,123 @@ struct MantissaFeatureState {
     enhanced_coupling_active: bool,
     rematrix_active: bool,
     aht_active: bool,
+}
+
+#[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)] // Diagnostic state mirrors independent syntax flags.
+struct MantissaDiagnosticInput<'a> {
+    baps: &'a [u8],
+    exponents: &'a [u8],
+    information: &'a ExponentInformation,
+    parameter_codes: BitAllocationParameters,
+    fast_gain_code: u8,
+    fscod: u8,
+    delta: Option<&'a DeltaBitAllocationElement>,
+    coupling_leaks: Option<(u8, u8)>,
+    zero_bap: bool,
+    mantissa_start_offset_bits: usize,
+    block_start_offset_bits: usize,
+    dither: bool,
+    block_switch: bool,
+    exponent_reused: bool,
+}
+
+fn mantissa_position(
+    baps: &[u8],
+    start_offset_bits: usize,
+    target_offset_bits: usize,
+) -> Option<(usize, u8)> {
+    let mut offset = start_offset_bits;
+    let mut index = 0_usize;
+    while index < baps.len() {
+        let bap = baps[index];
+        let quantizer = mantissa_quantizer(bap).ok()?;
+        if bap == 0 {
+            index += 1;
+            continue;
+        }
+        let run_end = if quantizer.group_size == 1 {
+            index + 1
+        } else {
+            let mut end = index + 1;
+            while end < baps.len() && baps[end] == bap {
+                end += 1;
+            }
+            end
+        };
+        while index < run_end {
+            if offset == target_offset_bits {
+                return Some((index, 0));
+            }
+            offset = offset.checked_add(usize::from(quantizer.group_bits))?;
+            index = index.checked_add(usize::from(quantizer.group_size).min(run_end - index))?;
+        }
+    }
+    None
+}
+
+fn allocation_diagnostic(
+    input: MantissaDiagnosticInput<'_>,
+    bin_index: usize,
+) -> (Option<i16>, Option<i16>) {
+    if input.zero_bap {
+        return (None, None);
+    }
+    let Ok(full_exponents) = full_exponents(input.information) else {
+        return (None, None);
+    };
+    let Ok(psd) = exponents_to_psd(&full_exponents) else {
+        return (None, None);
+    };
+    let Ok(bndpsd) = integrate_psd(
+        &psd,
+        input.information.start_mantissa,
+        input.information.end_mantissa,
+    ) else {
+        return (None, None);
+    };
+    let Ok(parameters) =
+        decode_bit_allocation_parameters(input.parameter_codes, input.fast_gain_code)
+    else {
+        return (None, None);
+    };
+    let initial_leaks = input.coupling_leaks.map(|(fast_code, slow_code)| {
+        (
+            (i16::from(fast_code) << 8) + 768,
+            (i16::from(slow_code) << 8) + 768,
+        )
+    });
+    let Ok(excite) = compute_excitation(
+        &psd,
+        &bndpsd,
+        input.information.start_mantissa,
+        input.information.end_mantissa,
+        parameters,
+        initial_leaks,
+    ) else {
+        return (psd.get(bin_index).copied(), None);
+    };
+    let Ok(mut mask) = compute_masking_curve(
+        &bndpsd,
+        &excite,
+        input.information.start_mantissa,
+        input.information.end_mantissa,
+        input.fscod,
+        parameters.db_per_bit,
+    ) else {
+        return (psd.get(bin_index).copied(), None);
+    };
+    if let Some(delta) = input.delta {
+        mask = match apply_delta_bit_allocation(&mask, delta) {
+            Ok(values) => values,
+            Err(_) => return (psd.get(bin_index).copied(), None),
+        };
+    }
+    let mask_value = u16::try_from(bin_index)
+        .ok()
+        .and_then(|bin| bit_allocation_band_for_bin(bin).ok())
+        .and_then(|band| mask.get(usize::from(band)).copied());
+    (psd.get(bin_index).copied(), mask_value)
 }
 
 /// One newly transmitted E.1.2.4 exponent payload and its decoded bins.
@@ -900,6 +1019,9 @@ fn decode_audio_blocks_until(
     let block_count = usize::from(frame.bsi.header.audio_blocks).min(max_blocks);
     let mut blocks = Vec::with_capacity(block_count);
     for block_index in 0..block_count {
+        let block_start_offset_bits = frame_bits
+            .checked_sub(bits.bits_remaining())
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
         let prefix = parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state)?;
         let parameter_codes = state
             .bit_allocation_parameters
@@ -934,6 +1056,7 @@ fn decode_audio_blocks_until(
             &mut dither_index,
             zero_bap,
             frame_bits,
+            block_start_offset_bits,
         )?;
         let channel_mantissas = if frame.bsi.audio_coding_mode == 2 {
             rematrix_channels(
@@ -997,6 +1120,7 @@ fn decode_audio_blocks_until(
             zero_bap,
             frame_bits,
             frame.lfe_aht_in_use,
+            block_start_offset_bits,
         )?;
         let lfe_mantissas = lfe_mantissas
             .as_deref()
@@ -1318,6 +1442,7 @@ fn mantissa_error_context(
     element: MantissaElement,
     channel: Option<u8>,
     features: MantissaFeatureState,
+    input: MantissaDiagnosticInput<'_>,
 ) -> Eac3Error {
     let (bap, actual, grouped) = match error {
         Eac3Error::InvalidMantissaCode { bap, actual } => (bap, actual, false),
@@ -1331,6 +1456,19 @@ fn mantissa_error_context(
     let bit_offset_bits = frame_bits
         .saturating_sub(bits.bits_remaining())
         .saturating_sub(usize::from(bit_width));
+    let Some((local_bin_index, group_position)) = mantissa_position(
+        input.baps,
+        input.mantissa_start_offset_bits,
+        bit_offset_bits,
+    ) else {
+        return error;
+    };
+    let bin_index = input
+        .information
+        .start_mantissa
+        .saturating_add(local_bin_index);
+    let exponent = input.exponents.get(local_bin_index).copied().unwrap_or(0);
+    let (psd, mask) = allocation_diagnostic(input, bin_index);
     Eac3Error::InvalidMantissaDiagnostic {
         element,
         channel,
@@ -1345,6 +1483,21 @@ fn mantissa_error_context(
         enhanced_coupling_active: features.enhanced_coupling_active,
         rematrix_active: features.rematrix_active,
         aht_active: features.aht_active,
+        bin_index,
+        exponent,
+        psd,
+        mask,
+        quantizer_levels: quantizer.levels,
+        quantizer_group_size: quantizer.group_size,
+        quantizer_group_bits: quantizer.group_bits,
+        quantizer_symmetric: quantizer.symmetric,
+        group_position,
+        dither: input.dither,
+        block_switch: input.block_switch,
+        exponent_strategy: input.information.strategy,
+        exponent_reused: input.exponent_reused,
+        block_start_offset_bits: input.block_start_offset_bits,
+        element_start_offset_bits: input.mantissa_start_offset_bits,
     }
 }
 
@@ -1507,6 +1660,7 @@ fn decode_channel_mantissas(
     dither_index: &mut usize,
     zero_bap: bool,
     frame_bits: usize,
+    block_start_offset_bits: usize,
 ) -> Result<ChannelMantissaBlock, Eac3Error> {
     let fast_gain = state
         .fast_gain_codes
@@ -1562,20 +1716,22 @@ fn decode_channel_mantissas(
             )?;
             (baps, mantissas, metadata)
         } else {
+            let delta = state
+                .delta_bit_allocation
+                .as_ref()
+                .and_then(|value| value.channels.get(channel));
+            let fast_gain_code = *fast_gain
+                .channels
+                .get(channel)
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
             let baps = element_baps(
                 &information,
                 parameter_codes,
-                *fast_gain
-                    .channels
-                    .get(channel)
-                    .ok_or(Eac3Error::FrameSizeOverflow)?,
+                fast_gain_code,
                 snr.coarse_code,
                 fine,
                 fscod,
-                state
-                    .delta_bit_allocation
-                    .as_ref()
-                    .and_then(|delta| delta.channels.get(channel)),
+                delta,
                 None,
                 zero_bap,
             )?;
@@ -1584,6 +1740,30 @@ fn decode_channel_mantissas(
                 .dither
                 .get(channel)
                 .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let mantissa_start_offset_bits = frame_bits
+                .checked_sub(bits.bits_remaining())
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let diagnostic_input = MantissaDiagnosticInput {
+                baps: &baps,
+                exponents: &exponents,
+                information: &information,
+                parameter_codes,
+                fast_gain_code,
+                fscod,
+                delta,
+                coupling_leaks: None,
+                zero_bap,
+                mantissa_start_offset_bits,
+                block_start_offset_bits,
+                dither,
+                block_switch: prefix.block_switch.get(channel).copied().unwrap_or(false),
+                exponent_reused: frame
+                    .channel_exponent_strategy
+                    .get(block_index)
+                    .and_then(|strategies| strategies.get(channel))
+                    .copied()
+                    == Some(0),
+            };
             let mantissas = decode_element_mantissas(
                 bits,
                 &baps,
@@ -1610,6 +1790,7 @@ fn decode_channel_mantissas(
                         rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
                         aht_active: use_aht,
                     },
+                    diagnostic_input,
                 )
             })?;
             (baps, mantissas, None)
@@ -1651,22 +1832,44 @@ fn decode_channel_mantissas(
                 )?;
                 (baps, mantissas, metadata)
             } else {
+                let delta = state
+                    .delta_bit_allocation
+                    .as_ref()
+                    .and_then(|value| value.coupling.as_ref());
+                let fast_gain_code = fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?;
                 let baps = element_baps(
                     &information,
                     parameter_codes,
-                    fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    fast_gain_code,
                     snr.coarse_code,
                     snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
                     fscod,
-                    state
-                        .delta_bit_allocation
-                        .as_ref()
-                        .and_then(|delta| delta.coupling.as_ref()),
+                    delta,
                     leaks,
                     zero_bap,
                 )?;
                 let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
                 let dither_flags = vec![false; baps.len()];
+                let mantissa_start_offset_bits = frame_bits
+                    .checked_sub(bits.bits_remaining())
+                    .ok_or(Eac3Error::FrameSizeOverflow)?;
+                let diagnostic_input = MantissaDiagnosticInput {
+                    baps: &baps,
+                    exponents: &exponents,
+                    information: &information,
+                    parameter_codes,
+                    fast_gain_code,
+                    fscod,
+                    delta,
+                    coupling_leaks: leaks,
+                    zero_bap,
+                    mantissa_start_offset_bits,
+                    block_start_offset_bits,
+                    dither: false,
+                    block_switch: false,
+                    exponent_reused: frame.coupling_exponent_strategy.get(block_index).copied()
+                        == Some(0),
+                };
                 let mantissas = decode_mantissas(bits, &baps, &exponents, &dither_flags, &[])
                     .map_err(|error| {
                         mantissa_error_context(
@@ -1686,6 +1889,7 @@ fn decode_channel_mantissas(
                                 rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
                                 aht_active: use_aht,
                             },
+                            diagnostic_input,
                         )
                     })?;
                 (baps, mantissas, None)
@@ -1718,6 +1922,7 @@ fn decode_lfe_mantissas(
     zero_bap: bool,
     frame_bits: usize,
     aht_active: bool,
+    block_start_offset_bits: usize,
 ) -> Result<
     (
         Option<Vec<u8>>,
@@ -1750,12 +1955,14 @@ fn decode_lfe_mantissas(
         )?;
         (baps, mantissas, metadata)
     } else {
+        let fine = snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?;
+        let fast_gain_code = fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?;
         let baps = element_baps(
             &information,
             parameter_codes,
-            fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
+            fast_gain_code,
             snr.coarse_code,
-            snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+            fine,
             fscod,
             None,
             None,
@@ -1763,6 +1970,25 @@ fn decode_lfe_mantissas(
         )?;
         let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
         let dither_flags = vec![false; baps.len()];
+        let mantissa_start_offset_bits = frame_bits
+            .checked_sub(bits.bits_remaining())
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let diagnostic_input = MantissaDiagnosticInput {
+            baps: &baps,
+            exponents: &exponents,
+            information: &information,
+            parameter_codes,
+            fast_gain_code,
+            fscod,
+            delta: None,
+            coupling_leaks: None,
+            zero_bap,
+            mantissa_start_offset_bits,
+            block_start_offset_bits,
+            dither: false,
+            block_switch: false,
+            exponent_reused: frame.lfe_exponent_strategy.get(block_index).copied() == Some(false),
+        };
         let mantissas =
             decode_mantissas(bits, &baps, &exponents, &dither_flags, &[]).map_err(|error| {
                 mantissa_error_context(
@@ -1776,6 +2002,7 @@ fn decode_lfe_mantissas(
                         aht_active,
                         ..MantissaFeatureState::default()
                     },
+                    diagnostic_input,
                 )
             })?;
         (baps, mantissas, None)
