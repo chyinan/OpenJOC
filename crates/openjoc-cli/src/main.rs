@@ -163,6 +163,8 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
     let mut skip_non_emdf = 0_usize;
     let mut skip_valid_emdf = 0_usize;
     let mut skip_malformed_emdf = 0_usize;
+    let mut frame_end_non_emdf = 0_usize;
+    let mut frame_end_malformed_emdf = 0_usize;
     let mut skip_errors = Vec::new();
     for entry in &frames {
         let end = entry
@@ -175,12 +177,17 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
                 "truncated indexed E-AC-3 frame",
             )
         })?;
-        match openjoc_eac3::extract_auxdata(frame)? {
-            Some(_) => {
+        match openjoc_eac3::classify_aux_emdf(frame)? {
+            Some(classification) => {
                 aux_present += 1;
                 emdf_attempts += 1;
-                if openjoc_eac3::extract_aux_emdf(frame)?.is_some() {
-                    emdf_parsed += 1;
+                match classification {
+                    openjoc_emdf::CarrierClassification::NonEmdf => frame_end_non_emdf += 1,
+                    openjoc_emdf::CarrierClassification::Parsed(_) => emdf_parsed += 1,
+                    openjoc_emdf::CarrierClassification::Malformed(_)
+                    | openjoc_emdf::CarrierClassification::TrailingData { .. } => {
+                        frame_end_malformed_emdf += 1;
+                    }
                 }
             }
             None => aux_absent += 1,
@@ -208,7 +215,9 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
     }
     println!("carrier paths examined:");
     println!("  frame-end auxdatae: {aux_present} present, {aux_absent} absent");
-    println!("  frame-end EMDF: {emdf_parsed} parsed from {emdf_attempts} bounded attempts");
+    println!(
+        "  frame-end EMDF: {emdf_parsed} parsed, {frame_end_non_emdf} non-EMDF, {frame_end_malformed_emdf} malformed from {emdf_attempts} bounded attempts"
+    );
     println!(
         "  audio-block skipfld: {skip_observed} observed in {skip_examined} reached prefixes; {skip_unresolved} blocks unresolved"
     );

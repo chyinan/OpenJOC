@@ -278,6 +278,36 @@ fn inspect_command_reports_timing_profile_payloads_and_complexity() {
     fs::remove_dir_all(&root).expect("remove test directory");
 }
 
+#[test]
+fn inspect_command_reports_non_emdf_frame_end_data_without_rejecting_it() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-inspect-non-emdf-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("non-emdf.ec3");
+    fs::write(&input, joc_frame(&[0, 0, 0, 0], 2)).expect("write input");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["inspect", input.to_str().expect("input path")])
+        .output()
+        .expect("run openjoc");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let output = String::from_utf8(result.stdout).expect("UTF-8 output");
+    assert!(output.contains("frame-end auxdatae: 1 present, 0 absent"));
+    assert!(output.contains("frame-end EMDF: 0 parsed, 1 non-EMDF, 0 malformed"));
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
 fn push(bits: &mut Vec<bool>, value: u64, width: u8) {
     for shift in (0..width).rev() {
         bits.push(value & (1_u64 << shift) != 0);
