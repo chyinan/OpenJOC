@@ -279,7 +279,23 @@ pub struct CarrierAttempt {
     pub payload_ids: Vec<u64>,
     pub payload_sizes: Vec<usize>,
     pub payload_group_ids: Vec<Option<u64>>,
+    pub payload_configs: Vec<PayloadConfigReport>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PayloadConfigReport {
+    pub payload_id: u64,
+    pub sample_offset: Option<u16>,
+    pub duration: Option<u64>,
+    pub group_id: Option<u64>,
+    pub codec_data_present: bool,
+    pub discard_unknown_payload: bool,
+    pub payload_frame_aligned: Option<bool>,
+    pub create_duplicate: Option<bool>,
+    pub remove_duplicate: Option<bool>,
+    pub priority: Option<u8>,
+    pub processing_allowed: Option<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -792,6 +808,7 @@ fn inspect_frame_end_carrier(
                         payload_ids: Vec::new(),
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
+                        payload_configs: Vec::new(),
                         error: None,
                     });
                 }
@@ -799,6 +816,7 @@ fn inspect_frame_end_carrier(
                     report.frame_end_valid_emdf_container_count += 1;
                     let (payload_ids, payload_sizes, payload_group_ids) =
                         payload_inventory(&parsed);
+                    let payload_configs = payload_config_inventory(&parsed);
                     for id in &payload_ids {
                         *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
                         *report
@@ -834,6 +852,7 @@ fn inspect_frame_end_carrier(
                         payload_ids,
                         payload_sizes,
                         payload_group_ids,
+                        payload_configs,
                         error: None,
                     });
                 }
@@ -852,6 +871,7 @@ fn inspect_frame_end_carrier(
                         payload_ids: Vec::new(),
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
+                        payload_configs: Vec::new(),
                         error: Some(error.to_string()),
                     });
                     record_failure(
@@ -885,6 +905,7 @@ fn inspect_frame_end_carrier(
                         payload_ids: Vec::new(),
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
+                        payload_configs: Vec::new(),
                         error: Some(error.clone()),
                     });
                     record_failure(
@@ -912,6 +933,7 @@ fn inspect_frame_end_carrier(
                         payload_ids: Vec::new(),
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
+                        payload_configs: Vec::new(),
                         error: Some(error.to_string()),
                     });
                     record_failure(
@@ -1061,6 +1083,7 @@ fn inspect_skip_field_carrier(
         payload_ids: Vec::new(),
         payload_sizes: Vec::new(),
         payload_group_ids: Vec::new(),
+        payload_configs: Vec::new(),
         error: None,
     };
     match classify_skip_field_emdf(skip) {
@@ -1074,6 +1097,7 @@ fn inspect_skip_field_carrier(
             attempt.payload_ids.clone_from(&payload_ids);
             attempt.payload_sizes = payload_sizes;
             attempt.payload_group_ids = payload_group_ids;
+            attempt.payload_configs = payload_config_inventory(&parsed);
             for id in &payload_ids {
                 *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
                 *report
@@ -1160,6 +1184,27 @@ fn payload_inventory(
         .map(|payload| payload.config.group_id)
         .collect();
     (ids, sizes, group_ids)
+}
+
+fn payload_config_inventory(parsed: &openjoc_emdf::ParsedEmdf) -> Vec<PayloadConfigReport> {
+    parsed
+        .container
+        .payloads
+        .iter()
+        .map(|payload| PayloadConfigReport {
+            payload_id: payload.id,
+            sample_offset: payload.config.sample_offset,
+            duration: payload.config.duration,
+            group_id: payload.config.group_id,
+            codec_data_present: payload.config.codec_data_present,
+            discard_unknown_payload: payload.config.discard_unknown_payload,
+            payload_frame_aligned: payload.config.payload_frame_aligned,
+            create_duplicate: payload.config.create_duplicate,
+            remove_duplicate: payload.config.remove_duplicate,
+            priority: payload.config.priority,
+            processing_allowed: payload.config.processing_allowed,
+        })
+        .collect()
 }
 
 fn record_skip_failure(report: &mut FixtureReport, attempt: &CarrierAttempt) {
@@ -1500,6 +1545,11 @@ fn render_text_report(report: &CensusReport) -> String {
                 attempt.payload_group_ids,
                 attempt.result,
             );
+            let _ = writeln!(
+                text,
+                "  first parsed carrier payload configs: {:?}",
+                attempt.payload_configs,
+            );
         }
         if let Some(failure) = &fixture.first_failure {
             let _ = writeln!(
@@ -1580,8 +1630,8 @@ fn render_text_report(report: &CensusReport) -> String {
 mod tests {
     use super::{
         CarrierAttempt, FixtureManifest, FixtureManifestError, MantissaFailureContext,
-        mantissa_failure_context, parse_manifest, payload_inventory, report_status_order,
-        run_census,
+        mantissa_failure_context, parse_manifest, payload_config_inventory, payload_inventory,
+        report_status_order, run_census,
     };
     use openjoc_eac3::{Eac3Error, MantissaElement};
     use openjoc_emdf::{EmdfContainer, EmdfPayload, EmdfPayloadConfig, EmdfProtection, ParsedEmdf};
@@ -1697,6 +1747,13 @@ mod tests {
             payload_inventory(&parsed),
             (vec![11, 99], vec![2, 1], vec![Some(1), None])
         );
+        let configs = payload_config_inventory(&parsed);
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].payload_id, 11);
+        assert!(configs[0].codec_data_present);
+        assert_eq!(configs[0].payload_frame_aligned, Some(true));
+        assert_eq!(configs[1].payload_id, 99);
+        assert!(configs[1].discard_unknown_payload);
     }
 
     #[test]
@@ -1714,6 +1771,7 @@ mod tests {
             payload_ids: Vec::new(),
             payload_sizes: Vec::new(),
             payload_group_ids: Vec::new(),
+            payload_configs: Vec::new(),
             error: None,
         };
         assert_eq!(attempt.frame_relative_start_bit, 137);
