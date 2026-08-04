@@ -222,7 +222,7 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
         "  audio-block skipfld: {skip_observed} observed in {skip_examined} reached prefixes; {skip_unresolved} blocks unresolved"
     );
     println!(
-        "  skipfld EMDF: {skip_valid_emdf} valid, {skip_non_emdf} non-EMDF, {skip_malformed_emdf} malformed candidates"
+        "  skipfld EMDF candidates: {skip_valid_emdf} parsed, {skip_non_emdf} non-EMDF, {skip_malformed_emdf} malformed"
     );
     if !skip_errors.is_empty() {
         println!(
@@ -249,7 +249,7 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
                     extract_joc_addbsi_access_unit(&media.bytes, &frames, unit)?
                 {
                     println!(
-                        "  JOC extension signaled: complexity index {}; no profile in examined frame-end/skipfld carriers",
+                        "  JOC extension signaled: complexity index {}; EMDF profile absent (examined frame-end/skipfld carrier candidates)",
                         extension.complexity_index
                     );
                 } else {

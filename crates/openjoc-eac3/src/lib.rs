@@ -1754,8 +1754,10 @@ pub fn classify_aux_emdf(frame: &[u8]) -> Result<Option<CarrierClassification>, 
 }
 
 /// Classifies one exact audio-block `skipfld` byte range using the bounded
-/// Annex H parser. The bytes have already been unpacked from their declared
-/// bit range; no frame or neighbouring carrier data is visible here.
+/// Annex H parser as a diagnostic candidate. TS 102 366 describes these bytes
+/// as dummy data, so this function does not assert normative JOC carriage. The
+/// bytes have already been unpacked from their declared bit range; no frame or
+/// neighbouring carrier data is visible here.
 #[must_use]
 pub fn classify_skip_field_emdf(auxdata: &AuxiliaryData) -> CarrierClassification {
     classify_emdf_carrier(&auxdata.bytes)
@@ -1775,9 +1777,9 @@ pub fn extract_aux_joc_access_unit(
     extract_joc_access_unit_impl(stream, frames, unit, false)
 }
 
-/// Extracts and validates one TS 103 420 profile from all currently
-/// implemented bounded E-AC-3 carriers: frame-end `auxdata` and each reached
-/// audio-block `skipfld`.
+/// Extracts and validates one TS 103 420 profile from the currently examined
+/// bounded E-AC-3 ranges: frame-end `auxdata` and each reached audio-block
+/// `skipfld` diagnostic candidate.
 ///
 /// `extract_aux_joc_access_unit` remains available for callers that explicitly
 /// need the historical frame-end-only boundary. This function never combines

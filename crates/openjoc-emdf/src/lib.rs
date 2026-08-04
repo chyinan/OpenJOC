@@ -314,11 +314,13 @@ pub fn parse_emdf_sync(bytes: &[u8]) -> Result<ParsedEmdf, EmdfError> {
 
 /// Classifies an exact, bounded EMDF carrier range.
 ///
-/// This is the common entry point for E-AC-3 reserved data spaces such as
-/// frame-end `auxdata` and `skipfld`. A range that does not begin with
-/// `0x5838` is ordinary non-EMDF carrier data. Once that syncword is present,
-/// every failure is retained as a malformed candidate; the function does not
-/// fall back to searching for another syncword.
+/// This is the common entry point for E-AC-3 caller-declared data ranges such
+/// as frame-end `auxdata` and exact audio-block `skipfld` candidate ranges. TS
+/// 102 366 describes `skipfld` as dummy data; classifying that range here is a
+/// bounded diagnostic operation, not an assertion that it is a JOC carrier. A
+/// range that does not begin with `0x5838` is ordinary non-EMDF data. Once that
+/// syncword is present, every failure is retained as a malformed candidate; the
+/// function does not fall back to searching for another syncword.
 #[must_use]
 pub fn classify_emdf_carrier(bytes: &[u8]) -> CarrierClassification {
     if bytes.len() < 2 || u16::from_be_bytes([bytes[0], bytes[1]]) != SYNCWORD {

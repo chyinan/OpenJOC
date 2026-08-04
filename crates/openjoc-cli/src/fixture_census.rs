@@ -187,8 +187,7 @@ impl CarrierState {
 pub fn report_status_order(status: &str) -> u8 {
     match status {
         "joc_extension_not_signaled" => 1,
-        "extension_no_emdf_in_validated_carriers" => 2,
-        "validated_carriers_contain_no_emdf" => 2,
+        "extension_no_emdf_in_validated_carriers" | "validated_carriers_contain_no_emdf" => 2,
         "carrier_unresolved" => 3,
         "malformed_emdf_candidate" => 4,
         "valid_emdf_no_joc_profile" => 5,
@@ -1067,7 +1066,7 @@ fn inspect_skip_field_carrier(
     match classify_skip_field_emdf(skip) {
         CarrierClassification::NonEmdf => {
             report.skip_field_non_emdf_count += 1;
-            attempt.result = "non_emdf".to_owned();
+            "non_emdf".clone_into(&mut attempt.result);
         }
         CarrierClassification::Parsed(parsed) => {
             report.skip_field_valid_emdf_container_count += 1;
@@ -1091,20 +1090,20 @@ fn inspect_skip_field_carrier(
             if has_oamd && has_joc {
                 if let Err(error) = openjoc_emdf::validate_joc_profile(&parsed.container) {
                     report.invalid_or_incomplete_profile_count += 1;
-                    attempt.result = "parsed_incomplete_profile".to_owned();
+                    "parsed_incomplete_profile".clone_into(&mut attempt.result);
                     attempt.error = Some(error.to_string());
                 } else {
                     report.valid_joc_profile_count += 1;
-                    attempt.result = "parsed_complete_profile_container".to_owned();
+                    "parsed_complete_profile_container".clone_into(&mut attempt.result);
                     if report.first_complete_profile.is_none() {
                         report.first_complete_profile = Some(attempt.clone());
                     }
                 }
             } else if has_oamd || has_joc {
                 report.invalid_or_incomplete_profile_count += 1;
-                attempt.result = "parsed_incomplete_profile".to_owned();
+                "parsed_incomplete_profile".clone_into(&mut attempt.result);
             } else {
-                attempt.result = "parsed_non_profile".to_owned();
+                "parsed_non_profile".clone_into(&mut attempt.result);
             }
         }
         CarrierClassification::Malformed(error) => {
@@ -1125,7 +1124,7 @@ fn inspect_skip_field_carrier(
         } => {
             report.skip_field_malformed_emdf_candidate_count += 1;
             report.malformed_or_truncated_carrier_count += 1;
-            attempt.result = "malformed_emdf_trailing_data".to_owned();
+            "malformed_emdf_trailing_data".clone_into(&mut attempt.result);
             attempt.error = Some(format!(
                 "EMDF container consumed {container_bytes} of {carrier_bytes} carrier bytes"
             ));
