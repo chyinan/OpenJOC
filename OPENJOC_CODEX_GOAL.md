@@ -202,6 +202,32 @@ or an authoritative carriage/profile clarification is required. A vendor
 divergence is observed; commercial intent is not established and must not be
 assumed.
 
+## Bit-exact OAMD entry evidence (current forensic boundary)
+
+The private Logic raw EC-3 and its MP4 were traced across all 126 access units
+with `openjoc diagnose-oamd --all-access-units --trim-config-count 1`. The
+reports preserve original bytes and name each offset's coordinate system. MP4
+packet `pos,size` mapping closes against the demuxed stream, yielding sample
+indices 0..125 and exact original-file bit positions. Every AU closes one
+bounded EMDF container with payload IDs 11, 14, 2, and 1; payload 11 remains
+536 bits and its 9-bit configuration is repeated rather than inherited.
+
+The OAMD payload is 536 bits with `object_count=16`, two top-level elements
+(ID 1 then ID 2), and the trim element at OAMD bits `[525,533)`. After the
+element's discard bit, the warp field is OAMD bits `[526,528)` and its raw
+value is 3 in every observation. The configured normative parser returns
+`ReservedWarpMode{code: 3}` for every tested explicit trim count; no value is
+remapped and no offset is injected. The first payload-11 body transition is
+visible at AU 15, while the OAMD entry geometry and warp value stay fixed.
+
+The trace initially placed the warp field at the element body start; a focused
+synthetic fixture caught and corrected that diagnostic-coordinate mistake. The
+regression now proves that raw reserved value 3 is retained while strict OAMD
+validation still fails. This is conclusion C: one Logic export is not enough
+to introduce a Dolby compatibility syntax rule. OAMD object-scene decoding,
+object PCM, ADM waveform comparison, and internal-base fidelity remain blocked
+at this exact boundary.
+
 ## Explicit open goals after the current increment
 
 - Establish a user-supplied legal DEE real-vector lane without committing

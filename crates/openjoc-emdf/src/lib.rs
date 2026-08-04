@@ -148,6 +148,31 @@ pub struct ParsedEmdf {
     pub bytes_consumed: usize,
 }
 
+/// Exact bit spans for one payload in a declared EMDF container.
+///
+/// All offsets are relative to the first bit of the EMDF carrier, including
+/// the 32-bit synchronization header. The trace is observational only and
+/// does not alter the parsed payload representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmdfPayloadBitTrace {
+    pub payload_id: u64,
+    pub payload_id_start_bit: usize,
+    pub payload_id_end_bit: usize,
+    pub config_start_bit: usize,
+    pub config_end_bit: usize,
+    pub payload_size_start_bit: usize,
+    pub payload_size_end_bit: usize,
+    pub payload_body_start_bit: usize,
+    pub payload_body_end_bit: usize,
+}
+
+/// Parsed EMDF plus exact payload/config bit spans.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParsedEmdfBitTrace {
+    pub parsed: ParsedEmdf,
+    pub payloads: Vec<EmdfPayloadBitTrace>,
+}
+
 /// Classification of one caller-declared carrier range.
 ///
 /// The classifier deliberately examines only the first two bits-as-bytes of
@@ -625,6 +650,15 @@ pub fn variable_bits(
 /// Returns an error for invalid synchronization, truncated declared data, any
 /// malformed conditional field, reserved value, or nonzero byte padding.
 pub fn parse_emdf_sync(bytes: &[u8]) -> Result<ParsedEmdf, EmdfError> {
+    Ok(parse_emdf_sync_with_bit_trace(bytes)?.parsed)
+}
+
+/// Parses one EMDF container and retains exact payload/config bit spans.
+///
+/// Offsets in the returned traces are relative to the first bit of `bytes`,
+/// including the 32-bit EMDF synchronization header. The same bounded syntax
+/// and padding checks as [`parse_emdf_sync`] are used.
+pub fn parse_emdf_sync_with_bit_trace(bytes: &[u8]) -> Result<ParsedEmdfBitTrace, EmdfError> {
     if bytes.len() < 4 {
         return Err(EmdfError::TruncatedContainer {
             declared: 4,
@@ -647,7 +681,7 @@ pub fn parse_emdf_sync(bytes: &[u8]) -> Result<ParsedEmdf, EmdfError> {
     }
 
     let mut reader = BitReader::new(&bytes[4..end]);
-    let container = parse_container(&mut reader)?;
+    let (container, payloads) = parse_container_with_bit_trace(&mut reader)?;
     let padding_bits = reader.bits_remaining();
     if padding_bits > 7 {
         return Err(EmdfError::ExcessPadding { bits: padding_bits });
@@ -657,9 +691,12 @@ pub fn parse_emdf_sync(bytes: &[u8]) -> Result<ParsedEmdf, EmdfError> {
             return Err(EmdfError::NonzeroPadding);
         }
     }
-    Ok(ParsedEmdf {
-        container,
-        bytes_consumed: end,
+    Ok(ParsedEmdfBitTrace {
+        parsed: ParsedEmdf {
+            container,
+            bytes_consumed: end,
+        },
+        payloads,
     })
 }
 
@@ -687,7 +724,10 @@ pub fn classify_emdf_carrier(bytes: &[u8]) -> CarrierClassification {
     }
 }
 
-fn parse_container(reader: &mut impl BitRead) -> Result<EmdfContainer, EmdfError> {
+fn parse_container_with_bit_trace(
+    reader: &mut impl BitRead,
+) -> Result<(EmdfContainer, Vec<EmdfPayloadBitTrace>), EmdfError> {
+    let initial_bits = reader.bits_remaining();
     let version_base = reader.read_bits(2)?;
     let version = extended_value(reader, version_base, 3, 2)?;
     if version != 0 {
@@ -696,28 +736,51 @@ fn parse_container(reader: &mut impl BitRead) -> Result<EmdfContainer, EmdfError
     let key_base = reader.read_bits(3)?;
     let key_id = extended_value(reader, key_base, 7, 3)?;
     let mut payloads = Vec::new();
+    let mut traces = Vec::new();
     loop {
+        let payload_id_start_bit = 32 + (initial_bits - reader.bits_remaining());
         let id_base = reader.read_bits(5)?;
         let id = extended_value(reader, id_base, 31, 5)?;
         if id == 0 {
             break;
         }
+        let payload_id_end_bit = 32 + (initial_bits - reader.bits_remaining());
+        let config_start_bit = payload_id_end_bit;
         let config = parse_payload_config(reader)?;
+        let config_end_bit = 32 + (initial_bits - reader.bits_remaining());
+        let payload_size_start_bit = config_end_bit;
         let payload_size = variable_bits(reader, 8, 2)?;
+        let payload_size_end_bit = 32 + (initial_bits - reader.bits_remaining());
         let payload_size = usize::try_from(payload_size).map_err(|_| EmdfError::ValueOverflow)?;
+        let payload_body_start_bit = payload_size_end_bit;
         let mut data = Vec::with_capacity(payload_size);
         for _ in 0..payload_size {
             data.push(u8::try_from(reader.read_bits(8)?).map_err(|_| EmdfError::ValueOverflow)?);
         }
+        let payload_body_end_bit = 32 + (initial_bits - reader.bits_remaining());
+        traces.push(EmdfPayloadBitTrace {
+            payload_id: id,
+            payload_id_start_bit,
+            payload_id_end_bit,
+            config_start_bit,
+            config_end_bit,
+            payload_size_start_bit,
+            payload_size_end_bit,
+            payload_body_start_bit,
+            payload_body_end_bit,
+        });
         payloads.push(EmdfPayload { id, config, data });
     }
     let protection = parse_protection(reader)?;
-    Ok(EmdfContainer {
-        version,
-        key_id,
-        payloads,
-        protection,
-    })
+    Ok((
+        EmdfContainer {
+            version,
+            key_id,
+            payloads,
+            protection,
+        },
+        traces,
+    ))
 }
 
 fn extended_value(

@@ -452,6 +452,82 @@ diagnostic change adds per-payload configuration fields to census JSON/text.
   `fbfc56b8d4f317017bab348559a687a66ca1201d`. Implementation and
   status/documentation commits remain distinct.
 
+## Implemented increment: bit-exact OAMD entry forensic trace
+
+The next downstream failure was investigated without changing either profile or
+decoder semantics. `openjoc diagnose-oamd FILE -o DIR` now emits a JSON and a
+text report from a separate observational trace layer. The command accepts an
+explicit `--access-unit N`, `--all-access-units`, and caller-supplied
+`--trim-config-count N`; the trim count remains an experimental diagnostic
+parameter and is never inferred or turned into a hidden decoder rule.
+
+The trace names every coordinate system. All spans are MSB-first, half-open
+`[start_bit,end_bit)` ranges: frame-relative `skipfld`, original-file,
+elementary-stream, access-unit, bounded skip-field, EMDF-container, and
+OAMD-payload coordinates are kept separate. For ISO BMFF, FFprobe packet
+`size,pos` rows are checked against the exact stream-copy byte sequence, so the
+MP4 sample index and original-file bit offset are present only when that
+mapping closes. Payload reports include ID, configuration, size, and body spans
+in every mapped coordinate; OAMD reports include payload, element, warp-field,
+64-bit surrounding window, and elementary/original-file byte dumps.
+
+Against the private controlled Logic vector, all 126 access units were traced
+from both the raw EC-3 and the MP4. The MP4 packet mapping is one packet/sample
+per access unit, sample indices 0 through 125, and the raw and demuxed stream
+bytes are length-identical. In every AU:
+
+```text
+EMDF payload IDs: 11, 14, 2, 1
+payload-11 body: 536 bits (67 bytes), config: 9 bits
+OAMD payload: EMDF bits [60,596), 536 bits
+OAMD top-level elements: ID 1 then ID 2; object_count=16; element_count=2
+trim element body: OAMD bits [525,533)
+warp field: OAMD bits [526,528), raw value=3
+validator with trim-config-count=1: reserved OAMD warp mode 3
+```
+
+The bounded skip-field length equals the complete EMDF container length in all
+126 observations; every payload body span equals its declared byte length, and
+the four payload boundaries close without padding or cross-carrier reads. The
+payload configurations are repeated in every AU rather than inherited in this
+vector: ID 11 has `group=0`, `codecdatae=0`, `payload_frame_aligned=0`; ID 14
+has `group=0`, `codecdatae=0`, `payload_frame_aligned=1` with zero duplicate,
+priority, and processing controls; ID 2 is discarded; ID 1 carries duration
+1536. Payload-11 body changes first at AU 15, while the OAMD entry geometry and
+warp value remain unchanged. Earlier explicit trim-count experiments 1, 2, 3,
+4, 5, 6, 8, and 10 all reached the same first downstream error.
+
+The initial trace implementation was itself corrected: the trim warp field is
+after the element's `discard_unknown` bit (and any alternate-data ID), not at
+the first body bit. A focused regression fixture proves that the trace records
+raw value 3 at the exact bit while the normative parser still returns
+`ReservedWarpMode{code: 3}`.
+
+ADM BWF inventory remains an external oracle only: it records 11 channels,
+two ADM objects (one direct-speaker master and `OBJ_997HZ`), 197 object-position
+blocks, 48 kHz, and 192,000 samples. The current OAMD entry trace is consistent
+and bounded, but it does not yet decode the object element through the rejected
+trim element; no object-scene, PCM, ADM waveform, or fidelity claim is made.
+
+This is conclusion C for the current evidence set. A stable raw value of 3 is
+established across all AUs of one Logic export and its MP4/raw representations,
+but no second independent real encoder/sample has been supplied. Therefore no
+Dolby compatibility syntax rule, warp remapping, offset constant, or reserved
+value exception is added. The new first real blocker remains the exact OAMD
+`ReservedWarpMode{3}` boundary. Private reports are retained outside Git at
+`OpenJOC-Private/reports/oamd_forensics_raw` and
+`OpenJOC-Private/reports/oamd_forensics_mp4`; their final JSON SHA-256 values
+are respectively
+`50a8e4e9ff48e090652e010007ffa91360230f2a4679885ebe63a0ee8e819224` and
+`0978b86e1dc908645d1453c8c126a22e18567c673fc7ec17d64fff88dee9ba46`.
+
+The 2026-08-05 quality gate for this increment passed
+`cargo fmt --all -- --check`, workspace strict clippy, the serialized
+all-feature workspace test suite, the offline workspace release build, and
+`git diff --check`. The private manifest census was run twice after the release
+build and remained byte-identical (`52302b6f…5432` JSON and
+`5b94f9d4…f928` text).
+
 ## Known limitations and next goals
 
 All-carrier EMDF discovery, the real-vector acceptance lane,

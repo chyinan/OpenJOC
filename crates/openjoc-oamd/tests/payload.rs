@@ -1,7 +1,7 @@
 use openjoc_oamd::{
     ContentDescription, Gain, OamdContentPrefix, OamdDecoderConfig, OamdElement, OamdError,
     ObjectBasicInfo, ObjectClass, ObjectRenderInfo, OpaqueBits, parse_oamd_payload,
-    parse_oamd_payload_with_config,
+    parse_oamd_payload_with_config, trace_oamd_payload,
 };
 use std::num::NonZeroU8;
 
@@ -285,6 +285,37 @@ fn trim_element_requires_explicit_cardinality_and_is_then_decoded() {
     )
     .expect("configured trim payload");
     assert!(matches!(payload.elements[0].element, OamdElement::Trim(_)));
+}
+
+#[test]
+fn forensic_trace_preserves_reserved_trim_warp_bits_without_accepting_them() {
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    let mut content = vec![false]; // discard unknown false
+    push(&mut content, 3, 2); // reserved warp mode, retained by the trace
+    push(&mut content, 0, 2); // reserved trim data
+    push(&mut content, 0, 2); // default global trim
+    push(&mut content, 0, 1); // no per-object flags
+    push_element(&mut bits, 2, 1, &content);
+    let bytes = pack(bits);
+
+    let trace = trace_oamd_payload(&bytes).expect("bounded forensic trace");
+    assert_eq!(trace.object_count, 1);
+    assert_eq!(trace.element_count, 1);
+    assert_eq!(trace.elements[0].body_start_bit, 23);
+    assert_eq!(trace.elements[0].warp_mode_start_bit, Some(24));
+    assert_eq!(trace.elements[0].warp_mode_raw, Some(3));
+    assert_eq!(
+        parse_oamd_payload_with_config(
+            &bytes,
+            OamdDecoderConfig {
+                trim_configuration_count: Some(
+                    NonZeroU8::new(1).expect("nonzero configuration count"),
+                ),
+            },
+        ),
+        Err(OamdError::ReservedWarpMode { code: 3 })
+    );
 }
 
 #[test]

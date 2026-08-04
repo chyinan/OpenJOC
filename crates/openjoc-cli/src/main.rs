@@ -3,6 +3,7 @@
 mod banner;
 mod eac3_decode;
 mod fixture_census;
+mod oamd_forensics;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
@@ -23,7 +24,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE -o DIR [--access-unit N | --all-access-units] [--trim-config-count N]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -75,6 +76,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some("decode-payload") => decode_payload(&arguments[1..]),
         Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
         Some("census") => run_census(&arguments[1..]),
+        Some("diagnose-oamd") => oamd_forensics::run(&arguments[1..]),
         _ => Err(usage_error().into()),
     }
 }
@@ -106,6 +108,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc inspect <FILE>\n",
         "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--trim-config-count N] [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
+        "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc --help\n",
         "\n",
@@ -123,6 +126,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
+        "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units]\n",
+        "                         [--trim-config-count N]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [OPTIONS]\n",
         "\n",
@@ -132,6 +137,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  inspect         Inspect E-AC-3 access units and JOC metadata\n",
         "  decode          Decode an E-AC-3 JOC stream into an object scene\n",
         "  census          Census bounded metadata carriers from external fixtures\n",
+        "  diagnose-oamd   Emit bit-exact EMDF/OAMD entry evidence\n",
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
         "\n",
     ));

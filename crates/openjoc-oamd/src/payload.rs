@@ -8,6 +8,7 @@ use crate::{
     variable_bits_max,
 };
 use openjoc_bitio::{BitRead, BitReader};
+use serde::Serialize;
 use std::num::NonZeroU8;
 
 /// Configuration for standard constants left undefined by TS 103 420 V1.2.1.
@@ -48,6 +49,93 @@ pub struct OamdPayload {
     pub object_classes: Vec<ObjectClass>,
     pub elements: Vec<OamdElementMetadata>,
     pub consumed_bits: usize,
+}
+
+/// Exact top-level bit spans for one bounded OAMD element.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OamdElementBitTrace {
+    pub index: usize,
+    pub id: u8,
+    pub header_start_bit: usize,
+    pub header_end_bit: usize,
+    pub body_start_bit: usize,
+    pub body_end_bit: usize,
+    pub warp_mode_start_bit: Option<usize>,
+    pub warp_mode_raw: Option<u8>,
+}
+
+/// Exact top-level OAMD bit spans used to diagnose bounded element entry.
+///
+/// Offsets are relative to the first bit of the OAMD payload. This is a
+/// syntax trace only; it does not accept reserved values or change the normal
+/// OAMD validator.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OamdBitTrace {
+    pub payload_bits: usize,
+    pub prefix_end_bit: usize,
+    pub object_count: u16,
+    pub element_count: u8,
+    pub elements: Vec<OamdElementBitTrace>,
+}
+
+/// Traces top-level OAMD element boundaries and the raw trim warp code.
+///
+/// The function intentionally stops at declared element windows and does not
+/// interpret the element body beyond the first two trim warp bits. It is used
+/// for forensic evidence when the full OAMD parser rejects a reserved value.
+pub fn trace_oamd_payload(payload: &[u8]) -> Result<OamdBitTrace, OamdError> {
+    let payload_bits = payload
+        .len()
+        .checked_mul(8)
+        .ok_or(OamdError::ValueOverflow)?;
+    let mut reader = BitReader::new(payload);
+    let prefix = parse_oamd_content_prefix_reader(&mut reader)?;
+    let prefix_end_bit = payload_bits - reader.bits_remaining();
+    let mut elements = Vec::with_capacity(usize::from(prefix.element_count));
+    for index in 0..usize::from(prefix.element_count) {
+        let header_start_bit = payload_bits - reader.bits_remaining();
+        let id = read_u8(&mut reader, 4)?;
+        let size_minus_one = variable_bits_max(&mut reader, 4, 4)?;
+        let size_bytes = size_minus_one
+            .checked_add(1)
+            .ok_or(OamdError::ValueOverflow)?;
+        let size_bits = usize::try_from(size_bytes)?
+            .checked_mul(8)
+            .ok_or(OamdError::ValueOverflow)?;
+        let header_end_bit = payload_bits - reader.bits_remaining();
+        let body_start_bit = header_end_bit;
+        let mut body_reader = reader.take_bits(size_bits)?;
+        if prefix.alternate_object_data_present {
+            let _alternate_data_id = body_reader.read_bits(4)?;
+        }
+        let _discard_unknown = body_reader.read_bit()?;
+        let (warp_mode_start_bit, warp_mode_raw) = if id == 2 {
+            let body_prefix_bits = usize::from(prefix.alternate_object_data_present) * 4 + 1;
+            let warp_mode_start_bit = body_start_bit + body_prefix_bits;
+            let warp_mode_raw = read_u8(&mut body_reader, 2)?;
+            (Some(warp_mode_start_bit), Some(warp_mode_raw))
+        } else {
+            (None, None)
+        };
+        let body_end_bit = payload_bits - reader.bits_remaining();
+        elements.push(OamdElementBitTrace {
+            index,
+            id,
+            header_start_bit,
+            header_end_bit,
+            body_start_bit,
+            body_end_bit,
+            warp_mode_start_bit,
+            warp_mode_raw,
+        });
+    }
+    Ok(OamdBitTrace {
+        payload_bits,
+        prefix_end_bit,
+        object_count: prefix.object_count,
+        element_count: prefix.element_count,
+        elements,
+    })
 }
 
 /// Parses the top-level OAMD payload and bounded `oa_element_md` windows.

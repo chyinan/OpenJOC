@@ -30,8 +30,9 @@ pub use object_element::{
     parse_object_element,
 };
 pub use payload::{
-    OamdDecoderConfig, OamdElement, OamdElementMetadata, OamdPayload, OpaqueBits,
-    parse_oamd_payload, parse_oamd_payload_with_config,
+    OamdBitTrace, OamdDecoderConfig, OamdElement, OamdElementBitTrace, OamdElementMetadata,
+    OamdPayload, OpaqueBits, parse_oamd_payload, parse_oamd_payload_with_config,
+    trace_oamd_payload,
 };
 pub use position::{
     Distance, Position3, PositionCoding, ReferenceScreen, RoomPosition, StandardPositionBits,

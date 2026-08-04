@@ -3,7 +3,7 @@ use openjoc_emdf::{
     CarrierClassification, EmdfContainer, EmdfError, EmdfPayload, EmdfPayloadConfig,
     EmdfProtection, JOC_PAYLOAD_ID, JocProfileField, JocProfileValue, JocValidationProfile,
     JocValidationStatus, OAMD_PAYLOAD_ID, classify_emdf_carrier, parse_emdf_sync,
-    validate_joc_profile, validate_joc_profile_for, variable_bits,
+    parse_emdf_sync_with_bit_trace, validate_joc_profile, validate_joc_profile_for, variable_bits,
 };
 
 #[derive(Default)]
@@ -150,6 +150,45 @@ fn parses_payload_configuration_conditionals_and_unknown_payload_bytes() {
     );
     assert_eq!(parsed.container.protection.primary, [0x7e]);
     assert_eq!(parsed.container.protection.secondary, [1, 2, 3, 4]);
+}
+
+#[test]
+fn bit_trace_matches_payload_bytes_and_closes_each_payload_boundary() {
+    let mut container = Bits::default();
+    container.push(0, 2); // version
+    container.push(0, 3); // key ID
+    container.push(11, 5); // payload ID
+    container.push(0, 1); // no sample offset
+    container.push(0, 1); // no duration
+    container.push(0, 1); // no group ID
+    container.push(0, 1); // no codec data
+    container.push(1, 1); // discard unknown payload
+    container.variable(&[(2, false)], 8); // two-byte payload
+    container.push(0xa5, 8);
+    container.push(0x5a, 8);
+    container.push(0, 5); // payload terminator
+    container.push(1, 2); // primary protection: one byte
+    container.push(0, 2); // no secondary protection
+    container.push(0x7e, 8);
+
+    let bytes = wrap_sync(&container.bytes());
+    let parsed = parse_emdf_sync_with_bit_trace(&bytes).expect("traced EMDF");
+    assert_eq!(
+        parsed.parsed,
+        parse_emdf_sync(&bytes).expect("ordinary EMDF")
+    );
+    let trace = &parsed.payloads[0];
+    assert_eq!(trace.payload_id, 11);
+    assert!(trace.payload_id_start_bit < trace.payload_id_end_bit);
+    assert!(trace.payload_id_end_bit <= trace.config_start_bit);
+    assert!(trace.config_start_bit < trace.config_end_bit);
+    assert!(trace.config_end_bit <= trace.payload_size_start_bit);
+    assert!(trace.payload_size_start_bit < trace.payload_size_end_bit);
+    assert_eq!(
+        trace.payload_body_end_bit - trace.payload_body_start_bit,
+        parsed.parsed.container.payloads[0].data.len() * 8
+    );
+    assert_eq!(&parsed.parsed.container.payloads[0].data, &[0xa5, 0x5a]);
 }
 
 #[test]
