@@ -252,9 +252,9 @@ fn user_supplied_dee_fixture_uses_container_boundary_when_enabled() {
     assert!(inspect.status.success());
     let inspect_stdout = String::from_utf8_lossy(&inspect.stdout);
     assert!(inspect_stdout.contains("frames: 7773"));
-    assert!(
-        inspect_stdout.contains("JOC extension signaled: complexity index 16; EMDF profile absent")
-    );
+    assert!(inspect_stdout.contains(
+        "JOC profile candidate found but validation failed in examined carriers: failed to decode carried EMDF: invalid JOC-profile EMDF payload configuration"
+    ));
 
     let decode = Command::new(env!("CARGO_BIN_EXE_openjoc"))
         .args([
