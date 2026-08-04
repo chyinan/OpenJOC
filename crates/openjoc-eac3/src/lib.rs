@@ -75,8 +75,9 @@ pub use transform::{inverse_transform, overlap_add};
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};
 use openjoc_emdf::{
-    CarrierClassification, EmdfError, JOC_PAYLOAD_ID, OAMD_PAYLOAD_ID, ParsedEmdf,
-    classify_emdf_carrier, parse_emdf_sync, validate_joc_profile,
+    CarrierClassification, EmdfContainer, EmdfError, JOC_PAYLOAD_ID, JocProfileDeviation,
+    JocProfileValidationFailure, JocValidationProfile, JocValidationStatus, OAMD_PAYLOAD_ID,
+    ParsedEmdf, classify_emdf_carrier, parse_emdf_sync, validate_joc_profile_for,
 };
 
 const EAC3_SYNCWORD: u16 = 0x0b77;
@@ -90,7 +91,7 @@ pub enum MantissaElement {
 }
 
 /// Checked frontend failures.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Eac3Error {
     Bit(BitError),
     InvalidSyncword {
@@ -349,6 +350,7 @@ pub enum Eac3Error {
         unresolved_blocks: usize,
     },
     Emdf(EmdfError),
+    JocProfileValidation(JocProfileValidationFailure),
     InvalidAccessUnitRange,
     UnsupportedJocAccessUnitFrameCount {
         actual: usize,
@@ -722,6 +724,7 @@ impl fmt::Display for Eac3Error {
                 "E-AC-3 EMDF auxiliary data is not byte-aligned: {bits} bits"
             ),
             Self::Emdf(error) => write!(formatter, "failed to decode carried EMDF: {error}"),
+            Self::JocProfileValidation(error) => write!(formatter, "{error}"),
             Self::EmdfCarrierTrailingData {
                 container_bytes,
                 carrier_bytes,
@@ -822,6 +825,12 @@ impl From<EmdfError> for Eac3Error {
     }
 }
 
+impl From<JocProfileValidationFailure> for Eac3Error {
+    fn from(value: JocProfileValidationFailure) -> Self {
+        Self::JocProfileValidation(value)
+    }
+}
+
 /// Table E.1.1 stream identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StreamType {
@@ -864,13 +873,28 @@ pub struct AuxiliaryData {
     pub bytes: Vec<u8>,
 }
 
-/// One validated TS 103 420 metadata frame extracted from E-AC-3.
+/// Parsed JOC-candidate representation before profile validation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParsedJocAccessUnit {
+    pub carrier_frame: usize,
+    pub sample_rate: u32,
+    pub samples: u16,
+    pub complexity_index: u8,
+    pub emdf: EmdfContainer,
+}
+
+/// One explicitly validated TS 103 420 metadata frame extracted from E-AC-3.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JocMetadataFrame {
     pub carrier_frame: usize,
     pub sample_rate: u32,
     pub samples: u16,
     pub complexity_index: u8,
+    pub validation_profile: JocValidationProfile,
+    pub validation_status: JocValidationStatus,
+    pub deviations: Vec<JocProfileDeviation>,
+    /// Complete original parsed EMDF representation; no profile normalization.
+    pub emdf: EmdfContainer,
     pub oamd: Vec<u8>,
     pub joc: Vec<u8>,
 }
@@ -1763,42 +1787,102 @@ pub fn classify_skip_field_emdf(auxdata: &AuxiliaryData) -> CarrierClassificatio
     classify_emdf_carrier(&auxdata.bytes)
 }
 
-/// Extracts and validates one TS 103 420 profile carried through `auxdata`.
+/// Parses one TS 103 420 candidate carried through frame-end auxiliary data.
 ///
 /// # Errors
 /// Returns an error for invalid unit bounds, malformed frame/EMDF syntax,
 /// multiple profile carriers, missing same-frame `addbsi`, or violation of the
 /// mandatory last-dependent-substream placement rule.
+pub fn parse_aux_joc_access_unit(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+) -> Result<Option<ParsedJocAccessUnit>, Eac3Error> {
+    parse_joc_access_unit_impl(stream, frames, unit, false)
+}
+
+/// Strictly validates one frame-end candidate for backward API compatibility.
 pub fn extract_aux_joc_access_unit(
     stream: &[u8],
     frames: &[SyncframeIndexEntry],
     unit: AccessUnitIndex,
 ) -> Result<Option<JocMetadataFrame>, Eac3Error> {
-    extract_joc_access_unit_impl(stream, frames, unit, false)
+    parse_aux_joc_access_unit(stream, frames, unit)?
+        .as_ref()
+        .map(|parsed| validate_joc_access_unit(parsed, JocValidationProfile::EtsiStrict))
+        .transpose()
 }
 
-/// Extracts and validates one TS 103 420 profile from the currently examined
+/// Parses one JOC candidate from the currently examined
 /// bounded E-AC-3 ranges: frame-end `auxdata` and each reached audio-block
 /// `skipfld` diagnostic candidate.
 ///
-/// `extract_aux_joc_access_unit` remains available for callers that explicitly
-/// need the historical frame-end-only boundary. This function never combines
+/// This parser never combines
 /// payloads from separate carriers; a duplicate or incomplete placement is a
-/// structured error.
+/// structured parse error. It does not apply table 55/56 profile validation.
+pub fn parse_joc_access_unit(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+) -> Result<Option<ParsedJocAccessUnit>, Eac3Error> {
+    parse_joc_access_unit_impl(stream, frames, unit, true)
+}
+
+/// Applies one explicit validation profile to a parsed JOC candidate.
+///
+/// The returned decoder representation retains the complete original EMDF
+/// container and every compatibility deviation.
+pub fn validate_joc_access_unit(
+    parsed: &ParsedJocAccessUnit,
+    profile: JocValidationProfile,
+) -> Result<JocMetadataFrame, Eac3Error> {
+    let validated = validate_joc_profile_for(&parsed.emdf, profile)?;
+    let oamd = validated.oamd.data.clone();
+    let joc = validated.joc.data.clone();
+    let validation_status = validated.status;
+    let deviations = validated.deviations;
+    Ok(JocMetadataFrame {
+        carrier_frame: parsed.carrier_frame,
+        sample_rate: parsed.sample_rate,
+        samples: parsed.samples,
+        complexity_index: parsed.complexity_index,
+        validation_profile: profile,
+        validation_status,
+        deviations,
+        emdf: parsed.emdf.clone(),
+        oamd,
+        joc,
+    })
+}
+
+/// Parses and validates with an explicit profile.
+pub fn extract_joc_access_unit_for_profile(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+    profile: JocValidationProfile,
+) -> Result<Option<JocMetadataFrame>, Eac3Error> {
+    parse_joc_access_unit(stream, frames, unit)?
+        .as_ref()
+        .map(|parsed| validate_joc_access_unit(parsed, profile))
+        .transpose()
+}
+
+/// Parses and validates with the normative strict profile.
 pub fn extract_joc_access_unit(
     stream: &[u8],
     frames: &[SyncframeIndexEntry],
     unit: AccessUnitIndex,
 ) -> Result<Option<JocMetadataFrame>, Eac3Error> {
-    extract_joc_access_unit_impl(stream, frames, unit, true)
+    extract_joc_access_unit_for_profile(stream, frames, unit, JocValidationProfile::EtsiStrict)
 }
 
-fn extract_joc_access_unit_impl(
+fn parse_joc_access_unit_impl(
     stream: &[u8],
     frames: &[SyncframeIndexEntry],
     unit: AccessUnitIndex,
     include_skip_fields: bool,
-) -> Result<Option<JocMetadataFrame>, Eac3Error> {
+) -> Result<Option<ParsedJocAccessUnit>, Eac3Error> {
     let end_frame = unit
         .first_frame
         .checked_add(unit.frame_count)
@@ -1860,14 +1944,12 @@ fn extract_joc_access_unit_impl(
         frame: carrier_frame,
     })?;
     let extension = parse_joc_addbsi(addbsi)?;
-    let payloads = validate_joc_profile(&parsed.container)?;
-    Ok(Some(JocMetadataFrame {
+    Ok(Some(ParsedJocAccessUnit {
         carrier_frame,
         sample_rate: unit.sample_rate,
         samples: unit.samples,
         complexity_index: extension.complexity_index,
-        oamd: payloads.oamd.to_vec(),
-        joc: payloads.joc.to_vec(),
+        emdf: parsed.container,
     }))
 }
 

@@ -1,8 +1,9 @@
 use openjoc_bitio::BitReader;
 use openjoc_emdf::{
     CarrierClassification, EmdfContainer, EmdfError, EmdfPayload, EmdfPayloadConfig,
-    EmdfProtection, JOC_PAYLOAD_ID, OAMD_PAYLOAD_ID, classify_emdf_carrier, parse_emdf_sync,
-    validate_joc_profile, variable_bits,
+    EmdfProtection, JOC_PAYLOAD_ID, JocProfileField, JocProfileValue, JocValidationProfile,
+    JocValidationStatus, OAMD_PAYLOAD_ID, classify_emdf_carrier, parse_emdf_sync,
+    validate_joc_profile, validate_joc_profile_for, variable_bits,
 };
 
 #[derive(Default)]
@@ -383,5 +384,74 @@ fn validates_the_complete_table_55_and_56_joc_profile() {
     assert_eq!(
         validate_joc_profile(&duplicate),
         Err(EmdfError::JocProfilePayloadCount { oamd: 2, joc: 1 })
+    );
+}
+
+fn logic_vendor_profile_container() -> EmdfContainer {
+    let mut container = joc_profile_container();
+    container.payloads[0].config.codec_data_present = false;
+    container.payloads[0].config.payload_frame_aligned = Some(false);
+    container.payloads[0].config.create_duplicate = None;
+    container.payloads[0].config.remove_duplicate = None;
+    container.payloads[0].config.priority = None;
+    container.payloads[0].config.processing_allowed = None;
+    container.payloads[1].config.codec_data_present = false;
+    container
+}
+
+#[test]
+fn strict_and_vendor_profiles_preserve_the_logic_interoperability_boundary() {
+    let container = logic_vendor_profile_container();
+
+    let strict = validate_joc_profile_for(&container, JocValidationProfile::EtsiStrict)
+        .expect_err("Logic signaling must not pass the published ETSI profile");
+    assert_eq!(strict.profile, JocValidationProfile::EtsiStrict);
+    assert_eq!(strict.oamd_payload_count, 1);
+    assert_eq!(strict.joc_payload_count, 1);
+    assert_eq!(strict.deviations.len(), 7);
+    assert!(strict.deviations.iter().any(|deviation| {
+        deviation.payload_id == OAMD_PAYLOAD_ID
+            && deviation.field == JocProfileField::CodecDataPresent
+            && deviation.actual == JocProfileValue::Bool(false)
+            && deviation.expected_by_etsi == JocProfileValue::Bool(true)
+    }));
+    assert!(strict.deviations.iter().any(|deviation| {
+        deviation.payload_id == OAMD_PAYLOAD_ID
+            && deviation.field == JocProfileField::PayloadFrameAligned
+            && deviation.actual == JocProfileValue::Bool(false)
+            && deviation.expected_by_etsi == JocProfileValue::Bool(true)
+    }));
+
+    let compatible = validate_joc_profile_for(&container, JocValidationProfile::DolbyVendorCompat)
+        .expect("the explicitly documented Logic signaling pattern");
+    assert_eq!(
+        compatible.status,
+        JocValidationStatus::AcceptedWithDeviation
+    );
+    assert_eq!(compatible.deviations, strict.deviations);
+    assert_eq!(compatible.oamd.config, container.payloads[0].config);
+    assert_eq!(compatible.joc.config, container.payloads[1].config);
+    assert_eq!(compatible.oamd.data, [1]);
+    assert_eq!(compatible.joc.data, [2]);
+}
+
+#[test]
+fn vendor_profile_accepts_normative_streams_without_deviation_and_rejects_new_hacks() {
+    let normative = joc_profile_container();
+    let compatible = validate_joc_profile_for(&normative, JocValidationProfile::DolbyVendorCompat)
+        .expect("normative profiles are a subset of vendor-compatible input");
+    assert_eq!(compatible.status, JocValidationStatus::NormativeCompliant);
+    assert!(compatible.deviations.is_empty());
+
+    let mut unknown_pattern = logic_vendor_profile_container();
+    unknown_pattern.payloads[1].config.group_id = Some(8);
+    let rejected =
+        validate_joc_profile_for(&unknown_pattern, JocValidationProfile::DolbyVendorCompat)
+            .expect_err("compatibility must not accept an unobserved group mismatch");
+    assert!(
+        rejected
+            .deviations
+            .iter()
+            .any(|deviation| deviation.field == JocProfileField::GroupId)
     );
 }

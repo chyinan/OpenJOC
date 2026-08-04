@@ -5,10 +5,11 @@ use openjoc_eac3::{
     decode_exponents, decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain,
     extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
     group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
-    parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header,
-    reconstruct_enhanced_coupling, spx_subband_range, synthesize_audio_blocks,
-    validate_complexity_index,
+    parse_bsi, parse_first_audio_block_prefix, parse_joc_access_unit, parse_joc_addbsi,
+    parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
+    synthesize_audio_blocks, validate_complexity_index, validate_joc_access_unit,
 };
+use openjoc_emdf::{JocProfileField, JocValidationProfile, JocValidationStatus};
 
 #[derive(Clone, Default)]
 struct Bits(Vec<bool>);
@@ -2060,7 +2061,7 @@ fn classifies_exact_skip_field_ranges_without_scanning_or_padding() {
     );
 }
 
-fn joc_emdf() -> Vec<u8> {
+fn joc_emdf_for_profile(vendor_compat: bool) -> Vec<u8> {
     let mut container = Bits::default();
     container.push(0, 2);
     container.push(0, 3);
@@ -2071,14 +2072,20 @@ fn joc_emdf() -> Vec<u8> {
         container.push(1, 1); // group ID
         container.push(1, 2);
         container.push(0, 1); // variable-bits stop
-        container.push(1, 1); // codec data present
-        container.push(0, 8); // reserved codec data
+        container.push(u64::from(!vendor_compat), 1); // codec data present
+        if !vendor_compat {
+            container.push(0, 8); // reserved codec data
+        }
         container.push(0, 1); // retain unknown payload
-        container.push(1, 1); // frame aligned
-        container.push(0, 1); // create duplicate
-        container.push(0, 1); // remove duplicate
-        container.push(0, 5); // priority
-        container.push(0, 2); // proc_allowed
+        if vendor_compat && id == 11 {
+            container.push(0, 1); // observed Logic OAMD is not frame aligned
+        } else {
+            container.push(1, 1); // frame aligned
+            container.push(0, 1); // create duplicate
+            container.push(0, 1); // remove duplicate
+            container.push(0, 5); // priority
+            container.push(0, 2); // proc_allowed
+        }
         container.push(1, 8); // one payload byte
         container.push(0, 1); // variable-bits stop
         container.push(payload, 8);
@@ -2096,6 +2103,10 @@ fn joc_emdf() -> Vec<u8> {
     );
     emdf.extend_from_slice(&container);
     emdf
+}
+
+fn joc_emdf() -> Vec<u8> {
+    joc_emdf_for_profile(false)
 }
 
 fn joc_carrier_frame(stream_type: u8, substream_id: u8, emdf: Option<&[u8]>) -> Vec<u8> {
@@ -2194,6 +2205,51 @@ fn extracts_joc_profile_from_an_exact_audio_block_skip_field() {
             bytes: emdf,
         })
     );
+}
+
+#[test]
+fn parser_validation_and_decoder_metadata_are_explicit_for_vendor_signaling() {
+    let emdf = joc_emdf_for_profile(true);
+    let bytes = skip_field_joc_frame(&emdf);
+    let frames = index_syncframes(&bytes).expect("frame");
+    let unit = group_access_units(&frames).expect("unit")[0];
+
+    let parsed = parse_joc_access_unit(&bytes, &frames, unit)
+        .expect("bounded parser")
+        .expect("parsed JOC candidate");
+    assert!(!parsed.emdf.payloads[0].config.codec_data_present);
+    assert_eq!(
+        parsed.emdf.payloads[0].config.payload_frame_aligned,
+        Some(false)
+    );
+
+    let strict = validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict)
+        .expect_err("strict validation must preserve the normative failure");
+    let Eac3Error::JocProfileValidation(strict) = strict else {
+        panic!("expected structured profile evidence");
+    };
+    assert_eq!(strict.profile, JocValidationProfile::EtsiStrict);
+    assert!(
+        strict
+            .deviations
+            .iter()
+            .any(|deviation| deviation.field == JocProfileField::CodecDataPresent)
+    );
+
+    let compatible = validate_joc_access_unit(&parsed, JocValidationProfile::DolbyVendorCompat)
+        .expect("documented vendor profile");
+    assert_eq!(
+        compatible.validation_status,
+        JocValidationStatus::AcceptedWithDeviation
+    );
+    assert_eq!(
+        compatible.validation_profile,
+        JocValidationProfile::DolbyVendorCompat
+    );
+    assert_eq!(compatible.deviations, strict.deviations);
+    assert_eq!(compatible.emdf, parsed.emdf);
+    assert_eq!(compatible.oamd, [0xa5]);
+    assert_eq!(compatible.joc, [0x5a]);
 }
 
 #[test]

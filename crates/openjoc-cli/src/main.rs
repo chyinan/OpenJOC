@@ -8,6 +8,7 @@ mod terminal;
 use banner::{package_metadata, render_banner};
 use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_eac3::extract_joc_addbsi_access_unit;
+use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, decode, encode_channels};
@@ -22,7 +23,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -40,6 +41,8 @@ struct DecodeEac3Args {
     internal_base: bool,
     output: PathBuf,
     output_format: SampleFormat,
+    validation_profile: JocValidationProfile,
+    trim_configuration_count: Option<NonZeroU8>,
 }
 
 fn main() -> ExitCode {
@@ -101,7 +104,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE>\n",
-        "  openjoc decode <FILE> -o <DIR> [--reference-f64]\n",
+        "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--trim-config-count N] [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc --help\n",
@@ -115,7 +118,10 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE>\n",
-        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--reference-f64]\n",
+        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
+        "                         [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+        "                         [--trim-config-count N]\n",
+        "                         [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [OPTIONS]\n",
@@ -133,6 +139,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  -h, --help       Print root command help\n",
         "      --no-banner Disable the interactive startup banner\n",
+        "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
+        "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
         "      --reference-f64 Use explicit reference f64 object-stem output (default: f32)\n",
     ));
     Ok(())
@@ -237,12 +245,16 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
         println!("access unit {unit_index}:");
         println!("  sample rate: {} Hz", unit.sample_rate);
         println!("  samples: {}", unit.samples);
-        match openjoc_eac3::extract_joc_access_unit(&media.bytes, &frames, unit) {
-            Ok(Some(metadata)) => {
-                println!("  carrier frame: {}", metadata.carrier_frame);
-                println!("  complexity index: {}", metadata.complexity_index);
-                println!("  OAMD bytes: {}", metadata.oamd.len());
-                println!("  JOC bytes: {}", metadata.joc.len());
+        match openjoc_eac3::parse_joc_access_unit(&media.bytes, &frames, unit) {
+            Ok(Some(parsed)) => {
+                println!("  carrier frame: {}", parsed.carrier_frame);
+                println!("  complexity index: {}", parsed.complexity_index);
+                for profile in [
+                    JocValidationProfile::EtsiStrict,
+                    JocValidationProfile::DolbyVendorCompat,
+                ] {
+                    print_profile_validation(&parsed, profile);
+                }
             }
             Ok(None) => {
                 if let Some(extension) =
@@ -257,13 +269,51 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
                 }
             }
             Err(error) => {
-                println!(
-                    "  JOC profile candidate found but validation failed in examined carriers: {error}"
-                );
+                println!("  JOC profile candidate parsing failed in examined carriers: {error}");
             }
         }
     }
     Ok(())
+}
+
+fn print_profile_validation(
+    parsed: &openjoc_eac3::ParsedJocAccessUnit,
+    profile: JocValidationProfile,
+) {
+    println!("  profile: {}", profile.as_str());
+    match openjoc_eac3::validate_joc_access_unit(parsed, profile) {
+        Ok(metadata) => {
+            println!("    result: {}", metadata.validation_status.as_str());
+            println!("    OAMD bytes: {}", metadata.oamd.len());
+            println!("    JOC bytes: {}", metadata.joc.len());
+            for deviation in &metadata.deviations {
+                println!(
+                    "    deviation: payload {} {}={} expected_by_etsi={}",
+                    deviation.payload_id,
+                    deviation.field,
+                    deviation.actual,
+                    deviation.expected_by_etsi
+                );
+            }
+        }
+        Err(openjoc_eac3::Eac3Error::JocProfileValidation(failure)) => {
+            println!("    result: failed");
+            println!("    reason: {failure}");
+            for deviation in &failure.deviations {
+                println!(
+                    "    deviation: payload {} {}={} expected_by_etsi={}",
+                    deviation.payload_id,
+                    deviation.field,
+                    deviation.actual,
+                    deviation.expected_by_etsi
+                );
+            }
+        }
+        Err(error) => {
+            println!("    result: failed");
+            println!("    reason: {error}");
+        }
+    }
 }
 
 fn run_census(values: &[String]) -> Result<(), Box<dyn Error>> {
@@ -335,6 +385,8 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let mut downmix = None;
     let mut internal_base = false;
     let mut reference_f64 = false;
+    let mut validation_profile = JocValidationProfile::EtsiStrict;
+    let mut trim_configuration_count = None;
     let mut output = None;
     let mut index = 1;
     while index < values.len() {
@@ -353,6 +405,10 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         match flag.as_str() {
             "--downmix" => downmix = Some(PathBuf::from(value)),
             "-o" | "--output" => output = Some(PathBuf::from(value)),
+            "--validation-profile" => validation_profile = parse_validation_profile(value)?,
+            "--trim-config-count" => {
+                trim_configuration_count = Some(parse_trim_configuration_count(value)?);
+            }
             _ => return Err(usage_error().into()),
         }
         index += 2;
@@ -370,7 +426,39 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         } else {
             SampleFormat::F32
         },
+        validation_profile,
+        trim_configuration_count,
     })
+}
+
+fn parse_trim_configuration_count(value: &str) -> Result<NonZeroU8, io::Error> {
+    let count = value.parse::<u8>().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid OAMD trim configuration count {value}; expected 1..=255"),
+        )
+    })?;
+    NonZeroU8::new(count).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid OAMD trim configuration count 0; expected 1..=255",
+        )
+    })
+}
+
+fn parse_validation_profile(value: &str) -> Result<JocValidationProfile, io::Error> {
+    match value {
+        "etsi-strict" | "ETSI_STRICT" => Ok(JocValidationProfile::EtsiStrict),
+        "dolby-vendor-compat" | "DOLBY_VENDOR_COMPAT" => {
+            Ok(JocValidationProfile::DolbyVendorCompat)
+        }
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "unknown validation profile {value}; expected etsi-strict or dolby-vendor-compat"
+            ),
+        )),
+    }
 }
 
 fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
@@ -379,7 +467,7 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     let config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig {
-            trim_configuration_count: None,
+            trim_configuration_count: arguments.trim_configuration_count,
         },
     };
     let sink_output = arguments.output.clone();
@@ -388,9 +476,11 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
         eac3_decode::decode_internal_eac3_with_sink(
             stream,
             config,
+            arguments.validation_profile,
             &dither,
-            |frame_index, frame| {
-                write_debug(&sink_output, frame_index, frame)
+            |frame_index, metadata, frame| {
+                write_validation_debug(&sink_output, frame_index, metadata)
+                    .and_then(|()| write_debug(&sink_output, frame_index, frame))
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
         )?
@@ -404,8 +494,10 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             stream,
             &downmix,
             config,
-            |frame_index, frame| {
-                write_debug(&sink_output, frame_index, frame)
+            arguments.validation_profile,
+            |frame_index, metadata, frame| {
+                write_validation_debug(&sink_output, frame_index, metadata)
+                    .and_then(|()| write_debug(&sink_output, frame_index, frame))
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
         )?
@@ -568,6 +660,60 @@ fn write_debug(
         frame.join("reconstruction.txt"),
         format!("{:#?}\n", decoded.decoded),
     )?;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ValidationDeviationArtifact {
+    payload_id: u64,
+    field: &'static str,
+    actual: String,
+    expected_by_etsi: String,
+}
+
+#[derive(serde::Serialize)]
+struct ValidationArtifact {
+    profile: &'static str,
+    result: &'static str,
+    deviations: Vec<ValidationDeviationArtifact>,
+}
+
+fn write_validation_debug(
+    output: &Path,
+    frame_index: usize,
+    metadata: &openjoc_eac3::JocMetadataFrame,
+) -> Result<(), Box<dyn Error>> {
+    let frame = output.join(format!("debug/frame_{frame_index:03}"));
+    fs::create_dir_all(&frame)?;
+    let deviations = metadata
+        .deviations
+        .iter()
+        .map(|deviation| ValidationDeviationArtifact {
+            payload_id: deviation.payload_id,
+            field: deviation.field.as_str(),
+            actual: deviation.actual.to_string(),
+            expected_by_etsi: deviation.expected_by_etsi.to_string(),
+        })
+        .collect::<Vec<_>>();
+    let report = ValidationArtifact {
+        profile: metadata.validation_profile.as_str(),
+        result: metadata.validation_status.as_str(),
+        deviations,
+    };
+    fs::write(
+        frame.join("profile_validation.json"),
+        serde_json::to_vec_pretty(&report)?,
+    )?;
+    let mut text = format!("profile: {}\nresult: {}\n", report.profile, report.result);
+    for deviation in &report.deviations {
+        writeln!(
+            text,
+            "deviation: payload {} {}={} expected_by_etsi={}",
+            deviation.payload_id, deviation.field, deviation.actual, deviation.expected_by_etsi
+        )?;
+    }
+    fs::write(frame.join("profile_validation.txt"), text)?;
+    fs::write(frame.join("emdf.txt"), format!("{:#?}\n", metadata.emdf))?;
     Ok(())
 }
 

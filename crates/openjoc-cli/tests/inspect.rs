@@ -37,7 +37,7 @@ impl Bits {
     }
 }
 
-fn joc_emdf(oamd: &[u8], joc: &[u8]) -> Vec<u8> {
+fn joc_emdf_for_profile(oamd: &[u8], joc: &[u8], vendor_compat: bool) -> Vec<u8> {
     let mut container = Bits::default();
     container.push(0, 2);
     container.push(0, 3);
@@ -48,14 +48,20 @@ fn joc_emdf(oamd: &[u8], joc: &[u8]) -> Vec<u8> {
         container.push(1, 1);
         container.push(1, 2);
         container.push(0, 1);
-        container.push(1, 1);
-        container.push(0, 8);
+        container.push(u64::from(!vendor_compat), 1);
+        if !vendor_compat {
+            container.push(0, 8);
+        }
         container.push(0, 1);
-        container.push(1, 1);
-        container.push(0, 1);
-        container.push(0, 1);
-        container.push(0, 5);
-        container.push(0, 2);
+        if vendor_compat && id == 11 {
+            container.push(0, 1);
+        } else {
+            container.push(1, 1);
+            container.push(0, 1);
+            container.push(0, 1);
+            container.push(0, 5);
+            container.push(0, 2);
+        }
         container.push(u64::try_from(payload.len()).expect("payload length"), 8);
         container.push(0, 1);
         for byte in payload {
@@ -75,6 +81,10 @@ fn joc_emdf(oamd: &[u8], joc: &[u8]) -> Vec<u8> {
     );
     emdf.extend_from_slice(&container);
     emdf
+}
+
+fn joc_emdf(oamd: &[u8], joc: &[u8]) -> Vec<u8> {
+    joc_emdf_for_profile(oamd, joc, false)
 }
 
 fn joc_frame(emdf: &[u8], complexity: u8) -> Vec<u8> {
@@ -279,6 +289,44 @@ fn inspect_command_reports_timing_profile_payloads_and_complexity() {
 }
 
 #[test]
+fn inspect_distinguishes_normative_failure_from_vendor_compatibility() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-inspect-vendor-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("vendor-profile.ec3");
+    fs::write(
+        &input,
+        joc_frame(&joc_emdf_for_profile(&[0xa5], &[0x5a], true), 2),
+    )
+    .expect("write input");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["inspect", input.to_str().expect("input path")])
+        .output()
+        .expect("run openjoc");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let output = String::from_utf8(result.stdout).expect("UTF-8 output");
+    assert!(output.contains("profile: ETSI_STRICT"));
+    assert!(output.contains("result: failed"));
+    assert!(output.contains("payload 11 codecdatae=0 where ETSI requires 1"));
+    assert!(output.contains("profile: DOLBY_VENDOR_COMPAT"));
+    assert!(output.contains("result: accepted_with_deviation"));
+    assert!(output.contains("deviation: payload 14 codecdatae=0 expected_by_etsi=1"));
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
 fn inspect_command_reports_non_emdf_frame_end_data_without_rejecting_it() {
     let nonce = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -371,6 +419,85 @@ fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
         .expect("decode stem");
     assert_eq!(stem.sample_rate, 48_000);
     assert_eq!(stem.channels, vec![vec![0.0; 1536]]);
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-vendor-decode-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("vendor-profile.ec3");
+    let downmix = root.join("downmix.wav");
+    let strict_output = root.join("strict-output");
+    let compat_output = root.join("compat-output");
+    let oamd = inactive_oamd();
+    let joc = absent_joc();
+    fs::write(
+        &input,
+        joc_frame(&joc_emdf_for_profile(&oamd, &joc, true), 1),
+    )
+    .expect("write input");
+    fs::write(
+        &downmix,
+        encode_f64_channels(48_000, &vec![vec![1.0; 1536]; 5]).expect("downmix WAV"),
+    )
+    .expect("write downmix");
+
+    let strict = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--downmix",
+            downmix.to_str().expect("downmix path"),
+            "-o",
+            strict_output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run strict decode");
+    assert!(!strict.status.success());
+    assert!(String::from_utf8_lossy(&strict.stderr).contains("ETSI_STRICT validation failed"));
+
+    let compatible = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--downmix",
+            downmix.to_str().expect("downmix path"),
+            "--validation-profile",
+            "dolby-vendor-compat",
+            "-o",
+            compat_output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run compatible decode");
+    assert!(
+        compatible.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compatible.stderr)
+    );
+    let validation_path = compat_output.join("debug/frame_000/profile_validation.json");
+    let validation: serde_json::Value =
+        serde_json::from_slice(&fs::read(&validation_path).expect("validation report"))
+            .expect("validation JSON");
+    assert_eq!(validation["profile"], "DOLBY_VENDOR_COMPAT");
+    assert_eq!(validation["result"], "accepted_with_deviation");
+    assert_eq!(
+        validation["deviations"]
+            .as_array()
+            .expect("deviation array")
+            .len(),
+        7
+    );
+    assert!(compat_output.join("debug/frame_000/emdf.txt").is_file());
+    assert!(compat_output.join("scene.json").is_file());
 
     fs::remove_dir_all(&root).expect("remove test directory");
 }

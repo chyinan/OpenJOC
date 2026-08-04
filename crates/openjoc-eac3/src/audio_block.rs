@@ -85,7 +85,7 @@ pub struct AudioBlockCarrier {
 /// failed the Table 6.17/6.18 code-domain check. The walker still advances by
 /// the declared width so later `audblk` prefixes remain independently bounded;
 /// callers must treat the report as malformed rather than PCM-valid.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioBlockMantissaFailure {
     pub block_index: usize,
     pub element: MantissaElement,

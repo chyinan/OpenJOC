@@ -179,16 +179,176 @@ pub struct JocPayloadPair<'a> {
     pub joc: &'a [u8],
 }
 
-/// Applies every TS 103 420 table 55 and table 56 restriction.
+/// Explicit validation policy applied after bounded EMDF parsing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JocValidationProfile {
+    /// Published TS 103 420 tables 55 and 56 without interoperability exceptions.
+    EtsiStrict,
+    /// Narrow production-encoder signaling patterns with every ETSI deviation retained.
+    DolbyVendorCompat,
+}
+
+impl JocValidationProfile {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EtsiStrict => "ETSI_STRICT",
+            Self::DolbyVendorCompat => "DOLBY_VENDOR_COMPAT",
+        }
+    }
+}
+
+impl fmt::Display for JocValidationProfile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Successful validation outcome. Vendor validation reports normative input
+/// separately from input accepted only through a documented deviation set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JocValidationStatus {
+    NormativeCompliant,
+    AcceptedWithDeviation,
+}
+
+impl JocValidationStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NormativeCompliant => "normative_compliant",
+            Self::AcceptedWithDeviation => "accepted_with_deviation",
+        }
+    }
+}
+
+/// One TS 103 420 table 56 field retained in validation evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JocProfileField {
+    SampleOffset,
+    Duration,
+    GroupId,
+    CodecDataPresent,
+    DiscardUnknownPayload,
+    PayloadFrameAligned,
+    CreateDuplicate,
+    RemoveDuplicate,
+    Priority,
+    ProcessingAllowed,
+}
+
+impl JocProfileField {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SampleOffset => "smploffste",
+            Self::Duration => "duratione",
+            Self::GroupId => "groupid",
+            Self::CodecDataPresent => "codecdatae",
+            Self::DiscardUnknownPayload => "discard_unknown_payload",
+            Self::PayloadFrameAligned => "payload_frame_aligned",
+            Self::CreateDuplicate => "create_duplicate",
+            Self::RemoveDuplicate => "remove_duplicate",
+            Self::Priority => "priority",
+            Self::ProcessingAllowed => "proc_allowed",
+        }
+    }
+}
+
+impl fmt::Display for JocProfileField {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Typed actual/expected value used by profile evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JocProfileValue {
+    Absent,
+    Present,
+    Bool(bool),
+    Unsigned(u64),
+}
+
+impl fmt::Display for JocProfileValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Absent => formatter.write_str("absent"),
+            Self::Present => formatter.write_str("present"),
+            Self::Bool(value) => formatter.write_str(if *value { "1" } else { "0" }),
+            Self::Unsigned(value) => write!(formatter, "{value}"),
+        }
+    }
+}
+
+/// One observed field value that differs from the published ETSI profile.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JocProfileDeviation {
+    pub payload_id: u64,
+    pub field: JocProfileField,
+    pub actual: JocProfileValue,
+    pub expected_by_etsi: JocProfileValue,
+}
+
+/// Evidence returned when a selected validation profile rejects a parsed
+/// container. Parsing has already succeeded and no source fields are changed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JocProfileValidationFailure {
+    pub profile: JocValidationProfile,
+    pub oamd_payload_count: usize,
+    pub joc_payload_count: usize,
+    pub deviations: Vec<JocProfileDeviation>,
+}
+
+impl fmt::Display for JocProfileValidationFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} validation failed", self.profile)?;
+        if self.oamd_payload_count != 1 || self.joc_payload_count != 1 {
+            return write!(
+                formatter,
+                ": expected one OAMD payload and one JOC payload, found {} and {}",
+                self.oamd_payload_count, self.joc_payload_count
+            );
+        }
+        for (index, deviation) in self.deviations.iter().enumerate() {
+            formatter.write_str(if index == 0 { ": " } else { "; " })?;
+            write!(
+                formatter,
+                "payload {} {}={} where ETSI requires {}",
+                deviation.payload_id, deviation.field, deviation.actual, deviation.expected_by_etsi
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for JocProfileValidationFailure {}
+
+/// References into the original parsed container after an explicit profile
+/// accepts it. Configuration fields remain unchanged and deviations are
+/// carried alongside the payload bytes for reporting and decoder provenance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedJocProfile<'a> {
+    pub profile: JocValidationProfile,
+    pub status: JocValidationStatus,
+    pub oamd: &'a EmdfPayload,
+    pub joc: &'a EmdfPayload,
+    pub deviations: Vec<JocProfileDeviation>,
+}
+
+/// Validates a parsed EMDF container under one explicit policy.
 ///
-/// The otherwise omitted `smploffste` and `payload_frame_aligned` values are
-/// structurally implied by the presence of `create_duplicate`,
-/// `remove_duplicate`, `priority`, and `proc_allowed` in table 56.
+/// DolbyVendorCompat accepts the strict profile plus only the exact Logic
+/// Pro/Dolby signaling deviations currently evidenced by controlled and
+/// external fixtures. It never mutates or synthesizes configuration fields.
 ///
 /// # Errors
-/// Returns an error unless exactly one OAMD and one JOC payload are present,
-/// both have the prescribed configuration, and their group IDs match.
-pub fn validate_joc_profile(container: &EmdfContainer) -> Result<JocPayloadPair<'_>, EmdfError> {
+/// Returns complete payload-count and field-level evidence when the selected
+/// policy rejects the parsed representation.
+pub fn validate_joc_profile_for(
+    container: &EmdfContainer,
+    profile: JocValidationProfile,
+) -> Result<ValidatedJocProfile<'_>, JocProfileValidationFailure> {
     let oamd: Vec<_> = container
         .payloads
         .iter()
@@ -200,36 +360,227 @@ pub fn validate_joc_profile(container: &EmdfContainer) -> Result<JocPayloadPair<
         .filter(|payload| payload.id == JOC_PAYLOAD_ID)
         .collect();
     if oamd.len() != 1 || joc.len() != 1 {
-        return Err(EmdfError::JocProfilePayloadCount {
-            oamd: oamd.len(),
-            joc: joc.len(),
+        return Err(JocProfileValidationFailure {
+            profile,
+            oamd_payload_count: oamd.len(),
+            joc_payload_count: joc.len(),
+            deviations: Vec::new(),
         });
     }
     let oamd = oamd[0];
     let joc = joc[0];
-    if !is_joc_profile_config(&oamd.config)
-        || !is_joc_profile_config(&joc.config)
-        || oamd.config.group_id != joc.config.group_id
-    {
-        return Err(EmdfError::JocProfileConfiguration);
+    let mut deviations = profile_config_deviations(oamd);
+    deviations.extend(profile_config_deviations(joc));
+    if oamd.config.group_id != joc.config.group_id {
+        deviations.push(JocProfileDeviation {
+            payload_id: JOC_PAYLOAD_ID,
+            field: JocProfileField::GroupId,
+            actual: option_u64_value(joc.config.group_id),
+            expected_by_etsi: option_u64_value(oamd.config.group_id),
+        });
     }
-    Ok(JocPayloadPair {
-        oamd: &oamd.data,
-        joc: &joc.data,
+    let accepted = match profile {
+        JocValidationProfile::EtsiStrict => deviations.is_empty(),
+        JocValidationProfile::DolbyVendorCompat => {
+            deviations.iter().all(is_allowed_vendor_deviation)
+        }
+    };
+    if !accepted {
+        return Err(JocProfileValidationFailure {
+            profile,
+            oamd_payload_count: 1,
+            joc_payload_count: 1,
+            deviations,
+        });
+    }
+    let status = if deviations.is_empty() {
+        JocValidationStatus::NormativeCompliant
+    } else {
+        JocValidationStatus::AcceptedWithDeviation
+    };
+    Ok(ValidatedJocProfile {
+        profile,
+        status,
+        oamd,
+        joc,
+        deviations,
     })
 }
 
-fn is_joc_profile_config(config: &EmdfPayloadConfig) -> bool {
-    config.sample_offset.is_none()
-        && config.duration.is_none()
-        && config.group_id.is_some()
-        && config.codec_data_present
-        && !config.discard_unknown_payload
-        && config.payload_frame_aligned == Some(true)
-        && config.create_duplicate == Some(false)
-        && config.remove_duplicate == Some(false)
-        && config.priority == Some(0)
-        && config.processing_allowed == Some(0)
+/// Applies every TS 103 420 table 55 and table 56 restriction.
+///
+/// The otherwise omitted `smploffste` and `payload_frame_aligned` values are
+/// structurally implied by the presence of `create_duplicate`,
+/// `remove_duplicate`, `priority`, and `proc_allowed` in table 56.
+///
+/// # Errors
+/// Returns an error unless exactly one OAMD and one JOC payload are present,
+/// both have the prescribed configuration, and their group IDs match.
+pub fn validate_joc_profile(container: &EmdfContainer) -> Result<JocPayloadPair<'_>, EmdfError> {
+    let validated = validate_joc_profile_for(container, JocValidationProfile::EtsiStrict).map_err(
+        |failure| {
+            if failure.oamd_payload_count != 1 || failure.joc_payload_count != 1 {
+                EmdfError::JocProfilePayloadCount {
+                    oamd: failure.oamd_payload_count,
+                    joc: failure.joc_payload_count,
+                }
+            } else {
+                EmdfError::JocProfileConfiguration
+            }
+        },
+    )?;
+    Ok(JocPayloadPair {
+        oamd: &validated.oamd.data,
+        joc: &validated.joc.data,
+    })
+}
+
+fn profile_config_deviations(payload: &EmdfPayload) -> Vec<JocProfileDeviation> {
+    let config = &payload.config;
+    let mut deviations = Vec::new();
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::SampleOffset,
+        option_u16_value(config.sample_offset),
+        JocProfileValue::Absent,
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::Duration,
+        option_u64_value(config.duration),
+        JocProfileValue::Absent,
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::GroupId,
+        option_u64_value(config.group_id),
+        JocProfileValue::Present,
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::CodecDataPresent,
+        JocProfileValue::Bool(config.codec_data_present),
+        JocProfileValue::Bool(true),
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::DiscardUnknownPayload,
+        JocProfileValue::Bool(config.discard_unknown_payload),
+        JocProfileValue::Bool(false),
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::PayloadFrameAligned,
+        option_bool_value(config.payload_frame_aligned),
+        JocProfileValue::Bool(true),
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::CreateDuplicate,
+        option_bool_value(config.create_duplicate),
+        JocProfileValue::Bool(false),
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::RemoveDuplicate,
+        option_bool_value(config.remove_duplicate),
+        JocProfileValue::Bool(false),
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::Priority,
+        option_u8_value(config.priority),
+        JocProfileValue::Unsigned(0),
+    );
+    push_deviation(
+        &mut deviations,
+        payload.id,
+        JocProfileField::ProcessingAllowed,
+        option_u8_value(config.processing_allowed),
+        JocProfileValue::Unsigned(0),
+    );
+    deviations
+}
+
+fn push_deviation(
+    deviations: &mut Vec<JocProfileDeviation>,
+    payload_id: u64,
+    field: JocProfileField,
+    actual: JocProfileValue,
+    expected_by_etsi: JocProfileValue,
+) {
+    let matches = actual == expected_by_etsi
+        || matches!(expected_by_etsi, JocProfileValue::Present)
+            && !matches!(actual, JocProfileValue::Absent);
+    if !matches {
+        deviations.push(JocProfileDeviation {
+            payload_id,
+            field,
+            actual,
+            expected_by_etsi,
+        });
+    }
+}
+
+fn option_bool_value(value: Option<bool>) -> JocProfileValue {
+    value.map_or(JocProfileValue::Absent, JocProfileValue::Bool)
+}
+
+fn option_u8_value(value: Option<u8>) -> JocProfileValue {
+    value.map_or(JocProfileValue::Absent, |value| {
+        JocProfileValue::Unsigned(u64::from(value))
+    })
+}
+
+fn option_u16_value(value: Option<u16>) -> JocProfileValue {
+    value.map_or(JocProfileValue::Absent, |value| {
+        JocProfileValue::Unsigned(u64::from(value))
+    })
+}
+
+fn option_u64_value(value: Option<u64>) -> JocProfileValue {
+    value.map_or(JocProfileValue::Absent, JocProfileValue::Unsigned)
+}
+
+fn is_allowed_vendor_deviation(deviation: &JocProfileDeviation) -> bool {
+    matches!(
+        (
+            deviation.payload_id,
+            deviation.field,
+            deviation.actual,
+            deviation.expected_by_etsi,
+        ),
+        (
+            OAMD_PAYLOAD_ID | JOC_PAYLOAD_ID,
+            JocProfileField::CodecDataPresent,
+            JocProfileValue::Bool(false),
+            JocProfileValue::Bool(true),
+        ) | (
+            OAMD_PAYLOAD_ID,
+            JocProfileField::PayloadFrameAligned,
+            JocProfileValue::Bool(false),
+            JocProfileValue::Bool(true),
+        ) | (
+            OAMD_PAYLOAD_ID,
+            JocProfileField::CreateDuplicate | JocProfileField::RemoveDuplicate,
+            JocProfileValue::Absent,
+            JocProfileValue::Bool(false),
+        ) | (
+            OAMD_PAYLOAD_ID,
+            JocProfileField::Priority | JocProfileField::ProcessingAllowed,
+            JocProfileValue::Absent,
+            JocProfileValue::Unsigned(0),
+        )
+    )
 }
 
 /// Decodes clause H.2.1.2.1 using an explicit resource bound.

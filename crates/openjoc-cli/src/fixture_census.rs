@@ -4,11 +4,14 @@
 
 use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_eac3::{
-    Eac3Error, classify_skip_field_emdf, extract_auxdata, extract_joc_access_unit,
-    group_access_units, index_syncframes, inspect_audio_block_carriers, parse_bsi,
-    parse_joc_addbsi,
+    Eac3Error, classify_skip_field_emdf, extract_auxdata, group_access_units, index_syncframes,
+    inspect_audio_block_carriers, parse_bsi, parse_joc_access_unit, parse_joc_addbsi,
+    validate_joc_access_unit,
 };
-use openjoc_emdf::{CarrierClassification, EmdfError};
+use openjoc_emdf::{
+    CarrierClassification, EmdfError, JocProfileDeviation, JocValidationProfile,
+    validate_joc_profile_for,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -26,9 +29,35 @@ pub struct FixtureDescriptor {
     pub sha256: Option<String>,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub expected_profiles: Option<ExpectedProfileResults>,
 }
 
 pub type FixtureManifest = Vec<FixtureDescriptor>;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileExpectation {
+    NormativeCompliant,
+    AcceptedWithDeviation,
+    Failed,
+}
+
+impl ProfileExpectation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NormativeCompliant => "normative_compliant",
+            Self::AcceptedWithDeviation => "accepted_with_deviation",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExpectedProfileResults {
+    pub etsi_strict: ProfileExpectation,
+    pub dolby_vendor_compat: ProfileExpectation,
+}
 
 #[derive(Debug)]
 pub enum FixtureManifestError {
@@ -54,6 +83,12 @@ pub enum FixtureManifestError {
         label: String,
         expected: String,
         actual: String,
+    },
+    ProfileExpectationMismatch {
+        label: String,
+        profile: &'static str,
+        expected: &'static str,
+        actual: &'static str,
     },
     UnsupportedInput {
         label: String,
@@ -118,6 +153,15 @@ impl fmt::Display for FixtureManifestError {
             } => write!(
                 formatter,
                 "real-fixture {label} SHA-256 mismatch: expected {expected}, got {actual}"
+            ),
+            Self::ProfileExpectationMismatch {
+                label,
+                profile,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "real-fixture {label} {profile} result mismatch: expected {expected}, got {actual}"
             ),
             Self::UnsupportedInput { label, detail } => {
                 write!(
@@ -208,6 +252,7 @@ pub struct CensusReport {
 pub struct FixtureReport {
     pub label: String,
     pub note: Option<String>,
+    pub expected_profiles: Option<ExpectedProfileResults>,
     pub source_sha256: String,
     pub source_bytes: usize,
     pub input_media: String,
@@ -247,9 +292,16 @@ pub struct FixtureReport {
     pub valid_joc_profile_count: usize,
     pub complete_joc_profile_count: usize,
     pub invalid_or_incomplete_profile_count: usize,
+    pub etsi_strict_accepted_count: usize,
+    pub etsi_strict_failed_count: usize,
+    pub dolby_vendor_compat_accepted_count: usize,
+    pub dolby_vendor_compat_accepted_with_deviation_count: usize,
+    pub dolby_vendor_compat_failed_count: usize,
+    pub complete_dolby_vendor_compat_profile_count: usize,
     pub malformed_or_truncated_carrier_count: usize,
     pub first_malformed_candidate: Option<CarrierAttempt>,
     pub first_complete_profile: Option<CarrierAttempt>,
+    pub first_dolby_vendor_compat_profile: Option<CarrierAttempt>,
     pub first_failure: Option<FirstFailure>,
     pub decoder_first_failure: Option<FirstFailure>,
     pub carrier_state: CarrierState,
@@ -280,7 +332,24 @@ pub struct CarrierAttempt {
     pub payload_sizes: Vec<usize>,
     pub payload_group_ids: Vec<Option<u64>>,
     pub payload_configs: Vec<PayloadConfigReport>,
+    pub profile_validations: Vec<ProfileValidationReport>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProfileValidationReport {
+    pub profile: String,
+    pub result: String,
+    pub deviations: Vec<ProfileDeviationReport>,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ProfileDeviationReport {
+    pub payload_id: u64,
+    pub field: String,
+    pub actual: String,
+    pub expected_by_etsi: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -506,11 +575,12 @@ fn census_fixture(
         },
     })?;
     let demuxed_sha256 = sha256(&media.bytes);
-    let frames = index_syncframes(&media.bytes).map_err(|error| census_error(entry, error))?;
-    let units = group_access_units(&frames).map_err(|error| census_error(entry, error))?;
+    let frames = index_syncframes(&media.bytes).map_err(|error| census_error(entry, &error))?;
+    let units = group_access_units(&frames).map_err(|error| census_error(entry, &error))?;
     let mut report = FixtureReport {
         label: entry.label.clone(),
         note: entry.note.clone(),
+        expected_profiles: entry.expected_profiles,
         source_sha256,
         source_bytes: source.len(),
         input_media: media_kind_name(media.kind).to_owned(),
@@ -550,9 +620,16 @@ fn census_fixture(
         valid_joc_profile_count: 0,
         complete_joc_profile_count: 0,
         invalid_or_incomplete_profile_count: 0,
+        etsi_strict_accepted_count: 0,
+        etsi_strict_failed_count: 0,
+        dolby_vendor_compat_accepted_count: 0,
+        dolby_vendor_compat_accepted_with_deviation_count: 0,
+        dolby_vendor_compat_failed_count: 0,
+        complete_dolby_vendor_compat_profile_count: 0,
         malformed_or_truncated_carrier_count: 0,
         first_malformed_candidate: None,
         first_complete_profile: None,
+        first_dolby_vendor_compat_profile: None,
         first_failure: None,
         decoder_first_failure: None,
         carrier_state: CarrierState::JocExtensionNotSignaled,
@@ -569,7 +646,7 @@ fn census_fixture(
         let end = unit.first_frame + unit.frame_count;
         for slot in frame_units
             .get_mut(unit.first_frame..end)
-            .ok_or_else(|| census_error(entry, Eac3Error::InvalidAccessUnitRange))?
+            .ok_or_else(|| census_error(entry, &Eac3Error::InvalidAccessUnitRange))?
         {
             *slot = unit_index;
         }
@@ -577,7 +654,7 @@ fn census_fixture(
     for (frame_index, entry_frame) in frames.iter().enumerate() {
         let unit_index = frame_units[frame_index];
         let frame =
-            frame_bytes(&media.bytes, *entry_frame).map_err(|error| census_error(entry, error))?;
+            frame_bytes(&media.bytes, *entry_frame).map_err(|error| census_error(entry, &error))?;
         if let Err(error) = inspect_bsi(&mut report, frame) {
             report.malformed_or_truncated_carrier_count += 1;
             record_failure(
@@ -602,24 +679,20 @@ fn census_fixture(
     }
     if let Some(first) = frames.first() {
         let frame =
-            frame_bytes(&media.bytes, *first).map_err(|error| census_error(entry, error))?;
+            frame_bytes(&media.bytes, *first).map_err(|error| census_error(entry, &error))?;
         diagnose_first_complete_audio_block(&mut report, *first, frame);
     }
-    if report.valid_joc_profile_count != 0 {
+    if report.etsi_strict_accepted_count != 0 || report.dolby_vendor_compat_accepted_count != 0 {
         for (unit_index, unit) in units.iter().enumerate() {
-            match extract_joc_access_unit(&media.bytes, &frames, *unit) {
-                Ok(Some(metadata)) => {
-                    report.complete_joc_profile_count += 1;
-                    if report.first_complete_profile.is_none() {
-                        report.first_complete_profile = report
-                            .emdf_attempts
-                            .iter()
-                            .find(|attempt| {
-                                attempt.syncframe == metadata.carrier_frame
-                                    && attempt.payload_ids.contains(&11)
-                                    && attempt.payload_ids.contains(&14)
-                            })
-                            .cloned();
+            match parse_joc_access_unit(&media.bytes, &frames, *unit) {
+                Ok(Some(parsed)) => {
+                    if validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict).is_ok() {
+                        report.complete_joc_profile_count += 1;
+                    }
+                    if validate_joc_access_unit(&parsed, JocValidationProfile::DolbyVendorCompat)
+                        .is_ok()
+                    {
+                        report.complete_dolby_vendor_compat_profile_count += 1;
                     }
                 }
                 Ok(None) => {}
@@ -638,7 +711,60 @@ fn census_fixture(
         }
     }
     report.carrier_state = determine_state(&report);
+    validate_profile_expectations(entry, &report)?;
     Ok(report)
+}
+
+fn profile_outcome(accepted: usize, accepted_with_deviation: usize, failed: usize) -> &'static str {
+    if accepted == 0 && failed == 0 {
+        "not_observed"
+    } else if failed != 0 && accepted != 0 {
+        "mixed"
+    } else if failed != 0 {
+        "failed"
+    } else if accepted_with_deviation == accepted {
+        "accepted_with_deviation"
+    } else if accepted_with_deviation == 0 {
+        "normative_compliant"
+    } else {
+        "mixed"
+    }
+}
+
+fn validate_profile_expectations(
+    descriptor: &FixtureDescriptor,
+    report: &FixtureReport,
+) -> Result<(), FixtureManifestError> {
+    let Some(expected) = descriptor.expected_profiles else {
+        return Ok(());
+    };
+    let strict_actual = profile_outcome(
+        report.etsi_strict_accepted_count,
+        0,
+        report.etsi_strict_failed_count,
+    );
+    if strict_actual != expected.etsi_strict.as_str() {
+        return Err(FixtureManifestError::ProfileExpectationMismatch {
+            label: descriptor.label.clone(),
+            profile: "ETSI_STRICT",
+            expected: expected.etsi_strict.as_str(),
+            actual: strict_actual,
+        });
+    }
+    let vendor_actual = profile_outcome(
+        report.dolby_vendor_compat_accepted_count,
+        report.dolby_vendor_compat_accepted_with_deviation_count,
+        report.dolby_vendor_compat_failed_count,
+    );
+    if vendor_actual != expected.dolby_vendor_compat.as_str() {
+        return Err(FixtureManifestError::ProfileExpectationMismatch {
+            label: descriptor.label.clone(),
+            profile: "DOLBY_VENDOR_COMPAT",
+            expected: expected.dolby_vendor_compat.as_str(),
+            actual: vendor_actual,
+        });
+    }
+    Ok(())
 }
 
 fn diagnose_first_complete_audio_block(
@@ -648,7 +774,7 @@ fn diagnose_first_complete_audio_block(
 ) {
     let dither = vec![0.0_f64; 32_768];
     if let Err(error) = openjoc_eac3::decode_first_audio_block(frame, &dither) {
-        let context = mantissa_failure_context(error);
+        let context = mantissa_failure_context(&error);
         let bit_offset = context
             .as_ref()
             .map(|value| value.bit_offset_bits)
@@ -680,7 +806,7 @@ fn diagnose_first_complete_audio_block(
     }
 }
 
-fn mantissa_failure_context(error: Eac3Error) -> Option<MantissaFailureContext> {
+fn mantissa_failure_context(error: &Eac3Error) -> Option<MantissaFailureContext> {
     let Eac3Error::InvalidMantissaDiagnostic {
         element,
         channel,
@@ -716,35 +842,35 @@ fn mantissa_failure_context(error: Eac3Error) -> Option<MantissaFailureContext> 
     };
     Some(MantissaFailureContext {
         element: format!("{element:?}"),
-        channel,
-        block,
-        bap,
-        raw_code: actual,
-        bit_width,
-        bit_offset_bits,
-        grouped,
-        spx_active,
-        coupling_active,
-        enhanced_coupling_active,
-        rematrix_active,
-        aht_active,
-        bin_index,
-        exponent,
-        psd,
-        mask,
-        quantizer_levels,
-        quantizer_group_size,
-        quantizer_group_bits,
-        quantizer_symmetric,
-        group_position,
-        dither,
-        block_switch,
-        exponent_strategy,
-        exponent_reused,
-        block_start_offset_bits,
-        element_start_offset_bits,
-        block_relative_bit_offset: bit_offset_bits.saturating_sub(block_start_offset_bits),
-        element_relative_bit_offset: bit_offset_bits.saturating_sub(element_start_offset_bits),
+        channel: *channel,
+        block: *block,
+        bap: *bap,
+        raw_code: *actual,
+        bit_width: *bit_width,
+        bit_offset_bits: *bit_offset_bits,
+        grouped: *grouped,
+        spx_active: *spx_active,
+        coupling_active: *coupling_active,
+        enhanced_coupling_active: *enhanced_coupling_active,
+        rematrix_active: *rematrix_active,
+        aht_active: *aht_active,
+        bin_index: *bin_index,
+        exponent: *exponent,
+        psd: *psd,
+        mask: *mask,
+        quantizer_levels: *quantizer_levels,
+        quantizer_group_size: *quantizer_group_size,
+        quantizer_group_bits: *quantizer_group_bits,
+        quantizer_symmetric: *quantizer_symmetric,
+        group_position: *group_position,
+        dither: *dither,
+        block_switch: *block_switch,
+        exponent_strategy: *exponent_strategy,
+        exponent_reused: *exponent_reused,
+        block_start_offset_bits: *block_start_offset_bits,
+        element_start_offset_bits: *element_start_offset_bits,
+        block_relative_bit_offset: bit_offset_bits.saturating_sub(*block_start_offset_bits),
+        element_relative_bit_offset: bit_offset_bits.saturating_sub(*element_start_offset_bits),
     })
 }
 
@@ -809,6 +935,7 @@ fn inspect_frame_end_carrier(
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
                         payload_configs: Vec::new(),
+                        profile_validations: Vec::new(),
                         error: None,
                     });
                 }
@@ -830,16 +957,27 @@ fn inspect_frame_end_carrier(
                     report.payload_id_14_count += usize::from(has_joc);
                     report.payload_id_11_located |= has_oamd;
                     report.payload_id_14_located |= has_joc;
-                    if has_oamd && has_joc {
-                        if openjoc_emdf::validate_joc_profile(&parsed.container).is_ok() {
-                            report.valid_joc_profile_count += 1;
-                        } else {
-                            report.invalid_or_incomplete_profile_count += 1;
-                        }
-                    } else {
-                        report.invalid_or_incomplete_profile_count += 1;
+                    let profile_validations = profile_validation_reports(&parsed);
+                    if has_oamd || has_joc {
+                        record_profile_counts(report, &profile_validations);
                     }
-                    report.emdf_attempts.push(CarrierAttempt {
+                    let strict = validation_result(&profile_validations, "ETSI_STRICT");
+                    let vendor = validation_result(&profile_validations, "DOLBY_VENDOR_COMPAT");
+                    let result =
+                        if strict.is_some_and(|value| value.result == "normative_compliant") {
+                            "parsed_normative_profile"
+                        } else if vendor.is_some_and(|value| {
+                            value.result == "accepted_with_deviation"
+                                || value.result == "normative_compliant"
+                        }) {
+                            "parsed_vendor_compatible_profile"
+                        } else if has_oamd || has_joc {
+                            "parsed_incomplete_profile"
+                        } else {
+                            "parsed_non_profile"
+                        };
+                    let error = strict.and_then(|value| value.reason.clone());
+                    let attempt = CarrierAttempt {
                         location: "frame_end_auxdata".to_owned(),
                         access_unit,
                         syncframe: frame_index,
@@ -848,13 +986,26 @@ fn inspect_frame_end_carrier(
                         frame_relative_start_bit,
                         start_bit,
                         length_bits,
-                        result: "parsed".to_owned(),
+                        result: result.to_owned(),
                         payload_ids,
                         payload_sizes,
                         payload_group_ids,
                         payload_configs,
-                        error: None,
-                    });
+                        profile_validations,
+                        error,
+                    };
+                    if result == "parsed_normative_profile"
+                        && report.first_complete_profile.is_none()
+                    {
+                        report.first_complete_profile = Some(attempt.clone());
+                    }
+                    if (result == "parsed_normative_profile"
+                        || result == "parsed_vendor_compatible_profile")
+                        && report.first_dolby_vendor_compat_profile.is_none()
+                    {
+                        report.first_dolby_vendor_compat_profile = Some(attempt.clone());
+                    }
+                    report.emdf_attempts.push(attempt);
                 }
                 Ok(CarrierClassification::Malformed(error)) => {
                     report.malformed_or_truncated_carrier_count += 1;
@@ -872,6 +1023,7 @@ fn inspect_frame_end_carrier(
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
                         payload_configs: Vec::new(),
+                        profile_validations: Vec::new(),
                         error: Some(error.to_string()),
                     });
                     record_failure(
@@ -906,6 +1058,7 @@ fn inspect_frame_end_carrier(
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
                         payload_configs: Vec::new(),
+                        profile_validations: Vec::new(),
                         error: Some(error.clone()),
                     });
                     record_failure(
@@ -934,6 +1087,7 @@ fn inspect_frame_end_carrier(
                         payload_sizes: Vec::new(),
                         payload_group_ids: Vec::new(),
                         payload_configs: Vec::new(),
+                        profile_validations: Vec::new(),
                         error: Some(error.to_string()),
                     });
                     record_failure(
@@ -1084,6 +1238,7 @@ fn inspect_skip_field_carrier(
         payload_sizes: Vec::new(),
         payload_group_ids: Vec::new(),
         payload_configs: Vec::new(),
+        profile_validations: Vec::new(),
         error: None,
     };
     match classify_skip_field_emdf(skip) {
@@ -1098,6 +1253,7 @@ fn inspect_skip_field_carrier(
             attempt.payload_sizes = payload_sizes;
             attempt.payload_group_ids = payload_group_ids;
             attempt.payload_configs = payload_config_inventory(&parsed);
+            attempt.profile_validations = profile_validation_reports(&parsed);
             for id in &payload_ids {
                 *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
                 *report
@@ -1111,21 +1267,30 @@ fn inspect_skip_field_carrier(
             report.payload_id_14_count += usize::from(has_joc);
             report.payload_id_11_located |= has_oamd;
             report.payload_id_14_located |= has_joc;
-            if has_oamd && has_joc {
-                if let Err(error) = openjoc_emdf::validate_joc_profile(&parsed.container) {
-                    report.invalid_or_incomplete_profile_count += 1;
-                    "parsed_incomplete_profile".clone_into(&mut attempt.result);
-                    attempt.error = Some(error.to_string());
-                } else {
-                    report.valid_joc_profile_count += 1;
-                    "parsed_complete_profile_container".clone_into(&mut attempt.result);
-                    if report.first_complete_profile.is_none() {
-                        report.first_complete_profile = Some(attempt.clone());
-                    }
+            if has_oamd || has_joc {
+                record_profile_counts(report, &attempt.profile_validations);
+            }
+            let strict = validation_result(&attempt.profile_validations, "ETSI_STRICT");
+            let vendor = validation_result(&attempt.profile_validations, "DOLBY_VENDOR_COMPAT");
+            if strict.is_some_and(|value| value.result == "normative_compliant") {
+                "parsed_normative_profile".clone_into(&mut attempt.result);
+                if report.first_complete_profile.is_none() {
+                    report.first_complete_profile = Some(attempt.clone());
+                }
+                if report.first_dolby_vendor_compat_profile.is_none() {
+                    report.first_dolby_vendor_compat_profile = Some(attempt.clone());
+                }
+            } else if vendor.is_some_and(|value| {
+                value.result == "accepted_with_deviation" || value.result == "normative_compliant"
+            }) {
+                "parsed_vendor_compatible_profile".clone_into(&mut attempt.result);
+                attempt.error = strict.and_then(|value| value.reason.clone());
+                if report.first_dolby_vendor_compat_profile.is_none() {
+                    report.first_dolby_vendor_compat_profile = Some(attempt.clone());
                 }
             } else if has_oamd || has_joc {
-                report.invalid_or_incomplete_profile_count += 1;
                 "parsed_incomplete_profile".clone_into(&mut attempt.result);
+                attempt.error = strict.and_then(|value| value.reason.clone());
             } else {
                 "parsed_non_profile".clone_into(&mut attempt.result);
             }
@@ -1205,6 +1370,78 @@ fn payload_config_inventory(parsed: &openjoc_emdf::ParsedEmdf) -> Vec<PayloadCon
             processing_allowed: payload.config.processing_allowed,
         })
         .collect()
+}
+
+fn profile_validation_reports(parsed: &openjoc_emdf::ParsedEmdf) -> Vec<ProfileValidationReport> {
+    [
+        JocValidationProfile::EtsiStrict,
+        JocValidationProfile::DolbyVendorCompat,
+    ]
+    .into_iter()
+    .map(
+        |profile| match validate_joc_profile_for(&parsed.container, profile) {
+            Ok(validated) => ProfileValidationReport {
+                profile: profile.as_str().to_owned(),
+                result: validated.status.as_str().to_owned(),
+                deviations: deviation_reports(&validated.deviations),
+                reason: None,
+            },
+            Err(failure) => ProfileValidationReport {
+                profile: profile.as_str().to_owned(),
+                result: "failed".to_owned(),
+                deviations: deviation_reports(&failure.deviations),
+                reason: Some(failure.to_string()),
+            },
+        },
+    )
+    .collect()
+}
+
+fn deviation_reports(deviations: &[JocProfileDeviation]) -> Vec<ProfileDeviationReport> {
+    deviations
+        .iter()
+        .map(|deviation| ProfileDeviationReport {
+            payload_id: deviation.payload_id,
+            field: deviation.field.as_str().to_owned(),
+            actual: deviation.actual.to_string(),
+            expected_by_etsi: deviation.expected_by_etsi.to_string(),
+        })
+        .collect()
+}
+
+fn record_profile_counts(report: &mut FixtureReport, validations: &[ProfileValidationReport]) {
+    for validation in validations {
+        match (validation.profile.as_str(), validation.result.as_str()) {
+            ("ETSI_STRICT", "normative_compliant") => {
+                report.etsi_strict_accepted_count += 1;
+                report.valid_joc_profile_count += 1;
+            }
+            ("ETSI_STRICT", "failed") => {
+                report.etsi_strict_failed_count += 1;
+                report.invalid_or_incomplete_profile_count += 1;
+            }
+            ("DOLBY_VENDOR_COMPAT", "normative_compliant") => {
+                report.dolby_vendor_compat_accepted_count += 1;
+            }
+            ("DOLBY_VENDOR_COMPAT", "accepted_with_deviation") => {
+                report.dolby_vendor_compat_accepted_count += 1;
+                report.dolby_vendor_compat_accepted_with_deviation_count += 1;
+            }
+            ("DOLBY_VENDOR_COMPAT", "failed") => {
+                report.dolby_vendor_compat_failed_count += 1;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validation_result<'a>(
+    validations: &'a [ProfileValidationReport],
+    profile: &str,
+) -> Option<&'a ProfileValidationReport> {
+    validations
+        .iter()
+        .find(|validation| validation.profile == profile)
 }
 
 fn record_skip_failure(report: &mut FixtureReport, attempt: &CarrierAttempt) {
@@ -1295,7 +1532,7 @@ fn frame_bytes(
         })
 }
 
-fn census_error(entry: &FixtureDescriptor, error: Eac3Error) -> FixtureManifestError {
+fn census_error(entry: &FixtureDescriptor, error: &Eac3Error) -> FixtureManifestError {
     FixtureManifestError::Container {
         label: entry.label.clone(),
         detail: error.to_string(),
@@ -1424,7 +1661,7 @@ fn render_text_report(report: &CensusReport) -> String {
     let mut text = String::new();
     text.push_str("comparison:\n");
     text.push_str(
-        "  label | syncframes/access-units | complexity | auxdatae present/absent | skip observed/examined/unresolved | skip EMDF non/valid/malformed/unsupported | payload 11/14 | state\n",
+        "  label | syncframes/access-units | complexity | auxdatae present/absent | skip observed/examined/unresolved | skip EMDF non/valid/malformed/unsupported | payload 11/14 | ETSI accepted/failed | vendor accepted(with-deviation)/failed | state\n",
     );
     for fixture in &report.fixtures {
         let complexity = fixture
@@ -1435,7 +1672,7 @@ fn render_text_report(report: &CensusReport) -> String {
             .join(",");
         let _ = writeln!(
             text,
-            "  {} | {}/{} | {} | {}/{} | {}/{}/{} | {}/{}/{}/{} | {}/{} | {}",
+            "  {} | {}/{} | {} | {}/{} | {}/{}/{} | {}/{}/{}/{} | {}/{} | {}/{} | {}({})/{} | {}",
             fixture.label,
             fixture.syncframe_count,
             fixture.access_unit_count,
@@ -1455,6 +1692,11 @@ fn render_text_report(report: &CensusReport) -> String {
             fixture.skip_field_unsupported_emdf_count,
             fixture.payload_id_11_located,
             fixture.payload_id_14_located,
+            fixture.etsi_strict_accepted_count,
+            fixture.etsi_strict_failed_count,
+            fixture.dolby_vendor_compat_accepted_count,
+            fixture.dolby_vendor_compat_accepted_with_deviation_count,
+            fixture.dolby_vendor_compat_failed_count,
             fixture.carrier_state.status_name(),
         );
     }
@@ -1523,11 +1765,32 @@ fn render_text_report(report: &CensusReport) -> String {
         );
         let _ = writeln!(
             text,
-            "  payload IDs 11/14 count: {}/{}; complete access-unit profiles: {}",
-            fixture.payload_id_11_count,
-            fixture.payload_id_14_count,
+            "  payload IDs 11/14 count: {}/{}",
+            fixture.payload_id_11_count, fixture.payload_id_14_count,
+        );
+        let _ = writeln!(
+            text,
+            "  ETSI_STRICT accepted/failed/complete-access-units: {}/{}/{}",
+            fixture.etsi_strict_accepted_count,
+            fixture.etsi_strict_failed_count,
             fixture.complete_joc_profile_count,
         );
+        let _ = writeln!(
+            text,
+            "  DOLBY_VENDOR_COMPAT accepted/accepted-with-deviation/failed/complete-access-units: {}/{}/{}/{}",
+            fixture.dolby_vendor_compat_accepted_count,
+            fixture.dolby_vendor_compat_accepted_with_deviation_count,
+            fixture.dolby_vendor_compat_failed_count,
+            fixture.complete_dolby_vendor_compat_profile_count,
+        );
+        if let Some(expected) = fixture.expected_profiles {
+            let _ = writeln!(
+                text,
+                "  expected profile results: ETSI_STRICT={} DOLBY_VENDOR_COMPAT={}",
+                expected.etsi_strict.as_str(),
+                expected.dolby_vendor_compat.as_str(),
+            );
+        }
         if let Some(attempt) = fixture
             .emdf_attempts
             .iter()
@@ -1550,6 +1813,23 @@ fn render_text_report(report: &CensusReport) -> String {
                 "  first parsed carrier payload configs: {:?}",
                 attempt.payload_configs,
             );
+            for validation in &attempt.profile_validations {
+                let _ = writeln!(
+                    text,
+                    "  profile {}: result={} reason={:?}",
+                    validation.profile, validation.result, validation.reason,
+                );
+                for deviation in &validation.deviations {
+                    let _ = writeln!(
+                        text,
+                        "    deviation: payload {} {}={} expected_by_etsi={}",
+                        deviation.payload_id,
+                        deviation.field,
+                        deviation.actual,
+                        deviation.expected_by_etsi,
+                    );
+                }
+            }
         }
         if let Some(failure) = &fixture.first_failure {
             let _ = writeln!(
@@ -1630,8 +1910,9 @@ fn render_text_report(report: &CensusReport) -> String {
 mod tests {
     use super::{
         CarrierAttempt, FixtureManifest, FixtureManifestError, MantissaFailureContext,
-        mantissa_failure_context, parse_manifest, payload_config_inventory, payload_inventory,
-        report_status_order, run_census,
+        ProfileExpectation, mantissa_failure_context, parse_manifest, payload_config_inventory,
+        payload_inventory, profile_outcome, profile_validation_reports, report_status_order,
+        run_census,
     };
     use openjoc_eac3::{Eac3Error, MantissaElement};
     use openjoc_emdf::{EmdfContainer, EmdfPayload, EmdfPayloadConfig, EmdfProtection, ParsedEmdf};
@@ -1673,6 +1954,36 @@ mod tests {
         assert_eq!(manifest.len(), 2);
         assert_eq!(manifest[0].label, "b");
         assert_eq!(manifest[1].note.as_deref(), Some("first"));
+    }
+
+    #[test]
+    fn parses_profile_expectations_for_private_logic_and_future_dee_fixtures() {
+        let manifest = parse_manifest(
+            br#"[{
+                "label":"logic",
+                "path":"logic.ec3",
+                "expected_profiles":{
+                    "etsi_strict":"failed",
+                    "dolby_vendor_compat":"accepted_with_deviation"
+                }
+            }]"#,
+        )
+        .expect("manifest should parse");
+        let expected = manifest[0].expected_profiles.expect("profile expectations");
+        assert_eq!(expected.etsi_strict, ProfileExpectation::Failed);
+        assert_eq!(
+            expected.dolby_vendor_compat,
+            ProfileExpectation::AcceptedWithDeviation
+        );
+    }
+
+    #[test]
+    fn aggregate_profile_outcomes_do_not_hide_mixed_or_absent_results() {
+        assert_eq!(profile_outcome(126, 0, 0), "normative_compliant");
+        assert_eq!(profile_outcome(126, 126, 0), "accepted_with_deviation");
+        assert_eq!(profile_outcome(0, 0, 126), "failed");
+        assert_eq!(profile_outcome(1, 1, 1), "mixed");
+        assert_eq!(profile_outcome(0, 0, 0), "not_observed");
     }
 
     #[test]
@@ -1757,6 +2068,61 @@ mod tests {
     }
 
     #[test]
+    fn census_reports_normative_failure_and_vendor_acceptance_separately() {
+        let oamd_config = EmdfPayloadConfig {
+            sample_offset: None,
+            duration: None,
+            group_id: Some(0),
+            codec_data_present: false,
+            discard_unknown_payload: false,
+            payload_frame_aligned: Some(false),
+            create_duplicate: None,
+            remove_duplicate: None,
+            priority: None,
+            processing_allowed: None,
+        };
+        let mut joc_config = oamd_config.clone();
+        joc_config.payload_frame_aligned = Some(true);
+        joc_config.create_duplicate = Some(false);
+        joc_config.remove_duplicate = Some(false);
+        joc_config.priority = Some(0);
+        joc_config.processing_allowed = Some(0);
+        let parsed = ParsedEmdf {
+            container: EmdfContainer {
+                version: 0,
+                key_id: 0,
+                payloads: vec![
+                    EmdfPayload {
+                        id: 11,
+                        config: oamd_config,
+                        data: vec![1],
+                    },
+                    EmdfPayload {
+                        id: 14,
+                        config: joc_config,
+                        data: vec![2],
+                    },
+                ],
+                protection: EmdfProtection {
+                    primary: Vec::new(),
+                    secondary: Vec::new(),
+                },
+            },
+            bytes_consumed: 0,
+        };
+        let reports = profile_validation_reports(&parsed);
+        assert_eq!(reports.len(), 2);
+        assert_eq!(reports[0].profile, "ETSI_STRICT");
+        assert_eq!(reports[0].result, "failed");
+        assert_eq!(reports[0].deviations.len(), 7);
+        assert!(reports[0].reason.is_some());
+        assert_eq!(reports[1].profile, "DOLBY_VENDOR_COMPAT");
+        assert_eq!(reports[1].result, "accepted_with_deviation");
+        assert_eq!(reports[1].deviations, reports[0].deviations);
+        assert!(reports[1].reason.is_none());
+    }
+
+    #[test]
     fn carrier_attempt_retains_frame_relative_and_absolute_offsets() {
         let attempt = CarrierAttempt {
             location: "audio_block_skipfld".to_owned(),
@@ -1772,6 +2138,7 @@ mod tests {
             payload_sizes: Vec::new(),
             payload_group_ids: Vec::new(),
             payload_configs: Vec::new(),
+            profile_validations: Vec::new(),
             error: None,
         };
         assert_eq!(attempt.frame_relative_start_bit, 137);
@@ -1810,7 +2177,7 @@ mod tests {
             block_start_offset_bits: 198,
             element_start_offset_bits: 2345,
         };
-        let context = mantissa_failure_context(error).expect("diagnostic context");
+        let context = mantissa_failure_context(&error).expect("diagnostic context");
         assert_eq!(
             context,
             MantissaFailureContext {
@@ -1862,6 +2229,35 @@ mod tests {
         .expect("manifest");
         let error = run_census(&manifest).expect_err("hash mismatch");
         assert!(matches!(error, FixtureManifestError::HashMismatch { .. }));
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn rejects_profile_expectation_mismatch_after_bounded_census() {
+        let root = test_root("profile-expectation");
+        fs::create_dir_all(&root).expect("test directory");
+        fs::write(root.join("input.ec3"), raw_eac3_frame()).expect("fixture");
+        fs::write(
+            root.join("manifest.json"),
+            r#"[{
+                "label":"sample",
+                "path":"input.ec3",
+                "expected_profiles":{
+                    "etsi_strict":"failed",
+                    "dolby_vendor_compat":"failed"
+                }
+            }]"#,
+        )
+        .expect("manifest");
+        let error = run_census(&root.join("manifest.json")).expect_err("expectation mismatch");
+        assert!(matches!(
+            error,
+            FixtureManifestError::ProfileExpectationMismatch {
+                profile: "ETSI_STRICT",
+                actual: "not_observed",
+                ..
+            }
+        ));
         fs::remove_dir_all(root).expect("cleanup");
     }
 

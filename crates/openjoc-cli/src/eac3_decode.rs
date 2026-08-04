@@ -1,10 +1,11 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame, extract_joc_access_unit,
+    Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame, extract_joc_access_unit_for_profile,
     extract_joc_addbsi_access_unit, group_access_units, index_syncframes,
     validate_complexity_index,
 };
+use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{OamdError, parse_oamd_payload_with_config};
 use openjoc_scene::{
     DecodedPayloadFrame, JocFrameInput, ObjectScene, PayloadDecodeError, PayloadDecoder,
@@ -105,8 +106,11 @@ fn required_metadata(
     frames: &[openjoc_eac3::SyncframeIndexEntry],
     unit: openjoc_eac3::AccessUnitIndex,
     access_unit: usize,
+    validation_profile: JocValidationProfile,
 ) -> Result<JocMetadataFrame, DecodeEac3Error> {
-    if let Some(metadata) = extract_joc_access_unit(stream, frames, unit)? {
+    if let Some(metadata) =
+        extract_joc_access_unit_for_profile(stream, frames, unit, validation_profile)?
+    {
         return Ok(metadata);
     }
     match extract_joc_addbsi_access_unit(stream, frames, unit)? {
@@ -136,10 +140,11 @@ pub fn decode_aligned_eac3_with_sink<S>(
     stream: &[u8],
     downmix: &WavePcm,
     config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
     mut sink: S,
 ) -> Result<ObjectScene, DecodeEac3Error>
 where
-    S: FnMut(usize, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
 {
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
@@ -171,7 +176,8 @@ where
                 stream: unit.sample_rate,
             });
         }
-        let metadata = required_metadata(stream, &frame_index, unit, unit_index)?;
+        let metadata =
+            required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
         let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let end = sample_offset
@@ -192,7 +198,7 @@ where
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,
             },
-            |frame| sink(unit_index, frame),
+            |frame| sink(unit_index, &metadata, frame),
         )?;
         sample_offset = end;
     }
@@ -211,11 +217,12 @@ where
 pub fn decode_internal_eac3_with_sink<S>(
     stream: &[u8],
     config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
     dither_values: &[f64],
     mut sink: S,
 ) -> Result<ObjectScene, DecodeEac3Error>
 where
-    S: FnMut(usize, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
 {
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
@@ -238,7 +245,8 @@ where
                 expected: usize::from(unit.samples),
             });
         }
-        let metadata = required_metadata(stream, &frame_index, unit, unit_index)?;
+        let metadata =
+            required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
         let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
@@ -251,7 +259,7 @@ where
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,
             },
-            |frame| sink(unit_index, frame),
+            |frame| sink(unit_index, &metadata, frame),
         )?;
     }
     Ok(decoder.finish()?)
