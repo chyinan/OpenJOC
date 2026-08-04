@@ -1,8 +1,8 @@
 use openjoc_eac3::{
     AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAccessUnitPcmDecoder, JocAddbsi,
     StreamType, block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
-    decode_audio_blocks, decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
-    decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
+    classify_aux_emdf, decode_audio_blocks, decode_audio_frame_pcm, decode_exponents,
+    decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
     group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
     parse_bsi, parse_first_audio_block_prefix, parse_joc_addbsi, parse_syncframe_header,
@@ -1939,6 +1939,42 @@ fn parses_a_bounded_emdf_container_directly_from_auxdata() {
     assert_eq!(parsed.container.version, 0);
     assert!(parsed.container.payloads.is_empty());
     assert_eq!(parsed.bytes_consumed, 7);
+}
+
+#[test]
+fn classifies_frame_end_auxdata_without_scanning_or_accepting_trailing_bytes() {
+    let non_emdf = auxdata_frame(true, 32, &[0x00, 0x00, 0x00, 0x00]);
+    assert_eq!(
+        classify_aux_emdf(&non_emdf).expect("bounded auxiliary data"),
+        Some(openjoc_emdf::CarrierClassification::NonEmdf)
+    );
+
+    let mut container = Bits::default();
+    container.push(0, 2); // EMDF version
+    container.push(0, 3); // key
+    container.push(0, 5); // terminator
+    container.push(1, 2); // primary protection: 8 bits
+    container.push(0, 2); // no secondary protection
+    container.push(0, 8);
+    let container = container.bytes(3);
+    let mut emdf = vec![0x58, 0x38, 0, 3];
+    emdf.extend_from_slice(&container);
+    emdf.push(0);
+    let frame = auxdata_frame(true, 64, &emdf);
+    assert_eq!(
+        classify_aux_emdf(&frame).expect("bounded auxiliary data"),
+        Some(openjoc_emdf::CarrierClassification::TrailingData {
+            container_bytes: 7,
+            carrier_bytes: 8,
+        })
+    );
+    assert!(matches!(
+        extract_aux_emdf(&frame),
+        Err(Eac3Error::EmdfCarrierTrailingData {
+            container_bytes: 7,
+            carrier_bytes: 8,
+        })
+    ));
 }
 
 fn joc_emdf() -> Vec<u8> {

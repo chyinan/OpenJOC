@@ -268,6 +268,10 @@ fn inspect_command_reports_timing_profile_payloads_and_complexity() {
     assert!(output.contains("complexity index: 2"));
     assert!(output.contains("OAMD bytes: 1"));
     assert!(output.contains("JOC bytes: 1"));
+    assert!(
+        output
+            .contains("audio-block skipfld: 0 observed in 0 reached prefixes; 6 blocks unresolved")
+    );
     assert!(!output.contains("Open the objects"));
     assert!(!output.contains("\x1b["));
 

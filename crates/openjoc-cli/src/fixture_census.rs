@@ -4,9 +4,9 @@
 
 use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_eac3::{
-    Eac3Error, classify_skip_field_emdf, extract_aux_emdf, extract_auxdata,
-    extract_joc_access_unit, group_access_units, index_syncframes, inspect_audio_block_carriers,
-    parse_bsi, parse_joc_addbsi,
+    Eac3Error, classify_skip_field_emdf, extract_auxdata, extract_joc_access_unit,
+    group_access_units, index_syncframes, inspect_audio_block_carriers, parse_bsi,
+    parse_joc_addbsi,
 };
 use openjoc_emdf::{CarrierClassification, EmdfError};
 use serde::{Deserialize, Serialize};
@@ -769,8 +769,27 @@ fn inspect_frame_end_carrier(
             report.auxdatae_present_count += 1;
             report.bounded_frame_end_auxiliary_containers += 1;
             let (start_bit, length_bits) = auxiliary_span(entry, aux.bit_len);
-            match extract_aux_emdf(frame) {
-                Ok(Some(parsed)) => {
+            let classification = if aux.bit_len % 8 != 0 {
+                Err(Eac3Error::AuxDataNotByteAligned { bits: aux.bit_len })
+            } else {
+                Ok(openjoc_emdf::classify_emdf_carrier(&aux.bytes))
+            };
+            match classification {
+                Ok(CarrierClassification::NonEmdf) => {
+                    report.emdf_attempts.push(CarrierAttempt {
+                        location: "frame_end_auxdata".to_owned(),
+                        access_unit,
+                        syncframe: frame_index,
+                        substream_id: entry.header.substream_id,
+                        audio_block: None,
+                        start_bit,
+                        length_bits,
+                        result: "non_emdf".to_owned(),
+                        payload_ids: Vec::new(),
+                        error: None,
+                    });
+                }
+                Ok(CarrierClassification::Parsed(parsed)) => {
                     report.frame_end_valid_emdf_container_count += 1;
                     let payload_ids = parsed
                         .container
@@ -813,7 +832,60 @@ fn inspect_frame_end_carrier(
                         error: None,
                     });
                 }
-                Ok(None) => unreachable!("auxdata was present but EMDF parser returned none"),
+                Ok(CarrierClassification::Malformed(error)) => {
+                    report.malformed_or_truncated_carrier_count += 1;
+                    report.emdf_attempts.push(CarrierAttempt {
+                        location: "frame_end_auxdata".to_owned(),
+                        access_unit,
+                        syncframe: frame_index,
+                        substream_id: entry.header.substream_id,
+                        audio_block: None,
+                        start_bit,
+                        length_bits,
+                        result: "failed".to_owned(),
+                        payload_ids: Vec::new(),
+                        error: Some(error.to_string()),
+                    });
+                    record_failure(
+                        report,
+                        access_unit,
+                        frame_index,
+                        None,
+                        Some(start_bit),
+                        "frame_end_auxdata",
+                        error.to_string(),
+                    );
+                }
+                Ok(CarrierClassification::TrailingData {
+                    container_bytes,
+                    carrier_bytes,
+                }) => {
+                    let error = format!(
+                        "EMDF container consumed {container_bytes} of {carrier_bytes} carrier bytes"
+                    );
+                    report.malformed_or_truncated_carrier_count += 1;
+                    report.emdf_attempts.push(CarrierAttempt {
+                        location: "frame_end_auxdata".to_owned(),
+                        access_unit,
+                        syncframe: frame_index,
+                        substream_id: entry.header.substream_id,
+                        audio_block: None,
+                        start_bit,
+                        length_bits,
+                        result: "malformed_emdf_trailing_data".to_owned(),
+                        payload_ids: Vec::new(),
+                        error: Some(error.clone()),
+                    });
+                    record_failure(
+                        report,
+                        access_unit,
+                        frame_index,
+                        None,
+                        Some(start_bit),
+                        "frame_end_auxdata",
+                        error,
+                    );
+                }
                 Err(error) => {
                     report.malformed_or_truncated_carrier_count += 1;
                     report.emdf_attempts.push(CarrierAttempt {

@@ -1726,7 +1726,31 @@ pub fn extract_aux_emdf(frame: &[u8]) -> Result<Option<ParsedEmdf>, Eac3Error> {
             bits: auxdata.bit_len,
         });
     }
-    Ok(Some(parse_emdf_sync(&auxdata.bytes)?))
+    let parsed = parse_emdf_sync(&auxdata.bytes)?;
+    if parsed.bytes_consumed != auxdata.bytes.len() {
+        return Err(Eac3Error::EmdfCarrierTrailingData {
+            container_bytes: parsed.bytes_consumed,
+            carrier_bytes: auxdata.bytes.len(),
+        });
+    }
+    Ok(Some(parsed))
+}
+
+/// Classifies the exact, byte-bounded frame-end `auxdata` carrier.
+///
+/// The caller receives `NonEmdf` for ordinary auxiliary data, while a
+/// synchronization word commits the whole declared range to the bounded
+/// Annex H parser. No later byte search or implicit padding is performed.
+pub fn classify_aux_emdf(frame: &[u8]) -> Result<Option<CarrierClassification>, Eac3Error> {
+    let Some(auxdata) = extract_auxdata(frame)? else {
+        return Ok(None);
+    };
+    if auxdata.bit_len % 8 != 0 {
+        return Err(Eac3Error::AuxDataNotByteAligned {
+            bits: auxdata.bit_len,
+        });
+    }
+    Ok(Some(classify_emdf_carrier(&auxdata.bytes)))
 }
 
 /// Classifies one exact audio-block `skipfld` byte range using the bounded
@@ -1790,8 +1814,25 @@ fn extract_joc_access_unit_impl(
     for (relative, entry) in unit_frames.iter().enumerate() {
         let frame_index = unit.first_frame + relative;
         let frame = frame_bytes(stream, *entry)?;
-        if let Some(parsed) = extract_aux_emdf(frame)? {
-            register_joc_carrier(&mut found, frame_index, parsed)?;
+        if let Some(classification) = classify_aux_emdf(frame)? {
+            match classification {
+                CarrierClassification::NonEmdf => {}
+                CarrierClassification::Parsed(parsed) => {
+                    register_joc_carrier(&mut found, frame_index, parsed)?;
+                }
+                CarrierClassification::Malformed(error) => {
+                    return Err(Eac3Error::Emdf(error));
+                }
+                CarrierClassification::TrailingData {
+                    container_bytes,
+                    carrier_bytes,
+                } => {
+                    return Err(Eac3Error::EmdfCarrierTrailingData {
+                        container_bytes,
+                        carrier_bytes,
+                    });
+                }
+            }
         }
         if include_skip_fields {
             inspect_skip_joc_carriers(frame, frame_index, &mut found)?;

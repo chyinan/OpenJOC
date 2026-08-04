@@ -160,6 +160,9 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
     let mut skip_examined = 0_usize;
     let mut skip_observed = 0_usize;
     let mut skip_unresolved = 0_usize;
+    let mut skip_non_emdf = 0_usize;
+    let mut skip_valid_emdf = 0_usize;
+    let mut skip_malformed_emdf = 0_usize;
     let mut skip_errors = Vec::new();
     for entry in &frames {
         let end = entry
@@ -184,8 +187,16 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
         }
         match openjoc_eac3::inspect_audio_block_carriers(frame, |value| {
             skip_examined += 1;
-            if value.skip_field.is_some() {
+            if let Some(skip) = value.skip_field.as_ref() {
                 skip_observed += 1;
+                match openjoc_eac3::classify_skip_field_emdf(skip) {
+                    openjoc_emdf::CarrierClassification::NonEmdf => skip_non_emdf += 1,
+                    openjoc_emdf::CarrierClassification::Parsed(_) => skip_valid_emdf += 1,
+                    openjoc_emdf::CarrierClassification::Malformed(_)
+                    | openjoc_emdf::CarrierClassification::TrailingData { .. } => {
+                        skip_malformed_emdf += 1;
+                    }
+                }
             }
         }) {
             Ok(carrier) => skip_unresolved += carrier.unresolved_blocks,
@@ -199,7 +210,10 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
     println!("  frame-end auxdatae: {aux_present} present, {aux_absent} absent");
     println!("  frame-end EMDF: {emdf_parsed} parsed from {emdf_attempts} bounded attempts");
     println!(
-        "  audio-block skipfld: {skip_observed} observed in {skip_examined} reached first-block prefixes; {skip_unresolved} later blocks unresolved pending mantissa cursor traversal"
+        "  audio-block skipfld: {skip_observed} observed in {skip_examined} reached prefixes; {skip_unresolved} blocks unresolved"
+    );
+    println!(
+        "  skipfld EMDF: {skip_valid_emdf} valid, {skip_non_emdf} non-EMDF, {skip_malformed_emdf} malformed candidates"
     );
     if !skip_errors.is_empty() {
         println!(
