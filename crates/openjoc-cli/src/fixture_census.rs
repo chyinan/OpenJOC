@@ -217,6 +217,8 @@ pub struct FixtureReport {
     pub audio_block_skip_field_examined_count: usize,
     pub audio_block_skip_field_unresolved_count: usize,
     pub skip_field_byte_lengths: BTreeMap<usize, usize>,
+    pub audio_block_malformed_mantissa_count: usize,
+    pub audio_block_first_mantissa_failure: Option<AudioBlockMantissaFailureReport>,
     pub emdf_attempts: Vec<CarrierAttempt>,
     pub emdf_payload_id_distribution: BTreeMap<u64, usize>,
     pub payload_id_11_located: bool,
@@ -225,6 +227,7 @@ pub struct FixtureReport {
     pub invalid_or_incomplete_profile_count: usize,
     pub malformed_or_truncated_carrier_count: usize,
     pub first_failure: Option<FirstFailure>,
+    pub decoder_first_failure: Option<FirstFailure>,
     pub carrier_state: CarrierState,
 }
 
@@ -263,6 +266,20 @@ pub struct FirstFailure {
     pub block_relative_bit_offset: Option<usize>,
     pub detail: String,
     pub mantissa: Option<MantissaFailureContext>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct AudioBlockMantissaFailureReport {
+    pub block: usize,
+    pub element: String,
+    pub channel: Option<u8>,
+    pub bin: usize,
+    pub bap: u8,
+    pub raw_code: u16,
+    pub bit_width: u8,
+    pub grouped: bool,
+    pub bit_offset_bits: usize,
+    pub detail: String,
 }
 
 #[allow(clippy::struct_excessive_bools)] // These flags are independent diagnostic facts.
@@ -471,6 +488,8 @@ fn census_fixture(
         audio_block_skip_field_examined_count: 0,
         audio_block_skip_field_unresolved_count: 0,
         skip_field_byte_lengths: BTreeMap::new(),
+        audio_block_malformed_mantissa_count: 0,
+        audio_block_first_mantissa_failure: None,
         emdf_attempts: Vec::new(),
         emdf_payload_id_distribution: BTreeMap::new(),
         payload_id_11_located: false,
@@ -479,6 +498,7 @@ fn census_fixture(
         invalid_or_incomplete_profile_count: 0,
         malformed_or_truncated_carrier_count: 0,
         first_failure: None,
+        decoder_first_failure: None,
         carrier_state: CarrierState::JocExtensionNotSignaled,
     };
     for entry_frame in &frames {
@@ -515,7 +535,14 @@ fn census_fixture(
             );
         }
         inspect_frame_end_carrier(&mut report, unit_index, frame_index, *entry_frame, frame);
-        inspect_first_audio_block(&mut report, &media.bytes, frame_index, *entry_frame, frame);
+        inspect_first_audio_block(
+            &mut report,
+            unit_index,
+            &media.bytes,
+            frame_index,
+            *entry_frame,
+            frame,
+        );
     }
     if let Some(first) = frames.first() {
         let frame =
@@ -531,9 +558,6 @@ fn diagnose_first_complete_audio_block(
     entry: openjoc_eac3::SyncframeIndexEntry,
     frame: &[u8],
 ) {
-    if report.first_failure.is_some() {
-        return;
-    }
     let dither = vec![0.0_f64; 32_768];
     if let Err(error) = openjoc_eac3::decode_first_audio_block(frame, &dither) {
         let context = mantissa_failure_context(error);
@@ -545,26 +569,26 @@ fn diagnose_first_complete_audio_block(
                     .ok()
                     .map(|audio| audio.audio_blocks_offset_bits)
             });
-        record_failure(
-            report,
-            0,
-            0,
-            Some(0),
+        let failure = FirstFailure {
+            phase: "complete_audio_block_decode".to_owned(),
+            access_unit: 0,
+            syncframe: 0,
+            audio_block: Some(0),
             bit_offset,
-            "complete_audio_block_decode",
-            error.to_string(),
-        );
-        if let Some(failure) = &mut report.first_failure {
-            failure.mantissa = context;
-            failure.elementary_stream_bit_offset = failure
-                .bit_offset
-                .and_then(|offset| entry.offset.checked_mul(8)?.checked_add(offset));
-            failure.block_relative_bit_offset = failure.bit_offset.and_then(|offset| {
+            elementary_stream_bit_offset: bit_offset
+                .and_then(|offset| entry.offset.checked_mul(8)?.checked_add(offset)),
+            block_relative_bit_offset: bit_offset.and_then(|offset| {
                 openjoc_eac3::parse_audio_frame(frame)
                     .ok()
                     .and_then(|audio| offset.checked_sub(audio.audio_blocks_offset_bits))
-            });
+            }),
+            detail: error.to_string(),
+            mantissa: context,
+        };
+        if report.first_failure.is_none() {
+            report.first_failure = Some(failure.clone());
         }
+        report.decoder_first_failure = Some(failure);
     }
 }
 
@@ -744,7 +768,7 @@ fn inspect_frame_end_carrier(
             report.malformed_or_truncated_carrier_count += 1;
             record_failure(
                 report,
-                0,
+                access_unit,
                 frame_index,
                 None,
                 None,
@@ -757,6 +781,7 @@ fn inspect_frame_end_carrier(
 
 fn inspect_first_audio_block(
     report: &mut FixtureReport,
+    access_unit: usize,
     _stream: &[u8],
     frame_index: usize,
     entry: openjoc_eac3::SyncframeIndexEntry,
@@ -775,13 +800,56 @@ fn inspect_first_audio_block(
     match result {
         Ok(summary) => {
             report.audio_block_skip_field_unresolved_count += summary.unresolved_blocks;
+            report.audio_block_malformed_mantissa_count += summary.malformed_mantissa_count;
+            if report.audio_block_first_mantissa_failure.is_none() {
+                if let Some(failure) = summary.first_mantissa_failure {
+                    let mapped = AudioBlockMantissaFailureReport {
+                        block: failure.block_index,
+                        element: format!("{:?}", failure.element),
+                        channel: failure.channel,
+                        bin: failure.bin_index,
+                        bap: failure.bap,
+                        raw_code: failure.raw_code,
+                        bit_width: failure.bit_width,
+                        grouped: failure.grouped,
+                        bit_offset_bits: failure.bit_offset_bits,
+                        detail: failure.error.to_string(),
+                    };
+                    if report.first_failure.is_none() {
+                        record_failure(
+                            report,
+                            access_unit,
+                            frame_index,
+                            Some(failure.block_index),
+                            Some(failure.bit_offset_bits),
+                            "audio_block_mantissa_traversal",
+                            mapped.detail.clone(),
+                        );
+                        if let Some(first) = &mut report.first_failure {
+                            first.elementary_stream_bit_offset = entry
+                                .offset
+                                .checked_mul(8)
+                                .and_then(|offset| offset.checked_add(failure.bit_offset_bits));
+                            first.block_relative_bit_offset =
+                                openjoc_eac3::parse_audio_frame(frame)
+                                    .ok()
+                                    .and_then(|audio| {
+                                        failure
+                                            .bit_offset_bits
+                                            .checked_sub(audio.audio_blocks_offset_bits)
+                                    });
+                        }
+                    }
+                    report.audio_block_first_mantissa_failure = Some(mapped);
+                }
+            }
         }
         Err(error) => {
             report.audio_block_skip_field_unresolved_count +=
                 usize::from(entry.header.audio_blocks);
             record_failure(
                 report,
-                0,
+                access_unit,
                 frame_index,
                 Some(0),
                 None,
@@ -1052,6 +1120,11 @@ fn render_text_report(report: &CensusReport) -> String {
         );
         let _ = writeln!(
             text,
+            "  parse-only malformed mantissa codewords: {}",
+            fixture.audio_block_malformed_mantissa_count
+        );
+        let _ = writeln!(
+            text,
             "  payload IDs 11/14 located: {}/{}",
             fixture.payload_id_11_located, fixture.payload_id_14_located
         );
@@ -1101,6 +1174,29 @@ fn render_text_report(report: &CensusReport) -> String {
                     mantissa.element_start_offset_bits,
                 );
             }
+        }
+        if let Some(failure) = &fixture.audio_block_first_mantissa_failure {
+            let _ = writeln!(
+                text,
+                "  parse-only mantissa failure: element={} channel={:?} block={} bin={} bap={} raw={} width={} bit={} grouped={} detail={}",
+                failure.element,
+                failure.channel,
+                failure.block,
+                failure.bin,
+                failure.bap,
+                failure.raw_code,
+                failure.bit_width,
+                failure.bit_offset_bits,
+                failure.grouped,
+                failure.detail
+            );
+        }
+        if let Some(failure) = &fixture.decoder_first_failure {
+            let _ = writeln!(
+                text,
+                "  decoder first failure: {} at syncframe {} bit {:?}: {}",
+                failure.phase, failure.syncframe, failure.bit_offset, failure.detail
+            );
         }
         text.push('\n');
     }

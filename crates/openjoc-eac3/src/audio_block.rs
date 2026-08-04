@@ -77,14 +77,36 @@ pub struct AudioBlockCarrier {
     pub next_offset_bits: usize,
 }
 
+/// One fixed-width mantissa code that was bounded by the syntax walker but
+/// failed the Table 6.17/6.18 code-domain check. The walker still advances by
+/// the declared width so later `audblk` prefixes remain independently bounded;
+/// callers must treat the report as malformed rather than PCM-valid.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AudioBlockMantissaFailure {
+    pub block_index: usize,
+    pub element: MantissaElement,
+    pub channel: Option<u8>,
+    pub bin_index: usize,
+    pub bap: u8,
+    pub raw_code: u16,
+    pub bit_width: u8,
+    pub grouped: bool,
+    pub bit_offset_bits: usize,
+    pub error: Eac3Error,
+}
+
 /// Result of the parse-only audio-block carrier walk.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioBlockCarrierReport {
     /// Number of blocks whose side-information prefix was completely reached.
     pub examined_blocks: usize,
-    /// Number of blocks not reached because mantissa traversal is still needed
-    /// to prove the next block's starting cursor.
+    /// Number of blocks not reached because the preceding mantissa cursor could
+    /// not be proven.
     pub unresolved_blocks: usize,
+    /// Number of bounded mantissa codewords outside their normative domain.
+    pub malformed_mantissa_count: usize,
+    /// First malformed codeword in syntax traversal order, if any.
+    pub first_mantissa_failure: Option<AudioBlockMantissaFailure>,
 }
 
 #[allow(clippy::struct_excessive_bools)] // Independent syntax features are reported verbatim.
@@ -753,12 +775,307 @@ pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, 
     parse_first_prefix_reader(&mut bits, &frame)
 }
 
-/// Walks the bounded side-information prefix before conventional mantissas.
+fn consume_conventional_mantissas(
+    bits: &mut BitReader<'_>,
+    baps: &[u8],
+    information: &ExponentInformation,
+    element: MantissaElement,
+    channel: Option<u8>,
+    block_index: usize,
+    frame_bits: usize,
+    malformed_mantissa_count: &mut usize,
+    first_mantissa_failure: &mut Option<AudioBlockMantissaFailure>,
+) -> Result<bool, Eac3Error> {
+    if baps.len() != information.decoded.len() {
+        return Err(Eac3Error::MantissaExponentLengthMismatch {
+            baps: baps.len(),
+            exponents: information.decoded.len(),
+        });
+    }
+    let mut index = 0_usize;
+    while index < baps.len() {
+        let bap = baps[index];
+        let quantizer = mantissa_quantizer(bap)?;
+        if bap == 0 {
+            index += 1;
+            continue;
+        }
+        let run_end = if quantizer.group_size == 1 {
+            index + 1
+        } else {
+            let mut end = index + 1;
+            while end < baps.len() && baps[end] == bap {
+                end += 1;
+            }
+            end
+        };
+        while index < run_end {
+            let bit_offset_bits = frame_bits
+                .checked_sub(bits.bits_remaining())
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let raw_code = u16::try_from(bits.read_bits(quantizer.group_bits)?)
+                .map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            let max_code = quantizer
+                .levels
+                .checked_pow(u32::from(quantizer.group_size))
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            if u32::from(raw_code) >= max_code {
+                let error = if quantizer.group_size == 1 {
+                    Eac3Error::InvalidMantissaCode {
+                        bap,
+                        actual: raw_code,
+                    }
+                } else {
+                    Eac3Error::InvalidMantissaGroupCode {
+                        bap,
+                        actual: raw_code,
+                    }
+                };
+                *malformed_mantissa_count = malformed_mantissa_count
+                    .checked_add(1)
+                    .ok_or(Eac3Error::FrameSizeOverflow)?;
+                if first_mantissa_failure.is_none() {
+                    *first_mantissa_failure = Some(AudioBlockMantissaFailure {
+                        block_index,
+                        element,
+                        channel,
+                        bin_index: information.start_mantissa + index,
+                        bap,
+                        raw_code,
+                        bit_width: quantizer.group_bits,
+                        grouped: quantizer.group_size > 1,
+                        bit_offset_bits,
+                        error,
+                    });
+                }
+                return Ok(false);
+            }
+            index = index
+                .checked_add(usize::from(quantizer.group_size).min(run_end - index))
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+        }
+    }
+    Ok(true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn consume_audio_block_mantissas(
+    bits: &mut BitReader<'_>,
+    frame: &AudioFrameInformation,
+    state: &mut AudioBlockState,
+    block_index: usize,
+    parameter_codes: BitAllocationParameters,
+    snr: &SnrOffsets,
+    fscod: u8,
+    zero_bap: bool,
+    frame_bits: usize,
+    malformed_mantissa_count: &mut usize,
+    first_mantissa_failure: &mut Option<AudioBlockMantissaFailure>,
+) -> Result<bool, Eac3Error> {
+    let fast_gain = state
+        .fast_gain_codes
+        .clone()
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let mut coupling_decoded = false;
+    for channel in 0..usize::from(frame.full_bandwidth_channels) {
+        let information = state
+            .channel_exponents
+            .get(channel)
+            .and_then(Option::as_ref)
+            .ok_or(Eac3Error::FrameSizeOverflow)?
+            .clone();
+        let fine = *snr
+            .channel_fine_codes
+            .get(channel)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let delta = state
+            .delta_bit_allocation
+            .as_ref()
+            .and_then(|value| value.channels.get(channel));
+        let fast_gain_code = *fast_gain
+            .channels
+            .get(channel)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if frame
+            .channel_aht_in_use
+            .get(channel)
+            .copied()
+            .ok_or(Eac3Error::FrameSizeOverflow)?
+        {
+            let baps = high_efficiency_element_baps(
+                &information,
+                parameter_codes,
+                fast_gain_code,
+                snr.coarse_code,
+                fine,
+                fscod,
+                delta,
+                None,
+                zero_bap,
+            )?;
+            // AHT's Annex-E word syntax is consumed and retained in its
+            // per-element state, but no PCM/TDAC synthesis is performed.
+            let _ = decode_aht_values(
+                bits,
+                state
+                    .channel_aht
+                    .get_mut(channel)
+                    .ok_or(Eac3Error::FrameSizeOverflow)?,
+                &baps,
+                &information.decoded,
+                block_index,
+            )?;
+        } else {
+            let baps = element_baps(
+                &information,
+                parameter_codes,
+                fast_gain_code,
+                snr.coarse_code,
+                fine,
+                fscod,
+                delta,
+                None,
+                zero_bap,
+            )?;
+            let (baps, _) = active_baps_and_exponents(&information, baps)?;
+            if !consume_conventional_mantissas(
+                bits,
+                &baps,
+                &information,
+                MantissaElement::Channel,
+                u8::try_from(channel).ok(),
+                block_index,
+                frame_bits,
+                malformed_mantissa_count,
+                first_mantissa_failure,
+            )? {
+                return Ok(false);
+            }
+        }
+
+        if !coupling_decoded && channel_uses_coupling(state.coupling.as_ref(), channel) {
+            let information = state
+                .coupling_exponents
+                .clone()
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let leaks = state
+                .coupling_leak
+                .map(|leak| (leak.fast_code, leak.slow_code));
+            let delta = state
+                .delta_bit_allocation
+                .as_ref()
+                .and_then(|value| value.coupling.as_ref());
+            let fast_gain_code = fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?;
+            if frame.coupling_aht_in_use {
+                let baps = high_efficiency_element_baps(
+                    &information,
+                    parameter_codes,
+                    fast_gain_code,
+                    snr.coarse_code,
+                    snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    fscod,
+                    delta,
+                    leaks,
+                    zero_bap,
+                )?;
+                let _ = decode_aht_values(
+                    bits,
+                    &mut state.coupling_aht,
+                    &baps,
+                    &information.decoded,
+                    block_index,
+                )?;
+            } else {
+                let baps = element_baps(
+                    &information,
+                    parameter_codes,
+                    fast_gain_code,
+                    snr.coarse_code,
+                    snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    fscod,
+                    delta,
+                    leaks,
+                    zero_bap,
+                )?;
+                let (baps, _) = active_baps_and_exponents(&information, baps)?;
+                if !consume_conventional_mantissas(
+                    bits,
+                    &baps,
+                    &information,
+                    MantissaElement::Coupling,
+                    u8::try_from(channel).ok(),
+                    block_index,
+                    frame_bits,
+                    malformed_mantissa_count,
+                    first_mantissa_failure,
+                )? {
+                    return Ok(false);
+                }
+            }
+            coupling_decoded = true;
+        }
+    }
+
+    if let Some(information) = state.lfe_exponents.clone() {
+        let fast_gain_code = fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?;
+        if frame.lfe_aht_in_use {
+            let baps = high_efficiency_element_baps(
+                &information,
+                parameter_codes,
+                fast_gain_code,
+                snr.coarse_code,
+                snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                fscod,
+                None,
+                None,
+                zero_bap,
+            )?;
+            let _ = decode_aht_values(
+                bits,
+                &mut state.lfe_aht,
+                &baps,
+                &information.decoded,
+                block_index,
+            )?;
+        } else {
+            let baps = element_baps(
+                &information,
+                parameter_codes,
+                fast_gain_code,
+                snr.coarse_code,
+                snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                fscod,
+                None,
+                None,
+                zero_bap,
+            )?;
+            let (baps, _) = active_baps_and_exponents(&information, baps)?;
+            if !consume_conventional_mantissas(
+                bits,
+                &baps,
+                &information,
+                MantissaElement::Lfe,
+                None,
+                block_index,
+                frame_bits,
+                malformed_mantissa_count,
+                first_mantissa_failure,
+            )? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Walks each reachable `audblk` side-information prefix and its bounded
+/// mantissa syntax without synthesizing PCM.
 ///
-/// The first block is always reachable without consuming mantissas. Later
-/// blocks are reported as unresolved until a normative mantissa cursor walker
-/// is available; they are never reported as skip-field absence. This boundary
-/// intentionally does not synthesize PCM or invent mantissa values.
+/// A block is reported through `callback` only after its prefix, including a
+/// declared `skipfld`, has been reached. If a bounded mantissa code is outside
+/// its normative domain, or the mantissa syntax is truncated, traversal stops
+/// at that block and all later blocks remain explicitly unresolved. No failed
+/// cursor is reused to claim carrier absence.
 ///
 /// # Errors
 /// Returns an error if the acquisition/frame or first block side-information
@@ -775,17 +1092,71 @@ where
     let mut bits = BitReader::new(frame_bytes);
     bits.take_bits(frame.audio_blocks_offset_bits)?;
     let mut state = AudioBlockState::new(usize::from(frame.full_bandwidth_channels));
-    let prefix = parse_audio_block_prefix_reader(&mut bits, &frame, 0, &mut state)?;
-    let carrier = AudioBlockCarrier {
-        block_index: 0,
-        skip_field: prefix.skip_field.clone(),
-        prefix_start_offset_bits: frame.audio_blocks_offset_bits,
-        next_offset_bits: prefix.next_offset_bits,
+    let frame_bits = frame
+        .bsi
+        .header
+        .frame_size
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let fscod = match frame.bsi.header.sample_rate {
+        48_000 => 0,
+        44_100 => 1,
+        32_000 => 2,
+        _ => return Err(Eac3Error::ReservedSampleRate),
     };
-    callback(&carrier);
+    let mut examined_blocks = 0_usize;
+    let mut malformed_mantissa_count = 0_usize;
+    let mut first_mantissa_failure = None;
+    for block_index in 0..usize::from(frame.bsi.header.audio_blocks) {
+        let prefix_start_offset_bits = frame_bits
+            .checked_sub(bits.bits_remaining())
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let prefix = parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state)?;
+        let parameter_codes = state
+            .bit_allocation_parameters
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let snr = state
+            .snr_offsets
+            .clone()
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let mut fine_codes = Vec::with_capacity(usize::from(frame.full_bandwidth_channels) + 2);
+        if let Some(code) = snr.coupling_fine_code {
+            fine_codes.push(code);
+        }
+        fine_codes.extend_from_slice(&snr.channel_fine_codes);
+        if let Some(code) = snr.lfe_fine_code {
+            fine_codes.push(code);
+        }
+        let zero_bap = snr_offsets_are_zero(snr.coarse_code, &fine_codes)?;
+        callback(&AudioBlockCarrier {
+            block_index,
+            skip_field: prefix.skip_field.clone(),
+            prefix_start_offset_bits,
+            next_offset_bits: prefix.next_offset_bits,
+        });
+        examined_blocks += 1;
+        if !consume_audio_block_mantissas(
+            &mut bits,
+            &frame,
+            &mut state,
+            block_index,
+            parameter_codes,
+            &snr,
+            fscod,
+            zero_bap,
+            frame_bits,
+            &mut malformed_mantissa_count,
+            &mut first_mantissa_failure,
+        )? {
+            break;
+        }
+    }
     Ok(AudioBlockCarrierReport {
-        examined_blocks: 1,
-        unresolved_blocks: usize::from(frame.bsi.header.audio_blocks).saturating_sub(1),
+        examined_blocks,
+        unresolved_blocks: usize::from(frame.bsi.header.audio_blocks)
+            .saturating_sub(examined_blocks),
+        malformed_mantissa_count,
+        first_mantissa_failure,
     })
 }
 
@@ -3625,4 +3996,121 @@ fn read_optional_u8(bits: &mut BitReader<'_>, width: u8) -> Result<Option<u8>, E
 
 fn read_u8(bits: &mut BitReader<'_>, width: u8) -> Result<u8, Eac3Error> {
     u8::try_from(bits.read_bits(width)?).map_err(|_| Eac3Error::FrameSizeOverflow)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AudioBlockMantissaFailure, ExponentInformation, consume_conventional_mantissas};
+    use crate::{Eac3Error, MantissaElement};
+    use openjoc_bitio::{BitRead, BitReader};
+
+    #[test]
+    fn parse_only_mantissa_cursor_reports_invalid_code_without_inventing_pcm() {
+        let mut bits = BitReader::new(&[0b1110_0000]);
+        let information = ExponentInformation {
+            strategy: 1,
+            initial_exponent: 0,
+            grouped_exponents: Vec::new(),
+            start_mantissa: 0,
+            end_mantissa: 1,
+            decoded: vec![0],
+            gain_range: None,
+        };
+        let mut malformed = 0;
+        let mut first = None;
+        let reached = consume_conventional_mantissas(
+            &mut bits,
+            &[3],
+            &information,
+            MantissaElement::Channel,
+            Some(0),
+            2,
+            8,
+            &mut malformed,
+            &mut first,
+        )
+        .expect("fixed-width code is bounded");
+
+        assert!(!reached);
+        assert_eq!(malformed, 1);
+        assert_eq!(bits.bits_remaining(), 5);
+        assert_eq!(
+            first,
+            Some(AudioBlockMantissaFailure {
+                block_index: 2,
+                element: MantissaElement::Channel,
+                channel: Some(0),
+                bin_index: 0,
+                bap: 3,
+                raw_code: 7,
+                bit_width: 3,
+                grouped: false,
+                bit_offset_bits: 0,
+                error: Eac3Error::InvalidMantissaCode { bap: 3, actual: 7 },
+            })
+        );
+    }
+
+    #[test]
+    fn parse_only_mantissa_cursor_consumes_one_packed_group() {
+        let mut bits = BitReader::new(&[0b11010_000]);
+        let information = ExponentInformation {
+            strategy: 1,
+            initial_exponent: 0,
+            grouped_exponents: Vec::new(),
+            start_mantissa: 0,
+            end_mantissa: 3,
+            decoded: vec![0; 3],
+            gain_range: None,
+        };
+        let mut malformed = 0;
+        let mut first = None;
+        let reached = consume_conventional_mantissas(
+            &mut bits,
+            &[1, 1, 1],
+            &information,
+            MantissaElement::Channel,
+            Some(0),
+            0,
+            8,
+            &mut malformed,
+            &mut first,
+        )
+        .expect("grouped code is bounded");
+        assert!(reached);
+        assert_eq!(malformed, 0);
+        assert!(first.is_none());
+        assert_eq!(bits.bits_remaining(), 3);
+    }
+
+    #[test]
+    fn parse_only_mantissa_cursor_reports_truncation_without_advancing_domain() {
+        let mut bits = BitReader::new(&[]);
+        let information = ExponentInformation {
+            strategy: 1,
+            initial_exponent: 0,
+            grouped_exponents: Vec::new(),
+            start_mantissa: 0,
+            end_mantissa: 1,
+            decoded: vec![0],
+            gain_range: None,
+        };
+        let mut malformed = 0;
+        let mut first = None;
+        let error = consume_conventional_mantissas(
+            &mut bits,
+            &[3],
+            &information,
+            MantissaElement::Channel,
+            Some(0),
+            0,
+            0,
+            &mut malformed,
+            &mut first,
+        )
+        .expect_err("truncated mantissa must remain a structured error");
+        assert!(matches!(error, Eac3Error::Bit(_)));
+        assert_eq!(malformed, 0);
+        assert!(first.is_none());
+    }
 }

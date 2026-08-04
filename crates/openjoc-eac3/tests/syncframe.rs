@@ -153,15 +153,43 @@ fn six_block_mono_frame(
 #[test]
 fn parse_only_carrier_inspection_reports_reached_prefixes_and_unresolved_blocks() {
     let bytes = six_block_mono_frame(0, None, None);
-    let mut callbacks = 0;
+    let mut callbacks = Vec::new();
     let report = inspect_audio_block_carriers(&bytes, |carrier| {
-        callbacks += 1;
-        assert_eq!(carrier.block_index, 0);
+        callbacks.push(carrier.block_index);
     })
-    .expect("first audio-block prefix is bounded");
-    assert_eq!(callbacks, 1);
-    assert_eq!(report.examined_blocks, 1);
-    assert_eq!(report.unresolved_blocks, 5);
+    .expect("all synthetic zero-bap blocks are bounded");
+    assert_eq!(callbacks, (0..6).collect::<Vec<_>>());
+    assert_eq!(report.examined_blocks, 6);
+    assert_eq!(report.unresolved_blocks, 0);
+}
+
+#[test]
+fn parse_only_carrier_inspection_consumes_reachable_mantissa_cursors() {
+    let bytes = six_block_mono_frame(0, None, None);
+    let mut callbacks = Vec::new();
+    let report = inspect_audio_block_carriers(&bytes, |carrier| {
+        callbacks.push((
+            carrier.block_index,
+            carrier.prefix_start_offset_bits,
+            carrier.next_offset_bits,
+            carrier.skip_field.is_some(),
+        ));
+    })
+    .expect("all synthetic zero-bap blocks are bounded");
+
+    assert_eq!(report.examined_blocks, 6);
+    assert_eq!(report.unresolved_blocks, 0);
+    assert_eq!(callbacks.len(), 6);
+    assert_eq!(
+        callbacks.iter().map(|entry| entry.0).collect::<Vec<_>>(),
+        (0..6).collect::<Vec<_>>()
+    );
+    assert!(callbacks.iter().all(|entry| !entry.3));
+    assert!(
+        callbacks
+            .windows(2)
+            .all(|window| window[0].2 <= window[1].1)
+    );
 }
 
 #[test]
