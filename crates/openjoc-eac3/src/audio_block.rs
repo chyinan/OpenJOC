@@ -4053,7 +4053,7 @@ mod tests {
 
     #[test]
     fn parse_only_mantissa_cursor_consumes_one_packed_group() {
-        let mut bits = BitReader::new(&[0b11010_000]);
+        let mut bits = BitReader::new(&[0b1101_0000]);
         let information = ExponentInformation {
             strategy: 1,
             initial_exponent: 0,
