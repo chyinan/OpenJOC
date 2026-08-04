@@ -1084,22 +1084,74 @@ frame behavior is covered by integration tests.
   length exceeding the frame prefix, and an actual bounded EMDF synchronization
   header/container/protection unit carried inside an E-AC-3 frame are tested.
   Audio-block `skipfld` carriage is not conflated with this reverse carrier
-  extraction path. The parse-only `inspect_audio_block_carriers` boundary
-  reaches the first block prefix without mantissa/PCM synthesis; the complete
+  extraction path. TS 102 366 calls the `skipfld` bytes dummy data to be
+  ignored; TS 103 420 requires an EMDF container for a JOC profile but does not
+  expressly designate `skipfld` as a JOC carrier. OpenJOC therefore treats an
+  exact reached `skipfld` range as a diagnostic Annex H candidate only. The
+  parse-only `inspect_audio_block_carriers` boundary reaches each bounded block
+  prefix and declared `skipfld` without PCM synthesis; the complete
   `decode_audio_blocks` traversal remains the path used for full audio decode.
   TS 102 366 pages 44 and 116 through 124 were
   rendered losslessly at 300 DPI with Poppler 26.02.0 and visually inspected:
   page 117 establishes frame-level `skipflde`; page 124 places `skiple`, the
   9-bit byte count, and exactly `skipl × 8` data bits immediately before
   variable-length mantissas; page 44 confirms the byte-count semantics. The
-  carrier extractor continues to use only the normative frame-end location
-  and never searches mantissa bytes for an EMDF syncword.
+  frame-end classifier continues to use only the normative carrier range and
+  never searches mantissa bytes for an EMDF syncword. A carrier that begins
+  with the EMDF syncword but has undeclared trailing bytes is reported as a
+  bounded trailing-data candidate rather than accepted as padded data.
 - The four supplied real fixtures now reach every six-block `audfrm` cursor;
-  their bounded `skipfld` fields are observed and their byte lengths are
-  recorded. The current census has not yet fed those skip-field ranges to the
-  Annex H EMDF parser, so all-carrier EMDF discovery remains open. This is
-  evidence that the syntax path is traversable, not evidence that a skip-field
-  carries EMDF, nor proof that the complete stream has no other legal carrier.
+  their bounded `skipfld` fields are observed, byte lengths and both
+  frame-relative/elementary-stream offsets are recorded, and each declared
+  range is classified by the bounded Annex H parser as a diagnostic candidate.
+  The classifier accepts only an exact `0x5838` start and the complete declared
+  container; it never scans later bytes, concatenates fields, or assumes
+  undeclared carrier padding. In the four fixtures, one exact range per access
+  unit parses as an Annex H candidate with payload IDs 11, 14, 2, and 1. The
+  ID-11 configuration fails TS 103 420 Table 56 (`codecdatae=0` and
+  `payload_frame_aligned=0`), so this is not a valid JOC profile and is not
+  proof that `skipfld` is a normative JOC carrier. Coverage of the frame-end
+  path and this diagnostic skip-field candidate path is implemented; the
+  carriage interpretation and any additional carrier ambiguity remain open.
+
+### Skip-field carriage audit and bounded candidate rule
+
+- Normative pages inspected: TS 102 366 V1.4.1 p.44 (`skiple`, the 9-bit
+  `skipl` count, and dummy `skipfld` bytes), p.117 (`skipflde`), and p.124
+  (the order `skiple` -> `skipl` -> `skipfld`, followed by the mantissa
+  syntax); TS 103 420 V1.2.1 pp.68-69 (Tables 55-56, payload IDs 11/14,
+  configuration, `addbsi`, and last-dependent placement); TS 102 366 Annex H
+  pp.204-209 (the exact EMDF syncword, declared container length, syntax,
+  protection, and padding).
+- The `skiple` flag gates a 9-bit `skipl` value. Exactly `skipl * 8` bits are
+  read as the `skipfld` data range. OpenJOC preserves the range's
+  frame-relative bit offset, elementary-stream absolute bit offset, and
+  declared bit length; it does not reinterpret the preceding `skiple` or
+  `skipl` bits as payload data. The range may begin at a non-byte frame bit
+  offset, but its declared data length is an integral number of bytes.
+- Annex H parsing starts at bit zero of the extracted candidate bytes only
+  when the caller-declared range begins with the exact `0x5838` syncword. The
+  bounded parser consumes the 16-bit syncword, 16-bit declared byte length,
+  container syntax, protection, and permitted terminal padding. A range that
+  does not begin with the syncword is classified as ordinary non-EMDF data; a
+  sync-start range whose bounded syntax fails is a malformed candidate; a
+  complete container followed by undeclared bytes is a trailing-data
+  candidate. No sliding offset search, padding invention, or cross-range
+  concatenation is performed.
+- Annex H permits one declared container in the range examined by this API.
+  The inspected specifications do not state that one E-AC-3 `skipfld` may
+  carry multiple concatenated containers, nonzero user padding after a
+  container, or fragments that may be reassembled across blocks, syncframes,
+  or substreams. OpenJOC therefore does not implement those interpretations.
+  Whether a `skipfld` dummy-data field is an authorized JOC/EMDF carrier is an
+  unresolved carriage-semantic question, not an implementation license to
+  search for magic bytes.
+- A complete Table 55/56 profile is validated within one parsed container:
+  exactly one payload ID 11 and one ID 14, matching group IDs, required
+  configuration, same-frame type-A `addbsi`, and the required last-dependent
+  placement. OpenJOC never combines ID 11 from one candidate with ID 14 from
+  another. Same-access-unit duplicate or mixed frame-end/skip-field profile
+  candidates are rejected as ambiguous rather than silently ordered.
 
 ### JOC-profile access-unit extraction and placement
 
@@ -1107,19 +1159,29 @@ frame behavior is covered by integration tests.
   TS 102 366 clauses E.1.3.1.2 and H.2.
 - Official reference data: none beyond the already documented 300 DPI renders
   of TS 103 420 pages 68 and 69 and TS 102 366 Annex H pages.
-- Design rationale: inspect only the size-bounded `auxdata` of frames belonging
-  to one already validated access unit; identify containers carrying payload
-  ID 11 or 14; require one complete table-55/56 OAMD/JOC pair; require the
-  type-A `addbsi` in that same syncframe; and, whenever dependent substreams
-  exist, require that carrier to be the last dependent frame. Return owned
-  OAMD/JOC bytes together with exact frame rate/sample timing and complexity.
+- Design rationale: inspect only size-bounded frame-end `auxdata` and exact
+  reached audio-block `skipfld` candidate ranges belonging to one already
+  validated access unit; identify containers carrying payload ID 11 or 14;
+  require one complete table-55/56 OAMD/JOC pair; require the type-A `addbsi`
+  in that same syncframe; and, whenever dependent substreams exist, require
+  that carrier to be the last dependent frame. Never combine payloads from
+  separate carriers. The `skipfld` path is deliberately a bounded diagnostic
+  candidate path, not a normative assertion that dummy bytes carry JOC. Return
+  owned OAMD/JOC bytes together with exact frame rate/sample timing and
+  complexity.
 - Validation: a three-frame independent/dependent/dependent access unit yields
   OAMD and JOC bytes from dependent substream 1 with the same-frame complexity
   index; moving the identical profile to dependent substream 0 is rejected
   with the exact required carrier frame. Multiple carriers and missing
   same-frame extension are structurally rejected by the public API.
   Clause 8.3.2.2 is additionally tested at its zero and sixteen-object
-  boundaries, with mismatched and over-profile OAMD counts rejected.
+  boundaries, with mismatched and over-profile OAMD counts rejected. The new
+  exact-range classifier has unit coverage for non-EMDF data, truncated or
+  malformed sync-start candidates, and undeclared trailing bytes. The external
+  four-fixture run parsed one bounded skip-field candidate per access unit and
+  retained payload IDs 11/14, but the ID-11 Table 56 configuration was invalid;
+  no real-vector reconstruction claim or normative `skipfld`-carriage claim is
+  made.
 
 ### Direct Enhanced AC-3 inspection command
 
@@ -1160,7 +1222,7 @@ frame behavior is covered by integration tests.
   five-channel aligned PCM, valid inactive OAMD, and valid absent-object JOC;
   the direct `.ec3` command writes a scene, timeline, per-frame debug dumps,
   and an exact 1,536-sample reconstructed object WAV. A legal encoded JOC
-  vector and bounded EMDF parsing from every legal `skipfld` carrier remain
+  vector, complete legal-carrier coverage, and real-vector PCM evidence remain
   required before this path is fully verified.
 
 ### External real-DEE fixture census and first-failure diagnostics
@@ -1177,17 +1239,19 @@ frame behavior is covered by integration tests.
   argument) loads stable labels, optional hashes, and user notes without
   copying programme bytes into the repository. Entries are sorted by label;
   source and demuxed hashes, bounded frame/index counts, addbsi/complexity,
-  frame-end auxiliary attempts, all reached block prefixes, skip-field lengths,
-  payload IDs, and first failures are emitted to JSON and text reports.
+  frame-end and skip-field carrier attempts, all reached block prefixes,
+  skip-field lengths, payload IDs by carrier kind, profile counts, and first
+  failures are emitted to JSON and text reports.
   The report uses explicit carrier states so “not found in validated paths”
   cannot be confused with an untraversed carrier.
 - Parse-only boundary: `inspect_audio_block_carriers` follows the checked BSI
   and `audfrm` cursor through all six `audblk` side-information prefixes and
   declared skip fields on the four external fixtures without PCM synthesis.
   The clause-6.3.5 grouping state keeps the mantissa cursor bounded across
-  exponent sets and interleaved BAP values. No bytes are scanned for EMDF
-  outside declared carrier ranges, and no skip-field bytes are yet passed to
-  the Annex H parser.
+  exponent sets and interleaved BAP values. Each declared skip-field byte range
+  is passed to the existing bounded Annex H classifier at its exact start. No
+  bytes are scanned for EMDF outside declared carrier ranges, no fields are
+  concatenated, and undeclared trailing bytes are not treated as padding.
 - First-failure diagnostics: complete internal-base decode wraps invalid
   mantissa code errors with element, channel, block, BAP, raw code, quantizer
   width, grouped state, and frame-relative bit offset. The census additionally
@@ -1199,25 +1263,29 @@ frame behavior is covered by integration tests.
   opt-in four-fixture external corpus run produced the following evidence;
   programme bytes are not committed. The grouped-mantissa correction in
   commit `2c524d107ae7451b2a6c838e7ca64159a51b375b` changed all four reports
-  from `carrier_unresolved` to `extension_no_emdf_in_validated_carriers`:
-  every six-block cursor is examined, malformed mantissa count is zero, and
-  unresolved block count is zero. This does not make the skip-field EMDF lane
-  complete.
+  from `carrier_unresolved` to complete six-block traversal: malformed
+  mantissa count is zero and unresolved block count is zero. The subsequent
+  skip-field integration in `d900ef13c3c3977d6f0cd861d00293d002f00006`
+  classified one bounded Annex H candidate per access unit with IDs 11, 14,
+  2, and 1, but the ID-11 Table 56 configuration is invalid; no complete JOC
+  profile is accepted.
 
-  | label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | skip observed/examined/unresolved | state | decoder first failure after correction |
+  | label | source SHA-256 | bytes | frames/access units | addbsi complexity | frame-end auxdatae | skip observed/examined/unresolved | skip EMDF valid/malformed | payload 11/14 | state |
   | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |
-  | `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | 3,910/23,460/0 | extension no EMDF in validated carriers | none |
-  | `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | 7,773/46,638/0 | extension no EMDF in validated carriers | none |
-  | `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | 10,599/63,594/0 | extension no EMDF in validated carriers | none |
-  | `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | 7,146/42,876/0 | extension no EMDF in validated carriers | none |
+  | `brainrot` | `2808eecb80353141135000ab499815219a86770e5b02e912dc971dd01e86afd7` | 16,283,910 | 3,910/3,910 | 3,910 × 16 | 0/3,910 | 3,910/23,460/0 | 3,910/0 | 3,910/3,910 | `emdf_profile_incomplete` |
+  | `forever_friends` | `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896` | 32,138,978 | 7,773/7,773 | 7,773 × 16 | 0/7,773 | 7,773/46,638/0 | 7,773/0 | 7,773/7,773 | `emdf_profile_incomplete` |
+  | `grand_escape` | `b7a320d2ff14a27e64b9e0262f2092b31145bc217100a2f987d174fef0ef2956` | 44,175,378 | 10,599/10,599 | 10,599 × 16 | 0/10,599 | 10,599/63,594/0 | 10,599/0 | 10,599/10,599 | `emdf_profile_incomplete` |
+  | `hitchcock` | `0075ade8f801e38a4f98637d9d9a8099771ea1edd0bb66bd829aa2c0faa3e425` | 29,370,578 | 7,146/7,146 | 7,146 × 16 | 0/7,146 | 7,146/42,876/0 | 7,146/0 | 7,146/7,146 | `emdf_profile_incomplete` |
 
   All four inputs are ISO BMFF with one 48 kHz six-channel `eac3` stream and
   1,536 samples per access unit. Every inspected frame has `addbsi` bytes
-  `01:10`; no payload IDs 11 or 14 were located in the currently bounded
-  frame-end carrier. All four reports have zero malformed mantissa codewords
-  and zero unresolved audio blocks. No payload IDs 11 or 14 were located, and
-  no report contains a valid JOC profile; they are therefore still not legal
-  nonzero JOC/OAMD acceptance vectors.
+  `01:10`, and frame-end `auxdatae` is absent. Every reached skip-field exact
+  range is classified by the bounded parser as an EMDF candidate with IDs 11,
+  14, 2, and 1; this is not a normative assertion that `skipfld` dummy bytes
+  are an authorized JOC carrier. All candidates fail the ID-11 Table 56
+  configuration check. All four reports have zero malformed mantissa codewords
+  and zero unresolved audio blocks. No complete JOC profile was extracted, so
+  these fixtures are still not legal nonzero JOC/OAMD acceptance vectors.
 
 ## Ambiguities and open normative questions
 
@@ -1476,24 +1544,25 @@ and a test or explicit TODO before implementation proceeds.
   OpenJOC container demux produced byte-equivalent elementary bytes.
 - Current OpenJOC evidence: `inspect` accepts the container and reports 7,773
   E-AC-3 frames/access units at 1,536 samples each. Every frame has the
-  §8.3 `addbsi` extension `[0x01, 0x10]`, while every currently inspected
-  TS 102 366 E.1.2.5 frame-end `auxdatae` bit is zero. Bento4 `mp4dump` and
-  the public BMFF structure show no second audio/metadata track or recognized
-  JOC box. The current frame-end profile extractor therefore did not locate
-  OAMD/JOC EMDF in the validated carrier paths. The CLI literally reports
-  “JOC extension signaled ... EMDF profile absent”; that diagnostic is bounded
-  to those paths and does not establish EMDF absence from every legal carrier.
-  The grouped-mantissa correction now lets the parse-only walker reach all six
-  audio blocks on this fixture; bounded `skipfld` fields are observed and
-  counted. Those skip-field byte ranges have not yet been passed to the Annex
-  H EMDF parser, so all-carrier discovery remains open. No claim is made that
-  a skip field carries EMDF, and the fixture is not yet a legal nonzero
-  JOC/OAMD acceptance vector.
+  §8.3 `addbsi` extension `[0x01, 0x10]`, while every TS 102 366 E.1.2.5
+  frame-end `auxdatae` bit is zero. Bento4 `mp4dump` and the public BMFF
+  structure show no second audio/metadata track or recognized JOC box. The
+  grouped-mantissa and parse-only paths reach all six audio blocks; exactly one
+  skip-field candidate per access unit is bounded and classified by the
+  Annex H parser as a complete candidate container with payload IDs 11, 14, 2,
+  and 1. TS 102 366 calls `skipfld` dummy data and TS 103 420 does not
+  expressly assign it as a JOC carrier, so this result is diagnostic evidence,
+  not a normative carriage conclusion. The ID-11 Table 56 configuration
+  (`codecdatae=0`, `payload_frame_aligned=0`) is invalid, so the access-unit
+  profile extractor returns no complete profile. If the CLI prints “JOC
+  extension signaled ... EMDF profile absent”, that compatibility wording is
+  bounded to profile validation and must be read with the carrier counts; it is
+  not a claim that the complete stream contains no EMDF.
 - Default FFmpeg base extraction produces six-channel 48 kHz f64 PCM
   (11,939,328 samples/channel). The current `--internal-base` command stops
-  before base synthesis because the required OAMD/JOC EMDF profile is not
-  located in the currently validated carriers; the earlier mantissa-code
-  failure was corrected by the grouped-state increment. The
+  before base synthesis because no complete OAMD/JOC EMDF profile is accepted
+  from the currently validated carriers; the earlier mantissa-code failure was
+  corrected by the grouped-state increment. The
   FFmpeg-versus-internal-base comparison is therefore not available and
   internal-base fidelity remains unverified.
 - FFmpeg `astats` records the `5.1(side)` order (FL, FR, FC, LFE, SL, SR) and
