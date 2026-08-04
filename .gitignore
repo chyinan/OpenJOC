@@ -1,5 +1,8 @@
 /target/
+/.codex-tmp/
 /references/etsi/*.pdf
 /references/etsi/*.zip
 /real-fixtures.local.json
 /real-census/
+/real-census-*/
+/crates/openjoc-eac3/tests/_real_debug.rs
