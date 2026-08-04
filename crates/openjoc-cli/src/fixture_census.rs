@@ -277,6 +277,8 @@ pub struct CarrierAttempt {
     pub length_bits: usize,
     pub result: String,
     pub payload_ids: Vec<u64>,
+    pub payload_sizes: Vec<usize>,
+    pub payload_group_ids: Vec<Option<u64>>,
     pub error: Option<String>,
 }
 
@@ -786,17 +788,15 @@ fn inspect_frame_end_carrier(
                         length_bits,
                         result: "non_emdf".to_owned(),
                         payload_ids: Vec::new(),
+                        payload_sizes: Vec::new(),
+                        payload_group_ids: Vec::new(),
                         error: None,
                     });
                 }
                 Ok(CarrierClassification::Parsed(parsed)) => {
                     report.frame_end_valid_emdf_container_count += 1;
-                    let payload_ids = parsed
-                        .container
-                        .payloads
-                        .iter()
-                        .map(|payload| payload.id)
-                        .collect::<Vec<_>>();
+                    let (payload_ids, payload_sizes, payload_group_ids) =
+                        payload_inventory(&parsed);
                     for id in &payload_ids {
                         *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
                         *report
@@ -829,6 +829,8 @@ fn inspect_frame_end_carrier(
                         length_bits,
                         result: "parsed".to_owned(),
                         payload_ids,
+                        payload_sizes,
+                        payload_group_ids,
                         error: None,
                     });
                 }
@@ -844,6 +846,8 @@ fn inspect_frame_end_carrier(
                         length_bits,
                         result: "failed".to_owned(),
                         payload_ids: Vec::new(),
+                        payload_sizes: Vec::new(),
+                        payload_group_ids: Vec::new(),
                         error: Some(error.to_string()),
                     });
                     record_failure(
@@ -874,6 +878,8 @@ fn inspect_frame_end_carrier(
                         length_bits,
                         result: "malformed_emdf_trailing_data".to_owned(),
                         payload_ids: Vec::new(),
+                        payload_sizes: Vec::new(),
+                        payload_group_ids: Vec::new(),
                         error: Some(error.clone()),
                     });
                     record_failure(
@@ -898,6 +904,8 @@ fn inspect_frame_end_carrier(
                         length_bits,
                         result: "failed".to_owned(),
                         payload_ids: Vec::new(),
+                        payload_sizes: Vec::new(),
+                        payload_group_ids: Vec::new(),
                         error: Some(error.to_string()),
                     });
                     record_failure(
@@ -1043,6 +1051,8 @@ fn inspect_skip_field_carrier(
         length_bits,
         result: String::new(),
         payload_ids: Vec::new(),
+        payload_sizes: Vec::new(),
+        payload_group_ids: Vec::new(),
         error: None,
     };
     match classify_skip_field_emdf(skip) {
@@ -1052,13 +1062,10 @@ fn inspect_skip_field_carrier(
         }
         CarrierClassification::Parsed(parsed) => {
             report.skip_field_valid_emdf_container_count += 1;
-            let payload_ids = parsed
-                .container
-                .payloads
-                .iter()
-                .map(|payload| payload.id)
-                .collect::<Vec<_>>();
+            let (payload_ids, payload_sizes, payload_group_ids) = payload_inventory(&parsed);
             attempt.payload_ids.clone_from(&payload_ids);
+            attempt.payload_sizes = payload_sizes;
+            attempt.payload_group_ids = payload_group_ids;
             for id in &payload_ids {
                 *report.emdf_payload_id_distribution.entry(*id).or_default() += 1;
                 *report
@@ -1121,6 +1128,30 @@ fn inspect_skip_field_carrier(
 
 fn is_unsupported_emdf(error: &EmdfError) -> bool {
     matches!(error, EmdfError::UnsupportedVersion { .. })
+}
+
+fn payload_inventory(
+    parsed: &openjoc_emdf::ParsedEmdf,
+) -> (Vec<u64>, Vec<usize>, Vec<Option<u64>>) {
+    let ids = parsed
+        .container
+        .payloads
+        .iter()
+        .map(|payload| payload.id)
+        .collect();
+    let sizes = parsed
+        .container
+        .payloads
+        .iter()
+        .map(|payload| payload.data.len())
+        .collect();
+    let group_ids = parsed
+        .container
+        .payloads
+        .iter()
+        .map(|payload| payload.config.group_id)
+        .collect();
+    (ids, sizes, group_ids)
 }
 
 fn record_skip_failure(report: &mut FixtureReport, attempt: &CarrierAttempt) {
@@ -1441,6 +1472,24 @@ fn render_text_report(report: &CensusReport) -> String {
             fixture.payload_id_14_count,
             fixture.complete_joc_profile_count,
         );
+        if let Some(attempt) = fixture
+            .emdf_attempts
+            .iter()
+            .find(|attempt| !attempt.payload_ids.is_empty())
+        {
+            let _ = writeln!(
+                text,
+                "  first parsed carrier: {} at access unit {} syncframe {} block {:?}; ids={:?} sizes={:?} group_ids={:?} result={}",
+                attempt.location,
+                attempt.access_unit,
+                attempt.syncframe,
+                attempt.audio_block,
+                attempt.payload_ids,
+                attempt.payload_sizes,
+                attempt.payload_group_ids,
+                attempt.result,
+            );
+        }
         if let Some(failure) = &fixture.first_failure {
             let _ = writeln!(
                 text,
@@ -1520,9 +1569,10 @@ fn render_text_report(report: &CensusReport) -> String {
 mod tests {
     use super::{
         FixtureManifest, FixtureManifestError, MantissaFailureContext, mantissa_failure_context,
-        parse_manifest, report_status_order, run_census,
+        parse_manifest, payload_inventory, report_status_order, run_census,
     };
     use openjoc_eac3::{Eac3Error, MantissaElement};
+    use openjoc_emdf::{EmdfContainer, EmdfPayload, EmdfPayloadConfig, EmdfProtection, ParsedEmdf};
     use std::{
         fs,
         path::PathBuf,
@@ -1582,6 +1632,59 @@ mod tests {
             report_status_order("carrier_unresolved") < report_status_order("valid_profile_found")
         );
         let _: Option<FixtureManifest> = None;
+    }
+
+    #[test]
+    fn carrier_inventory_preserves_payload_ids_sizes_and_group_ids() {
+        let parsed = ParsedEmdf {
+            container: EmdfContainer {
+                version: 0,
+                key_id: 0,
+                payloads: vec![
+                    EmdfPayload {
+                        id: 11,
+                        config: EmdfPayloadConfig {
+                            sample_offset: None,
+                            duration: None,
+                            group_id: Some(1),
+                            codec_data_present: true,
+                            discard_unknown_payload: false,
+                            payload_frame_aligned: Some(true),
+                            create_duplicate: Some(false),
+                            remove_duplicate: Some(false),
+                            priority: Some(0),
+                            processing_allowed: Some(0),
+                        },
+                        data: vec![1, 2],
+                    },
+                    EmdfPayload {
+                        id: 99,
+                        config: EmdfPayloadConfig {
+                            sample_offset: None,
+                            duration: None,
+                            group_id: None,
+                            codec_data_present: false,
+                            discard_unknown_payload: true,
+                            payload_frame_aligned: None,
+                            create_duplicate: None,
+                            remove_duplicate: None,
+                            priority: None,
+                            processing_allowed: None,
+                        },
+                        data: vec![3],
+                    },
+                ],
+                protection: EmdfProtection {
+                    primary: Vec::new(),
+                    secondary: Vec::new(),
+                },
+            },
+            bytes_consumed: 0,
+        };
+        assert_eq!(
+            payload_inventory(&parsed),
+            (vec![11, 99], vec![2, 1], vec![Some(1), None])
+        );
     }
 
     #[test]
