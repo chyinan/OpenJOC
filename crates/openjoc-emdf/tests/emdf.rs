@@ -1,7 +1,8 @@
 use openjoc_bitio::BitReader;
 use openjoc_emdf::{
-    EmdfContainer, EmdfError, EmdfPayload, EmdfPayloadConfig, EmdfProtection, JOC_PAYLOAD_ID,
-    OAMD_PAYLOAD_ID, parse_emdf_sync, validate_joc_profile, variable_bits,
+    CarrierClassification, EmdfContainer, EmdfError, EmdfPayload, EmdfPayloadConfig,
+    EmdfProtection, JOC_PAYLOAD_ID, OAMD_PAYLOAD_ID, classify_emdf_carrier, parse_emdf_sync,
+    validate_joc_profile, variable_bits,
 };
 
 #[derive(Default)]
@@ -261,6 +262,44 @@ fn rejects_truncation_reserved_data_codec_data_and_nonzero_padding() {
     assert_eq!(
         parse_emdf_sync(&wrap_sync(&padding.bytes())),
         Err(EmdfError::NonzeroPadding)
+    );
+}
+
+#[test]
+fn classifies_only_an_exact_carrier_start_as_emdf() {
+    let non_emdf = [0x00, 0x58, 0x38, 0x00];
+    assert_eq!(
+        classify_emdf_carrier(&non_emdf),
+        CarrierClassification::NonEmdf
+    );
+
+    let truncated = [0x58, 0x38, 0x00];
+    assert_eq!(
+        classify_emdf_carrier(&truncated),
+        CarrierClassification::Malformed(EmdfError::TruncatedContainer {
+            declared: 4,
+            available: 3,
+        })
+    );
+}
+
+#[test]
+fn classifies_exact_container_and_rejects_undeclared_carrier_trailing_bytes() {
+    let bytes = wrap_sync(&minimal_container(0, 1, 0).bytes());
+    let parsed = parse_emdf_sync(&bytes).expect("valid bounded EMDF");
+    assert_eq!(
+        classify_emdf_carrier(&bytes),
+        CarrierClassification::Parsed(parsed)
+    );
+
+    let mut trailing = bytes;
+    trailing.push(0);
+    assert_eq!(
+        classify_emdf_carrier(&trailing),
+        CarrierClassification::TrailingData {
+            container_bytes: trailing.len() - 1,
+            carrier_bytes: trailing.len(),
+        }
     );
 }
 

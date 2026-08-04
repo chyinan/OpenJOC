@@ -148,6 +148,30 @@ pub struct ParsedEmdf {
     pub bytes_consumed: usize,
 }
 
+/// Classification of one caller-declared carrier range.
+///
+/// The classifier deliberately examines only the first two bits-as-bytes of
+/// the supplied range. It never searches later bytes for an EMDF syncword and
+/// it never combines separate ranges. `TrailingData` is kept distinct from a
+/// successful parse because Annex H defines the container length, while the
+/// E-AC-3 carrier syntax does not grant this API an implicit padding rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CarrierClassification {
+    /// The exact carrier start does not contain the Annex H syncword.
+    NonEmdf,
+    /// The declared range is exactly one complete EMDF container.
+    Parsed(ParsedEmdf),
+    /// The exact start has the EMDF syncword, but bounded Annex H parsing
+    /// failed within the declared range.
+    Malformed(EmdfError),
+    /// A complete container ended before the declared carrier range ended.
+    /// No unmentioned carrier-padding rule is assumed here.
+    TrailingData {
+        container_bytes: usize,
+        carrier_bytes: usize,
+    },
+}
+
 /// Table 55 payload bytes after all table 56 restrictions are validated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct JocPayloadPair<'a> {
@@ -286,6 +310,28 @@ pub fn parse_emdf_sync(bytes: &[u8]) -> Result<ParsedEmdf, EmdfError> {
         container,
         bytes_consumed: end,
     })
+}
+
+/// Classifies an exact, bounded EMDF carrier range.
+///
+/// This is the common entry point for E-AC-3 reserved data spaces such as
+/// frame-end `auxdata` and `skipfld`. A range that does not begin with
+/// `0x5838` is ordinary non-EMDF carrier data. Once that syncword is present,
+/// every failure is retained as a malformed candidate; the function does not
+/// fall back to searching for another syncword.
+#[must_use]
+pub fn classify_emdf_carrier(bytes: &[u8]) -> CarrierClassification {
+    if bytes.len() < 2 || u16::from_be_bytes([bytes[0], bytes[1]]) != SYNCWORD {
+        return CarrierClassification::NonEmdf;
+    }
+    match parse_emdf_sync(bytes) {
+        Ok(parsed) if parsed.bytes_consumed == bytes.len() => CarrierClassification::Parsed(parsed),
+        Ok(parsed) => CarrierClassification::TrailingData {
+            container_bytes: parsed.bytes_consumed,
+            carrier_bytes: bytes.len(),
+        },
+        Err(error) => CarrierClassification::Malformed(error),
+    }
 }
 
 fn parse_container(reader: &mut impl BitRead) -> Result<EmdfContainer, EmdfError> {
