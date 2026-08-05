@@ -915,8 +915,10 @@ unverified OAMD/JOC/ADM/fidelity boundaries are unchanged.
 The increment starts at commit `054d3d4566c46a3ab308d0599eb1215b78171cc2` on
 `codex/logic-warp-differential-corpus`. The private run is
 `OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary-corrected_054d3d4`; its
-repeated tree is `..._repeat`, and the core JSON/TXT diagnostics plus regression
-PCM tree compare byte-for-byte. Repository
+repeated tree is `..._repeat`, and the core JSON/TXT diagnostics plus production
+regression hash report compare byte-for-byte. The private PCM tree used for the
+hash comparison remains in the earlier
+`2026-08-05T_tdac-boundary_054d3d4/internal_rerun` directory. Repository
 `.DS_Store` and `references/` remain untracked and untouched.
 
 ### Normative model and state audit
