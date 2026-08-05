@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 openjoc-bitio = { path = "../openjoc-bitio" }
 openjoc-emdf = { path = "../openjoc-emdf" }
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1"

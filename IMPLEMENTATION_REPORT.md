@@ -1187,3 +1187,24 @@ silence is excluded. JOC propagation has 15 diagnostic rows and complete object
 WAVs, but semantic identity remains unresolved. The next blocker is a parser-
 emitted full tool inventory plus a trusted external block anchor; no production
 decoder change is justified.
+
+## Block-anchor and parser tool inventory (2026-08-06)
+
+This increment adds the opt-in `diagnose-tools` path and
+`CodingToolBlockInventory`. It is built from parser-emitted state after the
+ordinary block decode; the default PCM path does not allocate or consume the
+inventory. The CLI refuses to overwrite an existing diagnostic JSON.
+
+Private A/E/D/F runs report 126 access units and 4536 records per vector
+(six blocks × five full-band channels plus LFE), with no failed access units.
+The schema records explicit versus reused state and formulas for derived BAP
+histograms/counts. The corpus cannot isolate tools: coupling, SPX and AHT have
+no on stratum, dither is mostly on, and exponent reuse has no randomized
+control. No coding-tool effect size is reported.
+
+A deterministic 48 kHz 5.1 marker source and independent detector recover
+480/480 source blocks at high confidence and exact offsets. This is not an
+encoded-carrier proof. Logic export and three-decoder anchor decode remain the
+next external step; mapping files are explicitly unproven and anchored
+metrics/effects remain unavailable. No production decoder, TDAC, warp, or
+vendor behavior changed.

@@ -345,3 +345,17 @@ lane remain unchanged/open.
 | Decoder relationship | OpenJOC≈FFmpeg in steady window metrics; Apple differs materially from both under current mapping and cannot be an oracle | measured; non-unique |
 | JOC propagation | 15 object rows and complete object WAVs retained; evaluation slicing does not alter output; semantic object identity remains open | diagnostic |
 | Production behavior | No startup trim, TDAC reset, gain, remap, warp alias, AU exception, file rule, or FFmpeg-fitting constant added | verified |
+
+## Block-anchor and parser tool inventory (2026-08-06)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Parser-emitted inventory | `openjoc-eac3::emit_coding_tool_inventory` consumes decoded prefix/BAP/AHT state without reparsing; CLI `diagnose-tools` is opt-in and failure-atomic | implemented; diagnostic |
+| Inventory coverage | A/E/D/F each report 126 AU × 6 blocks × 5 full-band channels plus independent LFE records (4536 records/vector) | verified; private |
+| Explicit/reused provenance | Stable provenance enum and reuse source fields are serialized; BAP counts are marked derived from expanded BAP arrays | verified |
+| Inventory invariants | Six blocks/AU, channel dimensions, BAP histograms, coupling/SPX off ranges, and no partial failed-AU commit are checked | verified |
+| Strata coverage | A/E/D/F are observational; coupling, SPX, and AHT are off; dither is mostly on; exponent reuse is observed but no randomized single-tool controls exist | confounded; no causal inference |
+| Anchor source/detector | Deterministic 48 kHz 5.1 source with 16 AU × 6 × 256 markers; source detector recovers 480/480 blocks at high confidence | verified; source-only |
+| Logic encoded carrier and external mapping | New Logic export/decode was not performed; external OpenJOC/FFmpeg/Apple block mapping remains unproven | unavailable; external blocker |
+| Anchored metrics/effects | Suppressed while external mapping is unproven | unavailable |
+| Production behavior | No TDAC, DSP, trim, warp, vendor, or decoder semantic change | verified |

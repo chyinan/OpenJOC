@@ -33,6 +33,7 @@ mod access_unit;
 mod aht;
 mod audio_block;
 mod bit_allocation;
+mod coding_tools;
 mod dynamic_range;
 mod mantissa;
 mod rematrix;
@@ -52,11 +53,11 @@ pub use audio_block::{
     ExponentInformation, FastGainCodes, InternalBasePolicy, MantissaElementTrace, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
     StandardCouplingInformation, TdacContribution, decode_audio_blocks,
-    decode_audio_blocks_with_diagnostic_trace, decode_audio_blocks_with_policy,
-    decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy, decode_first_audio_block,
-    decode_first_audio_block_with_policy, inspect_audio_block_carriers, inverse_aht_dct,
-    parse_first_audio_block_prefix, reconstruct_enhanced_coupling, reconstruct_standard_coupling,
-    synthesize_audio_blocks,
+    decode_audio_blocks_with_diagnostic_trace, decode_audio_blocks_with_parsed_frame,
+    decode_audio_blocks_with_policy, decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy,
+    decode_first_audio_block, decode_first_audio_block_with_policy, inspect_audio_block_carriers,
+    inverse_aht_dct, parse_first_audio_block_prefix, reconstruct_enhanced_coupling,
+    reconstruct_standard_coupling, synthesize_audio_blocks,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -65,6 +66,10 @@ pub use bit_allocation::{
     compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
     exponents_to_psd, high_efficiency_bit_allocation_pointer, integrate_psd, log_add, snr_offset,
     snr_offsets_are_zero,
+};
+pub use coding_tools::{
+    CodingToolBlockInventory, CodingToolInventory, InventoryProvenance, SemanticChannel,
+    emit_coding_tool_inventory,
 };
 pub use dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 pub use mantissa::{

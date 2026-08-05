@@ -609,3 +609,21 @@ is excluded. JOC output remains a 15-row evaluation-only propagation report;
 semantic object identity, complete OAMD timeline, JOC semantic reconstruction,
 nonzero object PCM fidelity, and ADM fidelity remain open. Next blocker:
 parser-emitted full tool inventory and a trusted external block anchor.
+
+## Block-anchor and parser tool inventory (2026-08-06)
+
+The parser-emitted inventory foundation is implemented without changing
+decoder semantics. `diagnose-tools` reports explicit/reused provenance,
+semantic channels, block-switch, exponent state, BAP histograms, dither,
+coupling, SPX, rematrix, AHT, dynamic-range and grouping state. A/E/D/F each
+produce 126 AU × 6 blocks with full-band and LFE records (4536 rows/vector),
+and repeat packages `_r5`/`_r6` are byte-identical for core JSON.
+
+The private anchor source is deterministic 48 kHz 5.1 with 16 AU and six
+distinct 256-sample markers per AU. An independent detector recovers 480/480
+source blocks at high confidence. This proves source-PCM detection only. The
+Logic-encoded G_Block_Anchor_5_1 carrier and OpenJOC/FFmpeg/Apple mapping were
+not generated in this increment, so anchored metrics and tool effects remain
+unavailable. The narrow next blocker is the external Logic export/decode, not
+a DSP or TDAC defect. OAMD/JOC boundaries and strict `warp=3` behavior remain
+unchanged.

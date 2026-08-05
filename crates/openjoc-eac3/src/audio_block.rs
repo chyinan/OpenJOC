@@ -1212,7 +1212,7 @@ pub fn decode_first_audio_block_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<DecodedAudioBlock, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, 1, policy, None)?
+    decode_audio_blocks_until(bytes, dither_values, 1, policy, None, None)?
         .into_iter()
         .next()
         .ok_or(Eac3Error::FrameSizeOverflow)
@@ -1238,7 +1238,7 @@ pub fn decode_audio_blocks_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, None)
+    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, None, None)
 }
 
 /// Decodes every audio block and records conventional mantissa stages.
@@ -1252,7 +1252,26 @@ pub fn decode_audio_blocks_with_diagnostic_trace(
     policy: InternalBasePolicy,
     trace: &mut Vec<MantissaElementTrace>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, Some(trace))
+    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, Some(trace), None)
+}
+
+/// Diagnostic variant that accepts a frame already parsed by the caller.
+/// This keeps inventory emission on the same parser traversal without a
+/// second bitstream parse.
+pub fn decode_audio_blocks_with_parsed_frame(
+    bytes: &[u8],
+    frame: &AudioFrameInformation,
+    dither_values: &[f64],
+    policy: InternalBasePolicy,
+) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
+    decode_audio_blocks_until(
+        bytes,
+        dither_values,
+        usize::MAX,
+        policy,
+        None,
+        Some(frame.clone()),
+    )
 }
 
 /// Decodes one complete E-AC-3 syncframe and emits its full-bandwidth/LFE PCM.
@@ -1560,8 +1579,9 @@ fn decode_audio_blocks_until(
     max_blocks: usize,
     policy: InternalBasePolicy,
     mut trace_sink: Option<&mut Vec<MantissaElementTrace>>,
+    preparsed_frame: Option<AudioFrameInformation>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    let frame = parse_audio_frame(bytes)?;
+    let frame = preparsed_frame.unwrap_or(parse_audio_frame(bytes)?);
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
     let fscod = match frame.bsi.header.sample_rate {
         48_000 => 0,

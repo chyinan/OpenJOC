@@ -2178,3 +2178,24 @@ association with coupling, SPX, dither, rematrix, AHT, or exponent strategy is
 established. LFE exact silence is excluded. JOC propagation remains
 evaluation-only (15 rows, complete object WAVs); semantic object identity is
 open. No production codec, TDAC, trim, warp, or compatibility behavior changed.
+
+## Block-anchor and parser tool inventory (2026-08-06)
+
+Private packages `2026-08-06T_block-anchor-tool-inventory_8d38331_r5` and
+`_r6` are deterministic repeats. `diagnose-tools` obtains records from the
+same parsed prefix, expanded BAP arrays, exponent state, coupling/SPX,
+rematrix/AHT and dither state used by decoding; it does not infer labels from
+PCM or reparse the bitstream. Failed AUs do not commit partial inventories.
+
+A/E/D/F each contain 126 AU, six blocks, five full-band channels and an
+independent LFE record: 4536 records per vector, zero failed AUs. Current
+incidence is observational: coupling/SPX/AHT are off, dither is predominantly
+on, and exponent reuse is present. No randomized single-tool stratum exists,
+so individual effects are not identifiable.
+
+The deterministic 48 kHz 5.1 marker source and independent detector recover
+all 480 source full-band blocks at high confidence with exact offsets. This
+validates source coordinates only. No new Logic export was made; external
+OpenJOC/FFmpeg/Apple block mapping and anchored residual metrics remain
+unproven and intentionally absent. Existing unanchored metrics remain
+diagnostic and are not upgraded.

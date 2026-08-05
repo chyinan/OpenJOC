@@ -10,7 +10,10 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use openjoc_container::{InputMediaKind, load_eac3};
-use openjoc_eac3::{DecodedAccessUnitPcm, InternalBasePolicy, extract_joc_addbsi_access_unit};
+use openjoc_eac3::{
+    DecodedAccessUnitPcm, InternalBasePolicy, emit_coding_tool_inventory,
+    extract_joc_addbsi_access_unit,
+};
 use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{OamdDecoderConfig, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
@@ -28,7 +31,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -78,6 +81,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         Some("decode-payload") => decode_payload(&arguments[1..]),
         Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
+        Some("diagnose-tools") => diagnose_tools(&arguments[1..]),
         Some("census") => run_census(&arguments[1..]),
         Some("diagnose-oamd") => oamd_forensics::run(&arguments[1..]),
         _ => Err(usage_error().into()),
@@ -308,6 +312,83 @@ fn inspect(
             }
         }
     }
+    Ok(())
+}
+
+fn diagnose_tools(values: &[String]) -> Result<(), Box<dyn Error>> {
+    let input = values
+        .first()
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(usage_error)?;
+    let mut vector_id = None;
+    let mut output = None;
+    let mut index = 1;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--vector-id" => {
+                vector_id = values.get(index + 1).cloned();
+                index += 2;
+            }
+            "--json" => {
+                output = values.get(index + 1).map(PathBuf::from);
+                index += 2;
+            }
+            _ => return Err(usage_error().into()),
+        }
+    }
+    let vector_id = vector_id.ok_or_else(usage_error)?;
+    let output = output.ok_or_else(usage_error)?;
+    let media = load_eac3(Path::new(input))?;
+    let frames = openjoc_eac3::index_syncframes(&media.bytes)?;
+    let units = openjoc_eac3::group_access_units(&frames)?;
+    let dither = deterministic_dither_values();
+    let mut inventories = Vec::new();
+    let mut failures = Vec::new();
+    for (au_index, unit) in units.iter().enumerate() {
+        let entry = frames[unit.first_frame];
+        let end = entry.offset + entry.header.frame_size;
+        let bytes = media
+            .bytes
+            .get(entry.offset..end)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "truncated frame"))?;
+        let parsed = openjoc_eac3::parse_audio_frame(bytes)?;
+        match openjoc_eac3::decode_audio_blocks_with_parsed_frame(
+            bytes,
+            &parsed,
+            &dither,
+            InternalBasePolicy::CurrentDefault,
+        )
+        .and_then(|blocks| emit_coding_tool_inventory(&vector_id, au_index, &parsed, &blocks))
+        {
+            Ok(inventory) => inventories.push(inventory),
+            Err(error) => {
+                failures
+                    .push(serde_json::json!({"au_index": au_index, "error": error.to_string()}));
+            }
+        }
+    }
+    let document = serde_json::json!({
+        "schema": "openjoc.coding-tool-inventory.v1",
+        "vector_id": vector_id,
+        "source_kind": media_kind_name(media.kind),
+        "au_count": units.len(),
+        "inventory_count": inventories.len(),
+        "failed_access_units": failures,
+        "inventories": inventories,
+        "diagnostic_only": true,
+        "production_pcm_unchanged": true,
+    });
+    if output.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("refusing to overwrite {}", output.display()),
+        )
+        .into());
+    }
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(output, serde_json::to_vec_pretty(&document)?)?;
     Ok(())
 }
 
