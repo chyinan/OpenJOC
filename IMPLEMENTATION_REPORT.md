@@ -909,3 +909,80 @@ does not claim FFmpeg stage equivalence.
 
 Strict OAMD validation, raw `warp=3`, vendor opaque trim handling, and all
 unverified OAMD/JOC/ADM/fidelity boundaries are unchanged.
+
+## Round-8 TDAC boundary investigation (2026-08-05)
+
+The increment starts at commit `054d3d4566c46a3ab308d0599eb1215b78171cc2` on
+`codex/logic-warp-differential-corpus`. The private run is
+`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary_054d3d4`; its repeated
+tree is `..._repeat`, and all 19 files compare byte-for-byte. Repository
+`.DS_Store` and `references/` remain untracked and untouched.
+
+### Normative model and state audit
+
+ETSI TS 102 366 V1.4.1 clauses 5.2.11, 6.9.3, and 6.9.4 (PDF pages 51 and
+82--85) define a windowed 512-sample block, overlap of its first half with the
+previous block's second half, `pcm[n] = 2 * (x[n] + delay[n])`, and
+`delay[n] = x[N/2+n]`; Table 6.33 (PDF page 86) supplies the symmetric window
+sequence. Saturation arithmetic is normative; the current f64 path did not
+encounter overflow in this run, so saturation was not used to classify the
+boundary. Hashes, f64 arrays, and JSON are diagnostic implementation choices.
+
+The state key is codec channel index, not programme/object index. Full-band
+channels each own a 256-sample delay; LFE owns a separate delay. A call clones
+the existing state, advances staged state block-by-block, and commits all
+channels only after successful synthesis. A failed call or retry cannot expose
+partial state. Independent and dependent JOC substreams use separate
+synthesizers, and there is no AU-boundary reset. Previous/current block-switch
+flags are retained only to make the opt-in trace auditable; they are not a
+hidden compatibility rule.
+
+### Contribution evidence
+
+`AudioPcmSynthesizer::synthesize_with_trace` is opt-in and reports
+pre-window IMDCT, head/tail window coefficients, windowed head/tail,
+carry-in/out, output sum, and scaled output. The normal `synthesize` path
+continues to use the direct transform and overlap/add implementation. A
+synthetic deterministic 12-block run equals a 6+6 framed run exactly, including
+the final carry and the frame-boundary carry-in.
+
+The real private A/E/D/F vectors each contain 126 AUs. For all 125 AU n -> n+1
+boundaries and all FL/FR/FC/SL/SR channels, `carry_out` hashes equal the next
+`carry_in` hashes. At AU0 block5 -> AU1 block0, AU0 block5 output itself is
+within about `0.93e-6--1.28e-6` RMS of the FFmpeg reference. The large error
+appears only when its stored side-channel tail participates at AU1:
+
+```text
+                 normal RMS        zero-carry RMS
+A/E/D SL          0.0075718936      0.000000126--0.000000181
+A/E/D SR          0.0073475530      0.000000125--0.000000181
+F SL              0.0071960116      0.000000181
+F SR              0.0069830427      0.000000180
+```
+
+The black-box inferred reference carry is explicitly marked
+`inferred_black_box_component=true`; correlation with stored SL/SR carry is
+only about `0.0227--0.0349`, with scalar gain approximately zero. Therefore:
+
+```text
+carry storage / frame commit / channel mapping: verified correct
+current AU1 head for SL/SR: agrees with FFmpeg when carry is omitted
+stored carry versus FFmpeg inferred component: differs
+root cause: unresolved upstream block-5 tail versus external frame-boundary policy
+```
+
+An FFmpeg continuous-vs-isolated AU1 probe is retained as a black-box
+observation, not as an ETSI rule. It cannot justify a production reset. No
+production reset, per-channel gain, sample-1536 special case, remap, or FFmpeg
+algorithm was added. OAMD strict/vendor behavior and raw warp `3` are unchanged.
+
+Complete OAMD timeline, JOC semantic fidelity, ADM position/trim comparison,
+and accepted internal-base fidelity remain open. The first remaining blocker is
+the normative/independent explanation for the side-channel block-5 tail at the
+first AU boundary, not state continuity.
+
+As a regression-only check, the A/E/D/F `CurrentDefault` internal-base full WAVs
+generated in this run are byte-identical to the prior base-root-cause outputs.
+Because no production TDAC fix was accepted, a second post-fix JOC propagation
+claim is intentionally not made; the existing object-row comparison remains
+non-fidelity evidence.

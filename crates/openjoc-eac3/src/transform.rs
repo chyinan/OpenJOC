@@ -49,6 +49,31 @@ struct Complex {
     imag: f64,
 }
 
+/// The bit-exact intermediate values of one inverse transform.
+///
+/// This is an opt-in diagnostic representation.  Production decoding uses
+/// the same values but does not retain or emit these arrays.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InverseTransformTrace {
+    pub block_switch: bool,
+    pub pre_window: Vec<f64>,
+    pub window_coefficients: Vec<f64>,
+    pub windowed: Vec<f64>,
+}
+
+/// The contribution identity for one TDAC block.
+///
+/// `output_sum = carry_in + current_head` and `output = 2 * output_sum`.
+/// The explicit unscaled sum avoids hiding the normative overlap/add factor.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OverlapAddTrace {
+    pub carry_in: Vec<f64>,
+    pub current_head: Vec<f64>,
+    pub output_sum: Vec<f64>,
+    pub output: Vec<f64>,
+    pub carry_out: Vec<f64>,
+}
+
 /// Applies the clause 6.9 inverse transform for one E-AC-3 audio block.
 ///
 /// `coefficients` contains the 256 interleaved transform coefficients. With
@@ -56,22 +81,44 @@ struct Complex {
 /// With `block_switch == true`, clause 6.9.4.2 de-interleaves two 256-sample
 /// transforms and returns their 512-sample windowed block.
 pub fn inverse_transform(coefficients: &[f64], block_switch: bool) -> Result<Vec<f64>, Eac3Error> {
-    if coefficients.len() != TRANSFORM_COEFFICIENTS {
-        return Err(Eac3Error::InvalidTransformCoefficientLength {
-            expected: TRANSFORM_COEFFICIENTS,
-            actual: coefficients.len(),
-        });
-    }
-    for (index, coefficient) in coefficients.iter().enumerate() {
-        if !coefficient.is_finite() {
-            return Err(Eac3Error::NonFiniteTransformCoefficient { index });
-        }
-    }
-    if block_switch {
-        inverse_short(coefficients)
+    validate_transform_coefficients(coefficients)?;
+    let mut windowed = if block_switch {
+        inverse_short(coefficients)?
     } else {
-        inverse_long(coefficients)
+        inverse_long(coefficients)?
+    };
+    for (index, value) in windowed.iter_mut().enumerate() {
+        *value *= window_coefficient(index);
     }
+    Ok(windowed)
+}
+
+/// Applies the inverse transform and exposes its pre-window and windowed
+/// stages for deterministic diagnostics.
+pub fn inverse_transform_with_trace(
+    coefficients: &[f64],
+    block_switch: bool,
+) -> Result<InverseTransformTrace, Eac3Error> {
+    validate_transform_coefficients(coefficients)?;
+    let pre_window = if block_switch {
+        inverse_short(coefficients)?
+    } else {
+        inverse_long(coefficients)?
+    };
+    let window_coefficients = (0..TRANSFORM_SAMPLES)
+        .map(window_coefficient)
+        .collect::<Vec<_>>();
+    let windowed = pre_window
+        .iter()
+        .zip(&window_coefficients)
+        .map(|(value, coefficient)| value * coefficient)
+        .collect();
+    Ok(InverseTransformTrace {
+        block_switch,
+        pre_window,
+        window_coefficients,
+        windowed,
+    })
 }
 
 /// Performs the clause 6.9.4.1 overlap/add operation and advances its delay.
@@ -87,6 +134,35 @@ pub fn overlap_add(windowed: &[f64], delay: &mut [f64]) -> Result<Vec<f64>, Eac3
         delay[index] = windowed[index + HALF_SAMPLES];
     }
     Ok(pcm)
+}
+
+/// Applies overlap/add and exposes the four contribution components.
+pub fn overlap_add_with_trace(
+    windowed: &[f64],
+    delay: &mut [f64],
+) -> Result<OverlapAddTrace, Eac3Error> {
+    if windowed.len() != TRANSFORM_SAMPLES || delay.len() != HALF_SAMPLES {
+        return Err(Eac3Error::InvalidTransformWindowLength {
+            actual: windowed.len(),
+        });
+    }
+    let carry_in = delay.to_vec();
+    let current_head = windowed[..HALF_SAMPLES].to_vec();
+    let output_sum = current_head
+        .iter()
+        .zip(&carry_in)
+        .map(|(head, carry)| head + carry)
+        .collect::<Vec<_>>();
+    let output = output_sum.iter().map(|sample| 2.0 * sample).collect();
+    let carry_out = windowed[HALF_SAMPLES..].to_vec();
+    delay.copy_from_slice(&carry_out);
+    Ok(OverlapAddTrace {
+        carry_in,
+        current_head,
+        output_sum,
+        output,
+        carry_out,
+    })
 }
 
 fn inverse_long(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
@@ -116,16 +192,14 @@ fn inverse_long(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
     let mut output = vec![0.0; TRANSFORM_SAMPLES];
     for n in 0..EIGHTH_SAMPLES {
         let n8 = EIGHTH_SAMPLES;
-        output[2 * n] = -y[n8 + n].imag * window(2 * n);
-        output[2 * n + 1] = y[n8 - n - 1].real * window(2 * n + 1);
-        output[QUARTER_SAMPLES + 2 * n] = -y[n].real * window(QUARTER_SAMPLES + 2 * n);
-        output[QUARTER_SAMPLES + 2 * n + 1] =
-            y[QUARTER_SAMPLES - n - 1].imag * window(QUARTER_SAMPLES + 2 * n + 1);
-        output[HALF_SAMPLES + 2 * n] = -y[n8 + n].real * window(HALF_SAMPLES - 2 * n - 1);
-        output[HALF_SAMPLES + 2 * n + 1] = y[n8 - n - 1].imag * window(HALF_SAMPLES - 2 * n - 2);
-        output[3 * QUARTER_SAMPLES + 2 * n] = y[n].imag * window(QUARTER_SAMPLES - 2 * n - 1);
-        output[3 * QUARTER_SAMPLES + 2 * n + 1] =
-            -y[QUARTER_SAMPLES - n - 1].real * window(QUARTER_SAMPLES - 2 * n - 2);
+        output[2 * n] = -y[n8 + n].imag;
+        output[2 * n + 1] = y[n8 - n - 1].real;
+        output[QUARTER_SAMPLES + 2 * n] = -y[n].real;
+        output[QUARTER_SAMPLES + 2 * n + 1] = y[QUARTER_SAMPLES - n - 1].imag;
+        output[HALF_SAMPLES + 2 * n] = -y[n8 + n].real;
+        output[HALF_SAMPLES + 2 * n + 1] = y[n8 - n - 1].imag;
+        output[3 * QUARTER_SAMPLES + 2 * n] = y[n].imag;
+        output[3 * QUARTER_SAMPLES + 2 * n + 1] = -y[QUARTER_SAMPLES - n - 1].real;
     }
     Ok(output)
 }
@@ -151,17 +225,14 @@ fn inverse_short(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
     for n in 0..EIGHTH_SAMPLES {
         let value1 = y1[n];
         let value2 = y2[n];
-        output[2 * n] = -value1.imag * window(2 * n);
-        output[2 * n + 1] = y1[EIGHTH_SAMPLES - n - 1].real * window(2 * n + 1);
-        output[QUARTER_SAMPLES + 2 * n] = -value1.real * window(QUARTER_SAMPLES + 2 * n);
-        output[QUARTER_SAMPLES + 2 * n + 1] =
-            y1[EIGHTH_SAMPLES - n - 1].imag * window(QUARTER_SAMPLES + 2 * n + 1);
-        output[HALF_SAMPLES + 2 * n] = -value2.real * window(HALF_SAMPLES - 2 * n - 1);
-        output[HALF_SAMPLES + 2 * n + 1] =
-            y2[EIGHTH_SAMPLES - n - 1].imag * window(HALF_SAMPLES - 2 * n - 2);
-        output[3 * QUARTER_SAMPLES + 2 * n] = value2.imag * window(QUARTER_SAMPLES - 2 * n - 1);
-        output[3 * QUARTER_SAMPLES + 2 * n + 1] =
-            -y2[EIGHTH_SAMPLES - n - 1].real * window(QUARTER_SAMPLES - 2 * n - 2);
+        output[2 * n] = -value1.imag;
+        output[2 * n + 1] = y1[EIGHTH_SAMPLES - n - 1].real;
+        output[QUARTER_SAMPLES + 2 * n] = -value1.real;
+        output[QUARTER_SAMPLES + 2 * n + 1] = y1[EIGHTH_SAMPLES - n - 1].imag;
+        output[HALF_SAMPLES + 2 * n] = -value2.real;
+        output[HALF_SAMPLES + 2 * n + 1] = y2[EIGHTH_SAMPLES - n - 1].imag;
+        output[3 * QUARTER_SAMPLES + 2 * n] = value2.imag;
+        output[3 * QUARTER_SAMPLES + 2 * n + 1] = -y2[EIGHTH_SAMPLES - n - 1].real;
     }
     Ok(output)
 }
@@ -206,4 +277,23 @@ fn inverse_complex(input: &[Complex], stride: f64) -> Vec<Complex> {
 
 fn window(index: usize) -> f64 {
     TRANSFORM_WINDOW[index]
+}
+
+fn window_coefficient(index: usize) -> f64 {
+    window(index.min(TRANSFORM_SAMPLES - 1 - index))
+}
+
+fn validate_transform_coefficients(coefficients: &[f64]) -> Result<(), Eac3Error> {
+    if coefficients.len() != TRANSFORM_COEFFICIENTS {
+        return Err(Eac3Error::InvalidTransformCoefficientLength {
+            expected: TRANSFORM_COEFFICIENTS,
+            actual: coefficients.len(),
+        });
+    }
+    for (index, coefficient) in coefficients.iter().enumerate() {
+        if !coefficient.is_finite() {
+            return Err(Eac3Error::NonFiniteTransformCoefficient { index });
+        }
+    }
+    Ok(())
 }

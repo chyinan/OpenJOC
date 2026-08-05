@@ -8,7 +8,9 @@ use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 use crate::mantissa::{MantissaGroupingState, decode_mantissas_with_state};
 use crate::rematrix::rematrix_channels;
-use crate::transform::{inverse_transform, overlap_add};
+use crate::transform::{
+    inverse_transform, inverse_transform_with_trace, overlap_add, overlap_add_with_trace,
+};
 use crate::{
     AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
     apply_delta_bit_allocation, bit_allocation_band_for_bin, channel_end_mantissa,
@@ -1266,6 +1268,34 @@ pub struct AudioPcmSynthesizer {
     channel_delays: Vec<Vec<f64>>,
     lfe_delay: Vec<f64>,
     lfe_present: Option<bool>,
+    previous_block_switch: Vec<bool>,
+    previous_lfe_block_switch: bool,
+}
+
+/// Opt-in contribution trace for one full-band or LFE transform block.
+///
+/// The arrays are deliberately owned so a diagnostic sink can serialize them
+/// after the decoder returns.  No production decode path allocates this
+/// representation unless [`AudioPcmSynthesizer::synthesize_with_trace`] is
+/// explicitly selected by the caller.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TdacContribution {
+    pub block_index: usize,
+    pub channel_index: usize,
+    pub lfe: bool,
+    pub previous_block_switch: bool,
+    pub block_switch: bool,
+    pub pre_window_imdct: Vec<f64>,
+    pub pre_window_imdct_head: Vec<f64>,
+    pub pre_window_imdct_tail: Vec<f64>,
+    pub window_coefficients_head: Vec<f64>,
+    pub window_coefficients_tail: Vec<f64>,
+    pub windowed_head: Vec<f64>,
+    pub windowed_tail: Vec<f64>,
+    pub carry_in: Vec<f64>,
+    pub output_sum: Vec<f64>,
+    pub output: Vec<f64>,
+    pub carry_out: Vec<f64>,
 }
 
 impl AudioPcmSynthesizer {
@@ -1294,6 +1324,28 @@ impl AudioPcmSynthesizer {
     pub fn synthesize(
         &mut self,
         blocks: &[DecodedAudioBlock],
+    ) -> Result<DecodedAudioPcm, Eac3Error> {
+        self.synthesize_internal(blocks, None)
+    }
+
+    /// Synthesizes blocks while sending a deterministic, read-only TDAC
+    /// contribution to `sink` for every channel and block.
+    ///
+    /// This is a diagnostic API.  It does not alter transform, overlap, or
+    /// commit semantics; the same staged state is committed only after all
+    /// blocks succeed.  A sink cannot reset or replace decoder state.
+    pub fn synthesize_with_trace(
+        &mut self,
+        blocks: &[DecodedAudioBlock],
+        sink: &mut dyn FnMut(TdacContribution),
+    ) -> Result<DecodedAudioPcm, Eac3Error> {
+        self.synthesize_internal(blocks, Some(sink))
+    }
+
+    fn synthesize_internal(
+        &mut self,
+        blocks: &[DecodedAudioBlock],
+        mut sink: Option<&mut dyn FnMut(TdacContribution)>,
     ) -> Result<DecodedAudioPcm, Eac3Error> {
         let Some(first) = blocks.first() else {
             return Ok(DecodedAudioPcm {
@@ -1326,6 +1378,12 @@ impl AudioPcmSynthesizer {
         } else {
             self.channel_delays.clone()
         };
+        let mut previous_block_switch = if self.previous_block_switch.len() == channel_count {
+            self.previous_block_switch.clone()
+        } else {
+            vec![false; channel_count]
+        };
+        let mut previous_lfe_block_switch = self.previous_lfe_block_switch;
         let mut lfe_delay = if lfe_present {
             if self.lfe_delay.is_empty() {
                 vec![0.0; 256]
@@ -1361,25 +1419,89 @@ impl AudioPcmSynthesizer {
             for channel in 0..channel_count {
                 let coefficients =
                     padded_transform_coefficients(&block.channel_mantissas[channel])?;
-                let windowed =
-                    inverse_transform(&coefficients, block.prefix.block_switch[channel])?;
-                let pcm = overlap_add(&windowed, &mut channel_delays[channel])?;
-                channels[channel].extend_from_slice(&pcm);
+                if let Some(sink) = sink.as_deref_mut() {
+                    let transform = inverse_transform_with_trace(
+                        &coefficients,
+                        block.prefix.block_switch[channel],
+                    )?;
+                    let overlap =
+                        overlap_add_with_trace(&transform.windowed, &mut channel_delays[channel])?;
+                    channels[channel].extend_from_slice(&overlap.output);
+                    sink(TdacContribution {
+                        block_index: block.block_index,
+                        channel_index: channel,
+                        lfe: false,
+                        previous_block_switch: previous_block_switch[channel],
+                        block_switch: transform.block_switch,
+                        pre_window_imdct: transform.pre_window.clone(),
+                        pre_window_imdct_head: overlap_head(&transform.pre_window),
+                        pre_window_imdct_tail: overlap_tail(&transform.pre_window),
+                        window_coefficients_head: overlap_head(&transform.window_coefficients),
+                        window_coefficients_tail: overlap_tail(&transform.window_coefficients),
+                        windowed_head: overlap.current_head,
+                        windowed_tail: overlap.carry_out.clone(),
+                        carry_in: overlap.carry_in,
+                        output_sum: overlap.output_sum,
+                        output: overlap.output,
+                        carry_out: overlap.carry_out,
+                    });
+                } else {
+                    let windowed =
+                        inverse_transform(&coefficients, block.prefix.block_switch[channel])?;
+                    let pcm = overlap_add(&windowed, &mut channel_delays[channel])?;
+                    channels[channel].extend_from_slice(&pcm);
+                }
+                previous_block_switch[channel] = block.prefix.block_switch[channel];
             }
 
             if let (Some(lfe_output), Some(lfe_coefficients)) = (&mut lfe, &block.lfe_mantissas) {
                 let coefficients = padded_transform_coefficients(lfe_coefficients)?;
-                let windowed = inverse_transform(&coefficients, false)?;
-                let pcm = overlap_add(&windowed, &mut lfe_delay)?;
-                lfe_output.extend_from_slice(&pcm);
+                if let Some(sink) = sink.as_deref_mut() {
+                    let transform = inverse_transform_with_trace(&coefficients, false)?;
+                    let overlap = overlap_add_with_trace(&transform.windowed, &mut lfe_delay)?;
+                    lfe_output.extend_from_slice(&overlap.output);
+                    sink(TdacContribution {
+                        block_index: block.block_index,
+                        channel_index: 0,
+                        lfe: true,
+                        previous_block_switch: previous_lfe_block_switch,
+                        block_switch: false,
+                        pre_window_imdct: transform.pre_window.clone(),
+                        pre_window_imdct_head: overlap_head(&transform.pre_window),
+                        pre_window_imdct_tail: overlap_tail(&transform.pre_window),
+                        window_coefficients_head: overlap_head(&transform.window_coefficients),
+                        window_coefficients_tail: overlap_tail(&transform.window_coefficients),
+                        windowed_head: overlap.current_head,
+                        windowed_tail: overlap.carry_out.clone(),
+                        carry_in: overlap.carry_in,
+                        output_sum: overlap.output_sum,
+                        output: overlap.output,
+                        carry_out: overlap.carry_out,
+                    });
+                } else {
+                    let windowed = inverse_transform(&coefficients, false)?;
+                    let pcm = overlap_add(&windowed, &mut lfe_delay)?;
+                    lfe_output.extend_from_slice(&pcm);
+                }
+                previous_lfe_block_switch = false;
             }
         }
 
         self.channel_delays = channel_delays;
         self.lfe_delay = lfe_delay;
         self.lfe_present = Some(lfe_present);
+        self.previous_block_switch = previous_block_switch;
+        self.previous_lfe_block_switch = previous_lfe_block_switch;
         Ok(DecodedAudioPcm { channels, lfe })
     }
+}
+
+fn overlap_head(values: &[f64]) -> Vec<f64> {
+    values[..256].to_vec()
+}
+
+fn overlap_tail(values: &[f64]) -> Vec<f64> {
+    values[256..512].to_vec()
 }
 
 /// Applies the inverse transform and overlap/add stages to one block sequence

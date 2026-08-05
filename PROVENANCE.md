@@ -1920,3 +1920,48 @@ by the current API (exponents, BAP, dequantized coefficients, pre-IMDCT/window,
 and overlap/add). Coupling-vs-SPX-vs-rematrix sub-stages are marked unavailable
 rather than inferred. `ETSI_STRICT` still rejects OAMD `warp=3`; no vendor warp
 rule or semantic remap was introduced.
+
+## TDAC contribution trace and boundary evidence (2026-08-05)
+
+The private, non-overwriting run
+`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary_054d3d4` (repeated in
+`..._repeat`) uses the opt-in `AudioPcmSynthesizer::synthesize_with_trace`
+sink. It records the bounded transform/window and overlap components without
+changing the production path. The paired reports are byte-identical. The run
+does not modify repository `.DS_Store`, `references/`, private Logic projects,
+ADM BWF, MP4/EC3, manifests, or earlier forensic/census output.
+
+The public reference is ETSI TS 102 366 V1.4.1: clauses 5.2.11, 6.9.3 and
+6.9.4 (PDF pages 51, 82--85) specify the windowed-block overlap equation and
+the delay update; Table 6.33 is on PDF page 86. The trace reports the explicit
+identity `output_sum = carry_in + current_windowed_head`, `output = 2 *
+output_sum`, and `carry_out = current_windowed_tail`. Floating-point
+representation and diagnostic hashes are implementation choices, not ETSI
+requirements.
+
+`AudioPcmSynthesizer` owns one 256-sample delay vector per full-bandwidth
+codec channel and a separate LFE vector. Calls stage cloned histories and
+commit only after every block succeeds. `JocAccessUnitPcmDecoder` keeps
+independent and dependent synthesizers separate. A synthetic 12-block stream
+and a 6+6 framed partition produce identical PCM and final carry, and the
+real A/E/D/F run reports exact carry-out/carry-in equality at all 125 AU
+boundaries for FL/FR/FC/SL/SR. This rules out a lost carry, retry double
+advance, AU vector rebuild, or channel-state commit bug.
+
+At AU0 block5 -> AU1 block0, current-windowed heads for SL/SR reproduce the
+FFmpeg-compatible reference when the stored carry is omitted (zero-carry RMS
+`1.2581e-7` and `1.2454e-7`), while the normal continuous output has RMS
+`0.0075718936` and `0.0073475530`. The stored carry is exact and channel-local
+but has near-zero correlation with the black-box inferred reference component
+(`0.0347`/`0.0349`, with scalar gain near zero). The same run records FFmpeg's
+continuous-vs-isolated AU1 probe as an implementation observation only; it is
+not treated as normative ETSI evidence. The remaining classification is
+`carry generation / upstream block-5 tail versus external frame-boundary
+policy`, unresolved. No production AU reset, remap, gain, or hidden
+compatibility mode is permitted by this evidence.
+
+As a non-fix regression check, A/E/D/F `CurrentDefault` internal-base full WAVs
+from this increment are byte-identical to the prior
+`2026-08-05T070007Z_base-root-cause_792d937` outputs. JOC propagation was not
+rerun as a post-fix comparison because no production TDAC correction was
+admitted; the earlier object-row measurements remain non-fidelity evidence.

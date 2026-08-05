@@ -51,11 +51,11 @@ pub use audio_block::{
     DeltaBitAllocationSegment, EnhancedCouplingInformation, EnhancedCouplingReconstruction,
     ExponentInformation, FastGainCodes, InternalBasePolicy, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
-    StandardCouplingInformation, decode_audio_blocks, decode_audio_blocks_with_policy,
-    decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy, decode_first_audio_block,
-    decode_first_audio_block_with_policy, inspect_audio_block_carriers, inverse_aht_dct,
-    parse_first_audio_block_prefix, reconstruct_enhanced_coupling, reconstruct_standard_coupling,
-    synthesize_audio_blocks,
+    StandardCouplingInformation, TdacContribution, decode_audio_blocks,
+    decode_audio_blocks_with_policy, decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy,
+    decode_first_audio_block, decode_first_audio_block_with_policy, inspect_audio_block_carriers,
+    inverse_aht_dct, parse_first_audio_block_prefix, reconstruct_enhanced_coupling,
+    reconstruct_standard_coupling, synthesize_audio_blocks,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -72,7 +72,10 @@ pub use mantissa::{
 };
 pub use rematrix::rematrix_channels;
 pub use spx::synthesize_spectral_extension;
-pub use transform::{inverse_transform, overlap_add};
+pub use transform::{
+    InverseTransformTrace, OverlapAddTrace, inverse_transform, inverse_transform_with_trace,
+    overlap_add, overlap_add_with_trace,
+};
 
 use core::fmt;
 use openjoc_bitio::{BitError, BitRead, BitReader};

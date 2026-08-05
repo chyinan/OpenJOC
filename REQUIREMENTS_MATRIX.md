@@ -255,3 +255,17 @@ lane remain unchanged/open.
 | TDAC boundary probe | Resetting overlap state only before frame/AU 1 removes the large SL/SR block-6 residual in a diagnostic probe, while ETSI requires overlap with the previous block; no production reset was added | unresolved black-box interoperability |
 | Stage evidence | Private opt-in stage inventory records decoded exponents, BAP, dequantized coefficients, transform/window, and overlap outputs; unavailable sub-stages are explicitly marked | diagnostic-only |
 | Fidelity conclusion | FFmpeg remains an independent black-box comparator; no decoder algorithm, gain, channel remap, or state reset is copied; strict/vendor OAMD behavior and raw warp `3` are unchanged | open |
+
+## TDAC boundary decomposition (2026-08-05)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Normative overlap model | ETSI TS 102 366 V1.4.1 clauses 5.2.11, 6.9.3, 6.9.4.1/2: `pcm[n] = 2 * (current_head[n] + previous_tail[n])`, then `carry_out[n] = current_tail[n]`; Table 6.33 is the 256-value symmetric window | recorded |
+| Opt-in contribution trace | `AudioPcmSynthesizer::synthesize_with_trace` exposes pre-window IMDCT, window coefficients, windowed head/tail, carry-in/out, output sum, and scaled output; normal synthesis remains the direct production path | implemented/tested |
+| Carry lifecycle | Per-channel 256-sample state; LFE is separate; frame calls stage cloned state and commit only after success; failed calls leave state unchanged; no AU reset | verified |
+| Synthetic partition invariant | Deterministic 12-block continuous run equals 6+6 framed run sample-for-sample and with identical final carry; transition flags are channel-local | verified |
+| Real AU boundary carry continuity | Private run `2026-08-05T_tdac-boundary_054d3d4` covers A/E/D/F, 126 AUs and all 125 boundaries: every FL/FR/FC/SL/SR `carry_out == next carry_in` | verified |
+| AU0 block5 -> AU1 block0 decomposition | SL/SR normal RMS is `0.0075718936/0.0073475530`; zero-carry RMS is `1.2581e-7/1.2454e-7`; stored-vs-inferred black-box carry correlation is only `0.0347/0.0349`; front/centre remain small | localized; unresolved |
+| Production correction | No reset, gain, remap, sample-index special case, or FFmpeg algorithm was added. The evidence rules out storage/commit loss but does not prove whether the remaining difference is an upstream block-5 transform/tail issue or FFmpeg frame-boundary policy | open |
+| CurrentDefault regression | A/E/D/F `internal_base_full.wav` outputs are byte-identical to the prior base-root-cause run; no production TDAC behavior changed | verified |
+| JOC propagation after a fix | Not rerun as a post-fix comparison because no production TDAC fix was admitted; prior JOC comparison remains the current non-fidelity evidence | pending |
