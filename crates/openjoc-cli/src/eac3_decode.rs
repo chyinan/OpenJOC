@@ -1,9 +1,9 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame, extract_joc_access_unit_for_profile,
-    extract_joc_addbsi_access_unit, group_access_units, index_syncframes,
-    validate_complexity_index,
+    DecodedAccessUnitPcm, Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame,
+    extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit, group_access_units,
+    index_syncframes, validate_complexity_index,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{
@@ -233,24 +233,23 @@ where
     Ok(decoder.finish()?)
 }
 
-/// Decodes the normative JOC elementary-stream audio path without an external
-/// base decoder. TS 103 420 E.3 permits exactly I0 and optional D0; the
-/// E-AC-3 access-unit decoder merges those channel locations before the PCM is
-/// passed to the JOC/ObjectScene boundary.
-///
 /// Decodes the normative E-AC-3 base path and lends each reconstructed JOC
 /// frame to a sink immediately. The base decoder remains an independently
 /// implemented, fidelity-unverified path until a legal real vector passes the
-/// required comparison.
-pub fn decode_internal_eac3_with_sink<S>(
+/// required comparison. It also lends each committed access-unit PCM
+/// to a second sink. The base sink is called only after the corresponding JOC
+/// frame has committed, so diagnostics cannot advance on a failed frame.
+pub fn decode_internal_eac3_with_base_sink<S, B>(
     stream: &[u8],
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
     dither_values: &[f64],
     mut sink: S,
+    mut base_sink: B,
 ) -> Result<ObjectScene, DecodeEac3Error>
 where
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
 {
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
@@ -292,7 +291,10 @@ where
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,
             },
-            |frame| sink(unit_index, &metadata, frame),
+            |frame| {
+                sink(unit_index, &metadata, frame)?;
+                base_sink(unit_index, &pcm)
+            },
         )?;
     }
     Ok(decoder.finish()?)

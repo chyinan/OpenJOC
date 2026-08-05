@@ -816,3 +816,40 @@ speaker-render fidelity, complete OAMD semantic timeline, or
 `--internal-base` fidelity claim is made. The first blocker after layout and
 JOC/QMF scene assembly is now unresolved trim/warp semantics and the absence
 of a validated ADM/render comparison, not object cardinality.
+
+## Round-6 internal-base numerical comparison (2026-08-05)
+
+This increment adds an auditable base-only sink to the internal E-AC-3 path.
+For each AU the sink is called only after the corresponding JOC frame commits,
+so `internal_base_full.wav` cannot advance after a failed frame. The exported
+orders are explicit: full base `FL,FR,FC,LFE,SL,SR`; JOC input
+`FL,FR,FC,SL,SR`; separate `LFE`. The accumulator checks AU sequence, sample
+rate, channel count, and frame lengths and records 126 x 1,536 samples for
+each A/E/D/F vector.
+
+The private evidence run is
+`OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`.
+FFmpeg 8.1.2 compatible-base is generated with `-map 0:a:0`, explicit `pan`
+filters, `pcm_f64le`, and no resampling. Its default dialnorm/dynrng
+presentation behavior is recorded rather than copied into the internal path.
+OpenJOC uses `--internal-base --reference-f64 --trim-config-count 1` with the
+explicit vendor profile; warp=3 remains raw/opaque and no new compatibility
+rule is present.
+
+The strict numerical result is deliberately separated from semantic claims:
+
+| plane | result |
+| --- | --- |
+| base PCM | all vectors diverge at zero delay in AU 0/block 0; FL/FR/FC first samples 9/9/7, SL/SR 12/5; raw SNR about 84.5--90.6 dB front/centre and 38.8--51.3 dB side; LFE exactly silent |
+| JOC propagation | same payload 11/14 and state are run through both bases; per-row/AU/block metrics are private, but no threshold converts them into fidelity acceptance |
+| OAMD activation | 16 scene entries (1 LFE + 15 dynamic) are emitted under vendor compatibility; this is not a complete OAMD timeline |
+| ADM position/trim | not compared; warp semantics remain unresolved |
+
+The A/E/D/F vectors contain 15 dynamic codec rows. Frequency matrices use the
+manifest's 440/659/997/2003 Hz source set and report target/off-target energy.
+F's two ADM object names are not treated as a proven row map because energy is
+distributed across rows; E is retained as a no-dynamic-object codec-capacity
+control. Both report trees (`reports1`, `reports2`) are byte-identical. The
+first remaining fidelity blocker is the measurable base-path difference plus
+unresolved FFmpeg/internal DRC/dialnorm/delay policy; no JOC, OAMD, or ADM
+semantic conclusion is inferred from it.

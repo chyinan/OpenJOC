@@ -9,11 +9,13 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use openjoc_container::{InputMediaKind, load_eac3};
-use openjoc_eac3::extract_joc_addbsi_access_unit;
+use openjoc_eac3::{DecodedAccessUnitPcm, extract_joc_addbsi_access_unit};
 use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{OamdDecoderConfig, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
-use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, decode, encode_channels};
+use openjoc_wave::{
+    Clipping, Dither, SampleFormat, WaveEncodeOptions, WavePcm, decode, encode_channels,
+};
 use std::{
     env,
     error::Error,
@@ -589,7 +591,8 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     let sink_output = arguments.output.clone();
     let scene = if arguments.internal_base {
         let dither = deterministic_dither_values();
-        eac3_decode::decode_internal_eac3_with_sink(
+        let mut base_capture = InternalBasePcm::default();
+        let scene = eac3_decode::decode_internal_eac3_with_base_sink(
             stream,
             config,
             arguments.validation_profile,
@@ -606,20 +609,30 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
                     })
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
-        )?
+            |access_unit, pcm| {
+                base_capture
+                    .append(access_unit, pcm)
+                    .map_err(eac3_decode::DecodeEac3Error::Sink)
+            },
+        )?;
+        base_capture.write(&sink_output)?;
+        scene
     } else {
         let base_paths = match &arguments.downmix {
             Some(path) => CompatibleBasePaths {
+                full: None,
                 downmix: path.clone(),
                 lfe: None,
             },
             None => decode_base_audio(&arguments.input, &arguments.output)?,
         };
-        let downmix = decode(&fs::read(base_paths.downmix)?)?;
+        let downmix = decode(&fs::read(&base_paths.downmix)?)?;
         let lfe = base_paths
             .lfe
+            .as_ref()
             .map(|path| -> Result<_, Box<dyn Error>> { Ok(decode(&fs::read(path)?)?) })
             .transpose()?;
+        write_compatible_base_inventory(&arguments.output, &base_paths, &downmix, lfe.as_ref())?;
         eac3_decode::decode_aligned_eac3_with_sink_and_lfe(
             stream,
             &downmix,
@@ -659,8 +672,165 @@ fn deterministic_dither_values() -> Vec<f64> {
 }
 
 struct CompatibleBasePaths {
+    full: Option<PathBuf>,
     downmix: PathBuf,
     lfe: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct InternalBasePcm {
+    sample_rate: Option<u32>,
+    full: Vec<Vec<f64>>,
+    joc_input: Vec<Vec<f64>>,
+    lfe: Option<Vec<f64>>,
+    access_units: usize,
+    samples_per_access_unit: Vec<usize>,
+}
+
+impl InternalBasePcm {
+    fn append(&mut self, access_unit: usize, pcm: &DecodedAccessUnitPcm) -> Result<(), String> {
+        if access_unit != self.access_units {
+            return Err(format!(
+                "internal base access-unit sequence expected {}, received {}",
+                self.access_units, access_unit
+            ));
+        }
+        if pcm.channels.len() != 5 {
+            return Err(format!(
+                "internal base exposes {} full-band channels; expected five JOC inputs",
+                pcm.channels.len()
+            ));
+        }
+        let frame_samples = usize::from(pcm.samples);
+        if pcm
+            .channels
+            .iter()
+            .any(|channel| channel.len() != frame_samples)
+        {
+            return Err("internal base channel frame length mismatch".to_owned());
+        }
+        if let Some(expected) = self.sample_rate
+            && expected != pcm.sample_rate
+        {
+            return Err(format!(
+                "internal base sample rate changed from {} to {}",
+                expected, pcm.sample_rate
+            ));
+        }
+        self.sample_rate.get_or_insert(pcm.sample_rate);
+        if self.joc_input.is_empty() {
+            self.joc_input = vec![Vec::new(); pcm.channels.len()];
+        }
+        for (destination, source) in self.joc_input.iter_mut().zip(&pcm.channels) {
+            destination.extend_from_slice(source);
+        }
+        match (&mut self.lfe, &pcm.lfe) {
+            (None, None) => {}
+            (None, Some(source)) => {
+                if source.len() != frame_samples {
+                    return Err("internal base LFE frame length mismatch".to_owned());
+                }
+                self.lfe = Some(source.clone());
+            }
+            (Some(destination), Some(source)) => {
+                if source.len() != frame_samples {
+                    return Err("internal base LFE frame length mismatch".to_owned());
+                }
+                destination.extend_from_slice(source);
+            }
+            (Some(_), None) => {
+                return Err("internal base LFE presence changed between access units".to_owned());
+            }
+        }
+        let frame_full = if let Some(lfe) = &pcm.lfe {
+            if lfe.len() != frame_samples {
+                return Err("internal base LFE frame length mismatch".to_owned());
+            }
+            vec![
+                pcm.channels[0].clone(),
+                pcm.channels[1].clone(),
+                pcm.channels[2].clone(),
+                lfe.clone(),
+                pcm.channels[3].clone(),
+                pcm.channels[4].clone(),
+            ]
+        } else {
+            pcm.channels.clone()
+        };
+        if self.full.is_empty() {
+            self.full = vec![Vec::new(); frame_full.len()];
+        }
+        for (destination, source) in self.full.iter_mut().zip(frame_full) {
+            destination.extend_from_slice(&source);
+        }
+        self.samples_per_access_unit.push(frame_samples);
+        self.access_units += 1;
+        Ok(())
+    }
+
+    fn write(&self, output: &Path) -> Result<(), Box<dyn Error>> {
+        let sample_rate = self
+            .sample_rate
+            .ok_or_else(|| io::Error::other("internal base produced no PCM"))?;
+        let options = WaveEncodeOptions {
+            sample_format: SampleFormat::F64,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        };
+        let debug = output.join("debug");
+        fs::create_dir_all(&debug)?;
+        fs::write(
+            debug.join("internal_base_full.wav"),
+            encode_channels(sample_rate, &self.full, options)?,
+        )?;
+        fs::write(
+            debug.join("internal_base_joc_input.wav"),
+            encode_channels(sample_rate, &self.joc_input, options)?,
+        )?;
+        if let Some(lfe) = &self.lfe {
+            fs::write(
+                debug.join("internal_base_lfe.wav"),
+                encode_channels(sample_rate, std::slice::from_ref(lfe), options)?,
+            )?;
+        }
+        let full_order = if self.lfe.is_some() {
+            vec!["FL", "FR", "FC", "LFE", "SL", "SR"]
+        } else {
+            vec!["FL", "FR", "FC", "SL", "SR"]
+        };
+        let inventory = serde_json::json!({
+            "source": "OpenJOC internal E-AC-3 decoder",
+            "sample_rate": sample_rate,
+            "access_units": self.access_units,
+            "samples_per_access_unit": self.samples_per_access_unit,
+            "sample_count": self.full.first().map_or(0, Vec::len),
+            "full_base": {
+                "wav": "debug/internal_base_full.wav",
+                "channel_order": full_order,
+                "channel_count": self.full.len(),
+            },
+            "joc_input": {
+                "wav": "debug/internal_base_joc_input.wav",
+                "channel_order": ["FL", "FR", "FC", "SL", "SR"],
+                "channel_count": self.joc_input.len(),
+                "lfe_excluded": true,
+            },
+            "lfe": {
+                "wav": self.lfe.as_ref().map(|_| "debug/internal_base_lfe.wav"),
+                "channel_order": ["LFE"],
+                "present": self.lfe.is_some(),
+            },
+            "decoder_delay": "not independently exposed; compare-base report estimates bounded alignment",
+            "overlap_add_state": "stateful TDAC retained across access units; reset at stream start",
+            "dynrng_policy": "OpenJOC internal decoder path; no FFmpeg presentation normalization",
+            "dither_policy": "deterministic injected dither sequence",
+        });
+        fs::write(
+            debug.join("internal_base_inventory.json"),
+            serde_json::to_vec_pretty(&inventory)?,
+        )?;
+        Ok(())
+    }
 }
 
 fn decode_base_audio(input: &Path, output: &Path) -> Result<CompatibleBasePaths, Box<dyn Error>> {
@@ -669,6 +839,7 @@ fn decode_base_audio(input: &Path, output: &Path) -> Result<CompatibleBasePaths,
     // The JOC matrix consumes five non-LFE channels. Keep the base LFE in a
     // separate file so it can be bound to an OAMD speaker entry without
     // entering the JOC row matrix.
+    let full_pcm = debug.join("compatible_base_full.wav");
     let base_pcm = debug.join("compatible_base.wav");
     let layout_probe = Command::new("ffprobe")
         .args([
@@ -688,6 +859,26 @@ fn decode_base_audio(input: &Path, output: &Path) -> Result<CompatibleBasePaths,
     }
     let layout = String::from_utf8_lossy(&layout_probe.stdout).to_ascii_lowercase();
     let has_lfe = layout.contains("5.1") || layout.contains("lfe");
+    let result = Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(input)
+        .args([
+            "-map",
+            "0:a:0",
+            "-af",
+            "pan=6c|c0=FL|c1=FR|c2=FC|c3=LFE|c4=SL|c5=SR",
+            "-c:a",
+            "pcm_f64le",
+        ])
+        .arg(&full_pcm)
+        .output()?;
+    if !result.status.success() {
+        return Err(io::Error::other(format!(
+            "full base E-AC-3 decode failed: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        ))
+        .into());
+    }
     let result = Command::new("ffmpeg")
         .args(["-v", "error", "-y", "-i"])
         .arg(input)
@@ -735,9 +926,66 @@ fn decode_base_audio(input: &Path, output: &Path) -> Result<CompatibleBasePaths,
         None
     };
     Ok(CompatibleBasePaths {
+        full: Some(full_pcm),
         downmix: base_pcm,
         lfe,
     })
+}
+
+fn write_compatible_base_inventory(
+    output: &Path,
+    paths: &CompatibleBasePaths,
+    downmix: &WavePcm,
+    lfe: Option<&WavePcm>,
+) -> Result<(), Box<dyn Error>> {
+    let full = paths
+        .full
+        .as_ref()
+        .map(|path| -> Result<WavePcm, Box<dyn Error>> { Ok(decode(&fs::read(path)?)?) })
+        .transpose()?;
+    let sample_count = downmix.channels.first().map_or(0, Vec::len);
+    let inventory = serde_json::json!({
+        "source": "FFmpeg compatible-base decode",
+        "ffmpeg_command": {
+            "full": "ffmpeg -v error -y -i INPUT -map 0:a:0 -af pan=6c|c0=FL|c1=FR|c2=FC|c3=LFE|c4=SL|c5=SR -c:a pcm_f64le compatible_base_full.wav",
+            "joc_input": "ffmpeg -v error -y -i INPUT -map 0:a:0 -af pan=5c|c0=FL|c1=FR|c2=FC|c3=SL|c4=SR -c:a pcm_f64le compatible_base.wav",
+            "lfe": "ffmpeg -v error -y -i INPUT -map 0:a:0 -af pan=mono|c0=LFE -c:a pcm_f64le compatible_base_lfe.wav",
+        },
+        "input_track": {
+            "selection": "0:a:0",
+            "ffprobe_layout": "5.1(side) observed on controlled Logic stream",
+            "sample_rate": downmix.sample_rate,
+        },
+        "full_base": {
+            "wav": paths.full.as_ref().map(|_| "debug/compatible_base_full.wav"),
+            "channel_order": ["FL", "FR", "FC", "LFE", "SL", "SR"],
+            "channel_count": full.as_ref().map_or(0, |pcm| pcm.channels.len()),
+            "sample_count": full.as_ref().and_then(|pcm| pcm.channels.first()).map_or(0, Vec::len),
+        },
+        "joc_input": {
+            "wav": "debug/compatible_base.wav",
+            "channel_order": ["FL", "FR", "FC", "SL", "SR"],
+            "channel_count": downmix.channels.len(),
+            "sample_count": sample_count,
+            "lfe_excluded": true,
+        },
+        "lfe": {
+            "wav": lfe.map(|_| "debug/compatible_base_lfe.wav"),
+            "channel_order": ["LFE"],
+            "present": lfe.is_some(),
+            "sample_count": lfe.and_then(|pcm| pcm.channels.first()).map_or(0, Vec::len),
+        },
+        "dialnorm_policy": "FFmpeg defaults; not independently normalized by OpenJOC",
+        "dynrng_policy": "FFmpeg defaults; exact presentation policy must be verified separately",
+        "resampling": false,
+        "decoder_delay": "not independently exposed; compare-base report estimates bounded alignment",
+    });
+    fs::create_dir_all(output.join("debug"))?;
+    fs::write(
+        output.join("debug/compatible_base_inventory.json"),
+        serde_json::to_vec_pretty(&inventory)?,
+    )?;
+    Ok(())
 }
 
 fn media_kind_name(kind: InputMediaKind) -> &'static str {
@@ -1023,4 +1271,50 @@ fn write_validation_debug(
 
 fn usage_error() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, USAGE)
+}
+
+#[cfg(test)]
+mod internal_base_tests {
+    use super::InternalBasePcm;
+    use openjoc_eac3::DecodedAccessUnitPcm;
+
+    fn frame(value: f64, lfe: Option<f64>) -> DecodedAccessUnitPcm {
+        DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 2,
+            channels: (0..5)
+                .map(|channel| vec![value + channel as f64, value + channel as f64 + 0.5])
+                .collect(),
+            lfe: lfe.map(|value| vec![value, value + 0.5]),
+        }
+    }
+
+    #[test]
+    fn preserves_full_joc_and_separate_lfe_channel_order() {
+        let mut capture = InternalBasePcm::default();
+        capture.append(0, &frame(1.0, Some(10.0))).unwrap();
+        capture.append(1, &frame(2.0, Some(20.0))).unwrap();
+
+        assert_eq!(capture.sample_rate, Some(48_000));
+        assert_eq!(capture.access_units, 2);
+        assert_eq!(capture.samples_per_access_unit, vec![2, 2]);
+        assert_eq!(capture.joc_input[0], vec![1.0, 1.5, 2.0, 2.5]);
+        assert_eq!(capture.joc_input[4], vec![5.0, 5.5, 6.0, 6.5]);
+        assert_eq!(capture.lfe, Some(vec![10.0, 10.5, 20.0, 20.5]));
+        assert_eq!(capture.full[3], vec![10.0, 10.5, 20.0, 20.5]);
+        assert_eq!(capture.full.len(), 6);
+    }
+
+    #[test]
+    fn rejects_non_sequential_access_units_and_channel_shape_changes() {
+        let mut sequence = InternalBasePcm::default();
+        let error = sequence.append(1, &frame(0.0, None)).unwrap_err();
+        assert!(error.contains("expected 0, received 1"));
+
+        let mut shape = InternalBasePcm::default();
+        let mut invalid = frame(0.0, None);
+        invalid.channels.pop();
+        let error = shape.append(0, &invalid).unwrap_err();
+        assert!(error.contains("expected five JOC inputs"));
+    }
 }

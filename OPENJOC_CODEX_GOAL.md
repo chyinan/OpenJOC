@@ -412,3 +412,32 @@ This advances only the vendor-compatible scene boundary. `ETSI_STRICT` still
 returns `ReservedWarpMode { raw: 3 }`; trim remains opaque; no complete OAMD
 timeline, JOC semantic fidelity, ADM position equivalence, speaker render, or
 internal-base comparison has been completed.
+
+## Current base-fidelity evidence boundary (2026-08-05)
+
+The private run
+`OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`
+now compares FFmpeg compatible-base and OpenJOC `--internal-base` on the same
+raw EC-3 for A/E/D/F. Both paths retain explicit reference-f64 full-base,
+five-channel JOC-input, and separate LFE artifacts. The mapping is
+`FL,FR,FC,LFE,SL,SR` -> `FL,FR,FC,SL,SR` + `LFE`; the JOC matrix never receives
+the LFE. FFmpeg 8.1.2 uses `0:a:0`, explicit `pan`, `pcm_f64le`, no resampling,
+and its default presentation DRC/dialnorm policy is recorded. OpenJOC's TDAC
+state and deterministic dither policy are recorded independently.
+
+The numerical evidence is not a fidelity pass: all vectors first differ at
+zero delay in AU 0/block 0 (FL/FR/FC/SL/SR samples 9/9/7/12/5), with selected
+delay 0; raw SNR is approximately 84.5--90.6 dB for front/centre and
+38.8--51.3 dB for side channels. Both LFE streams are exactly silent. The
+same payload/state is compared through object rows and deterministic 440/659/
+997/2003 Hz matrices; F's ADM object names do not yield a unique row identity,
+and E remains the no-dynamic-object codec-capacity control.
+
+This increment therefore distinguishes: real carrier accepted; real EMDF and
+payload 11/14 located; OAMD entered; vendor-compatible scene activated; base
+PCM numerically compared; but warp semantics, complete OAMD timeline, ADM
+position/trim fidelity, JOC semantic fidelity, speaker rendering, and a
+fidelity acceptance result remain open. `ETSI_STRICT` still returns
+`ReservedWarpMode { raw: 3 }`; no remap or vendor warp interpretation was
+added. `reports1` and `reports2` are byte-identical and all media remain
+private.

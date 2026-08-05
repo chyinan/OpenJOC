@@ -215,3 +215,31 @@ This closes the Logic cardinality and first nonzero PCM boundary only under
 the trim body remains opaque, complete OAMD timeline semantics are not
 claimed, and no ADM speaker/render or internal-base fidelity result is
 available.
+
+## Internal-base fidelity evidence (2026-08-05)
+
+The private run `OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`
+compares the same raw EC-3 through FFmpeg 8.1.2 `pcm_f64le` compatible-base
+and OpenJOC `--internal-base` paths. FFmpeg selects `0:a:0`, disables
+resampling, and explicitly pans `FL,FR,FC,LFE,SL,SR`; the JOC input is
+`FL,FR,FC,SL,SR`, with LFE retained separately. Zero-delay and bounded
+ +/-4096-sample metrics are both retained; no gain is applied to raw metrics
+and no pass threshold is asserted.
+
+All A/E/D/F vectors have 126 AUs, 48 kHz, 1,536 samples/AU, and 193,536
+samples. The numerical first divergence is AU 0/block 0 in every non-LFE
+channel (FL sample 9, FR 9, FC 7, SL 12, SR 5); selected bounded delay is 0.
+Front/centre raw SNR is approximately 84.5--90.6 dB, side raw SNR
+approximately 38.8--51.3 dB. Both LFE paths are present and exactly silent.
+These are measurements, not a fidelity acceptance claim: FFmpeg
+presentation DRC/dialnorm defaults and OpenJOC policy remain distinct, and
+decoder delay is not independently exposed.
+
+The same payload 11/14 and JOC state are propagated through both bases.
+Private reports include per-channel, per-AU, per-256-sample-block, object-row,
+LFE, and deterministic frequency matrices for manifest frequencies 440, 659,
+997, and 2003 Hz. F's ADM names remain an external oracle only because energy
+is distributed across codec rows; E remains a no-dynamic-object negative
+control. Two report trees are byte-identical. Strict validation, warp=3
+handling, complete OAMD timeline, ADM/render fidelity, and the legal fidelity
+lane remain unchanged/open.

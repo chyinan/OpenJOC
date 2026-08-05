@@ -1849,3 +1849,36 @@ This is a vendor-compatible reconstruction boundary, not full Atmos support:
 `ETSI_STRICT` still fails raw warp 3; trim/warp semantics and a complete OAMD
 timeline remain unresolved; no object identity, ADM position equivalence,
 speaker render, or `--internal-base` fidelity claim is made.
+
+## Internal-base fidelity run (2026-08-05)
+
+The first numerical base comparison is private and non-overwriting:
+`OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`.
+It uses raw EC-3 for A static-centre, E no-dynamic-object, D existing mixed
+motion, and F two-objects. MP4 and ADM files are retained by SHA-256 in the
+report; decoding uses raw EC-3 because the prior MP4 path has a known
+carrier/duration distinction.
+
+FFmpeg 8.1.2 is invoked as a black-box compatible-base reference with
+`-map 0:a:0`, `-c:a pcm_f64le`, no resampling, and explicit `pan` filters:
+six-channel `FL,FR,FC,LFE,SL,SR`, five-channel JOC input
+`FL,FR,FC,SL,SR`, and mono `LFE`. FFmpeg dialnorm/dynrng presentation defaults
+are recorded and not silently made equal to OpenJOC. OpenJOC exports matching
+reference-f64 `internal_base_full.wav`, `internal_base_joc_input.wav`, and
+`internal_base_lfe.wav`; TDAC state remains stateful across AUs and
+deterministic dither is used.
+
+All vectors are 126 AUs / 193,536 samples; the chosen delay is 0 and the first
+non-LFE differences occur in AU 0/block 0 (FL=9, FR=9, FC=7, SL=12, SR=5).
+Raw front/centre SNR is roughly 84.5--90.6 dB; raw side SNR is roughly
+38.8--51.3 dB. LFE is present and exactly silent in both paths. These values
+show a measurable base-decoder difference, not a pass/fail fidelity result;
+the run intentionally does not normalize gain or hide DRC/dialnorm policy.
+
+The unchanged JOC payload and state are compared again under both bases. Per
+object row, AU, block, LFE, and frequency evidence is present. The F ADM names
+`OBJ_997HZ` and `OBJ_2003HZ` are not promoted to row identities because the
+measured energy is distributed across codec rows; E remains a codec-capacity
+negative control. `reports1` and `reports2` are byte-identical. No warp=3
+interpretation, strict relaxation, complete OAMD timeline, ADM position/trim
+fidelity, speaker render, or nonzero-PCM fidelity claim is made.
