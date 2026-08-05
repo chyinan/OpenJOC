@@ -2002,3 +2002,70 @@ semantic. Therefore no TDAC correction is justified yet. The remaining
 question is AU0/block5 Ls/Rs coefficient provenance or a Logic-specific
 upstream/stream-feature boundary, to be tested without changing continuous
 TDAC.
+
+## Logic AU0/block5 provenance and controlled pre-roll corpus (2026-08-05)
+
+The non-overwriting private run
+`OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9`
+is diagnostic-only. Its starting repository head was
+`b18ea4d8dc5a72bc00bbb179cf8484f6291b9211`; no production TDAC, AU-boundary
+reset, gain, remap, warp remap, or decoder compatibility branch was added.
+
+Apple's system path is available on this Mac. `afconvert` decodes the Logic
+MP4, and `afinfo` reports the six-channel order `L,C,R,Ls,Rs,LFE`, 48 kHz,
+1,536 frames/packet. The comparator maps only that declared order to the
+canonical OpenJOC order `FL,FR,FC,LFE,SL,SR` using indices `[0,2,1,5,3,4]`.
+It does not infer a channel permutation from content or FFT peaks. The run
+keeps Apple, FFmpeg MP4, FFmpeg raw EC-3, and OpenJOC metrics separate for
+startup, the unaligned AU-1 window, steady state, and a diagnostic selected
+delay.
+
+The AU0/block5 probe records the actual upstream tool state before TDAC. In
+the target Ls/Rs blocks there is no observed coupling, SPX, rematrix, or AHT;
+`BAP=0` bins are classified as dither/noise only when the transmitted dither
+flag is set. The first block's exponent strategy/BAP state differs from later
+blocks. Exact later-block matches are therefore sparse; relaxed matches that
+exclude exponent strategy are explicitly labelled relaxed and are not decoder
+semantics. Carry storage remains continuous at every observed AU boundary.
+
+The Logic Pro pre-roll study uses four new copies of the same single-jump
+project and source/export profile. Only exact source pre-roll changes: LE0,
+LE1, LE2, and LE4 prepend 0, 1, 2, and 4 access units (0, 1,536, 3,072, and
+6,144 samples) and retain a four-second selected export. Each vector has 126
+access units. The private four-second hashes are:
+
+| vector | MP4 SHA-256 | stream-copy EC3 SHA-256 | ADM BWF SHA-256 |
+| --- | --- | --- | --- |
+| LE0 | `6a61a841bad73adcd2a9d8e2af3453e2bee52269e4dbd1aeb47d6fa03ffbb0a5` | `918e3ff1aa644d6f31a895f19da4ddfa391774899fd65c6417e6e1ea0e5b24a8` | `407341b2fa3177c7e560e794ca352daa76c149141eccf65c400e4ae453aff69e` |
+| LE1 | `bc7d211b9a39772937ce434f99ec3d1d05cbed7fe60ba6cd60f2ab00c09355aa` | `6371b408b9afea4b614a8661325d3e0e0f8449a237dc599d45ebe30930d60986` | `663fb7c080cc6ce2caeeb4c0ae9f1e32413631f4e1cb6d841ec6126c57955cf2` |
+| LE2 | `aacfd114cb734b7a25699b4a4079a3b15ef354a3ec3b5f4b70e32b6520c130d8` | `c7b0d4ff323a98eab5480db2c8ef07c87edc062d5c35e0dd674d98993b1903e6` | `e4a0c30ec64034143df65337cebd7bfb3208ae5cab67521dfb3327533262ff7d` |
+| LE4 | `0c771d81236910bc054f78331a43f21bbb4460bf3898a083654b9c7fa7980e72` | `44a6b4c0167e18547f090886e44ca80289ae80abf2bb0cb890fc90941a6b2293` | `a51c0d31f01d9ce201972ef779e7504ddf82211db440f5a8e1efae70aa1e69d3` |
+
+For every pre-roll vector, raw EC-3 and MP4 have 126 paired observations,
+zero payload-11 body mismatches, one unique payload-11 body, and warp
+distribution `{raw: 3, count: 126}`. `ETSI_STRICT` fails all 126 observations
+with `reserved OAMD warp mode 3`; `DOLBY_VENDOR_COMPAT` accepts all 126 with
+the trim element retained as opaque/unresolved. The independent bit oracle,
+diagnostic parser, production parser trace, and direct byte mask all report
+the same payload-relative warp span `[526,528)` and raw value `3`.
+
+The three diagnostic hypotheses (`assumed_semantics` 0, 1, and 2) all close
+the bounded 8-bit element and payload, but all explicitly report “semantic
+hypothesis is non-unique and diagnostic-only”; none reaches normative object
+element decoding, timing correspondence, or ADM movement semantics. This is
+not evidence that raw 3 aliases any legal warp mode.
+
+The ADM BWF inventory for each LE export contains 192,000 samples, 48 kHz,
+two ADM objects (`Master`, `OBJ_997HZ`), one object channel, and one static
+four-second object block at `X=-0.0,Y=1.0`. The inventory verifies
+carrier/project duration and object identity for this pre-roll control, but it
+does not provide a moving-position timeline for these copies. No ADM position
+or fidelity claim is inferred from the OAMD hypothesis reports.
+
+The first remaining blocker is the AU0/block5 Ls/Rs pre-IMDCT coefficient
+provenance and internal-base fidelity. The private tail backprojection is
+ill-conditioned (condition estimate about `8.42e6`) and explicitly
+non-unique; its dominant low-bin list is not assigned to a decoder tool. A
+complete OAMD timeline, JOC semantic reconstruction, non-zero object PCM
+fidelity, ADM positional comparison, or accepted internal-base fidelity is not
+claimed.

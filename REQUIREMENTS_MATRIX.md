@@ -283,3 +283,18 @@ lane remain unchanged/open.
 | Production TDAC change | No reset, gain, remap, sample special case, or stream-specific compatibility rule was added. | verified |
 | OAMD/warp behavior | `ETSI_STRICT` and existing vendor behavior are unchanged; raw warp `3` remains preserved/rejected according to the selected profile. | verified |
 | Current conclusion | TDAC tail/head arithmetic is independently supported. A generic TDAC bug and a generic FFmpeg first-frame priming rule are not established. Logic encoder/upstream or stream-feature-specific provenance remains the first blocker. | open |
+
+## Logic AU0/block5 coefficient provenance (2026-08-05)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Apple/macOS comparator | `afconvert` is available and decodes the Logic MP4 path; afinfo supplies `L,C,R,Ls,Rs,LFE`, remapped explicitly to `FL,FR,FC,LFE,SL,SR` as `[0,2,1,5,3,4]` | verified; comparator evidence |
+| Tri-decoder boundary | Private run `OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9` compares Apple, FFmpeg MP4/raw, and OpenJOC without changing production; delay-aligned and unaligned AU-1 windows are reported separately | verified; diagnostic |
+| Tool/stage inventory | AU0/block5 Ls/Rs contains no observed coupling, SPX, rematrix, or AHT; BAP=0 bins are classified as dither/noise only when the dither flag is set; frame-0 exponent/BAP state differs from later blocks | verified; provenance remains unresolved |
+| Matched later blocks and state lifecycle | Exact and relaxed match sets are recorded for A/E/D/F and Logic LE0/LE1/LE2/LE4; relaxed matching requires excluding exponent strategy, and no state-reset or hidden AU boundary is introduced | verified; diagnostic |
+| Independent tail backprojection | Private inverse is explicitly ill-conditioned/non-unique and uses only FFmpeg black-box output plus the independent TDAC oracle; dominant bins are not treated as tool attribution | verified; diagnostic only |
+| Controlled Logic pre-roll corpus | Logic Pro 12.3 copies LE0/LE1/LE2/LE4 use the same source/project/export profile with 0/1/2/4 AU (0/1536/3072/6144 samples) source pre-roll; each is 126 AU/4 seconds, with private MP4, stream-copy EC3, and ADM BWF hashes | verified; media private |
+| Raw/MP4 carrier equality | For all LE vectors, raw and MP4 diagnostics have 126 paired AUs, zero payload-11 body mismatches, and identical raw warp distribution `{3:126}` | verified; diagnostic |
+| Diagnostic warp hypotheses | Assumed semantics 0, 1, and 2 each close the bounded element but are explicitly non-unique and do not reach normative object-element decoding; no hypothesis is selected | verified; semantics unresolved |
+| Production behavior | `ETSI_STRICT` continues to reject `ReservedWarpMode { raw: 3 }`; vendor compatibility keeps the raw value and opaque trim deviation; no warp remap, TDAC reset, gain, channel remap, or magic offset was added | verified |
+| First remaining blocker | AU0/block5 Ls/Rs coefficient provenance and internal-base fidelity remain unresolved; complete OAMD timeline, JOC semantic fidelity, object PCM fidelity, and ADM positional fidelity are not claimed | open |

@@ -1018,3 +1018,73 @@ unresolved. No TDAC reset, gain, remap, sample special case, warp remap, or
 vendor profile change was made. Strict validation, raw metadata retention,
 complete OAMD timeline, JOC semantic fidelity, non-zero PCM fidelity, and
 ADM comparison remain open.
+
+## Logic AU0/block5 provenance round (2026-08-05)
+
+This round is recorded in the private, non-overwriting run
+`OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9`.
+The repository started at `b18ea4d8dc5a72bc00bbb179cf8484f6291b9211` and the
+run deliberately leaves production TDAC, AU state lifecycle, gain, channel
+mapping, strict/vendor warp handling, and decoder semantics unchanged.
+
+### Lane A: Apple and three-decoder comparison
+
+Apple `afconvert` is available and is used as a real macOS decoder comparator,
+not as a normative oracle. Its `afinfo` channel layout is explicitly
+`L,C,R,Ls,Rs,LFE`; the comparator maps it to OpenJOC's
+`FL,FR,FC,LFE,SL,SR` with `[0,2,1,5,3,4]`. Apple valid frames, FFmpeg MP4,
+FFmpeg raw EC-3, and OpenJOC internal-base WAVs are reported with sample
+counts, AU-1 windows, startup/steady ranges, selected diagnostic delay, and
+aligned residuals. Unaligned AU-1 differences are not interpreted as decoder
+errors because the container paths expose different priming/delay coordinates.
+
+The four new four-second Logic vectors have 192,000 Apple/FFmpeg-MP4 samples
+and 193,536 raw/OpenJOC samples. Raw-versus-OpenJOC AU-1 Ls/Rs windows are
+approximately `0.005756/0.005756` RMS for LE0/LE1/LE2/LE4; the selected delay
+is zero and the aligned steady residual is approximately `0.0002093` RMS.
+These values are measurements only and do not define a fidelity threshold.
+
+### Lane B: Logic pre-roll controls
+
+Logic Pro 12.3 was operated through its spatial-export UI on four copies of
+the same project. The selected four-second exports differ only by source
+pre-roll of 0, 1, 2, or 4 access units (LE0/LE1/LE2/LE4). The first attempted
+“project” scope produced 256 seconds/8001 AUs and is excluded from the corpus;
+the accepted corpus uses the four-second “selection” scope. Each accepted
+vector has a private MP4, stream-copy EC3, and ADM BWF, with hashes and source
+manifest outside Git.
+
+The deterministic forensic summaries report 126 AUs, one unique payload-11
+body, no payload-11 changes, and raw warp distribution `{3:126}` for every
+pre-roll. Raw and MP4 observations have zero payload-11 body mismatches. The
+ADM inventory is 48 kHz/192,000 samples with `Master` and `OBJ_997HZ`; the
+pre-roll copies' object channel has one static four-second block, so this
+corpus is a boundary control, not a moving-position ground truth.
+
+### Lane C: coefficient/tool provenance and backprojection
+
+The target AU0/block5 signature has `block_switch=00000`, dither enabled,
+coupling/SPX/rematrix/AHT absent, and exponent strategy `1,1,1,2,2`; the
+side-channel BAP-zero count is 46 in the four pre-roll probes. Exact later
+matches are not stable across all vectors, while relaxed matches excluding
+exponent strategy are explicitly labelled diagnostic. The probe writes hashes
+for mantissas, pre-IMDCT, window/carry stages, and AU1 heads without exposing
+private coefficients in the repository.
+
+The tail backprojection uses FFmpeg only as a black-box output and the private
+independent TDAC oracle as the transform map. Its condition estimate is about
+`8.42e6`; the explainable ratio is high but the inverse is ill-conditioned and
+non-unique. Dominant bins are therefore not assigned to coupling, SPX,
+rematrix, dither, or an Apple/FFmpeg internal tool.
+
+### Decision
+
+The independent oracle, formal parser, diagnostic parser, and direct byte mask
+all agree on payload-relative warp `[526,528)` and raw value `3`. Hypotheses
+0/1/2 all close the bounded element but are explicitly non-unique and never
+reach normative object-element semantics. `ETSI_STRICT` continues to return
+`ReservedWarpMode { raw: 3 }`; vendor compatibility preserves raw 3 and keeps
+trim metadata opaque. No vendor warp rule is added. The first real blocker is
+still AU0/block5 Ls/Rs coefficient provenance and internal-base fidelity; this
+round does not claim complete OAMD timeline, JOC reconstruction, non-zero PCM
+fidelity, or ADM positional fidelity.

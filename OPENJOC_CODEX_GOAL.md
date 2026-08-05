@@ -516,3 +516,41 @@ ADM position/render comparison, and non-zero object-PCM fidelity are not
 claimed. The next experiment must isolate AU0/block5 Ls/Rs coefficient
 provenance (coupling/SPX/rematrix/dither or encoder boundary) without
 altering continuous TDAC semantics.
+
+## AU0/block5 provenance round (2026-08-05)
+
+The current private evidence package is
+`OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9`.
+Apple `afconvert` is available as a real macOS comparator. Its declared
+`L,C,R,Ls,Rs,LFE` layout is mapped explicitly to
+`FL,FR,FC,LFE,SL,SR`; Apple, FFmpeg MP4/raw, and OpenJOC outputs are kept in
+separate coordinate/timing reports. This is a comparator boundary, not a
+normative oracle.
+
+The Logic pre-roll corpus consists of four fresh project copies exported at
+the four-second selection range: LE0/LE1/LE2/LE4 add 0/1/2/4 silent AUs to
+the source. All have 126 AUs and exact raw-EC3/MP4 payload-11 equality. Every
+payload-11 body is unchanged across its 126 AUs and every warp observation is
+raw `3`. The first project-scope export was 256 seconds/8001 AUs and is
+excluded from the accepted corpus; it is not used as evidence.
+
+Four-way coefficient probes show no target-block coupling, SPX, rematrix, or
+AHT activity. BAP-zero bins are classified as dither/noise only under the
+transmitted dither flag. Exponent/BAP state at frame 0 differs from later
+blocks, so exact later-block matches are not universal; relaxed comparisons
+that omit exponent strategy are diagnostic only. Carry lifecycle remains
+continuous, and the independent mathematical TDAC oracle still reproduces
+the production head/tail arithmetic.
+
+Three diagnostic warp hypotheses (0/1/2) all close the bounded element but
+are explicitly non-unique and do not reach normative object-element decode.
+Therefore no hypothesis is selected and no alias for raw 3 is implemented.
+`ETSI_STRICT` continues to fail with `ReservedWarpMode { raw: 3 }`;
+`DOLBY_VENDOR_COMPAT` preserves raw 3 and reports opaque unresolved trim.
+
+The first remaining blocker is AU0/block5 Ls/Rs pre-IMDCT coefficient
+provenance and internal-base fidelity. The diagnostic tail inverse is
+ill-conditioned (about `8.42e6`) and cannot identify a unique internal tool.
+Complete OAMD timeline, JOC semantic reconstruction, object PCM fidelity,
+ADM position comparison, and accepted fidelity remain open. No TDAC reset,
+gain, remap, AU special case, or vendor warp rule was added in this round.
