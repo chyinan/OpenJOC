@@ -268,6 +268,22 @@ at this exact boundary.
 
 ## Required verification loop
 
+## Round-2 decision boundary (2026-08-05)
+
+The controlled Logic vector now has a reproducible AU timing and differential
+package.  AU 15 (`0.480 s`) is the first payload-11 change; the warp field is
+raw `3` at OAMD `[526,528)` in every AU, independently confirmed by a small
+bit oracle and direct byte masking.  The ADM object timeline has 197 Cartesian
+blocks, including an update at `0.480 s` and a position boundary at `0.500 s`.
+These are alignment observations only.
+
+Hypotheses 0/1/2 are retained only in the diagnostic report.  All three have
+the same bounded top-level closure and none reaches a unique object/update/
+position interpretation, so OpenJOC does not select one.  `ETSI_STRICT`
+continues to reject `ReservedWarpMode{code: 3}`; `DOLBY_VENDOR_COMPAT` has not
+been extended for warp semantics.  OAMD timeline generation, JOC
+reconstruction, nonzero object PCM, and ADM fidelity remain unverified.
+
 Before any completion claim, run the full workspace formatting, strict clippy,
 all-feature test, and release-build commands and record their results in
 `IMPLEMENTATION_REPORT.md`. A passing synthetic/inactive-OAMD test proves only

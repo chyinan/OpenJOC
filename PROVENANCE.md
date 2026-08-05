@@ -1606,6 +1606,28 @@ and a test or explicit TODO before implementation proceeds.
 
 ### User-supplied legal DEE fixture (acceptance lane remains open)
 
+### Controlled Logic OAMD round-2 evidence (private, not committed)
+
+- Inputs are the existing controlled Logic raw EC-3, its MP4, and the same
+  exported ADM BWF.  New evidence is written only under
+  `OpenJOC-Private/reports/oamd_round2/`; the prior forensic/census outputs
+  are not a source of decoder semantics and are not overwritten by the CLI.
+- The timing report records 126 AUs at 48 kHz/1,536 samples (`0.032 s/AU`),
+  first payload-11 change at AU 15 / `0.480 s`, 63 unique payload-11 bodies,
+  exact bit intervals/byte changes, and raw-vs-MP4 payload hash equality.
+- `OBJ_997HZ` is read from the ADM `axml` chunk as a 197-block Cartesian
+  object timeline.  ADM values remain in their source coordinate system; no
+  unproven conversion to OAMD coordinates is applied.
+- An independent diagnostic bit oracle reports raw warp `3` at
+  `[526,528)` and closes the two top-level elements/payload.  It is test-only
+  and does not call the formal parser.  The three hypothesis rows are
+  diagnostic-only, non-unique bounded closures with semantic fields left
+  unresolved.
+- Normative reference: ETSI TS 103 420 V1.2.1 Table 32 states `0b1X` is
+  reserved for `warp_mode`; no permitted public ETSI erratum changing this
+  table was found.  Consequently strict behavior is unchanged and no vendor
+  warp profile was added.
+
 - Fixture is not committed to this repository. Stable label:
   `forever_friends` (external user-supplied fixture).
 - Recorded SHA-256: `67c10f65642f11713f8495026a37cf26fd1f901e9a343d2e3acf5ee879584896`.

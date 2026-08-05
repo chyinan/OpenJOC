@@ -4,6 +4,7 @@ mod banner;
 mod eac3_decode;
 mod fixture_census;
 mod oamd_forensics;
+mod oamd_oracle;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
@@ -24,7 +25,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE -o DIR [--access-unit N | --all-access-units] [--trim-config-count N]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -126,8 +127,9 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
-        "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units]\n",
-        "                         [--trim-config-count N]\n",
+        "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
+        "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
+        "                         [--adm-reference PATH] [--json PATH]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [OPTIONS]\n",
         "\n",

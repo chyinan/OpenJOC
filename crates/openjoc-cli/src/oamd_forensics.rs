@@ -8,14 +8,16 @@ use openjoc_eac3::{
 use openjoc_emdf::{EmdfPayload, EmdfPayloadBitTrace, parse_emdf_sync_with_bit_trace};
 use openjoc_oamd::{OamdBitTrace, OamdDecoderConfig, trace_oamd_payload};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
+    fmt::Write as _,
     fs, io,
     num::NonZeroU8,
     path::PathBuf,
     process::{Command, Stdio},
 };
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct BitSpan {
     start_bit: usize,
     end_bit: usize,
@@ -124,6 +126,8 @@ struct OamdEvidence {
     warp_window_bytes_hex_original_file: Option<String>,
     trim_config_count: Option<u8>,
     validator_result: String,
+    oracle: Option<crate::oamd_oracle::OracleTrace>,
+    oracle_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -151,6 +155,71 @@ struct ForensicObservation {
     oamd: Option<OamdEvidence>,
     trim_config_count: Option<u8>,
     parse_error: Option<String>,
+    start_sample: u64,
+    end_sample: u64,
+    start_seconds: f64,
+    end_seconds: f64,
+    payload_11_sha256: Option<String>,
+    payload_11_changed_from_previous: Option<bool>,
+    oamd_parse_stage: String,
+    warp_raw: Option<u8>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct Payload11Unique {
+    sha256: String,
+    first_au: usize,
+    last_au: usize,
+    occurrence_count: usize,
+    payload_size_bytes: usize,
+    changed_bit_intervals_compared_with_previous_unique: Vec<BitSpan>,
+    changed_bytes: Vec<usize>,
+    warp_raw: Option<u8>,
+    warp_changed_from_previous_unique: Option<bool>,
+    element_body_hashes: Vec<String>,
+    element_boundaries: Vec<BitSpan>,
+    metadata_block_count: Option<usize>,
+    parse_stage: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct Payload11Transition {
+    from_au: usize,
+    to_au: usize,
+    from_sha256: String,
+    to_sha256: String,
+    changed_bit_intervals: Vec<BitSpan>,
+    changed_bytes: Vec<usize>,
+    warp_changed: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct Payload11DiffReport {
+    unique_payload_count: usize,
+    unique_payloads: Vec<Payload11Unique>,
+    transitions: Vec<Payload11Transition>,
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Debug, Serialize)]
+struct WarpHypothesisEvidence {
+    raw_warp: u8,
+    assumed_semantics: u8,
+    diagnostic_only: bool,
+    bounded_element_closed: bool,
+    payload_closed: bool,
+    reserved_after_warp_raw: Option<u8>,
+    object_count: Option<u16>,
+    element_count: Option<u8>,
+    metadata_block_count: Option<usize>,
+    update_count: Option<usize>,
+    position_count: Option<usize>,
+    jump_count: Option<usize>,
+    ramp_count: Option<usize>,
+    non_finite_values: bool,
+    adm_timing_correspondence: String,
+    adm_movement_correspondence: String,
+    status: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -162,14 +231,23 @@ struct ForensicReport {
     access_unit_count: usize,
     selected_access_units: Vec<usize>,
     observations: Vec<ForensicObservation>,
+    timing_grid_seconds: Option<f64>,
+    payload_11_diff: Option<Payload11DiffReport>,
+    adm_reference: Option<String>,
+    warp_hypotheses: Option<Vec<WarpHypothesisEvidence>>,
 }
 
 pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let input = values.first().filter(|value| !value.starts_with('-'));
     let mut output = None;
     let mut requested_access_unit = None;
+    let mut requested_range = None;
     let mut trim_config_count = None;
     let mut all_access_units = false;
+    let mut diff_payload_11 = false;
+    let mut json_output = None;
+    let mut warp_hypotheses = false;
+    let mut adm_reference = None;
     let mut index = 1;
     while index < values.len() {
         let flag = &values[index];
@@ -178,21 +256,40 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             index += 1;
             continue;
         }
+        if flag == "--diff-payload-11" {
+            diff_payload_11 = true;
+            index += 1;
+            continue;
+        }
+        if flag == "--warp-hypotheses" {
+            warp_hypotheses = true;
+            index += 1;
+            continue;
+        }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
             "-o" | "--output" => output = Some(PathBuf::from(value)),
+            "--json" => json_output = Some(PathBuf::from(value)),
+            "--adm-reference" => adm_reference = Some(value.to_owned()),
             "--access-unit" => {
                 requested_access_unit = Some(value.parse::<usize>().map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid access-unit index")
                 })?);
             }
+            "--au" => requested_range = Some(parse_access_unit_range(value)?),
             "--trim-config-count" => trim_config_count = Some(parse_trim_count(value)?),
             _ => return Err(usage_error().into()),
         }
         index += 2;
     }
     let input = PathBuf::from(input.ok_or_else(usage_error)?);
-    let output = output.ok_or_else(usage_error)?;
+    let output = output
+        .or_else(|| {
+            json_output
+                .as_ref()
+                .and_then(|path| path.parent().map(PathBuf::from))
+        })
+        .ok_or_else(usage_error)?;
     let original_file_bytes = fs::read(&input)?;
     let media = load_eac3(&input)?;
     let iso_packets = if media.kind == InputMediaKind::IsoBmff {
@@ -213,11 +310,22 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         input_media: media.kind,
         iso_packets: iso_packets.as_deref(),
     };
-    let selected = selected_units(units.len(), requested_access_unit, all_access_units)?;
-    let observations = selected
+    let selected = selected_units(
+        units.len(),
+        requested_access_unit,
+        requested_range,
+        all_access_units,
+    )?;
+    let mut observations = selected
         .iter()
         .map(|&unit_index| observe_access_unit(&forensic_input, unit_index, trim_config_count))
         .collect::<Result<Vec<_>, _>>()?;
+    annotate_payload_11_changes(&mut observations);
+    let timing_grid_seconds = units
+        .first()
+        .map(|unit| f64::from(unit.samples) / f64::from(unit.sample_rate));
+    let payload_11_diff = diff_payload_11.then(|| build_payload_11_diff(&observations));
+    let warp_hypothesis_report = warp_hypotheses.then(|| build_warp_hypotheses(&observations));
     let report = ForensicReport {
         input: input.display().to_string(),
         input_media: media_kind_name(media.kind).to_owned(),
@@ -226,13 +334,24 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         access_unit_count: units.len(),
         selected_access_units: selected,
         observations,
+        timing_grid_seconds,
+        payload_11_diff,
+        adm_reference,
+        warp_hypotheses: warp_hypothesis_report,
     };
     fs::create_dir_all(&output)?;
-    fs::write(
-        output.join("oamd_forensics.json"),
-        format!("{}\n", serde_json::to_string_pretty(&report)?),
-    )?;
-    fs::write(output.join("oamd_forensics.txt"), render_text(&report))?;
+    let json_text = format!("{}\n", serde_json::to_string_pretty(&report)?);
+    if let Some(path) = json_output {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, &json_text)?;
+        let text_path = path.with_extension("txt");
+        fs::write(text_path, render_text(&report))?;
+    } else {
+        fs::write(output.join("oamd_forensics.json"), &json_text)?;
+        fs::write(output.join("oamd_forensics.txt"), render_text(&report))?;
+    }
     println!(
         "oamd-forensics: {} observations written to {}",
         report.observations.len(),
@@ -259,12 +378,19 @@ fn parse_trim_count(value: &str) -> Result<NonZeroU8, io::Error> {
 fn selected_units(
     count: usize,
     requested: Option<usize>,
+    requested_range: Option<(usize, usize)>,
     all: bool,
 ) -> Result<Vec<usize>, io::Error> {
-    if all && requested.is_some() {
+    if all && (requested.is_some() || requested_range.is_some()) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "--all-access-units cannot be combined with --access-unit",
+            "--all-access-units cannot be combined with --access-unit or --au",
+        ));
+    }
+    if requested.is_some() && requested_range.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--access-unit cannot be combined with --au",
         ));
     }
     if all {
@@ -279,10 +405,35 @@ fn selected_units(
         }
         return Ok(vec![index]);
     }
+    if let Some((start, end)) = requested_range {
+        if start > end || end >= count {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("access-unit range {start}..{end} is outside 0..{count}"),
+            ));
+        }
+        return Ok((start..=end).collect());
+    }
     let mut selected = vec![0, count / 2, count - 1];
     selected.sort_unstable();
     selected.dedup();
     Ok(selected)
+}
+
+fn parse_access_unit_range(value: &str) -> Result<(usize, usize), io::Error> {
+    let (start, end) = value.split_once("..").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid --au range; expected START..END (inclusive)",
+        )
+    })?;
+    let start = start
+        .parse::<usize>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid --au range start"))?;
+    let end = end
+        .parse::<usize>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid --au range end"))?;
+    Ok((start, end))
 }
 
 fn index_iso_packets(
@@ -472,6 +623,8 @@ fn observe_access_unit(
         .map_or_else(|error| error.to_string(), |_| "accepted".to_owned()),
         None => "not_attempted_without_trim_config_count".to_owned(),
     };
+    let payload_11_sha256 = Some(sha256_hex(&payload.data));
+    let oamd_parse_stage = classify_oamd_parse_stage(trim_config_count, &validator_result);
     let emdf_start_stream = skip_start_stream;
     let emdf_end_stream = emdf_start_stream
         .checked_add(
@@ -502,6 +655,7 @@ fn observe_access_unit(
         InputMediaKind::Unknown => "container classifier returned unknown; only elementary-stream offsets are asserted".to_owned(),
     };
     let oamd_trace = trace_oamd_payload(&payload.data).ok();
+    let oracle_result = crate::oamd_oracle::trace_observed_payload(&payload.data);
     let trace_context = OamdTraceContext {
         stream: input.stream,
         original_file: input.original_file,
@@ -516,6 +670,8 @@ fn observe_access_unit(
             payload,
             trim_config_count,
             &trace_context,
+            oracle_result.as_ref().ok(),
+            oracle_result.as_ref().err().map(ToString::to_string),
         )
     });
     let payload_evidence = emdf_trace
@@ -573,7 +729,49 @@ fn observe_access_unit(
         oamd,
         trim_config_count: trim_config_count.map(NonZeroU8::get),
         parse_error: Some(validator_result),
+        start_sample: units_sample_start(input.units, unit_index),
+        end_sample: units_sample_start(input.units, unit_index)
+            .saturating_add(u64::from(unit.samples)),
+        start_seconds: units_sample_start(input.units, unit_index) as f64
+            / f64::from(unit.sample_rate),
+        end_seconds: (units_sample_start(input.units, unit_index)
+            .saturating_add(u64::from(unit.samples))) as f64
+            / f64::from(unit.sample_rate),
+        payload_11_sha256,
+        payload_11_changed_from_previous: None,
+        oamd_parse_stage,
+        warp_raw: oamd_trace.as_ref().and_then(|trace| {
+            trace
+                .elements
+                .iter()
+                .find(|element| element.id == 2)
+                .and_then(|element| element.warp_mode_raw)
+        }),
     })
+}
+
+fn units_sample_start(units: &[AccessUnitIndex], index: usize) -> u64 {
+    units
+        .iter()
+        .take(index)
+        .map(|unit| u64::from(unit.samples))
+        .sum()
+}
+
+fn classify_oamd_parse_stage(
+    trim_config_count: Option<NonZeroU8>,
+    validator_result: &str,
+) -> String {
+    if trim_config_count.is_none() {
+        return "not_attempted_without_trim_config_count".to_owned();
+    }
+    if validator_result == "accepted" {
+        "accepted".to_owned()
+    } else if validator_result.contains("reserved OAMD warp mode") {
+        "trim.warp_mode".to_owned()
+    } else {
+        validator_result.to_owned()
+    }
 }
 
 fn build_oamd_evidence(
@@ -582,6 +780,8 @@ fn build_oamd_evidence(
     payload: &EmdfPayload,
     trim_config_count: Option<NonZeroU8>,
     context: &OamdTraceContext<'_>,
+    oracle: Option<&crate::oamd_oracle::OracleTrace>,
+    oracle_error: Option<String>,
 ) -> OamdEvidence {
     let trim = trace.elements.iter().find(|element| element.id == 2);
     let warp = trim.and_then(|element| element.warp_mode_start_bit.zip(element.warp_mode_raw));
@@ -719,6 +919,8 @@ fn build_oamd_evidence(
         warp_window_bytes_hex_original_file: original_window_hex,
         trim_config_count: trim_config_count.map(NonZeroU8::get),
         validator_result: "trace_only".to_owned(),
+        oracle: oracle.cloned(),
+        oracle_error,
     }
 }
 
@@ -836,6 +1038,230 @@ fn hex_bytes(bytes: &[u8]) -> String {
         .join(" ")
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut output = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
+}
+
+fn decode_hex_bytes(value: &str) -> Vec<u8> {
+    value
+        .split_whitespace()
+        .filter_map(|pair| u8::from_str_radix(pair, 16).ok())
+        .collect()
+}
+
+fn annotate_payload_11_changes(observations: &mut [ForensicObservation]) {
+    let mut previous: Option<String> = None;
+    for observation in observations {
+        observation.payload_11_changed_from_previous = observation
+            .payload_11_sha256
+            .as_ref()
+            .map(|current| previous.as_ref().is_some_and(|prior| prior != current));
+        previous.clone_from(&observation.payload_11_sha256);
+    }
+}
+
+fn changed_spans(left: &[u8], right: &[u8], bit_len: usize) -> Vec<BitSpan> {
+    let mut spans = Vec::new();
+    let mut start = None;
+    for bit in 0..bit_len {
+        let left_bit = left
+            .get(bit / 8)
+            .map_or(0, |byte| (byte >> (7 - bit % 8)) & 1);
+        let right_bit = right
+            .get(bit / 8)
+            .map_or(0, |byte| (byte >> (7 - bit % 8)) & 1);
+        if left_bit != right_bit {
+            start.get_or_insert(bit);
+        } else if let Some(begin) = start.take() {
+            spans.push(span(begin, bit));
+        }
+    }
+    if let Some(begin) = start {
+        spans.push(span(begin, bit_len));
+    }
+    spans
+}
+
+fn changed_bytes(left: &[u8], right: &[u8]) -> Vec<usize> {
+    (0..left.len().max(right.len()))
+        .filter(|&index| left.get(index) != right.get(index))
+        .collect()
+}
+
+fn payload_11(observation: &ForensicObservation) -> Option<&PayloadEvidence> {
+    observation
+        .emdf_payloads
+        .iter()
+        .find(|payload| payload.payload_id == 11)
+}
+
+fn build_payload_11_diff(observations: &[ForensicObservation]) -> Payload11DiffReport {
+    let mut unique_payloads = Vec::<Payload11Unique>::new();
+    let mut transitions = Vec::new();
+    let mut previous: Option<(&ForensicObservation, Vec<u8>)> = None;
+    for observation in observations {
+        let Some(payload) = payload_11(observation) else {
+            continue;
+        };
+        let bytes = decode_hex_bytes(&payload.body_bytes_hex);
+        let hash = sha256_hex(&bytes);
+        if let Some((prior_observation, prior_bytes)) = previous {
+            if hash != sha256_hex(&prior_bytes) {
+                transitions.push(Payload11Transition {
+                    from_au: prior_observation.access_unit_index,
+                    to_au: observation.access_unit_index,
+                    from_sha256: sha256_hex(&prior_bytes),
+                    to_sha256: hash.clone(),
+                    changed_bit_intervals: changed_spans(
+                        &prior_bytes,
+                        &bytes,
+                        prior_bytes.len().min(bytes.len()).saturating_mul(8),
+                    ),
+                    changed_bytes: changed_bytes(&prior_bytes, &bytes),
+                    warp_changed: Some(prior_observation.warp_raw != observation.warp_raw),
+                });
+            }
+        }
+        let current_index = unique_payloads
+            .iter()
+            .position(|entry| entry.sha256 == hash);
+        if let Some(index) = current_index {
+            unique_payloads[index].last_au = observation.access_unit_index;
+            unique_payloads[index].occurrence_count += 1;
+        } else {
+            let previous_unique = unique_payloads.last();
+            let (changed_bit_intervals, changed_byte_indices, warp_changed) = previous_unique
+                .map_or((Vec::new(), Vec::new(), None), |entry| {
+                    let prior_obs = observations
+                        .iter()
+                        .find(|candidate| candidate.access_unit_index == entry.last_au);
+                    let prior_bytes = prior_obs
+                        .and_then(payload_11)
+                        .map(|value| decode_hex_bytes(&value.body_bytes_hex))
+                        .unwrap_or_default();
+                    (
+                        changed_spans(
+                            &prior_bytes,
+                            &bytes,
+                            prior_bytes.len().min(bytes.len()).saturating_mul(8),
+                        ),
+                        changed_bytes(&prior_bytes, &bytes),
+                        prior_obs.map(|prior| prior.warp_raw != observation.warp_raw),
+                    )
+                });
+            let element_body_hashes = observation
+                .oamd
+                .as_ref()
+                .map(|oamd| {
+                    oamd.elements
+                        .iter()
+                        .filter_map(|element| {
+                            let start = element.body_start_bit;
+                            let end = element.body_end_bit;
+                            if end <= bytes.len().saturating_mul(8) {
+                                Some(sha256_hex(&bit_slice(&bytes, start, end)))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let element_boundaries = observation
+                .oamd
+                .as_ref()
+                .map(|oamd| {
+                    oamd.elements
+                        .iter()
+                        .map(|element| span(element.body_start_bit, element.body_end_bit))
+                        .collect()
+                })
+                .unwrap_or_default();
+            unique_payloads.push(Payload11Unique {
+                sha256: hash.clone(),
+                first_au: observation.access_unit_index,
+                last_au: observation.access_unit_index,
+                occurrence_count: 1,
+                payload_size_bytes: bytes.len(),
+                changed_bit_intervals_compared_with_previous_unique: changed_bit_intervals,
+                changed_bytes: changed_byte_indices,
+                warp_raw: observation.warp_raw,
+                warp_changed_from_previous_unique: warp_changed,
+                element_body_hashes,
+                element_boundaries,
+                metadata_block_count: observation.oamd.as_ref().map(|oamd| oamd.elements.len()),
+                parse_stage: observation.oamd_parse_stage.clone(),
+            });
+        }
+        previous = Some((observation, bytes));
+    }
+    Payload11DiffReport {
+        unique_payload_count: unique_payloads.len(),
+        unique_payloads,
+        transitions,
+    }
+}
+
+fn bit_slice(bytes: &[u8], start: usize, end: usize) -> Vec<u8> {
+    let mut result = vec![0_u8; end.saturating_sub(start).saturating_add(7) / 8];
+    for (index, bit) in (start..end).enumerate() {
+        let value = (bytes.get(bit / 8).copied().unwrap_or_default() >> (7 - bit % 8)) & 1;
+        result[index / 8] |= value << (7 - index % 8);
+    }
+    result
+}
+
+fn build_warp_hypotheses(observations: &[ForensicObservation]) -> Vec<WarpHypothesisEvidence> {
+    let first = observations.iter().find_map(|observation| {
+        let oamd = observation.oamd.as_ref()?;
+        let oracle = oamd.oracle.as_ref()?;
+        let reserved = oracle
+            .fields
+            .iter()
+            .find(|field| field.name.ends_with("reserved_after_warp"))
+            .map(|field| field.integer_value as u8);
+        Some((oamd, oracle, reserved))
+    });
+    let Some((oamd, oracle, reserved_after_warp_raw)) = first else {
+        return Vec::new();
+    };
+    (0..=2)
+        .map(|assumed_semantics| WarpHypothesisEvidence {
+            raw_warp: oracle.warp_raw,
+            assumed_semantics,
+            diagnostic_only: true,
+            bounded_element_closed: oamd
+                .elements
+                .iter()
+                .all(|element| element.body_end_bit <= oamd.payload_bits),
+            payload_closed: oamd
+                .elements
+                .last()
+                .is_some_and(|element| element.body_end_bit <= oamd.payload_bits),
+            reserved_after_warp_raw,
+            object_count: Some(oamd.object_count),
+            element_count: Some(oamd.element_count),
+            metadata_block_count: Some(oamd.elements.len()),
+            update_count: None,
+            position_count: None,
+            jump_count: None,
+            ramp_count: None,
+            non_finite_values: false,
+            adm_timing_correspondence: "not_evaluable before normative object-element decode"
+                .to_owned(),
+            adm_movement_correspondence: "not_evaluable before normative object-element decode"
+                .to_owned(),
+            status: "bounded syntax closes; semantic hypothesis is non-unique and diagnostic-only"
+                .to_owned(),
+        })
+        .collect()
+}
+
 fn render_text(report: &ForensicReport) -> String {
     use std::fmt::Write as _;
     let mut text = String::new();
@@ -851,6 +1277,9 @@ fn render_text(report: &ForensicReport) -> String {
         "syncframes/access_units: {}/{}",
         report.syncframe_count, report.access_unit_count
     );
+    if let Some(grid) = report.timing_grid_seconds {
+        let _ = writeln!(text, "timing_grid_seconds: {grid:.9}");
+    }
     for observation in &report.observations {
         let _ = writeln!(
             text,
@@ -859,6 +1288,18 @@ fn render_text(report: &ForensicReport) -> String {
             observation.mp4_sample_index,
             observation.carrier_frame_index,
             observation.substream_id
+        );
+        let _ = writeln!(
+            text,
+            "  timing samples=[{}, {}) seconds=[{:.9}, {:.9}) payload_11_sha256={} changed_from_previous={:?} parse_stage={} warp_raw={:?}",
+            observation.start_sample,
+            observation.end_sample,
+            observation.start_seconds,
+            observation.end_seconds,
+            observation.payload_11_sha256.as_deref().unwrap_or("none"),
+            observation.payload_11_changed_from_previous,
+            observation.oamd_parse_stage,
+            observation.warp_raw
         );
         let _ = writeln!(
             text,
@@ -925,6 +1366,56 @@ fn render_text(report: &ForensicReport) -> String {
             observation.parse_error.as_deref().unwrap_or("none")
         );
     }
+    if let Some(diff) = &report.payload_11_diff {
+        let _ = writeln!(
+            text,
+            "payload_11_unique_count: {}",
+            diff.unique_payload_count
+        );
+        for unique in &diff.unique_payloads {
+            let _ = writeln!(
+                text,
+                "payload_11 unique sha256={} AU {}..{} occurrences={} bytes={} warp={:?} changed_bits={:?} changed_bytes={:?} elements={:?}",
+                unique.sha256,
+                unique.first_au,
+                unique.last_au,
+                unique.occurrence_count,
+                unique.payload_size_bytes,
+                unique.warp_raw,
+                unique.changed_bit_intervals_compared_with_previous_unique,
+                unique.changed_bytes,
+                unique.element_boundaries
+            );
+        }
+        for transition in &diff.transitions {
+            let _ = writeln!(
+                text,
+                "payload_11 transition AU {} -> {} changed_bits={:?} changed_bytes={:?} warp_changed={:?}",
+                transition.from_au,
+                transition.to_au,
+                transition.changed_bit_intervals,
+                transition.changed_bytes,
+                transition.warp_changed
+            );
+        }
+    }
+    if let Some(reference) = &report.adm_reference {
+        let _ = writeln!(text, "adm_reference: {reference}");
+    }
+    if let Some(hypotheses) = &report.warp_hypotheses {
+        for hypothesis in hypotheses {
+            let _ = writeln!(
+                text,
+                "warp_hypothesis raw={} assumed={} diagnostic_only={} element_closed={} payload_closed={} status={}",
+                hypothesis.raw_warp,
+                hypothesis.assumed_semantics,
+                hypothesis.diagnostic_only,
+                hypothesis.bounded_element_closed,
+                hypothesis.payload_closed,
+                hypothesis.status
+            );
+        }
+    }
     text
 }
 
@@ -939,6 +1430,27 @@ fn media_kind_name(kind: InputMediaKind) -> &'static str {
 fn usage_error() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "usage: openjoc diagnose-oamd FILE -o DIR [--access-unit N | --all-access-units] [--trim-config-count N]",
+        "usage: openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH]",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{changed_spans, parse_access_unit_range, span};
+
+    #[test]
+    fn parses_inclusive_access_unit_ranges() {
+        assert_eq!(parse_access_unit_range("14..17").expect("range"), (14, 17));
+        assert!(parse_access_unit_range("14-17").is_err());
+    }
+
+    #[test]
+    fn payload_diff_reports_exact_bit_intervals_and_bytes() {
+        let left = [0b1010_0000_u8, 0];
+        let right = [0b1001_0000_u8, 0b0000_0001];
+        assert_eq!(
+            changed_spans(&left, &right, 16),
+            vec![span(2, 4), span(15, 16)]
+        );
+    }
 }

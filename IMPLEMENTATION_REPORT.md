@@ -518,7 +518,7 @@ value exception is added. The new first real blocker remains the exact OAMD
 `OpenJOC-Private/reports/oamd_forensics_raw` and
 `OpenJOC-Private/reports/oamd_forensics_mp4`; their final JSON SHA-256 values
 are respectively
-`50a8e4e9ff48e090652e010007ffa91360230f2a4679885ebe63a0ee8e819224` and
+`fe4cace04ce7cf5a33515ae16e6ecedb69cb9379b3eb9b367eca8d2147fc2b32` and
 `0978b86e1dc908645d1453c8c126a22e18567c673fc7ec17d64fff88dee9ba46`.
 
 The 2026-08-05 quality gate for this increment passed
@@ -529,6 +529,46 @@ build and remained byte-identical (`52302b6f…5432` JSON and
 `5b94f9d4…f928` text).
 
 ## Known limitations and next goals
+
+### Round-2 controlled Logic OAMD evidence (2026-08-05)
+
+The round-2 diagnostic lane is deliberately separate from decoding.  It adds
+`diagnose-oamd --au START..END --diff-payload-11 --json PATH` and an explicit
+`--warp-hypotheses --adm-reference PATH` diagnostic report.  The independent
+oracle starts at the bounded payload-11 body and does not share either formal
+OAMD or trace-layer cursors.  On all 126 raw and MP4 access units it reports
+the same payload-relative warp span `[526,528)`, raw bits `11`, integer value
+`3`, and payload closure at bit 536; its direct byte/mask extraction agrees.
+
+The time grid is exact: 1,536 samples / 48,000 Hz = 0.032 seconds.  Zero-based
+AU 15 starts at sample 23,040 (0.480 seconds) and is the first payload-11 hash
+transition.  AU 14, 15, 16, and 17 are reported explicitly, as are later
+transitions.  The raw and MP4 payload-11 hash sequences and warp spans are
+identical; this is a carrier-path equality check, not a file-container hash
+claim.
+
+The external ADM BWF oracle was read without changing the existing inventory.
+`OBJ_997HZ` has 197 object block formats in Cartesian coordinates.  An ADM
+block exists at 0.480 seconds and an explicit position boundary begins at
+0.500 seconds.  This records timing/ordering evidence only; no Cartesian-to-
+OAMD conversion or fidelity conclusion is made.
+
+For raw warp 3, diagnostic-only hypotheses 0, 1, and 2 all close the bounded
+top-level element and payload windows, retain `raw_warp=3`, and remain
+non-unique because the object-element update/position grammar has not been
+decoded.  They therefore report no update/position/jump/ramp counts and no
+ADM semantic correspondence.  No production remap or vendor exception was
+added.  The official TS 103 420 V1.2.1 Table 32 still defines `0b1X` as
+reserved; no official erratum changing that table was found in the permitted
+ETSI PDF/companion-file and public ETSI deliverable search.  The strict parser
+continues to return `ReservedWarpMode{code: 3}`.
+
+Computer Use successfully created the private copy
+`OpenJOC-Private/logic/warp-study/Vector_D_existing_mixed_motion.logicx`
+through Logic Pro Save As.  A/B/C/E/F single-variable projects and their
+exports are not claimed: they still require controlled UI edits and fresh
+exports.  No private media, manifest, census, forensic, or ADM file is
+committed.
 
 All-carrier EMDF discovery, the real-vector acceptance lane,
 FFmpeg-versus-internal-base fidelity report, metadata-only scene assembly, and
