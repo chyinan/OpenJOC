@@ -914,9 +914,9 @@ unverified OAMD/JOC/ADM/fidelity boundaries are unchanged.
 
 The increment starts at commit `054d3d4566c46a3ab308d0599eb1215b78171cc2` on
 `codex/logic-warp-differential-corpus`. The private run is
-`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary_054d3d4`; its repeated
-tree is `..._repeat`, and the core JSON/TXT diagnostics plus regression PCM
-tree compare byte-for-byte. Repository
+`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary-corrected_054d3d4`; its
+repeated tree is `..._repeat`, and the core JSON/TXT diagnostics plus regression
+PCM tree compare byte-for-byte. Repository
 `.DS_Store` and `references/` remain untracked and untouched.
 
 ### Normative model and state audit
@@ -947,27 +947,29 @@ continues to use the direct transform and overlap/add implementation. A
 synthetic deterministic 12-block run equals a 6+6 framed run exactly, including
 the final carry and the frame-boundary carry-in.
 
-The real private A/E/D/F vectors each contain 126 AUs. For all 125 AU n -> n+1
-boundaries and all FL/FR/FC/SL/SR channels, `carry_out` hashes equal the next
-`carry_in` hashes. At AU0 block5 -> AU1 block0, AU0 block5 output itself is
+The real private A/E/D/F vectors each contain 126 AUs. The trace order is
+E-AC-3 syntax `L,C,R,Ls,Rs`; the FFmpeg reference order is
+`FL,FR,FC,LFE,SL,SR`, mapped as `[L,R,C,Ls,Rs]` after removing LFE. For all
+125 AU n -> n+1 boundaries and all five codec channels, `carry_out` hashes
+equal the next `carry_in` hashes. At AU0 block5 -> AU1 block0, AU0 block5 output itself is
 within about `0.93e-6--1.28e-6` RMS of the FFmpeg reference. The large error
-appears only when its stored side-channel tail participates at AU1:
+appears only when its stored Ls/Rs tail participates at AU1:
 
 ```text
                  normal RMS        zero-carry RMS
-A/E/D SL          0.0075718936      0.000000126--0.000000181
-A/E/D SR          0.0073475530      0.000000125--0.000000181
-F SL              0.0071960116      0.000000181
-F SR              0.0069830427      0.000000180
+A/E/D Ls          0.0075718936      0.000000126--0.000000181
+A/E/D Rs          0.0073475530      0.000000125--0.000000181
+F Ls              0.0071960116      0.000000181
+F Rs              0.0069830427      0.000000180
 ```
 
 The black-box inferred reference carry is explicitly marked
-`inferred_black_box_component=true`; correlation with stored SL/SR carry is
+`inferred_black_box_component=true`; correlation with stored Ls/Rs carry is
 only about `0.0227--0.0349`, with scalar gain approximately zero. Therefore:
 
 ```text
 carry storage / frame commit / channel mapping: verified correct
-current AU1 head for SL/SR: agrees with FFmpeg when carry is omitted
+current AU1 head for Ls/Rs: agrees with FFmpeg when carry is omitted
 stored carry versus FFmpeg inferred component: differs
 root cause: unresolved upstream block-5 tail versus external frame-boundary policy
 ```

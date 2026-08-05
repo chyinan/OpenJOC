@@ -471,10 +471,12 @@ output sum, output, and carry-out together with pre-window IMDCT and window
 components. A synthetic 12-block versus 6+6 framed invariant passes exactly.
 
 The private A/E/D/F evidence package
-`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary_054d3d4` covers all 125
-AU boundaries. Every full-band codec channel satisfies
+`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary-corrected_054d3d4`
+(repeated in `..._repeat`) covers all 125 AU boundaries. The trace uses
+E-AC-3 syntax order `L,C,R,Ls,Rs`; the reference order is
+`FL,FR,FC,LFE,SL,SR`, mapped as `[L,R,C,Ls,Rs]` after LFE removal. Every full-band codec channel satisfies
 `AU n block5 carry_out == AU n+1 block0 carry_in`; state staging and rollback
-are therefore verified. At the first boundary the SL/SR normal residual is
+are therefore verified. At the first boundary the Ls/Rs normal residual is
 about `7.57e-3/7.35e-3` RMS, while the zero-carry probe is about
 `1.26e-7/1.25e-7`; the inferred black-box carry is not correlated with the
 stored tail. This localizes the remaining difference to an upstream block-5

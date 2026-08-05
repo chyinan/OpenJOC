@@ -1924,8 +1924,9 @@ rule or semantic remap was introduced.
 ## TDAC contribution trace and boundary evidence (2026-08-05)
 
 The private, non-overwriting run
-`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary_054d3d4` (repeated in
-`..._repeat`) uses the opt-in `AudioPcmSynthesizer::synthesize_with_trace`
+`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary-corrected_054d3d4`
+(repeated in `..._repeat`) uses the opt-in
+`AudioPcmSynthesizer::synthesize_with_trace`
 sink. It records the bounded transform/window and overlap components without
 changing the production path. The core JSON/TXT diagnostics and the regression
 PCM tree compare byte-for-byte across the repeated run. The run
@@ -1946,10 +1947,13 @@ commit only after every block succeeds. `JocAccessUnitPcmDecoder` keeps
 independent and dependent synthesizers separate. A synthetic 12-block stream
 and a 6+6 framed partition produce identical PCM and final carry, and the
 real A/E/D/F run reports exact carry-out/carry-in equality at all 125 AU
-boundaries for FL/FR/FC/SL/SR. This rules out a lost carry, retry double
+boundaries for all five full-band codec channels. This rules out a lost carry, retry double
 advance, AU vector rebuild, or channel-state commit bug.
 
-At AU0 block5 -> AU1 block0, current-windowed heads for SL/SR reproduce the
+The trace order is the E-AC-3 syntax order `L,C,R,Ls,Rs`; the six-channel
+FFmpeg reference order is `FL,FR,FC,LFE,SL,SR`, so reference indices are
+mapped as `[L,R,C,Ls,Rs]` after excluding LFE. At AU0 block5 -> AU1 block0,
+current-windowed heads for Ls/Rs reproduce the
 FFmpeg-compatible reference when the stored carry is omitted (zero-carry RMS
 `1.2581e-7` and `1.2454e-7`), while the normal continuous output has RMS
 `0.0075718936` and `0.0073475530`. The stored carry is exact and channel-local
