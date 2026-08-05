@@ -1149,7 +1149,7 @@ position comparison, and accepted internal-base fidelity remain open.
 This increment adds an evaluation-only comparison contract with explicit cold,
 warm-up, and steady-state regions. It does not modify decoder output or add
 production trimming. The private package
-`2026-08-05T_decoder-comparison-contract_d60baf3_r4` is repeated in `_r5` with
+`2026-08-05T_decoder-comparison-contract_c07ab90_r6` is repeated in `_r7` with
 byte-identical core JSON/TXT evidence.
 
 Measured exact-history convergence is decoder-specific:

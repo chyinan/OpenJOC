@@ -2141,9 +2141,9 @@ accepted internal-base fidelity remain unclaimed.
 ## Decoder comparison contract (2026-08-06)
 
 The private evaluation-only package
-`2026-08-05T_decoder-comparison-contract_d60baf3_r4` consumes the complete
+`2026-08-05T_decoder-comparison-contract_c07ab90_r6` consumes the complete
 exact-history outputs and prior A/E/D/F three-decoder metrics. It does not
-trim or rewrite any decoder WAV; `_r5` is a byte-identical deterministic
+trim or rewrite any decoder WAV; `_r7` is a byte-identical deterministic
 repeat of the core JSON/TXT evidence.
 
 The contract defines cold start `[0,1536)`, warm-up `[1536,3072)`, and a
