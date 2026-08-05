@@ -321,6 +321,26 @@ then repeat the same independent-oracle and ADM comparison without weakening
 ETSI validation. The CLI forensic writer now refuses existing report targets
 unless explicit `--force` is supplied, preserving evidence history.
 
+## Round-4 vendor opaque boundary (2026-08-05)
+
+This increment does not decide the meaning of `warp=3`. `ETSI_STRICT` remains
+unchanged. An explicit `DOLBY_VENDOR_COMPAT` path can now retain a complete
+declared element-2 trim body opaquely, with the raw value, exact ranges, hash,
+formal first error, and deviation code preserved. It is not trim decoding,
+warp remapping, a default trim, or a complete OAMD acceptance.
+
+On private A/E/D raw and MP4 carriers, element 1 formally parses across all
+126 AUs (16 objects, 15 dynamic, one block and 16 updates per AU) and payload
+14/JOC formally parses 126/126 (five channels, 15 output objects, full mode,
+900 codewords/AU, nonzero symbols). The next concrete blocker is the explicit
+cross-chain object-count mismatch: `JOC declares 15 objects but OAMD declares
+16`. No real object PCM, complete OAMD timeline, ObjectScene, or ADM fidelity
+claim is made. The private non-overwriting batch is
+`OpenJOC-Private/reports/runs/2026-08-05T0358Z_vendor-opaque-2f5de17`.
+The follow-up B/C/F raw+MP4 regression repeats 126/126 opaque acceptances,
+raw warp `3:126`, normalized carrier equality, and 126/126 formal payload-14
+parses; B/C remain non-canonical automation copies.
+
 ## Round-3 differential refresh (2026-08-05)
 
 This refresh branch is `codex/logic-warp-differential-corpus`, starting from

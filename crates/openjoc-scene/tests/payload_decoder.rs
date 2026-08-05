@@ -1,4 +1,7 @@
-use openjoc_oamd::{OamdDecoderConfig, Position3 as OamdPosition3, ReferenceScreen};
+use openjoc_oamd::{
+    OamdDecoderConfig, OamdElement, OamdError, OamdParseProfile, Position3 as OamdPosition3,
+    ReferenceScreen,
+};
 use openjoc_scene::{
     JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig, Position, Position3,
 };
@@ -53,6 +56,33 @@ fn inactive_oamd_payload() -> Vec<u8> {
     push(&mut bits, 1, 1); // object inactive
     push(&mut bits, 0, 1); // no additional data
     push(&mut bits, 0, 7); // zero padding to the declared three-byte window
+    pack(bits)
+}
+
+fn opaque_trim_oamd_payload() -> Vec<u8> {
+    let mut bits = Vec::new();
+    push(&mut bits, 0, 2); // syntax version
+    push(&mut bits, 0, 5); // one object
+    push(&mut bits, 1, 1); // dynamic-only
+    push(&mut bits, 0, 1); // no LFE
+    push(&mut bits, 0, 1); // no alternate data
+    push(&mut bits, 2, 4); // two elements
+    push(&mut bits, 1, 4); // object element ID
+    push(&mut bits, 2, 4); // three-byte body minus one
+    push(&mut bits, 0, 1); // variable-size continuation false
+    push(&mut bits, 0, 1); // discard unknown false
+    push(&mut bits, 0, 2); // sample offset zero
+    push(&mut bits, 0, 3); // one metadata block
+    push(&mut bits, 0, 6); // block start zero
+    push(&mut bits, 0, 2); // no ramp
+    push(&mut bits, 1, 1); // reserved data absent
+    push(&mut bits, 1, 1); // object inactive
+    push(&mut bits, 0, 1); // no additional data
+    push(&mut bits, 0, 7); // object body padding
+    push(&mut bits, 2, 4); // trim element ID
+    push(&mut bits, 0, 4); // one-byte body minus one
+    push(&mut bits, 0, 1); // variable-size continuation false
+    push(&mut bits, 0b0110_0000, 8); // discard, raw warp 3, remaining opaque bits
     pack(bits)
 }
 
@@ -194,4 +224,47 @@ fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
     let scene = decoder.finish().expect("two committed frames");
     assert_eq!(scene.duration_samples, 128);
     assert_eq!(scene.metadata_timeline[1].start_sample, 64);
+}
+
+#[test]
+fn explicit_vendor_profile_retains_opaque_trim_and_keeps_joc_chain_separate() {
+    let joc = absent_joc_payload(0);
+    let oamd = opaque_trim_oamd_payload();
+    let downmix = vec![vec![1.0; 64]; 5];
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig {
+            trim_configuration_count: Some(std::num::NonZeroU8::new(1).expect("nonzero")),
+        },
+    };
+    let mut strict = PayloadDecoder::new(config);
+    assert!(matches!(
+        strict
+            .decode_frame(JocFrameInput {
+                sample_rate: 48_000,
+                downmix_pcm: &downmix,
+                joc_payload: &joc,
+                oamd_payload: &oamd,
+                frame_index: 0,
+            })
+            .expect_err("strict raw warp 3 rejection"),
+        PayloadDecodeError::Oamd(OamdError::ReservedWarpMode { code: 3 })
+    ));
+
+    let mut vendor = PayloadDecoder::with_oamd_profile(config, OamdParseProfile::DolbyVendorCompat);
+    let frame = vendor
+        .decode_frame(JocFrameInput {
+            sample_rate: 48_000,
+            downmix_pcm: &downmix,
+            joc_payload: &joc,
+            oamd_payload: &oamd,
+            frame_index: 0,
+        })
+        .expect("vendor opaque trim retention");
+    assert!(matches!(
+        frame.oamd.elements[1].element,
+        OamdElement::OpaqueObservedKnownElement(_)
+    ));
+    assert_eq!(frame.joc.header.object_count, 1);
+    assert!(vendor.finish().is_ok());
 }

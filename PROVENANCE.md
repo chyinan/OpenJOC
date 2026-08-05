@@ -1769,3 +1769,30 @@ or `DOLBY_VENDOR_COMPAT` warp interpretation was added. B/C remain a UI-copy
 limitation record rather than canonical single-variable vectors, and the next
 required evidence is a genuinely canonical Logic jump/ramp export or an
 additional authorized encoder/version.
+
+### Bounded vendor opaque trim retention (2026-08-05)
+
+The explicit `DOLBY_VENDOR_COMPAT` OAMD path now retains a complete declared
+element-2 trim body as `OpaqueObservedKnownElement` only after payload ID 11,
+element-1/element-2 bounds, and the formal first error
+`ReservedWarpMode { code: 3 }` are verified. It preserves raw bits, declared
+length, final-byte validity, SHA-256, raw warp/ranges, the original error, and
+deviation `LOGIC_OAMD_RESERVED_TRIM_WARP_3`; it does not remap warp or create a
+trim timeline. `ETSI_STRICT` remains unchanged and rejects the same value.
+
+In private batch `2026-08-05T0358Z_vendor-opaque-2f5de17`, A/E/D raw and MP4
+each show 126/126 strict warp failures and 126/126 opaque vendor acceptances.
+Element 1 parses to 16 objects (15 dynamic), one metadata block and 16 object
+updates. Payload 14 independently parses 126/126 with 15 output objects,
+five-channel downmix, full matrices, 900 codewords per AU and nonzero
+codewords. The first downstream boundary is explicit and unchanged by trim:
+`JOC declares 15 objects but OAMD declares 16`. No object PCM, complete OAMD
+timeline, or fidelity claim is made.
+
+The follow-up private B/C/F raw+MP4 regression run
+`2026-08-05T_vendor-opaque-bcf.Y072QA` reports the same 126/126 strict
+`trim.warp_mode` boundary, 126/126 vendor opaque acceptances, raw warp `3`
+distribution, and 126/126 formal payload-14 parses. Raw/MP4 normalized
+observation sequences are equal. B/C remain the previously documented
+non-canonical Logic copies; this run does not promote their automation labels
+to semantic ground truth.

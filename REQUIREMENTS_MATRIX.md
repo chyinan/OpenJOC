@@ -167,3 +167,15 @@ JOC reconstruction, nonzero object PCM, and ADM fidelity remain unverified.
   real-vector outcomes, remaining gaps, and known limitations. Current real
   fixture evidence is recorded as an open/failed fidelity lane, not as decoder
   completion.
+
+## Dolby vendor partial-metadata boundary (2026-08-05)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| ETSI strict raw warp 3 rejection | Formal element-2 trim parser still returns `ReservedWarpMode { code: 3 }` at payload-relative `[526,528)`; A/E/D forensic reports remain 126/126 rejected | implemented |
+| Explicit vendor opaque trim retention | `DOLBY_VENDOR_COMPAT` requires payload ID 11, complete element-2 declared window, exact first error raw warp 3, and retains the full body/hash without remap | implemented/verified |
+| Partial OAMD state | Element 1 is formally parsed; trim is `opaque_unresolved`; trim timeline and renderer fidelity are unavailable | implemented/verified |
+| Inspect profile visibility | `inspect` always shows both carrier profiles; explicit `--trim-config-count N` additionally shows strict/vendor OAMD partial status without inferring a count | implemented |
+| Independent payload-14/JOC chain | A/E/D raw and MP4 payload 14 parses succeed 126/126; JOC declares 15 objects while OAMD declares 16, which is the first remaining decoder blocker | entered/blocked |
+| B/C/F vendor regression | Follow-up raw/MP4 private run repeats 126 AUs, raw warp `3:126`, opaque vendor acceptance `126/126`, normalized carrier equality, and payload-14 parse `126/126` | verified |
+| Real object PCM and fidelity | No real ObjectScene/object PCM is emitted past the explicit object-count boundary; no fidelity claim | open |

@@ -3,7 +3,8 @@
 use crate::{ObjectScene, SceneBuildError, SceneBuilder};
 use openjoc_joc::{DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, parse_joc_payload};
 use openjoc_oamd::{
-    OamdDecoderConfig, OamdError, OamdPayload, ReferenceScreen, parse_oamd_payload_with_config,
+    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ReferenceScreen,
+    parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use std::fmt;
 
@@ -97,6 +98,7 @@ impl From<SceneBuildError> for PayloadDecodeError {
 #[derive(Clone, Debug)]
 pub struct PayloadDecoder {
     config: PayloadDecoderConfig,
+    oamd_profile: OamdParseProfile,
     joc: JocDecoderState,
     builder: Option<SceneBuilder>,
     sample_rate: Option<u32>,
@@ -109,10 +111,21 @@ impl PayloadDecoder {
     pub fn new(config: PayloadDecoderConfig) -> Self {
         Self {
             config,
+            oamd_profile: OamdParseProfile::EtsiStrict,
             joc: JocDecoderState::new(),
             builder: None,
             sample_rate: None,
             next_frame_index: 0,
+        }
+    }
+
+    /// Creates a decoder with an explicit OAMD parser profile. The default
+    /// [`Self::new`] constructor remains ETSI strict.
+    #[must_use]
+    pub fn with_oamd_profile(config: PayloadDecoderConfig, profile: OamdParseProfile) -> Self {
+        Self {
+            oamd_profile: profile,
+            ..Self::new(config)
         }
     }
 
@@ -140,7 +153,17 @@ impl PayloadDecoder {
             });
         }
         let joc = parse_joc_payload(input.joc_payload).map_err(JocDecodeError::Parse)?;
-        let oamd = parse_oamd_payload_with_config(input.oamd_payload, self.config.oamd)?;
+        let oamd = match self.oamd_profile {
+            OamdParseProfile::EtsiStrict => {
+                parse_oamd_payload_with_config(input.oamd_payload, self.config.oamd)?
+            }
+            OamdParseProfile::DolbyVendorCompat => parse_oamd_payload_with_profile(
+                input.oamd_payload,
+                self.config.oamd,
+                OamdParseProfile::DolbyVendorCompat,
+                OAMD_PAYLOAD_ID,
+            )?,
+        };
         if u16::from(joc.header.object_count) != oamd.prefix.object_count {
             return Err(PayloadDecodeError::ObjectCountMismatch {
                 joc: joc.header.object_count,

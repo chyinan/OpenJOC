@@ -702,3 +702,50 @@ build, and `git diff --check`. The private manifest census was run twice into
 new output directories; JSON hash `52302b6fee68e5ad4bcf1c3bbc4c526077efb223126a975c37a732b010035432`
 and TXT hash `5b94f9d45faba8f62a2260fb9ad34857c62a82fd60f8871e29cb75cb2f04f928`
 matched byte-for-byte.
+
+## Round-4 bounded Dolby vendor partial-metadata path (2026-08-05)
+
+This increment keeps `ETSI_STRICT` unchanged and adds an explicit
+`DOLBY_VENDOR_COMPAT` OAMD parser path. When the validated payload-11 carrier
+contains top-level element 1 followed by a complete element-2 trim window and
+the formal trim parser's first error is exactly `ReservedWarpMode { code: 3 }`,
+the complete declared element-2 body is retained as
+`OpaqueObservedKnownElement`. The raw body, declared length, valid final-byte
+bits, SHA-256, raw warp value/range, first error, and deviation code
+`LOGIC_OAMD_RESERVED_TRIM_WARP_3` are preserved. No warp remap, default trim,
+semantic hypothesis, or hidden offset is used; trim timeline remains
+unavailable and renderer fidelity is ineligible. Other reserved values,
+truncation, malformed preceding elements, invalid carrier ID, or unrelated
+errors do not enter the fallback.
+
+The stateful scene decoder now accepts this representation only through an
+explicit profile. Element 1 remains formally parsed while element 2 is
+opaque, and the same access unit's payload 14 is parsed independently. On
+private A/E/D raw and MP4 carriers, all 126 AUs reach this boundary with
+`accepted_with_deviation`, 126 opaque element-2 bodies (one unique body hash
+`8d33f520a3c4cef80d2453aef81b612bfe1cb44c8b2025630ad38662763f13d3`), element
+1 object count 16 (15 dynamic), one metadata block and 16 object updates.
+Payload 14 formally parses 126/126 with five-channel downmix, 15 output
+objects, full matrices, 900 codewords per AU, and nonzero codewords; the first
+real downstream blocker is the explicit cross-chain mismatch `JOC declares 15
+objects but OAMD declares 16`. No object PCM or ObjectScene is emitted from
+these real vectors, and no fidelity claim is made.
+
+`inspect` always prints both carrier validation profiles. With the explicit
+`--trim-config-count N` option it also prints the corresponding OAMD strict or
+vendor partial status; without that caller-supplied count it reports that OAMD
+partial parsing was not attempted, rather than inferring a trim cardinality.
+
+After the A/E/D gate, a new non-overwriting private B/C/F regression run
+(`2026-08-05T_vendor-opaque-bcf.Y072QA`) covered both raw EC-3 and MP4. Each
+carrier had 126 AUs, 63 unique payload-11 bodies, first change AU 14 -> 15,
+strict stage `trim.warp_mode` in 126/126, vendor opaque acceptance in 126/126,
+raw warp `3` in 126/126, and payload-14 parse success in 126/126 with output
+object count 15. Normalized raw/MP4 observation sequences were equal for all
+six reports. This extends the opaque-boundary evidence without asserting that
+B/C are canonical single-variable Logic exports.
+
+Raw/MP4 normalized metadata sequences are byte-identical for A/E/D. Strict
+forensic stages remain `trim.warp_mode` for 126/126; the existing carrier
+profile deviations are not relaxed. The private non-overwriting run is
+`OpenJOC-Private/reports/runs/2026-08-05T0358Z_vendor-opaque-2f5de17`.

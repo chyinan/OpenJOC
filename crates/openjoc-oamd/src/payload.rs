@@ -9,7 +9,20 @@ use crate::{
 };
 use openjoc_bitio::{BitRead, BitReader};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use std::num::NonZeroU8;
+
+/// EMDF payload identifier required for the observed Dolby compatibility path.
+pub const OAMD_PAYLOAD_ID: u64 = 11;
+
+/// Explicit OAMD parser profile. The strict profile is the default and never
+/// retains a reserved trim element as decoded metadata.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OamdParseProfile {
+    EtsiStrict,
+    DolbyVendorCompat,
+}
 
 /// Configuration for standard constants left undefined by TS 103 420 V1.2.1.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -24,11 +37,33 @@ pub struct OpaqueBits {
     pub bit_len: usize,
 }
 
+/// A known trim element whose declared body is retained without interpreting
+/// the unresolved vendor warp syntax.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpaqueObservedKnownElement {
+    pub element_id: u8,
+    pub alternate_data_id: Option<u8>,
+    pub discard_unknown: bool,
+    pub declared_bits: usize,
+    pub declared_bytes: usize,
+    pub valid_bits_in_last_byte: u8,
+    pub raw_body: OpaqueBits,
+    pub raw_body_sha256: String,
+    pub first_parser_error: OamdError,
+    pub raw_warp: u8,
+    pub warp_element_relative_start_bit: usize,
+    pub warp_element_relative_end_bit: usize,
+    pub warp_payload_start_bit: usize,
+    pub warp_payload_end_bit: usize,
+    pub deviation_code: &'static str,
+}
+
 /// Normative element bodies currently exposed by the top-level OAMD parser.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OamdElement {
     Objects(ObjectElement),
     Trim(TrimElement),
+    OpaqueObservedKnownElement(OpaqueObservedKnownElement),
     Extended(ExtendedObjectElement),
     Unknown(OpaqueBits),
 }
@@ -161,6 +196,38 @@ pub fn parse_oamd_payload_with_config(
     payload: &[u8],
     config: OamdDecoderConfig,
 ) -> Result<OamdPayload, OamdError> {
+    parse_oamd_payload_inner(payload, config, OamdParseProfile::EtsiStrict, None)
+}
+
+/// Parses OAMD using an explicit profile and EMDF payload identifier.
+///
+/// The vendor profile is deliberately narrow: it only retains a complete
+/// element-2 trim body opaquely when the bounded, formal trim parser's first
+/// error is reserved warp value 3. It does not remap or otherwise interpret
+/// that value. The payload identifier is required so callers cannot enable the
+/// observed fallback for an unrelated EMDF payload.
+pub fn parse_oamd_payload_with_profile(
+    payload: &[u8],
+    config: OamdDecoderConfig,
+    profile: OamdParseProfile,
+    payload_id: u64,
+) -> Result<OamdPayload, OamdError> {
+    if profile == OamdParseProfile::DolbyVendorCompat && payload_id != OAMD_PAYLOAD_ID {
+        return Err(OamdError::VendorProfilePayloadId { payload_id });
+    }
+    parse_oamd_payload_inner(payload, config, profile, Some(payload_id))
+}
+
+fn parse_oamd_payload_inner(
+    payload: &[u8],
+    config: OamdDecoderConfig,
+    profile: OamdParseProfile,
+    payload_id: Option<u64>,
+) -> Result<OamdPayload, OamdError> {
+    let payload_bits = payload
+        .len()
+        .checked_mul(8)
+        .ok_or(OamdError::ValueOverflow)?;
     let mut reader = BitReader::new(payload);
     let initial_bits = reader.bits_remaining();
     let prefix = parse_oamd_content_prefix_reader(&mut reader)?;
@@ -176,7 +243,10 @@ pub fn parse_oamd_payload_with_config(
         let size_bits = usize::try_from(size_bytes)?
             .checked_mul(8)
             .ok_or(OamdError::ValueOverflow)?;
+        let header_end_bit = payload_bits - reader.bits_remaining();
+        let body_start_bit = header_end_bit;
         let mut element_reader = reader.take_bits(size_bits)?;
+        let body_end_bit = payload_bits - reader.bits_remaining();
         let alternate_data_id = if prefix.alternate_object_data_present {
             Some(read_u8(&mut element_reader, 4)?)
         } else {
@@ -198,10 +268,54 @@ pub fn parse_oamd_payload_with_config(
                 let count = config
                     .trim_configuration_count
                     .ok_or(OamdError::MissingTrimConfigurationCount)?;
-                let trim =
-                    parse_trim_element_reader(&mut element_reader, prefix.object_count, count)?;
-                consume_zero_padding(&mut element_reader)?;
-                OamdElement::Trim(trim)
+                match parse_trim_element_reader(&mut element_reader, prefix.object_count, count) {
+                    Ok(trim) => {
+                        consume_zero_padding(&mut element_reader)?;
+                        OamdElement::Trim(trim)
+                    }
+                    Err(error @ OamdError::ReservedWarpMode { code: 3 })
+                        if profile == OamdParseProfile::DolbyVendorCompat
+                            && payload_id == Some(OAMD_PAYLOAD_ID)
+                            && alternate_data_id.is_none_or(|alternate| alternate == 0) =>
+                    {
+                        let warp_relative_start =
+                            usize::from(prefix.alternate_object_data_present) * 4 + 1;
+                        let warp_relative_end = warp_relative_start + 2;
+                        if warp_relative_end > size_bits {
+                            return Err(error);
+                        }
+                        let warp_start = body_start_bit + warp_relative_start;
+                        let raw_warp = read_window_u8(payload, warp_start, 2)?;
+                        if raw_warp != 3 {
+                            return Err(error);
+                        }
+                        let raw_body = copy_bit_window(payload, body_start_bit, body_end_bit)?;
+                        let valid_bits_in_last_byte = if raw_body.bit_len % 8 == 0 {
+                            8
+                        } else {
+                            u8::try_from(raw_body.bit_len % 8)?
+                        };
+                        let raw_body_sha256 = sha256_hex(&raw_body.bytes);
+                        OamdElement::OpaqueObservedKnownElement(OpaqueObservedKnownElement {
+                            element_id: id,
+                            alternate_data_id,
+                            discard_unknown,
+                            declared_bits: size_bits,
+                            declared_bytes: usize::try_from(size_bytes)?,
+                            valid_bits_in_last_byte,
+                            raw_body,
+                            raw_body_sha256,
+                            first_parser_error: error,
+                            raw_warp,
+                            warp_element_relative_start_bit: warp_relative_start,
+                            warp_element_relative_end_bit: warp_relative_end,
+                            warp_payload_start_bit: warp_start,
+                            warp_payload_end_bit: warp_start + 2,
+                            deviation_code: "LOGIC_OAMD_RESERVED_TRIM_WARP_3",
+                        })
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             5 => {
                 let object_index = elements
@@ -241,6 +355,65 @@ pub fn parse_oamd_payload_with_config(
         elements,
         consumed_bits: initial_bits,
     })
+}
+
+fn read_window_u8(payload: &[u8], start_bit: usize, width: u8) -> Result<u8, OamdError> {
+    let end_bit = start_bit
+        .checked_add(usize::from(width))
+        .ok_or(OamdError::ValueOverflow)?;
+    let total_bits = payload
+        .len()
+        .checked_mul(8)
+        .ok_or(OamdError::ValueOverflow)?;
+    if end_bit > total_bits || width > 8 {
+        return Err(OamdError::Bit(openjoc_bitio::BitError::EndOfInput {
+            requested: usize::from(width),
+            remaining: total_bits.saturating_sub(start_bit),
+        }));
+    }
+    let mut value = 0_u8;
+    for bit in start_bit..end_bit {
+        value = (value << 1) | u8::from(payload[bit / 8] & (0x80 >> (bit % 8)) != 0);
+    }
+    Ok(value)
+}
+
+fn copy_bit_window(
+    payload: &[u8],
+    start_bit: usize,
+    end_bit: usize,
+) -> Result<OpaqueBits, OamdError> {
+    if end_bit < start_bit {
+        return Err(OamdError::ValueOverflow);
+    }
+    let bit_len = end_bit - start_bit;
+    let total_bits = payload
+        .len()
+        .checked_mul(8)
+        .ok_or(OamdError::ValueOverflow)?;
+    if end_bit > total_bits {
+        return Err(OamdError::Bit(openjoc_bitio::BitError::EndOfInput {
+            requested: bit_len,
+            remaining: total_bits.saturating_sub(start_bit),
+        }));
+    }
+    let byte_len = bit_len.checked_add(7).ok_or(OamdError::ValueOverflow)? / 8;
+    let mut bytes = vec![0_u8; byte_len];
+    for offset in 0..bit_len {
+        if payload[(start_bit + offset) / 8] & (0x80 >> ((start_bit + offset) % 8)) != 0 {
+            bytes[offset / 8] |= 0x80 >> (offset % 8);
+        }
+    }
+    Ok(OpaqueBits { bytes, bit_len })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut output = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
 }
 
 fn derive_object_classes(prefix: &OamdContentPrefix) -> Result<Vec<ObjectClass>, OamdError> {

@@ -14,6 +14,7 @@ path = "src/main.rs"
 openjoc-eac3 = { path = "../openjoc-eac3" }
 openjoc-emdf = { path = "../openjoc-emdf" }
 openjoc-container = { path = "../openjoc-container" }
+openjoc-joc = { path = "../openjoc-joc" }
 openjoc-oamd = { path = "../openjoc-oamd" }
 openjoc-scene = { path = "../openjoc-scene" }
 openjoc-wave = { path = "../openjoc-wave" }

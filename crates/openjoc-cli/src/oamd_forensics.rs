@@ -6,7 +6,11 @@ use openjoc_eac3::{
     index_syncframes, inspect_audio_block_carriers,
 };
 use openjoc_emdf::{EmdfPayload, EmdfPayloadBitTrace, parse_emdf_sync_with_bit_trace};
-use openjoc_oamd::{OamdBitTrace, OamdDecoderConfig, trace_oamd_payload};
+use openjoc_joc::{JocPayloadData, parse_joc_payload};
+use openjoc_oamd::{
+    OamdBitTrace, OamdDecoderConfig, OamdElement, OamdParseProfile, OpaqueObservedKnownElement,
+    parse_oamd_payload_with_profile, trace_oamd_payload,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -163,6 +167,64 @@ struct ForensicObservation {
     payload_11_changed_from_previous: Option<bool>,
     oamd_parse_stage: String,
     warp_raw: Option<u8>,
+    vendor_oamd: Option<VendorOamdEvidence>,
+    joc: Option<JocEvidence>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct JocEvidence {
+    payload_size_bytes: usize,
+    payload_sha256: String,
+    result: &'static str,
+    error: Option<String>,
+    downmix_channel_count: Option<u8>,
+    output_object_count: Option<u8>,
+    sequence_count: Option<u16>,
+    present_object_count: Option<usize>,
+    data_point_count: Option<usize>,
+    sparse_object_count: Option<usize>,
+    full_object_count: Option<usize>,
+    codeword_count: Option<usize>,
+    nonzero_codeword_count: Option<usize>,
+    steep_data_point_count: Option<usize>,
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Debug, Serialize)]
+struct VendorOamdEvidence {
+    profile: &'static str,
+    result: &'static str,
+    error: Option<String>,
+    oamd_payload_structurally_accepted: bool,
+    oamd_semantically_complete: bool,
+    object_metadata_status: &'static str,
+    trim_metadata_status: &'static str,
+    trim_timeline_available: bool,
+    renderer_fidelity_eligible: bool,
+    object_count: u16,
+    dynamic_object_count: usize,
+    element_count: u8,
+    metadata_block_count: Option<usize>,
+    object_update_count: Option<usize>,
+    active_update_count: Option<usize>,
+    position_field_count: Option<usize>,
+    first_update_sample: Option<u16>,
+    positive_ramp_count: Option<usize>,
+    opaque_elements: Vec<OpaqueElementEvidence>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct OpaqueElementEvidence {
+    element_id: u8,
+    declared_bits: usize,
+    declared_bytes: usize,
+    valid_bits_in_last_byte: u8,
+    raw_body_sha256: String,
+    raw_warp: u8,
+    warp_element_relative_span: BitSpan,
+    warp_payload_relative_span: BitSpan,
+    first_parser_error: String,
+    deviation_code: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -699,6 +761,21 @@ fn observe_access_unit(
             oracle_result.as_ref().err().map(ToString::to_string),
         )
     });
+    let vendor_oamd = trim_config_count.map(|count| {
+        build_vendor_oamd_evidence(
+            &payload.data,
+            OamdDecoderConfig {
+                trim_configuration_count: Some(count),
+            },
+        )
+    });
+    let joc = emdf_trace
+        .parsed
+        .container
+        .payloads
+        .iter()
+        .find(|candidate| candidate.id == 14)
+        .map(build_joc_evidence);
     let payload_evidence = emdf_trace
         .payloads
         .iter()
@@ -772,7 +849,259 @@ fn observe_access_unit(
                 .find(|element| element.id == 2)
                 .and_then(|element| element.warp_mode_raw)
         }),
+        vendor_oamd,
+        joc,
     })
+}
+
+fn build_joc_evidence(payload: &EmdfPayload) -> JocEvidence {
+    let payload_size_bytes = payload.data.len();
+    let payload_sha256 = sha256_hex(&payload.data);
+    match parse_joc_payload(&payload.data) {
+        Ok(frame) => {
+            let present_objects = frame.objects.iter().filter(|object| object.present).count();
+            let data_point_count = frame
+                .objects
+                .iter()
+                .map(|object| object.data_points.len())
+                .sum::<usize>();
+            let sparse_object_count = frame
+                .objects
+                .iter()
+                .filter(|object| {
+                    object.present
+                        && object
+                            .data_points
+                            .iter()
+                            .any(|point| matches!(point.payload, JocPayloadData::Sparse { .. }))
+                })
+                .count();
+            let full_object_count = frame
+                .objects
+                .iter()
+                .filter(|object| {
+                    object.present
+                        && object
+                            .data_points
+                            .iter()
+                            .any(|point| matches!(point.payload, JocPayloadData::Full { .. }))
+                })
+                .count();
+            let codeword_count = frame
+                .objects
+                .iter()
+                .flat_map(|object| &object.data_points)
+                .map(|point| match &point.payload {
+                    JocPayloadData::Sparse {
+                        channel_deltas,
+                        vector_symbols,
+                        ..
+                    } => channel_deltas.len() + vector_symbols.len(),
+                    JocPayloadData::Full { matrix_symbols } => {
+                        matrix_symbols.iter().map(Vec::len).sum()
+                    }
+                })
+                .sum::<usize>();
+            let nonzero_codeword_count = frame
+                .objects
+                .iter()
+                .flat_map(|object| &object.data_points)
+                .flat_map(|point| match &point.payload {
+                    JocPayloadData::Sparse {
+                        channel_deltas,
+                        vector_symbols,
+                        ..
+                    } => channel_deltas
+                        .iter()
+                        .chain(vector_symbols)
+                        .collect::<Vec<_>>(),
+                    JocPayloadData::Full { matrix_symbols } => matrix_symbols
+                        .iter()
+                        .flat_map(|row| row.iter())
+                        .collect::<Vec<_>>(),
+                })
+                .filter(|codeword| codeword.symbol != 0)
+                .count();
+            let steep_data_point_count = frame
+                .objects
+                .iter()
+                .flat_map(|object| &object.data_points)
+                .filter(|point| point.offset_timeslot.is_some())
+                .count();
+            JocEvidence {
+                payload_size_bytes,
+                payload_sha256,
+                result: "parsed",
+                error: None,
+                downmix_channel_count: Some(frame.header.channel_count),
+                output_object_count: Some(frame.header.object_count),
+                sequence_count: Some(frame.sequence_count),
+                present_object_count: Some(present_objects),
+                data_point_count: Some(data_point_count),
+                sparse_object_count: Some(sparse_object_count),
+                full_object_count: Some(full_object_count),
+                codeword_count: Some(codeword_count),
+                nonzero_codeword_count: Some(nonzero_codeword_count),
+                steep_data_point_count: Some(steep_data_point_count),
+            }
+        }
+        Err(error) => JocEvidence {
+            payload_size_bytes,
+            payload_sha256,
+            result: "failed",
+            error: Some(error.to_string()),
+            downmix_channel_count: None,
+            output_object_count: None,
+            sequence_count: None,
+            present_object_count: None,
+            data_point_count: None,
+            sparse_object_count: None,
+            full_object_count: None,
+            codeword_count: None,
+            nonzero_codeword_count: None,
+            steep_data_point_count: None,
+        },
+    }
+}
+
+fn build_vendor_oamd_evidence(payload: &[u8], config: OamdDecoderConfig) -> VendorOamdEvidence {
+    match parse_oamd_payload_with_profile(
+        payload,
+        config,
+        OamdParseProfile::DolbyVendorCompat,
+        openjoc_oamd::OAMD_PAYLOAD_ID,
+    ) {
+        Ok(parsed) => {
+            let opaque_elements = parsed
+                .elements
+                .iter()
+                .filter_map(|metadata| match &metadata.element {
+                    OamdElement::OpaqueObservedKnownElement(opaque) => {
+                        Some(opaque_element_evidence(opaque))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            VendorOamdEvidence {
+                profile: "DOLBY_VENDOR_COMPAT",
+                result: if opaque_elements.is_empty() {
+                    "accepted"
+                } else {
+                    "accepted_with_deviation"
+                },
+                error: None,
+                oamd_payload_structurally_accepted: true,
+                oamd_semantically_complete: opaque_elements.is_empty(),
+                object_metadata_status: if parsed
+                    .elements
+                    .iter()
+                    .any(|metadata| matches!(metadata.element, OamdElement::Objects(_)))
+                {
+                    "parsed"
+                } else {
+                    "blocked"
+                },
+                trim_metadata_status: if opaque_elements.is_empty() {
+                    "parsed_or_absent"
+                } else {
+                    "opaque_unresolved"
+                },
+                trim_timeline_available: false,
+                renderer_fidelity_eligible: false,
+                object_count: parsed.prefix.object_count,
+                dynamic_object_count: parsed
+                    .object_classes
+                    .iter()
+                    .filter(|class| matches!(class, openjoc_oamd::ObjectClass::Dynamic))
+                    .count(),
+                element_count: parsed.prefix.element_count,
+                metadata_block_count: object_element(&parsed)
+                    .map(|element| element.timing.blocks.len()),
+                object_update_count: object_element(&parsed)
+                    .map(|element| element.objects.iter().map(Vec::len).sum()),
+                active_update_count: object_element(&parsed).map(|element| {
+                    element
+                        .objects
+                        .iter()
+                        .flatten()
+                        .filter(|update| update.active)
+                        .count()
+                }),
+                position_field_count: object_element(&parsed).map(|element| {
+                    element
+                        .objects
+                        .iter()
+                        .flatten()
+                        .filter(|update| update.active)
+                        .count()
+                }),
+                first_update_sample: object_element(&parsed)
+                    .and_then(|element| element.timing.blocks.first())
+                    .map(|block| block.start_sample),
+                positive_ramp_count: object_element(&parsed).map(|element| {
+                    element
+                        .timing
+                        .blocks
+                        .iter()
+                        .filter(|block| block.ramp_duration > 0)
+                        .count()
+                }),
+                opaque_elements,
+            }
+        }
+        Err(error) => VendorOamdEvidence {
+            profile: "DOLBY_VENDOR_COMPAT",
+            result: "failed",
+            error: Some(error.to_string()),
+            oamd_payload_structurally_accepted: false,
+            oamd_semantically_complete: false,
+            object_metadata_status: "blocked",
+            trim_metadata_status: "blocked",
+            trim_timeline_available: false,
+            renderer_fidelity_eligible: false,
+            object_count: 0,
+            dynamic_object_count: 0,
+            element_count: 0,
+            metadata_block_count: None,
+            object_update_count: None,
+            active_update_count: None,
+            position_field_count: None,
+            first_update_sample: None,
+            positive_ramp_count: None,
+            opaque_elements: Vec::new(),
+        },
+    }
+}
+
+fn object_element(payload: &openjoc_oamd::OamdPayload) -> Option<&openjoc_oamd::ObjectElement> {
+    payload.elements.iter().find_map(|metadata| {
+        if let OamdElement::Objects(objects) = &metadata.element {
+            Some(objects)
+        } else {
+            None
+        }
+    })
+}
+
+fn opaque_element_evidence(opaque: &OpaqueObservedKnownElement) -> OpaqueElementEvidence {
+    OpaqueElementEvidence {
+        element_id: opaque.element_id,
+        declared_bits: opaque.declared_bits,
+        declared_bytes: opaque.declared_bytes,
+        valid_bits_in_last_byte: opaque.valid_bits_in_last_byte,
+        raw_body_sha256: opaque.raw_body_sha256.clone(),
+        raw_warp: opaque.raw_warp,
+        warp_element_relative_span: span(
+            opaque.warp_element_relative_start_bit,
+            opaque.warp_element_relative_end_bit,
+        ),
+        warp_payload_relative_span: span(
+            opaque.warp_payload_start_bit,
+            opaque.warp_payload_end_bit,
+        ),
+        first_parser_error: opaque.first_parser_error.to_string(),
+        deviation_code: opaque.deviation_code,
+    }
 }
 
 fn units_sample_start(units: &[AccessUnitIndex], index: usize) -> u64 {

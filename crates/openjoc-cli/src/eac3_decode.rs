@@ -6,7 +6,10 @@ use openjoc_eac3::{
     validate_complexity_index,
 };
 use openjoc_emdf::JocValidationProfile;
-use openjoc_oamd::{OamdError, parse_oamd_payload_with_config};
+use openjoc_oamd::{
+    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile,
+    parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
+};
 use openjoc_scene::{
     DecodedPayloadFrame, JocFrameInput, ObjectScene, PayloadDecodeError, PayloadDecoder,
     PayloadDecoderConfig,
@@ -122,6 +125,22 @@ fn required_metadata(
     }
 }
 
+fn parse_oamd_for_profile(
+    payload: &[u8],
+    config: OamdDecoderConfig,
+    validation_profile: JocValidationProfile,
+) -> Result<openjoc_oamd::OamdPayload, OamdError> {
+    match validation_profile {
+        JocValidationProfile::EtsiStrict => parse_oamd_payload_with_config(payload, config),
+        JocValidationProfile::DolbyVendorCompat => parse_oamd_payload_with_profile(
+            payload,
+            config,
+            OamdParseProfile::DolbyVendorCompat,
+            OAMD_PAYLOAD_ID,
+        ),
+    }
+}
+
 /// Aligns already decoded channel PCM with size-bounded E-AC-3 JOC metadata.
 ///
 /// Aligns decoded channel PCM with E-AC-3 JOC metadata and lends each
@@ -167,7 +186,11 @@ where
         });
     }
 
-    let mut decoder = PayloadDecoder::new(config);
+    let oamd_profile = match validation_profile {
+        JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
+        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
+    };
+    let mut decoder = PayloadDecoder::with_oamd_profile(config, oamd_profile);
     let mut sample_offset = 0_usize;
     for (unit_index, unit) in units.into_iter().enumerate() {
         if unit.sample_rate != downmix.sample_rate {
@@ -178,7 +201,7 @@ where
         }
         let metadata =
             required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
-        let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
+        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let end = sample_offset
             .checked_add(usize::from(unit.samples))
@@ -230,7 +253,11 @@ where
         return Err(DecodeEac3Error::EmptyStream);
     }
     let mut audio_decoder = JocAccessUnitPcmDecoder::new();
-    let mut decoder = PayloadDecoder::new(config);
+    let oamd_profile = match validation_profile {
+        JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
+        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
+    };
+    let mut decoder = PayloadDecoder::with_oamd_profile(config, oamd_profile);
     for (unit_index, unit) in units.into_iter().enumerate() {
         let pcm = audio_decoder.decode(stream, &frame_index, unit, dither_values)?;
         if pcm.sample_rate != unit.sample_rate
@@ -247,7 +274,7 @@ where
         }
         let metadata =
             required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
-        let parsed_oamd = parse_oamd_payload_with_config(&metadata.oamd, config.oamd)?;
+        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;

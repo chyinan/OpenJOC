@@ -1,7 +1,8 @@
 use openjoc_oamd::{
     ContentDescription, Gain, OamdContentPrefix, OamdDecoderConfig, OamdElement, OamdError,
-    ObjectBasicInfo, ObjectClass, ObjectRenderInfo, OpaqueBits, parse_oamd_payload,
-    parse_oamd_payload_with_config, trace_oamd_payload,
+    OamdParseProfile, ObjectBasicInfo, ObjectClass, ObjectRenderInfo, OpaqueBits,
+    parse_oamd_payload, parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
+    trace_oamd_payload,
 };
 use std::num::NonZeroU8;
 
@@ -315,6 +316,106 @@ fn forensic_trace_preserves_reserved_trim_warp_bits_without_accepting_them() {
             },
         ),
         Err(OamdError::ReservedWarpMode { code: 3 })
+    );
+}
+
+#[test]
+fn vendor_profile_retains_reserved_trim_body_without_remapping_warp() {
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    let mut content = vec![false]; // discard unknown false
+    push(&mut content, 3, 2); // raw reserved warp 3
+    push(&mut content, 0, 2); // reserved trim data
+    push(&mut content, 0, 2); // default global trim
+    push(&mut content, 0, 1); // no per-object flags
+    push_element(&mut bits, 2, 1, &content);
+    let bytes = pack(bits);
+
+    let strict = parse_oamd_payload_with_config(
+        &bytes,
+        OamdDecoderConfig {
+            trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
+        },
+    );
+    assert_eq!(strict, Err(OamdError::ReservedWarpMode { code: 3 }));
+
+    let vendor = parse_oamd_payload_with_profile(
+        &bytes,
+        OamdDecoderConfig {
+            trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
+        },
+        OamdParseProfile::DolbyVendorCompat,
+        11,
+    )
+    .expect("narrow vendor opaque retention");
+    let OamdElement::OpaqueObservedKnownElement(opaque) = &vendor.elements[0].element else {
+        panic!("expected opaque observed trim element");
+    };
+    assert_eq!(opaque.element_id, 2);
+    assert_eq!(opaque.declared_bits, 8);
+    assert_eq!(opaque.declared_bytes, 1);
+    assert_eq!(opaque.valid_bits_in_last_byte, 8);
+    assert_eq!(opaque.raw_body.bytes, vec![0b0110_0000]);
+    assert_eq!(opaque.raw_body.bit_len, 8);
+    assert_eq!(opaque.raw_warp, 3);
+    assert_eq!(opaque.warp_element_relative_start_bit, 1);
+    assert_eq!(opaque.warp_element_relative_end_bit, 3);
+    assert_eq!(opaque.warp_payload_start_bit, 24);
+    assert_eq!(opaque.warp_payload_end_bit, 26);
+    assert_eq!(
+        opaque.first_parser_error,
+        OamdError::ReservedWarpMode { code: 3 }
+    );
+    assert_eq!(opaque.deviation_code, "LOGIC_OAMD_RESERVED_TRIM_WARP_3");
+}
+
+#[test]
+fn vendor_profile_does_not_generalize_reserved_trim_errors() {
+    for (warp, expected) in [
+        (2_u8, OamdError::ReservedWarpMode { code: 2 }),
+        (0_u8, OamdError::ReservedGlobalTrimMode),
+    ] {
+        let mut bits = Vec::new();
+        dynamic_prefix(&mut bits, 0, 1);
+        let mut content = vec![false];
+        push(&mut content, warp.into(), 2);
+        push(&mut content, 0, 2); // reserved trim data
+        push(&mut content, if warp == 0 { 3 } else { 0 }, 2);
+        push(&mut content, 0, 1);
+        push_element(&mut bits, 2, 1, &content);
+        let result = parse_oamd_payload_with_profile(
+            &pack(bits),
+            OamdDecoderConfig {
+                trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
+            },
+            OamdParseProfile::DolbyVendorCompat,
+            11,
+        );
+        assert_eq!(result, Err(expected));
+    }
+}
+
+#[test]
+fn vendor_opaque_retention_requires_payload_id_eleven() {
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    let mut content = vec![false];
+    push(&mut content, 3, 2);
+    push(&mut content, 0, 2);
+    push(&mut content, 0, 2);
+    push(&mut content, 0, 1);
+    push_element(&mut bits, 2, 1, &content);
+    let result = parse_oamd_payload_with_profile(
+        &pack(bits),
+        OamdDecoderConfig {
+            trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
+        },
+        OamdParseProfile::DolbyVendorCompat,
+        14,
+    );
+    assert_eq!(
+        result,
+        Err(OamdError::VendorProfilePayloadId { payload_id: 14 })
     );
 }
 

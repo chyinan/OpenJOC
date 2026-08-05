@@ -30,8 +30,9 @@ pub use object_element::{
     parse_object_element,
 };
 pub use payload::{
-    OamdBitTrace, OamdDecoderConfig, OamdElement, OamdElementBitTrace, OamdElementMetadata,
-    OamdPayload, OpaqueBits, parse_oamd_payload, parse_oamd_payload_with_config,
+    OAMD_PAYLOAD_ID, OamdBitTrace, OamdDecoderConfig, OamdElement, OamdElementBitTrace,
+    OamdElementMetadata, OamdParseProfile, OamdPayload, OpaqueBits, OpaqueObservedKnownElement,
+    parse_oamd_payload, parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
     trace_oamd_payload,
 };
 pub use position::{
@@ -110,6 +111,8 @@ pub enum OamdError {
     InvalidRoomDistanceFactor,
     /// A bounded known element or payload ended with a nonzero padding bit.
     NonzeroPadding,
+    /// The vendor OAMD profile was requested for a payload other than ID 11.
+    VendorProfilePayloadId { payload_id: u64 },
 }
 
 impl fmt::Display for OamdError {
@@ -191,6 +194,10 @@ impl fmt::Display for OamdError {
                 formatter.write_str("invalid OAMD room distance factor")
             }
             Self::NonzeroPadding => formatter.write_str("nonzero OAMD padding"),
+            Self::VendorProfilePayloadId { payload_id } => write!(
+                formatter,
+                "Dolby vendor OAMD profile requires payload ID 11, got {payload_id}"
+            ),
         }
     }
 }

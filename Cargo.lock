@@ -287,6 +287,7 @@ dependencies = [
  "openjoc-container",
  "openjoc-eac3",
  "openjoc-emdf",
+ "openjoc-joc",
  "openjoc-oamd",
  "openjoc-scene",
  "openjoc-wave",
@@ -334,6 +335,7 @@ version = "0.1.0"
 dependencies = [
  "openjoc-bitio",
  "serde",
+ "sha2",
 ]
 
 [[package]]

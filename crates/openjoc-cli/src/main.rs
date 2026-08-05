@@ -11,7 +11,7 @@ use banner::{package_metadata, render_banner};
 use openjoc_container::{InputMediaKind, load_eac3};
 use openjoc_eac3::extract_joc_addbsi_access_unit;
 use openjoc_emdf::JocValidationProfile;
-use openjoc_oamd::{OamdDecoderConfig, Position3, ReferenceScreen};
+use openjoc_oamd::{OamdDecoderConfig, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, decode, encode_channels};
 use std::{
@@ -25,7 +25,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -33,6 +33,7 @@ struct DecodePayloadArgs {
     oamd: PathBuf,
     output: PathBuf,
     trim_count: Option<NonZeroU8>,
+    validation_profile: JocValidationProfile,
     reference_screen: Option<ReferenceScreen>,
     output_format: SampleFormat,
 }
@@ -68,11 +69,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         None if terminal.is_tty => print_root_page(terminal, false),
         Some("-h" | "--help") if arguments.len() == 1 => print_root_page(terminal, true),
         Some("inspect") => {
-            let input = arguments.get(1).ok_or_else(usage_error)?;
-            if arguments.len() != 2 {
-                return Err(usage_error().into());
-            }
-            inspect(Path::new(&input))
+            let (input, trim_configuration_count) = parse_inspect(&arguments[1..])?;
+            inspect(&input, trim_configuration_count)
         }
         Some("decode-payload") => decode_payload(&arguments[1..]),
         Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
@@ -106,7 +104,7 @@ fn print_root_page(terminal: TerminalCapabilities, help: bool) -> Result<(), Box
 fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
-        "  openjoc inspect <FILE>\n",
+        "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--trim-config-count N] [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
@@ -121,7 +119,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
 fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
-        "  openjoc inspect <FILE>\n",
+        "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
         "                         [--validation-profile etsi-strict|dolby-vendor-compat]\n",
         "                         [--trim-config-count N]\n",
@@ -131,7 +129,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
-        "                         -o <DIR> [OPTIONS]\n",
+        "                         -o <DIR> [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+        "                         [OPTIONS]\n",
         "\n",
     ));
     append_heading(output, "COMMANDS", color)?;
@@ -162,7 +161,29 @@ fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(),
     }
 }
 
-fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
+fn parse_inspect(values: &[String]) -> Result<(PathBuf, Option<NonZeroU8>), Box<dyn Error>> {
+    let input = values.first().filter(|value| !value.starts_with('-'));
+    let mut trim_configuration_count = None;
+    let mut index = 1;
+    while index < values.len() {
+        let flag = &values[index];
+        if flag != "--trim-config-count" {
+            return Err(usage_error().into());
+        }
+        let value = values.get(index + 1).ok_or_else(usage_error)?;
+        trim_configuration_count = Some(parse_trim_configuration_count(value)?);
+        index += 2;
+    }
+    Ok((
+        PathBuf::from(input.ok_or_else(usage_error)?),
+        trim_configuration_count,
+    ))
+}
+
+fn inspect(
+    input: &Path,
+    trim_configuration_count: Option<NonZeroU8>,
+) -> Result<(), Box<dyn Error>> {
     let media = load_eac3(input)?;
     let frames = openjoc_eac3::index_syncframes(&media.bytes)?;
     let units = openjoc_eac3::group_access_units(&frames)?;
@@ -261,7 +282,7 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
                     JocValidationProfile::EtsiStrict,
                     JocValidationProfile::DolbyVendorCompat,
                 ] {
-                    print_profile_validation(&parsed, profile);
+                    print_profile_validation(&parsed, profile, trim_configuration_count);
                 }
             }
             Ok(None) => {
@@ -287,6 +308,7 @@ fn inspect(input: &Path) -> Result<(), Box<dyn Error>> {
 fn print_profile_validation(
     parsed: &openjoc_eac3::ParsedJocAccessUnit,
     profile: JocValidationProfile,
+    trim_configuration_count: Option<NonZeroU8>,
 ) {
     println!("  profile: {}", profile.as_str());
     match openjoc_eac3::validate_joc_access_unit(parsed, profile) {
@@ -302,6 +324,16 @@ fn print_profile_validation(
                     deviation.actual,
                     deviation.expected_by_etsi
                 );
+            }
+            match trim_configuration_count {
+                Some(count) => print_oamd_profile_status(
+                    &metadata.oamd,
+                    profile,
+                    OamdDecoderConfig {
+                        trim_configuration_count: Some(count),
+                    },
+                ),
+                None => println!("    OAMD partial: not_attempted_without_trim_config_count"),
             }
         }
         Err(openjoc_eac3::Eac3Error::JocProfileValidation(failure)) => {
@@ -320,6 +352,74 @@ fn print_profile_validation(
         Err(error) => {
             println!("    result: failed");
             println!("    reason: {error}");
+        }
+    }
+}
+
+fn print_oamd_profile_status(
+    payload: &[u8],
+    profile: JocValidationProfile,
+    config: OamdDecoderConfig,
+) {
+    let parsed = match profile {
+        JocValidationProfile::EtsiStrict => {
+            openjoc_oamd::parse_oamd_payload_with_config(payload, config)
+        }
+        JocValidationProfile::DolbyVendorCompat => openjoc_oamd::parse_oamd_payload_with_profile(
+            payload,
+            config,
+            OamdParseProfile::DolbyVendorCompat,
+            openjoc_oamd::OAMD_PAYLOAD_ID,
+        ),
+    };
+    match parsed {
+        Ok(parsed) => {
+            let object_element = parsed
+                .elements
+                .iter()
+                .find(|metadata| matches!(metadata.element, openjoc_oamd::OamdElement::Objects(_)));
+            let opaque_trim = parsed.elements.iter().find_map(|metadata| {
+                if let openjoc_oamd::OamdElement::OpaqueObservedKnownElement(opaque) =
+                    &metadata.element
+                {
+                    Some(opaque)
+                } else {
+                    None
+                }
+            });
+            println!(
+                "    OAMD result: {}",
+                if opaque_trim.is_some() {
+                    "accepted_with_deviation"
+                } else {
+                    "accepted"
+                }
+            );
+            println!(
+                "    OAMD object element: {}",
+                if object_element.is_some() {
+                    "parsed"
+                } else {
+                    "blocked"
+                }
+            );
+            if let Some(opaque) = opaque_trim {
+                println!(
+                    "    OAMD trim element: opaque unresolved; raw warp={} payload-relative bits=[{},{}] deviation={}",
+                    opaque.raw_warp,
+                    opaque.warp_payload_start_bit,
+                    opaque.warp_payload_end_bit,
+                    opaque.deviation_code,
+                );
+                println!("    OAMD trim timeline: unavailable");
+                println!("    OAMD renderer fidelity: ineligible");
+            } else {
+                println!("    OAMD trim element: parsed or absent");
+            }
+        }
+        Err(error) => {
+            println!("    OAMD result: failed");
+            println!("    OAMD reason: {error}");
         }
     }
 }
@@ -367,12 +467,19 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
     let downmix = decode(&fs::read(&arguments.downmix)?)?;
     let joc_payload = fs::read(&arguments.joc)?;
     let oamd_payload = fs::read(&arguments.oamd)?;
-    let mut decoder = PayloadDecoder::new(PayloadDecoderConfig {
-        reference_screen: arguments.reference_screen,
-        oamd: OamdDecoderConfig {
-            trim_configuration_count: arguments.trim_count,
+    let oamd_profile = match arguments.validation_profile {
+        JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
+        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
+    };
+    let mut decoder = PayloadDecoder::with_oamd_profile(
+        PayloadDecoderConfig {
+            reference_screen: arguments.reference_screen,
+            oamd: OamdDecoderConfig {
+                trim_configuration_count: arguments.trim_count,
+            },
         },
-    });
+        oamd_profile,
+    );
     decoder.decode_frame_with(
         JocFrameInput {
             sample_rate: downmix.sample_rate,
@@ -381,7 +488,7 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
             oamd_payload: &oamd_payload,
             frame_index: 0,
         },
-        |frame| write_debug(&arguments.output, 0, frame),
+        |frame| write_debug(&arguments.output, 0, frame, arguments.validation_profile),
     )?;
     let scene = decoder.finish()?;
     write_scene(&arguments.output, &scene, arguments.output_format)?;
@@ -488,7 +595,14 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             &dither,
             |frame_index, metadata, frame| {
                 write_validation_debug(&sink_output, frame_index, metadata)
-                    .and_then(|()| write_debug(&sink_output, frame_index, frame))
+                    .and_then(|()| {
+                        write_debug(
+                            &sink_output,
+                            frame_index,
+                            frame,
+                            metadata.validation_profile,
+                        )
+                    })
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
         )?
@@ -505,7 +619,14 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             arguments.validation_profile,
             |frame_index, metadata, frame| {
                 write_validation_debug(&sink_output, frame_index, metadata)
-                    .and_then(|()| write_debug(&sink_output, frame_index, frame))
+                    .and_then(|()| {
+                        write_debug(
+                            &sink_output,
+                            frame_index,
+                            frame,
+                            metadata.validation_profile,
+                        )
+                    })
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
         )?
@@ -564,6 +685,7 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
     let mut oamd = None;
     let mut output = None;
     let mut trim_count = None;
+    let mut validation_profile = JocValidationProfile::EtsiStrict;
     let mut reference_f64 = false;
     let mut screen = [None; 5];
     let mut index = 0;
@@ -584,6 +706,7 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
                 let parsed = value.parse::<u8>()?;
                 trim_count = Some(NonZeroU8::new(parsed).ok_or_else(usage_error)?);
             }
+            "--validation-profile" => validation_profile = parse_validation_profile(value)?,
             "--screen-origin-x" => screen[0] = Some(value.parse::<f64>()?),
             "--screen-origin-y" => screen[1] = Some(value.parse::<f64>()?),
             "--screen-origin-z" => screen[2] = Some(value.parse::<f64>()?),
@@ -610,6 +733,7 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
         oamd: oamd.ok_or_else(usage_error)?,
         output: output.ok_or_else(usage_error)?,
         trim_count,
+        validation_profile,
         reference_screen,
         output_format: if reference_f64 {
             SampleFormat::F64
@@ -659,6 +783,7 @@ fn write_debug(
     output: &Path,
     frame_index: usize,
     decoded: &openjoc_scene::DecodedPayloadFrame,
+    validation_profile: JocValidationProfile,
 ) -> Result<(), Box<dyn Error>> {
     let frame = output.join(format!("debug/frame_{frame_index:03}"));
     fs::create_dir_all(&frame)?;
@@ -668,7 +793,105 @@ fn write_debug(
         frame.join("reconstruction.txt"),
         format!("{:#?}\n", decoded.decoded),
     )?;
+    let opaque_elements = decoded
+        .oamd
+        .elements
+        .iter()
+        .filter_map(|metadata| match &metadata.element {
+            openjoc_oamd::OamdElement::OpaqueObservedKnownElement(opaque) => Some(opaque),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let status = OamdPartialStatusArtifact {
+        profile: validation_profile.as_str(),
+        accepted_with_deviation: !opaque_elements.is_empty(),
+        oamd_payload_structurally_accepted: true,
+        oamd_semantically_complete: opaque_elements.is_empty(),
+        object_metadata_status: if decoded
+            .oamd
+            .elements
+            .iter()
+            .any(|metadata| matches!(metadata.element, openjoc_oamd::OamdElement::Objects(_)))
+        {
+            "parsed"
+        } else {
+            "blocked"
+        },
+        trim_metadata_status: if opaque_elements.is_empty() {
+            "parsed_or_absent"
+        } else {
+            "opaque_unresolved"
+        },
+        trim_timeline_available: false,
+        renderer_fidelity_eligible: false,
+        opaque_elements: opaque_elements
+            .iter()
+            .map(|opaque| OpaqueTrimArtifact {
+                element_id: opaque.element_id,
+                declared_bits: opaque.declared_bits,
+                declared_bytes: opaque.declared_bytes,
+                raw_body_sha256: opaque.raw_body_sha256.clone(),
+                raw_warp: opaque.raw_warp,
+                warp_payload_bits: [opaque.warp_payload_start_bit, opaque.warp_payload_end_bit],
+                deviation_code: opaque.deviation_code,
+            })
+            .collect(),
+    };
+    fs::write(
+        frame.join("oamd_partial_status.json"),
+        serde_json::to_vec_pretty(&status)?,
+    )?;
+    let mut status_text = format!(
+        "profile: {}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nrenderer_fidelity_eligible: {}\n",
+        status.profile,
+        status.accepted_with_deviation,
+        status.oamd_payload_structurally_accepted,
+        status.oamd_semantically_complete,
+        status.object_metadata_status,
+        status.trim_metadata_status,
+        status.trim_timeline_available,
+        status.renderer_fidelity_eligible,
+    );
+    for opaque in &status.opaque_elements {
+        writeln!(
+            status_text,
+            "opaque_element id={} declared_bits={} raw_body_sha256={} raw_warp={} payload_bits=[{},{}] deviation={}",
+            opaque.element_id,
+            opaque.declared_bits,
+            opaque.raw_body_sha256,
+            opaque.raw_warp,
+            opaque.warp_payload_bits[0],
+            opaque.warp_payload_bits[1],
+            opaque.deviation_code,
+        )?;
+    }
+    fs::write(frame.join("oamd_partial_status.txt"), status_text)?;
     Ok(())
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(serde::Serialize)]
+struct OamdPartialStatusArtifact {
+    profile: &'static str,
+    accepted_with_deviation: bool,
+    oamd_payload_structurally_accepted: bool,
+    oamd_semantically_complete: bool,
+    object_metadata_status: &'static str,
+    trim_metadata_status: &'static str,
+    trim_timeline_available: bool,
+    renderer_fidelity_eligible: bool,
+    opaque_elements: Vec<OpaqueTrimArtifact>,
+}
+
+#[derive(serde::Serialize)]
+struct OpaqueTrimArtifact {
+    element_id: u8,
+    declared_bits: usize,
+    declared_bytes: usize,
+    raw_body_sha256: String,
+    raw_warp: u8,
+    warp_payload_bits: [usize; 2],
+    deviation_code: &'static str,
 }
 
 #[derive(serde::Serialize)]
