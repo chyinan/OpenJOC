@@ -320,3 +320,29 @@ and linear-ramp Logic export (or an additional authorized encoder/version),
 then repeat the same independent-oracle and ADM comparison without weakening
 ETSI validation. The CLI forensic writer now refuses existing report targets
 unless explicit `--force` is supplied, preserving evidence history.
+
+## Round-3 differential refresh (2026-08-05)
+
+This refresh branch is `codex/logic-warp-differential-corpus`, starting from
+`952b052d61e23e5b7c7d96d37b41a01f090424b7`. Computer Use reopened Logic Pro
+12.3 and the private canonical-B copy, but the unsaved editing experiment was
+discarded before exit. Consequently no new B/C export is treated as canonical;
+the earlier B/C copies remain non-canonical and are not proof of single-jump
+or linear-ramp semantics.
+
+The reproducible private refresh is
+`OpenJOC-Private/reports/runs/2026-08-05T1042Z_logic-warp-evidence_952b052`.
+It reruns raw and MP4 diagnostics and independent ADM extraction for A-F
+without overwriting prior forensic or census output. All 12 carrier reports
+have 126 AUs at exactly 0.032 s/AU. A/E have one payload-11 body; B/C/D/F
+have 63. The first changed payload body remains AU 14 -> 15 (AU 15 = 0.480 s),
+and raw/MP4 normalized traces are equal.
+
+The four-way boundary evidence remains exact and unchanged: formal trace,
+diagnostic trace, independent cursor-free oracle, and direct byte masking all
+report `[526,528)`, `11`, and integer `3`; all bounded element/payload ranges
+close. Hypotheses 0/1/2 remain diagnostic-only and non-unique. ADM is used
+only as an external timing/position oracle; the object grammar is not entered.
+Strict behavior remains `ReservedWarpMode { raw: 3 }`, and no vendor warp
+compatibility rule is permitted until a canonical independent vector or
+authoritative specification evidence makes one interpretation unique.

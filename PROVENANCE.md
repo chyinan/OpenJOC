@@ -1730,6 +1730,42 @@ bounded observations, not complete OAMD/JOC decoding.
 
 The independent oracle and direct byte mask report warp bits `[526,528)` with
 raw value `3`; the formal ETSI parser still returns `ReservedWarpMode { raw: 3 }`.
+
 Diagnostic assumptions 0, 1, and 2 each close bounded element/payload windows
 but remain non-unique and do not produce update/position semantics. No official
 ETSI erratum changing the reserved table was found in the permitted sources.
+
+### 2026-08-05 Logic differential refresh
+
+This evidence refresh began at Git HEAD
+`952b052d61e23e5b7c7d96d37b41a01f090424b7` on
+`codex/logic-warp-differential-corpus`. Computer Use was used to reopen Logic
+Pro 12.3 and inspect the private canonical-B copy. An unsaved automation
+experiment was discarded before exit; no private project, ADM BWF, MP4/EC3,
+manifest, forensic report, census output, `.DS_Store`, or `references/` entry
+was committed or overwritten.
+
+The new private batch is
+`OpenJOC-Private/reports/runs/2026-08-05T1042Z_logic-warp-evidence_952b052`.
+It contains two carrier reports per A-F and one fresh ADM inventory report per
+vector. Raw and MP4 observations normalize identically for all 126 AUs. The
+payload-11 unique counts are A/E=1 and B/C/D/F=63; the first transition where
+present is AU 14 -> 15, and `1536/48000 = 0.032` seconds per AU, so zero-based
+AU 15 begins at sample 23,040 and 0.480 seconds.
+
+The evidence package preserves the coordinate systems separately (raw file,
+elementary stream, AU, bounded skip field, and EMDF payload). The independent
+oracle and direct byte mask agree with the formal/diagnostic entry traces on
+warp start 526, end 528, raw bits `11`, integer `3`, and payload end 536.
+Diagnostic hypotheses 0/1/2 all close bounded syntax but remain non-unique and
+do not yield timing, position, jump, or ramp counts. ADM reports are an
+external oracle only: A=1 object update, B/C/D=197, E=0 object channels, and
+F=197 updates for each of two objects. No unproven coordinate conversion or
+fidelity statement is recorded.
+
+This refresh therefore preserves the existing interoperability boundary:
+`ETSI_STRICT` returns `ReservedWarpMode { code: 3 }`; no remap, vendor exception,
+or `DOLBY_VENDOR_COMPAT` warp interpretation was added. B/C remain a UI-copy
+limitation record rather than canonical single-variable vectors, and the next
+required evidence is a genuinely canonical Logic jump/ramp export or an
+additional authorized encoder/version.

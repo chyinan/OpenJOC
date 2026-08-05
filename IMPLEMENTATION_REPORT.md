@@ -658,3 +658,47 @@ bitstream or decode semantics.
 - `git diff --check`: passed
 - controlled private manifest run 1/run 2: JSON and TXT byte-identical
   (`52302b6f…5432`, `5b94f9d4…f928`)
+
+### Round-3 Logic differential refresh (2026-08-05)
+
+This refresh started at `952b052d61e23e5b7c7d96d37b41a01f090424b7` on
+`codex/logic-warp-differential-corpus`. The tracked worktree was clean; the
+pre-existing untracked `.DS_Store` and `references/` entries were not touched.
+The recorded environment is macOS 26.6 (25G72), Logic Pro 12.3, Rust/Cargo
+1.94.0, and FFmpeg/FFprobe 8.1.2.
+Computer Use reopened Logic Pro 12.3 and the private canonical-B copy after
+an unsaved editing experiment was discarded. No new B/C export is labelled
+canonical in this round; the earlier B/C exports remain explicitly
+non-canonical because their ADM and payload evidence retain D's mixed motion.
+
+The new non-overwriting batch is
+`OpenJOC-Private/reports/runs/2026-08-05T1042Z_logic-warp-evidence_952b052`.
+It contains raw-EC3 and MP4 reports for A static-centre, B single-jump-copy,
+C linear-ramp-copy, D mixed-motion, E no-dynamic-object, and F two-object
+controls, plus a fresh RIFF/axml/chna ADM report for each vector. Every carrier
+report has 126 access units and `timing_grid_seconds=0.032`; raw and MP4
+normalized observations are equal. Payload-11 unique counts are A=1, B=63,
+C=63, D=63, E=1, F=63. Where a transition exists, the first transition is
+AU 14 -> AU 15 (zero-based AU 15 starts at sample 23,040 and 0.480 s).
+
+The independent oracle and direct byte mask agree for every one of the 12
+carrier reports: OAMD payload-relative warp `[526,528)`, raw bits `11`, raw
+integer `3`, payload end bit `536`, element IDs 1 and 2, and exact bounded
+closure. Diagnostic hypotheses 0, 1, and 2 each close only bounded syntax,
+retain `raw_warp=3`, and are explicitly marked non-unique and diagnostic-only;
+none produces update, position, jump, or ramp counts. ADM summaries remain an
+external oracle: A has one `OBJ_997HZ` update, B/C/D have 197, E has no object
+channel, and F has 197 updates for each of `OBJ_997HZ` and `OBJ_2003HZ`.
+
+The decision remains unresolved-unknown. No parser offset fix, warp remap,
+trim magic, hidden compatibility branch, or `DOLBY_VENDOR_COMPAT` warp rule
+was added. `ETSI_STRICT` still rejects `ReservedWarpMode { code: 3 }`; OAMD
+timeline generation, JOC reconstruction, nonzero PCM, object-scene comparison,
+and ADM fidelity remain blocked at that exact boundary.
+
+Round-3 quality gates passed: `cargo fmt --all -- --check`, strict workspace
+clippy, serialized all-feature workspace tests, offline workspace release
+build, and `git diff --check`. The private manifest census was run twice into
+new output directories; JSON hash `52302b6fee68e5ad4bcf1c3bbc4c526077efb223126a975c37a732b010035432`
+and TXT hash `5b94f9d45faba8f62a2260fb9ad34857c62a82fd60f8871e29cb75cb2f04f928`
+matched byte-for-byte.
