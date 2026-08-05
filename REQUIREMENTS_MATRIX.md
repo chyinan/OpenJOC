@@ -317,3 +317,17 @@ lane remain unchanged/open.
 | Joint decision | OpenJOC coefficient stages are history-stable; OpenJOC AU0 PCM boundary follows TDAC carry context; FFmpeg is history-dependent; Apple is history-stable | narrowed; no codec-core fix |
 | Production behavior | No TDAC change, reset, gain, remap, sample special case, vector/hash special case, OAMD/JOC profile change, or warp alias | verified |
 | Remaining blocker | Separate fixed decoder priming/history coordinates from Logic AU0/block5 upstream coefficient provenance; component transplant and complete OAMD/JOC/fidelity claims remain open | open |
+
+## Decoder comparison contract (2026-08-06)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Evaluation-only regions | `openjoc-cli::comparison` defines serializable `cold_start`, `warmup`, and `steady_state` regions with range/hash validation; it cannot alter decode or trimming | verified |
+| Exact-history convergence | Private contract run `2026-08-05T_decoder-comparison-contract_d60baf3_r4` maps target AUs by indexed manifest ranges, not packet ordinal guesses | verified; private |
+| OpenJOC convergence | AU0 differs first at legal TDAC carry-in; AU1 stages and PCM are history-stable; decoder-state hash API remains unavailable | measured; scoped to this corpus |
+| FFmpeg convergence | No PCM convergence suffix through source AU8 under the declared raw E-AC-3 command; PTS is unavailable | measured; mapping uncertainty recorded |
+| Apple convergence | Target PCM is stable from AU0 in the observed 1536-sample grid; 288 trailing samples are absent and PTS is unavailable | measured; not a normative oracle |
+| Sample 1536 interpretation | Reclassified as a warm-up/startup comparator boundary; cross-decoder semantic alignment is unproven and it is not a demonstrated TDAC defect | downgraded |
+| Steady-state base metrics | A/E/D/F metrics are separated from cold/warm windows; values are reported without an acceptance threshold | `steady_state_reported` |
+| JOC region metrics | Object WAVs remain complete; evaluation slicing is private/report-only; 15 rows and base-error propagation are recorded, semantic object identity remains open | diagnostic |
+| Production behavior | No TDAC, mantissa, coupling, SPX, dither, rematrix, warp, reset, gain, remap, or silent trim change | verified |

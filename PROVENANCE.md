@@ -2137,3 +2137,26 @@ The remaining blocker is to separate comparator startup/priming coordinates
 from Logic AU0/block5 upstream coefficient provenance. Complete OAMD timeline,
 JOC semantic reconstruction, object PCM fidelity, ADM position comparison, and
 accepted internal-base fidelity remain unclaimed.
+
+## Decoder comparison contract (2026-08-06)
+
+The private evaluation-only package
+`2026-08-05T_decoder-comparison-contract_d60baf3_r4` consumes the complete
+exact-history outputs and prior A/E/D/F three-decoder metrics. It does not
+trim or rewrite any decoder WAV; `_r5` is a byte-identical deterministic
+repeat of the core JSON/TXT evidence.
+
+The contract defines cold start `[0,1536)`, warm-up `[1536,3072)`, and a
+decoder-specific steady-state suffix. OpenJOC reaches observed history
+convergence at source AU1: AU0 carry-in is the first difference, while AU1
+stages and PCM are stable. A complete decoder-state hash is not exposed, so
+this is scoped corpus evidence, not a universal state theorem. Apple is stable
+from target AU0 in the observed 1536-sample grid, with 288 trailing samples
+absent and PTS unavailable. FFmpeg has no PCM convergence suffix through AU8;
+its mapping is manifest/grid based with PTS unavailable.
+
+Sample 1536 is classified as a warm-up/startup comparator boundary. Its
+cross-decoder semantic alignment is unproven and it is not retained as a
+demonstrated TDAC defect. Steady-state A/E/D/F metrics are reported without
+an acceptance threshold. JOC object WAVs remain complete; evaluation slicing
+is report-only and object semantic identity remains open.

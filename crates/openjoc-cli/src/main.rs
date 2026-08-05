@@ -1,6 +1,7 @@
 // pattern: Imperative Shell
 
 mod banner;
+mod comparison;
 mod eac3_decode;
 mod fixture_census;
 mod oamd_forensics;

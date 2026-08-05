@@ -580,3 +580,15 @@ history/priming boundary versus Logic AU0/block5 upstream provenance; no
 codec-core or TDAC fix is justified. Strict `warp=3` rejection, vendor opaque
 trim behavior, OAMD/JOC profile behavior, and all fidelity boundaries remain
 unchanged.
+
+## Decoder comparison contract (2026-08-06)
+
+The evaluation-only contract separates cold start `[0,1536)`, warm-up
+`[1536,3072)`, and decoder-specific steady state. On the exact H0/H1/H2/H4/HP
+corpus, OpenJOC reaches observed history convergence at source AU1, Apple is
+stable from AU0, and FFmpeg has no PCM convergence suffix through AU8. PTS is
+unavailable; Apple also has 288 fewer trailing samples. The absolute sample
+1536 event is therefore a warm-up comparator disagreement, not a demonstrated
+TDAC defect. Complete decoder-state hashes, universal priming semantics,
+OAMD timeline, and JOC semantic fidelity remain open. No production trimming
+or codec change was introduced.
