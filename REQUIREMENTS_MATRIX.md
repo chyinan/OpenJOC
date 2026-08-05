@@ -331,3 +331,17 @@ lane remain unchanged/open.
 | Steady-state base metrics | A/E/D/F metrics are separated from cold/warm windows; values are reported without an acceptance threshold | `steady_state_reported` |
 | JOC region metrics | Object WAVs remain complete; evaluation slicing is private/report-only; 15 rows and base-error propagation are recorded, semantic object identity remains open | diagnostic |
 | Production behavior | No TDAC, mantissa, coupling, SPX, dither, rematrix, warp, reset, gain, remap, or silent trim change | verified |
+
+## Steady-state coding-tool differential (2026-08-06)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| AU/sample mapping | Indexed 1536-sample AU grid is high confidence for OpenJOC and FFmpeg; Apple has medium confidence with 288 trailing samples absent | partial; block alignment unproven externally |
+| Fixed windows | S1=AU2–15, S2=AU32–63, S3=AU80–110, selected before measurement and below Apple valid tail | verified; evaluation-only |
+| Per-block/channel metrics | CurrentDefault, FFmpeg raw, and Apple are sliced on the declared internal 256-sample block grid; external block semantic equivalence is explicitly not claimed | reported; scoped |
+| Tool inventory | Existing parser evidence records representative target-block coupling/SPX/AHT/rematrix state and dither/BAP=0; complete independent per-AU tool strata are not exposed | incomplete; no causal inference |
+| Tool association | No controlled on/off strata; no significant coupling/SPX/dither/rematrix/AHT effect size can be estimated | none established |
+| Residual bands | Existing tail-bin attribution is retained as diagnostic evidence only; band overlap does not prove tool causality | unresolved |
+| Decoder relationship | OpenJOC≈FFmpeg in steady window metrics; Apple differs materially from both under current mapping and cannot be an oracle | measured; non-unique |
+| JOC propagation | 15 object rows and complete object WAVs retained; evaluation slicing does not alter output; semantic object identity remains open | diagnostic |
+| Production behavior | No startup trim, TDAC reset, gain, remap, warp alias, AU exception, file rule, or FFmpeg-fitting constant added | verified |

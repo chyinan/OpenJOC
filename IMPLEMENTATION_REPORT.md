@@ -1167,3 +1167,23 @@ unproven, so it is not a demonstrated TDAC defect. A/E/D/F cold and
 steady-state metrics are reported without an acceptance threshold. JOC object
 WAVs remain complete; region slicing is evaluation-only and complete OAMD/JOC
 semantic fidelity remains open.
+
+## Steady-state coding-tool differential (2026-08-06)
+
+This increment adds only private, evaluation-only evidence in
+`2026-08-06T_steady-state-tool-differential_b62168f` (repeat `_r2`). The
+selected windows are S1 AU2–15, S2 AU32–63, and S3 AU80–110. AU mapping is
+high confidence for OpenJOC and FFmpeg and medium confidence for Apple; Apple
+has 288 missing trailing samples and no PTS. The external meaning of the
+internal 256-sample block grid remains unproven.
+
+OpenJOC and FFmpeg are close in the steady windows (median channel block RMS
+residual approximately `0.98e-6`), while Apple is approximately `1e-5` from
+each under the same diagnostic mapping. These numbers are not pass/fail
+criteria. Existing tool evidence is representative only: complete independent
+per-AU/per-block strata for coupling, SPX, dither, rematrix, AHT, and exponent
+strategy are unavailable, so no tool-level causal claim is made. LFE exact
+silence is excluded. JOC propagation has 15 diagnostic rows and complete object
+WAVs, but semantic identity remains unresolved. The next blocker is a parser-
+emitted full tool inventory plus a trusted external block anchor; no production
+decoder change is justified.

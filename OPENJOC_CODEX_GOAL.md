@@ -592,3 +592,20 @@ unavailable; Apple also has 288 fewer trailing samples. The absolute sample
 TDAC defect. Complete decoder-state hashes, universal priming semantics,
 OAMD timeline, and JOC semantic fidelity remain open. No production trimming
 or codec change was introduced.
+
+## Steady-state coding-tool differential (2026-08-06)
+
+Evidence package: private `2026-08-06T_steady-state-tool-differential_b62168f`
+with byte-identical repeat `_r2`. The comparison uses fixed windows S1 AU2–15,
+S2 AU32–63, and S3 AU80–110. OpenJOC/FFmpeg AU mapping is high confidence;
+Apple mapping is medium confidence with 288 trailing samples absent and PTS
+unavailable. Block alignment to an external decoder is not yet demonstrated.
+
+The measured OpenJOC–FFmpeg median per-channel block RMS residual is about
+`0.98e-6`; Apple differs from both by about `1e-5` on the same diagnostic grid.
+No independent per-AU/per-block tool strata exist, so coupling, SPX, dither,
+rematrix, AHT, and exponent strategy cannot be assigned causally. LFE silence
+is excluded. JOC output remains a 15-row evaluation-only propagation report;
+semantic object identity, complete OAMD timeline, JOC semantic reconstruction,
+nonzero object PCM fidelity, and ADM fidelity remain open. Next blocker:
+parser-emitted full tool inventory and a trusted external block anchor.

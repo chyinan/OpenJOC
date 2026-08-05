@@ -2160,3 +2160,21 @@ cross-decoder semantic alignment is unproven and it is not retained as a
 demonstrated TDAC defect. Steady-state A/E/D/F metrics are reported without
 an acceptance threshold. JOC object WAVs remain complete; evaluation slicing
 is report-only and object semantic identity remains open.
+
+## Steady-state coding-tool differential (2026-08-06)
+
+The private package `2026-08-06T_steady-state-tool-differential_b62168f` and
+deterministic repeat `_r2` compare Logic vectors A/E/D/F on fixed windows S1
+(AU2–15), S2 (AU32–63), and S3 (AU80–110). OpenJOC and FFmpeg have a
+high-confidence 1536-sample AU mapping; Apple is medium confidence with 288
+trailing samples absent and PTS unavailable. External 256-sample block
+alignment is not proven, so block metrics are diagnostic only.
+
+OpenJOC versus FFmpeg has median per-channel block RMS residuals near
+`0.98e-6`; Apple versus either is around `1e-5` under the same diagnostic grid,
+confounded by the unproven block anchor and Apple tail. The representative tool
+inventory has no independent per-AU/per-block on/off strata, so no causal
+association with coupling, SPX, dither, rematrix, AHT, or exponent strategy is
+established. LFE exact silence is excluded. JOC propagation remains
+evaluation-only (15 rows, complete object WAVs); semantic object identity is
+open. No production codec, TDAC, trim, warp, or compatibility behavior changed.
