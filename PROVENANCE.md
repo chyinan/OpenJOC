@@ -2069,3 +2069,71 @@ non-unique; its dominant low-bin list is not assigned to a decoder tool. A
 complete OAMD timeline, JOC semantic reconstruction, non-zero object PCM
 fidelity, ADM positional comparison, or accepted internal-base fidelity is not
 claimed.
+
+## Exact target-AU decoder-history corpus (2026-08-05)
+
+The non-overwriting private evidence package is
+`2026-08-05T_exact-au-history_e73ef3f_r7`; a second complete OpenJOC harness
+run in `_r8` is byte-identical for all deterministic evidence files. The
+source is the existing LE0 raw EC-3 vector, not a new Logic re-export. It has
+126 indexed access units, 48 kHz, 1,536 samples/AU, and 3,072-byte independent
+frames. OpenJOC's indexed parser, rather than syncword search, establishes:
+
+| target | source byte range | byte length | SHA-256 |
+| --- | ---: | ---: | --- |
+| AU0 | `[0,3072)` | 3072 | `05712ff5440003dfefdf7d203599dcbd97485191b77c58ca25da71c8e3d37856` |
+| AU1 | `[3072,6144)` | 3072 | `578f26ca19b5948d40e112fa8e3436e63f95dad4b30a1e377f1924fdc6de94c5` |
+| AU0+AU1 | `[0,6144)` | 6144 | `0a14861a3ddcc5539b18fd3a5593ecc4d1355a37ec9c0c73d6125225aa57b991` |
+
+H0 is the original source. H1/H2/H4 prepend one, two, or four exact AU0
+copies. HP prepends exact AU0+AU1. The target occurrence is therefore
+manifest-mapped to corpus AU indices 0/1, 1/2, 2/3, 4/5, and 2/3
+respectively; all target AU0 and AU1 bytes are directly identical across the
+five histories. The duplicated streams are explicitly diagnostic byte-history
+corpora, not normative programme acceptance vectors.
+
+All five raw streams were remuxed to MP4 without re-encoding. MP4-to-EC3
+roundtrip bytes are identical; frame counts are H0=126, H1=127, H2=128,
+H4=130, HP=128. No metadata or audio bytes were normalized to make a muxer
+accept a stream.
+
+### OpenJOC exact-history result
+
+The diagnostic replay uses the existing parser, `InternalBasePolicy::CodecCore`,
+and `AudioPcmSynthesizer::synthesize_with_trace`. For identical target AU
+bytes, parsed headers, exponent/BAP state, exposed pre-IMDCT coefficient
+hashes, and AU0/block5 Ls/Rs TDAC tail hashes are equal in all histories. For
+H1/H2/H4/HP target AU0, the first exposed difference is
+`block0_channel3_tdac_carry_in`; this is a TDAC-context/PCM boundary effect,
+not a coefficient difference. Target AU1's exposed stages and PCM are stable
+after the target AU0 has run.
+
+The snapshot check clones `AudioPcmSynthesizer` immediately before target AU0
+and obtains equal stage counts, carry arrays, and PCM. The production staged
+commit behavior remains the failure-atomicity boundary. The opt-in diagnostic
+trace records raw mantissa tokens, grouped positions, dither values,
+dequantized mantissas, and final pre-IMDCT arrays from the same production
+cursor; normal decoding allocates no trace. Component transplant is likewise
+reported as not performed because those production state components are not
+public. No production state API was added.
+
+### Black-box history matrix
+
+| decoder | H0→H1 AU0 | H0→H2 AU0 | H0→H4 AU0 | H0→HP AU0 | target AU1 |
+| --- | --- | --- | --- | --- | --- |
+| OpenJOC exposed stages | stable | stable | stable | stable | stable |
+| OpenJOC PCM | changes at block-0 carry boundary | changes at block-0 carry boundary | changes at block-0 carry boundary | changes at block-0 carry boundary | stable |
+| FFmpeg raw | changes, strongest in Ls/Rs | changes, strongest in Ls/Rs | changes, strongest in Ls/Rs | changes | changes at measured output coordinates |
+| Apple `afconvert` | stable | stable | stable | stable | stable |
+
+This matrix is an output comparison only. It does not claim visibility into
+FFmpeg or Apple internal state. The joint decision is narrowed to: OpenJOC's
+exposed target coefficients are history-stable; OpenJOC's first PCM difference
+is the expected retained TDAC carry context; FFmpeg exhibits a history-
+dependent black-box output; Apple is stable for the same remuxed histories.
+No codec-core fix is justified, and strict/vendor OAMD behavior is unchanged.
+
+The remaining blocker is to separate comparator startup/priming coordinates
+from Logic AU0/block5 upstream coefficient provenance. Complete OAMD timeline,
+JOC semantic reconstruction, object PCM fidelity, ADM position comparison, and
+accepted internal-base fidelity remain unclaimed.

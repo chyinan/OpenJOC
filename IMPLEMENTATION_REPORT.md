@@ -1088,3 +1088,58 @@ trim metadata opaque. No vendor warp rule is added. The first real blocker is
 still AU0/block5 Ls/Rs coefficient provenance and internal-base fidelity; this
 round does not claim complete OAMD timeline, JOC reconstruction, non-zero PCM
 fidelity, or ADM positional fidelity.
+
+## Exact target-AU history replay (2026-08-05)
+
+This increment uses the private non-overwriting run
+`2026-08-05T_exact-au-history_e73ef3f_r7`, with `_r8` as a deterministic
+repeat. It does not create new Logic media. The LE0 raw EC-3 source is indexed
+through OpenJOC's `index_syncframes` and `group_access_units`; AU0 and AU1 are
+3,072-byte frames with hashes recorded in the private manifest. H0 is the
+original stream; H1/H2/H4 prepend one/two/four exact AU0 copies; HP prepends
+exact AU0+AU1. Target bytes are identical across all histories by direct
+range extraction and SHA-256. The corpus is diagnostic only because repeated
+frame counters and metadata continuity are not a normative programme claim.
+
+All five raw streams remux successfully with FFmpeg `-c:a copy`; extracting
+EC3 from each MP4 is byte-identical to its raw input. This proves carrier
+preservation, not semantic acceptance.
+
+The new diagnostic example replays every history through the existing E-AC-3
+parser and `CodecCore` base policy, then traces TDAC contributions. For the
+same target bytes, parsed header, exponent/BAP state, exposed pre-IMDCT
+coefficients, and AU0/block5 Ls/Rs tail hashes are stable. H1/H2/H4/HP target
+AU0 first diverges at `block0_channel3_tdac_carry_in`; the divergence is in
+the retained TDAC context and final PCM boundary, not in the exposed target
+coefficients. Target AU1's exposed stages and PCM are stable. A cloned
+`AudioPcmSynthesizer` snapshot immediately before target AU0 replays with
+identical stage counts, carry arrays, and PCM.
+
+The opt-in diagnostic trace records raw mantissa tokens, grouped-state
+positions, dither values, dequantized mantissas, and final pre-coupling/
+pre-IMDCT arrays from the same production cursor. Normal decoding allocates no
+trace. Component transplant was not performed because production state
+components are not public; no diagnostic state transplant was smuggled into
+production.
+
+FFmpeg raw target comparisons vary with history (strongest at side-channel
+AU0), while Apple `afconvert` accepts all five remuxed MP4 histories and is
+sample-stable at target AU0/AU1 under the declared
+`L,C,R,Ls,Rs,LFE -> FL,FR,FC,LFE,SL,SR` mapping. These are black-box output
+observations, not internal-state claims or fidelity thresholds.
+
+### Decision
+
+The experiment narrows, but does not solve, the provenance question:
+
+- OpenJOC exposed target coefficients are history-stable.
+- OpenJOC AU0 final PCM changes first at the retained block-0 TDAC carry-in;
+  no TDAC change is warranted.
+- FFmpeg output is history-dependent in this corpus; Apple output is stable.
+- No production fix, state reset, gain, remap, AU special case, vector/hash
+  special case, OAMD/JOC profile change, or warp alias was added.
+
+The first remaining blocker is distinguishing fixed decoder priming/history
+coordinates from the Logic AU0/block5 Ls/Rs upstream coefficient provenance.
+Complete OAMD timeline, JOC semantic fidelity, object PCM fidelity, ADM
+position comparison, and accepted internal-base fidelity remain open.

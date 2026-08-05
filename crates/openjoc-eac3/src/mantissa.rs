@@ -24,6 +24,20 @@ pub struct MantissaQuantizer {
     pub symmetric: bool,
 }
 
+/// Opt-in trace for one conventional mantissa element.
+///
+/// The production decoder does not allocate this representation. It is used
+/// only by the diagnostic exact-AU history harness to prove raw codeword,
+/// grouping, dither, and dequantization provenance without a second cursor.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MantissaDecodeTrace {
+    pub raw_codes: Vec<u16>,
+    pub grouped: Vec<bool>,
+    pub group_positions: Vec<u8>,
+    pub dither_values: Vec<f64>,
+    pub dequantized: Vec<f64>,
+}
+
 /// Returns the Table 6.17/6.18 quantizer description for `bap`.
 ///
 /// # Errors
@@ -395,6 +409,26 @@ pub(crate) fn decode_mantissas_with_state<R: BitRead>(
     dither_values: &[f64],
     grouping: &mut MantissaGroupingState,
 ) -> Result<Vec<f64>, Eac3Error> {
+    decode_mantissas_with_state_and_trace(
+        bits,
+        baps,
+        exponents,
+        dither_flags,
+        dither_values,
+        grouping,
+        None,
+    )
+}
+
+pub(crate) fn decode_mantissas_with_state_and_trace<R: BitRead>(
+    bits: &mut R,
+    baps: &[u8],
+    exponents: &[u8],
+    dither_flags: &[bool],
+    dither_values: &[f64],
+    grouping: &mut MantissaGroupingState,
+    mut trace: Option<&mut MantissaDecodeTrace>,
+) -> Result<Vec<f64>, Eac3Error> {
     if baps.len() != exponents.len() {
         return Err(Eac3Error::MantissaExponentLengthMismatch {
             baps: baps.len(),
@@ -424,7 +458,7 @@ pub(crate) fn decode_mantissas_with_state<R: BitRead>(
     while index < baps.len() {
         let bap = baps[index];
         if bap == 0 {
-            let value = if dither_flags[index] {
+            let dither_value = if dither_flags[index] {
                 let value = *dither_values
                     .get(dither_index)
                     .ok_or(Eac3Error::MissingDitherValue { index })?;
@@ -433,14 +467,30 @@ pub(crate) fn decode_mantissas_with_state<R: BitRead>(
             } else {
                 0.0
             };
-            values.push(shift_mantissa(value, exponents[index])?);
+            let dequantized = shift_mantissa(dither_value, exponents[index])?;
+            if let Some(trace) = trace.as_deref_mut() {
+                trace.raw_codes.push(0);
+                trace.grouped.push(false);
+                trace.group_positions.push(0);
+                trace.dither_values.push(dither_value);
+                trace.dequantized.push(dequantized);
+            }
+            values.push(dequantized);
             index += 1;
             continue;
         }
 
         let code = grouping.next_code(bits, bap)?;
         let value = decode_mantissa_code(bap, code.value)?;
-        values.push(shift_mantissa(value, exponents[index])?);
+        let dequantized = shift_mantissa(value, exponents[index])?;
+        if let Some(trace) = trace.as_deref_mut() {
+            trace.raw_codes.push(code.raw_code);
+            trace.grouped.push(code.grouped);
+            trace.group_positions.push(code.group_position);
+            trace.dither_values.push(0.0);
+            trace.dequantized.push(dequantized);
+        }
+        values.push(dequantized);
         index += 1;
     }
     Ok(values)

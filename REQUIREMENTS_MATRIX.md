@@ -298,3 +298,22 @@ lane remain unchanged/open.
 | Diagnostic warp hypotheses | Assumed semantics 0, 1, and 2 each close the bounded element but are explicitly non-unique and do not reach normative object-element decoding; no hypothesis is selected | verified; semantics unresolved |
 | Production behavior | `ETSI_STRICT` continues to reject `ReservedWarpMode { raw: 3 }`; vendor compatibility keeps the raw value and opaque trim deviation; no warp remap, TDAC reset, gain, channel remap, or magic offset was added | verified |
 | First remaining blocker | AU0/block5 Ls/Rs coefficient provenance and internal-base fidelity remain unresolved; complete OAMD timeline, JOC semantic fidelity, object PCM fidelity, and ADM positional fidelity are not claimed | open |
+
+## Exact target-AU decoder-history experiment (2026-08-05)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Exact target bytes | OpenJOC `index_syncframes` + `group_access_units` extracted LE0 AU0/AU1 (3072 bytes each); SHA-256 `05712ff5...37856` / `578f26ca...e94c5`; direct extraction matches in H0/H1/H2/H4/HP | verified |
+| History corpus | Diagnostic-only H0/H1/H2/H4/HP streams use the complete original source preceded by 0/1/2/4 AU0 copies or AU0+AU1; target occurrence indices and sample ranges are manifest-defined | verified; not normative programme vectors |
+| Raw/MP4 carrier | All five raw streams remuxed with `-c:a copy`; MP4-to-EC3 roundtrip is byte-identical and frame counts are 126/127/128/130/128 | verified |
+| OpenJOC replay | Diagnostic example replays every history through the existing E-AC-3 parser, `CodecCore` coefficients, and traced TDAC; no production reset or state mutation was added | verified; diagnostic |
+| OpenJOC exposed stages | Parsed header, exponent/BAP state, pre-IMDCT coefficient hashes, and AU0/block5 Ls/Rs TDAC tail hashes are equal for identical target bytes across histories | verified |
+| OpenJOC first divergence | For H1/H2/H4/HP target AU0, first exposed difference is `block0_channel3_tdac_carry_in`; target AU1 exposed stages and PCM are stable | verified; expected TDAC-context effect |
+| Snapshot/replay | `AudioPcmSynthesizer` clone-before-target replay is deterministic; stage trace count, carry arrays, and PCM are equal; staged commit semantics preserve failed-call atomicity | verified |
+| Raw mantissa/intermediate stages | Opt-in diagnostic trace records raw mantissa tokens, grouped state, dither values, dequantized mantissas, and final pre-IMDCT arrays from the production cursor; normal decode allocates no trace | verified; diagnostic |
+| Component transplant | No production state components are public; transplant is explicitly reported as not performed rather than approximated | open; no production change |
+| FFmpeg black box | Exact target occurrence comparison changes with history, especially side-channel AU0; this is an output observation only, not an internal-state claim | verified; black-box |
+| Apple black box | `afconvert` accepted all remuxed histories; target AU0/AU1 output is sample-stable across H0/H1/H2/H4/HP under declared channel mapping | verified; black-box |
+| Joint decision | OpenJOC coefficient stages are history-stable; OpenJOC AU0 PCM boundary follows TDAC carry context; FFmpeg is history-dependent; Apple is history-stable | narrowed; no codec-core fix |
+| Production behavior | No TDAC change, reset, gain, remap, sample special case, vector/hash special case, OAMD/JOC profile change, or warp alias | verified |
+| Remaining blocker | Separate fixed decoder priming/history coordinates from Logic AU0/block5 upstream coefficient provenance; component transplant and complete OAMD/JOC/fidelity claims remain open | open |

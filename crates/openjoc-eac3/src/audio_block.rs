@@ -6,7 +6,9 @@ use openjoc_bitio::{BitRead, BitReader};
 
 use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
-use crate::mantissa::{MantissaGroupingState, decode_mantissas_with_state};
+use crate::mantissa::{
+    MantissaDecodeTrace, MantissaGroupingState, decode_mantissas_with_state_and_trace,
+};
 use crate::rematrix::rematrix_channels;
 use crate::transform::{
     inverse_transform, inverse_transform_with_trace, overlap_add, overlap_add_with_trace,
@@ -288,6 +290,18 @@ pub struct DecodedAudioBlock {
     pub lfe_aht: Option<AhtQuantizationInformation>,
     /// Absolute frame bit offset immediately after conventional mantissas.
     pub mantissa_end_offset_bits: usize,
+}
+
+/// Conventional mantissa trace for one audio element.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MantissaElementTrace {
+    pub element: MantissaElement,
+    pub channel: Option<u8>,
+    pub block_index: usize,
+    pub baps: Vec<u8>,
+    pub exponents: Vec<u8>,
+    pub dither: bool,
+    pub decode: MantissaDecodeTrace,
 }
 
 /// PCM channels reconstructed from one or more decoded E-AC-3 audio blocks.
@@ -1198,7 +1212,7 @@ pub fn decode_first_audio_block_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<DecodedAudioBlock, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, 1, policy)?
+    decode_audio_blocks_until(bytes, dither_values, 1, policy, None)?
         .into_iter()
         .next()
         .ok_or(Eac3Error::FrameSizeOverflow)
@@ -1224,7 +1238,21 @@ pub fn decode_audio_blocks_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy)
+    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, None)
+}
+
+/// Decodes every audio block and records conventional mantissa stages.
+///
+/// This is a diagnostic-only opt-in. The trace is populated from the same
+/// cursor and grouping state used by production decoding; the normal API does
+/// not allocate it and no decoder state is exposed for mutation.
+pub fn decode_audio_blocks_with_diagnostic_trace(
+    bytes: &[u8],
+    dither_values: &[f64],
+    policy: InternalBasePolicy,
+    trace: &mut Vec<MantissaElementTrace>,
+) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
+    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, Some(trace))
 }
 
 /// Decodes one complete E-AC-3 syncframe and emits its full-bandwidth/LFE PCM.
@@ -1531,6 +1559,7 @@ fn decode_audio_blocks_until(
     dither_values: &[f64],
     max_blocks: usize,
     policy: InternalBasePolicy,
+    mut trace_sink: Option<&mut Vec<MantissaElementTrace>>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
     let frame = parse_audio_frame(bytes)?;
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
@@ -1594,6 +1623,7 @@ fn decode_audio_blocks_until(
             frame_bits,
             block_start_offset_bits,
             &mut grouping,
+            trace_sink.as_deref_mut(),
         )?;
         let channel_mantissas = if frame.bsi.audio_coding_mode == 2 {
             rematrix_channels(
@@ -1659,6 +1689,7 @@ fn decode_audio_blocks_until(
             frame.lfe_aht_in_use,
             block_start_offset_bits,
             &mut grouping,
+            trace_sink.as_deref_mut(),
         )?;
         let lfe_mantissas = lfe_mantissas
             .as_deref()
@@ -1953,6 +1984,7 @@ fn decode_element_mantissas(
     dither_values: &[f64],
     dither_index: &mut usize,
     grouping: &mut MantissaGroupingState,
+    trace: Option<&mut MantissaDecodeTrace>,
 ) -> Result<Vec<f64>, Eac3Error> {
     let dither_flags = vec![dither; baps.len()];
     let needed = if dither {
@@ -1968,8 +2000,15 @@ fn decode_element_mantissas(
         .ok_or(Eac3Error::MissingDitherValue {
             index: *dither_index,
         })?;
-    let decoded =
-        decode_mantissas_with_state(bits, baps, exponents, &dither_flags, values, grouping)?;
+    let decoded = decode_mantissas_with_state_and_trace(
+        bits,
+        baps,
+        exponents,
+        &dither_flags,
+        values,
+        grouping,
+        trace,
+    )?;
     *dither_index = end;
     Ok(decoded)
 }
@@ -2203,6 +2242,7 @@ fn decode_channel_mantissas(
     frame_bits: usize,
     block_start_offset_bits: usize,
     grouping: &mut MantissaGroupingState,
+    mut trace_sink: Option<&mut Vec<MantissaElementTrace>>,
 ) -> Result<ChannelMantissaBlock, Eac3Error> {
     let fast_gain = state
         .fast_gain_codes
@@ -2307,6 +2347,7 @@ fn decode_channel_mantissas(
                     == Some(0),
                 grouping_state: *grouping,
             };
+            let mut element_trace = trace_sink.as_ref().map(|_| MantissaDecodeTrace::default());
             let mantissas = decode_element_mantissas(
                 bits,
                 &baps,
@@ -2315,6 +2356,7 @@ fn decode_channel_mantissas(
                 dither_values,
                 dither_index,
                 grouping,
+                element_trace.as_mut(),
             )
             .map_err(|error| {
                 mantissa_error_context(
@@ -2337,6 +2379,17 @@ fn decode_channel_mantissas(
                     diagnostic_input,
                 )
             })?;
+            if let (Some(sink), Some(decode)) = (trace_sink.as_deref_mut(), element_trace) {
+                sink.push(MantissaElementTrace {
+                    element: MantissaElement::Channel,
+                    channel: u8::try_from(channel).ok(),
+                    block_index,
+                    baps: baps.clone(),
+                    exponents: exponents.clone(),
+                    dither,
+                    decode,
+                });
+            }
             (baps, mantissas, None)
         };
         channel_baps.push(baps);
@@ -2415,13 +2468,15 @@ fn decode_channel_mantissas(
                         == Some(0),
                     grouping_state: *grouping,
                 };
-                let mantissas = decode_mantissas_with_state(
+                let mut element_trace = trace_sink.as_ref().map(|_| MantissaDecodeTrace::default());
+                let mantissas = decode_mantissas_with_state_and_trace(
                     bits,
                     &baps,
                     &exponents,
                     &dither_flags,
                     &[],
                     grouping,
+                    element_trace.as_mut(),
                 )
                 .map_err(|error| {
                     mantissa_error_context(
@@ -2444,6 +2499,17 @@ fn decode_channel_mantissas(
                         diagnostic_input,
                     )
                 })?;
+                if let (Some(sink), Some(decode)) = (trace_sink.as_deref_mut(), element_trace) {
+                    sink.push(MantissaElementTrace {
+                        element: MantissaElement::Coupling,
+                        channel: u8::try_from(channel).ok(),
+                        block_index,
+                        baps: baps.clone(),
+                        exponents: exponents.clone(),
+                        dither: false,
+                        decode,
+                    });
+                }
                 (baps, mantissas, None)
             };
             coupling_bap = Some(baps);
@@ -2476,6 +2542,7 @@ fn decode_lfe_mantissas(
     aht_active: bool,
     block_start_offset_bits: usize,
     grouping: &mut MantissaGroupingState,
+    trace_sink: Option<&mut Vec<MantissaElementTrace>>,
 ) -> Result<
     (
         Option<Vec<u8>>,
@@ -2543,23 +2610,42 @@ fn decode_lfe_mantissas(
             exponent_reused: frame.lfe_exponent_strategy.get(block_index).copied() == Some(false),
             grouping_state: *grouping,
         };
-        let mantissas =
-            decode_mantissas_with_state(bits, &baps, &exponents, &dither_flags, &[], grouping)
-                .map_err(|error| {
-                    mantissa_error_context(
-                        error,
-                        bits,
-                        frame_bits,
-                        block_index,
-                        MantissaElement::Lfe,
-                        None,
-                        MantissaFeatureState {
-                            aht_active,
-                            ..MantissaFeatureState::default()
-                        },
-                        diagnostic_input,
-                    )
-                })?;
+        let mut element_trace = trace_sink.as_ref().map(|_| MantissaDecodeTrace::default());
+        let mantissas = decode_mantissas_with_state_and_trace(
+            bits,
+            &baps,
+            &exponents,
+            &dither_flags,
+            &[],
+            grouping,
+            element_trace.as_mut(),
+        )
+        .map_err(|error| {
+            mantissa_error_context(
+                error,
+                bits,
+                frame_bits,
+                block_index,
+                MantissaElement::Lfe,
+                None,
+                MantissaFeatureState {
+                    aht_active,
+                    ..MantissaFeatureState::default()
+                },
+                diagnostic_input,
+            )
+        })?;
+        if let (Some(sink), Some(decode)) = (trace_sink, element_trace) {
+            sink.push(MantissaElementTrace {
+                element: MantissaElement::Lfe,
+                channel: None,
+                block_index,
+                baps: baps.clone(),
+                exponents: exponents.clone(),
+                dither: false,
+                decode,
+            });
+        }
         (baps, mantissas, None)
     };
     let _ = frame;

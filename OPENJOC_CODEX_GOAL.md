@@ -554,3 +554,29 @@ ill-conditioned (about `8.42e6`) and cannot identify a unique internal tool.
 Complete OAMD timeline, JOC semantic reconstruction, object PCM fidelity,
 ADM position comparison, and accepted fidelity remain open. No TDAC reset,
 gain, remap, AU special case, or vendor warp rule was added in this round.
+
+## Exact target-AU history experiment (2026-08-05)
+
+The private run `2026-08-05T_exact-au-history_e73ef3f_r7` uses the existing LE0
+raw EC-3 bytes. OpenJOC's indexed AU parser establishes 126 AUs and exact
+3,072-byte target AU0/AU1 ranges. H0/H1/H2/H4/HP prepend exact AU0 or AU0+AU1
+copies without re-encoding; target bytes and hashes remain identical in every
+target occurrence. MP4 stream-copy remux succeeds for all five histories and
+MP4-to-EC3 roundtrip is byte-identical. These are diagnostic byte-history
+corpora, not normative programme vectors.
+
+OpenJOC replay shows stable parsed headers, exponent/BAP state, exposed
+pre-IMDCT coefficients, and AU0/block5 Ls/Rs tails for identical target bytes.
+H1/H2/H4/HP target AU0 first diverges at block-0 TDAC `carry_in` and final PCM;
+target AU1 remains stable. Snapshot clone/replay is deterministic. An opt-in
+trace records raw mantissa/grouped/dither/dequantized/pre-IMDCT stages from
+the same production cursor; component transplant remains explicitly not
+performed because production state components are not public.
+
+FFmpeg changes black-box target output across histories, especially the AU0
+side channels. Apple `afconvert` accepts every remuxed history and remains
+stable at target AU0/AU1. Therefore the result is narrowed to a comparator
+history/priming boundary versus Logic AU0/block5 upstream provenance; no
+codec-core or TDAC fix is justified. Strict `warp=3` rejection, vendor opaque
+trim behavior, OAMD/JOC profile behavior, and all fidelity boundaries remain
+unchanged.

@@ -310,6 +310,8 @@ version = "0.1.0"
 dependencies = [
  "openjoc-bitio",
  "openjoc-emdf",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

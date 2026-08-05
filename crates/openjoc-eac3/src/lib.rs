@@ -49,13 +49,14 @@ pub use audio_block::{
     AudioPcmSynthesizer, BitAllocationParameters, CouplingInformation, CouplingLeak,
     DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation, DeltaBitAllocationElement,
     DeltaBitAllocationSegment, EnhancedCouplingInformation, EnhancedCouplingReconstruction,
-    ExponentInformation, FastGainCodes, InternalBasePolicy, SnrOffsets,
+    ExponentInformation, FastGainCodes, InternalBasePolicy, MantissaElementTrace, SnrOffsets,
     SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
     StandardCouplingInformation, TdacContribution, decode_audio_blocks,
-    decode_audio_blocks_with_policy, decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy,
-    decode_first_audio_block, decode_first_audio_block_with_policy, inspect_audio_block_carriers,
-    inverse_aht_dct, parse_first_audio_block_prefix, reconstruct_enhanced_coupling,
-    reconstruct_standard_coupling, synthesize_audio_blocks,
+    decode_audio_blocks_with_diagnostic_trace, decode_audio_blocks_with_policy,
+    decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy, decode_first_audio_block,
+    decode_first_audio_block_with_policy, inspect_audio_block_carriers, inverse_aht_dct,
+    parse_first_audio_block_prefix, reconstruct_enhanced_coupling, reconstruct_standard_coupling,
+    synthesize_audio_blocks,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,
@@ -67,8 +68,8 @@ pub use bit_allocation::{
 };
 pub use dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
 pub use mantissa::{
-    MantissaQuantizer, decode_mantissa_code, decode_mantissas, mantissa_quantizer, shift_mantissa,
-    ungroup_mantissa_code,
+    MantissaDecodeTrace, MantissaQuantizer, decode_mantissa_code, decode_mantissas,
+    mantissa_quantizer, shift_mantissa, ungroup_mantissa_code,
 };
 pub use rematrix::rematrix_channels;
 pub use spx::synthesize_spectral_extension;

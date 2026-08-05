@@ -239,3 +239,31 @@ fn synthesizer_trace_proves_carry_out_equals_next_frame_carry_in() {
     assert_eq!(framed_trace[6].previous_block_switch, switches[5]);
     assert_eq!(framed_trace[6].block_switch, switches[6]);
 }
+
+#[test]
+fn synthesizer_clone_replay_and_failed_call_are_isolated() {
+    let good = synthetic_block(0, false);
+    let mut bad = synthetic_block(1, false);
+    bad.channel_mantissas.push(vec![0.0; 256]);
+    bad.prefix.block_switch.push(false);
+
+    let mut staged = AudioPcmSynthesizer::new();
+    let mut snapshot = staged.clone();
+    let first = staged
+        .synthesize(std::slice::from_ref(&good))
+        .expect("first block");
+    let replay = snapshot
+        .synthesize(std::slice::from_ref(&good))
+        .expect("snapshot replay");
+    assert_eq!(first, replay);
+
+    let mut before_failure = staged.clone();
+    assert!(staged.synthesize(std::slice::from_ref(&bad)).is_err());
+    let after_failure = staged
+        .synthesize(std::slice::from_ref(&good))
+        .expect("retry after failed call");
+    let expected_after_failure = before_failure
+        .synthesize(std::slice::from_ref(&good))
+        .expect("fresh clone after failed call");
+    assert_eq!(after_failure, expected_after_failure);
+}
