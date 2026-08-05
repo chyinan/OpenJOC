@@ -1,9 +1,11 @@
 use openjoc_eac3::{
-    AudioPcmSynthesizer, CouplingInformation, Eac3Error, JocAccessUnitPcmDecoder, JocAddbsi,
-    StreamType, block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
-    classify_aux_emdf, classify_skip_field_emdf, decode_audio_blocks, decode_audio_frame_pcm,
-    decode_exponents, decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain,
-    extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
+    AudioPcmSynthesizer, CouplingInformation, Eac3Error, InternalBasePolicy,
+    JocAccessUnitPcmDecoder, JocAddbsi, StreamType, block_start_information_length,
+    channel_end_mantissa, channel_exponent_group_count, classify_aux_emdf,
+    classify_skip_field_emdf, decode_audio_blocks, decode_audio_blocks_with_policy,
+    decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
+    decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
+    extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
     group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
     parse_bsi, parse_first_audio_block_prefix, parse_joc_access_unit, parse_joc_addbsi,
     parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
@@ -643,6 +645,65 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
     assert_eq!(pcm.channels.len(), 1);
     assert_eq!(pcm.channels[0].len(), 256);
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn codec_core_policy_disables_only_optional_dynamic_range_gain() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(255, 11); // 512-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5);
+    bits.push(31, 5);
+    bits.push(0, 1); // compre
+    bits.push(0, 1); // mixmdate
+    bits.push(0, 1); // infomdate
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // addbsie
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // transient processing
+    bits.push(1, 1); // block-switch syntax
+    bits.push(0, 1); // dither syntax disabled
+    bits.push(0, 5); // remaining syntax flags
+    bits.push(1, 2); // channel D15
+    bits.push(0, 1); // converter exponent strategy absent
+    bits.push(0, 10); // frame SNR offsets
+    bits.push(1, 1); // block switch
+    bits.push(1, 1); // dynamic range present
+    bits.push(0x60, 8);
+    bits.push(0, 1); // no SPX
+    bits.push(0, 6); // channel bandwidth: 73 bins
+    bits.push(15, 4); // channel absolute exponent
+    for _ in 0..24 {
+        bits.push(62, 7);
+    }
+    bits.push(0, 2); // gain range
+    bits.push(0, 1); // converter SNR offset absent
+    let bytes = bits.bytes(512);
+    let dither = [0.5; 73];
+    let current =
+        decode_audio_blocks_with_policy(&bytes, &dither, InternalBasePolicy::CurrentDefault)
+            .expect("current policy");
+    let core = decode_audio_blocks_with_policy(&bytes, &dither, InternalBasePolicy::CodecCore)
+        .expect("codec-core policy");
+    assert_eq!(current[0].prefix.dynamic_range, Some(0x60));
+    let source = core[0].channel_mantissas[0][0];
+    assert_ne!(source, 0.0);
+    assert_eq!(
+        current[0].channel_mantissas[0][0],
+        source * dynamic_range_gain(Some(0x60))
+    );
+    assert_ne!(current[0].channel_mantissas, core[0].channel_mantissas);
+    assert_eq!(current[0].channel_baps, core[0].channel_baps);
+    assert_eq!(
+        current[0].prefix.channel_exponents,
+        core[0].prefix.channel_exponents
+    );
 }
 
 #[test]

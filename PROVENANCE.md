@@ -1882,3 +1882,41 @@ measured energy is distributed across codec rows; E remains a codec-capacity
 negative control. `reports1` and `reports2` are byte-identical. No warp=3
 interpretation, strict relaxation, complete OAMD timeline, ADM position/trim
 fidelity, speaker render, or nonzero-PCM fidelity claim is made.
+
+## Round-7 base-root-cause policy audit (2026-08-05)
+
+The private, non-overwriting run
+`OpenJOC-Private/reports/runs/2026-08-05T070007Z_base-root-cause_792d937`
+records local FFmpeg 8.1.2 decoder help, build configuration, version, and
+the complete R0--R6 command lines. R0 is the implicit default; R1 is
+`drc_scale=0`; R2 is `drc_scale=1`; R3/R4 are `cons_noisegen=0/1`; R5 is
+`heavy_compr=0`; and R6 is `target_level=0`. R0/R2/R3/R5/R6 are byte-identical
+for A/E/D/F. R4 changes all four outputs; R1 changes only E. No FFmpeg option
+is treated as a normative oracle.
+
+The internal decoder now exposes an explicit `InternalBasePolicy` boundary.
+`CurrentDefault` is the unchanged default CLI behavior. `CodecCore` leaves
+syntax parsing, dequantization, coupling, SPX, dither, and TDAC untouched and
+sets only optional `dynrng/dynrng2` presentation gain to unity. On A/D/F the
+two internal policies are byte-identical; on E the policy change is isolated
+to the signaled dynamic-range fields, and `CodecCore` is close to but not
+identical with FFmpeg R1. This is a policy distinction, not a fidelity pass.
+
+The first large residual is state-local, not a fixed gain: A/E/D/F all show a
+common SL/SR event at block 6 (sample 1536), immediately after the first
+1,536-sample syncframe. A private diagnostic probe that resets
+`AudioPcmSynthesizer` only before frame/AU 1 reduces that event from roughly
+`7e-3` RMS to `1e-7`--`1e-6` RMS and raises side-channel SNR into the mid/high
+80 dB range. The probe is not a production change. ETSI TS 102 366 V1.4.1
+clause 6.9.4 explicitly overlaps the first half of each windowed block with
+the second half of the previous block, so the evidence does not justify
+silently resetting TDAC at an AU boundary. The remaining explanation is a
+decoder/encoder boundary or priming convention not established by the public
+stream syntax. No state reset, FFmpeg algorithm, per-channel gain, or channel
+remap was added.
+
+The private stage inventory is opt-in and records the bounded stages exposed
+by the current API (exponents, BAP, dequantized coefficients, pre-IMDCT/window,
+and overlap/add). Coupling-vs-SPX-vs-rematrix sub-stages are marked unavailable
+rather than inferred. `ETSI_STRICT` still rejects OAMD `warp=3`; no vendor warp
+rule or semantic remap was introduced.

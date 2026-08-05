@@ -853,3 +853,59 @@ control. Both report trees (`reports1`, `reports2`) are byte-identical. The
 first remaining fidelity blocker is the measurable base-path difference plus
 unresolved FFmpeg/internal DRC/dialnorm/delay policy; no JOC, OAMD, or ADM
 semantic conclusion is inferred from it.
+
+## Round-7 FFmpeg/internal-base root-cause increment (2026-08-05)
+
+The starting commit was `792d937297f44a1a5d4b25613831fad5e529d572` on
+`codex/logic-warp-differential-corpus`; the private run is
+`OpenJOC-Private/reports/runs/2026-08-05T070007Z_base-root-cause_792d937`.
+The run does not touch repository `.DS_Store` or `references/`, and no media,
+manifest, ADM, forensic, census, or fidelity output is tracked.
+
+### Policy matrix
+
+The local FFmpeg 8.1.2 decoder help was captured before running an orthogonal
+matrix. R0 is the implicit default; R1/R2 set `drc_scale` to 0/1; R3/R4 set
+`cons_noisegen` to 0/1; R5 sets `heavy_compr=0`; R6 sets `target_level=0`.
+All outputs are explicit six-channel `pcm_f64le` with
+`FL,FR,FC,LFE,SL,SR`, 48 kHz, 193,536 samples. R0/R2/R3/R5/R6 are
+byte-identical for every A/E/D/F vector. R4 changes every vector but does not
+materially remove the residual. R1 changes E, the vector that carries
+dynamic-range metadata, and does not explain A/D/F. No single FFmpeg
+presentation option explains the base difference.
+
+### Internal policy boundary
+
+`InternalBasePolicy::CurrentDefault` is the unchanged default path. The new
+explicit `CodecCore` policy disables only optional `dynrng/dynrng2` gain; it
+does not alter mantissa decoding, coupling, SPX, dither, or transform state.
+The synthetic regression proves that both policies retain identical syntax,
+BAP, and exponent state while differing exactly at the optional gain stage.
+On A/D/F the two internal outputs are byte-identical; on E only the dynamic
+range policy changes. The CLI requires an explicit
+`--internal-base-policy codec-core` to select the core policy.
+
+### First state-local residual
+
+The global first differing samples remain AU 0/block 0: FL=9, FR=9, FC=7,
+SL=12, SR=5. The most informative residual, however, is a later local event:
+all four vectors have an SL/SR residual at block 6 (sample 1536, the first
+block after the first 1,536-sample syncframe) of approximately `7e-3` RMS,
+while neighboring blocks are near `1e-6` RMS. A private transform probe that
+resets the overlap state only before AU/frame 1 removes that event and raises
+side SNR to approximately 85--90 dB, without changing the front/centre
+metrics. This is diagnostic evidence that the large side residual is carried
+by TDAC history, not a fixed scalar gain, permutation, sign, DRC option, or
+random-noise realization.
+
+The public ETSI TS 102 366 V1.4.1 clause 6.9.4 overlap/add rule uses the
+second half of the previous windowed block. Because the private reset probe
+would contradict that rule if generalized, no production reset was made.
+The remaining blocker is an unresolved first-frame/encoder priming or
+decoder-boundary convention in this Logic carrier. The opt-in private stage
+inventory records bounded decoded-exponent/BAP/coefficient/transform/window/
+overlap evidence and explicitly marks unavailable internal sub-stages; it
+does not claim FFmpeg stage equivalence.
+
+Strict OAMD validation, raw `warp=3`, vendor opaque trim handling, and all
+unverified OAMD/JOC/ADM/fidelity boundaries are unchanged.

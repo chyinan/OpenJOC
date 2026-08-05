@@ -66,6 +66,29 @@ pub struct AudioBlockPrefix {
     pub next_offset_bits: usize,
 }
 
+/// Selects whether optional presentation dynamic-range metadata is applied
+/// while producing the internal base PCM.
+///
+/// The default public decoding functions retain [`InternalBasePolicy::CurrentDefault`]
+/// for backwards compatibility. [`InternalBasePolicy::CodecCore`] keeps the
+/// normative coefficient, coupling, spectral-extension, and transform stages
+/// intact while leaving optional presentation gain at unity.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum InternalBasePolicy {
+    #[default]
+    CurrentDefault,
+    CodecCore,
+}
+
+impl InternalBasePolicy {
+    fn dynamic_range_gain(self, code: Option<u8>) -> f64 {
+        match self {
+            Self::CurrentDefault => dynamic_range_gain(code),
+            Self::CodecCore => 1.0,
+        }
+    }
+}
+
 /// One audio-block carrier reached by the parse-only side-information walker.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AudioBlockCarrier {
@@ -1164,7 +1187,16 @@ pub fn decode_first_audio_block(
     bytes: &[u8],
     dither_values: &[f64],
 ) -> Result<DecodedAudioBlock, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, 1)?
+    decode_first_audio_block_with_policy(bytes, dither_values, InternalBasePolicy::CurrentDefault)
+}
+
+/// Decodes the first block with an explicit internal-base policy.
+pub fn decode_first_audio_block_with_policy(
+    bytes: &[u8],
+    dither_values: &[f64],
+    policy: InternalBasePolicy,
+) -> Result<DecodedAudioBlock, Eac3Error> {
+    decode_audio_blocks_until(bytes, dither_values, 1, policy)?
         .into_iter()
         .next()
         .ok_or(Eac3Error::FrameSizeOverflow)
@@ -1181,7 +1213,16 @@ pub fn decode_audio_blocks(
     bytes: &[u8],
     dither_values: &[f64],
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX)
+    decode_audio_blocks_with_policy(bytes, dither_values, InternalBasePolicy::CurrentDefault)
+}
+
+/// Decodes every block with an explicit internal-base policy.
+pub fn decode_audio_blocks_with_policy(
+    bytes: &[u8],
+    dither_values: &[f64],
+    policy: InternalBasePolicy,
+) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
+    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy)
 }
 
 /// Decodes one complete E-AC-3 syncframe and emits its full-bandwidth/LFE PCM.
@@ -1196,7 +1237,22 @@ pub fn decode_audio_frame_pcm(
     dither_values: &[f64],
     synthesizer: &mut AudioPcmSynthesizer,
 ) -> Result<DecodedAudioPcm, Eac3Error> {
-    let blocks = decode_audio_blocks(bytes, dither_values)?;
+    decode_audio_frame_pcm_with_policy(
+        bytes,
+        dither_values,
+        synthesizer,
+        InternalBasePolicy::CurrentDefault,
+    )
+}
+
+/// Decodes one syncframe with an explicit internal-base policy.
+pub fn decode_audio_frame_pcm_with_policy(
+    bytes: &[u8],
+    dither_values: &[f64],
+    synthesizer: &mut AudioPcmSynthesizer,
+    policy: InternalBasePolicy,
+) -> Result<DecodedAudioPcm, Eac3Error> {
+    let blocks = decode_audio_blocks_with_policy(bytes, dither_values, policy)?;
     synthesizer.synthesize(&blocks)
 }
 
@@ -1352,6 +1408,7 @@ fn decode_audio_blocks_until(
     bytes: &[u8],
     dither_values: &[f64],
     max_blocks: usize,
+    policy: InternalBasePolicy,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
     let frame = parse_audio_frame(bytes)?;
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
@@ -1427,8 +1484,8 @@ fn decode_audio_blocks_until(
             channel_block.channel_mantissas.clone()
         };
         let channel_mantissas = channel_mantissas;
-        let primary_gain = dynamic_range_gain(state.dynamic_range);
-        let secondary_gain = dynamic_range_gain(state.dynamic_range_2);
+        let primary_gain = policy.dynamic_range_gain(state.dynamic_range);
+        let secondary_gain = policy.dynamic_range_gain(state.dynamic_range_2);
         let channel_gains = if frame.bsi.audio_coding_mode == 0 {
             vec![primary_gain, secondary_gain]
         } else {

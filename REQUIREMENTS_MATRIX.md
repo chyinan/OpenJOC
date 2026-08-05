@@ -243,3 +243,15 @@ is distributed across codec rows; E remains a no-dynamic-object negative
 control. Two report trees are byte-identical. Strict validation, warp=3
 handling, complete OAMD timeline, ADM/render fidelity, and the legal fidelity
 lane remain unchanged/open.
+
+## Round-7 FFmpeg/internal-base policy boundary (2026-08-05)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Explicit base policy boundary | `InternalBasePolicy::CurrentDefault` preserves the previous CLI behavior; `CodecCore` disables only optional `dynrng/dynrng2` gain and is selected explicitly with `--internal-base-policy codec-core` | implemented/tested |
+| FFmpeg option audit | FFmpeg 8.1.2 decoder help/build/version and R0--R6 commands are recorded in private run `2026-08-05T070007Z_base-root-cause_792d937` | verified |
+| Orthogonal policy matrix | R0/R2/R3/R5/R6 are byte-identical for A/E/D/F; R4 changes all four; R1 changes E only | measured; no normative policy adopted |
+| First numerical boundary | all vectors first differ in AU 0/block 0 at FL/FR/FC/SL/SR samples 9/9/7/12/5; zero-delay selection remains 0 | measured |
+| TDAC boundary probe | Resetting overlap state only before frame/AU 1 removes the large SL/SR block-6 residual in a diagnostic probe, while ETSI requires overlap with the previous block; no production reset was added | unresolved black-box interoperability |
+| Stage evidence | Private opt-in stage inventory records decoded exponents, BAP, dequantized coefficients, transform/window, and overlap outputs; unavailable sub-stages are explicitly marked | diagnostic-only |
+| Fidelity conclusion | FFmpeg remains an independent black-box comparator; no decoder algorithm, gain, channel remap, or state reset is copied; strict/vendor OAMD behavior and raw warp `3` are unchanged | open |

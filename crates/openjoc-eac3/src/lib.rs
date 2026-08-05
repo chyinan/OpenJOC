@@ -49,11 +49,13 @@ pub use audio_block::{
     AudioPcmSynthesizer, BitAllocationParameters, CouplingInformation, CouplingLeak,
     DecodedAudioBlock, DecodedAudioPcm, DeltaBitAllocation, DeltaBitAllocationElement,
     DeltaBitAllocationSegment, EnhancedCouplingInformation, EnhancedCouplingReconstruction,
-    ExponentInformation, FastGainCodes, SnrOffsets, SpectralExtensionCoordinates,
-    SpectralExtensionInformation, StandardCouplingCoordinates, StandardCouplingInformation,
-    decode_audio_blocks, decode_audio_frame_pcm, decode_first_audio_block,
-    inspect_audio_block_carriers, inverse_aht_dct, parse_first_audio_block_prefix,
-    reconstruct_enhanced_coupling, reconstruct_standard_coupling, synthesize_audio_blocks,
+    ExponentInformation, FastGainCodes, InternalBasePolicy, SnrOffsets,
+    SpectralExtensionCoordinates, SpectralExtensionInformation, StandardCouplingCoordinates,
+    StandardCouplingInformation, decode_audio_blocks, decode_audio_blocks_with_policy,
+    decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy, decode_first_audio_block,
+    decode_first_audio_block_with_policy, inspect_audio_block_carriers, inverse_aht_dct,
+    parse_first_audio_block_prefix, reconstruct_enhanced_coupling, reconstruct_standard_coupling,
+    synthesize_audio_blocks,
 };
 pub use bit_allocation::{
     BitAllocationBand, FixedBitAllocationParameters, apply_delta_bit_allocation,

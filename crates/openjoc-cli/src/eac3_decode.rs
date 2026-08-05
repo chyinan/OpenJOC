@@ -1,7 +1,7 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    DecodedAccessUnitPcm, Eac3Error, JocAccessUnitPcmDecoder, JocMetadataFrame,
+    DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame,
     extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit, group_access_units,
     index_syncframes, validate_complexity_index,
 };
@@ -233,17 +233,15 @@ where
     Ok(decoder.finish()?)
 }
 
-/// Decodes the normative E-AC-3 base path and lends each reconstructed JOC
-/// frame to a sink immediately. The base decoder remains an independently
-/// implemented, fidelity-unverified path until a legal real vector passes the
-/// required comparison. It also lends each committed access-unit PCM
-/// to a second sink. The base sink is called only after the corresponding JOC
-/// frame has committed, so diagnostics cannot advance on a failed frame.
-pub fn decode_internal_eac3_with_base_sink<S, B>(
+/// Explicit-policy variant of the internal base decoder. The policy is
+/// carried through the E-AC-3 decoder boundary and is never inferred from
+/// input bytes or validation profile.
+pub fn decode_internal_eac3_with_base_sink_and_policy<S, B>(
     stream: &[u8],
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
     dither_values: &[f64],
+    base_policy: InternalBasePolicy,
     mut sink: S,
     mut base_sink: B,
 ) -> Result<ObjectScene, DecodeEac3Error>
@@ -263,7 +261,13 @@ where
     };
     let mut decoder = PayloadDecoder::with_oamd_profile(config, oamd_profile);
     for (unit_index, unit) in units.into_iter().enumerate() {
-        let pcm = audio_decoder.decode(stream, &frame_index, unit, dither_values)?;
+        let pcm = audio_decoder.decode_with_policy(
+            stream,
+            &frame_index,
+            unit,
+            dither_values,
+            base_policy,
+        )?;
         if pcm.sample_rate != unit.sample_rate
             || pcm.samples != unit.samples
             || pcm.channels.is_empty()

@@ -9,7 +9,7 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use openjoc_container::{InputMediaKind, load_eac3};
-use openjoc_eac3::{DecodedAccessUnitPcm, extract_joc_addbsi_access_unit};
+use openjoc_eac3::{DecodedAccessUnitPcm, InternalBasePolicy, extract_joc_addbsi_access_unit};
 use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{OamdDecoderConfig, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
@@ -27,7 +27,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -48,6 +48,7 @@ struct DecodeEac3Args {
     output_format: SampleFormat,
     validation_profile: JocValidationProfile,
     trim_configuration_count: Option<NonZeroU8>,
+    internal_base_policy: InternalBasePolicy,
 }
 
 fn main() -> ExitCode {
@@ -107,7 +108,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
-        "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--trim-config-count N] [--reference-f64]\n",
+        "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base-policy current-default|codec-core] [--trim-config-count N] [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
         "  openjoc decode-payload [OPTIONS]\n",
@@ -124,6 +125,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
         "                         [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+        "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
@@ -149,6 +151,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  -h, --help       Print root command help\n",
         "      --no-banner Disable the interactive startup banner\n",
         "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
+        "      --internal-base-policy Select current default or codec-core gain policy\n",
         "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
         "      --reference-f64 Use explicit reference f64 object-stem output (default: f32)\n",
     ));
@@ -505,6 +508,7 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let mut reference_f64 = false;
     let mut validation_profile = JocValidationProfile::EtsiStrict;
     let mut trim_configuration_count = None;
+    let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
     let mut output = None;
     let mut index = 1;
     while index < values.len() {
@@ -524,6 +528,7 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
             "--downmix" => downmix = Some(PathBuf::from(value)),
             "-o" | "--output" => output = Some(PathBuf::from(value)),
             "--validation-profile" => validation_profile = parse_validation_profile(value)?,
+            "--internal-base-policy" => internal_base_policy = parse_internal_base_policy(value)?,
             "--trim-config-count" => {
                 trim_configuration_count = Some(parse_trim_configuration_count(value)?);
             }
@@ -546,7 +551,19 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         },
         validation_profile,
         trim_configuration_count,
+        internal_base_policy,
     })
+}
+
+fn parse_internal_base_policy(value: &str) -> Result<InternalBasePolicy, io::Error> {
+    match value {
+        "current-default" | "CURRENT_DEFAULT" => Ok(InternalBasePolicy::CurrentDefault),
+        "codec-core" | "CODEC_CORE" => Ok(InternalBasePolicy::CodecCore),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown internal base policy {value}; expected current-default or codec-core"),
+        )),
+    }
 }
 
 fn parse_trim_configuration_count(value: &str) -> Result<NonZeroU8, io::Error> {
@@ -591,12 +608,16 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     let sink_output = arguments.output.clone();
     let scene = if arguments.internal_base {
         let dither = deterministic_dither_values();
-        let mut base_capture = InternalBasePcm::default();
-        let scene = eac3_decode::decode_internal_eac3_with_base_sink(
+        let mut base_capture = InternalBasePcm {
+            base_policy: arguments.internal_base_policy,
+            ..InternalBasePcm::default()
+        };
+        let scene = eac3_decode::decode_internal_eac3_with_base_sink_and_policy(
             stream,
             config,
             arguments.validation_profile,
             &dither,
+            arguments.internal_base_policy,
             |frame_index, metadata, frame| {
                 write_validation_debug(&sink_output, frame_index, metadata)
                     .and_then(|()| {
@@ -679,6 +700,7 @@ struct CompatibleBasePaths {
 
 #[derive(Default)]
 struct InternalBasePcm {
+    base_policy: InternalBasePolicy,
     sample_rate: Option<u32>,
     full: Vec<Vec<f64>>,
     joc_input: Vec<Vec<f64>>,
@@ -800,6 +822,7 @@ impl InternalBasePcm {
         };
         let inventory = serde_json::json!({
             "source": "OpenJOC internal E-AC-3 decoder",
+            "base_policy": format!("{:?}", self.base_policy),
             "sample_rate": sample_rate,
             "access_units": self.access_units,
             "samples_per_access_unit": self.samples_per_access_unit,

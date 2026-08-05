@@ -4,7 +4,7 @@
 
 use crate::{
     AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, Eac3Error,
-    StreamType, SyncframeIndexEntry, decode_audio_frame_pcm,
+    InternalBasePolicy, StreamType, SyncframeIndexEntry, decode_audio_frame_pcm_with_policy,
 };
 
 /// Channel-major PCM and timing emitted by one JOC elementary-stream access unit.
@@ -64,6 +64,26 @@ impl JocAccessUnitPcmDecoder {
         unit: AccessUnitIndex,
         dither_values: &[f64],
     ) -> Result<DecodedAccessUnitPcm, Eac3Error> {
+        self.decode_with_policy(
+            stream,
+            frames,
+            unit,
+            dither_values,
+            InternalBasePolicy::CurrentDefault,
+        )
+    }
+
+    /// Decodes and assembles one access unit with an explicit internal-base
+    /// presentation policy. The default [`Self::decode`] behavior is kept
+    /// unchanged for existing callers.
+    pub fn decode_with_policy(
+        &mut self,
+        stream: &[u8],
+        frames: &[SyncframeIndexEntry],
+        unit: AccessUnitIndex,
+        dither_values: &[f64],
+        policy: InternalBasePolicy,
+    ) -> Result<DecodedAccessUnitPcm, Eac3Error> {
         let unit_end = unit
             .first_frame
             .checked_add(unit.frame_count)
@@ -110,9 +130,9 @@ impl JocAccessUnitPcmDecoder {
             dependent_synth.reset();
         }
         let (independent_info, independent) =
-            decode_frame(stream, first, dither_values, &mut independent_synth)?;
+            decode_frame(stream, first, dither_values, &mut independent_synth, policy)?;
         let dependent = dependent_entry
-            .map(|entry| decode_frame(stream, entry, dither_values, &mut dependent_synth))
+            .map(|entry| decode_frame(stream, entry, dither_values, &mut dependent_synth, policy))
             .transpose()?;
         if let Some((info, _)) = &dependent
             && (info.header.sample_rate != unit.sample_rate || info.header.samples != unit.samples)
@@ -147,6 +167,7 @@ fn decode_frame(
     entry: SyncframeIndexEntry,
     dither_values: &[f64],
     synthesizer: &mut AudioPcmSynthesizer,
+    policy: InternalBasePolicy,
 ) -> Result<(BitstreamInformation, DecodedAudioPcm), Eac3Error> {
     let end = entry
         .offset
@@ -160,7 +181,7 @@ fn decode_frame(
             available: stream.len().saturating_sub(entry.offset),
         })?;
     let info = crate::parse_audio_frame(bytes)?.bsi;
-    let pcm = decode_audio_frame_pcm(bytes, dither_values, synthesizer)?;
+    let pcm = decode_audio_frame_pcm_with_policy(bytes, dither_values, synthesizer, policy)?;
     Ok((info, pcm))
 }
 

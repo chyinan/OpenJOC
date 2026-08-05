@@ -441,3 +441,24 @@ fidelity acceptance result remain open. `ETSI_STRICT` still returns
 `ReservedWarpMode { raw: 3 }`; no remap or vendor warp interpretation was
 added. `reports1` and `reports2` are byte-identical and all media remain
 private.
+
+## Base policy and first numeric boundary (2026-08-05)
+
+The next controlled increment is private run
+`2026-08-05T070007Z_base-root-cause_792d937`. It audits local FFmpeg 8.1.2
+decoder options and runs the single-variable R0--R6 policy matrix. No option
+is adopted as a normative decoder rule. The internal path now has an explicit
+`InternalBasePolicy` boundary: `CurrentDefault` preserves existing CLI output,
+and `CodecCore` disables only optional `dynrng/dynrng2` presentation gain.
+The default is not silently changed and strict `warp=3` behavior is untouched.
+
+The matrix shows no universal DRC/noise/target-level explanation. The first
+sample-level differences stay in AU 0/block 0, but the dominant side-channel
+residual is a repeatable TDAC-state event at sample 1536. Resetting overlap
+state only before frame/AU 1 in a private diagnostic probe removes that event;
+ETSI TS 102 366 V1.4.1's overlap/add rule requires the previous block, so this
+is evidence of an unresolved encoder/decoder boundary or priming convention,
+not permission to add a hidden reset. No production remap, gain, FFmpeg
+algorithm, or vendor warp rule was added. The next open target is to obtain a
+normative or independently controlled explanation of that first-frame state
+boundary before changing TDAC semantics.
