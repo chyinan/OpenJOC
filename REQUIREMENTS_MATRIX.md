@@ -323,7 +323,7 @@ lane remain unchanged/open.
 | requirement | implementation/evidence | status |
 | --- | --- | --- |
 | Evaluation-only regions | `openjoc-cli::comparison` defines serializable `cold_start`, `warmup`, and `steady_state` regions with range/hash validation; it cannot alter decode or trimming | verified |
-| Exact-history convergence | Private contract run `2026-08-05T_decoder-comparison-contract_c07ab90_r6` maps target AUs by indexed manifest ranges, not packet ordinal guesses | verified; private |
+| Exact-history convergence | Private contract run `2026-08-05T_decoder-comparison-contract_01936ed_r8` maps target AUs by indexed manifest ranges, not packet ordinal guesses | verified; private |
 | OpenJOC convergence | AU0 differs first at legal TDAC carry-in; AU1 stages and PCM are history-stable; decoder-state hash API remains unavailable | measured; scoped to this corpus |
 | FFmpeg convergence | No PCM convergence suffix through source AU8 under the declared raw E-AC-3 command; PTS is unavailable | measured; mapping uncertainty recorded |
 | Apple convergence | Target PCM is stable from AU0 in the observed 1536-sample grid; 288 trailing samples are absent and PTS is unavailable | measured; not a normative oracle |
