@@ -1927,7 +1927,8 @@ The private, non-overwriting run
 `OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary_054d3d4` (repeated in
 `..._repeat`) uses the opt-in `AudioPcmSynthesizer::synthesize_with_trace`
 sink. It records the bounded transform/window and overlap components without
-changing the production path. The paired reports are byte-identical. The run
+changing the production path. The core JSON/TXT diagnostics and the regression
+PCM tree compare byte-for-byte across the repeated run. The run
 does not modify repository `.DS_Store`, `references/`, private Logic projects,
 ADM BWF, MP4/EC3, manifests, or earlier forensic/census output.
 
