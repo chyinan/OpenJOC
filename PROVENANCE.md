@@ -1972,3 +1972,33 @@ from this increment are byte-identical to the prior
 `2026-08-05T070007Z_base-root-cause_792d937` outputs. JOC propagation was not
 rerun as a post-fix comparison because no production TDAC correction was
 admitted; the earlier object-row measurements remain non-fidelity evidence.
+
+## Independent TDAC oracle and pre-roll controls (2026-08-05)
+
+The non-overwriting private run `2026-08-05T_tdac-oracle-preroll_b18ea4d_r4`
+contains the joint decision, synthetic oracle, real AU0/block5 replay, and
+Logic virtual-crop metrics. The companion run
+`2026-08-05T_tdac-oracle-preroll_b18ea4d_r5` contains the P0/P1/P2/P4 base-only
+pre-roll vectors and their inventories. The oracle is a read-only Python
+implementation using only standard-library float64 arithmetic and literal
+ETSI window/IMDCT equations. It has an independent cursor, state, transform,
+window, and overlap implementation; it does not call OpenJOC, FFmpeg, or any
+production helper.
+
+The oracle reports 53 synthetic comparisons with no material divergence at
+`1e-12`; the continuous 12-block and 6+6 partitioned runs are exactly equal.
+The real AU0 block5 replay agrees with production carry tails to at most
+`5.12e-17` and AU1 block0 heads to at most `2.00e-15`. These are TDAC
+arithmetic checks, not whole-decoder fidelity checks.
+
+P0/P1/P2/P4 use identical active content with 0/1/2/4 silent-AU prefixes.
+The active-content SHA-256 is
+`921b0e6c84bf798936998279948d2af40e2139e3367ebfea761e57a70cb9518e`.
+FFmpeg raw and MP4 decoded PCM are sample-identical in all four controls, and
+the controls do not reproduce Logic's approximately `7e-3` Ls/Rs first
+boundary event. Cropping the first two Logic AUs is retained only as a
+diagnostic observation; it is not production trimming or a compatibility
+semantic. Therefore no TDAC correction is justified yet. The remaining
+question is AU0/block5 Ls/Rs coefficient provenance or a Logic-specific
+upstream/stream-feature boundary, to be tested without changing continuous
+TDAC.

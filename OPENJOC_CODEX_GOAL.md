@@ -488,3 +488,31 @@ strict `warp=3` rejection, vendor opaque trim retention, complete OAMD timeline,
 ADM/render fidelity, and accepted internal-base/JOC fidelity remain open. The
 next target is an independently controlled/normative explanation of the
 side-channel block-5 tail before any production TDAC semantic change.
+
+## Independent TDAC oracle and pre-roll boundary (2026-08-05)
+
+The authoritative private evidence is split between
+`2026-08-05T_tdac-oracle-preroll_b18ea4d_r4` (independent oracle, real block5
+replay, Logic virtual crop, joint decision) and
+`2026-08-05T_tdac-oracle-preroll_b18ea4d_r5` (P0/P1/P2/P4 base-only vectors).
+The oracle is independent of OpenJOC production TDAC, FFmpeg, and real-vector
+parser/state/cosine helpers. It passes 53 synthetic comparisons and an exact
+12-block versus 6+6 partition invariant. Real AU0 block5/AU1 block0 replay
+supports production carry tail/head arithmetic to `5.12e-17`/`2.00e-15`
+maximum absolute error.
+
+P0/P1/P2/P4 preserve the same active content and add 0/1/2/4 silent AUs.
+FFmpeg raw and MP4 PCM are sample-identical, but none reproduces the Logic
+approximately `7e-3` first Ls/Rs boundary event. Excluding the first two
+Logic AUs lowers diagnostic error without changing production output. The
+result is unresolved evidence, not a priming fix: no TDAC reset, gain, remap,
+or special case was added. `ETSI_STRICT` and raw warp `3` behavior remain
+unchanged; no vendor warp interpretation was added.
+
+Current completion boundary: real carrier/EMDF/payload and vendor scene
+entry are established, and TDAC arithmetic is independently supported. A
+complete OAMD timeline, JOC semantic reconstruction, accepted fidelity,
+ADM position/render comparison, and non-zero object-PCM fidelity are not
+claimed. The next experiment must isolate AU0/block5 Ls/Rs coefficient
+provenance (coupling/SPX/rematrix/dither or encoder boundary) without
+altering continuous TDAC semantics.

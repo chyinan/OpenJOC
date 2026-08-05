@@ -269,3 +269,17 @@ lane remain unchanged/open.
 | Production correction | No reset, gain, remap, sample-index special case, or FFmpeg algorithm was added. The evidence rules out storage/commit loss but does not prove whether the remaining difference is an upstream block-5 transform/tail issue or FFmpeg frame-boundary policy | open |
 | CurrentDefault regression | A/E/D/F `internal_base_full.wav` outputs are byte-identical to the prior base-root-cause run; no production TDAC behavior changed | verified |
 | JOC propagation after a fix | Not rerun as a post-fix comparison because no production TDAC fix was admitted; prior JOC comparison remains the current non-fidelity evidence | pending |
+
+## Independent TDAC oracle and base-only pre-roll (2026-08-05)
+
+| requirement | implementation/evidence | status |
+| --- | --- | --- |
+| Independent mathematical oracle | Private pure-stdlib Python oracle uses a literal ETSI Table 6.33 window, direct type-IV IMDCT, windowing, overlap/add, and carry update. It does not import OpenJOC, FFmpeg, production state, cursor, or cosine helpers. | verified |
+| Synthetic TDAC coverage | T0--T7 long/short IMDCT, window, windowed head/tail, overlap, and non-zero carry stages: 53 comparisons, no material divergence at the declared `1e-12` threshold. | verified |
+| Partition invariance | A continuous 12-block run and a 6+6 framed run have identical PCM and final carry in the independent oracle. | verified |
+| Real AU0 block5 replay | Independent replay agrees with production carry-out tail (`max abs <= 5.12e-17`) and AU1 block0 current head (`max abs <= 2.00e-15`) for A/E/D/F and L/C/R/Ls/Rs. | verified; TDAC arithmetic only |
+| Base-only pre-roll controls | Private P0/P1/P2/P4 vectors keep the same active content and vary only 0/1/2/4 silent AUs. FFmpeg raw and MP4 PCM are sample-identical for every vector; none reproduces Logic's approximately `7e-3` first side-channel boundary event. | verified; no priming rule established |
+| Logic virtual crop | Diagnostic exclusion of the first two Logic AUs reduces the residual to approximately `1.26e-6--3.50e-6` RMS, but does not alter production output and is not a fidelity claim. | diagnostic only |
+| Production TDAC change | No reset, gain, remap, sample special case, or stream-specific compatibility rule was added. | verified |
+| OAMD/warp behavior | `ETSI_STRICT` and existing vendor behavior are unchanged; raw warp `3` remains preserved/rejected according to the selected profile. | verified |
+| Current conclusion | TDAC tail/head arithmetic is independently supported. A generic TDAC bug and a generic FFmpeg first-frame priming rule are not established. Logic encoder/upstream or stream-feature-specific provenance remains the first blocker. | open |

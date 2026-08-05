@@ -991,3 +991,30 @@ generated in this run are byte-identical to the prior base-root-cause outputs.
 Because no production TDAC fix was accepted, a second post-fix JOC propagation
 claim is intentionally not made; the existing object-row comparison remains
 non-fidelity evidence.
+
+## Independent TDAC and pre-roll decision (2026-08-05)
+
+This increment is an evidence package rather than a decoder semantic change.
+The private pure-math oracle independently reimplements the direct type-IV
+IMDCT, ETSI Table 6.33 window, overlap/add, and carry update. It reports 53
+synthetic comparisons with no material divergence at `1e-12`, and exact
+12-block versus 6+6 partition invariance. A separate real-vector replay of
+AU0 block 5 and AU1 block 0 agrees with production tails and heads at
+`5.12e-17` and `2.00e-15` maximum absolute error respectively.
+
+The P0/P1/P2/P4 base-only controls vary only a 0/1/2/4-AU silent prefix. Their
+active PCM content is identical by hash; raw EC-3 and MP4 FFmpeg outputs are
+sample-identical for each vector. Their first-boundary errors remain in the
+approximately `1e-6--5e-5` range and do not reproduce Logic's approximately
+`7e-3` Ls/Rs event. A diagnostic Logic crop excluding the first two AUs lowers
+the residual, but no samples are trimmed in production and this is not a
+fidelity result.
+
+The joint decision is therefore: production TDAC arithmetic is independently
+supported; a generic TDAC state/IMDCT/window defect is not supported; a generic
+FFmpeg priming explanation is not established by the base-only controls; and
+Logic encoder/upstream or stream-feature-specific provenance remains
+unresolved. No TDAC reset, gain, remap, sample special case, warp remap, or
+vendor profile change was made. Strict validation, raw metadata retention,
+complete OAMD timeline, JOC semantic fidelity, non-zero PCM fidelity, and
+ADM comparison remain open.
