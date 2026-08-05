@@ -289,3 +289,34 @@ all-feature test, and release-build commands and record their results in
 `IMPLEMENTATION_REPORT.md`. A passing synthetic/inactive-OAMD test proves only
 the plumbing and zero-stem behavior; it is not evidence of nonzero real JOC
 reconstruction.
+
+## Current controlled-corpus decision (2026-08-05)
+
+The private Logic corpus now includes A static-centre, B requested single-jump,
+C requested linear-ramp, D existing mixed motion, E no dynamic object, and F
+two objects. All six exports have 126 AUs at 48 kHz/1,536 samples. A/E have
+one unique payload-11 body; B/C/D/F have 63. B/C are not canonical single-
+variable vectors: their ADM and payload reports prove that D's mixed
+automation was retained in the copy. They remain useful evidence of the UI
+copy limitation, not proof of jump/ramp semantics.
+
+All six vectors report warp raw `3` in 126/126 AUs, including static A and
+no-dynamic-object E. The independent bit oracle, formal entry trace,
+diagnostic trace, and direct byte mask agree on OAMD-relative `[526,528)`.
+The three semantic hypotheses 0/1/2 each close only bounded syntax and remain
+non-unique. This is therefore the unresolved-unknown outcome: no parser offset
+bug is demonstrated, but no vendor meaning is proven either. Strict behavior
+remains `ReservedWarpMode { raw: 3 }`; no vendor warp compatibility profile
+extension, remap, magic offset, or hidden trim behavior is allowed.
+
+The ADM BWF remains an external oracle. Object names, block counts, Cartesian
+coordinates, jump/interpolation attributes, gains, and times are preserved in
+the private timeline report. Because the normative OAMD object grammar is not
+entered, coordinate conversion, timeline equivalence, object PCM, JOC
+reconstruction, and fidelity are explicitly open.
+
+The next actionable blocker is to obtain a genuinely canonical single-jump
+and linear-ramp Logic export (or an additional authorized encoder/version),
+then repeat the same independent-oracle and ADM comparison without weakening
+ETSI validation. The CLI forensic writer now refuses existing report targets
+unless explicit `--force` is supplied, preserving evidence history.

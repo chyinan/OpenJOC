@@ -80,7 +80,7 @@ normative failures, and the decoder has no profile-specific signaling hacks.
 | Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
 | Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3`/container `decode` write scene/timeline/default-f32 stems/debug artifacts; explicit `--reference-f64` retains reference output; `inspect` reports bounded profile timing/carrier details, `decode --validation-profile` selects the explicit profile, and `--trim-config-count` remains caller-supplied | implemented |
 | Engineering spec 6 / OAMD forensic boundary | Bit-exact OAMD entry evidence | `openjoc-cli`, `openjoc-emdf`, `openjoc-oamd` | `diagnose-oamd` records MP4 sample/AU/substream, exact skip-field and EMDF/payload/config/body spans in named coordinate systems, OAMD warp bit/window/raw value, original-byte dumps, all-AU continuity, and explicit trim-count provenance without changing decode semantics | implemented |
-| Engineering spec 6 / OAMD forensic round 2 | AU timing, payload-11 differential, independent bit oracle, ADM comparison, diagnostic warp hypotheses | `openjoc-cli` | `--au START..END`, `--diff-payload-11`, deterministic timing/diff JSON/TXT, independent cursor-free oracle, explicit raw-vs-MP4 equality, and diagnostic-only hypotheses; strict parser remains reserved-value failure; private Logic A/B/C/E/F exports remain open | implemented |
+| Engineering spec 6 / OAMD forensic round 2 | AU timing, payload-11 differential, independent bit oracle, ADM comparison, diagnostic warp hypotheses | `openjoc-cli` | `--au START..END`, `--diff-payload-11`, deterministic timing/diff JSON/TXT, independent cursor-free oracle, explicit raw-vs-MP4 equality, and diagnostic-only hypotheses; strict parser remains reserved-value failure; private A-F corpus evidence is retained outside Git, with B/C canonical automation semantics explicitly unresolved | implemented |
 | Engineering spec 6 / interoperability boundary | Explicit ETSI and vendor-compatibility profiles | `openjoc-emdf`, `openjoc-eac3`, `openjoc-cli` | parser retains original EMDF; `ETSI_STRICT` never relaxes Table 55/56; `DOLBY_VENDOR_COMPAT` accepts only the observed Logic/Dolby pattern, records every deviation, and manifest expectations gate Logic/future DEE regressions | implemented |
 | Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | completed |
 | Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | completed |
@@ -127,6 +127,32 @@ TS 102 366 describes its bytes as dummy data, and TS 103 420 does not state
 that the field carries JOC EMDF. Therefore `implemented` here means exact-range
 classification and inventory are available; it does not advance the
 `planned` all-carrier or legal real-vector rows.
+
+## Controlled Logic warp-study corpus (2026-08-05)
+
+The private run `2026-08-05T004530Z_vector-corpus_1330681` contains Logic Pro
+12.3 exports A-F, ADM BWF inventories, MP4 and stream-copied EC-3 hashes, and
+raw/MP4 OAMD forensic reports. Every vector has 126 OpenJOC access units at
+48 kHz and 1,536 samples per AU (`0.032 s/AU`). Normalized raw-versus-MP4
+EMDF/OAMD observations are equal for all six vectors; carrier file offsets and
+MP4 sample indices are intentionally excluded from that equality check.
+
+| vector | ADM objects / object updates | payload-11 unique | first payload change | warp distribution | status |
+| --- | --- | ---: | --- | --- | --- |
+| A static centre | `OBJ_997HZ` / 1 | 1 | none | `3:126` | static export evidence |
+| B requested single jump | `OBJ_997HZ` / 197 | 63 | AU 15, 0.480 s | `3:126` | export is still D mixed-motion; not canonical B |
+| C requested linear ramp | `OBJ_997HZ` / 197 | 63 | AU 15, 0.480 s | `3:126` | export is still D mixed-motion; not canonical C |
+| D existing mixed motion | `OBJ_997HZ` / 197 | 63 | AU 15, 0.480 s | `3:126` | control vector |
+| E no dynamic object | none / 0 | 1 | none | `3:126` | warp remains present without object blocks |
+| F two objects | `OBJ_997HZ`, `OBJ_2003HZ` / 197 each | 63 | AU 15, 0.480 s | `3:126` | two-object export evidence |
+
+The independent bit oracle, diagnostic trace, formal entry trace, and direct
+byte/mask calculation agree on payload-relative warp bits `[526,528)` and raw
+value `3`. Elements 1 and 2 close at the same declared boundaries and the
+three diagnostic hypotheses (assumed 0/1/2) all close only as non-unique,
+diagnostic-only syntax. `ETSI_STRICT` therefore remains blocked by
+`ReservedWarpMode { raw: 3 }`; no vendor warp rule was added. OAMD timeline,
+JOC reconstruction, nonzero object PCM, and ADM fidelity remain unverified.
 
 ## Global quality gates
 

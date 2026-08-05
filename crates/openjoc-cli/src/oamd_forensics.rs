@@ -13,7 +13,7 @@ use std::{
     fmt::Write as _,
     fs, io,
     num::NonZeroU8,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -248,6 +248,7 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut json_output = None;
     let mut warp_hypotheses = false;
     let mut adm_reference = None;
+    let mut force = false;
     let mut index = 1;
     while index < values.len() {
         let flag = &values[index];
@@ -263,6 +264,11 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         if flag == "--warp-hypotheses" {
             warp_hypotheses = true;
+            index += 1;
+            continue;
+        }
+        if flag == "--force" {
+            force = true;
             index += 1;
             continue;
         }
@@ -339,24 +345,43 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         adm_reference,
         warp_hypotheses: warp_hypothesis_report,
     };
-    fs::create_dir_all(&output)?;
-    let json_text = format!("{}\n", serde_json::to_string_pretty(&report)?);
-    if let Some(path) = json_output {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&path, &json_text)?;
-        let text_path = path.with_extension("txt");
-        fs::write(text_path, render_text(&report))?;
+    let (json_path, text_path) = if let Some(path) = json_output {
+        (path.clone(), path.with_extension("txt"))
     } else {
-        fs::write(output.join("oamd_forensics.json"), &json_text)?;
-        fs::write(output.join("oamd_forensics.txt"), render_text(&report))?;
+        (
+            output.join("oamd_forensics.json"),
+            output.join("oamd_forensics.txt"),
+        )
+    };
+    fs::create_dir_all(&output)?;
+    if let Some(parent) = json_path.parent() {
+        fs::create_dir_all(parent)?;
     }
+    ensure_report_targets_available(&[&json_path, &text_path], force)?;
+    let json_text = format!("{}\n", serde_json::to_string_pretty(&report)?);
+    fs::write(&json_path, &json_text)?;
+    fs::write(&text_path, render_text(&report))?;
     println!(
         "oamd-forensics: {} observations written to {}",
         report.observations.len(),
         output.display()
     );
+    Ok(())
+}
+
+fn ensure_report_targets_available(paths: &[&Path], force: bool) -> io::Result<()> {
+    if force {
+        return Ok(());
+    }
+    if let Some(path) = paths.iter().find(|path| path.exists()) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "report output already exists: {}; pass --force to overwrite",
+                path.display()
+            ),
+        ));
+    }
     Ok(())
 }
 
@@ -1430,13 +1455,14 @@ fn media_kind_name(kind: InputMediaKind) -> &'static str {
 fn usage_error() -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        "usage: openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH]",
+        "usage: openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]",
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{changed_spans, parse_access_unit_range, span};
+    use super::{changed_spans, ensure_report_targets_available, parse_access_unit_range, span};
+    use std::fs;
 
     #[test]
     fn parses_inclusive_access_unit_ranges() {
@@ -1452,5 +1478,25 @@ mod tests {
             changed_spans(&left, &right, 16),
             vec![span(2, 4), span(15, 16)]
         );
+    }
+
+    #[test]
+    fn report_output_refuses_existing_targets_without_force() {
+        let root =
+            std::env::temp_dir().join(format!("openjoc-oamd-report-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("temporary report directory");
+        let json = root.join("report.json");
+        let text = root.join("report.txt");
+        fs::write(&json, "old json\n").expect("seed json");
+        assert_eq!(
+            ensure_report_targets_available(&[json.as_path(), text.as_path()], false)
+                .expect_err("existing report must be rejected")
+                .kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        ensure_report_targets_available(&[json.as_path(), text.as_path()], true)
+            .expect("force permits overwrite");
+        let _ = fs::remove_dir_all(root);
     }
 }

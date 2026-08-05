@@ -1695,3 +1695,41 @@ and a test or explicit TODO before implementation proceeds.
   `crates/openjoc-cli/tests/inspect.rs` remain green after the CLI switches to
   immediate frame debug writes. Full workspace format, strict clippy,
   all-feature tests, and offline release build are required before commit.
+
+### Controlled Logic warp-study corpus (2026-08-05, private)
+
+The corpus was created and exported through Logic Pro 12.3 on macOS 26.6
+(25G72), using the existing deterministic 48 kHz sources and the same DD+
+Atmos export profile. Nothing below is committed to Git. The immutable run
+directory is `OpenJOC-Private/reports/runs/2026-08-05T004530Z_vector-corpus_1330681`.
+The Logic project hash is the SHA-256 of sorted relative file paths and file
+hashes inside each `.logicx` package.
+
+| vector | Logic project hash | ADM SHA-256 | MP4 SHA-256 | stream-copied EC3 SHA-256 |
+| --- | --- | --- | --- | --- |
+| A static centre | `e883c6614fb2b46a62094a0576b2fa700c1e7d0fe8b689707eb49d39dc04af46` | `e1459458d64717bce300be910d49c076eeccbfe1a9d26a4f99728996dc8530c2` | `a9e7d9d05e8e993297d707d4a93e2cdf4ab389cd060bbb5a8d60ba7f0172f942` | `0c64900c76d213bd8f49066244702167f1dce20d55f605cb974987ce084fe82f` |
+| B requested single jump (not canonical) | `7d703722ca39ca31ceac0c0822d66e197fb339be952c700fa36dd4eda50c95dd` | `87ccfa22de9e854e459cd725e050475e666e9b1d9a517e1404bd5eba256ed4df` | `360c267af5e9b82fde0e203b150f3b8a07e40011cf9b0b19d74aa9d494f297d7` | `7ed23a04628c62300a3cc4cee846a308077f8a9117e96366d2b018e6b3ec224` |
+| C requested linear ramp (not canonical) | `0e5efc87c47d0c963627cc9d65525ef8c543bf34f73731cc1c69283fd483fe30` | `87ccfa22de9e854e459cd725e050475e666e9b1d9a517e1404bd5eba256ed4df` | `79323cea3d406b5bf688d45c3e90f1a10715dd853f3eacfbff54f68796d89652` | `7ed23a04628c62300a3cc4cee846a308077f8a9117e96366d2b018e6b3ec224` |
+| D existing mixed motion | `e4e210ceb0e2915819a1300b5b1411cc33f9b138e450fb2f6fc355abff3d4b50` | `87ccfa22de9e854e459cd725e050475e666e9b1d9a517e1404bd5eba256ed4df` | `704545f313148412d019a8e7e739fccc0ead345ba7afb4b3b32199fde7b79af0` | `7ed23a04628c62300a3cc4cee846a308077f8a9117e96366d2b018e6b3ec224` |
+| E no dynamic object | `ab82dedc165f7c2c0005e624598536e3ca915bb591e78540306ce833085adc3e` | `e0c76fd5136b50bf58f329926068dddd63f2ab24570163c0192f68d78f8cf3ec` | `e827b2bc7fac662d38a781834d2bc002c50188b629fbbc5d37298a0613d4c187` | `6aeeac15f30ee08e07df5c2084f6eda5794f084d93c97bd0ed6b7d3bc23853b5` |
+| F two objects | `123895cd71becc66c9ebc7377b4387bd737ff5724fa7e64fc8a8e4466f740297` | `601dfa93653c98639ee3b223dce1ff173340bd498a6c1bf988f6d8839477466c` | `251b22ba273af6530f4c7abcb03f946606f80c74c8a7d3b7a45b61c5799dc14b` | `713f99eddfc8951c8aa712f8bd708e5bf2594ce7ae32ce06d6e7d1f1569955b3` |
+
+All six exports produce 126 access units. A/E have one unique payload-11
+body; B/C/D/F have 63. The first changed body is AU 15 (zero-based, 0.480 s)
+for B/C/D/F. All vectors, including static A and no-dynamic-object E, have
+warp distribution `raw=3` in 126/126 AUs. ADM object updates are A:1,
+B/C/D:197, E:0, and F:197 per object (`OBJ_997HZ` and `OBJ_2003HZ`). B and C
+were cloned exports whose ADM proves the existing D mixed motion remained;
+they are retained as evidence but are not claimed to satisfy their requested
+single-variable automation semantics.
+
+The normalized raw-EC3/MP4 forensic sequences are byte-identical at the
+EMDF/OAMD observation level for every vector. The extracted EC3 hash equals
+the raw EC3 hash in each pair. This proves carrier-path equivalence for the
+bounded observations, not complete OAMD/JOC decoding.
+
+The independent oracle and direct byte mask report warp bits `[526,528)` with
+raw value `3`; the formal ETSI parser still returns `ReservedWarpMode { raw: 3 }`.
+Diagnostic assumptions 0, 1, and 2 each close bounded element/payload windows
+but remain non-unique and do not produce update/position semantics. No official
+ETSI erratum changing the reserved table was found in the permitted sources.

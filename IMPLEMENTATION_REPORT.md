@@ -565,10 +565,10 @@ continues to return `ReservedWarpMode{code: 3}`.
 
 Computer Use successfully created the private copy
 `OpenJOC-Private/logic/warp-study/Vector_D_existing_mixed_motion.logicx`
-through Logic Pro Save As.  A/B/C/E/F single-variable projects and their
-exports are not claimed: they still require controlled UI edits and fresh
-exports.  No private media, manifest, census, forensic, or ADM file is
-committed.
+through Logic Pro Save As.  The later A/B/C/E/F copies and exports are
+retained outside Git; B/C are explicitly non-canonical because their ADM
+exports still contain D's mixed automation.  No private media, manifest,
+census, forensic, or ADM file is committed.
 
 All-carrier EMDF discovery, the real-vector acceptance lane,
 FFmpeg-versus-internal-base fidelity report, metadata-only scene assembly, and
@@ -576,3 +576,85 @@ streaming PCM/file sinks remain open. The borrowed frame sink only removes the
 all-frame debug vector; it is not the complete constant-memory streaming
 design. Speaker and binaural renderers are later non-normative components and
 are deliberately outside the current decoder increments.
+
+## Controlled Logic warp-study corpus (2026-08-05)
+
+This increment started at commit `13306818f854ab29709bac27929194f1442b1b6a`
+and kept the pre-existing `.DS_Store` and `references/` entries untouched.
+Computer Use was used for Logic Pro project duplication, track/automation
+editing in copies, and all spatial exports. The private run is
+`OpenJOC-Private/reports/runs/2026-08-05T004530Z_vector-corpus_1330681`.
+
+The corpus contains A static-centre, B requested single-jump, C requested
+linear-ramp, D existing mixed motion, E no dynamic object, and F two objects.
+A, D, E, and F satisfy their stated control semantics. The Logic UI copy
+operation for B/C retained D's mixed automation; their ADM exports contain
+197 `OBJ_997HZ` blocks and identical payload-11 transition structure, so they
+are explicitly marked non-canonical B/C evidence rather than being treated as
+single-variable proof.
+
+Every vector has 126 AUs, 48 kHz, 1,536 samples/AU, and exactly 0.032 s/AU.
+The payload-11 body is unique once for A/E and 63 times for B/C/D/F. The first
+changed body for B/C/D/F is zero-based AU 15, start sample 23,040, time
+0.480 s; the report includes AU 14/15/16/17 and all observed transitions.
+Normalized raw-EC3 versus MP4 observations are equal for all six vectors, and
+each MP4 stream-copy EC3 has the same hash as its raw EC3 input. This excludes
+carrier demux/offset drift for the bounded fields but does not imply semantic
+OAMD decoding.
+
+The static and no-dynamic-object vectors are important negative controls:
+both still emit payload 11 with warp raw `3` in all 126 AUs. F has two ADM
+objects and still has the same warp distribution. Thus the current data is
+consistent with an encoder/profile-level convention, but it does not identify
+the convention's meaning.
+
+### OAMD entry decision
+
+Four independent observations agree on the first failure:
+
+```text
+payload-relative warp span: [526,528)
+raw bits: 11
+raw integer: 3
+formal ETSI result: ReservedWarpMode { raw: 3 }
+elements: ID 1 then ID 2, exact bounded closure
+object_count: 16
+```
+
+The direct byte/mask calculation and the independent test oracle do not share
+the formal or diagnostic cursor. The three diagnostic-only hypotheses
+(assuming semantic 0, 1, or 2 while retaining `raw_warp=3`) all close the
+bounded element and payload and all remain non-unique: no update/position/
+jump/ramp count is available before the normative object grammar is entered.
+No production remap, offset magic, hidden trim selection, or vendor warp
+compatibility rule was added. `ETSI_STRICT` behavior is unchanged; no
+`DOLBY_VENDOR_COMPAT` warp extension was added. OAMD timeline, JOC parsing,
+nonzero PCM, ADM position comparison, and fidelity remain unverified.
+
+### ADM oracle boundary
+
+The ADM BWFs were read from RIFF/axml/chna without modification. A has one
+static `OBJ_997HZ` block, B/C/D have 197 `OBJ_997HZ` blocks, E has no object
+channel, and F has 197 blocks each for `OBJ_997HZ` and `OBJ_2003HZ`. The ADM
+reports retain Cartesian coordinates, jump-position attributes,
+interpolation lengths, gain, and update times. No unproven conversion to an
+OAMD coordinate system is performed, and no fidelity claim is made while the
+OAMD object-element parser is blocked.
+
+### Forensic report overwrite protection
+
+`diagnose-oamd` now refuses to overwrite either JSON or text report targets by
+default and returns `AlreadyExists`; an explicit, auditable `--force` is
+required for replacement. A regression test covers both refusal and explicit
+force behavior. This protects the private forensic history and does not alter
+bitstream or decode semantics.
+
+### Quality gates for this increment
+
+- `cargo fmt --all -- --check`: passed
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: passed
+- `CARGO_BUILD_JOBS=1 cargo test --workspace --all-features -- --test-threads=1`: passed
+- `CARGO_BUILD_JOBS=1 cargo build --workspace --release --offline`: passed
+- `git diff --check`: passed
+- controlled private manifest run 1/run 2: JSON and TXT byte-identical
+  (`52302b6f…5432`, `5b94f9d4…f928`)
