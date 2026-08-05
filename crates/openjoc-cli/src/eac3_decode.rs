@@ -141,23 +141,13 @@ fn parse_oamd_for_profile(
     }
 }
 
-/// Aligns already decoded channel PCM with size-bounded E-AC-3 JOC metadata.
-///
-/// Aligns decoded channel PCM with E-AC-3 JOC metadata and lends each
-/// successfully reconstructed frame to a sink immediately.
-///
-/// The codec scene still retains its renderer-independent PCM until the
-/// separate metadata-only/PCM-file-sink increment lands. This API removes the
-/// additional all-frame `DecodedPayloadFrame` retention from callers such as
-/// the CLI debug exporter.
-///
-/// # Errors
-/// Returns the same checked frontend, metadata, timing, PCM-shape, or
-/// reconstruction error as this module's E-AC-3 frontend, or the sink error after a
-/// frame has been committed.
-pub fn decode_aligned_eac3_with_sink<S>(
+/// Aligns five non-LFE JOC input channels with a separately supplied base LFE.
+/// The LFE is never sent to the JOC QMF matrix; it is bound to an OAMD
+/// speaker-anchored entry at the scene boundary.
+pub fn decode_aligned_eac3_with_sink_and_lfe<S>(
     stream: &[u8],
     downmix: &WavePcm,
+    base_lfe: Option<&WavePcm>,
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
     mut sink: S,
@@ -185,6 +175,19 @@ where
             expected: expected_samples,
         });
     }
+    if let Some(lfe) = base_lfe {
+        if lfe.channels.len() != 1
+            || lfe.sample_rate != downmix.sample_rate
+            || lfe.channels[0].len() != expected_samples
+        {
+            return Err(DecodeEac3Error::Payload(PayloadDecodeError::from(
+                openjoc_scene::ProgrammeLayoutError::BaseLfeLengthMismatch {
+                    expected: expected_samples,
+                    actual: lfe.channels.first().map_or(0, Vec::len),
+                },
+            )));
+        }
+    }
 
     let oamd_profile = match validation_profile {
         JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
@@ -211,12 +214,14 @@ where
             .iter()
             .map(|channel| channel[sample_offset..end].to_vec())
             .collect::<Vec<_>>();
+        let frame_lfe = base_lfe.map(|lfe| &lfe.channels[0][sample_offset..end]);
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
         decoder.decode_frame_with(
             JocFrameInput {
                 sample_rate: unit.sample_rate,
                 downmix_pcm: &frame_pcm,
+                base_lfe_pcm: frame_lfe,
                 joc_payload: &metadata.joc,
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,
@@ -282,6 +287,7 @@ where
             JocFrameInput {
                 sample_rate: unit.sample_rate,
                 downmix_pcm: &pcm.channels,
+                base_lfe_pcm: pcm.lfe.as_deref(),
                 joc_payload: &metadata.joc,
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,

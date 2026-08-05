@@ -1796,3 +1796,56 @@ distribution, and 126/126 formal payload-14 parses. Raw/MP4 normalized
 observation sequences are equal. B/C remain the previously documented
 non-canonical Logic copies; this run does not promote their automation labels
 to semantic ground truth.
+
+### Controlled programme cardinality and first PCM boundary (2026-08-05)
+
+The prior object-count error was a cross-chain validation error, not evidence
+that a JOC row was missing. The OAMD content-description expansion now derives
+typed bindings from the actual anchor sequence. In every private A-F vector the
+sequence is:
+
+```text
+OAMD[0]     Speaker(RcLfe) -> BaseLfe(channel 0)
+OAMD[1..15] Dynamic         -> JOC rows 0..14
+```
+
+The resulting cardinalities are `total_oamd_count=16`,
+`speaker_anchored_count=1`, `bed_count=0`, `lfe_count=1`, `isf_count=0`,
+`dynamic_slot_count=15`, and `joc_output_count=15`. The `addbsi` complexity
+index remains checked against total OAMD count 16. A normal bed, ISF,
+multiple LFE entries, unexpected LFE order, missing LFE PCM, unequal frame
+length, duplicate row, and JOC/dynamic-slot mismatch each have explicit
+typed failures; there is no `count - 1` compatibility branch.
+
+The non-LFE compatible-base path is an explicit five-channel
+`FL,FR,FC,SL,SR` f64 WAV. A separate FFmpeg `pan=mono|c0=LFE` f64 WAV is
+retained and passed only to the scene boundary. It is not sent to QMF/JOC and
+is not synthesized when unavailable. A/E/D/F vendor-compatible decodes now
+produce 16 scene entries (entry 0 class `lfe`, entries 1-15 class `dynamic`)
+over 126 AUs / 193,536 samples, with 15 dynamic JOC signals and one
+base-carried LFE signal. The tested LFE source is silent, so its measured
+peak/RMS are zero; the source and zero result are both reported rather than
+silently fabricating an audio stem.
+
+The OAMD `active` field, not ADM and not PCM energy, is the activity oracle.
+All 15 dynamic slots are active according to the observed OAMD updates in
+A/E/D/F. E's ADM BWF has zero dynamic objects while its codec still exposes
+the same 15 coded slots and nonzero-capable JOC rows; this is an observed
+capacity/content distinction, not a claim that those slots are ADM objects.
+F's two ADM names (`OBJ_997HZ`, `OBJ_2003HZ`) are retained as a partial
+comparison only; measured frequency energy is distributed across several JOC
+rows and does not uniquely prove row-to-name identity.
+
+The reproducible private evidence package is
+`OpenJOC-Private/reports/runs/2026-08-05T044606Z_object-cardinality_a4f88af_r3`.
+Its `programme_layout`, `oamd_joc_bindings`, `base_lfe_inventory`,
+`joc_row_metrics`, `object_pcm_metrics`, `scene_inventory`,
+`adm_partial_comparison`, and `strict_vs_vendor` JSON/TXT pairs were written
+twice under `reports3` and `reports_repeat3`; every pair compares
+byte-for-byte. The package does not contain repository media and is not
+committed.
+
+This is a vendor-compatible reconstruction boundary, not full Atmos support:
+`ETSI_STRICT` still fails raw warp 3; trim/warp semantics and a complete OAMD
+timeline remain unresolved; no object identity, ADM position equivalence,
+speaker render, or `--internal-base` fidelity claim is made.

@@ -366,3 +366,49 @@ only as an external timing/position oracle; the object grammar is not entered.
 Strict behavior remains `ReservedWarpMode { raw: 3 }`, and no vendor warp
 compatibility rule is permitted until a canonical independent vector or
 authoritative specification evidence makes one interpretation unique.
+
+## Current programme-cardinality boundary (2026-08-05)
+
+The former generic `JOC count == OAMD count` check was too broad. The current
+orchestration keeps these relationships distinct:
+
+```text
+addbsi complexity  == total OAMD programme entries
+JOC output rows     == OAMD dynamic slots
+ObjectScene entries == total OAMD programme entries
+```
+
+`ProgrammeLayout` is derived from the parsed OAMD anchors. Across private
+Logic A-F, the evidence is `OAMD[0] = Speaker(RcLfe)` followed by 15 dynamic
+anchors. The explicit binding is `RcLfe -> BaseLfe(channel 0)` and dynamic
+slot `i -> JOC row i` for `i=0..14`. This is not a generic N-versus-N-minus-1
+allowance: ordinary beds, ISF, multiple/misordered LFE, duplicate rows,
+missing LFE PCM, unequal frame lengths, and cardinality mismatches fail with
+typed errors. The JOC core continues to see exactly 15 rows.
+
+The compatible-base path separates six-channel E-AC-3 input into five QMF
+channels (`FL,FR,FC,SL,SR`) and a retained LFE PCM source. The LFE is attached
+only at the scene boundary, never copied from a JOC row and never fabricated.
+The scene manifest now has 16 entries: one `lfe` entry followed by 15
+`dynamic` entries. A/E/D/F each decode 126 AUs / 193,536 samples and produce
+15 dynamic PCM outputs plus one base-carried LFE output. The tested LFE source
+is present but silent; its zero peak/RMS are measured evidence.
+
+OAMD activity is determined only by the parsed `active` field. The observed
+Logic frames flag all 15 dynamic slots active, including E even though E's ADM
+contains zero dynamic object channels. This is recorded as the distinction
+between fixed codec slot capacity and ADM content; PCM nonzero status is not
+used to rewrite activity. F's `OBJ_997HZ` and `OBJ_2003HZ` are therefore only
+partial ADM/frequency oracles, not proven row identities.
+
+The private reproducibility package is
+`OpenJOC-Private/reports/runs/2026-08-05T044606Z_object-cardinality_a4f88af_r3`.
+Its layout, binding, LFE, row-metric, PCM, scene, ADM-partial, and
+strict/vendor reports are duplicated under `reports3` and
+`reports_repeat3`; every JSON/TXT pair is byte-identical. Media and reports
+remain private and are not committed.
+
+This advances only the vendor-compatible scene boundary. `ETSI_STRICT` still
+returns `ReservedWarpMode { raw: 3 }`; trim remains opaque; no complete OAMD
+timeline, JOC semantic fidelity, ADM position equivalence, speaker render, or
+internal-base comparison has been completed.

@@ -749,3 +749,70 @@ Raw/MP4 normalized metadata sequences are byte-identical for A/E/D. Strict
 forensic stages remain `trim.warp_mode` for 126/126; the existing carrier
 profile deviations are not relaxed. The private non-overwriting run is
 `OpenJOC-Private/reports/runs/2026-08-05T0358Z_vendor-opaque-2f5de17`.
+
+## Round-5 typed programme layout and first nonzero PCM (2026-08-05)
+
+This round resolves the cross-chain cardinality boundary without changing
+either JOC syntax or ETSI validation. The previous generic equality check
+(`JOC declares 15 objects but OAMD declares 16`) is replaced by three scoped
+checks:
+
+```text
+addbsi complexity == total OAMD programme count
+JOC output count  == OAMD dynamic-slot count
+scene entry count == total OAMD programme count
+```
+
+`ProgrammeLayout` derives typed `ProgrammeObjectBinding` values from
+`OamdContentPrefix::object_anchors()`. For every private A-F Logic carrier the
+observed layout is `RcLfe` at OAMD index 0 followed by 15 dynamic anchors. The
+only accepted source mapping for this layout is therefore:
+
+```text
+OAMD[0]     -> ObjectAudioSource::BaseLfe { channel_index: 0 }
+OAMD[1+i]   -> ObjectAudioSource::JocObject { row_index: i }, i=0..14
+```
+
+This is an anchor/order-derived typed mapping, not a `count - 1` exception.
+Ordinary beds and ISF anchors remain explicitly unsupported at this boundary;
+multiple LFE entries, misplaced LFE, JOC/dynamic-slot mismatch, missing or
+unequal LFE PCM, duplicate rows, and row bounds have dedicated errors. The
+layout is checked again against the OAMD prefix before a frame can commit.
+`PayloadDecoder` stages layout validation, JOC state, scene metadata, dynamic
+PCM, and optional LFE together, preserving frame retry atomicity.
+
+The compatible-base CLI now probes the six-channel E-AC-3 input, exports the
+five non-LFE channels as `FL,FR,FC,SL,SR`, and retains a separate LFE WAV. The
+LFE is passed to the scene boundary only; it never enters the five-channel JOC
+QMF matrix. No LFE audio is fabricated when the source is unavailable. The
+scene model serializes the speaker-anchored entry as `lfe` and dynamic entries
+as `dynamic`.
+
+Private run
+`OpenJOC-Private/reports/runs/2026-08-05T044606Z_object-cardinality_a4f88af_r3`
+contains A-F forensic reports and A/E/D/F compatible-base decodes. Each
+decoded vector has 126 AUs, 48 kHz, 1,536 samples/AU, 193,536 total samples,
+16 scene entries, 15 JOC-reconstructed dynamic signals, and one base-carried
+LFE entry. The LFE WAV is retained as evidence and is silent for the tested
+source (measured peak/RMS zero); that result is not a synthetic zero stem.
+The first dynamic stems are nonzero (for example A row 1 has peak about
+0.603 and RMS about 0.172; D/F show strong 997 Hz energy), while later slots
+may be PCM-silent. All non-finite counts are zero and AU-boundary continuity
+metrics are recorded in the private JSON/TXT reports.
+
+The OAMD `active` flag is kept separate from ADM object count and PCM energy.
+In the observed frames all 15 dynamic slots are flagged active, including E,
+whose ADM BWF contains zero dynamic object channels. F's two ADM names and
+997/2003 Hz measurements are retained only as partial evidence; energy is
+distributed across multiple rows and does not establish a unique row-to-name
+mapping. The private reports explicitly record this codec-slot-capacity versus
+ADM-content distinction.
+
+The strict/vendor boundary is unchanged: `ETSI_STRICT` still fails the raw
+OAMD warp value 3, and `DOLBY_VENDOR_COMPAT` retains the declared trim body
+opaqely with raw value 3 and deviation code
+`LOGIC_OAMD_RESERVED_TRIM_WARP_3`. No trim timeline, warp semantics,
+speaker-render fidelity, complete OAMD semantic timeline, or
+`--internal-base` fidelity claim is made. The first blocker after layout and
+JOC/QMF scene assembly is now unresolved trim/warp semantics and the absence
+of a validated ADM/render comparison, not object cardinality.

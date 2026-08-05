@@ -11,6 +11,7 @@ use openjoc_oamd::{
     OamdBitTrace, OamdDecoderConfig, OamdElement, OamdParseProfile, OpaqueObservedKnownElement,
     parse_oamd_payload_with_profile, trace_oamd_payload,
 };
+use openjoc_scene::{ObjectAudioSource, ProgrammeLayout, ProgrammeObjectBinding};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -210,7 +211,22 @@ struct VendorOamdEvidence {
     position_field_count: Option<usize>,
     first_update_sample: Option<u16>,
     positive_ramp_count: Option<usize>,
+    programme_layout: Option<ProgrammeLayoutEvidence>,
     opaque_elements: Vec<OpaqueElementEvidence>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ProgrammeLayoutEvidence {
+    total_oamd_count: usize,
+    speaker_anchored_count: usize,
+    bed_count: usize,
+    lfe_count: usize,
+    isf_count: usize,
+    dynamic_slot_count: usize,
+    active_dynamic_slots: Vec<usize>,
+    joc_output_count: Option<u8>,
+    mapping_result: &'static str,
+    bindings: Vec<ProgrammeObjectBinding>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -761,14 +777,6 @@ fn observe_access_unit(
             oracle_result.as_ref().err().map(ToString::to_string),
         )
     });
-    let vendor_oamd = trim_config_count.map(|count| {
-        build_vendor_oamd_evidence(
-            &payload.data,
-            OamdDecoderConfig {
-                trim_configuration_count: Some(count),
-            },
-        )
-    });
     let joc = emdf_trace
         .parsed
         .container
@@ -776,6 +784,16 @@ fn observe_access_unit(
         .iter()
         .find(|candidate| candidate.id == 14)
         .map(build_joc_evidence);
+    let vendor_oamd = trim_config_count.map(|count| {
+        build_vendor_oamd_evidence(
+            &payload.data,
+            OamdDecoderConfig {
+                trim_configuration_count: Some(count),
+            },
+            joc.as_ref()
+                .and_then(|evidence| evidence.output_object_count),
+        )
+    });
     let payload_evidence = emdf_trace
         .payloads
         .iter()
@@ -964,7 +982,11 @@ fn build_joc_evidence(payload: &EmdfPayload) -> JocEvidence {
     }
 }
 
-fn build_vendor_oamd_evidence(payload: &[u8], config: OamdDecoderConfig) -> VendorOamdEvidence {
+fn build_vendor_oamd_evidence(
+    payload: &[u8],
+    config: OamdDecoderConfig,
+    joc_output_count: Option<u8>,
+) -> VendorOamdEvidence {
     match parse_oamd_payload_with_profile(
         payload,
         config,
@@ -1046,6 +1068,7 @@ fn build_vendor_oamd_evidence(payload: &[u8], config: OamdDecoderConfig) -> Vend
                         .filter(|block| block.ramp_duration > 0)
                         .count()
                 }),
+                programme_layout: build_programme_layout_evidence(&parsed, joc_output_count),
                 opaque_elements,
             }
         }
@@ -1068,9 +1091,57 @@ fn build_vendor_oamd_evidence(payload: &[u8], config: OamdDecoderConfig) -> Vend
             position_field_count: None,
             first_update_sample: None,
             positive_ramp_count: None,
+            programme_layout: None,
             opaque_elements: Vec::new(),
         },
     }
+}
+
+fn build_programme_layout_evidence(
+    payload: &openjoc_oamd::OamdPayload,
+    joc_output_count: Option<u8>,
+) -> Option<ProgrammeLayoutEvidence> {
+    let layout = ProgrammeLayout::from_prefix(&payload.prefix).ok()?;
+    let active_dynamic_slots = object_element(payload)
+        .map(|objects| {
+            objects
+                .objects
+                .iter()
+                .enumerate()
+                .filter(|(index, updates)| {
+                    matches!(
+                        layout.bindings.get(*index).map(|binding| binding.source),
+                        Some(ObjectAudioSource::JocObject { .. })
+                    ) && updates.iter().any(|update| update.active)
+                })
+                .filter_map(|(index, _)| {
+                    layout
+                        .bindings
+                        .get(index)
+                        .and_then(|binding| binding.dynamic_slot_index)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mapping_result = joc_output_count.map_or("not_compared", |count| {
+        if layout.validate_joc_output(usize::from(count)).is_ok() {
+            "accepted"
+        } else {
+            "rejected"
+        }
+    });
+    Some(ProgrammeLayoutEvidence {
+        total_oamd_count: layout.total_oamd_count,
+        speaker_anchored_count: layout.speaker_anchored_count,
+        bed_count: layout.bed_count,
+        lfe_count: layout.lfe_count,
+        isf_count: layout.isf_count,
+        dynamic_slot_count: layout.dynamic_slot_count,
+        active_dynamic_slots,
+        joc_output_count,
+        mapping_result,
+        bindings: layout.bindings,
+    })
 }
 
 fn object_element(payload: &openjoc_oamd::OamdPayload) -> Option<&openjoc_oamd::ObjectElement> {

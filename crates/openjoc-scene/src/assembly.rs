@@ -2,8 +2,8 @@
 
 use crate::{
     Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, SceneError, SpeakerLabel, TrimUpdate, ZoneConstraint, metadata_is_finite,
-    trim_is_finite,
+    Position3, ProgrammeLayout, ProgrammeLayoutError, SceneError, SpeakerLabel, TrimUpdate,
+    ZoneConstraint, metadata_is_finite, trim_is_finite,
 };
 use openjoc_oamd::{
     ExtendedObjectElement, Gain, IsfRing as OamdIsfRing, OamdContentPrefix, OamdElement, OamdError,
@@ -16,6 +16,8 @@ use std::fmt;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SceneBuildError {
     Oamd(OamdError),
+    ProgrammeLayout(ProgrammeLayoutError),
+    ProgrammeLayoutMismatch,
     Scene(SceneError),
     ContentDescriptionChanged,
     ObjectCount { expected: usize, actual: usize },
@@ -29,6 +31,11 @@ impl fmt::Display for SceneBuildError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Oamd(error) => write!(formatter, "invalid OAMD scene data: {error}"),
+            Self::ProgrammeLayout(error) => {
+                write!(formatter, "invalid OAMD/JOC programme layout: {error}")
+            }
+            Self::ProgrammeLayoutMismatch => formatter
+                .write_str("programme layout does not match the OAMD content-description ordering"),
             Self::Scene(error) => write!(formatter, "invalid assembled scene: {error}"),
             Self::ContentDescriptionChanged => {
                 formatter.write_str("OAMD content description changed without a reset")
@@ -56,6 +63,12 @@ impl std::error::Error for SceneBuildError {}
 impl From<OamdError> for SceneBuildError {
     fn from(value: OamdError) -> Self {
         Self::Oamd(value)
+    }
+}
+
+impl From<ProgrammeLayoutError> for SceneBuildError {
+    fn from(value: ProgrammeLayoutError) -> Self {
+        Self::ProgrammeLayout(value)
     }
 }
 
@@ -91,6 +104,9 @@ impl SceneBuilder {
                         .map_err(|_| SceneBuildError::DurationOverflow)?,
                     class: match anchor {
                         ObjectAnchor::Dynamic => ObjectClass::Dynamic,
+                        ObjectAnchor::Speaker(
+                            OamdSpeakerLabel::RcLfe | OamdSpeakerLabel::RcLfe2,
+                        ) => ObjectClass::Lfe,
                         ObjectAnchor::Speaker(_) | ObjectAnchor::IntermediateSpatial(_) => {
                             ObjectClass::BedOrIsf
                         }
@@ -122,9 +138,27 @@ impl SceneBuilder {
         oamd: &OamdPayload,
         reference_screen: Option<ReferenceScreen>,
     ) -> Result<(), SceneBuildError> {
+        let layout = ProgrammeLayout::from_prefix(&oamd.prefix)?;
+        self.append_frame_with_layout(object_pcm, None, oamd, reference_screen, &layout)
+    }
+
+    /// Atomically appends one frame after explicitly binding JOC rows and a
+    /// separately carried base LFE to the OAMD programme layout.
+    pub fn append_frame_with_layout(
+        &mut self,
+        joc_pcm: &[Vec<f64>],
+        base_lfe_pcm: Option<&[f64]>,
+        oamd: &OamdPayload,
+        reference_screen: Option<ReferenceScreen>,
+        layout: &ProgrammeLayout,
+    ) -> Result<(), SceneBuildError> {
         if oamd.prefix.object_anchors()? != self.anchors {
             return Err(SceneBuildError::ContentDescriptionChanged);
         }
+        if ProgrammeLayout::from_prefix(&oamd.prefix)? != *layout {
+            return Err(SceneBuildError::ProgrammeLayoutMismatch);
+        }
+        let object_pcm = layout.bind_audio(joc_pcm, base_lfe_pcm)?;
         if object_pcm.len() != self.scene.objects.len() {
             return Err(SceneBuildError::ObjectCount {
                 expected: self.scene.objects.len(),
@@ -214,7 +248,7 @@ impl SceneBuilder {
         }
         self.scene.duration_samples = next_duration;
         for (track, pcm) in self.scene.objects.iter_mut().zip(object_pcm) {
-            track.pcm.extend_from_slice(pcm);
+            track.pcm.extend_from_slice(&pcm);
         }
         self.scene.metadata_timeline.extend(frame_metadata);
         self.scene.trim_timeline.extend(frame_trims);

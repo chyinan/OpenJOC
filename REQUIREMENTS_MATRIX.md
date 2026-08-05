@@ -83,6 +83,7 @@ normative failures, and the decoder has no profile-specific signaling hacks.
 | Engineering spec 6 / OAMD forensic round 2 | AU timing, payload-11 differential, independent bit oracle, ADM comparison, diagnostic warp hypotheses | `openjoc-cli` | `--au START..END`, `--diff-payload-11`, deterministic timing/diff JSON/TXT, independent cursor-free oracle, explicit raw-vs-MP4 equality, and diagnostic-only hypotheses; strict parser remains reserved-value failure; private A-F corpus evidence is retained outside Git, with B/C canonical automation semantics explicitly unresolved | implemented |
 | Engineering spec 6 / OAMD forensic round 3 | Reproducible raw/MP4/ADM refresh and Logic canonical-copy audit | private controlled run + public docs | New non-overwriting batch `2026-08-05T1042Z_logic-warp-evidence_952b052` covers A-F (12 carrier reports, six ADM reports); all 126 AUs close; four-way warp oracle remains `[526,528) = 3`; B/C remain explicitly non-canonical after a discarded Logic editing experiment; no vendor rule added | evidence refresh; semantics unresolved |
 | Engineering spec 6 / interoperability boundary | Explicit ETSI and vendor-compatibility profiles | `openjoc-emdf`, `openjoc-eac3`, `openjoc-cli` | parser retains original EMDF; `ETSI_STRICT` never relaxes Table 55/56; `DOLBY_VENDOR_COMPAT` accepts only the observed Logic/Dolby pattern, records every deviation, and manifest expectations gate Logic/future DEE regressions | implemented |
+| TS 103 420 5.6.0, 5.6.1, 6.4, 8.3 / controlled vendor programme boundary | Typed OAMD programme layout and JOC-row binding | `openjoc-scene`, `openjoc-cli` | OAMD total, speaker/LFE/bed/ISF/dynamic cardinalities are derived from anchors; `RcLfe` is bound to separately retained base LFE; dynamic slots map one-to-one to JOC rows; `addbsi` complexity is checked against total OAMD count; A-F private reports and layout tests pass | verified |
 | Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | completed |
 | Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | completed |
 | Legal DEE real-vector lane | Nonzero JOC/OAMD reconstruction and continuity acceptance | `openjoc-cli`, `openjoc-scene` | user-supplied fixture hash, nonzero side information/stems, dynamic OAMD, moving object, multiple access units, known-stem/ADM-BWF comparison | planned |
@@ -176,6 +177,41 @@ JOC reconstruction, nonzero object PCM, and ADM fidelity remain unverified.
 | Explicit vendor opaque trim retention | `DOLBY_VENDOR_COMPAT` requires payload ID 11, complete element-2 declared window, exact first error raw warp 3, and retains the full body/hash without remap | implemented/verified |
 | Partial OAMD state | Element 1 is formally parsed; trim is `opaque_unresolved`; trim timeline and renderer fidelity are unavailable | implemented/verified |
 | Inspect profile visibility | `inspect` always shows both carrier profiles; explicit `--trim-config-count N` additionally shows strict/vendor OAMD partial status without inferring a count | implemented |
-| Independent payload-14/JOC chain | A/E/D raw and MP4 payload 14 parses succeed 126/126; JOC declares 15 objects while OAMD declares 16, which is the first remaining decoder blocker | entered/blocked |
+| Independent payload-14/JOC chain | A/E/D/F compatible-base runs parse payload 14 across 126/126 AUs; JOC declares 15 rows, which bind to 15 OAMD dynamic slots while the separate OAMD LFE remains base-carried | verified |
 | B/C/F vendor regression | Follow-up raw/MP4 private run repeats 126 AUs, raw warp `3:126`, opaque vendor acceptance `126/126`, normalized carrier equality, and payload-14 parse `126/126` | verified |
-| Real object PCM and fidelity | No real ObjectScene/object PCM is emitted past the explicit object-count boundary; no fidelity claim | open |
+| Real object PCM and fidelity | A/E/D/F vendor-compatible runs emit 16-entry scenes, 15 nonzero-capable JOC dynamic stems, and one separately bound base-LFE stem; trim/warp semantics, internal-base fidelity, and ADM rendering equivalence remain open | evidence; fidelity open |
+
+## Controlled Logic programme-cardinality result (2026-08-05)
+
+The typed scene boundary distinguishes the counts that were previously
+collapsed into one equality:
+
+```text
+addbsi complexity == total OAMD programme entries
+JOC output rows    == OAMD dynamic slot count
+scene entries      == total OAMD programme entries
+```
+
+For all private Logic A-F carriers, the parsed anchor sequence is
+`OAMD[0] = RcLfe` followed by `OAMD[1..15] = Dynamic`. The resulting binding
+is `OAMD[0] -> BaseLfe(channel 0)` and dynamic slot `i -> JOC row i` for
+`i = 0..14`. No row is deleted, synthesized, or shifted inside the JOC core;
+the base LFE is never sent to the five-channel JOC matrix. The scene manifest
+serializes entry 0 as `lfe`, followed by 15 `dynamic` entries.
+
+The private run
+`2026-08-05T044606Z_object-cardinality_a4f88af_r3` contains raw forensic
+regressions for A-F and compatible-base decodes for A/E/D/F. Each decode has
+126 AUs, 193,536 samples, 16 scene entries, 15 JOC-reconstructed dynamic
+signals, and one base-carried LFE entry. The extracted LFE WAV is retained
+and auditable; it is silent for these source programmes, not a fabricated
+zero stem. OAMD `active` flags report all 15 dynamic slots in the observed
+frames, including E where ADM exports zero dynamic object channels. This is
+recorded as a codec-slot-capacity versus ADM-content distinction; PCM energy
+is never used to infer activity.
+
+This closes the Logic cardinality and first nonzero PCM boundary only under
+`DOLBY_VENDOR_COMPAT`. `ETSI_STRICT` still rejects the unchanged raw warp 3,
+the trim body remains opaque, complete OAMD timeline semantics are not
+claimed, and no ADM speaker/render or internal-base fidelity result is
+available.

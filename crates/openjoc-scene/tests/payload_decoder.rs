@@ -108,6 +108,7 @@ fn decodes_raw_payloads_and_downmix_into_an_object_scene() {
         .decode_frame(JocFrameInput {
             sample_rate: 48_000,
             downmix_pcm: &downmix,
+            base_lfe_pcm: None,
             joc_payload: &joc,
             oamd_payload: &oamd,
             frame_index: 0,
@@ -150,6 +151,7 @@ fn consumes_a_decoded_frame_through_a_borrowed_sink() {
             JocFrameInput {
                 sample_rate: 48_000,
                 downmix_pcm: &downmix,
+                base_lfe_pcm: None,
                 joc_payload: &joc,
                 oamd_payload: &oamd,
                 frame_index: 0,
@@ -194,6 +196,7 @@ fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
         .decode_frame(JocFrameInput {
             sample_rate: 48_000,
             downmix_pcm: &downmix,
+            base_lfe_pcm: None,
             joc_payload: &joc_zero,
             oamd_payload: &oamd,
             frame_index: 0,
@@ -205,6 +208,7 @@ fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
             .decode_frame(JocFrameInput {
                 sample_rate: 48_000,
                 downmix_pcm: &downmix,
+                base_lfe_pcm: None,
                 joc_payload: &joc_one,
                 oamd_payload: &[0],
                 frame_index: 1,
@@ -215,6 +219,7 @@ fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
         .decode_frame(JocFrameInput {
             sample_rate: 48_000,
             downmix_pcm: &downmix,
+            base_lfe_pcm: None,
             joc_payload: &joc_one,
             oamd_payload: &oamd,
             frame_index: 1,
@@ -243,6 +248,7 @@ fn explicit_vendor_profile_retains_opaque_trim_and_keeps_joc_chain_separate() {
             .decode_frame(JocFrameInput {
                 sample_rate: 48_000,
                 downmix_pcm: &downmix,
+                base_lfe_pcm: None,
                 joc_payload: &joc,
                 oamd_payload: &oamd,
                 frame_index: 0,
@@ -256,6 +262,7 @@ fn explicit_vendor_profile_retains_opaque_trim_and_keeps_joc_chain_separate() {
         .decode_frame(JocFrameInput {
             sample_rate: 48_000,
             downmix_pcm: &downmix,
+            base_lfe_pcm: None,
             joc_payload: &joc,
             oamd_payload: &oamd,
             frame_index: 0,

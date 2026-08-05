@@ -8,6 +8,11 @@ use std::{collections::HashSet, fmt};
 
 mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder};
+mod layout;
+pub use layout::{
+    ObjectAudioSource, ProgrammeAnchor, ProgrammeLayout, ProgrammeLayoutError,
+    ProgrammeObjectBinding, ProgrammeObjectClass,
+};
 mod payload_decoder;
 pub use payload_decoder::{
     DecodedPayloadFrame, JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
@@ -98,6 +103,7 @@ pub enum ZoneConstraint {
 #[serde(rename_all = "snake_case")]
 pub enum ObjectClass {
     BedOrIsf,
+    Lfe,
     Dynamic,
 }
 

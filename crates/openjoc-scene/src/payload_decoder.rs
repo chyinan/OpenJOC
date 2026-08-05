@@ -1,6 +1,6 @@
 // pattern: Functional Core
 
-use crate::{ObjectScene, SceneBuildError, SceneBuilder};
+use crate::{ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SceneBuildError, SceneBuilder};
 use openjoc_joc::{DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, parse_joc_payload};
 use openjoc_oamd::{
     OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ReferenceScreen,
@@ -13,6 +13,7 @@ use std::fmt;
 pub struct JocFrameInput<'a> {
     pub sample_rate: u32,
     pub downmix_pcm: &'a [Vec<f64>],
+    pub base_lfe_pcm: Option<&'a [f64]>,
     pub joc_payload: &'a [u8],
     pub oamd_payload: &'a [u8],
     pub frame_index: u64,
@@ -31,6 +32,7 @@ pub struct DecodedPayloadFrame {
     pub joc: JocFrame,
     pub oamd: OamdPayload,
     pub decoded: DecodedJocFrame,
+    pub programme_layout: ProgrammeLayout,
 }
 
 /// Failures in the raw payload-to-scene orchestration boundary.
@@ -39,9 +41,9 @@ pub enum PayloadDecodeError {
     Joc(JocDecodeError),
     Oamd(OamdError),
     Scene(SceneBuildError),
+    ProgrammeLayout(ProgrammeLayoutError),
     UnexpectedFrameIndex { expected: u64, actual: u64 },
     SampleRateChanged { expected: u32, actual: u32 },
-    ObjectCountMismatch { joc: u8, oamd: u16 },
     FrameIndexOverflow,
     EmptyStream,
 }
@@ -52,6 +54,12 @@ impl fmt::Display for PayloadDecodeError {
             Self::Joc(error) => write!(formatter, "failed to decode JOC frame: {error}"),
             Self::Oamd(error) => write!(formatter, "failed to decode OAMD frame: {error}"),
             Self::Scene(error) => write!(formatter, "failed to assemble object scene: {error}"),
+            Self::ProgrammeLayout(error) => {
+                write!(
+                    formatter,
+                    "failed to bind OAMD/JOC programme layout: {error}"
+                )
+            }
             Self::UnexpectedFrameIndex { expected, actual } => {
                 write!(
                     formatter,
@@ -62,12 +70,6 @@ impl fmt::Display for PayloadDecodeError {
                 formatter,
                 "sample rate changed from {expected} Hz to {actual} Hz without reset"
             ),
-            Self::ObjectCountMismatch { joc, oamd } => {
-                write!(
-                    formatter,
-                    "JOC declares {joc} objects but OAMD declares {oamd}"
-                )
-            }
             Self::FrameIndexOverflow => formatter.write_str("payload frame index overflow"),
             Self::EmptyStream => formatter.write_str("cannot finish an empty payload stream"),
         }
@@ -91,6 +93,12 @@ impl From<OamdError> for PayloadDecodeError {
 impl From<SceneBuildError> for PayloadDecodeError {
     fn from(value: SceneBuildError) -> Self {
         Self::Scene(value)
+    }
+}
+
+impl From<ProgrammeLayoutError> for PayloadDecodeError {
+    fn from(value: ProgrammeLayoutError) -> Self {
+        Self::ProgrammeLayout(value)
     }
 }
 
@@ -164,12 +172,8 @@ impl PayloadDecoder {
                 OAMD_PAYLOAD_ID,
             )?,
         };
-        if u16::from(joc.header.object_count) != oamd.prefix.object_count {
-            return Err(PayloadDecodeError::ObjectCountMismatch {
-                joc: joc.header.object_count,
-                oamd: oamd.prefix.object_count,
-            });
-        }
+        let layout = ProgrammeLayout::from_prefix(&oamd.prefix)?;
+        layout.validate_joc_output(usize::from(joc.header.object_count))?;
 
         let mut next_joc = self.joc.clone();
         let decoded = next_joc.decode_pcm_frame(&joc, input.downmix_pcm)?;
@@ -178,17 +182,34 @@ impl PayloadDecoder {
             .checked_add(1)
             .ok_or(PayloadDecodeError::FrameIndexOverflow)?;
         if let Some(builder) = self.builder.as_mut() {
-            builder.append_frame(&decoded.object_pcm, &oamd, self.config.reference_screen)?;
+            builder.append_frame_with_layout(
+                &decoded.object_pcm,
+                input.base_lfe_pcm,
+                &oamd,
+                self.config.reference_screen,
+                &layout,
+            )?;
         } else {
             let mut builder = SceneBuilder::new(input.sample_rate, &oamd.prefix)?;
-            builder.append_frame(&decoded.object_pcm, &oamd, self.config.reference_screen)?;
+            builder.append_frame_with_layout(
+                &decoded.object_pcm,
+                input.base_lfe_pcm,
+                &oamd,
+                self.config.reference_screen,
+                &layout,
+            )?;
             self.builder = Some(builder);
         }
 
         self.joc = next_joc;
         self.sample_rate = Some(input.sample_rate);
         self.next_frame_index = next_frame_index;
-        Ok(DecodedPayloadFrame { joc, oamd, decoded })
+        Ok(DecodedPayloadFrame {
+            joc,
+            oamd,
+            decoded,
+            programme_layout: layout,
+        })
     }
 
     /// Decodes one frame and lends the committed frame result to a sink.

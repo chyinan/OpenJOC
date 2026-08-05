@@ -484,6 +484,7 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
         JocFrameInput {
             sample_rate: downmix.sample_rate,
             downmix_pcm: &downmix.channels,
+            base_lfe_pcm: None,
             joc_payload: &joc_payload,
             oamd_payload: &oamd_payload,
             frame_index: 0,
@@ -607,14 +608,22 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             },
         )?
     } else {
-        let downmix_path = match &arguments.downmix {
-            Some(path) => path.clone(),
+        let base_paths = match &arguments.downmix {
+            Some(path) => CompatibleBasePaths {
+                downmix: path.clone(),
+                lfe: None,
+            },
             None => decode_base_audio(&arguments.input, &arguments.output)?,
         };
-        let downmix = decode(&fs::read(downmix_path)?)?;
-        eac3_decode::decode_aligned_eac3_with_sink(
+        let downmix = decode(&fs::read(base_paths.downmix)?)?;
+        let lfe = base_paths
+            .lfe
+            .map(|path| -> Result<_, Box<dyn Error>> { Ok(decode(&fs::read(path)?)?) })
+            .transpose()?;
+        eac3_decode::decode_aligned_eac3_with_sink_and_lfe(
             stream,
             &downmix,
+            lfe.as_ref(),
             config,
             arguments.validation_profile,
             |frame_index, metadata, frame| {
@@ -649,16 +658,47 @@ fn deterministic_dither_values() -> Vec<f64> {
         .collect()
 }
 
-fn decode_base_audio(input: &Path, output: &Path) -> Result<PathBuf, Box<dyn Error>> {
+struct CompatibleBasePaths {
+    downmix: PathBuf,
+    lfe: Option<PathBuf>,
+}
+
+fn decode_base_audio(input: &Path, output: &Path) -> Result<CompatibleBasePaths, Box<dyn Error>> {
     let debug = output.join("debug");
     fs::create_dir_all(&debug)?;
-    // pcm_f64le is an explicit reference/debug format. It is compatible
-    // base-channel PCM, not a final speaker or binaural render.
+    // The JOC matrix consumes five non-LFE channels. Keep the base LFE in a
+    // separate file so it can be bound to an OAMD speaker entry without
+    // entering the JOC row matrix.
     let base_pcm = debug.join("compatible_base.wav");
+    let layout_probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=channels,channel_layout",
+            "-of",
+            "default=nw=1",
+        ])
+        .arg(input)
+        .output()?;
+    if !layout_probe.status.success() {
+        return Err(io::Error::other("could not inspect base E-AC-3 channel layout").into());
+    }
+    let layout = String::from_utf8_lossy(&layout_probe.stdout).to_ascii_lowercase();
+    let has_lfe = layout.contains("5.1") || layout.contains("lfe");
     let result = Command::new("ffmpeg")
         .args(["-v", "error", "-y", "-i"])
         .arg(input)
-        .args(["-map", "0:a:0", "-c:a", "pcm_f64le"])
+        .args([
+            "-map",
+            "0:a:0",
+            "-af",
+            "pan=5c|c0=FL|c1=FR|c2=FC|c3=SL|c4=SR",
+            "-c:a",
+            "pcm_f64le",
+        ])
         .arg(&base_pcm)
         .output()?;
     if !result.status.success() {
@@ -668,7 +708,36 @@ fn decode_base_audio(input: &Path, output: &Path) -> Result<PathBuf, Box<dyn Err
         ))
         .into());
     }
-    Ok(base_pcm)
+    let lfe = if has_lfe {
+        let lfe_path = debug.join("compatible_base_lfe.wav");
+        let result = Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-i"])
+            .arg(input)
+            .args([
+                "-map",
+                "0:a:0",
+                "-af",
+                "pan=mono|c0=LFE",
+                "-c:a",
+                "pcm_f64le",
+            ])
+            .arg(&lfe_path)
+            .output()?;
+        if !result.status.success() {
+            return Err(io::Error::other(format!(
+                "base LFE decode failed: {}",
+                String::from_utf8_lossy(&result.stderr).trim()
+            ))
+            .into());
+        }
+        Some(lfe_path)
+    } else {
+        None
+    };
+    Ok(CompatibleBasePaths {
+        downmix: base_pcm,
+        lfe,
+    })
 }
 
 fn media_kind_name(kind: InputMediaKind) -> &'static str {
@@ -789,6 +858,10 @@ fn write_debug(
     fs::create_dir_all(&frame)?;
     fs::write(frame.join("joc.txt"), format!("{:#?}\n", decoded.joc))?;
     fs::write(frame.join("oamd.txt"), format!("{:#?}\n", decoded.oamd))?;
+    fs::write(
+        frame.join("programme_layout.json"),
+        serde_json::to_vec_pretty(&decoded.programme_layout)?,
+    )?;
     fs::write(
         frame.join("reconstruction.txt"),
         format!("{:#?}\n", decoded.decoded),
