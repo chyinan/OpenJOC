@@ -1203,8 +1203,10 @@ no on stratum, dither is mostly on, and exponent reuse has no randomized
 control. No coding-tool effect size is reported.
 
 A deterministic 48 kHz 5.1 marker source and independent detector recover
-480/480 source blocks at high confidence and exact offsets. This is not an
-encoded-carrier proof. Logic export and three-decoder anchor decode remain the
-next external step; mapping files are explicitly unproven and anchored
-metrics/effects remain unavailable. No production decoder, TDAC, warp, or
-vendor behavior changed.
+480/480 source blocks at high confidence and exact offsets. The subsequent G9
+Logic carrier was decoded through OpenJOC CurrentDefault, OpenJOC CodecCore,
+FFmpeg raw/MP4, and Apple diagnostic paths. Each required path recovered
+461/480 blocks; all 19 residuals were frozen margin-only near-neighbor
+ambiguities, so the external mapping remains explicitly unproven and
+anchored metrics/effects remain unavailable. No production decoder, TDAC,
+warp, or vendor behavior changed.

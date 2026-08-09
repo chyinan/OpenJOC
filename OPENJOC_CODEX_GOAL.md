@@ -621,9 +621,11 @@ and repeat packages `_r5`/`_r6` are byte-identical for core JSON.
 
 The private anchor source is deterministic 48 kHz 5.1 with 16 AU and six
 distinct 256-sample markers per AU. An independent detector recovers 480/480
-source blocks at high confidence. This proves source-PCM detection only. The
-Logic-encoded G_Block_Anchor_5_1 carrier and OpenJOC/FFmpeg/Apple mapping were
-not generated in this increment, so anchored metrics and tool effects remain
-unavailable. The narrow next blocker is the external Logic export/decode, not
-a DSP or TDAC defect. OAMD/JOC boundaries and strict `warp=3` behavior remain
+source blocks at high confidence. The subsequent G9 Logic-encoded
+G_Block_Anchor_5_1 carrier and OpenJOC/FFmpeg/Apple comparison were generated:
+the four required paths each recover 461/480 blocks, with 19 margin-only
+near-neighbor ambiguities and no score or jitter failures. External mapping
+and anchored tool effects therefore remain unavailable; the narrow blocker is
+generalizable correlation-broadening evidence, not a demonstrated DSP or
+TDAC defect. OAMD/JOC boundaries and strict `warp=3` behavior remain
 unchanged.

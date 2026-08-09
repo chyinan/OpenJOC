@@ -2195,7 +2195,37 @@ so individual effects are not identifiable.
 
 The deterministic 48 kHz 5.1 marker source and independent detector recover
 all 480 source full-band blocks at high confidence with exact offsets. This
-validates source coordinates only. No new Logic export was made; external
-OpenJOC/FFmpeg/Apple block mapping and anchored residual metrics remain
-unproven and intentionally absent. Existing unanchored metrics remain
-diagnostic and are not upgraded.
+validates source coordinates only. The subsequent controlled G9 Logic
+carrier was decoded through OpenJOC CurrentDefault, OpenJOC CodecCore, FFmpeg
+raw/MP4, and an Apple diagnostic path. The source identity and 480/480 source
+gate passed, while each required external path recovered 461/480 blocks; all
+19 residuals were margin-only near-neighbor ambiguities. External mapping and
+anchored residual/tool effects remain unproven and are not upgraded.
+
+## Controlled Logic full-band block-anchor study (2026-08-09)
+
+The deterministic G1--G9 block-anchor research line used a controlled Logic
+Dolby Digital Plus Atmos carrier and the four required decode paths (OpenJOC
+CurrentDefault, OpenJOC CodecCore, FFmpeg raw EC-3, and FFmpeg MP4), with an
+Apple path retained as diagnostic comparison. G9's source semantic identity
+passed with permutation margin `0.2461121871`; source detection recovered
+480/480 full-band blocks with minimum score `0.6907968032`, minimum
+best/second margin `0.3029205927`, and zero jitter. Energy, spectral, and
+guard gates also passed, so the source fixture is not the remaining blocker.
+
+The required external paths each recovered `461/480`. Their 19 residuals
+were all frozen best/second localization-margin failures; there were no score
+or jitter failures. The competing-peak offsets were identical across all four
+paths: `-1` sample eight times and `-2` samples eleven times relative to the
+source-correct peak. Phase-A full-curve analysis found a stable local
+near-neighbor ambiguity and highly consistent OpenJOC/FFmpeg curves, but the
+predeclared empirical model class `M2_asymmetric_local_smoothing` failed
+cross-validation (minimum Spearman `-0.20040975`; excluding all 19 failures,
+classification accuracy `0`). This is diagnostic evidence for the controlled
+carrier, not proof of an encoder kernel or universal E-AC-3 behavior.
+
+The final evidence boundary is therefore
+`external_block_mapping_established = false`. The 256-sample external block
+mapping, anchored coding-tool attribution, and anchored residual effects are
+not established. G10 marker construction was not started. No Logic/media
+artifacts or private reports are part of this repository provenance entry.

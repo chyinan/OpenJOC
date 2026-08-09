@@ -1,8 +1,11 @@
 # OpenJOC Requirements Matrix
 
-Status values are `planned`, `implemented`, `verified`, or `completed`. A row
-may be marked `verified` only with fresh test or artifact evidence; `completed`
-marks an integrated milestone whose scoped acceptance boundary is closed.
+Status values are `planned`, `implemented`, `verified`, `completed`, `open`, or
+`partially evidenced`. A row may be marked `verified` only with fresh test or
+artifact evidence; `completed` marks an integrated milestone whose scoped
+acceptance boundary is closed. `open` and `partially evidenced` preserve an
+explicit boundary when source or diagnostic evidence exists without closing
+the external acceptance gate.
 
 The matrix describes incremental evidence, not a claim that OpenJOC is already
 a complete real-world Atmos decoder or renderer. The currently evidenced codec
@@ -356,6 +359,40 @@ lane remain unchanged/open.
 | Inventory invariants | Six blocks/AU, channel dimensions, BAP histograms, coupling/SPX off ranges, and no partial failed-AU commit are checked | verified |
 | Strata coverage | A/E/D/F are observational; coupling, SPX, and AHT are off; dither is mostly on; exponent reuse is observed but no randomized single-tool controls exist | confounded; no causal inference |
 | Anchor source/detector | Deterministic 48 kHz 5.1 source with 16 AU × 6 × 256 markers; source detector recovers 480/480 blocks at high confidence | verified; source-only |
-| Logic encoded carrier and external mapping | New Logic export/decode was not performed; external OpenJOC/FFmpeg/Apple block mapping remains unproven | unavailable; external blocker |
+| Logic encoded carrier and external mapping | G9 controlled Logic carrier: source 480/480; OpenJOC CurrentDefault, OpenJOC CodecCore, FFmpeg raw, and FFmpeg MP4 each 461/480; all remaining 19 are frozen margin-only near-neighbor ambiguities; external blocker remains | partially evidenced |
 | Anchored metrics/effects | Suppressed while external mapping is unproven | unavailable |
 | Production behavior | No TDAC, DSP, trim, warp, vendor, or decoder semantic change | verified |
+
+## Final external anchor boundary (2026-08-09)
+
+The controlled source fixture is independently established: six-channel
+semantic identity passes, source block detection is 480/480, and the source
+energy, spectral, identity, and guard gates pass. Semantic identity is scoped
+to the controlled 5.1(side) corpus; physical output index order may differ by
+decoder, as demonstrated by the Apple diagnostic path. FFmpeg and Apple remain
+black-box comparators, not normative oracles.
+
+The external mapping requirement remains **OPEN / PARTIALLY EVIDENCED**:
+
+```text
+external_block_mapping_established = false
+OpenJOC CurrentDefault = 461/480
+OpenJOC CodecCore      = 461/480
+FFmpeg raw             = 461/480
+FFmpeg MP4             = 461/480
+remaining 19           = best-second margin only
+score failures         = 0 on required paths
+jitter failures        = 0 on required paths
+```
+
+The four required paths share a stable local competing-peak structure
+(`-1 × 8`, `-2 × 11`), but no cross-validated generalizable broadening model
+was established. Consequently anchored coding-tool attribution and exact
+external block-wise residual attribution remain **OPEN**. Existing completed
+TDAC arithmetic, carry continuity, decoder-history, parser inventory, and
+controlled semantic-channel requirements retain their independent statuses;
+the unresolved anchor does not reopen or downgrade them.
+
+JOC remains evaluation-only. This matrix does not claim a complete OAMD
+timeline, authored-object/JOC-row identity, verified object PCM, ADM/render
+fidelity, or resolved Logic `warp=3` semantics.

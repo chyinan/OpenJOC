@@ -144,3 +144,98 @@ unsupported-feature error before consuming mantissa bits. This is an explicit
 implementation boundary, not a conventional-mantissa fallback. AHT requires
 independent page-151 through page-156 formula inspection and conformance
 vectors before it can be added.
+
+## Controlled external block-anchor investigation (G1--G10 Phase-A)
+
+This research line is suspended at a principled evidence boundary. It is not
+abandoned or declared complete: further marker redesign is not justified
+without a validated, generalizable mechanism. The next documented transition
+is J1 -- Single-Object Semantic Binding Corpus; J1 is not implemented by this
+milestone.
+
+### G1 -- G3: repair the fixture, then freeze semantic identity
+
+G1 was an invalid Logic fixture, not decoder behavior: the surround anchor
+track was muted, `OBJ_997HZ` was soloed, and the anchor region was not at the
+timeline origin. G2 repaired routing and produced six nonzero decoded
+channels, but the marker design still had insufficient surround orthogonality
+and unsuitable LFE marker energy. G3 established unique six-channel semantic
+identity across OpenJOC, FFmpeg, and the Apple diagnostic path under the
+controlled corpus; the source detector recovered 480/480 blocks. This became a
+frozen control, not a universal channel-order claim.
+
+### G4 -- G6: reject energy-only fixes and expose the trade-off
+
+G4's uniform Layer-B amplitude increase failed the frozen Layer-A source
+identity margin and was stopped before Logic. G5 introduced an energy-neutral
+distributed marker and solved source/guard visibility, but one low-score
+`C/AU11/block5` result remained after the external decode. G6 improved codec
+survivability above the score floor while degrading localization through
+competing correlation peaks. The result was a survivability/localization
+trade-off, not evidence of a TDAC defect.
+
+### G7 -- G8: freeze scorer-native constraints and reject weak proxies
+
+G7 evaluated 96 predeclared BPSK candidates. All passed energy and source
+480/480, but none passed the complete Layer-A identity gate; the best margin
+was `0.1985783149948018`, below the frozen `0.20`. G8 rejected a simple
+waveform/Layer-A-subspace projection hypothesis because it remained below the
+predeclared `0.40` partial-mechanism threshold. No Logic candidate was
+admitted by either result, and neither detector threshold nor identity margin
+was relaxed.
+
+### G9: scorer-native source solution, external local ambiguity
+
+The scorer audit separated self-normalization dilution (`41.27%`) from cross
+confusion (`58.73%`), dominated by the temporal-code score; the recurring
+second-best permutation was `L ↔ Rs`. This moderate scorer-native mechanism
+admitted one frozen G9 family: 32 predeclared global candidates, nine source
+eligible, winner `triple56_k2_n100_e075`. Anti-overfit exclusions left the
+winner unchanged. The formal source passed identity margin `0.2461121871`,
+480/480 detection, minimum score `0.6907968032`, minimum localization margin
+`0.3029205927`, zero jitter, energy, spectral, and guard gates.
+
+The G9 Logic carrier was then decoded through the four required paths and the
+Apple diagnostic path. Each required path recovered 461/480 blocks. Every
+remaining failure was margin-only (`<0.01`); no required path failed score or
+jitter. The Phase-A full-curve audit found the same local competing-peak
+histogram on every required path: `-1 × 8`, `-2 × 11`. FFmpeg raw and MP4
+curves were identical, and OpenJOC curves were nearly identical to them. This
+supports a controlled-carrier, cross-decoder diagnostic observation only; it
+does not establish a Dolby encoder kernel or universal E-AC-3 shift rule.
+
+### G10 Phase-A: stable structure, no predictive mechanism
+
+The predeclared global classes selected `M2_asymmetric_local_smoothing` for
+all four required paths, but that model failed the frozen generalization
+gate: minimum cross-validated Spearman was `-0.20040975`, and training while
+excluding all 19 known failures yielded classification accuracy `0`. Thus a
+stable offset structure was observed, but it is not a validated predictive
+broadening model. G10 marker construction was not justified and was not
+started; no second Logic candidate was tested.
+
+### Rejected explanations and preservation rules
+
+- Do not reopen generic TDAC as the anchor explanation without contradictory
+  evidence. The independent TDAC arithmetic, carry continuity, and exact-AU
+  history experiments remain separately supported.
+- Do not lower frozen detector thresholds, identity margins, or block gates.
+- Do not treat `461/480` as complete external mapping.
+- Do not infer an encoder smoothing kernel from the `-1/-2` histogram.
+- Do not use ordinary waveform projection as the G7 identity-loss mechanism.
+- Do not solve fixture failures with per-channel, per-block, or sample-specific
+  exceptions.
+- FFmpeg and Apple remain black-box comparators; ETSI remains normative where
+  applicable.
+- `raw warp=3` remains opaque: ETSI strict rejection and bounded vendor
+  compatibility are unchanged, with no alias or remapping.
+
+### Current boundary and next line
+
+`external_block_mapping_established = false`. Parser-emitted coding-tool
+inventory is implemented and diagnostic; exact external block-wise causal
+attribution is still open. JOC remains evaluation-only: no complete OAMD
+semantic timeline, authored-object/JOC-row verification, object PCM fidelity,
+ADM/render fidelity, or resolved `warp=3` semantics is claimed. The active
+mainline now transitions from external block-anchor refinement to controlled
+JOC/OAMD semantic binding (J1), without implementing J1 in this commit.
