@@ -4,7 +4,7 @@
 //! and mantissa arrays. It never reparses a bitstream and is not consulted by
 //! the production PCM path.
 
-use crate::{AudioFrameInformation, DecodedAudioBlock, Eac3Error};
+use crate::{AudioFrameInformation, DecodedAudioBlock, Eac3Error, ExponentInformation};
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -46,6 +46,10 @@ pub struct CodingToolBlockInventory {
     pub exponent_source_au: Option<usize>,
     pub exponent_source_block: Option<usize>,
     pub bandwidth_end_bin: usize,
+    /// Expanded bit-allocation pointers in absolute transform-bin order.
+    pub bap_by_bin: Vec<u8>,
+    /// Expanded exponents in the same absolute transform-bin coordinates.
+    pub exponent_by_bin: Vec<u8>,
     pub bap_histogram: Vec<usize>,
     pub bap_zero_count: usize,
     pub grouped_bap_1_count: usize,
@@ -131,6 +135,31 @@ fn histogram(baps: &[u8]) -> (Vec<usize>, usize, usize, usize, usize) {
     (values, zero, grouped_1, grouped_2, grouped_4)
 }
 
+fn expanded_exponents(
+    information: Option<&ExponentInformation>,
+    bin_count: usize,
+) -> Result<Vec<u8>, Eac3Error> {
+    let Some(information) = information else {
+        return Ok(Vec::new());
+    };
+    let decoded_count = information
+        .end_mantissa
+        .saturating_sub(information.start_mantissa);
+    if information.start_mantissa > information.end_mantissa
+        || information.end_mantissa > bin_count
+        || information.decoded.len() != decoded_count
+    {
+        return Err(Eac3Error::MantissaExponentLengthMismatch {
+            baps: bin_count,
+            exponents: information.decoded.len(),
+        });
+    }
+    let mut result = vec![0; bin_count];
+    result[information.start_mantissa..information.end_mantissa]
+        .copy_from_slice(&information.decoded);
+    Ok(result)
+}
+
 /// Builds a complete diagnostic inventory from parser-emitted block state.
 ///
 /// The returned value is committed only after all six blocks and all channel
@@ -167,6 +196,7 @@ pub fn emit_coding_tool_inventory(
         for (channel_index, baps) in block.channel_baps.iter().enumerate() {
             let (hist, zero, one, two, four) = histogram(baps);
             let exponent = block.prefix.channel_exponents[channel_index].as_ref();
+            let exponent_by_bin = expanded_exponents(exponent, baps.len())?;
             let coupling_active =
                 block
                     .prefix
@@ -231,6 +261,8 @@ pub fn emit_coding_tool_inventory(
                     None
                 },
                 bandwidth_end_bin: baps.len(),
+                bap_by_bin: baps.clone(),
+                exponent_by_bin,
                 bap_histogram: hist,
                 bap_zero_count: zero,
                 grouped_bap_1_count: one,
@@ -277,6 +309,8 @@ pub fn emit_coding_tool_inventory(
         if frame.bsi.lfe_on {
             if let Some(baps) = block.lfe_bap.as_ref() {
                 let (hist, zero, one, two, four) = histogram(baps);
+                let exponent = block.prefix.lfe_exponents.as_ref();
+                let exponent_by_bin = expanded_exponents(exponent, baps.len())?;
                 records.push(CodingToolBlockInventory {
                     vector_id: vector_id.clone(),
                     au_index,
@@ -285,11 +319,7 @@ pub fn emit_coding_tool_inventory(
                     provenance: InventoryProvenance::DerivedFromNormativeState,
                     block_switch: false,
                     block_switch_provenance: InventoryProvenance::NotApplicable,
-                    exponent_strategy: block
-                        .prefix
-                        .lfe_exponents
-                        .as_ref()
-                        .map(|value| value.strategy),
+                    exponent_strategy: exponent.map(|value| value.strategy),
                     exponent_reused: block
                         .prefix
                         .lfe_exponents
@@ -298,6 +328,8 @@ pub fn emit_coding_tool_inventory(
                     exponent_source_au: None,
                     exponent_source_block: None,
                     bandwidth_end_bin: baps.len(),
+                    bap_by_bin: baps.clone(),
+                    exponent_by_bin,
                     bap_histogram: hist,
                     bap_zero_count: zero,
                     grouped_bap_1_count: one,
@@ -332,7 +364,8 @@ pub fn emit_coding_tool_inventory(
 
 #[cfg(test)]
 mod tests {
-    use super::histogram;
+    use super::{expanded_exponents, histogram};
+    use crate::ExponentInformation;
 
     #[test]
     fn bap_histogram_is_derived_from_expanded_values() {
@@ -342,5 +375,23 @@ mod tests {
         assert_eq!(one, 1);
         assert_eq!(two, 1);
         assert_eq!(four, 2);
+    }
+
+    #[test]
+    fn expanded_exponents_preserve_absolute_bin_coordinates() {
+        let information = ExponentInformation {
+            strategy: 2,
+            initial_exponent: 7,
+            grouped_exponents: vec![1],
+            start_mantissa: 2,
+            end_mantissa: 5,
+            decoded: vec![7, 8, 9],
+            gain_range: None,
+        };
+        assert_eq!(
+            expanded_exponents(Some(&information), 5).expect("bounded exponent bins"),
+            vec![0, 0, 7, 8, 9]
+        );
+        assert!(expanded_exponents(Some(&information), 4).is_err());
     }
 }
