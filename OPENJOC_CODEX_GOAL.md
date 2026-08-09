@@ -22,6 +22,13 @@ This is not yet a complete real-world Atmos decoder or speaker/binaural
 renderer. In particular, the retained `debug/compatible_base.wav` is explicit
 FFmpeg `pcm_f64le` compatible-base reference PCM, not a final render.
 
+For the controlled Logic corpus, the current evidence is narrower than this
+architectural target: the normative OAMD prefix and two spatial code fields
+are now independently identified, but complete OAMD/timeline semantics and
+end-to-end JOC acceptance remain open. The section `J1R7A` below is the
+current real-vector boundary; older dated sections preserve their historical
+state rather than claiming that boundary was already closed.
+
 ## Current interoperability boundary: two explicit JOC profiles
 
 The parser, validator, and decoder are separate layers. Parsing retains the
@@ -548,7 +555,7 @@ Therefore no hypothesis is selected and no alias for raw 3 is implemented.
 `ETSI_STRICT` continues to fail with `ReservedWarpMode { raw: 3 }`;
 `DOLBY_VENDOR_COMPAT` preserves raw 3 and reports opaque unresolved trim.
 
-The first remaining blocker is AU0/block5 Ls/Rs pre-IMDCT coefficient
+At that 2026-08-05 round, the first remaining blocker was AU0/block5 Ls/Rs pre-IMDCT coefficient
 provenance and internal-base fidelity. The diagnostic tail inverse is
 ill-conditioned (about `8.42e6`) and cannot identify a unique internal tool.
 Complete OAMD timeline, JOC semantic reconstruction, object PCM fidelity,
@@ -629,3 +636,37 @@ and anchored tool effects therefore remain unavailable; the narrow blocker is
 generalizable correlation-broadening evidence, not a demonstrated DSP or
 TDAC defect. OAMD/JOC boundaries and strict `warp=3` behavior remain
 unchanged.
+
+## J1R7A — Spec-anchored normative OAMD position-field closure (2026-08-09)
+
+This milestone is docs-only. The private run
+`20260809T180109Z_j1r7a-spec-anchored-oamd_b6eb1de` froze two identical
+analyses in `j1r7a_spec_cursor_evidence_freeze.json` (SHA-256
+`572209bcb35cf2b37a512df1c9523b1a8762a2672445f96e57ad48a09257ba4f`). No
+production code, test, CLI, fixture, Logic project, ADM, carrier, manifest, or
+forensic output was changed.
+
+The cursor begins at payload-11 bit 0 and follows only ETSI TS 103 420
+syntax. Seven frozen sources × 129 AUs = 903 observations all reach the same
+bounded normative prefix `[0,526)`. Within that prefix:
+
+- `pos3D_X` is the exact six-bit payload-relative field `[52,58)`.
+- `pos3D_Y` is the exact six-bit payload-relative field `[58,64)`.
+- Controlled ADM-qualified X values `-1,-.5,0,+.5,+1` align with raw codes
+  `0,16,31,46,62`; Y values `+1,0,-1` align with `0,31,62`.
+- The historical `[58,63)` value is only the first five bits of the full Y
+  field and is not a revised production field.
+
+The first unresolved syntax is trim `warp_mode [526,528)`, raw `11` = `3`.
+ETSI Table 32 marks `0b1X` reserved. `ETSI_STRICT` therefore still rejects
+`ReservedWarpMode { raw: 3 }`; `DOLBY_VENDOR_COMPAT` is unchanged and no warp
+alias is added. J1R6D H0/H1/H2 are non-discriminating diagnostic labels over
+the same cursor, not semantic support.
+
+The completed boundary is limited to normative prefix/field identity and
+controlled numeric alignment. Complete trim/timeline/previous-state semantics,
+post-warp vendor continuation, authored-object ↔ OAMD-slot identity,
+OAMD ↔ JOC binding, object PCM, ObjectScene/render fidelity, ADM/render
+comparison, and end-to-end acceptance remain open. The active next research
+line is **J1R7B — Reserved Warp-3 Empirical Boundary Characterization**;
+this milestone only records it and does not execute it.

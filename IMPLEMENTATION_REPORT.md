@@ -513,7 +513,7 @@ This is conclusion C for the current evidence set. A stable raw value of 3 is
 established across all AUs of one Logic export and its MP4/raw representations,
 but no second independent real encoder/sample has been supplied. Therefore no
 Dolby compatibility syntax rule, warp remapping, offset constant, or reserved
-value exception is added. The new first real blocker remains the exact OAMD
+value exception is added. At that dated round, the first real blocker was the exact OAMD
 `ReservedWarpMode{3}` boundary. Private reports are retained outside Git at
 `OpenJOC-Private/reports/oamd_forensics_raw` and
 `OpenJOC-Private/reports/oamd_forensics_mp4`; their final JSON SHA-256 values
@@ -1210,3 +1210,38 @@ FFmpeg raw/MP4, and Apple diagnostic paths. Each required path recovered
 ambiguities, so the external mapping remains explicitly unproven and
 anchored metrics/effects remain unavailable. No production decoder, TDAC,
 warp, or vendor behavior changed.
+
+## J1R7A — Normative OAMD spatial-field boundary (2026-08-09)
+
+This is a documentation-only closure. No production parser, DSP, profile,
+CLI, fixture, or test changed. The private evidence run is
+`20260809T180109Z_j1r7a-spec-anchored-oamd_b6eb1de`; its two-run byte-identical
+freeze is `j1r7a_spec_cursor_evidence_freeze.json`, SHA-256
+`572209bcb35cf2b37a512df1c9523b1a8762a2672445f96e57ad48a09257ba4f`.
+
+The run replays seven frozen Logic/ADM-qualified sources, 129 AUs each (903
+observations), from payload-11 bit 0 using only ETSI-authorized syntax. Every
+observation reaches and closes the same normative prefix `[0,526)`. The
+precise field result is:
+
+| result | span / value | status |
+| --- | --- | --- |
+| `pos3D_X` | payload-relative `[52,58)`, six bits | verified in all 903 observations |
+| `pos3D_Y` | payload-relative `[58,64)`, six bits | verified in all 903 observations |
+| ADM numeric alignment | X `-1,-.5,0,+.5,+1` → `0,16,31,46,62`; Y `+1,0,-1` → `0,31,62` | verified for the controlled corpus |
+| first unresolved syntax | `warp_mode [526,528)`, raw `11` = `3` | ETSI Table 32 reserved |
+
+The historical J1R6C/J1R6B `[58,63)` scalar is retained as a five-bit prefix
+observation only; J1R6C-R reconciled the representation and did not alter the
+carrier. J1R6D's H0/H1/H2 branches all close identically because they attach
+labels to the same cursor; they are not evidence for a semantic alias.
+
+The strict parser therefore remains unchanged:
+`ETSI_STRICT -> ReservedWarpMode { raw: 3 }`. The vendor profile remains
+unchanged and no vendor warp rule is added. The current real-vector boundary
+is now narrower and explicit: normative OAMD prefix and X/Y field identity are
+validated; trim warp-3 meaning, post-warp continuation, complete trim/timeline/
+state semantics, authored-object/OAMD-slot identity, OAMD/JOC binding, object
+PCM, ObjectScene/render fidelity, and end-to-end acceptance remain open. The
+next proposed milestone is J1R7B, which is intentionally not part of this
+round.

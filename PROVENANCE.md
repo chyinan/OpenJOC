@@ -2062,7 +2062,7 @@ carrier/project duration and object identity for this pre-roll control, but it
 does not provide a moving-position timeline for these copies. No ADM position
 or fidelity claim is inferred from the OAMD hypothesis reports.
 
-The first remaining blocker is the AU0/block5 Ls/Rs pre-IMDCT coefficient
+At that 2026-08-05 round, the first remaining blocker was the AU0/block5 Ls/Rs pre-IMDCT coefficient
 provenance and internal-base fidelity. The private tail backprojection is
 ill-conditioned (condition estimate about `8.42e6`) and explicitly
 non-unique; its dominant low-bin list is not assigned to a decoder tool. A
@@ -2229,3 +2229,55 @@ The final evidence boundary is therefore
 mapping, anchored coding-tool attribution, and anchored residual effects are
 not established. G10 marker construction was not started. No Logic/media
 artifacts or private reports are part of this repository provenance entry.
+
+## J1R7A — Spec-anchored normative OAMD position-field milestone (2026-08-09)
+
+This documentation-only milestone records the evidence boundary reached after
+the J1 Logic authoring, ADM, carrier, differential, and reconciliation rounds.
+The private source freeze is
+`20260809T180109Z_j1r7a-spec-anchored-oamd_b6eb1de`; its
+`j1r7a_spec_cursor_evidence_freeze.json` SHA-256 is
+`572209bcb35cf2b37a512df1c9523b1a8762a2672445f96e57ad48a09257ba4f`.
+The J1R6B declared raw-evidence freeze is
+`cca9196dcf1f53839b42fbcfa2031c21a81392aa71d0df0e4952c6d286110332`.
+The freeze records the prior J1R6C calibration artifact by its actual
+SHA-256 (`344b3495c441703c81fa36bb1eb615fdea6bb0ff40123f7dc9864f9bc5705a72`),
+the J1R6C-R reconciliation freeze (`82862be433296c86e179bc943c60c040ec8adee092729f38440de226ee216f32`),
+and the J1R6D semantic-hypothesis freeze
+(`03073c171afea3c78558c0948bf5fc1948772e125d69b5a5bcdbfcd6e1d023a4`).
+The J1R6D predeclared protocol hash is
+`0713c39a6de066a49a02ab4038dd306ce6c150a4c1d8964ce42064f148edc6f9`.
+
+The normative cursor starts at payload-11 bit 0 and consumes only syntax
+authorized by ETSI TS 103 420 V1.2.1. Seven frozen, independently authored and
+ADM-qualified sources × 129 access units yielded 903/903 identical bounded
+observations. The fully accepted normative prefix ends at payload-relative bit
+526 (last accepted bit 525). Two exact spatial fields are therefore identified
+without consulting the later trim value:
+
+| field | payload-relative span | evidence |
+| --- | --- | --- |
+| `pos3D_X` | `[52,58)` | exact six-bit field; controlled X values `-1,-.5,0,+.5,+1` decode as `0,16,31,46,62` |
+| `pos3D_Y` | `[58,64)` | exact six-bit field; controlled Y values `+1,0,-1` decode as `0,31,62` |
+
+The earlier J1R6C/J1R6B five-bit `[58,63)` Front/Back summary is retained as
+history only: it is the first five bits of the full Y field, not a production
+field definition. J1R6C-R is the report-integrity correction; no source bits
+or carrier bytes were changed.
+
+The first normative ambiguity is trim `warp_mode` at `[526,528)`, raw bits
+`11`, integer `3`. Table 32 marks `0b1X` reserved. Therefore
+`ETSI_STRICT` still returns `ReservedWarpMode { raw: 3 }`, while the existing
+`DOLBY_VENDOR_COMPAT` profile remains unchanged and adds no warp rule. J1R6D's
+H0/H1/H2 branches are diagnostic labels over the same cursor, not semantic
+decoders: all 903 observations closed identically, so no hypothesis was
+selected.
+
+This closes only normative prefix/field identity and controlled ADM numeric
+alignment. It does not close complete OAMD trim or timeline/state semantics,
+authored-object ↔ OAMD-slot identity, OAMD ↔ JOC binding, ObjectScene fidelity,
+object PCM, ADM/render fidelity, or end-to-end acceptance. The next proposed
+line is J1R7B, empirical characterization of the reserved warp-3 boundary;
+it is not executed here. Historical statements in earlier dated sections are
+preserved as historical observations and are superseded for the current
+position-field boundary by this section.

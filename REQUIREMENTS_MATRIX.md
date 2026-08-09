@@ -159,6 +159,24 @@ diagnostic-only syntax. `ETSI_STRICT` therefore remains blocked by
 `ReservedWarpMode { raw: 3 }`; no vendor warp rule was added. OAMD timeline,
 JOC reconstruction, nonzero object PCM, and ADM fidelity remain unverified.
 
+## J1R7A controlled normative OAMD boundary (2026-08-09)
+
+The following rows are deliberately scoped to the seven frozen Logic/ADM
+sources (129 AUs each, 903 observations) in private run
+`20260809T180109Z_j1r7a-spec-anchored-oamd_b6eb1de`. They do not promote the
+complete OAMD, JOC, or renderer requirements to completion.
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Normative payload-11 cursor prefix | ETSI-anchored cursor reaches and closes `[0,526)` in 903/903 observations; no vendor branch or hypothesis cursor is used | completed |
+| `pos3D_X` field identity | exact six-bit payload-relative `[52,58)`; ADM-qualified X controls decode `0,16,31,46,62` for `-1,-.5,0,+.5,+1` | verified |
+| `pos3D_Y` field identity | exact six-bit payload-relative `[58,64)`; ADM-qualified Y controls decode `0,31,62` for `+1,0,-1` | verified |
+| ADM ↔ X/Y numeric alignment | controlled numeric alignment only; no unproved coordinate conversion or renderer claim | verified |
+| Trim `warp_mode` raw 3 | `[526,528)` raw `11`; ETSI Table 32 `0b1X` is reserved; strict result remains structured `ReservedWarpMode { raw: 3 }` | open |
+| H0/H1/H2 semantic selection | all branches are labels over the same cursor and close identically; no semantic hypothesis selected | open |
+| Complete OAMD trim/timeline/state semantics | post-warp continuation, reuse, and previous-state timing remain unadmitted | open |
+| OAMD ↔ JOC identity, object PCM, ObjectScene/render fidelity | no end-to-end real-vector acceptance or fidelity gate is claimed | open |
+
 ## Global quality gates
 
 - `cargo fmt --check`
@@ -300,7 +318,7 @@ lane remain unchanged/open.
 | Raw/MP4 carrier equality | For all LE vectors, raw and MP4 diagnostics have 126 paired AUs, zero payload-11 body mismatches, and identical raw warp distribution `{3:126}` | verified; diagnostic |
 | Diagnostic warp hypotheses | Assumed semantics 0, 1, and 2 each close the bounded element but are explicitly non-unique and do not reach normative object-element decoding; no hypothesis is selected | verified; semantics unresolved |
 | Production behavior | `ETSI_STRICT` continues to reject `ReservedWarpMode { raw: 3 }`; vendor compatibility keeps the raw value and opaque trim deviation; no warp remap, TDAC reset, gain, channel remap, or magic offset was added | verified |
-| First remaining blocker | AU0/block5 Ls/Rs coefficient provenance and internal-base fidelity remain unresolved; complete OAMD timeline, JOC semantic fidelity, object PCM fidelity, and ADM positional fidelity are not claimed | open |
+| Historical base/TDAC blocker | AU0/block5 Ls/Rs provenance and internal-base fidelity remain unresolved in the dated 2026-08-05 evidence; the current OAMD-specific blocker is reserved warp-3 semantics and post-warp continuation | open |
 
 ## Exact target-AU decoder-history experiment (2026-08-05)
 

@@ -10,9 +10,9 @@ research may only cross-check architecture after normative behavior is derived.
 ## Normative sources verified locally
 
 - ETSI TS 103 420 V1.2.1 (2018-10), `references/etsi/ts_103420v010201p.pdf`.
-  Local SHA-256: `e532bfc4f8be4a97c7c9cdd9f6bcc40634ecf8ef93a1dc490fcb15c162fec2aa`.
+  Local SHA-256: `e532bfc4f8be4a97c7c9cdd9f6bcc40634ecf8ef93a1dc490fcb15c16265daa7`.
 - ETSI TS 102 366 V1.4.1 (2017-09), `references/etsi/ts_102366v010401p.pdf`.
-  Local SHA-256: `0229e151dfd9f8cec427f234798cac679a66fdec096feecc4d5ce455bb06c2796`.
+  Local SHA-256: `0229e151dfd9f8cec427f234798cac679a66fdec096feecc4d5ce455bbe3cadf`.
 - TS 103 420 companion archive,
   `references/etsi/ts_103420v010201p0.zip`. Verified SHA-256:
   `a79cf108c4529b7d9ca9525c871183a70b1732ed6df03a3d85b2f31be46eeced`.
@@ -79,7 +79,7 @@ ground truth are supplied or legally generated.
 
 The clause 6.2.2.3 `logadd(a, b)` pseudocode uses a layout-sensitive operator.
 In V1.4.1 (local SHA-256
-`0229e151dfd9f8cec427f234798cac679a66fdec096feecc4d5ce455bb06c2796`) the
+`0229e151dfd9f8cec427f234798cac679a66fdec096feecc4d5ce455bbe3cadf`) the
 300-DPI Poppler render shows a missing-glyph square and layout extraction emits
 control byte `0x01`; object inspection identifies embedded Type3 font `T13`
 with a solid 33x41 placeholder bitmap. This is not sufficient evidence on its
@@ -239,3 +239,64 @@ semantic timeline, authored-object/JOC-row verification, object PCM fidelity,
 ADM/render fidelity, or resolved `warp=3` semantics is claimed. The active
 mainline now transitions from external block-anchor refinement to controlled
 JOC/OAMD semantic binding (J1), without implementing J1 in this commit.
+
+## J1 semantic-binding / OAMD spatial-field investigation (2026-08-09)
+
+This line is a controlled evidence chain, not a decoder-relaxation effort. It
+keeps the human-assisted Logic authoring protocol explicit: the automation lane
+is the authoring source of truth, the Object Panner is timeline readback only,
+and Codex independently verifies the value before and after save/reopen. No
+private Logic project, ADM BWF, MP4/EC3, manifest, or forensic output is part
+of this repository.
+
+J1R3 established persisted Front-Left automation after the earlier failed
+authoring attempt was correctly classified as `GUI_CAPABILITY_LIMITATION`,
+not a Logic persistence failure. J1R4 qualified the persisted position through
+ADM; J1R5 established deterministic DD+ carrier propagation. J1R6B then
+qualified the four-position carrier corpus (Center, Front Left, Front Right,
+Rear Center) and established raw LR/Front-Back differential structure, while
+deliberately stopping before normative field identity.
+J1R6C added independently ADM-qualified half-step controls and a Y-mid control.
+J1R6C's frozen five-bit Front/Back summary discrepancy was reconciled by
+J1R6C-R: the canonical field is the full six-bit Y field, and the historical
+`[58,63)` value was only its first five bits. J1R6D tested hypotheses H0/H1/H2
+without allowing them to move the cursor; all 7 fixtures × 129 AUs (903
+observations) closed identically, so semantic selection was not discriminated.
+
+### J1R7A normative cursor result
+
+The private run
+`20260809T180109Z_j1r7a-spec-anchored-oamd_b6eb1de` is frozen by
+`j1r7a_spec_cursor_evidence_freeze.json` (SHA-256
+`572209bcb35cf2b37a512df1c9523b1a8762a2672445f96e57ad48a09257ba4f`). Its
+cursor starts at payload-11 bit 0 and follows only the authorized ETSI
+syntax. Across seven frozen sources × 129 AUs, all 903 observations share the
+same bounded payload/element/field boundaries and close through the normative
+prefix `[0,526)`.
+
+The first normative ambiguity is trim `warp_mode` at payload-relative
+`[526,528)`: raw bits `11`, integer `3`. ETSI TS 103 420 V1.2.1 Table 32
+defines `0b1X` as reserved, so the strict parser remains
+`ReservedWarpMode { raw: 3 }`. No vendor alias, remap, or new compatibility
+rule is admitted. The result is not a claim that the Logic encoder is
+non-conforming; it is a precise boundary between published normative syntax
+and an observed commercial carrier.
+
+Before that blocker, the cursor reaches two exact six-bit spatial fields:
+`pos3D_X_bits = [52,58)` and `pos3D_Y_bits = [58,64)`. The independently
+authored and ADM-qualified controls align numerically with these fields:
+X = -1, -.5, 0, +.5, +1 maps to 0, 16, 31, 46, 62; Y = +1, 0, -1 maps to
+0, 31, 62. This is controlled field-identity and numeric-alignment evidence,
+not a complete OAMD timeline or an OAMD-to-JOC identity proof.
+
+### Current J1 boundary
+
+Completed for the controlled corpus: normative cursor prefix and X/Y field
+identity, ADM-qualified numeric alignment, raw warp location/value, and the
+negative result that H0/H1/H2 do not discriminate semantics. Still open:
+meaning of reserved raw warp 3, post-warp vendor continuation, trim/timeline/
+previous-state semantics, authored-object to OAMD-slot identity, OAMD-to-JOC
+binding, object PCM, ObjectScene/render fidelity, and end-to-end acceptance.
+The next proposed research line is **J1R7B — Reserved Warp-3 Empirical
+Boundary Characterization**; it is documented only and is not executed by this
+milestone.
