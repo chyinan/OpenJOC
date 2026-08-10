@@ -560,3 +560,17 @@ Decision: `EAC3_CODING_TOOL_COVERAGE_PARTIAL`. The next non-fixture blocker is
 an integrated, public-syntax-only activation/state-transition evidence task
 for the under-exercised tools. No vendor semantics, raw warp-3 interpretation,
 or semantic binding change is implied.
+
+## J1R24 — public-syntax activation harness
+
+`crates/openjoc-eac3/tests/coding_tool_activation.rs` is a deliberately small
+test-only harness. It activates production API DSP paths with public
+ETSI-shaped structures and checks repeatability/finite bounded output. Existing
+syncframe and access-unit tests continue to provide parser/state coverage.
+Rematrix has a separate small public sum/difference oracle; coupling and SPX
+remain invariant/state-only evidence, while AHT and dependent-substream retain
+their existing bounded state tests.
+
+The real controlled corpus remains unchanged and does not exercise the target
+coding-tool effects. Synthetic activation is not a Dolby-encoder or authored
+object claim.

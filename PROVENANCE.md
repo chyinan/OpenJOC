@@ -2523,3 +2523,18 @@ The resulting release boundary is `EAC3_CODING_TOOL_COVERAGE_PARTIAL`. No new
 media was created, `SemanticBindingState` remains `Unresolved`, and ETSI
 strict raw warp 3 remains `ReservedWarpMode { raw: 3 }`. This matrix is not a
 claim of full E-AC-3 coding-tool fidelity or authored-object identity.
+
+## J1R24 — public-syntax coding-tool activation (2026-08-10)
+
+The test-only `PublicSyntaxCase` harness uses public ETSI-shaped API structures
+and existing frame helpers; it is not a general encoder and does not create
+media. Coupling, SPX, AHT, rematrix, and dependent-substream production paths
+now have explicit activation/state evidence. Rematrix additionally matches a
+separate public sum/difference formula oracle for the tested band case.
+
+This improves branch/state admission but does not upgrade real controlled
+corpus activation: those target coding-tool effects remain
+`NOT_EXERCISED_BY_CONTROLLED_CORPUS`. The narrow decisions are
+`PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED` and
+`EAC3_CODING_TOOL_STATE_ADMISSION_STRENGTHENED`; full E-AC-3 coding-tool
+fidelity remains unclaimed.

@@ -1561,3 +1561,18 @@ Accordingly the release status is `EAC3_CODING_TOOL_COVERAGE_PARTIAL`, not
 DSP validation, and DSP implementation is not treated as causal corpus
 coverage. `SemanticBindingState::Unresolved` and strict raw warp-3 rejection
 are unchanged.
+
+## J1R24 — public-syntax coding-tool activation harness
+
+The new test-only `PublicSyntaxCase` harness is intentionally narrow: it uses
+existing public E-AC-3 structures and calls production coupling, SPX, AHT, and
+rematrix DSP APIs without implementing an encoder. The dependent-substream
+cases reuse the production parser/state/merge tests. Determinism and finite
+shape invariants are checked; a separate public sum/difference oracle admits
+the rematrix band formula at `L4` for the tested case.
+
+This is branch/state evidence, not real-corpus prevalence or full coding-tool
+fidelity. Coupling, SPX, AHT, rematrix, and dependent-substream effects remain
+absent from the frozen controlled inventory. The decisions are
+`PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED` and
+`EAC3_CODING_TOOL_STATE_ADMISSION_STRENGTHENED`.

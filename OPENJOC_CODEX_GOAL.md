@@ -919,3 +919,16 @@ The milestone decision is `EAC3_CODING_TOOL_COVERAGE_PARTIAL`. This does not
 resolve authored-object binding, does not admit authored-object PCM, does not
 change `SemanticBindingState::Unresolved`, and does not assign meaning to raw
 warp 3.
+
+## J1R24 — public-syntax coding-tool activation
+
+OpenJOC now has a small test-only `PublicSyntaxCase` harness that drives
+public ETSI-shaped structures through production DSP APIs. It proves
+deterministic finite activation for coupling, SPX, AHT, and rematrix, reuses
+the dependent-substream parser/state tests, and keeps synthetic activation
+separate from the real Logic corpus. Rematrix has the strongest result because
+its tested band formula is compared with an independent public oracle.
+
+The decisions are `PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED`
+and `EAC3_CODING_TOOL_STATE_ADMISSION_STRENGTHENED`. No semantic binding,
+authored-object PCM, renderer, vendor warp rule, or real media was added.

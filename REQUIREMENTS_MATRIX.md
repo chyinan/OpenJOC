@@ -642,3 +642,14 @@ ISO BMFF container metadata.
 
 This milestone does not alter J1R14–J1R22 streaming contracts, semantic
 binding, or warp behavior.
+
+## J1R24 — public-syntax activation harness (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Reusable test-only activation | `PublicSyntaxCase` plus existing public production APIs | established with declared parser bypasses |
+| Coupling/SPX/AHT activation | deterministic finite DSP cases and existing syntax/state tests | activated; numerical scope remains partial |
+| Rematrix independent oracle | separate public sum/difference formula | `L4_INDEPENDENT_NORMATIVE_ORACLE_VALIDATED` for tested band formula |
+| Dependent-substream state | existing parser/chanmap/merge/reset tests | `L2_STATE_TRANSITION_VALIDATED` with scope limit |
+| Real controlled corpus | unchanged A/D/E/F evidence | target effects remain not exercised |
+| Decision | harness and state admission only; no full-fidelity claim | `PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED` |
