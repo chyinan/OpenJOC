@@ -848,3 +848,18 @@ capture. The strongest supported status is
 `BOUNDED_STREAMING_DECODE_CORE_ESTABLISHED`. Semantic binding remains
 unresolved, authored-object PCM and audio-bound ObjectScene remain inadmissible,
 and warp raw3 behavior is unchanged. No new Logic fixture or media was created.
+
+## J1R19 — Incremental input/container streaming and output finalization
+
+OpenJOC now has a bounded raw E-AC-3 syncframe reader and a seekable
+incremental WAV writer. The reader survives arbitrary chunk boundaries without
+whole-file buffering inside the framing primitive; the writer patches RIFF
+sizes at close while preserving f32/reference-f64/integer policies. Captured
+scene row and LFE diagnostics use chunked output.
+
+The existing CLI/container ownership contract remains explicit: `load_eac3`
+still materializes raw or FFmpeg stream-copy bytes and builds the current AU
+index, and ISO BMFF sample-table/index memory is not misrepresented as O(1).
+Non-seekable MP4 is not admitted. The narrow decision is
+`STREAMING_INPUT_OUTPUT_ADMISSION_PARTIAL`; no semantic binding, warp meaning,
+authored-object PCM, or new media was introduced.

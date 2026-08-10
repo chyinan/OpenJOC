@@ -18,7 +18,7 @@ use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{OamdDecoderConfig, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{
-    Clipping, Dither, SampleFormat, WaveEncodeOptions, WavePcm, decode, encode_channels,
+    Clipping, Dither, SampleFormat, WaveEncodeOptions, WavePcm, WaveWriter, decode, encode_channels,
 };
 use std::{
     env,
@@ -1202,34 +1202,37 @@ fn write_scene(
     if let Some(basis) = &scene.reconstruction_basis {
         for (row_index, row) in basis.rows.iter().enumerate() {
             let filename = format!("row_{row_index:03}.wav");
-            fs::write(
-                rows.join(filename),
-                encode_channels(
-                    scene.sample_rate,
-                    std::slice::from_ref(row),
-                    WaveEncodeOptions {
-                        sample_format,
-                        clipping: Clipping::Reject,
-                        dither: Dither::None,
-                    },
-                )?,
-            )?;
+            write_incremental_wave(&rows.join(filename), scene.sample_rate, row, sample_format)?;
         }
     }
     if let Some(base_lfe) = &scene.base_lfe_pcm {
-        fs::write(
-            output.join("diagnostics/base_lfe.wav"),
-            encode_channels(
-                scene.sample_rate,
-                std::slice::from_ref(base_lfe),
-                WaveEncodeOptions {
-                    sample_format,
-                    clipping: Clipping::Reject,
-                    dither: Dither::None,
-                },
-            )?,
+        write_incremental_wave(
+            &output.join("diagnostics/base_lfe.wav"),
+            scene.sample_rate,
+            base_lfe,
+            sample_format,
         )?;
     }
+    Ok(())
+}
+
+fn write_incremental_wave(
+    path: &Path,
+    sample_rate: u32,
+    samples: &[f64],
+    sample_format: SampleFormat,
+) -> Result<(), Box<dyn Error>> {
+    let options = WaveEncodeOptions {
+        sample_format,
+        clipping: Clipping::Reject,
+        dither: Dither::None,
+    };
+    let file = fs::File::create(path)?;
+    let mut writer = WaveWriter::new(file, sample_rate, 1, options)?;
+    for chunk in samples.chunks(4096) {
+        writer.write_channels(&[chunk])?;
+    }
+    let _file = writer.finish()?;
     Ok(())
 }
 

@@ -7,7 +7,9 @@
 //! boundary. FFmpeg is used only as an external ISO BMFF demuxer with audio
 //! stream copy; it is not an audio decoder or a normative reference.
 
-use openjoc_eac3::{Eac3Error, group_access_units, index_syncframes};
+use openjoc_eac3::{
+    Eac3Error, SyncframeHeader, group_access_units, index_syncframes, parse_syncframe_header,
+};
 use std::{
     fmt,
     fs::{self, File},
@@ -33,6 +35,132 @@ pub enum InputMediaKind {
 pub struct Eac3Input {
     pub kind: InputMediaKind,
     pub bytes: Vec<u8>,
+}
+
+/// Deterministic high-watermark counters for incremental raw E-AC-3 framing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RawEac3ReaderStats {
+    pub frames_emitted: usize,
+    pub max_input_carry_bytes: usize,
+    pub max_frame_bytes: usize,
+}
+
+/// Reader-based raw E-AC-3 syncframe framer.
+///
+/// The reader requests no more than the bytes needed for the current header or
+/// declared frame.  It therefore never retains a complete programme or a
+/// second frame merely because the underlying `Read` implementation returned a
+/// large chunk.  AU grouping remains a separate bounded consumer concern.
+pub struct RawEac3FrameReader<R> {
+    reader: R,
+    carry: Vec<u8>,
+    offset: usize,
+    eof: bool,
+    max_frame_bytes: usize,
+    stats: RawEac3ReaderStats,
+}
+
+impl<R: Read> RawEac3FrameReader<R> {
+    /// Creates a framer with an explicit maximum declared syncframe size.
+    #[must_use]
+    pub fn new(reader: R, max_frame_bytes: usize) -> Self {
+        Self {
+            reader,
+            carry: Vec::new(),
+            offset: 0,
+            eof: false,
+            max_frame_bytes,
+            stats: RawEac3ReaderStats::default(),
+        }
+    }
+
+    /// Reads the next complete syncframe, or `None` at an exact frame-boundary EOF.
+    pub fn next_frame(&mut self) -> Result<Option<Vec<u8>>, InputMediaError> {
+        const HEADER_PROBE_BYTES: usize = 8;
+        while self.carry.len() < HEADER_PROBE_BYTES {
+            if !self.read_more(HEADER_PROBE_BYTES - self.carry.len())? {
+                if self.carry.is_empty() {
+                    return Ok(None);
+                }
+                return Err(InputMediaError::TruncatedRawEac3 {
+                    offset: self.offset,
+                    available: self.carry.len(),
+                });
+            }
+        }
+        let header =
+            parse_syncframe_header(&self.carry).map_err(InputMediaError::InvalidDemuxedEac3)?;
+        if header.frame_size > self.max_frame_bytes {
+            return Err(InputMediaError::DemuxOutputTooLarge {
+                limit: self.max_frame_bytes,
+            });
+        }
+        while self.carry.len() < header.frame_size {
+            if !self.read_more(header.frame_size - self.carry.len())? {
+                return Err(InputMediaError::InvalidDemuxedEac3(
+                    Eac3Error::TruncatedFrame {
+                        offset: self.offset,
+                        declared: header.frame_size,
+                        available: self.carry.len(),
+                    },
+                ));
+            }
+        }
+        let frame = self.carry.drain(..header.frame_size).collect::<Vec<_>>();
+        self.offset = self.offset.checked_add(header.frame_size).ok_or(
+            InputMediaError::DemuxOutputTooLarge {
+                limit: self.max_frame_bytes,
+            },
+        )?;
+        self.stats.frames_emitted = self.stats.frames_emitted.saturating_add(1);
+        self.stats.max_frame_bytes = self.stats.max_frame_bytes.max(frame.len());
+        Ok(Some(frame))
+    }
+
+    /// Returns deterministic retained-input high-watermarks.
+    #[must_use]
+    pub const fn stats(&self) -> RawEac3ReaderStats {
+        self.stats
+    }
+
+    fn read_more(&mut self, requested: usize) -> Result<bool, InputMediaError> {
+        if self.eof || requested == 0 {
+            return Ok(false);
+        }
+        let start = self.carry.len();
+        self.carry.resize(start + requested, 0);
+        let mut read = 0;
+        while read < requested {
+            let count = self
+                .reader
+                .read(&mut self.carry[start + read..start + requested])
+                .map_err(|source| InputMediaError::Io {
+                    operation: "read raw E-AC-3 frame",
+                    source,
+                })?;
+            if count == 0 {
+                self.eof = true;
+                self.carry.truncate(start + read);
+                break;
+            }
+            read += count;
+        }
+        self.stats.max_input_carry_bytes = self.stats.max_input_carry_bytes.max(self.carry.len());
+        Ok(read != 0)
+    }
+}
+
+impl<R> RawEac3FrameReader<R> {
+    /// Returns the underlying reader after framing has stopped.
+    #[must_use]
+    pub fn into_inner(self) -> R {
+        self.reader
+    }
+}
+
+/// Lightweight header information useful to a bounded AU consumer.
+pub fn raw_frame_header(frame: &[u8]) -> Result<SyncframeHeader, InputMediaError> {
+    parse_syncframe_header(frame).map_err(InputMediaError::InvalidDemuxedEac3)
 }
 
 /// Container/input boundary failure.
@@ -64,6 +192,10 @@ pub enum InputMediaError {
         limit: usize,
     },
     EmptyDemuxOutput,
+    TruncatedRawEac3 {
+        offset: usize,
+        available: usize,
+    },
     InvalidDemuxedEac3(Eac3Error),
 }
 
@@ -105,6 +237,10 @@ impl fmt::Display for InputMediaError {
             Self::EmptyDemuxOutput => {
                 formatter.write_str("ISO BMFF E-AC-3 demux produced an empty elementary stream")
             }
+            Self::TruncatedRawEac3 { offset, available } => write!(
+                formatter,
+                "truncated raw E-AC-3 input at byte {offset}: only {available} header bytes available"
+            ),
             Self::InvalidDemuxedEac3(error) => {
                 write!(formatter, "demuxed E-AC-3 stream is invalid: {error}")
             }

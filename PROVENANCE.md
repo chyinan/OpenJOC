@@ -2492,3 +2492,18 @@ container/index layer still materializes input bytes and the AU index, while
 WAV/diagnostic writers remain explicit capture paths. This establishes a
 bounded decode core, not full input-to-output streaming. No new media or Logic
 fixture was created.
+
+## J1R19 incremental input/output boundaries (2026-08-11)
+
+The input/output boundary now includes a reader-based raw E-AC-3 syncframe
+framer (`RawEac3FrameReader`) that requests only the current header/declared
+frame bytes, reports bounded carry high-watermarks, and preserves explicit
+truncated-frame errors across arbitrary read chunk boundaries. It is a
+framing primitive; the legacy `load_eac3`/CLI path still returns a complete
+elementary-stream buffer and AU index for existing inspect/capture consumers.
+
+`WaveWriter` provides a seekable incremental RIFF writer with identical sample
+format, clipping, and dither policy. Captured scene row/LFE exports now append
+chunks and patch sizes at finalization. ISO BMFF demux still materializes the
+stream-copy payload and retains the current container/AU index boundary; no
+seekless MP4 claim is made. No new fixture or media was created.

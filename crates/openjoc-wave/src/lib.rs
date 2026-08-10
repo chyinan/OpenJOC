@@ -2,11 +2,12 @@
 
 //! Checked reference serialization for reconstructed object WAV stems.
 
-use std::fmt;
+use std::{fmt, io, io::Seek, io::SeekFrom, io::Write};
 
 /// WAV serialization failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WaveError {
+    Io { kind: io::ErrorKind },
     InvalidSampleRate,
     NonFiniteSample { index: usize },
     OutOfRangeSample { index: usize },
@@ -22,6 +23,7 @@ pub enum WaveError {
 impl fmt::Display for WaveError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Io { kind } => write!(formatter, "WAV I/O error: {kind}"),
             Self::InvalidSampleRate => formatter.write_str("invalid WAV sample rate"),
             Self::NonFiniteSample { index } => {
                 write!(formatter, "non-finite WAV sample at index {index}")
@@ -278,6 +280,198 @@ pub struct WaveEncodeOptions {
     pub sample_format: SampleFormat,
     pub clipping: Clipping,
     pub dither: Dither,
+}
+
+/// Incremental seekable WAV writer.
+///
+/// The header is written once with placeholder sizes, samples are appended in
+/// bounded chunks, and RIFF/data sizes are patched during [`Self::finish`].
+/// This is intentionally seekable-only; callers writing to non-seekable output
+/// must use an explicitly supported container instead of emitting invalid WAV.
+pub struct WaveWriter<W> {
+    writer: W,
+    sample_rate: u32,
+    channels: usize,
+    options: WaveEncodeOptions,
+    data_bytes: u64,
+    frames: u64,
+    sample_index: usize,
+}
+
+impl<W: Write + Seek> WaveWriter<W> {
+    /// Creates a writer and emits a placeholder 44-byte RIFF/WAVE header.
+    pub fn new(
+        mut writer: W,
+        sample_rate: u32,
+        channels: usize,
+        options: WaveEncodeOptions,
+    ) -> Result<Self, WaveError> {
+        let channel_count = validate_writer_format(sample_rate, channels, options)?;
+        write_placeholder_header(&mut writer, sample_rate, channel_count, options)?;
+        Ok(Self {
+            writer,
+            sample_rate,
+            channels,
+            options,
+            data_bytes: 0,
+            frames: 0,
+            sample_index: 0,
+        })
+    }
+
+    /// Appends interleaved samples for one or more complete frames.
+    pub fn write_interleaved(&mut self, samples: &[f64]) -> Result<(), WaveError> {
+        if samples.len() % self.channels != 0 {
+            return Err(WaveError::InvalidFormat);
+        }
+        let mut encoded = Vec::with_capacity(
+            samples
+                .len()
+                .checked_mul(self.options.sample_format.bytes_per_sample())
+                .ok_or(WaveError::SizeOverflow)?,
+        );
+        for &sample in samples {
+            encode_sample(&mut encoded, sample, self.options, self.sample_index)?;
+            self.sample_index = self
+                .sample_index
+                .checked_add(1)
+                .ok_or(WaveError::SizeOverflow)?;
+        }
+        self.writer.write_all(&encoded).map_err(io_error)?;
+        self.data_bytes = self
+            .data_bytes
+            .checked_add(u64::try_from(encoded.len()).map_err(|_| WaveError::SizeOverflow)?)
+            .ok_or(WaveError::SizeOverflow)?;
+        self.frames = self
+            .frames
+            .checked_add(
+                u64::try_from(samples.len() / self.channels)
+                    .map_err(|_| WaveError::SizeOverflow)?,
+            )
+            .ok_or(WaveError::SizeOverflow)?;
+        Ok(())
+    }
+
+    /// Appends a channel-major chunk without retaining prior chunks.
+    pub fn write_channels(&mut self, channels: &[&[f64]]) -> Result<(), WaveError> {
+        if channels.len() != self.channels {
+            return Err(WaveError::InvalidFormat);
+        }
+        let frames = channels.first().map_or(0, |channel| channel.len());
+        if channels.iter().any(|channel| channel.len() != frames) {
+            return Err(WaveError::InvalidFormat);
+        }
+        let mut interleaved = Vec::with_capacity(
+            frames
+                .checked_mul(self.channels)
+                .ok_or(WaveError::SizeOverflow)?,
+        );
+        for frame in 0..frames {
+            for channel in channels {
+                interleaved.push(channel[frame]);
+            }
+        }
+        self.write_interleaved(&interleaved)
+    }
+
+    /// Finalizes RIFF/data sizes, flushes, and returns the underlying writer.
+    pub fn finish(mut self) -> Result<W, WaveError> {
+        let data_size = u32::try_from(self.data_bytes).map_err(|_| WaveError::SizeOverflow)?;
+        let riff_size = data_size.checked_add(36).ok_or(WaveError::SizeOverflow)?;
+        self.writer.seek(SeekFrom::Start(4)).map_err(io_error)?;
+        self.writer
+            .write_all(&riff_size.to_le_bytes())
+            .map_err(io_error)?;
+        self.writer.seek(SeekFrom::Start(40)).map_err(io_error)?;
+        self.writer
+            .write_all(&data_size.to_le_bytes())
+            .map_err(io_error)?;
+        self.writer.seek(SeekFrom::End(0)).map_err(io_error)?;
+        self.writer.flush().map_err(io_error)?;
+        Ok(self.writer)
+    }
+
+    /// Number of complete sample frames appended so far.
+    #[must_use]
+    pub const fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    /// Bytes of encoded sample data appended so far.
+    #[must_use]
+    pub const fn data_bytes(&self) -> u64 {
+        self.data_bytes
+    }
+
+    /// Sample rate retained by this writer.
+    #[must_use]
+    pub const fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn io_error(error: io::Error) -> WaveError {
+    WaveError::Io { kind: error.kind() }
+}
+
+fn validate_writer_format(
+    sample_rate: u32,
+    channels: usize,
+    options: WaveEncodeOptions,
+) -> Result<u16, WaveError> {
+    if sample_rate == 0 || channels == 0 {
+        return Err(WaveError::InvalidFormat);
+    }
+    let channel_count = u16::try_from(channels).map_err(|_| WaveError::SizeOverflow)?;
+    channel_count
+        .checked_mul(
+            u16::try_from(options.sample_format.bytes_per_sample())
+                .map_err(|_| WaveError::SizeOverflow)?,
+        )
+        .ok_or(WaveError::SizeOverflow)?;
+    Ok(channel_count)
+}
+
+fn write_placeholder_header<W: Write>(
+    writer: &mut W,
+    sample_rate: u32,
+    channels: u16,
+    options: WaveEncodeOptions,
+) -> Result<(), WaveError> {
+    let block_align = channels
+        .checked_mul(
+            u16::try_from(options.sample_format.bytes_per_sample())
+                .map_err(|_| WaveError::SizeOverflow)?,
+        )
+        .ok_or(WaveError::SizeOverflow)?;
+    let byte_rate = sample_rate
+        .checked_mul(u32::from(block_align))
+        .ok_or(WaveError::SizeOverflow)?;
+    writer.write_all(b"RIFF").map_err(io_error)?;
+    writer.write_all(&0_u32.to_le_bytes()).map_err(io_error)?;
+    writer.write_all(b"WAVEfmt ").map_err(io_error)?;
+    writer.write_all(&16_u32.to_le_bytes()).map_err(io_error)?;
+    writer
+        .write_all(&options.sample_format.encoding().to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&channels.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&sample_rate.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&byte_rate.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&block_align.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&options.sample_format.bits().to_le_bytes())
+        .map_err(io_error)?;
+    writer.write_all(b"data").map_err(io_error)?;
+    writer.write_all(&0_u32.to_le_bytes()).map_err(io_error)
 }
 
 /// Encodes channel-major samples with an explicit format and quantization policy.

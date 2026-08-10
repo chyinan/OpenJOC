@@ -1465,3 +1465,24 @@ the byte stream and AU index, while WAV/debug writers remain capture sinks;
 therefore the decision is `BOUNDED_STREAMING_DECODE_CORE_ESTABLISHED`, not
 full input-to-output streaming. No semantic binding, authored-object PCM,
 warp interpretation, or new media was added.
+
+## J1R19 — Incremental input/container streaming and output finalization
+
+`openjoc-container` now exposes `RawEac3FrameReader<R: Read>`. It never reads
+past the current header or declared frame, retains at most one compressed
+syncframe, exposes deterministic carry/frame high-watermarks, and maps EOF
+mid-frame to an explicit structured error. Chunk-boundary regressions cover
+split syncwords, headers, bodies, multiple frames, exact EOF, and truncation.
+
+`openjoc-wave` now exposes seekable `WaveWriter`, which writes a placeholder
+RIFF header, appends bounded interleaved/channel chunks, and patches data/RIFF
+sizes only at successful finalization. CLI captured reconstruction-row and
+RcLfe WAV artifacts use this writer, preserving existing sample formats and
+quantization policy.
+
+The current `load_eac3` and FFmpeg ISO BMFF path remain capture/index APIs: they
+materialize stream-copy bytes, and the E-AC-3 decoder still consumes complete
+borrowed stream/index slices. Non-seekable MP4 streaming is not admitted. The
+milestone therefore stops at `STREAMING_INPUT_OUTPUT_ADMISSION_PARTIAL` rather
+than claiming universal O(1) container memory. SemanticBindingState, warp
+behavior, and all prior numerical/binding boundaries are unchanged.

@@ -479,3 +479,19 @@ and WAV/diagnostic export remains an explicit capture path. J1R14 block-major
 metadata ordering, J1R15 numerical row boundaries, J1R17 opaque continuation,
 and `SemanticBindingState::Unresolved` remain unchanged. No new media or
 fixture was generated.
+
+## J1R19 — Incremental input/container streaming and output finalization
+
+The raw elementary-stream boundary now has a Reader-based syncframe framer.
+It probes only enough bytes to parse the fixed header, then requests exactly
+the declared frame remainder; arbitrary underlying read chunk sizes produce
+byte-identical frames. A 128-frame logical sequence shows a constant carry
+high-watermark and truncated final frames remain explicit errors.
+
+This is intentionally not called full raw input-to-J1R18 delivery: the
+existing `load_eac3` API and CLI still materialize the input bytes and build a
+complete AU index because downstream extraction APIs currently consume those
+borrowed slices. ISO BMFF stream-copy payload and sample-table/index metadata
+remain separate duration-proportional boundaries. `WaveWriter` is now used by
+captured scene row/LFE exports, with header finalization errors propagated.
+No media or fixture was created.

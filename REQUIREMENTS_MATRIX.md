@@ -558,3 +558,21 @@ Private evidence freeze:
 
 The strongest result is `BOUNDED_STREAMING_DECODE_CORE_ESTABLISHED`; this is
 not a claim of full end-to-end input-to-output streaming.
+
+## J1R19 incremental input/container/output boundary (2026-08-11)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Raw EC-3 reader framing | `RawEac3FrameReader` reads only header/declared frame bytes | passed; primitive |
+| Raw chunk boundaries | 1/2/3/7/31/257/4096-byte chunk tests, split header/body, exact EOF and truncation | passed |
+| Raw high-watermark | 128-frame logical sequence retains at most one current frame | passed |
+| MP4 payload materialization | FFmpeg stream-copy output remains a complete `Vec<u8>` | declared limitation |
+| ISO BMFF index | Current container/AU index remains duration-proportional metadata | declared limitation |
+| Non-seekable MP4 | No admission claim | not admitted |
+| Incremental WAV writer | Seekable `WaveWriter` patches RIFF/data sizes at close | passed |
+| Scene row/LFE output | CLI captured exports use chunked `WaveWriter`; capture scene remains explicit | passed; capture boundary |
+| Semantic binding/profile behavior | J1R13/J1R17/J1R18 contracts unchanged | unchanged |
+
+The precise result is `STREAMING_INPUT_OUTPUT_ADMISSION_PARTIAL`: raw framing
+and seekable output writing are bounded primitives, while the existing CLI
+input/container path still has whole-stream and indexed metadata storage.

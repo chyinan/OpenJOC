@@ -1,7 +1,29 @@
 use openjoc_wave::{
-    Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, decode, encode_channels,
-    encode_f64_channels, encode_f64_mono,
+    Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter, decode,
+    encode_channels, encode_f64_channels, encode_f64_mono,
 };
+use std::io::{self, Cursor, Seek, SeekFrom, Write};
+
+struct FailingSeekWriter {
+    bytes: Vec<u8>,
+}
+
+impl Write for FailingSeekWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Seek for FailingSeekWriter {
+    fn seek(&mut self, _position: SeekFrom) -> io::Result<u64> {
+        Err(io::Error::other("seek intentionally failed"))
+    }
+}
 
 #[test]
 fn encodes_mono_ieee_float_wave_without_pcm_quantization() {
@@ -40,6 +62,48 @@ fn encodes_mono_ieee_float_wave_without_pcm_quantization() {
         .map(|bytes| f64::from_le_bytes(bytes.try_into().expect("sample")))
         .collect::<Vec<_>>();
     assert_eq!(samples, vec![0.25, -0.5, 1.0]);
+}
+
+#[test]
+fn incremental_writer_matches_capture_encoding_and_patches_sizes() {
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::F64,
+        clipping: Clipping::Reject,
+        dither: Dither::None,
+    };
+    let expected =
+        encode_f64_channels(48_000, &[vec![0.25, -0.5], vec![0.75, -1.0]]).expect("capture WAV");
+    let mut writer = WaveWriter::new(Cursor::new(Vec::new()), 48_000, 2, options).expect("writer");
+    writer
+        .write_channels(&[&[0.25_f64][..], &[0.75_f64][..]])
+        .expect("first chunk");
+    writer
+        .write_interleaved(&[-0.5, -1.0])
+        .expect("second chunk");
+    let actual = writer.finish().expect("finalize").into_inner();
+    assert_eq!(actual, expected);
+    assert_eq!(
+        decode(&actual).expect("decode").channels[0],
+        vec![0.25, -0.5]
+    );
+}
+
+#[test]
+fn incremental_writer_propagates_finalization_io_error() {
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::F32,
+        clipping: Clipping::Reject,
+        dither: Dither::None,
+    };
+    let mut writer = WaveWriter::new(FailingSeekWriter { bytes: Vec::new() }, 48_000, 1, options)
+        .expect("header write");
+    writer.write_interleaved(&[0.25]).expect("sample write");
+    assert!(matches!(
+        writer.finish(),
+        Err(WaveError::Io {
+            kind: io::ErrorKind::Other,
+        })
+    ));
 }
 
 #[test]
