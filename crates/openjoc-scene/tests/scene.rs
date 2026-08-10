@@ -1,8 +1,10 @@
 use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{GlobalTrim, TrimElement, WarpMode};
 use openjoc_scene::{
-    Extent3, IsfLabel, IsfRing, MetadataObject, MetadataUpdate, ObjectClass, ObjectScene, Position,
-    Position3, SceneError, SemanticBindingState, SpeakerLabel, TrimUpdate, ZoneConstraint,
+    BindingAdmissionRequirements, BindingEvidenceClass, BindingEvidenceDimensions,
+    BindingProvenance, BindingRelationKind, Extent3, IsfLabel, IsfRing, MetadataObject,
+    MetadataUpdate, ObjectClass, ObjectScene, Position, Position3, SceneError,
+    SemanticBindingEvidence, SemanticBindingState, SpeakerLabel, TrimUpdate, ZoneConstraint,
 };
 
 fn scene() -> ObjectScene {
@@ -90,6 +92,94 @@ fn reconstruction_basis_has_rows_without_authored_object_identity() {
     assert_eq!(basis.rows.len(), 2);
     let json = serde_json::to_string(&basis).unwrap();
     assert!(!json.contains("object_id"));
+}
+
+#[test]
+fn structural_and_empirical_evidence_cannot_admit_binding() {
+    for evidence_class in [
+        BindingEvidenceClass::Structural,
+        BindingEvidenceClass::Empirical,
+    ] {
+        let evidence = SemanticBindingEvidence::new(
+            BindingRelationKind::OamdSlotToRow,
+            "J1R12 controlled corpus",
+            evidence_class,
+            BindingProvenance::ControlledCleanroomEmpirical,
+        );
+        let error = evidence
+            .try_admit(&BindingAdmissionRequirements::default())
+            .expect_err("non-verified evidence must not admit semantic binding");
+        assert!(matches!(
+            error,
+            openjoc_scene::BindingAdmissionError::EvidenceClassNotVerified { .. }
+        ));
+    }
+}
+
+#[test]
+fn synthetic_admission_contract_is_explicit_but_does_not_change_scene_state() {
+    let mut evidence = SemanticBindingEvidence::new(
+        BindingRelationKind::AuthoredObjectToRow,
+        "synthetic contract test only",
+        BindingEvidenceClass::Verified,
+        BindingProvenance::ControlledCleanroomEmpirical,
+    );
+    evidence
+        .supporting_observations
+        .push("synthetic observation".into());
+    evidence
+        .negative_controls
+        .push("synthetic negative control".into());
+    evidence
+        .producer_constraints
+        .push("synthetic deterministic carrier".into());
+    evidence.falsifier = "a counterexample invalidates the relation".into();
+    evidence.dimensions = BindingEvidenceDimensions {
+        who: true,
+        where_: true,
+        slot: true,
+        row_or_basis: true,
+        audio_identity: true,
+        context: true,
+        time: true,
+        repeatability: true,
+        negative_control: true,
+        cross_state: true,
+    };
+    let admission = evidence
+        .try_admit(&BindingAdmissionRequirements::default())
+        .expect("complete synthetic contract should mint a capability token");
+    assert_eq!(
+        admission.relation(),
+        BindingRelationKind::AuthoredObjectToRow
+    );
+    assert_eq!(admission.scope(), "synthetic contract test only");
+    assert_eq!(
+        evidence.admission_status(),
+        openjoc_scene::BindingAdmissionStatus::NotAdmitted
+    );
+    assert_eq!(
+        scene().semantic_binding,
+        SemanticBindingState::Unresolved,
+        "the contract token cannot silently upgrade production scenes"
+    );
+}
+
+#[test]
+fn incomplete_verified_evidence_reports_missing_dimensions_and_controls() {
+    let evidence = SemanticBindingEvidence::new(
+        BindingRelationKind::OamdSlotToRow,
+        "incomplete synthetic record",
+        BindingEvidenceClass::Verified,
+        BindingProvenance::PublicReference,
+    );
+    let error = evidence
+        .try_admit(&BindingAdmissionRequirements::default())
+        .expect_err("verified label alone is not enough");
+    assert!(matches!(
+        error,
+        openjoc_scene::BindingAdmissionError::MissingDimensions { .. }
+    ));
 }
 
 #[test]

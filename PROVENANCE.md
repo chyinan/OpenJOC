@@ -2394,3 +2394,22 @@ audio-bound ObjectScene and verified authored-object PCM remain inadmissible.
 This round changes no Logic fixture, private media, raw warp behavior, JOC
 semantic inference, or profile rule. `ETSI_STRICT` continues to reject raw
 warp 3 as reserved, and the vendor profile remains unchanged.
+
+## J1R13 semantic-binding evidence boundary
+
+OpenJOC now records proposed semantic relations through an explicit evidence
+contract rather than treating structural or empirical observations as a
+binding. Evidence is classified as `STRUCTURAL`, `EMPIRICAL`, or `VERIFIED`,
+with scope, allowed provenance, observations, contradictions, negative
+controls, producer/carrier constraints, required dimensions, and a falsifier.
+The production scene remains `SemanticBindingState::Unresolved`; no real
+evidence package in this campaign is admitted as verified.
+
+The minimum future admission dimensions are WHO, WHERE, SLOT, ROW/BASIS,
+audio identity, context, time, repeatability, negative control, and cross-state
+coverage. Equal cardinality/index, a dominant row, one fixture, or one spatial
+state is explicitly insufficient. Metadata-only ObjectScene and separate
+diagnostic ReconstructionBasis rows remain valid; audio-bound ObjectScene and
+verified authored-object PCM remain blocked. Evidence must be independently
+supportable through normative/public or controlled clean-room sources; private,
+decompiled, leaked, or unknown-constant material is not provenance.

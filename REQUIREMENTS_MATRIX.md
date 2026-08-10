@@ -236,6 +236,16 @@ complete OAMD, JOC, or renderer requirements to completion.
 | B/C/F vendor regression | Follow-up raw/MP4 private run repeats 126 AUs, raw warp `3:126`, opaque vendor acceptance `126/126`, normalized carrier equality, and payload-14 parse `126/126` | verified |
 | Reconstruction rows and fidelity | A/E/D/F vendor-compatible runs emit 16-entry metadata scenes, 15 diagnostic reconstruction rows, and one separately retained base-LFE row; no verified authored-object PCM, trim/warp semantics, internal-base fidelity, or ADM rendering equivalence is claimed | evidence; fidelity open |
 
+### J1R13 semantic-binding evidence contract
+
+| Requirement | Current evidence boundary | Status |
+|---|---|---|
+| Evidence and production state are separate | `SemanticBindingEvidence` records structural/empirical/verified classes while `ObjectScene.semantic_binding` remains `unresolved` | implemented |
+| Admission is explicit and falsifiable | Required WHO/WHERE/SLOT/ROW-or-basis/audio/context/time/repeatability/negative-control/cross-state dimensions plus provenance, contradictions, and a falsifier | implemented |
+| Unsupported identity is rejected | Row-count/index equality, dominant-row correlation, one fixture, and field-name similarity cannot admit binding | implemented |
+| Metadata-only scene and diagnostic rows | Both remain exportable without authored-object PCM identity | implemented |
+| Verified authored-object PCM / audio-bound ObjectScene | Requires future admitted semantic binding; current Logic campaign is frozen | blocked |
+
 ## Controlled Logic programme-cardinality result (2026-08-05)
 
 The typed scene boundary distinguishes the counts that were previously

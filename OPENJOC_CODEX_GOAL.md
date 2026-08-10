@@ -758,3 +758,14 @@ Base-carried LFE remains separate. Metadata-only scene validation is allowed;
 verified authored-object PCM and audio-bound ObjectScene admission remain
 blocked. This round adds no Logic fixture, no JOC semantic inference, no
 ObjectScene semantic admission, and no warp/profile behavior change.
+
+## J1R13 — Semantic binding evidence contract
+
+The current goal boundary is explicit: `SemanticBindingState::Unresolved` is a
+valid production result, not an error. Structural and empirical evidence may
+be reported without becoming semantic identity. Future admission requires the
+typed evidence contract's relation, scope, provenance, falsifier, negative
+controls, producer constraints, and WHO/WHERE/SLOT/ROW-or-basis/audio/context/
+time/repeatability/cross-state dimensions. The current Logic campaign is
+frozen; J1R13 created no new fixture and changed no warp, Size, profile, JOC,
+or renderer behavior.

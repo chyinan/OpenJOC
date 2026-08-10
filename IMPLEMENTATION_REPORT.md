@@ -1354,3 +1354,21 @@ unresolved binding, structural LFE/row cardinality, atomic row staging, and
 diagnostic row export. Strict raw warp 3 behavior and the explicit vendor
 profile are unchanged; no new Logic fixture, JOC semantic inference, or
 production warp rule was introduced.
+
+## J1R13 — Semantic binding evidence contract
+
+`openjoc-scene` now exposes a small evidence/admission API separate from the
+production binding state. `SemanticBindingEvidence` carries the proposed
+relation, scope, evidence class, provenance, observations, contradictions,
+negative controls, producer/carrier constraints, evidence dimensions, and a
+falsifier. `try_admit` rejects non-verified or incomplete evidence and returns
+only a private-field capability token; it cannot silently mutate an
+`ObjectScene`. The production state is still only `Unresolved`.
+
+CLI partial-status reports now distinguish
+`semantic_object_audio_binding: unresolved`, metadata-scene availability, and
+diagnostic reconstruction-row availability. No authored-object PCM or
+audio-bound ObjectScene is emitted. Metadata-only scenes, separate
+ReconstructionBasis rows, and RcLfe separation are unchanged. The J1R9–J1R11
+Logic campaign remains frozen because independent slot assignment has not been
+demonstrated; no fixture, ADM, DD+, EC3, warp, or Size behavior changed.

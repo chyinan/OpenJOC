@@ -1235,3 +1235,26 @@ OpenJOC 应把“格式解码的正确性”和“最终空间渲染的主观品
 # 18. 给实现 Agent 的最后一句话
 
 **不要模仿 Dolby 的代码；复现 ETSI 所定义的行为。不要以“能播放”为目标；以“每一个 bitstream field、每一张 matrix、每一个 QMF sample 都能解释和验证”为目标。Reference correctness first, optimization second, renderer last.**
+
+### 5.7.1 Semantic binding evidence contract (J1R13)
+
+`SemanticBindingState` is deliberately limited to `Unresolved` in the current
+release. Evidence strength is a separate, serializable
+`SemanticBindingEvidence` record with an explicit relation, scope, provenance,
+supporting observations, contradictions, negative controls, producer/carrier
+constraints, evidence dimensions, and falsifier. Its classes are
+`structural`, `empirical`, and `verified`; none of the first two is a semantic
+identity claim.
+
+The admission validator requires independent WHO/WHERE/SLOT/ROW (or basis),
+audio identity, context, timing, repeatability, negative-control, and
+cross-state evidence. Equal row counts, equal indices, a dominant row, one
+fixture, field-name similarity, or a single tone/carrier can never satisfy the
+contract. A private-field capability token is the only result of a successful
+synthetic contract check; J1R13 admits no real binding and provides no
+conversion from that token to `ObjectScene`.
+
+Metadata-only `ObjectScene` and diagnostic `ReconstructionBasis` row export
+remain admissible; audio-bound ObjectScene and verified authored-object PCM
+remain blocked. Clean-room provenance excludes proprietary, decompiled,
+leaked, and unknown-constant evidence.

@@ -1269,8 +1269,13 @@ fn write_debug(
             "opaque_unresolved"
         },
         trim_timeline_available: false,
+        semantic_object_audio_binding: "unresolved",
         semantic_binding_state: "unresolved",
+        metadata_scene_available: true,
+        reconstruction_rows_available: true,
         reconstruction_audio_status: "diagnostic_rows_only",
+        audio_bound_objectscene_admissible: false,
+        verified_authored_object_pcm_admissible: false,
         renderer_fidelity_eligible: false,
         opaque_elements: opaque_elements
             .iter()
@@ -1290,7 +1295,7 @@ fn write_debug(
         serde_json::to_vec_pretty(&status)?,
     )?;
     let mut status_text = format!(
-        "profile: {}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nsemantic_binding_state: {}\nreconstruction_audio_status: {}\nrenderer_fidelity_eligible: {}\n",
+        "profile: {}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nsemantic_object_audio_binding: {}\nsemantic_binding_state: {}\nmetadata_scene_available: {}\nreconstruction_rows_available: {}\nreconstruction_audio_status: {}\naudio_bound_objectscene_admissible: {}\nverified_authored_object_pcm_admissible: {}\nrenderer_fidelity_eligible: {}\n",
         status.profile,
         status.accepted_with_deviation,
         status.oamd_payload_structurally_accepted,
@@ -1298,8 +1303,13 @@ fn write_debug(
         status.object_metadata_status,
         status.trim_metadata_status,
         status.trim_timeline_available,
+        status.semantic_object_audio_binding,
         status.semantic_binding_state,
+        status.metadata_scene_available,
+        status.reconstruction_rows_available,
         status.reconstruction_audio_status,
+        status.audio_bound_objectscene_admissible,
+        status.verified_authored_object_pcm_admissible,
         status.renderer_fidelity_eligible,
     );
     for opaque in &status.opaque_elements {
@@ -1329,8 +1339,13 @@ struct OamdPartialStatusArtifact {
     object_metadata_status: &'static str,
     trim_metadata_status: &'static str,
     trim_timeline_available: bool,
+    semantic_object_audio_binding: &'static str,
     semantic_binding_state: &'static str,
+    metadata_scene_available: bool,
+    reconstruction_rows_available: bool,
     reconstruction_audio_status: &'static str,
+    audio_bound_objectscene_admissible: bool,
+    verified_authored_object_pcm_admissible: bool,
     renderer_fidelity_eligible: bool,
     opaque_elements: Vec<OpaqueTrimArtifact>,
 }

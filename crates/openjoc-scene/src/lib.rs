@@ -9,6 +9,12 @@ use std::{collections::HashSet, fmt};
 
 mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder};
+mod binding;
+pub use binding::{
+    BindingAdmissionError, BindingAdmissionRequirements, BindingAdmissionStatus,
+    BindingEvidenceClass, BindingEvidenceDimensions, BindingProvenance, BindingRelationKind,
+    SemanticBindingEvidence, VerifiedBindingAdmission,
+};
 mod layout;
 pub use layout::{
     ProgrammeAnchor, ProgrammeAudioSource, ProgrammeLayout, ProgrammeLayoutEntry,
@@ -121,19 +127,16 @@ pub struct MetadataObject {
 pub type ObjectTrack = MetadataObject;
 
 /// Semantic state of the audio-to-authored-object relationship.
+///
+/// Evidence levels are represented separately by [`SemanticBindingEvidence`].
+/// The only currently constructible production state is `Unresolved`; this
+/// prevents structural coincidence or empirical correlation from being
+/// serialized as a verified authored-object/audio-row binding.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticBindingState {
-    /// No independently verified authored-object/audio-row binding exists.
     #[default]
     Unresolved,
-    /// Only normative slot/row cardinality and ordering are established.
-    StructuralOnly,
-    /// Controlled spatial observations support a relationship, but do not
-    /// prove authored identity.
-    EmpiricalSpatialSupport,
-    /// Reserved for a future independently verified binding evidence package.
-    Verified,
 }
 
 /// One timed, fully resolved metadata update.

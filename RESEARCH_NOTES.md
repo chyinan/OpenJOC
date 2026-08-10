@@ -392,3 +392,14 @@ object stems. Structural 15-slot/15-row cardinality and the separate
 row-index, dominant-row, FL/FR, or spatial-observation fallback is allowed.
 The strict raw warp 3 reservation and vendor profile behavior are unchanged;
 no Logic fixture or new semantic inference was performed.
+
+## J1R13 — Semantic binding evidence contract
+
+J1R12's unresolved boundary is now an auditable contract. Structural
+slot/row relations and empirical spatial/context correlations are evidence
+classes, not semantic state transitions. A future verified admission must
+identify WHO, WHERE, SLOT, ROW/BASIS, audio identity, context, time,
+repeatability, negative controls, and cross-state behavior, with allowed
+provenance and a falsifier. The validator rejects equal-count/index,
+dominant-row, single-fixture, and field-name arguments. The current Logic
+campaign is frozen; no new fixture or semantic binding was created in J1R13.
