@@ -819,3 +819,17 @@ behavior. No new fixture/media was created. The next highest-value non-fixture
 blocker is admissible evidence for the bounded vendor continuation after raw
 warp 3. Private evidence is recorded under
 `OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.
+
+## J1R17 — Opaque vendor-continuation preservation
+
+The current goal now includes a narrow preservation contract at the unresolved
+vendor boundary. Under an explicit DOLBY_VENDOR_COMPAT selection, OpenJOC
+retains the bounded declared OAMD element and exposes the post-warp portion as
+an opaque, lossless, non-owning bit view with exact bounds and provenance.
+ETSI_STRICT still rejects raw warp 3, and the opaque bits remain outside
+normative semantics. No new Logic fixture/media, warp rule, trim mapping,
+ObjectScene admission, semantic binding, authored-object PCM, renderer claim,
+or JOC interpretation was added. The next step still requires reviewer
+authorization and evidence, not a guessed vendor meaning.
+Private evidence freeze:
+`20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.

@@ -498,6 +498,18 @@ fn print_oamd_profile_status(
                     opaque.warp_payload_end_bit,
                     opaque.deviation_code,
                 );
+                println!(
+                    "    vendor continuation: status={} payload-relative bits=[{},{}] length_bits={} sha256={} provenance={} interpretation={}",
+                    opaque.preservation_status,
+                    opaque.continuation_payload_start_bit,
+                    opaque.continuation_payload_end_bit,
+                    opaque
+                        .continuation_element_relative_end_bit
+                        .saturating_sub(opaque.continuation_element_relative_start_bit),
+                    opaque.continuation_sha256,
+                    opaque.provenance,
+                    opaque.interpretation_status,
+                );
                 println!("    OAMD trim timeline: unavailable");
                 println!("    OAMD renderer fidelity: ineligible");
             } else {
@@ -1286,6 +1298,23 @@ fn write_debug(
                 raw_body_sha256: opaque.raw_body_sha256.clone(),
                 raw_warp: opaque.raw_warp,
                 warp_payload_bits: [opaque.warp_payload_start_bit, opaque.warp_payload_end_bit],
+                body_payload_bits: [opaque.body_payload_start_bit, opaque.body_payload_end_bit],
+                continuation_element_relative_bits: [
+                    opaque.continuation_element_relative_start_bit,
+                    opaque.continuation_element_relative_end_bit,
+                ],
+                continuation_payload_bits: [
+                    opaque.continuation_payload_start_bit,
+                    opaque.continuation_payload_end_bit,
+                ],
+                continuation_bit_length: opaque
+                    .continuation_element_relative_end_bit
+                    .saturating_sub(opaque.continuation_element_relative_start_bit),
+                continuation_sha256: opaque.continuation_sha256.clone(),
+                raw_bits_available: true,
+                preservation_status: opaque.preservation_status,
+                provenance: opaque.provenance,
+                interpretation_status: opaque.interpretation_status,
                 deviation_code: opaque.deviation_code,
             })
             .collect(),
@@ -1358,6 +1387,15 @@ struct OpaqueTrimArtifact {
     raw_body_sha256: String,
     raw_warp: u8,
     warp_payload_bits: [usize; 2],
+    body_payload_bits: [usize; 2],
+    continuation_element_relative_bits: [usize; 2],
+    continuation_payload_bits: [usize; 2],
+    continuation_bit_length: usize,
+    continuation_sha256: String,
+    raw_bits_available: bool,
+    preservation_status: &'static str,
+    provenance: &'static str,
+    interpretation_status: &'static str,
     deviation_code: &'static str,
 }
 

@@ -357,16 +357,65 @@ fn vendor_profile_retains_reserved_trim_body_without_remapping_warp() {
     assert_eq!(opaque.valid_bits_in_last_byte, 8);
     assert_eq!(opaque.raw_body.bytes, vec![0b0110_0000]);
     assert_eq!(opaque.raw_body.bit_len, 8);
+    assert_eq!(opaque.body_payload_start_bit, 23);
+    assert_eq!(opaque.body_payload_end_bit, 31);
     assert_eq!(opaque.raw_warp, 3);
     assert_eq!(opaque.warp_element_relative_start_bit, 1);
     assert_eq!(opaque.warp_element_relative_end_bit, 3);
     assert_eq!(opaque.warp_payload_start_bit, 24);
     assert_eq!(opaque.warp_payload_end_bit, 26);
+    assert_eq!(opaque.continuation_element_relative_start_bit, 3);
+    assert_eq!(opaque.continuation_element_relative_end_bit, 8);
+    assert_eq!(opaque.continuation_payload_start_bit, 26);
+    assert_eq!(opaque.continuation_payload_end_bit, 31);
+    assert_eq!(opaque.vendor_continuation().bit_len(), 5);
+    assert_eq!(
+        (0..5)
+            .map(|index| opaque.vendor_continuation().bit(index))
+            .collect::<Vec<_>>(),
+        vec![Some(false); 5]
+    );
+    assert_eq!(opaque.preservation_status, "opaque_lossless_bounded");
+    assert_eq!(opaque.provenance, "vendor_observed_normative_unresolved");
+    assert_eq!(opaque.interpretation_status, "unresolved");
     assert_eq!(
         opaque.first_parser_error,
         OamdError::ReservedWarpMode { code: 3 }
     );
     assert_eq!(opaque.deviation_code, "LOGIC_OAMD_RESERVED_TRIM_WARP_3");
+}
+
+#[test]
+fn vendor_profile_preserves_nonzero_non_byte_aligned_continuation_exactly() {
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    let mut content = vec![false]; // discard unknown false
+    push(&mut content, 3, 2); // raw reserved warp 3
+    push(&mut content, 0b10101, 5); // opaque continuation; not a semantic field
+    push_element(&mut bits, 2, 1, &content);
+    let vendor = parse_oamd_payload_with_profile(
+        &pack(bits),
+        OamdDecoderConfig {
+            trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
+        },
+        OamdParseProfile::DolbyVendorCompat,
+        11,
+    )
+    .expect("vendor opaque retention");
+    let OamdElement::OpaqueObservedKnownElement(opaque) = &vendor.elements[0].element else {
+        panic!("expected opaque observed trim element");
+    };
+    let continuation = opaque.vendor_continuation();
+    assert_eq!(continuation.start_bit, 3);
+    assert_eq!(continuation.end_bit, 8);
+    assert_eq!(continuation.bit_len(), 5);
+    assert_eq!(
+        (0..5)
+            .map(|index| continuation.bit(index))
+            .collect::<Vec<_>>(),
+        vec![Some(true), Some(false), Some(true), Some(false), Some(true),]
+    );
+    assert_ne!(opaque.continuation_sha256, opaque.raw_body_sha256);
 }
 
 #[test]

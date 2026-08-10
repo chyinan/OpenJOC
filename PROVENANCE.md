@@ -2457,3 +2457,23 @@ authored-object PCM inadmissibility, and audio-bound ObjectScene
 inadmissibility are unchanged. No new Logic fixture or media was created.
 Private evidence freeze:
 `20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/j1r16_evidence_freeze.json`.
+
+## J1R17 opaque vendor-continuation preservation (2026-08-10)
+
+J1R17 adds an explicit lossless representation for the already bounded
+continuation of an observed OAMD element after the ETSI-reserved raw warp
+value. The vendor-compatible parser retains the complete declared element
+body and exposes a non-owning bit view from the end of warp_mode to the
+validated element boundary, together with payload-relative bounds, an exact
+bit-window SHA-256, and provenance/status fields. The view is opaque and
+unresolved; it is not an ETSI continuation, trim interpretation, padding
+claim, or vendor semantic rule.
+
+ETSI_STRICT remains unchanged and returns ReservedWarpMode { raw: 3 }.
+DOLBY_VENDOR_COMPAT still requires explicit selection and only preserves the
+observed raw-3 element as opaque_lossless_bounded; it does not feed the
+continuation into OAMD timelines, ObjectScene binding, ReconstructionBasis
+semantics, JOC rows, renderer state, or PCM. Existing qualified carriers were
+rechecked without new media; no Logic fixture or export was created.
+Private evidence freeze:
+`20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.

@@ -37,6 +37,44 @@ pub struct OpaqueBits {
     pub bit_len: usize,
 }
 
+impl OpaqueBits {
+    /// Returns one bit from this MSB-first lossless bit sequence.
+    #[must_use]
+    pub fn bit(&self, index: usize) -> Option<bool> {
+        (index < self.bit_len).then(|| self.bytes[index / 8] & (0x80 >> (index % 8)) != 0)
+    }
+}
+
+/// A lossless view into an already-preserved opaque bit sequence.
+///
+/// The view does not allocate or copy another byte buffer. Its range is
+/// relative to [`Self::source`], so callers can inspect a non-byte-aligned
+/// continuation without mistaking the enclosing body bytes for the exact
+/// source slice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpaqueVendorContinuation<'a> {
+    pub source: &'a OpaqueBits,
+    pub start_bit: usize,
+    pub end_bit: usize,
+    pub raw_warp: u8,
+    pub provenance: &'static str,
+    pub interpretation_status: &'static str,
+}
+
+impl OpaqueVendorContinuation<'_> {
+    #[must_use]
+    pub const fn bit_len(self) -> usize {
+        self.end_bit - self.start_bit
+    }
+
+    #[must_use]
+    pub fn bit(&self, index: usize) -> Option<bool> {
+        (index < self.bit_len())
+            .then(|| self.source.bit(self.start_bit + index))
+            .flatten()
+    }
+}
+
 /// A known trim element whose declared body is retained without interpreting
 /// the unresolved vendor warp syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,13 +87,39 @@ pub struct OpaqueObservedKnownElement {
     pub valid_bits_in_last_byte: u8,
     pub raw_body: OpaqueBits,
     pub raw_body_sha256: String,
+    /// Absolute payload-relative bounds of the validated enclosing body.
+    pub body_payload_start_bit: usize,
+    pub body_payload_end_bit: usize,
     pub first_parser_error: OamdError,
     pub raw_warp: u8,
     pub warp_element_relative_start_bit: usize,
     pub warp_element_relative_end_bit: usize,
     pub warp_payload_start_bit: usize,
     pub warp_payload_end_bit: usize,
+    /// The opaque continuation is a view into `raw_body`, not a second buffer.
+    pub continuation_element_relative_start_bit: usize,
+    pub continuation_element_relative_end_bit: usize,
+    pub continuation_payload_start_bit: usize,
+    pub continuation_payload_end_bit: usize,
+    pub continuation_sha256: String,
+    pub preservation_status: &'static str,
+    pub provenance: &'static str,
+    pub interpretation_status: &'static str,
     pub deviation_code: &'static str,
+}
+
+impl OpaqueObservedKnownElement {
+    #[must_use]
+    pub fn vendor_continuation(&self) -> OpaqueVendorContinuation<'_> {
+        OpaqueVendorContinuation {
+            source: &self.raw_body,
+            start_bit: self.continuation_element_relative_start_bit,
+            end_bit: self.continuation_element_relative_end_bit,
+            raw_warp: self.raw_warp,
+            provenance: self.provenance,
+            interpretation_status: self.interpretation_status,
+        }
+    }
 }
 
 /// Normative element bodies currently exposed by the top-level OAMD parser.
@@ -63,7 +127,7 @@ pub struct OpaqueObservedKnownElement {
 pub enum OamdElement {
     Objects(ObjectElement),
     Trim(TrimElement),
-    OpaqueObservedKnownElement(OpaqueObservedKnownElement),
+    OpaqueObservedKnownElement(Box<OpaqueObservedKnownElement>),
     Extended(ExtendedObjectElement),
     Unknown(OpaqueBits),
 }
@@ -296,23 +360,44 @@ fn parse_oamd_payload_inner(
                             u8::try_from(raw_body.bit_len % 8)?
                         };
                         let raw_body_sha256 = sha256_hex(&raw_body.bytes);
-                        OamdElement::OpaqueObservedKnownElement(OpaqueObservedKnownElement {
-                            element_id: id,
-                            alternate_data_id,
-                            discard_unknown,
-                            declared_bits: size_bits,
-                            declared_bytes: usize::try_from(size_bytes)?,
-                            valid_bits_in_last_byte,
-                            raw_body,
-                            raw_body_sha256,
-                            first_parser_error: error,
-                            raw_warp,
-                            warp_element_relative_start_bit: warp_relative_start,
-                            warp_element_relative_end_bit: warp_relative_end,
-                            warp_payload_start_bit: warp_start,
-                            warp_payload_end_bit: warp_start + 2,
-                            deviation_code: "LOGIC_OAMD_RESERVED_TRIM_WARP_3",
-                        })
+                        let continuation_element_relative_start_bit = warp_relative_end;
+                        let continuation_element_relative_end_bit = size_bits;
+                        let continuation_payload_start_bit = warp_start + 2;
+                        let continuation_payload_end_bit = body_end_bit;
+                        let continuation_sha256 = sha256_bit_window(
+                            &raw_body,
+                            continuation_element_relative_start_bit,
+                            continuation_element_relative_end_bit,
+                        )?;
+                        OamdElement::OpaqueObservedKnownElement(Box::new(
+                            OpaqueObservedKnownElement {
+                                element_id: id,
+                                alternate_data_id,
+                                discard_unknown,
+                                declared_bits: size_bits,
+                                declared_bytes: usize::try_from(size_bytes)?,
+                                valid_bits_in_last_byte,
+                                raw_body,
+                                raw_body_sha256,
+                                body_payload_start_bit: body_start_bit,
+                                body_payload_end_bit: body_end_bit,
+                                first_parser_error: error,
+                                raw_warp,
+                                warp_element_relative_start_bit: warp_relative_start,
+                                warp_element_relative_end_bit: warp_relative_end,
+                                warp_payload_start_bit: warp_start,
+                                warp_payload_end_bit: warp_start + 2,
+                                continuation_element_relative_start_bit,
+                                continuation_element_relative_end_bit,
+                                continuation_payload_start_bit,
+                                continuation_payload_end_bit,
+                                continuation_sha256,
+                                preservation_status: "opaque_lossless_bounded",
+                                provenance: "vendor_observed_normative_unresolved",
+                                interpretation_status: "unresolved",
+                                deviation_code: "LOGIC_OAMD_RESERVED_TRIM_WARP_3",
+                            },
+                        ))
                     }
                     Err(error) => return Err(error),
                 }
@@ -414,6 +499,26 @@ fn sha256_hex(bytes: &[u8]) -> String {
         let _ = write!(output, "{byte:02x}");
     }
     output
+}
+
+fn sha256_bit_window(
+    bits: &OpaqueBits,
+    start_bit: usize,
+    end_bit: usize,
+) -> Result<String, OamdError> {
+    if end_bit < start_bit || end_bit > bits.bit_len {
+        return Err(OamdError::ValueOverflow);
+    }
+    let window = copy_bit_window(&bits.bytes, start_bit, end_bit)?;
+    let mut hasher = Sha256::new();
+    hasher.update((window.bit_len as u64).to_be_bytes());
+    hasher.update(window.bytes);
+    let digest = hasher.finalize();
+    let mut output = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(output, "{byte:02x}");
+    }
+    Ok(output)
 }
 
 fn derive_object_classes(prefix: &OamdContentPrefix) -> Result<Vec<ObjectClass>, OamdError> {

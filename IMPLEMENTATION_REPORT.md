@@ -1426,3 +1426,23 @@ classification distinguishes expected `ETSI_STRICT` rejection of raw
 PCM, audio-bound ObjectScene, or renderer claim was added. The private matrix
 and evidence freeze are under
 `OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.
+
+## J1R17 — Opaque vendor-continuation preservation
+
+The OAMD payload layer now exposes OpaqueVendorContinuation as a borrowed,
+bit-addressed view over the existing retained element body. The vendor
+fallback records the body span, warp span, continuation span in both element
+and payload coordinates, an exact bit-window SHA-256, and explicit
+opaque_lossless_bounded / vendor_observed_normative_unresolved / unresolved
+status. The CLI forensic and partial-status artifacts serialize the same
+neutral evidence.
+
+The implementation does not copy or rewrite the source bits, map raw warp 3
+to 0/1/2, continue ETSI interpretation, or route opaque data into scene,
+binding, reconstruction, renderer, or PCM semantics. Strict validation remains
+unchanged. Unit and CLI regressions cover a non-byte-aligned continuation,
+exact bit access/hash distinction, raw-3 retention, and explicit profile
+behavior. Existing qualified carriers were exercised only as private evidence;
+no new media was created.
+Private evidence freeze:
+`20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.

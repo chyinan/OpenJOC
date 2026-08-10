@@ -522,3 +522,22 @@ The private run and its aggregate evidence freeze are recorded in
 The release-readiness decision is `EXISTING_CORPUS_ACCEPTANCE_PARTIAL`, not a
 percentage-based compatibility claim. Private evidence freeze:
 `20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/j1r16_evidence_freeze.json`.
+
+## J1R17 opaque vendor-continuation preservation (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Bounded enclosing element retained | Declared element-2 body bounds are copied losslessly before vendor fallback | passed |
+| Exact continuation view | Non-owning view spans element-relative warp_end..body_end; payload-relative bounds and bit length are explicit | passed |
+| Bit-exact evidence | Continuation SHA-256 includes the exact bit length and MSB-first packed window; non-byte-aligned synthetic regression passes | passed |
+| Provenance/status | opaque_lossless_bounded, vendor_observed_normative_unresolved, and unresolved are serialized | passed |
+| Strict profile | Raw warp 3 remains ReservedWarpMode; no strict relaxation | unchanged; expected rejection |
+| Vendor profile | Explicit Dolby-compatible profile preserves observed raw-3 continuation only; no alias or semantic interpretation | passed; opaque only |
+| Downstream isolation | Opaque continuation is not consumed by timeline, ObjectScene binding, ReconstructionBasis semantics, renderer, or PCM paths | passed |
+| Existing corpus | Nine qualified carriers rechecked without new Logic/ADM/DD+/EC3 media | passed |
+
+This milestone establishes preservation, not meaning. The post-warp bits remain
+normatively unresolved and do not justify a warp-3 alias or vendor semantic
+rule.
+Private evidence freeze:
+`20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.

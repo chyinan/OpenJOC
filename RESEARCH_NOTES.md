@@ -441,3 +441,23 @@ was created. The highest-value next non-fixture blocker is admissible evidence
 for the bounded vendor continuation after raw warp 3, or continued explicit
 opacity. Evidence package:
 `OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.
+
+## J1R17 — Opaque vendor-continuation preservation contract
+
+The remaining raw-3 boundary is now represented without pretending that the
+normative cursor continues through it. For an explicitly selected
+DOLBY_VENDOR_COMPAT parse, element 2's complete declared body remains the
+lossless source. A non-owning OpaqueVendorContinuation view covers only the
+bits after the two-bit raw warp field and before the validated enclosing
+element end; it carries exact payload-relative bounds, an exact bit-window
+hash, and unresolved provenance. This intentionally excludes payload trailing
+bits outside the element body.
+
+The strict parser still stops at warp_mode [526,528) = 3 with
+ReservedWarpMode { raw: 3 }. No trim, padding, checksum, coordinate, or
+other semantic name is assigned. The opaque view is diagnostic/preservation
+evidence only and cannot create an OAMD timeline, semantic object binding,
+authored-object PCM, renderer state, or JOC meaning. Nine existing qualified
+carriers were rechecked; no new fixture or media was generated.
+Private evidence freeze:
+`20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.

@@ -163,6 +163,23 @@ fn inactive_oamd() -> Vec<u8> {
     pack(bits)
 }
 
+fn vendor_reserved_trim_oamd() -> Vec<u8> {
+    let mut bits = Vec::new();
+    push(&mut bits, 0, 2); // syntax version
+    push(&mut bits, 0, 5); // one object
+    push(&mut bits, 1, 1); // dynamic-only program
+    push(&mut bits, 0, 1); // no LFE
+    push(&mut bits, 0, 1); // no alternate object data
+    push(&mut bits, 1, 4); // one element
+    push(&mut bits, 2, 4); // trim element
+    push(&mut bits, 0, 4); // one-byte body
+    push(&mut bits, 0, 1); // variable_bits_max continuation false
+    push(&mut bits, 0, 1); // discard_unknown false
+    push(&mut bits, 3, 2); // observed reserved warp mode
+    push(&mut bits, 0b10101, 5); // opaque non-byte-aligned continuation
+    pack(bits)
+}
+
 fn five_channel_audio_frame(emdf: &[u8]) -> Vec<u8> {
     let size = 4096;
     let mut bits = Bits::default();
@@ -441,7 +458,7 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
     let downmix = root.join("downmix.wav");
     let strict_output = root.join("strict-output");
     let compat_output = root.join("compat-output");
-    let oamd = inactive_oamd();
+    let oamd = vendor_reserved_trim_oamd();
     let joc = absent_joc();
     fs::write(
         &input,
@@ -460,6 +477,8 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
             input.to_str().expect("input path"),
             "--downmix",
             downmix.to_str().expect("downmix path"),
+            "--trim-config-count",
+            "1",
             "-o",
             strict_output.to_str().expect("output path"),
         ])
@@ -476,6 +495,8 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
             downmix.to_str().expect("downmix path"),
             "--validation-profile",
             "dolby-vendor-compat",
+            "--trim-config-count",
+            "1",
             "-o",
             compat_output.to_str().expect("output path"),
         ])
@@ -499,6 +520,22 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
             .len(),
         7
     );
+    let partial_status: serde_json::Value = serde_json::from_slice(
+        &fs::read(compat_output.join("debug/frame_000/oamd_partial_status.json"))
+            .expect("opaque status report"),
+    )
+    .expect("opaque status JSON");
+    assert_eq!(partial_status["trim_metadata_status"], "opaque_unresolved");
+    let opaque = partial_status["opaque_elements"]
+        .as_array()
+        .expect("opaque element array")
+        .first()
+        .expect("opaque element");
+    assert_eq!(opaque["raw_warp"], 3);
+    assert_eq!(opaque["raw_bits_available"], true);
+    assert_eq!(opaque["preservation_status"], "opaque_lossless_bounded");
+    assert_eq!(opaque["interpretation_status"], "unresolved");
+    assert_eq!(opaque["continuation_bit_length"], 5);
     assert!(compat_output.join("debug/frame_000/emdf.txt").is_file());
     assert!(compat_output.join("scene.json").is_file());
 
