@@ -1276,3 +1276,39 @@ deactivation as an intra-stream payload-11 transition, direct
 established. No production parser, DSP, profile, JOC, ObjectScene, or second
 Z fixture changed. Complete OAMD timeline/state semantics, OAMD↔JOC binding,
 verified object PCM, render fidelity, and end-to-end acceptance remain open.
+
+## J1R9 — Dual-object pre-render row identity boundary (2026-08-10)
+
+This docs-only closure records the private run
+`20260810T104057Z_j1r9-dual-object-multitone-identity_6492301`, whose two-run
+evidence-freeze aggregate SHA-256 is
+`d9611198677caf2f0d6c56aacc4b2fe70843f8fc7a9489546b9658e697045863`.
+No production code, test, fixture, carrier, parser, or profile setting changed.
+
+The sole four-second dual-object Logic fixture preserves two
+sample-identified sources while exchanging positions: 997 Hz is authored
+FL→FR and 2003 Hz is authored FR→FL. ADM confirms those identities and stable
+positions. A real nonzero-Z transition trajectory is retained and excluded
+from the predeclared stable analysis windows. Two unchanged-project DD+
+exports produce the same stream-copied raw EC3 SHA-256
+`d35aee5421e965d2fa0eb80d4b6dd071ba719dcd12686a40bf8a87cacfdc452e`.
+
+The diagnostic OAMD path reads Element 1 fields only before opaque Element 2:
+slot 0 stays at the Front-Left comparison tuple and slot 3 at Front-Right in
+both stable windows. This is evidence of stable spatial slots, not complete
+authored-object/OAMD-slot binding. Raw `warp_mode [526,528) = 3` remains ETSI
+reserved and the eight post-warp bits remain raw zero. Strict and vendor
+profile behaviour is unchanged.
+
+The evaluation-only JOC reconstruction uses the FFmpeg-compatible 5.1 base
+and declared Table-47 non-LFE mapping. It reports all rows, but only two carry
+high stable-window energy: row 0 (paired with FL slot 0) changes 997→2003 Hz
+and row 3 (paired with FR slot 3) changes 2003→997 Hz. Since ADM shows the
+opposite authored-object trajectories, the supported conclusion is
+`ONE_ROW_PER_AUTHORED_OBJECT_MODEL_REJECTED`. The associated scoped
+observation is `SPATIAL_ANCHORED_JOC_STRUCTURE_GAINS_SUPPORT`.
+
+This does not claim a universal JOC spatial basis, full OAMD/JOC mapping,
+ObjectScene correctness, renderer fidelity, verified final object PCM, or
+warp-3 semantics. Next work is an explicit spatial-basis binding model over
+the existing corpus; no second dual-object fixture is warranted here.

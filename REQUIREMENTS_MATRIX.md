@@ -432,3 +432,17 @@ fidelity, or resolved Logic `warp=3` semantics.
 
 The private run and its aggregate evidence freeze are recorded in
 `PROVENANCE.md`; no production decoder or profile behavior was changed.
+
+## J1R9 dual-object row-identity boundary (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Dual authored-object control | One persisted Logic project with 997 Hz moving FL→FR and 2003 Hz moving FR→FL; source PCM identities are independently authenticated | verified for this fixture |
+| ADM ground truth | Four-second ADM qualifies both object/track identities and stable FL/FR positions; transition Z is retained as an exception and excluded from stable-window claims | verified; scoped |
+| Carrier determinism | Unchanged-project R0/R1 raw EC3 are byte-identical (`d35aee54…c452e`) | verified |
+| OAMD boundary | Element 1 slot 0 remains FL and slot 3 remains FR in stable windows; full authored-object-to-slot identity is not established | partially evidenced |
+| Pre-render JOC row observation | Row 0 changes 997→2003 while paired with stable FL; row 3 changes 2003→997 while paired with stable FR | verified; diagnostic and scoped |
+| Authored-object-per-row model | The two high-energy rows exchange authenticated audio identity under an authored-object swap; they do not retain authored-object identity | `ONE_ROW_PER_AUTHORED_OBJECT_MODEL_REJECTED` for tested FL/FR swap |
+| Spatially anchored structure | These observations support spatially anchored JOC-row structure, not a global row/basis theorem | partially evidenced; scoped |
+| Strict/vendor warp boundary | `warp [526,528) = raw 3` remains ETSI-reserved; no vendor rule or production parser change | unchanged; unresolved |
+| ObjectScene, renderer, and fidelity | No ObjectScene admission, complete OAMD/JOC binding, object PCM claim, or rendering/fidelity comparison | open |

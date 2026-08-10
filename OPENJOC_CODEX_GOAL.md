@@ -704,3 +704,27 @@ OAMD↔JOC binding, verified object PCM, ObjectScene/render fidelity, and
 end-to-end acceptance remain open. No second Z fixture is required by this
 calibration; any future fixture should be selected only for a precise
 remaining control.
+
+## J1R9 — Dual-object JOC-row identity boundary (2026-08-10)
+
+The private evidence package
+`20260810T104057Z_j1r9-dual-object-multitone-identity_6492301` is frozen by
+aggregate SHA-256
+`d9611198677caf2f0d6c56aacc4b2fe70843f8fc7a9489546b9658e697045863`.
+It is one deterministic four-second FL/FR swap: independently authenticated
+997 Hz and 2003 Hz source identities exchange positions in ADM, while R0/R1
+stream-copied raw EC3 is byte-identical.
+
+The valid conclusion is deliberately narrow. In stable pre/post windows,
+OAMD Element 1 slot 0 remains Front-Left and slot 3 Front-Right, while paired
+high-energy pre-render JOC rows exchange audio identity: row 0 becomes 2003
+Hz at FL and row 3 becomes 997 Hz at FR. Therefore
+`ONE_ROW_PER_AUTHORED_OBJECT_MODEL_REJECTED` for this controlled swap; the
+evidence gives scoped support to spatially anchored row structure instead.
+
+The boundary remains strict: full authored-object/OAMD-slot binding is not
+established, raw `warp=3` remains reserved and opaque, the post-warp suffix is
+uninterpreted, and there is no ObjectScene, renderer, or final object
+PCM/fidelity claim. No production behaviour changed. The next task is to
+specify a falsifiable spatial-basis binding model from the qualified corpus
+before any ObjectScene admission.

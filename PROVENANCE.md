@@ -2323,3 +2323,45 @@ OAMD↔JOC binding, verified object PCM, ObjectScene/render fidelity, and
 end-to-end acceptance remain open. No production code, parser/profile,
 fixture corpus outside this one Logic project, JOC, or ObjectScene behavior
 was changed.
+
+## J1R9 — Dual-object multi-tone identity-binding boundary (2026-08-10)
+
+This documentation-only milestone records the sole qualified dual-object
+Front-Left/Front-Right swap in the private run
+`20260810T104057Z_j1r9-dual-object-multitone-identity_6492301`. Its
+two-run evidence freeze is `j1r9_evidence_freeze.json`, aggregate SHA-256
+`d9611198677caf2f0d6c56aacc4b2fe70843f8fc7a9489546b9658e697045863`.
+No private media, ADM, EC3, manifest, or forensic report is tracked here.
+
+The persisted Logic project contains exactly two independently controlled
+objects. ADM establishes that `OBJ_997HZ` moves Front-Left → Front-Right and
+`OBJ_2003HZ` moves Front-Right → Front-Left. The source gate proves the
+997 Hz and 2003 Hz PCM sources retain distinct identities; the four-second
+ADM programme range is qualified. Its recorded transition trajectory has
+nonzero Z during the transition, so analysis uses predeclared stable pre- and
+post-transition windows rather than normalizing that behaviour. Two
+unchanged-project DD+ exports stream-copy to the identical raw EC3 carrier
+SHA-256 `d35aee5421e965d2fa0eb80d4b6dd071ba719dcd12686a40bf8a87cacfdc452e`.
+
+The OAMD observation is deliberately limited to Element 1 data before the
+known unresolved trim boundary. Slot 0 retains the controlled Front-Left
+comparison tuple and slot 3 the Front-Right tuple in both stable windows. The
+full authored-object-to-OAMD-slot mapping is not established: the observed
+Front-Left → Front-Right trajectory is slot 9, whose paired JOC row is silent
+in the stable windows. Element 2 remains opaque; raw `warp_mode [526,528) =
+3` remains ETSI-reserved and `[528,536)` remains all zero. No warp or trim
+meaning and no vendor rule is inferred.
+
+Using only diagnostic pre-render reconstruction rows, the same two stable
+slots show a decisive frequency-identity exchange: row 0 (paired with the
+Front-Left slot) changes from 997 Hz to 2003 Hz, and row 3 (paired with the
+Front-Right slot) changes from 2003 Hz to 997 Hz. ADM establishes the
+opposite authored-object trajectories. The narrow supported decision is
+`ONE_ROW_PER_AUTHORED_OBJECT_MODEL_REJECTED`; the complementary scoped
+observation is `SPATIAL_ANCHORED_JOC_STRUCTURE_GAINS_SUPPORT`.
+
+This is not a universal spatial-basis model, a complete OAMD/JOC binding,
+ObjectScene correctness, renderer fidelity, object PCM fidelity, or a
+resolution of raw warp 3. No production parser, profile, decoder, renderer,
+or semantic-admission behaviour changed. The next work is an explicit,
+testable spatial-basis binding model using the existing qualified corpus.

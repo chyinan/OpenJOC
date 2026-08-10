@@ -333,3 +333,38 @@ binding, object PCM, ObjectScene/render fidelity, and end-to-end acceptance.
 The next proposed research line is **J1R7B — Reserved Warp-3 Empirical
 Boundary Characterization**; it is documented only and is not executed by this
 milestone.
+
+## J1R9 dual-object multi-tone identity-binding result (2026-08-10)
+
+The J1R9 private run
+`20260810T104057Z_j1r9-dual-object-multitone-identity_6492301` is frozen by
+aggregate SHA-256
+`d9611198677caf2f0d6c56aacc4b2fe70843f8fc7a9489546b9658e697045863`.
+It uses one qualified four-second dual-object fixture: authenticated 997 Hz
+and 2003 Hz sources exchange Front-Left/Front-Right positions. ADM verifies
+the two authored-object trajectories. A nonzero-Z trajectory during the
+transition is retained as observed; predeclared stable windows before and
+after it are the only intervals used for the identity conclusion. R0/R1 raw
+EC3 is byte-identical.
+
+The OAMD observation remains bounded at raw warp. Element 1 slot 0 is the
+Front-Left comparison tuple and slot 3 Front-Right in both stable windows.
+This supports stable spatial slots but does not identify every authored object
+with an OAMD slot. The visible FL→FR trajectory is slot 9 and its paired JOC
+row has zero stable-window energy. Element 2 stays opaque:
+`warp_mode [526,528) = raw 3` is still ETSI-reserved and `[528,536)` remains
+raw zero without assigned semantics.
+
+Diagnostic pre-render reconstruction rows supply the new narrow binding
+evidence. Row 0 paired with stable FL changes dominant energy 997→2003 Hz;
+row 3 paired with stable FR changes 2003→997 Hz. Since ADM independently
+proves the authored objects follow the opposite trajectories,
+`ONE_ROW_PER_AUTHORED_OBJECT_MODEL_REJECTED` for this FL/FR experiment.
+The evidence instead gives scoped support to spatially anchored JOC-row
+structure.
+
+This does not establish complete OAMD/JOC semantics, a universal basis,
+ObjectScene correctness, renderer or object-PCM fidelity, or a semantic
+interpretation of raw warp 3. No production code changed. The next line is an
+explicit, testable spatial-basis binding model from the existing corpus before
+considering ObjectScene admission.
