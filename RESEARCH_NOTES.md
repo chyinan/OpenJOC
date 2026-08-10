@@ -530,3 +530,18 @@ contract. The decoder, OAMD timeline handling, ReconstructionBasis meaning,
 SemanticBindingState, and ETSI strict raw warp=3 behavior were not changed.
 The decision is
 `SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`.
+
+## J1R22 — Avoidable derived sample-index state
+
+The previous seekable reader expanded every FFprobe packet row into an
+OpenJOC-owned `Vec<IsoBmffSample>`. J1R22 keeps that constructor only as an
+explicit indexed/capture mode and changes ordinary sequential delivery to a
+lazy `IsoBmffSampleCursor`: FFprobe packet stdout is read line-by-line, the
+current offset/size is used once, and no prior descriptor is retained. The
+four-carrier byte-equivalence evidence remains passing.
+
+This is a precise ownership improvement, not a native ISO BMFF parser claim.
+FFprobe still owns the underlying native-table interpretation, so stco/co64,
+stsc, stsz, and related metadata remain an external duration-proportional
+boundary. Semantic binding, ReconstructionBasis meaning, and raw warp=3
+strict behavior remain unchanged.

@@ -892,3 +892,15 @@ stream boundary. Non-seekable and fragmented MP4 remain unadmitted; semantic
 binding and warp interpretation remain unchanged.
 
 Decision: `SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`.
+
+## J1R22 — Lazy sample-table delivery
+
+Ordinary seekable MP4 delivery now uses a bounded `IsoBmffSampleCursor` rather
+than an OpenJOC-expanded per-sample descriptor vector. The explicit indexed
+adapter remains available where random access is requested. Frozen MP4/raw
+pairs remain byte-identical, while FFprobe/native ISO BMFF table storage is
+still reported honestly as an external duration-proportional boundary.
+
+Decision: `DERIVED_ISOBMFF_SAMPLE_INDEX_ELIMINATED_FOR_SEQUENTIAL_DECODE`,
+with `BOUNDED_ISOBMFF_SAMPLE_CURSOR_ESTABLISHED`. No semantic binding or warp
+interpretation follows from this memory-ownership result.

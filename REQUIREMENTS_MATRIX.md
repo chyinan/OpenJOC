@@ -611,3 +611,20 @@ container metadata, authored-object identity, or resolved warp semantics.
 The narrow decision is `SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`.
 This is not a claim of O(1) sample-table/index memory or authored-object
 semantic binding.
+
+## J1R22 lazy sample cursor (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Derived index audit | Pre-change `Vec<IsoBmffSample>` measured at 129 entries / ~2,064 bytes per representative carrier | passed |
+| Sequential ownership | `IsoBmffSampleCursor` reads one FFprobe packet row at a time; ordinary path retains zero derived entries | passed |
+| Bounded cursor | One child/reader/line-buffer cursor state; no descriptor history | passed |
+| Elementary stream equivalence | Four frozen MP4/EC3 pairs retain identical ordered bytes and packet sizes | passed |
+| Random access | Explicit indexed constructor remains available for capture/random access | passed |
+| Native table accounting | FFprobe-owned stco/co64/stsc/stsz/stts metadata remains external and explicitly not claimed O(1) | limitation retained |
+| Malformed/error boundaries | Row, stream, bounds, sample-limit, probe-failure, and exact-EOF paths remain structured | passed |
+| Semantic/profile boundary | SemanticBindingState unresolved; ETSI raw warp=3 remains ReservedWarpMode | unchanged |
+
+The narrow decisions are `DERIVED_ISOBMFF_SAMPLE_INDEX_ELIMINATED_FOR_SEQUENTIAL_DECODE`
+and `BOUNDED_ISOBMFF_SAMPLE_CURSOR_ESTABLISHED`. This is not a claim of O(1)
+ISO BMFF container metadata.

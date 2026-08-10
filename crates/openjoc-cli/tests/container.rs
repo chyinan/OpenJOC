@@ -258,7 +258,8 @@ fn seekable_frozen_isobmff_samples_match_stream_copy() {
     let stats = reader.stats();
     assert_eq!(stats.samples_delivered, stats.sample_count);
     assert_eq!(stats.max_samples_simultaneously_retained, 1);
-    assert!(stats.derived_sample_index_entries > 0);
+    assert_eq!(stats.derived_sample_index_entries, 0);
+    assert_eq!(stats.cursor_state_entries, 1);
 }
 
 #[test]

@@ -73,6 +73,8 @@ fn seekable_reader_delivers_one_sample_at_a_time_and_supports_read() {
     assert_eq!(stats.sample_count, 2);
     assert_eq!(stats.max_current_sample_bytes, 4);
     assert_eq!(stats.max_samples_simultaneously_retained, 1);
+    assert_eq!(stats.derived_sample_index_entries, 2);
+    assert_eq!(stats.cursor_state_entries, 0);
 
     let source = b"headerAAABBBBtail".to_vec();
     let samples = vec![

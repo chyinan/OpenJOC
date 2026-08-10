@@ -1526,3 +1526,22 @@ and ETSI strict raw warp=3 reservation are unchanged. The narrow decision is
 this does not claim O(1) container index memory or semantic object binding.
 Private evidence:
 `OpenJOC-Private/reports/runs/20260810T174335Z_j1r21-isobmff-streaming_bbee0a5/j1r21_evidence_freeze.json`.
+
+## J1R22 — Lazy ISO BMFF cursor and derived-index elimination
+
+The ordinary seekable ISO BMFF path no longer expands FFprobe packet rows into
+an OpenJOC `Vec<IsoBmffSample>`. `IsoBmffSampleCursor` consumes the packet
+probe stdout incrementally with one reusable line buffer, and
+`SeekableIsoBmffEc3Reader::from_cursor` seeks the current offset and releases
+the current compressed sample before advancing. The old `new(..., Vec<...>)`
+constructor remains an explicit indexed/capture adapter for random access.
+
+Across four frozen carriers, the former 129-entry derived index (about 2,064
+bytes per carrier at the current descriptor shape) is replaced by one bounded
+cursor state entry, with identical ordered packet bytes. This removes
+duplicate OpenJOC metadata, but does not claim that FFprobe's own native
+stco/co64/stsc/stsz/stts tables are constant-memory; that external/container
+metadata remains a separately declared duration-proportional cost. The
+decision is `DERIVED_ISOBMFF_SAMPLE_INDEX_ELIMINATED_FOR_SEQUENTIAL_DECODE`
+with `BOUNDED_ISOBMFF_SAMPLE_CURSOR_ESTABLISHED`. No semantic, warp, or
+binding behavior changed.
