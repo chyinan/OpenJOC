@@ -802,3 +802,20 @@ objects, numerical tone concentration is not object identity,
 audio-bound ObjectScene remain inadmissible, and ETSI `warp=3` remains
 `ReservedWarpMode`. The next blocker is admissible semantic-binding evidence,
 not a numerical shortcut from row energy or slot order.
+
+## J1R16 — Existing-corpus end-to-end acceptance (2026-08-10)
+
+The existing nine-carrier corpus now has an evidence-bounded end-to-end matrix.
+All nine reach the declared input, AU framing, base PCM numerical,
+metadata-only ObjectScene, and ReconstructionBasis boundaries; J1R14 and
+J1R15 regressions remain passing. The correct release-readiness classification
+is `EXISTING_CORPUS_ACCEPTANCE_PARTIAL`: strict raw-3 rejection is expected,
+and vendor compatibility remains partial because the continuation after the
+reserved warp is still opaque.
+
+This does not change `SemanticBindingState::Unresolved`, diagnostic row
+semantics, authored-object PCM or audio-bound ObjectScene policy, or warp/profile
+behavior. No new fixture/media was created. The next highest-value non-fixture
+blocker is admissible evidence for the bounded vendor continuation after raw
+warp 3. Private evidence is recorded under
+`OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.

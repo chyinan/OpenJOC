@@ -2437,3 +2437,23 @@ This does not admit authored-object PCM, audio-bound ObjectScene, or row/slot
 semantic identity. `SemanticBindingState::Unresolved` and ETSI raw `warp=3`
 reserved behavior are unchanged. Private evidence freeze:
 `20260810T151025Z_j1r15-reconstruction-basis-acceptance_ef3c43f/j1r15_evidence_freeze.json`.
+
+## J1R16 Existing-corpus end-to-end acceptance (2026-08-10)
+
+The nine independently qualified frozen carriers were evaluated across input
+recognition, AU framing, base PCM, normative metadata, metadata-only scene
+assembly, ReconstructionBasis output, determinism, and profile outcomes. All
+nine reached the declared numerical/metadata boundaries; J1R14 timeline
+ordering and J1R15 ReconstructionBasis acceptance remained passing. No
+implementation defect or nondeterministic acceptance failure was found.
+
+The evidence-bounded decision is `EXISTING_CORPUS_ACCEPTANCE_PARTIAL`:
+`ETSI_STRICT` continues to reject the observed raw `warp=3` as an expected
+normative boundary, while `DOLBY_VENDOR_COMPAT` accepts observed signaling only
+with deviations and leaves the post-warp vendor continuation opaque. This
+does not change warp/profile semantics. `SemanticBindingState::Unresolved`,
+metadata-only ObjectScene admission, diagnostic ReconstructionBasis rows,
+authored-object PCM inadmissibility, and audio-bound ObjectScene
+inadmissibility are unchanged. No new Logic fixture or media was created.
+Private evidence freeze:
+`20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/j1r16_evidence_freeze.json`.

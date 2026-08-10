@@ -1409,3 +1409,20 @@ indices only, `RcLfe` remains separate, `SemanticBindingState::Unresolved`
 remains the production state, and no authored-object PCM or audio-bound
 ObjectScene is admissible. ETSI strict raw `warp=3` rejection and the vendor
 profile remain unchanged.
+
+## J1R16 — Existing-corpus end-to-end acceptance matrix
+
+J1R16 reused the nine independently qualified frozen carriers and did not
+create Logic, ADM, DD+, EC3, or other new media. Every carrier reached the
+declared input/AU, base PCM numerical, metadata-only scene, and structural
+ReconstructionBasis boundaries. Existing J1R14 timeline ordering and J1R15
+numerical regressions remained passing; repeated frozen evidence found no
+nondeterministic acceptance failure or production implementation defect.
+
+The resulting decision is `EXISTING_CORPUS_ACCEPTANCE_PARTIAL`. This narrow
+classification distinguishes expected `ETSI_STRICT` rejection of raw
+`warp=3` from the unresolved vendor continuation left opaque by
+`DOLBY_VENDOR_COMPAT`. No new vendor rule, semantic binding, authored-object
+PCM, audio-bound ObjectScene, or renderer claim was added. The private matrix
+and evidence freeze are under
+`OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.

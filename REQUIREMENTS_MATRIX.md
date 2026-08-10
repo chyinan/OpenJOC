@@ -505,3 +505,20 @@ The private run and its aggregate evidence freeze are recorded in
 | Diagnostic export | `diagnostics/reconstruction_rows/row_NNN.wav`, no authored-object stem claim | passed |
 | Semantic binding | Numerical acceptance does not identify authored object, slot, row, or PCM stem | unchanged; `SemanticBindingState::Unresolved` |
 | Warp/profile behavior | `warp [526,528) = raw 3`; no vendor rule or production parser change | unchanged; unresolved |
+
+## J1R16 Existing-corpus end-to-end acceptance (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Qualified carrier population | Nine independently frozen J1R10/J1R15 carriers; no new Logic/ADM/DD+/EC3 media | passed |
+| Input/AU/base decode boundary | All nine recognized, framed, and reached the existing base PCM numerical contract | passed; declared scope |
+| Metadata-only scene | J1R14 timeline/state regression remains passing; metadata scene remains admissible | passed |
+| ReconstructionBasis | J1R15 finite, shaped, deterministic structural rows remain available | passed; diagnostic only |
+| ETSI strict profile | Raw `warp=3` remains `ReservedWarpMode`; strict rejection is expected, not a decoder defect | expected rejection |
+| Dolby vendor profile | Observed signaling is accepted with deviations; bounded trim continuation remains opaque | partial / unresolved |
+| Semantic binding | No authored-object PCM or audio-bound ObjectScene admission | unchanged; `SemanticBindingState::Unresolved` |
+| Production defects | Existing corpus found no defect meeting the fix policy | none observed |
+
+The release-readiness decision is `EXISTING_CORPUS_ACCEPTANCE_PARTIAL`, not a
+percentage-based compatibility claim. Private evidence freeze:
+`20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/j1r16_evidence_freeze.json`.
