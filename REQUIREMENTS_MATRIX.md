@@ -541,3 +541,20 @@ normatively unresolved and do not justify a warp-3 alias or vendor semantic
 rule.
 Private evidence freeze:
 `20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.
+
+## J1R18 bounded streaming decode (2026-08-11)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Explicit streaming mode | `PayloadDecoder::streaming*` and bounded scene summary | passed |
+| Capture compatibility | Existing constructors/API retain full scene results | passed |
+| Programme-duration scene retention | Streaming builder drops timeline, rows, and LFE after sink delivery | passed |
+| Cross-AU codec history | Streaming and capture frame outputs are identical; state remains in `JocDecoderState` | passed |
+| High-watermark invariant | 128 logical frames retain max one row, 64 samples/frame, and no historical event vector | passed |
+| Input/container boundary | Current E-AC-3 indexing still materializes bytes and AU index | declared limitation |
+| Output writers | Existing WAV/diagnostic paths remain explicit capture mode | declared limitation |
+| Semantic binding | `SemanticBindingState::Unresolved` unchanged | unchanged |
+| Warp/profile behavior | Strict raw warp 3 rejection and opaque vendor continuation unchanged | unchanged |
+
+The strongest result is `BOUNDED_STREAMING_DECODE_CORE_ESTABLISHED`; this is
+not a claim of full end-to-end input-to-output streaming.

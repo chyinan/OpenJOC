@@ -2477,3 +2477,18 @@ semantics, JOC rows, renderer state, or PCM. Existing qualified carriers were
 rechecked without new media; no Logic fixture or export was created.
 Private evidence freeze:
 `20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.
+
+## J1R18 bounded streaming decode (2026-08-11)
+
+J1R18 adds an explicit streaming retention mode to the payload/scene core.
+`PayloadDecoder::streaming*` preserves codec, QMF, OAMD, and frame validation
+state while dropping programme-duration metadata timelines, ReconstructionBasis
+PCM, and base-LFE history after each sink delivery. Existing constructors
+remain capture mode and retain their full-result API. Streaming returns only a
+bounded `StreamingSceneSummary`; it cannot be finalized as a captured scene.
+
+The E-AC-3 streaming entry points expose the same distinction, but the current
+container/index layer still materializes input bytes and the AU index, while
+WAV/diagnostic writers remain explicit capture paths. This establishes a
+bounded decode core, not full input-to-output streaming. No new media or Logic
+fixture was created.

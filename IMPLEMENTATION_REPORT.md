@@ -1446,3 +1446,22 @@ behavior. Existing qualified carriers were exercised only as private evidence;
 no new media was created.
 Private evidence freeze:
 `20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.
+
+## J1R18 — Bounded streaming decode and memory admission
+
+`SceneBuilder` now has an explicit streaming retention mode. It runs the same
+per-frame structural, finite-value, layout, timing, and content-description
+checks as capture mode, but does not extend `metadata_timeline`,
+`trim_timeline`, ReconstructionBasis rows, or base-LFE PCM. The bounded
+`StreamingSceneSummary` records only duration, frame count, object count,
+metadata/trim event counts, and per-frame maxima. Calling `finish()` on a
+streaming builder is rejected; callers must request the summary explicitly.
+
+`PayloadDecoder::streaming*` and the E-AC-3 streaming entry points reuse the
+existing JOC/QMF/OAMD state machine and sink each committed frame. Regression
+tests cover capture/stream frame equality and a 128-frame plateau. Existing
+capture APIs remain unchanged. The input/container layer still materializes
+the byte stream and AU index, while WAV/debug writers remain capture sinks;
+therefore the decision is `BOUNDED_STREAMING_DECODE_CORE_ESTABLISHED`, not
+full input-to-output streaming. No semantic binding, authored-object PCM,
+warp interpretation, or new media was added.

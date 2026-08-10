@@ -26,6 +26,8 @@ pub enum SceneBuildError {
     MetadataShapeMismatch,
     MissingReferenceScreen,
     DurationOverflow,
+    StreamingCaptureUnavailable,
+    StreamingSummaryUnavailable,
 }
 
 impl fmt::Display for SceneBuildError {
@@ -55,6 +57,12 @@ impl fmt::Display for SceneBuildError {
                 formatter.write_str("screen-anchored OAMD requires reference-screen geometry")
             }
             Self::DurationOverflow => formatter.write_str("scene duration overflow"),
+            Self::StreamingCaptureUnavailable => {
+                formatter.write_str("streaming builder cannot be finalized as a captured scene")
+            }
+            Self::StreamingSummaryUnavailable => {
+                formatter.write_str("capture builder cannot be finalized as a streaming summary")
+            }
         }
     }
 }
@@ -85,6 +93,39 @@ impl From<SceneError> for SceneBuildError {
 pub struct SceneBuilder {
     scene: ObjectScene,
     anchors: Vec<ObjectAnchor>,
+    retention: SceneRetention,
+    streaming_stats: StreamingSceneStats,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SceneRetention {
+    Capture,
+    Streaming,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct StreamingSceneStats {
+    frames: u64,
+    max_reconstruction_rows: usize,
+    max_frame_samples: usize,
+    metadata_events: u64,
+    trim_events: u64,
+}
+
+/// Bounded summary returned by a streaming scene builder.
+///
+/// The summary deliberately contains counters and dimensions only.  It does
+/// not retain a programme timeline, PCM rows, or LFE samples.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StreamingSceneSummary {
+    pub sample_rate: u32,
+    pub duration_samples: u64,
+    pub frames: u64,
+    pub object_count: usize,
+    pub max_reconstruction_rows: usize,
+    pub max_frame_samples: usize,
+    pub metadata_events: u64,
+    pub trim_events: u64,
 }
 
 impl SceneBuilder {
@@ -128,7 +169,25 @@ impl SceneBuilder {
                 semantic_binding: SemanticBindingState::Unresolved,
             },
             anchors,
+            retention: SceneRetention::Capture,
+            streaming_stats: StreamingSceneStats::default(),
         })
+    }
+
+    /// Creates a scene validator that retains only bounded current-frame
+    /// state.  Use [`Self::finish_streaming`] to obtain counters instead of a
+    /// full [`ObjectScene`].
+    ///
+    /// # Errors
+    /// Returns [`SceneBuildError`] for an invalid sample rate or content model.
+    pub fn new_streaming(
+        sample_rate: u32,
+        prefix: &OamdContentPrefix,
+    ) -> Result<Self, SceneBuildError> {
+        let mut builder = Self::new(sample_rate, prefix)?;
+        builder.retention = SceneRetention::Streaming;
+        builder.scene.reconstruction_basis = None;
+        Ok(builder)
     }
 
     /// Atomically appends one aligned reconstruction-row/OAMD metadata frame.
@@ -266,28 +325,52 @@ impl SceneBuilder {
             }
         }
         self.scene.duration_samples = next_duration;
-        let basis = self
-            .scene
-            .reconstruction_basis
-            .get_or_insert_with(ReconstructionBasis::default);
-        if basis.rows.len() != reconstruction_rows.len() {
-            if basis.rows.is_empty() {
-                basis.rows = vec![Vec::new(); reconstruction_rows.len()];
-            } else {
-                return Err(SceneBuildError::FrameLengthMismatch);
+        self.streaming_stats.frames = self
+            .streaming_stats
+            .frames
+            .checked_add(1)
+            .ok_or(SceneBuildError::DurationOverflow)?;
+        self.streaming_stats.max_reconstruction_rows = self
+            .streaming_stats
+            .max_reconstruction_rows
+            .max(reconstruction_rows.len());
+        self.streaming_stats.max_frame_samples =
+            self.streaming_stats.max_frame_samples.max(frame_samples);
+        self.streaming_stats.metadata_events = self
+            .streaming_stats
+            .metadata_events
+            .checked_add(u64::try_from(frame_metadata.len()).unwrap_or(u64::MAX))
+            .ok_or(SceneBuildError::DurationOverflow)?;
+        self.streaming_stats.trim_events = self
+            .streaming_stats
+            .trim_events
+            .checked_add(u64::try_from(frame_trims.len()).unwrap_or(u64::MAX))
+            .ok_or(SceneBuildError::DurationOverflow)?;
+
+        if self.retention == SceneRetention::Capture {
+            let basis = self
+                .scene
+                .reconstruction_basis
+                .get_or_insert_with(ReconstructionBasis::default);
+            if basis.rows.len() != reconstruction_rows.len() {
+                if basis.rows.is_empty() {
+                    basis.rows = vec![Vec::new(); reconstruction_rows.len()];
+                } else {
+                    return Err(SceneBuildError::FrameLengthMismatch);
+                }
             }
+            for (row, samples) in basis.rows.iter_mut().zip(reconstruction_rows) {
+                row.extend_from_slice(samples);
+            }
+            if let Some(lfe) = base_lfe_pcm {
+                self.scene
+                    .base_lfe_pcm
+                    .get_or_insert_with(Vec::new)
+                    .extend_from_slice(lfe);
+            }
+            self.scene.metadata_timeline.extend(frame_metadata);
+            self.scene.trim_timeline.extend(frame_trims);
         }
-        for (row, samples) in basis.rows.iter_mut().zip(reconstruction_rows) {
-            row.extend_from_slice(samples);
-        }
-        if let Some(lfe) = base_lfe_pcm {
-            self.scene
-                .base_lfe_pcm
-                .get_or_insert_with(Vec::new)
-                .extend_from_slice(lfe);
-        }
-        self.scene.metadata_timeline.extend(frame_metadata);
-        self.scene.trim_timeline.extend(frame_trims);
         debug_assert!(self.scene.validate().is_ok());
         Ok(())
     }
@@ -297,8 +380,29 @@ impl SceneBuilder {
     /// # Errors
     /// Returns [`SceneBuildError`] if final scene invariants are invalid.
     pub fn finish(self) -> Result<ObjectScene, SceneBuildError> {
+        if self.retention == SceneRetention::Streaming {
+            return Err(SceneBuildError::StreamingCaptureUnavailable);
+        }
         self.scene.validate()?;
         Ok(self.scene)
+    }
+
+    /// Finalizes a bounded streaming validation and returns counters only.
+    pub fn finish_streaming(self) -> Result<StreamingSceneSummary, SceneBuildError> {
+        if self.retention != SceneRetention::Streaming {
+            return Err(SceneBuildError::StreamingSummaryUnavailable);
+        }
+        self.scene.validate()?;
+        Ok(StreamingSceneSummary {
+            sample_rate: self.scene.sample_rate,
+            duration_samples: self.scene.duration_samples,
+            frames: self.streaming_stats.frames,
+            object_count: self.scene.objects.len(),
+            max_reconstruction_rows: self.streaming_stats.max_reconstruction_rows,
+            max_frame_samples: self.streaming_stats.max_frame_samples,
+            metadata_events: self.streaming_stats.metadata_events,
+            trim_events: self.streaming_stats.trim_events,
+        })
     }
 }
 

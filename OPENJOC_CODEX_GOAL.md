@@ -833,3 +833,18 @@ or JOC interpretation was added. The next step still requires reviewer
 authorization and evidence, not a guessed vendor meaning.
 Private evidence freeze:
 `20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.
+
+## J1R18 — Bounded streaming decode and memory admission
+
+OpenJOC now distinguishes complete-result capture from bounded streaming in the
+payload/scene core. Streaming retains only codec/QMF/OAMD state and bounded
+current-frame validation data while delivering ReconstructionBasis and
+metadata frames to sinks. A deterministic 128-frame test shows a constant
+high-watermark, and capture/streaming frame outputs remain identical.
+
+This milestone intentionally does not overclaim: the raw/MP4 input layer still
+loads bytes and builds an AU index, and WAV/diagnostic output remains explicit
+capture. The strongest supported status is
+`BOUNDED_STREAMING_DECODE_CORE_ESTABLISHED`. Semantic binding remains
+unresolved, authored-object PCM and audio-bound ObjectScene remain inadmissible,
+and warp raw3 behavior is unchanged. No new Logic fixture or media was created.

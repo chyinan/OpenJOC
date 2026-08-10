@@ -177,6 +177,112 @@ fn consumes_a_decoded_frame_through_a_borrowed_sink() {
 }
 
 #[test]
+fn streaming_decoder_retains_only_bounded_frame_state() {
+    let oamd = inactive_oamd_payload();
+    let downmix = vec![vec![1.0; 64]; 5];
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::default(),
+    };
+    let mut decoder = PayloadDecoder::streaming(config);
+    let mut observed = Vec::new();
+    for frame_index in 0..128_u16 {
+        let joc = absent_joc_payload(frame_index);
+        decoder
+            .decode_frame_with(
+                JocFrameInput {
+                    sample_rate: 48_000,
+                    downmix_pcm: &downmix,
+                    base_lfe_pcm: None,
+                    joc_payload: &joc,
+                    oamd_payload: &oamd,
+                    frame_index: u64::from(frame_index),
+                },
+                |frame| {
+                    observed.push((
+                        frame.decoded.reconstruction_basis.rows.len(),
+                        frame.decoded.reconstruction_basis.rows[0].len(),
+                    ));
+                    Ok::<(), PayloadDecodeError>(())
+                },
+            )
+            .expect("streaming frame is valid");
+    }
+    let summary = decoder
+        .finish_streaming()
+        .expect("streaming summary is valid");
+    assert_eq!(summary.frames, 128);
+    assert_eq!(summary.duration_samples, 128 * 64);
+    assert_eq!(summary.object_count, 1);
+    assert_eq!(summary.max_reconstruction_rows, 1);
+    assert_eq!(summary.max_frame_samples, 64);
+    assert_eq!(summary.metadata_events, 128);
+    assert_eq!(summary.trim_events, 0);
+    assert_eq!(observed.len(), 128);
+}
+
+#[test]
+fn streaming_and_capture_frame_outputs_are_identical() {
+    let oamd = inactive_oamd_payload();
+    let downmix = vec![vec![1.0; 64]; 5];
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::default(),
+    };
+    let mut capture = PayloadDecoder::new(config);
+    let mut streaming = PayloadDecoder::streaming(config);
+    let mut capture_rows = Vec::new();
+    let mut streaming_rows = Vec::new();
+    for frame_index in 0..3_u64 {
+        let joc = absent_joc_payload(u16::try_from(frame_index).expect("small index"));
+        capture
+            .decode_frame_with(
+                JocFrameInput {
+                    sample_rate: 48_000,
+                    downmix_pcm: &downmix,
+                    base_lfe_pcm: None,
+                    joc_payload: &joc,
+                    oamd_payload: &oamd,
+                    frame_index,
+                },
+                |frame| {
+                    capture_rows.push(frame.decoded.reconstruction_basis.rows.clone());
+                    Ok::<(), PayloadDecodeError>(())
+                },
+            )
+            .expect("capture frame is valid");
+        streaming
+            .decode_frame_with(
+                JocFrameInput {
+                    sample_rate: 48_000,
+                    downmix_pcm: &downmix,
+                    base_lfe_pcm: None,
+                    joc_payload: &joc,
+                    oamd_payload: &oamd,
+                    frame_index,
+                },
+                |frame| {
+                    streaming_rows.push(frame.decoded.reconstruction_basis.rows.clone());
+                    Ok::<(), PayloadDecodeError>(())
+                },
+            )
+            .expect("streaming frame is valid");
+    }
+    assert_eq!(capture_rows, streaming_rows);
+    assert_eq!(
+        capture.finish().expect("capture finish").duration_samples,
+        192
+    );
+    assert_eq!(
+        streaming
+            .finish_streaming()
+            .expect("streaming finish")
+            .duration_samples,
+        192
+    );
+}
+
+#[test]
 fn rejected_payload_frame_does_not_advance_decoder_or_scene_state() {
     let joc_zero = absent_joc_payload(0);
     let joc_one = absent_joc_payload(1);

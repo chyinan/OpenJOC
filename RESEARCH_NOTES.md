@@ -461,3 +461,21 @@ authored-object PCM, renderer state, or JOC meaning. Nine existing qualified
 carriers were rechecked; no new fixture or media was generated.
 Private evidence freeze:
 `20260810T155539Z_j1r17-opaque-vendor-continuation_f480e05d/j1r17_evidence_freeze.json`.
+
+## J1R18 — Bounded streaming decode and memory admission
+
+The production core now has two explicit retention modes. Capture mode keeps
+the legacy complete ObjectScene and diagnostic PCM contract. Streaming mode
+uses the same frame parser/reconstruction/history path, delivers each decoded
+frame to a sink, validates metadata against bounded scene state, and retains
+only counters, object anchors, current codec state, and current-frame data.
+The 128-frame logical sequence test reaches a constant high-watermark rather
+than accumulating rows or metadata events, and streaming/capture frame outputs
+are identical for the synthetic API-level regression.
+
+The result is deliberately narrower than full end-to-end streaming: raw/MP4
+input loading and syncframe/AU indexing still use duration-proportional storage,
+and WAV/diagnostic export remains an explicit capture path. J1R14 block-major
+metadata ordering, J1R15 numerical row boundaries, J1R17 opaque continuation,
+and `SemanticBindingState::Unresolved` remain unchanged. No new media or
+fixture was generated.

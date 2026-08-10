@@ -12,7 +12,7 @@ use openjoc_oamd::{
 };
 use openjoc_scene::{
     DecodedPayloadFrame, JocFrameInput, ObjectScene, PayloadDecodeError, PayloadDecoder,
-    PayloadDecoderConfig,
+    PayloadDecoderConfig, StreamingSceneSummary,
 };
 use openjoc_wave::WavePcm;
 use std::fmt;
@@ -150,10 +150,63 @@ pub fn decode_aligned_eac3_with_sink_and_lfe<S>(
     base_lfe: Option<&WavePcm>,
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
-    mut sink: S,
+    sink: S,
 ) -> Result<ObjectScene, DecodeEac3Error>
 where
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+{
+    decode_aligned_eac3_core(
+        stream,
+        downmix,
+        base_lfe,
+        config,
+        validation_profile,
+        false,
+        sink,
+        PayloadDecoder::finish,
+    )
+}
+
+/// Streaming variant of [`decode_aligned_eac3_with_sink_and_lfe`]. It emits
+/// frame results to the sink and retains only codec plus current-frame state.
+#[allow(dead_code)]
+pub fn decode_aligned_eac3_streaming_with_sink_and_lfe<S>(
+    stream: &[u8],
+    downmix: &WavePcm,
+    base_lfe: Option<&WavePcm>,
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    sink: S,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+{
+    decode_aligned_eac3_core(
+        stream,
+        downmix,
+        base_lfe,
+        config,
+        validation_profile,
+        true,
+        sink,
+        PayloadDecoder::finish_streaming,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_aligned_eac3_core<S, R, F>(
+    stream: &[u8],
+    downmix: &WavePcm,
+    base_lfe: Option<&WavePcm>,
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    streaming: bool,
+    mut sink: S,
+    finish: F,
+) -> Result<R, DecodeEac3Error>
+where
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    F: FnOnce(PayloadDecoder) -> Result<R, PayloadDecodeError>,
 {
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
@@ -193,7 +246,11 @@ where
         JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
         JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
     };
-    let mut decoder = PayloadDecoder::with_oamd_profile(config, oamd_profile);
+    let mut decoder = if streaming {
+        PayloadDecoder::streaming_with_oamd_profile(config, oamd_profile)
+    } else {
+        PayloadDecoder::with_oamd_profile(config, oamd_profile)
+    };
     let mut sample_offset = 0_usize;
     for (unit_index, unit) in units.into_iter().enumerate() {
         if unit.sample_rate != downmix.sample_rate {
@@ -230,7 +287,7 @@ where
         )?;
         sample_offset = end;
     }
-    Ok(decoder.finish()?)
+    Ok(finish(decoder)?)
 }
 
 /// Explicit-policy variant of the internal base decoder. The policy is
@@ -242,12 +299,71 @@ pub fn decode_internal_eac3_with_base_sink_and_policy<S, B>(
     validation_profile: JocValidationProfile,
     dither_values: &[f64],
     base_policy: InternalBasePolicy,
-    mut sink: S,
-    mut base_sink: B,
+    sink: S,
+    base_sink: B,
 ) -> Result<ObjectScene, DecodeEac3Error>
 where
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
+    decode_internal_eac3_core(
+        stream,
+        config,
+        validation_profile,
+        dither_values,
+        base_policy,
+        false,
+        sink,
+        base_sink,
+        PayloadDecoder::finish,
+    )
+}
+
+/// Streaming internal-base variant. The base sink receives each decoded AU;
+/// no programme PCM is retained by the decoder core.
+#[allow(dead_code)]
+pub fn decode_internal_eac3_streaming_with_base_sink_and_policy<S, B>(
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    sink: S,
+    base_sink: B,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
+    decode_internal_eac3_core(
+        stream,
+        config,
+        validation_profile,
+        dither_values,
+        base_policy,
+        true,
+        sink,
+        base_sink,
+        PayloadDecoder::finish_streaming,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_internal_eac3_core<S, B, R, F>(
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    streaming: bool,
+    mut sink: S,
+    mut base_sink: B,
+    finish: F,
+) -> Result<R, DecodeEac3Error>
+where
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+    F: FnOnce(PayloadDecoder) -> Result<R, PayloadDecodeError>,
 {
     let frame_index = index_syncframes(stream)?;
     let units = group_access_units(&frame_index)?;
@@ -259,7 +375,11 @@ where
         JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
         JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
     };
-    let mut decoder = PayloadDecoder::with_oamd_profile(config, oamd_profile);
+    let mut decoder = if streaming {
+        PayloadDecoder::streaming_with_oamd_profile(config, oamd_profile)
+    } else {
+        PayloadDecoder::with_oamd_profile(config, oamd_profile)
+    };
     for (unit_index, unit) in units.into_iter().enumerate() {
         let pcm = audio_decoder.decode_with_policy(
             stream,
@@ -301,7 +421,7 @@ where
             },
         )?;
     }
-    Ok(decoder.finish()?)
+    Ok(finish(decoder)?)
 }
 
 #[cfg(test)]

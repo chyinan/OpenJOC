@@ -1,6 +1,9 @@
 // pattern: Functional Core
 
-use crate::{ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SceneBuildError, SceneBuilder};
+use crate::{
+    ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SceneBuildError, SceneBuilder,
+    StreamingSceneSummary,
+};
 use openjoc_joc::{DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, parse_joc_payload};
 use openjoc_oamd::{
     OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ReferenceScreen,
@@ -109,6 +112,7 @@ pub struct PayloadDecoder {
     oamd_profile: OamdParseProfile,
     joc: JocDecoderState,
     builder: Option<SceneBuilder>,
+    streaming: bool,
     sample_rate: Option<u32>,
     next_frame_index: u64,
 }
@@ -122,6 +126,7 @@ impl PayloadDecoder {
             oamd_profile: OamdParseProfile::EtsiStrict,
             joc: JocDecoderState::new(),
             builder: None,
+            streaming: false,
             sample_rate: None,
             next_frame_index: 0,
         }
@@ -134,6 +139,28 @@ impl PayloadDecoder {
         Self {
             oamd_profile: profile,
             ..Self::new(config)
+        }
+    }
+
+    /// Creates a decoder that validates and emits each frame without
+    /// retaining programme-duration scene history.
+    #[must_use]
+    pub fn streaming(config: PayloadDecoderConfig) -> Self {
+        Self {
+            streaming: true,
+            ..Self::new(config)
+        }
+    }
+
+    /// Streaming constructor with an explicit OAMD validation profile.
+    #[must_use]
+    pub fn streaming_with_oamd_profile(
+        config: PayloadDecoderConfig,
+        profile: OamdParseProfile,
+    ) -> Self {
+        Self {
+            streaming: true,
+            ..Self::with_oamd_profile(config, profile)
         }
     }
 
@@ -190,7 +217,11 @@ impl PayloadDecoder {
                 &layout,
             )?;
         } else {
-            let mut builder = SceneBuilder::new(input.sample_rate, &oamd.prefix)?;
+            let mut builder = if self.streaming {
+                SceneBuilder::new_streaming(input.sample_rate, &oamd.prefix)?
+            } else {
+                SceneBuilder::new(input.sample_rate, &oamd.prefix)?
+            };
             builder.append_frame_with_layout(
                 &decoded.reconstruction_basis.rows,
                 input.base_lfe_pcm,
@@ -246,6 +277,14 @@ impl PayloadDecoder {
         self.builder
             .ok_or(PayloadDecodeError::EmptyStream)?
             .finish()
+            .map_err(Into::into)
+    }
+
+    /// Finalizes a streaming decoder without materializing a full scene.
+    pub fn finish_streaming(self) -> Result<StreamingSceneSummary, PayloadDecodeError> {
+        self.builder
+            .ok_or(PayloadDecodeError::EmptyStream)?
+            .finish_streaming()
             .map_err(Into::into)
     }
 }

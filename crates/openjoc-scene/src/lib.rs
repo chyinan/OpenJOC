@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
 mod assembly;
-pub use assembly::{SceneBuildError, SceneBuilder};
+pub use assembly::{SceneBuildError, SceneBuilder, StreamingSceneSummary};
 mod binding;
 pub use binding::{
     BindingAdmissionError, BindingAdmissionRequirements, BindingAdmissionStatus,
