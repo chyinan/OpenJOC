@@ -2570,3 +2570,23 @@ The result is intentionally scoped: parser activation and band/coordinate
 reconstruction are admitted for public synthetic syntax, while cross-block
 `spxcoe=0` reuse/reset and full real-stream SPX PCM fidelity remain open. The
 controlled Logic corpus remains `REAL_CONTROLLED_CORPUS_SPX_ACTIVATION_NOT_OBSERVED`.
+
+## J1R27 — SPX reuse, carry, and reset admission (2026-08-10)
+
+The parser-level synthetic regression follows the normative E.1.3.3 state
+fields: `spxstre=1` introduces block information, `spxstre=0` reuses the
+previous active SPX parameters, `spxcoe=0` reuses per-channel coordinates,
+and `spxcoe=1` supplies a replacement. The authorized PDF states that
+coordinates are sent at least once per audio frame and may be sent once per
+block (E.2.6.3, PDF page 162); band structure is defaulted on first use and
+reused when omitted in a later block (E.1.3.3.7, PDF page 140).
+
+The bounded fixture proves explicit A → two coordinate reuses → explicit B
+(including a changed copy-region code) → reuse B → disable, plus disable →
+fresh re-enable and an independent next-frame no-inheritance check. Effective
+`SpectralExtensionInformation` is compared exactly, not by finite/approximate
+output. A 256-repeat sequence remains exactly deterministic; the parser keeps
+current frame/channel state rather than an accumulating history. This is a
+public-syntax state-lifetime admission only: the Logic corpus remains SPX-off,
+multi-channel participation and parser-specific truncation cases remain open,
+and full real-stream SPX PCM fidelity is not established.

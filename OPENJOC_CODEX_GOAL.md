@@ -949,3 +949,13 @@ oracle, with 1,024 bounded cases plus explicit invalid-input and deterministic
 regressions. This advances SPX beyond API activation while keeping cross-block
 reuse/reset, real controlled-corpus activation, and full SPX PCM fidelity as
 open evidence boundaries. No new media or semantic binding was introduced.
+
+## J1R27 — SPX reuse, carry, and reset admission
+
+The public-syntax SPX state lifetime is now regression-protected for the
+exercised mono path: exact coordinate reuse, composite replacement, disable,
+fresh re-enable, independent-frame reset, and a deterministic long sequence.
+Together with J1R26 this establishes scoped public-syntax state plus numerical
+admission. It does not turn synthetic activation into Logic-corpus evidence,
+and `SemanticBindingState::Unresolved` and strict raw-warp handling remain
+unchanged.

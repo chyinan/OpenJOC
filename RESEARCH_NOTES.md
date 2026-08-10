@@ -604,3 +604,18 @@ This is `SPX_STATE_ADMISSION_ESTABLISHED_NUMERICAL_MAPPING_PARTIAL`: the
 cross-block `spxcoe=0` reuse/reset case and full real-stream SPX PCM fidelity
 are not yet independently established. The frozen Logic corpus still has
 SPX off, and no authored-object or semantic-binding conclusion follows.
+
+## J1R27 — SPX reuse, carry, and reset admission
+
+J1R27 closes a bounded parser-level state sequence in synthetic public syntax:
+explicit coordinates A, two consecutive `spxcoe=0` reuses, explicit B with a
+changed copy-region code, reuse B, disable, fresh re-enable, and independent
+frame reset. Reused `SpectralExtensionInformation` values match the last
+explicit state exactly. A 256-repeat long sequence is byte- and value-stable
+at the API boundary, with no historical state collection.
+
+The result is `SPX_STATE_REUSE_AND_RESET_ADMISSION_ESTABLISHED` for the
+exercised mono public-syntax scope, combined with J1R26 as
+`SPX_PUBLIC_SYNTAX_STATE_AND_NUMERICAL_ADMISSION_ESTABLISHED`. Channel-local
+participation, parser-specific truncation, real controlled-corpus SPX
+activation, and full real-stream SPX PCM fidelity remain unestablished.

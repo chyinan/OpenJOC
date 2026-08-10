@@ -1606,3 +1606,19 @@ remaining blend and attenuation primitives independently.
 The evidence level is `SPX_STATE_ADMISSION_ESTABLISHED_NUMERICAL_MAPPING_PARTIAL`.
 Cross-block coordinate reuse/reset and full real-stream SPX PCM fidelity are
 not claimed; the controlled Logic corpus remains SPX-off.
+
+## J1R27 — SPX reuse, carry, and reset admission
+
+`tests/spx_state.rs` drives the production parser through a six-block
+synthetic sequence: explicit A, two exact coordinate reuses, explicit B with
+a different `spxstrtf`, reuse B, and `spxinu=0` disable. A second sequence
+proves disable → fresh re-enable, and separate frame decoding proves no SPX
+state is inherited across the frame boundary. The expected state is compared
+as the complete public `SpectralExtensionInformation` value. A 256-repeat
+sequence is exactly deterministic and therefore exercises bounded current
+state rather than a growing history.
+
+Decision: `SPX_STATE_REUSE_AND_RESET_ADMISSION_ESTABLISHED` for the exercised
+mono public-syntax path, combined with J1R26's scoped numerical mapping. This
+does not establish multi-channel participation, parser-specific truncation,
+real Logic SPX activation, or full real-stream SPX PCM fidelity.
