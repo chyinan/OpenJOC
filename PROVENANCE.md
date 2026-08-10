@@ -2554,3 +2554,19 @@ real controlled Logic corpus still has coupling activation
 `NOT_EXERCISED_BY_CONTROLLED_CORPUS`; full coupled-PCM fidelity and semantic
 object binding remain unestablished. `SemanticBindingState` remains
 `Unresolved`, and strict warp raw 3 remains reserved.
+
+## J1R26 — SPX state and reconstruction admission (2026-08-10)
+
+J1R26 adds a test-only SPX oracle transcribed from ETSI TS 102 366 V1.4.1
+Annex E.2.6.3/E.2.6.4. The bounded oracle covers all four `spxstrtf` copy
+indices and all 16 × 4 × 4 legal exponent/mantissa/master coordinate values
+for an isolated one-band translation-and-scaling path (1,024 cases), with
+zero noise and no attenuation so the independently derived expected values
+remain auditable. Existing SPX tests continue to cover band-size mapping,
+noise blending, and the Table E.2.12 notch values; invalid coordinate,
+attenuation, noise-length, and dimension inputs are explicitly rejected.
+
+The result is intentionally scoped: parser activation and band/coordinate
+reconstruction are admitted for public synthetic syntax, while cross-block
+`spxcoe=0` reuse/reset and full real-stream SPX PCM fidelity remain open. The
+controlled Logic corpus remains `REAL_CONTROLLED_CORPUS_SPX_ACTIVATION_NOT_OBSERVED`.

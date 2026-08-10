@@ -590,3 +590,17 @@ Decision and limitation: `COUPLING_STATE_AND_COORDINATE_ADMISSION_ESTABLISHED`
 within the exercised parser/API scope; `FULL_COUPLED_PCM_FIDELITY_NOT_ESTABLISHED`.
 `SemanticBindingState::Unresolved` and strict raw warp-3 reservation are
 unchanged.
+
+## J1R26 — SPX state and reconstruction admission
+
+The SPX production path is now compared with an independent Annex E.2.6
+translation/coordinate oracle across 1,024 legal public code combinations.
+The oracle intentionally isolates one legal band with zero noise and no
+attenuation; existing tests retain the separate noise-blend and notch checks.
+Parser syntax, sub-band derivation, band grouping, finite output, and invalid
+input behavior are covered without creating media.
+
+This is `SPX_STATE_ADMISSION_ESTABLISHED_NUMERICAL_MAPPING_PARTIAL`: the
+cross-block `spxcoe=0` reuse/reset case and full real-stream SPX PCM fidelity
+are not yet independently established. The frozen Logic corpus still has
+SPX off, and no authored-object or semantic-binding conclusion follows.

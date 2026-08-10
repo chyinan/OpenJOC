@@ -941,3 +941,11 @@ fixture locks coordinate/state reuse. This closes a scoped numerical/state
 admission milestone without claiming real-corpus coupling prevalence, full
 coupled-PCM fidelity, authored-object PCM, or semantic binding. The strict
 warp raw-3 boundary remains unchanged.
+
+## J1R26 — SPX state and reconstruction admission
+
+OpenJOC now has an independent public-syntax SPX translation/coordinate
+oracle, with 1,024 bounded cases plus explicit invalid-input and deterministic
+regressions. This advances SPX beyond API activation while keeping cross-block
+reuse/reset, real controlled-corpus activation, and full SPX PCM fidelity as
+open evidence boundaries. No new media or semantic binding was introduced.

@@ -1592,3 +1592,17 @@ coordinate numerics. The Logic controlled corpus still has no coupling
 activation, so full coupled-PCM fidelity and semantic object binding remain
 open. `SemanticBindingState::Unresolved` and ETSI strict raw warp-3 handling
 are unchanged.
+
+## J1R26 — SPX state and reconstruction admission
+
+`tests/spx_admission.rs` adds a structurally separate float64 oracle for the
+public SPX translation and coordinate-scale path. It enumerates four copy
+indices × 16 exponents × 4 mantissas × 4 master values (1,024 cases), checks
+finite deterministic output, and rejects invalid coordinate, attenuation,
+noise-length, and band-dimension inputs. The oracle uses only the isolated
+one-band, zero-noise, no-attenuation boundary; existing SPX tests cover the
+remaining blend and attenuation primitives independently.
+
+The evidence level is `SPX_STATE_ADMISSION_ESTABLISHED_NUMERICAL_MAPPING_PARTIAL`.
+Cross-block coordinate reuse/reset and full real-stream SPX PCM fidelity are
+not claimed; the controlled Logic corpus remains SPX-off.
