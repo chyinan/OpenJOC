@@ -414,3 +414,21 @@ the unresolved anchor does not reopen or downgrade them.
 JOC remains evaluation-only. This matrix does not claim a complete OAMD
 timeline, authored-object/JOC-row identity, verified object PCM, ADM/render
 fidelity, or resolved Logic `warp=3` semantics.
+
+## J1R8 controlled 3D position calibration (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Normative Z field identity | `pos3D_Z_sign_bits [64,65)` and `pos3D_Z_bits [65,69)` from the J1R7A ETSI cursor ledger; ETSI TS 103 420 V1.2.1 clauses 5.5.8–5.5.11 and 5.6.1.1.7–5.6.1.1.9 | validated for the controlled vector |
+| Controlled Z/elevation calibration | One Center-derived Logic fixture, persisted `对象位置提升` values `0 → 50 → 100 → 0`; ADM Z baseline → ~0.5 → 1.0 → baseline | established; numeric formula not claimed |
+| X/Y orthogonality | ADM X = -0.0 and Y = +1.0 throughout; normative X/Y values remain invariant while Z changes | verified for the controlled vector |
+| Return-to-baseline | Final ADM baseline corresponds to the original normative Z magnitude code `0` | observed |
+| Source control | 997 Hz source PCM is sample-identical to frozen Center control | passed |
+| Carrier determinism | Stream-copied R0/R1 raw EC3 identical; 129 AU × 3072 bytes | passed |
+| Reserved warp boundary | `warp [526,528) = raw 3` for 129/129; `ETSI_STRICT` remains `ReservedWarpMode { raw: 3 }` | unchanged; unresolved |
+| Empirical post-warp suffix | `[528,536) = 00000000` for 129/129; no semantics assigned | invariant under this Z control |
+| Size branch | Object Size authoring persistence and ADM propagation established; tested DD+ Size semantics, direct size-index response, and Size-related warp/suffix response not established | frozen; open |
+| Remaining OAMD/JOC scope | Complete OAMD timeline/state semantics, OAMD↔JOC identity, verified object PCM, ObjectScene/render fidelity, and end-to-end acceptance | open |
+
+The private run and its aggregate evidence freeze are recorded in
+`PROVENANCE.md`; no production decoder or profile behavior was changed.

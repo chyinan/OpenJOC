@@ -1245,3 +1245,34 @@ state semantics, authored-object/OAMD-slot identity, OAMD/JOC binding, object
 PCM, ObjectScene/render fidelity, and end-to-end acceptance remain open. The
 next proposed milestone is J1R7B, which is intentionally not part of this
 round.
+
+## J1R8 — Controlled Z/elevation numeric calibration (2026-08-10)
+
+This is a docs-only closure of the private J1R8 evidence run
+`20260810T032631Z_j1r8-z-elevation-calibration_c90779b`; the aggregate
+evidence-freeze SHA-256 is
+`faeaf08c88f2aa8d241262de6edf6ab60e35ccdd959fa91239f6640f94779c8a`.
+One Center-derived Logic fixture was authored using the automation parameter
+`对象位置提升` with the independently verified persisted sequence
+`0 → 50 → 100 → 0`. ADM qualified the corresponding Z sequence as baseline,
+approximately `0.5`, `1.0`, and baseline again, with X = `-0.0` and Y = `+1.0`
+unchanged. The J1R7A ETSI cursor fields tested were
+`pos3D_Z_sign_bits [64,65)` and `pos3D_Z_bits [65,69)`; observed magnitude
+codes were `0,3,6,7,13,14,15,10,3,1,0`. This is controlled calibration
+evidence, not a claimed formula or complete timeline decoder.
+
+The 997 Hz source PCM passed sample-identity control. Unchanged-project DD+
+R0/R1 stream-copied raw EC3 was deterministic at 129 × 3072 bytes. The
+strict parser boundary is unchanged: `warp [526,528) = raw 3` remains
+`ReservedWarpMode { raw: 3 }`; no `DOLBY_VENDOR_COMPAT` rule was added. The
+post-warp empirical suffix `[528,536)` remained `00000000` for every AU and
+is not assigned a semantic name. An exploratory prefix interval `[177,182)`
+also changed, but no interpretation is claimed.
+
+The Size line remains frozen with the narrow status: authoring persistence
+and ADM propagation are established; tested DD+ Size-state semantics,
+deactivation as an intra-stream payload-11 transition, direct
+`object_size_idx` response, and Size-related warp/suffix response are not
+established. No production parser, DSP, profile, JOC, ObjectScene, or second
+Z fixture changed. Complete OAMD timeline/state semantics, OAMD↔JOC binding,
+verified object PCM, render fidelity, and end-to-end acceptance remain open.

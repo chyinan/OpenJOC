@@ -670,3 +670,37 @@ OAMD ↔ JOC binding, object PCM, ObjectScene/render fidelity, ADM/render
 comparison, and end-to-end acceptance remain open. The active next research
 line is **J1R7B — Reserved Warp-3 Empirical Boundary Characterization**;
 this milestone only records it and does not execute it.
+
+## J1R8 — Controlled 3D position calibration closure (2026-08-10)
+
+The private J1R8 run
+`20260810T032631Z_j1r8-z-elevation-calibration_c90779b` is frozen by
+aggregate SHA-256
+`faeaf08c88f2aa8d241262de6edf6ab60e35ccdd959fa91239f6640f94779c8a`.
+Exactly one Center-derived Logic fixture was used. The automation parameter
+`对象位置提升` was independently verified after save/reopen at `0, 50, 100,
+0`; ADM independently showed Z baseline → ~0.5 → 1.0 → baseline while X/Y
+remained fixed at approximately `0/+1`. The ETSI normative Z fields are the
+one-bit sign `[64,65)` and four-bit magnitude `[65,69)` from the J1R7A cursor
+ledger. The observed magnitude sequence was
+`0,3,6,7,13,14,15,10,3,1,0`, establishing controlled numeric alignment and
+return-to-baseline evidence without claiming a formula.
+
+The source PCM remained sample-identical to Center and the unchanged project
+produced byte-identical stream-copied raw EC3 for R0/R1. `warp [526,528)`
+remained raw `3` for all 129 AUs and therefore remains
+`ETSI_STRICT -> ReservedWarpMode { raw: 3 }`; no vendor compatibility rule
+was added. The empirical suffix `[528,536)` remained all zero, with no
+padding or other semantics assigned. This closes controlled 3D X/Y/Z
+position calibration for the tested evidence scope, not complete OAMD or
+Atmos reconstruction.
+
+The Size branch is frozen: Object Size authoring persistence and ADM
+propagation are established, but tested DD+ Size-state semantics,
+deactivation as an intra-stream payload-11 transition, direct size-index
+response, and Size-related warp/suffix response remain unresolved/not
+observed. Complete OAMD timeline/state semantics, reserved-warp meaning,
+OAMD↔JOC binding, verified object PCM, ObjectScene/render fidelity, and
+end-to-end acceptance remain open. No second Z fixture is required by this
+calibration; any future fixture should be selected only for a precise
+remaining control.

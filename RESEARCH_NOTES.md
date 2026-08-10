@@ -153,6 +153,39 @@ without a validated, generalizable mechanism. The next documented transition
 is J1 -- Single-Object Semantic Binding Corpus; J1 is not implemented by this
 milestone.
 
+## J1R8 controlled Z/elevation calibration (2026-08-10)
+
+J1R8 is a one-fixture, evidence-first calibration of the already identified
+ETSI position Z syntax. The private run
+`20260810T032631Z_j1r8-z-elevation-calibration_c90779b` is frozen by an
+aggregate SHA-256 of
+`faeaf08c88f2aa8d241262de6edf6ab60e35ccdd959fa91239f6640f94779c8a`.
+The Logic automation parameter was `对象位置提升`; the independently
+verified persisted values were `0, 50, 100, 0`. ADM showed the intended
+baseline → approximately 0.5 → 1.0 → baseline Z timeline while X = -0.0
+and Y = +1.0 remained fixed. The raw normative Z spans are sign
+`[64,65)` and magnitude `[65,69)`; the magnitude codes over the full AU
+timeline were `0,3,6,7,13,14,15,10,3,1,0`. This establishes controlled
+numeric alignment and return-to-baseline evidence without asserting a linear
+conversion formula.
+
+The source PCM is sample-identical to the frozen Center control. R0/R1
+stream-copied raw EC3 is byte-identical (129 AUs, 3072 bytes/AU). X/Y
+coordinate values remain invariant. `warp [526,528) = raw 3` remains an
+ETSI-reserved value and no vendor rule is added; the empirical suffix
+`[528,536) = 00000000` remains invariant for this Z control and is not called
+padding or otherwise assigned semantics. An exploratory raw prefix interval
+`[177,182)` changes, but it is deliberately unnamed.
+
+The Size branch is frozen rather than rescued: Object Size authoring and ADM
+propagation are established, while tested DD+ Size-state semantics,
+deactivation as a payload-11 transition, direct size-index response, and
+Size-related warp/suffix response remain unresolved or unobserved. No JOC,
+ObjectScene, object PCM, production parser, or profile behavior was entered.
+Controlled 3D X/Y/Z position calibration is closed for this evidence scope;
+complete OAMD timeline/state semantics and downstream binding/fidelity remain
+open. No second Z fixture is justified by this calibration.
+
 ### G1 -- G3: repair the fixture, then freeze semantic identity
 
 G1 was an invalid Logic fixture, not decoder behavior: the surround anchor

@@ -2281,3 +2281,45 @@ line is J1R7B, empirical characterization of the reserved warp-3 boundary;
 it is not executed here. Historical statements in earlier dated sections are
 preserved as historical observations and are superseded for the current
 position-field boundary by this section.
+
+## J1R8 — Controlled Z/elevation numeric calibration (2026-08-10)
+
+This documentation-only milestone records one new, independently authored
+Logic fixture, `J1R8_Z_CAL_997.logicx`, derived from the frozen Center
+control. The private evidence run is
+`20260810T032631Z_j1r8-z-elevation-calibration_c90779b`; its evidence-freeze
+aggregate SHA-256 is
+`faeaf08c88f2aa8d241262de6edf6ab60e35ccdd959fa91239f6640f94779c8a`.
+The fixture used the Logic automation parameter `对象位置提升` with persisted
+values `0 → 50 → 100 → 0`. The automation lane was the authoring source of
+truth; the Object Panner was used only for independent timeline readback.
+
+ADM independently qualified the same object (`AO_100B` / `J1_OBJ_TAG`) with
+X = `-0.0` and Y = `+1.0` throughout, and Z states of baseline, approximately
+`+0.5`, `+1.0`, and return to baseline. The exact ETSI normative Z fields
+identified in the J1R7A ledger are `pos3D_Z_sign_bits [64,65)` (one bit) and
+`pos3D_Z_bits [65,69)` (four-bit magnitude), ETSI TS 103 420 V1.2.1,
+clauses 5.5.8–5.5.11 and 5.6.1.1.7–5.6.1.1.9. The observed magnitude-code
+sequence was `0,3,6,7,13,14,15,10,3,1,0`; this is controlled numeric
+alignment evidence, not a newly asserted formula. X/Y coordinate fields
+remained invariant. A separate raw prefix interval `[177,182)` also changed
+in the exploratory diff, but no semantics are assigned to it.
+
+The source PCM remained sample-identical to the frozen Center source, and the
+two unchanged-project DD+ exports were deterministic after stream-copy:
+129 access units × 3072 bytes, identical raw EC3 SHA-256
+`714060cf8f2a55d5db6464cbde08e3cd342e4392806d6ff30f3ef52098bc3b84`.
+The observed `warp_mode [526,528) = raw 3` remains an ETSI reserved value;
+`ETSI_STRICT` still returns `ReservedWarpMode { raw: 3 }`, and
+`DOLBY_VENDOR_COMPAT` has no new rule. The empirical suffix `[528,536)` was
+`00000000` in all 129 AUs; this does not establish padding or any other
+semantics.
+
+The Size branch remains frozen: authoring persistence and ADM propagation are
+established, but tested DD+ Size-state semantics, a direct `object_size_idx`
+response, and Size-related warp/suffix response remain unresolved/not
+observed. Complete OAMD timeline/state semantics, reserved-warp meaning,
+OAMD↔JOC binding, verified object PCM, ObjectScene/render fidelity, and
+end-to-end acceptance remain open. No production code, parser/profile,
+fixture corpus outside this one Logic project, JOC, or ObjectScene behavior
+was changed.
