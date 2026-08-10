@@ -11,7 +11,7 @@ use openjoc_oamd::{
     OamdBitTrace, OamdDecoderConfig, OamdElement, OamdParseProfile, OpaqueObservedKnownElement,
     parse_oamd_payload_with_profile, trace_oamd_payload,
 };
-use openjoc_scene::{ObjectAudioSource, ProgrammeLayout, ProgrammeObjectBinding};
+use openjoc_scene::{ProgrammeAudioSource, ProgrammeLayout, ProgrammeLayoutEntry};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -226,7 +226,7 @@ struct ProgrammeLayoutEvidence {
     active_dynamic_slots: Vec<usize>,
     joc_output_count: Option<u8>,
     mapping_result: &'static str,
-    bindings: Vec<ProgrammeObjectBinding>,
+    bindings: Vec<ProgrammeLayoutEntry>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1111,7 +1111,7 @@ fn build_programme_layout_evidence(
                 .filter(|(index, updates)| {
                     matches!(
                         layout.bindings.get(*index).map(|binding| binding.source),
-                        Some(ObjectAudioSource::JocObject { .. })
+                        Some(ProgrammeAudioSource::ReconstructionRow { .. })
                     ) && updates.iter().any(|update| update.active)
                 })
                 .filter_map(|(index, _)| {

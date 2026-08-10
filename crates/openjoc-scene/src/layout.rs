@@ -5,12 +5,12 @@ use openjoc_oamd::{OamdContentPrefix, OamdError, ObjectAnchor};
 use serde::Serialize;
 use std::fmt;
 
-/// The audio source that can satisfy one OAMD programme entry at the scene
-/// boundary. JOC rows are intentionally distinct from base-carried speakers.
+/// Structural source category for one OAMD programme entry. This is not a
+/// semantic authored-object binding.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ObjectAudioSource {
-    JocObject { row_index: usize },
+pub enum ProgrammeAudioSource {
+    ReconstructionRow { row_index: usize },
     BaseLfe { channel_index: usize },
     UnsupportedBed,
     UnsupportedIsf,
@@ -36,15 +36,16 @@ pub enum ProgrammeObjectClass {
     Dynamic,
 }
 
-/// One typed OAMD-to-audio binding. `oamd_index` is never compacted or
-/// re-numbered when a speaker-anchored entry precedes dynamic slots.
+/// One typed structural OAMD programme-layout entry. `oamd_index` is never
+/// compacted or re-numbered when a speaker-anchored entry precedes dynamic
+/// slots. It must not be treated as semantic audio binding evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub struct ProgrammeObjectBinding {
+pub struct ProgrammeLayoutEntry {
     pub oamd_index: usize,
     pub class: ProgrammeObjectClass,
     pub anchor: ProgrammeAnchor,
     pub dynamic_slot_index: Option<usize>,
-    pub source: ObjectAudioSource,
+    pub source: ProgrammeAudioSource,
 }
 
 /// Programme-level cardinalities and typed source bindings derived from the
@@ -58,7 +59,7 @@ pub struct ProgrammeLayout {
     pub lfe_count: usize,
     pub isf_count: usize,
     pub dynamic_slot_count: usize,
-    pub bindings: Vec<ProgrammeObjectBinding>,
+    pub bindings: Vec<ProgrammeLayoutEntry>,
 }
 
 /// Explicit failures at the OAMD programme/JOC source-mapping boundary.
@@ -181,7 +182,7 @@ impl ProgrammeLayout {
                     ) => (
                         ProgrammeObjectClass::Lfe,
                         ProgrammeAnchor::Speaker(map_speaker(label)),
-                        ObjectAudioSource::BaseLfe {
+                        ProgrammeAudioSource::BaseLfe {
                             channel_index: usize::from(label == openjoc_oamd::SpeakerLabel::RcLfe2),
                         },
                         None,
@@ -189,13 +190,13 @@ impl ProgrammeLayout {
                     ObjectAnchor::Speaker(label) => (
                         ProgrammeObjectClass::Bed,
                         ProgrammeAnchor::Speaker(map_speaker(label)),
-                        ObjectAudioSource::UnsupportedBed,
+                        ProgrammeAudioSource::UnsupportedBed,
                         None,
                     ),
                     ObjectAnchor::IntermediateSpatial(label) => (
                         ProgrammeObjectClass::Isf,
                         ProgrammeAnchor::IntermediateSpatial(map_isf(label)),
-                        ObjectAudioSource::UnsupportedIsf,
+                        ProgrammeAudioSource::UnsupportedIsf,
                         None,
                     ),
                     ObjectAnchor::Dynamic => {
@@ -204,12 +205,12 @@ impl ProgrammeLayout {
                         (
                             ProgrammeObjectClass::Dynamic,
                             ProgrammeAnchor::Dynamic,
-                            ObjectAudioSource::JocObject { row_index: slot },
+                            ProgrammeAudioSource::ReconstructionRow { row_index: slot },
                             Some(slot),
                         )
                     }
                 };
-                ProgrammeObjectBinding {
+                ProgrammeLayoutEntry {
                     oamd_index,
                     class,
                     anchor: programme_anchor,
@@ -240,21 +241,23 @@ impl ProgrammeLayout {
         if self.lfe_count == 1
             && !matches!(
                 self.bindings.first().map(|binding| binding.source),
-                Some(ObjectAudioSource::BaseLfe { .. })
+                Some(ProgrammeAudioSource::BaseLfe { .. })
             )
         {
             return Err(ProgrammeLayoutError::UnexpectedObjectOrdering {
                 oamd_index: self
                     .bindings
                     .iter()
-                    .position(|binding| matches!(binding.source, ObjectAudioSource::BaseLfe { .. }))
+                    .position(|binding| {
+                        matches!(binding.source, ProgrammeAudioSource::BaseLfe { .. })
+                    })
                     .unwrap_or(0),
             });
         }
         if let Some(binding) = self
             .bindings
             .iter()
-            .find(|binding| matches!(binding.source, ObjectAudioSource::UnsupportedBed))
+            .find(|binding| matches!(binding.source, ProgrammeAudioSource::UnsupportedBed))
         {
             return Err(ProgrammeLayoutError::UnsupportedBedToJocMapping {
                 oamd_index: binding.oamd_index,
@@ -263,7 +266,7 @@ impl ProgrammeLayout {
         if let Some(binding) = self
             .bindings
             .iter()
-            .find(|binding| matches!(binding.source, ObjectAudioSource::UnsupportedIsf))
+            .find(|binding| matches!(binding.source, ProgrammeAudioSource::UnsupportedIsf))
         {
             return Err(ProgrammeLayoutError::UnsupportedIsfToJocMapping {
                 oamd_index: binding.oamd_index,
@@ -278,66 +281,21 @@ impl ProgrammeLayout {
         Ok(())
     }
 
-    /// Binds decoded JOC rows and an optional base LFE into stable OAMD order.
-    pub fn bind_audio(
+    /// Validates only the structural reconstruction-basis cardinality. This
+    /// is the boundary used by metadata-only scene assembly and deliberately
+    /// does not require a semantic OAMD-to-row binding or reject metadata
+    /// classes whose audio source is not yet implemented.
+    pub fn validate_reconstruction_basis(
         &self,
-        joc_pcm: &[Vec<f64>],
-        base_lfe_pcm: Option<&[f64]>,
-    ) -> Result<Vec<Vec<f64>>, ProgrammeLayoutError> {
-        self.validate_joc_output(joc_pcm.len())?;
-        if self.lfe_count == 1 && base_lfe_pcm.is_none() {
-            return Err(ProgrammeLayoutError::BaseLfeUnavailable);
-        }
-        let frame_samples = joc_pcm
-            .first()
-            .map_or_else(|| base_lfe_pcm.map_or(0, <[f64]>::len), Vec::len);
-        if joc_pcm.iter().any(|row| row.len() != frame_samples) {
-            return Err(ProgrammeLayoutError::DynamicRowOutOfRange {
-                row_index: 0,
-                available: joc_pcm.len(),
+        reconstruction_row_count: usize,
+    ) -> Result<(), ProgrammeLayoutError> {
+        if self.dynamic_slot_count != reconstruction_row_count {
+            return Err(ProgrammeLayoutError::JocDynamicCountMismatch {
+                expected: self.dynamic_slot_count,
+                actual: reconstruction_row_count,
             });
         }
-        if let Some(lfe) = base_lfe_pcm
-            && lfe.len() != frame_samples
-        {
-            return Err(ProgrammeLayoutError::BaseLfeLengthMismatch {
-                expected: frame_samples,
-                actual: lfe.len(),
-            });
-        }
-        let mut used_rows = Vec::new();
-        self.bindings
-            .iter()
-            .map(|binding| match binding.source {
-                ObjectAudioSource::BaseLfe { .. } => base_lfe_pcm
-                    .map(ToOwned::to_owned)
-                    .ok_or(ProgrammeLayoutError::BaseLfeUnavailable),
-                ObjectAudioSource::JocObject { row_index } => {
-                    if row_index >= joc_pcm.len() {
-                        return Err(ProgrammeLayoutError::DynamicRowOutOfRange {
-                            row_index,
-                            available: joc_pcm.len(),
-                        });
-                    }
-                    if used_rows.contains(&row_index) {
-                        return Err(ProgrammeLayoutError::DuplicateJocRow { row_index });
-                    }
-                    used_rows.push(row_index);
-                    Ok(joc_pcm[row_index].clone())
-                }
-                ObjectAudioSource::UnsupportedBed | ObjectAudioSource::UnsupportedIsf => Err(
-                    if matches!(binding.source, ObjectAudioSource::UnsupportedBed) {
-                        ProgrammeLayoutError::UnsupportedBedToJocMapping {
-                            oamd_index: binding.oamd_index,
-                        }
-                    } else {
-                        ProgrammeLayoutError::UnsupportedIsfToJocMapping {
-                            oamd_index: binding.oamd_index,
-                        }
-                    },
-                ),
-            })
-            .collect()
+        Ok(())
     }
 }
 

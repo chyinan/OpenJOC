@@ -116,14 +116,17 @@ fn decodes_raw_payloads_and_downmix_into_an_object_scene() {
         .expect("valid payload frame");
     assert_eq!(frame_output.joc.header.object_count, 1);
     assert!(
-        frame_output.decoded.object_pcm[0]
+        frame_output.decoded.reconstruction_basis.rows[0]
             .iter()
             .all(|sample| *sample == 0.0)
     );
 
     let scene = decoder.finish().expect("complete scene");
     assert_eq!(scene.duration_samples, 64);
-    assert_eq!(scene.objects[0].pcm, vec![0.0; 64]);
+    assert_eq!(
+        scene.reconstruction_basis.as_ref().unwrap().rows[0],
+        vec![0.0; 64]
+    );
     assert!(!scene.metadata_timeline[0].active);
     assert_eq!(
         scene.metadata_timeline[0].position,
@@ -159,7 +162,7 @@ fn consumes_a_decoded_frame_through_a_borrowed_sink() {
             |frame| {
                 observed.push((
                     frame.joc.header.object_count,
-                    frame.decoded.object_pcm.len(),
+                    frame.decoded.reconstruction_basis.rows.len(),
                 ));
                 Ok::<(), PayloadDecodeError>(())
             },

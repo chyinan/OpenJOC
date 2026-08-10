@@ -13,10 +13,16 @@ is currently:
 raw E-AC-3 elementary stream
   + aligned base-channel PCM
   + independently parsed JOC/OAMD/EMDF
-  -> renderer-independent ObjectScene
-  + default-f32 object stems
-  + optional explicit reference-f64 object stems
+  -> metadata-only ObjectScene
+  + separately named diagnostic ReconstructionBasis rows
+  + explicit SemanticBindingState (Unresolved by default)
 ```
+
+Reconstruction rows are not verified authored-object PCM. The current evidence
+supports structural row/cardinality diagnostics and scoped spatial-basis
+observations, but not semantic OAMD-object/audio-row binding. Therefore
+`METADATA_OBJECTSCENE_ADMISSIBLE` and
+`AUDIO_BOUND_OBJECTSCENE_NOT_ADMISSIBLE` are separate gates.
 
 This is not yet a complete real-world Atmos decoder or speaker/binaural
 renderer. In particular, the retained `debug/compatible_base.wav` is explicit
@@ -728,3 +734,27 @@ uninterpreted, and there is no ObjectScene, renderer, or final object
 PCM/fidelity claim. No production behaviour changed. The next task is to
 specify a falsifiable spatial-basis binding model from the qualified corpus
 before any ObjectScene admission.
+## J1R12 — Evidence-bounded reconstruction-basis architecture (2026-08-10)
+
+The Logic campaign is frozen at the J1R9/J1R10/J1R11 boundary. J1R9 rejects
+one-row-per-authored-object semantics; J1R10 leaves the spatial basis
+underdetermined; J1R11 changes application-level track order but leaves the
+raw EC3 carrier and OAMD slot trajectories unchanged. No independently
+controllable producer-side variable has been demonstrated that changes
+dynamic-slot assignment while authored identity, trajectory, and multi-object
+context are fixed.
+
+Production now separates metadata, reconstruction basis, and semantic binding:
+
+```text
+OAMD metadata object/state -> metadata-only ObjectScene
+JOC reconstruction rows   -> ReconstructionBasis / diagnostic row WAVs
+semantic binding           -> SemanticBindingState::Unresolved
+```
+
+`SceneBuilder` no longer creates `ObjectTrack::pcm` from a row index. There is
+no implicit row-index, dominant-row, FL/FR, or spatial-observation fallback.
+Base-carried LFE remains separate. Metadata-only scene validation is allowed;
+verified authored-object PCM and audio-bound ObjectScene admission remain
+blocked. This round adds no Logic fixture, no JOC semantic inference, no
+ObjectScene semantic admission, and no warp/profile behavior change.

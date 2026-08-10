@@ -1,17 +1,17 @@
+use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{GlobalTrim, TrimElement, WarpMode};
 use openjoc_scene::{
-    Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, SceneError, SpeakerLabel, TrimUpdate, ZoneConstraint,
+    Extent3, IsfLabel, IsfRing, MetadataObject, MetadataUpdate, ObjectClass, ObjectScene, Position,
+    Position3, SceneError, SemanticBindingState, SpeakerLabel, TrimUpdate, ZoneConstraint,
 };
 
 fn scene() -> ObjectScene {
     ObjectScene {
         sample_rate: 48_000,
         duration_samples: 3,
-        objects: vec![ObjectTrack {
+        objects: vec![MetadataObject {
             object_id: 0,
             class: ObjectClass::Dynamic,
-            pcm: vec![0.25, -0.5, 1.0],
         }],
         metadata_timeline: vec![MetadataUpdate {
             object_id: 0,
@@ -44,11 +44,16 @@ fn scene() -> ObjectScene {
                 consumed_bits: 9,
             },
         }],
+        reconstruction_basis: Some(ReconstructionBasis {
+            rows: vec![vec![0.25, -0.5, 1.0]],
+        }),
+        base_lfe_pcm: None,
+        semantic_binding: SemanticBindingState::Unresolved,
     }
 }
 
 #[test]
-fn scene_json_roundtrips_without_losing_timeline_or_pcm() {
+fn scene_json_roundtrips_without_losing_timeline_or_basis() {
     let expected = scene();
     expected.validate().expect("valid scene");
 
@@ -59,12 +64,41 @@ fn scene_json_roundtrips_without_losing_timeline_or_pcm() {
 }
 
 #[test]
-fn artifact_json_references_wav_stems_and_separates_timeline() {
+fn metadata_scene_is_admissible_without_audio_basis() {
+    let mut metadata_only = scene();
+    metadata_only.reconstruction_basis = None;
+    metadata_only
+        .validate()
+        .expect("metadata-only scene is valid");
+    assert_eq!(
+        metadata_only.semantic_binding,
+        SemanticBindingState::Unresolved
+    );
+    let json = metadata_only.to_json_pretty().expect("metadata JSON");
+    assert!(!json.contains("\"pcm\""));
+    assert_eq!(
+        ObjectScene::from_json(&json).unwrap().reconstruction_basis,
+        None
+    );
+}
+
+#[test]
+fn reconstruction_basis_has_rows_without_authored_object_identity() {
+    let basis = ReconstructionBasis {
+        rows: vec![vec![1.0, 2.0], vec![3.0, 4.0]],
+    };
+    assert_eq!(basis.rows.len(), 2);
+    let json = serde_json::to_string(&basis).unwrap();
+    assert!(!json.contains("object_id"));
+}
+
+#[test]
+fn artifact_json_separates_metadata_from_reconstruction_rows() {
     let scene = scene();
     let manifest = scene.to_manifest_json_pretty().expect("scene manifest");
     let timeline = scene.to_timeline_json_pretty().expect("metadata timeline");
 
-    assert!(manifest.contains("objects/object_000.wav"));
+    assert!(manifest.contains("diagnostics/reconstruction_basis.json"));
     assert!(!manifest.contains("\"pcm\""));
     assert!(manifest.contains("metadata/timeline.json"));
     assert!(timeline.contains("\"start_sample\": 1"));
@@ -89,11 +123,11 @@ fn validation_rejects_inconsistent_scene_boundaries() {
     assert_eq!(invalid_rate.validate(), Err(SceneError::InvalidSampleRate));
 
     let mut invalid_duration = scene();
-    invalid_duration.objects[0].pcm.pop();
+    invalid_duration.reconstruction_basis.as_mut().unwrap().rows[0].pop();
     assert_eq!(
         invalid_duration.validate(),
-        Err(SceneError::TrackDurationMismatch {
-            object_id: 0,
+        Err(SceneError::ReconstructionRowDurationMismatch {
+            row_index: 0,
             expected: 3,
             actual: 2,
         })

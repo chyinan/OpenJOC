@@ -368,3 +368,27 @@ ObjectScene correctness, renderer or object-PCM fidelity, or a semantic
 interpretation of raw warp 3. No production code changed. The next line is an
 explicit, testable spatial-basis binding model from the existing corpus before
 considering ObjectScene admission.
+## J1R12 — Evidence-bounded reconstruction-basis architecture (2026-08-10)
+
+The J1R9/J1R10/J1R11 Logic campaign is formally frozen. J1R9 rejects the
+one-row-per-authored-object model, J1R10 leaves the spatial basis
+underdetermined, and J1R11 shows that changing Logic application-level track
+order did not change the raw EC3 carrier or the observed OAMD slot
+trajectories. No independently controllable producer-side variable has been
+demonstrated that changes dynamic-slot assignment under fixed authored
+identity, trajectory, and multi-object context.
+
+The implementation boundary is therefore explicit and evidence-bounded:
+
+```text
+metadata object/state      -> metadata-only ObjectScene
+JOC reconstruction output  -> ReconstructionBasis rows
+semantic audio binding     -> Unresolved
+```
+
+Rows are diagnostic reconstruction-basis rows, not authored-object PCM or
+object stems. Structural 15-slot/15-row cardinality and the separate
+`RcLfe` base-carrier distinction remain available for diagnostics only. No
+row-index, dominant-row, FL/FR, or spatial-observation fallback is allowed.
+The strict raw warp 3 reservation and vendor profile behavior are unchanged;
+no Logic fixture or new semantic inference was performed.

@@ -7,13 +7,14 @@ use crate::{
 };
 use num_complex::Complex64;
 use openjoc_qmf::ReferenceQmf64F64;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 const QMF_SUBBANDS: usize = 64;
 
 /// Retained values at each normative matrix reconstruction stage.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ObjectReconstructionStages {
+pub struct ReconstructionRowStages {
     /// `[data_point][channel][parameter_band]`.
     pub quantized: Vec<Vec<Vec<u16>>>,
     /// `[data_point][channel][parameter_band]`.
@@ -25,11 +26,20 @@ pub struct ObjectReconstructionStages {
 /// Output of one stateful JOC frame decode.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedJocFrame {
-    pub object_qmf: Vec<Vec<[Complex64; QMF_SUBBANDS]>>,
-    /// Object-major PCM, with 64 samples emitted for every QMF timeslot.
-    pub object_pcm: Vec<Vec<f64>>,
-    pub stages: Vec<Option<ObjectReconstructionStages>>,
+    /// QMF output indexed by reconstruction row, not authored object.
+    pub reconstruction_qmf: Vec<Vec<[Complex64; QMF_SUBBANDS]>>,
+    /// PCM rows emitted by the JOC reconstruction basis.
+    pub reconstruction_basis: ReconstructionBasis,
+    pub stages: Vec<Option<ReconstructionRowStages>>,
     pub state_reset: bool,
+}
+
+/// PCM emitted by JOC reconstruction before any semantic authored-object
+/// binding. A row has only a structural index; it intentionally carries no
+/// authored object identity.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct ReconstructionBasis {
+    pub rows: Vec<Vec<f64>>,
 }
 
 /// Failures joining syntax, differential, interpolation, and object stages.
@@ -317,20 +327,20 @@ impl JocDecoderState {
                 &interpolation.matrix,
                 expected_channels,
             ));
-            stages.push(Some(ObjectReconstructionStages {
+            stages.push(Some(ReconstructionRowStages {
                 quantized,
                 dequantized,
                 interpolated: interpolation.matrix,
             }));
         }
-        let object_qmf = reconstruct_objects(inputs, &object_matrices)?;
+        let reconstruction_qmf = reconstruct_objects(inputs, &object_matrices)?;
         let mut synthesis_states =
             if state_reset || self.synthesis_states.len() != frame.objects.len() {
                 vec![ReferenceQmf64F64::new(); frame.objects.len()]
             } else {
                 self.synthesis_states.clone()
             };
-        let object_pcm = object_qmf
+        let reconstruction_rows = reconstruction_qmf
             .iter()
             .zip(&mut synthesis_states)
             .map(|(timeslots, synthesis)| {
@@ -346,8 +356,10 @@ impl JocDecoderState {
         self.previous_matrices = previous;
         self.synthesis_states = synthesis_states;
         Ok(DecodedJocFrame {
-            object_qmf,
-            object_pcm,
+            reconstruction_qmf,
+            reconstruction_basis: ReconstructionBasis {
+                rows: reconstruction_rows,
+            },
             stages,
             state_reset,
         })

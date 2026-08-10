@@ -67,7 +67,7 @@ fn payload() -> OamdPayload {
 }
 
 #[test]
-fn assembles_reconstructed_pcm_and_timed_oamd_into_scene() {
+fn assembles_reconstruction_basis_and_timed_oamd_without_object_binding() {
     let oamd = payload();
     let mut builder = SceneBuilder::new(48_000, &oamd.prefix).expect("valid content");
     builder
@@ -89,7 +89,14 @@ fn assembles_reconstructed_pcm_and_timed_oamd_into_scene() {
 
     assert_eq!(scene.duration_samples, 3);
     assert_eq!(scene.objects[0].class, ObjectClass::Dynamic);
-    assert_eq!(scene.objects[0].pcm, vec![0.25, -0.5, 1.0]);
+    assert_eq!(
+        scene.reconstruction_basis.as_ref().unwrap().rows[0],
+        vec![0.25, -0.5, 1.0]
+    );
+    assert_eq!(
+        scene.semantic_binding,
+        openjoc_scene::SemanticBindingState::Unresolved
+    );
     let update = &scene.metadata_timeline[0];
     assert_eq!(update.start_sample, 1);
     assert_eq!(update.ramp_duration, 2);
@@ -175,7 +182,7 @@ fn retains_complete_trim_state_in_the_renderer_independent_scene() {
 }
 
 #[test]
-fn failed_frame_staging_does_not_clone_or_mutate_committed_pcm() {
+fn failed_frame_staging_does_not_clone_or_mutate_committed_basis() {
     let first = payload();
     let mut builder = SceneBuilder::new(48_000, &first.prefix).expect("valid content");
     builder
@@ -190,5 +197,25 @@ fn failed_frame_staging_does_not_clone_or_mutate_committed_pcm() {
 
     let scene = builder.finish().expect("committed scene remains valid");
     assert_eq!(scene.duration_samples, 3);
-    assert_eq!(scene.objects[0].pcm, vec![0.25, -0.5, 1.0]);
+    assert_eq!(
+        scene.reconstruction_basis.as_ref().unwrap().rows[0],
+        vec![0.25, -0.5, 1.0]
+    );
+}
+
+#[test]
+fn row_shape_failure_does_not_mutate_metadata_or_basis() {
+    let oamd = payload();
+    let mut builder = SceneBuilder::new(48_000, &oamd.prefix).expect("valid content");
+    builder
+        .append_frame(&[vec![0.25, -0.5, 1.0]], &oamd, None)
+        .expect("first frame");
+    assert!(
+        builder
+            .append_frame(&[vec![0.0; 3], vec![1.0; 3]], &oamd, None)
+            .is_err()
+    );
+    let scene = builder.finish().expect("committed scene remains valid");
+    assert_eq!(scene.duration_samples, 3);
+    assert_eq!(scene.reconstruction_basis.unwrap().rows.len(), 1);
 }

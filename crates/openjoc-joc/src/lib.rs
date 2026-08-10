@@ -175,4 +175,6 @@ pub fn decode_huffman_codeword(
 pub fn qmf_prototype_64() -> &'static [f32; 640] {
     &generated::PROT64
 }
-pub use decoder::{DecodedJocFrame, JocDecodeError, JocDecoderState, ObjectReconstructionStages};
+pub use decoder::{
+    DecodedJocFrame, JocDecodeError, JocDecoderState, ReconstructionBasis, ReconstructionRowStages,
+};

@@ -330,6 +330,7 @@ dependencies = [
  "num-complex",
  "openjoc-bitio",
  "openjoc-qmf",
+ "serde",
 ]
 
 [[package]]

@@ -3,8 +3,10 @@
 ## Evidence boundary
 
 The repository currently supports a clean-room raw E-AC-3 path with aligned
-base-channel PCM, JOC/OAMD extraction, a renderer-independent `ObjectScene`,
-default-f32 object stems, and optional explicit reference-f64 object stems.
+base-channel PCM, JOC/OAMD extraction, a metadata-only `ObjectScene`, and a
+separately named diagnostic `ReconstructionBasis` row export. Reconstruction
+rows are not verified authored-object PCM; semantic audio binding is
+explicitly unresolved.
 This report does not claim a complete real-world Atmos decoder or a
 speaker/binaural renderer. The compatible base reference remains explicit
 FFmpeg `pcm_f64le` PCM and is not a final render.
@@ -341,18 +343,20 @@ renderer-independent scene boundary or claim nonzero JOC/OAMD reconstruction.
 surround, height, top/bottom and listener-Y controls, and per-object trim
 disable flags. CLI scene artifacts write this data to
 `metadata/trim_timeline.json`; no speaker or binaural rendering behavior is
-implied. Scene validation checks trim timing, object cardinality, and finite
-custom controls. Assembly and JSON roundtrip tests cover the retained state.
+implied. Scene metadata objects are separate from the diagnostic
+`ReconstructionBasis` rows written under `diagnostics/`; the scene carries an
+explicit `semantic_binding: unresolved` state by default. No row is exported
+as a verified authored-object stem.
 
 ## Implemented increment: frame-local atomic staging
 
-`SceneBuilder::append_frame` now stages the current frame's metadata and trim
-updates before mutating the accumulated scene. It validates PCM finiteness,
-timing bounds, trim cardinality, and numeric controls first, then appends PCM
-and metadata without cloning prior object audio. `PayloadDecoder` likewise
-uses the atomic builder in place; only its bounded JOC codec state is copied
-for retry semantics. A later CLI file-sink increment is still required to
-avoid retaining the complete input, base PCM, scene PCM, and debug frames.
+`SceneBuilder::append_frame` now stages the current frame's metadata, trim
+updates, and reconstruction rows before mutating the accumulated scene. It
+validates row finiteness, timing bounds, trim cardinality, and numeric controls
+first, then appends rows and metadata without cloning prior reconstruction
+audio. `PayloadDecoder` likewise uses the atomic builder in place; only its
+bounded JOC codec state is copied for retry semantics. The row export is
+diagnostic and carries no authored-object identity.
 
 ## Implemented increment: borrowed frame sink
 
@@ -763,17 +767,23 @@ JOC output count  == OAMD dynamic-slot count
 scene entry count == total OAMD programme count
 ```
 
-`ProgrammeLayout` derives typed `ProgrammeObjectBinding` values from
+`ProgrammeLayout` derives typed structural `ProgrammeLayoutEntry` values from
 `OamdContentPrefix::object_anchors()`. For every private A-F Logic carrier the
 observed layout is `RcLfe` at OAMD index 0 followed by 15 dynamic anchors. The
-only accepted source mapping for this layout is therefore:
+structural source categories for this layout are therefore:
 
 ```text
-OAMD[0]     -> ObjectAudioSource::BaseLfe { channel_index: 0 }
-OAMD[1+i]   -> ObjectAudioSource::JocObject { row_index: i }, i=0..14
+OAMD[0]     -> ProgrammeAudioSource::BaseLfe { channel_index: 0 }
+OAMD[1+i]   -> ProgrammeAudioSource::ReconstructionRow { row_index: i }, i=0..14
 ```
 
-This is an anchor/order-derived typed mapping, not a `count - 1` exception.
+This is an anchor/order-derived structural layout, not a `count - 1` exception
+and not semantic authored-object/audio binding. No `bind_audio` fallback is
+available in production. Ordinary beds and ISF anchors remain explicitly
+unsupported at this boundary; multiple LFE entries, misplaced LFE, and
+JOC/dynamic-slot mismatch have dedicated structural errors. The layout is
+checked again against the OAMD prefix before a frame can commit, while the
+scene retains rows and base LFE separately.
 Ordinary beds and ISF anchors remain explicitly unsupported at this boundary;
 multiple LFE entries, misplaced LFE, JOC/dynamic-slot mismatch, missing or
 unequal LFE PCM, duplicate rows, and row bounds have dedicated errors. The
@@ -1312,3 +1322,35 @@ This does not claim a universal JOC spatial basis, full OAMD/JOC mapping,
 ObjectScene correctness, renderer fidelity, verified final object PCM, or
 warp-3 semantics. Next work is an explicit spatial-basis binding model over
 the existing corpus; no second dual-object fixture is warranted here.
+## J1R12 — Evidence-bounded reconstruction-basis architecture (2026-08-10)
+
+J1R9, J1R10, and J1R11 are now treated as a frozen evidence boundary. J1R9
+rejected the one-row-per-authored-object model; J1R10 left the spatial basis
+underdetermined; J1R11 changed Logic application-level track order but left
+the raw EC3 carrier and all observed OAMD slot trajectories unchanged. No
+independently controllable producer-side variable has been demonstrated that
+changes OAMD dynamic-slot assignment while authored identity, trajectory, and
+multi-object context remain fixed.
+
+The production architecture therefore has three explicit layers:
+
+1. OAMD metadata objects and timed state (`MetadataObject`,
+   `MetadataUpdate`, `ObjectScene` metadata/timelines).
+2. JOC `ReconstructionBasis` rows and QMF/PCM diagnostics, with structural row
+   indices only and no authored-object ID.
+3. `SemanticBindingState`, defaulting to `Unresolved`.
+
+`SceneBuilder` retains the two audio domains separately: JOC rows remain under
+`reconstruction_basis`, and a base-carried LFE remains `base_lfe_pcm`. The
+former `object_pcm` → `bind_audio` → `ObjectTrack::pcm` chain has been removed;
+there is no row-index, dominant-row, or spatial-observation fallback. CLI WAV
+artifacts are named diagnostic reconstruction rows, not verified object stems.
+Metadata-only scenes are admissible (`METADATA_OBJECTSCENE_ADMISSIBLE`), while
+audio-bound ObjectScene admission remains blocked
+(`AUDIO_BOUND_OBJECTSCENE_NOT_ADMISSIBLE`).
+
+Regression tests cover metadata-only scenes, row-only basis construction,
+unresolved binding, structural LFE/row cardinality, atomic row staging, and
+diagnostic row export. Strict raw warp 3 behavior and the explicit vendor
+profile are unchanged; no new Logic fixture, JOC semantic inference, or
+production warp rule was introduced.

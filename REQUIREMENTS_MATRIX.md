@@ -13,10 +13,17 @@ boundary is raw E-AC-3 plus aligned base PCM plus JOC/OAMD extraction to the
 following renderer-independent output boundary:
 
 ```text
-renderer-independent ObjectScene
-  + default-f32 object stems
-  + optional explicit reference-f64 object stems
+metadata-only ObjectScene
+  + separately named diagnostic ReconstructionBasis rows
+  + optional separately retained base-LFE PCM
+  + semantic audio binding state (Unresolved by default)
 ```
+
+The current implementation deliberately does not call reconstruction rows
+authored-object PCM or export them as verified object stems. J1R9--J1R11
+established spatially anchored row evidence but not a semantic
+OAMD-object/audio-row binding. `METADATA_OBJECTSCENE_ADMISSIBLE` is therefore
+distinct from `AUDIO_BOUND_OBJECTSCENE_NOT_ADMISSIBLE`.
 
 The compatible base reference remains explicit FFmpeg `pcm_f64le` PCM and is
 not a speaker or binaural render. Container input is a completed first
@@ -51,7 +58,7 @@ normative failures, and the decoder has no profile-specific signaling hacks.
 | TS 103 420 5.5.1 | Bounded `variable_bits_max` decoding | `openjoc-oamd` | group values, exact bound, truncation, invalid configuration, overflow tests pass | verified |
 | TS 103 420 6.2 | Complete JOC payload syntax | `openjoc-joc` | full/sparse retained-codeword vectors and padding tests pass | verified |
 | TS 103 420 6.3 | Complete JOC field semantics and validation | `openjoc-joc` | 5/7 channel, 96/192, smooth/steep, reserved/range tests pass | verified |
-| TS 103 420 6.4 | JOC input/output/control boundary | `openjoc-joc`, `openjoc-scene` | public `JocFrameInput`; raw JOC/OAMD + channel PCM → analysis QMF → object QMF/PCM → timed ObjectScene and atomic retry tests pass | verified |
+| TS 103 420 6.4 | JOC input/output/control boundary | `openjoc-joc`, `openjoc-scene` | public `JocFrameInput`; raw JOC/OAMD + channel PCM → analysis QMF → reconstruction-basis QMF/PCM rows → metadata-only ObjectScene and atomic retry tests pass; authored-object binding remains unresolved | implemented |
 | TS 103 420 6.5, Table 54 | Exact 1/3/5/7/9/12/15/23 band mapping | `openjoc-joc` | exhaustive 8 x 64 test passes | verified |
 | TS 103 420 6.6.2 | Separate sparse and full differential decoding | `openjoc-joc` | distinct pseudocode 2/3 and malformed-input tests pass | verified |
 | TS 103 420 6.6.3, Annex A | Six MSB-first Huffman trees and symbol mapping | importer, `openjoc-joc` | all leaves, uniqueness, prefix-free, truncation and malformed-reference tests pass | verified |
@@ -80,25 +87,52 @@ normative failures, and the decoder has no profile-specific signaling hacks.
 | TS 102 366 Annex H.2 | EMDF sync/container/config/protection | `openjoc-emdf` | group-offset, conditional config, bounded payload, all protection lengths, version/reserved/padding/truncation tests pass | verified |
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
-| Engineering spec 5.7 | ObjectScene JSON and per-object PCM | `openjoc-scene`, `openjoc-wave` | raw payload-to-scene integration, metadata-complete JSON roundtrip, decoded OAMD/timed PCM assembly, invariants, and lossless f64 WAV byte tests pass; filesystem CLI export remains | implemented |
-| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3`/container `decode` write scene/timeline/default-f32 stems/debug artifacts; explicit `--reference-f64` retains reference output; `inspect` reports bounded profile timing/carrier details, `decode --validation-profile` selects the explicit profile, and `--trim-config-count` remains caller-supplied | implemented |
+| Engineering spec 5.7 | ObjectScene metadata and diagnostic reconstruction basis | `openjoc-scene`, `openjoc-wave` | metadata-only JSON roundtrip, separate reconstruction-basis rows, explicit unresolved binding state, invariants, and diagnostic row WAV export pass; verified authored-object PCM remains inadmissible | implemented |
+| Engineering spec 6 | Complete CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and direct `.ec3`/container `decode` write metadata scene/timeline/diagnostic reconstruction-row WAVs/debug artifacts; explicit `--reference-f64` retains reference row output; `inspect` reports bounded profile timing/carrier details, `decode --validation-profile` selects the explicit profile, and `--trim-config-count` remains caller-supplied | implemented |
 | Engineering spec 6 / OAMD forensic boundary | Bit-exact OAMD entry evidence | `openjoc-cli`, `openjoc-emdf`, `openjoc-oamd` | `diagnose-oamd` records MP4 sample/AU/substream, exact skip-field and EMDF/payload/config/body spans in named coordinate systems, OAMD warp bit/window/raw value, original-byte dumps, all-AU continuity, and explicit trim-count provenance without changing decode semantics | implemented |
 | Engineering spec 6 / OAMD forensic round 2 | AU timing, payload-11 differential, independent bit oracle, ADM comparison, diagnostic warp hypotheses | `openjoc-cli` | `--au START..END`, `--diff-payload-11`, deterministic timing/diff JSON/TXT, independent cursor-free oracle, explicit raw-vs-MP4 equality, and diagnostic-only hypotheses; strict parser remains reserved-value failure; private A-F corpus evidence is retained outside Git, with B/C canonical automation semantics explicitly unresolved | implemented |
 | Engineering spec 6 / OAMD forensic round 3 | Reproducible raw/MP4/ADM refresh and Logic canonical-copy audit | private controlled run + public docs | New non-overwriting batch `2026-08-05T1042Z_logic-warp-evidence_952b052` covers A-F (12 carrier reports, six ADM reports); all 126 AUs close; four-way warp oracle remains `[526,528) = 3`; B/C remain explicitly non-canonical after a discarded Logic editing experiment; no vendor rule added | evidence refresh; semantics unresolved |
 | Engineering spec 6 / interoperability boundary | Explicit ETSI and vendor-compatibility profiles | `openjoc-emdf`, `openjoc-eac3`, `openjoc-cli` | parser retains original EMDF; `ETSI_STRICT` never relaxes Table 55/56; `DOLBY_VENDOR_COMPAT` accepts only the observed Logic/Dolby pattern, records every deviation, and manifest expectations gate Logic/future DEE regressions | implemented |
-| TS 103 420 5.6.0, 5.6.1, 6.4, 8.3 / controlled vendor programme boundary | Typed OAMD programme layout and JOC-row binding | `openjoc-scene`, `openjoc-cli` | OAMD total, speaker/LFE/bed/ISF/dynamic cardinalities are derived from anchors; `RcLfe` is bound to separately retained base LFE; dynamic slots map one-to-one to JOC rows; `addbsi` complexity is checked against total OAMD count; A-F private reports and layout tests pass | verified |
+| TS 103 420 5.6.0, 5.6.1, 6.4, 8.3 / controlled vendor programme boundary | Typed OAMD programme layout and reconstruction-row structure | `openjoc-scene`, `openjoc-cli` | OAMD cardinalities derive from anchors; `RcLfe` remains separately retained as base LFE; dynamic-slot↔row cardinality/order is structural only; `addbsi` complexity is checked against total OAMD count; semantic binding is unresolved | implemented |
 | Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | completed |
 | Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | completed |
 | Legal DEE real-vector lane | Nonzero JOC/OAMD reconstruction and continuity acceptance | `openjoc-cli`, `openjoc-scene` | user-supplied fixture hash, nonzero side information/stems, dynamic OAMD, moving object, multiple access units, known-stem/ADM-BWF comparison | planned |
 | Legal DEE real-vector lane | FFmpeg base-channel versus `--internal-base` fidelity report | `openjoc-cli`, `openjoc-eac3` | per-channel count/order, delay, peak, RMS, and numerical-error comparison on the same legal stream | planned |
 | Engineering spec 5.7 | Renderer-independent trim and balance retention | `openjoc-scene`, `openjoc-oamd` | trim warp mode, global/centre/surround/height trims, balance controls, per-object disable flags, and timed trim snapshots preserved without rendering behavior | implemented |
-| Engineering spec 5.7 / frame-local staging | Atomic frame-local SceneBuilder staging without accumulated PCM clones | `openjoc-scene` | no per-frame clone of previously accumulated object PCM; metadata/PCM validation occurs before commit; retry atomicity tests pass | implemented |
+| Engineering spec 5.7 / frame-local staging | Atomic frame-local SceneBuilder staging without accumulated row clones | `openjoc-scene` | no per-frame clone of previously accumulated reconstruction rows; metadata/row validation occurs before commit; retry atomicity tests pass | implemented |
 | Engineering spec 5.7 / scalability | Bounded whole-input retention, metadata-only scene assembly, and streaming PCM/file sinks | `openjoc-scene`, `openjoc-cli`, `openjoc-wave` | bounded input/base PCM retention and streaming object stems/scene metadata; current implementation remains open | planned |
 | Engineering spec 5.7 / frame boundary | Borrowed per-frame sink for debug/artifact consumption | `openjoc-scene`, `openjoc-cli` | `PayloadDecoder::decode_frame_with` lends only the committed frame; aligned and internal E-AC-3 paths write debug artifacts without an all-frame `DecodedPayloadFrame` vector; sink/error and timing tests pass | implemented |
 | Engineering spec 5.7 / wave output | Explicit f32/f64/s24/s16 sample-format abstraction | `openjoc-wave`, `openjoc-cli` | f32 normal output, explicit reference-f64 option, defined clipping and dither tests; compatible base PCM name | implemented |
 | Engineering spec 9 | No panic/OOM/hang on malformed input | fuzz targets | bounded regression corpus and fuzz runs | planned |
 | Mandatory DoD | WAV stems, scene, timeline, debug artifacts from real JOC | end-to-end workspace | legal vector artifacts plus fidelity comparison | planned |
 | Mandatory DoD | Windows/Linux/macOS CI | `.github/workflows` | all platform jobs green | planned |
+
+## J1R12 — Evidence-bounded reconstruction basis architecture (2026-08-10)
+
+The Logic black-box campaign is frozen at the J1R9/J1R10/J1R11 evidence
+boundary. J1R9 rejected the one-row-per-authored-object model; J1R10 left the
+spatial basis underdetermined; J1R11 changed Logic application-level track
+order but produced byte-identical EC3 and unchanged OAMD slot trajectories.
+No independently controllable producer-side variable has been demonstrated
+that changes OAMD dynamic-slot assignment while holding authored identity,
+trajectory, and multi-object context fixed.
+
+The production boundary is now explicit:
+
+```text
+OAMD -> metadata objects/state -> metadata-only ObjectScene
+JOC  -> ReconstructionBasis rows -> diagnostic row PCM/WAV
+semantic audio binding -> Unresolved (default)
+```
+
+Structural cardinality/order (15 dynamic slots ↔ 15 JOC rows, and OAMD[0]
+`RcLfe` ↔ separately retained base-LFE carrier) remains available as
+`ProgrammeLayout` evidence. It is never promoted to authored-object identity.
+There is no row-index fallback, dominant-row fallback, FL/FR observation
+fallback, or implicit `ObjectScene.objects[i].pcm` path. The strict OAMD
+profile still rejects raw warp 3; no vendor rule or warp interpretation was
+changed. Metadata-only scene admission is supported; audio-bound scene
+admission and verified authored-object PCM remain blocked.
 
 ## Controlled Logic Pro vector gate result
 
@@ -198,9 +232,9 @@ complete OAMD, JOC, or renderer requirements to completion.
 | Explicit vendor opaque trim retention | `DOLBY_VENDOR_COMPAT` requires payload ID 11, complete element-2 declared window, exact first error raw warp 3, and retains the full body/hash without remap | implemented/verified |
 | Partial OAMD state | Element 1 is formally parsed; trim is `opaque_unresolved`; trim timeline and renderer fidelity are unavailable | implemented/verified |
 | Inspect profile visibility | `inspect` always shows both carrier profiles; explicit `--trim-config-count N` additionally shows strict/vendor OAMD partial status without inferring a count | implemented |
-| Independent payload-14/JOC chain | A/E/D/F compatible-base runs parse payload 14 across 126/126 AUs; JOC declares 15 rows, which bind to 15 OAMD dynamic slots while the separate OAMD LFE remains base-carried | verified |
+| Independent payload-14/JOC chain | A/E/D/F compatible-base runs parse payload 14 across 126/126 AUs; JOC declares 15 reconstruction rows, structurally cardinal with 15 OAMD dynamic slots while the separate OAMD LFE remains base-carried; authored identity is unresolved | evidence |
 | B/C/F vendor regression | Follow-up raw/MP4 private run repeats 126 AUs, raw warp `3:126`, opaque vendor acceptance `126/126`, normalized carrier equality, and payload-14 parse `126/126` | verified |
-| Real object PCM and fidelity | A/E/D/F vendor-compatible runs emit 16-entry scenes, 15 nonzero-capable JOC dynamic stems, and one separately bound base-LFE stem; trim/warp semantics, internal-base fidelity, and ADM rendering equivalence remain open | evidence; fidelity open |
+| Reconstruction rows and fidelity | A/E/D/F vendor-compatible runs emit 16-entry metadata scenes, 15 diagnostic reconstruction rows, and one separately retained base-LFE row; no verified authored-object PCM, trim/warp semantics, internal-base fidelity, or ADM rendering equivalence is claimed | evidence; fidelity open |
 
 ## Controlled Logic programme-cardinality result (2026-08-05)
 

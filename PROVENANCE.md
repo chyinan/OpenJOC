@@ -2365,3 +2365,32 @@ ObjectScene correctness, renderer fidelity, object PCM fidelity, or a
 resolution of raw warp 3. No production parser, profile, decoder, renderer,
 or semantic-admission behaviour changed. The next work is an explicit,
 testable spatial-basis binding model using the existing qualified corpus.
+## J1R12 — Evidence-bounded reconstruction-basis architecture (2026-08-10)
+
+J1R9/J1R10/J1R11 are frozen as the current Logic campaign boundary. J1R9
+rejects one-row-per-authored-object semantics; J1R10 leaves the spatial basis
+underdetermined; J1R11 changes application-level Logic track order without
+changing raw EC3 bytes or the observed OAMD slot trajectories. The narrow
+blocker remains: no independently controllable producer-side variable has
+been shown to change OAMD dynamic-slot assignment while authored identity,
+trajectory, and multi-object context are fixed.
+
+The production model now separates three evidence domains:
+
+```text
+OAMD metadata objects/state -> metadata-only ObjectScene
+JOC payload               -> ReconstructionBasis rows / diagnostic PCM
+semantic audio binding   -> SemanticBindingState::Unresolved
+```
+
+`ReconstructionBasis` rows contain structural indices only; they do not carry
+authored object IDs. `SceneBuilder` no longer binds rows into
+`ObjectTrack::pcm`; the old implicit row-index path is removed. Base-carried
+LFE PCM remains a separate field. CLI output uses
+`diagnostics/reconstruction_rows/row_NNN.wav` and never labels it a verified
+authored-object stem. Metadata-only scene validation is admissible, whereas an
+audio-bound ObjectScene and verified authored-object PCM remain inadmissible.
+
+This round changes no Logic fixture, private media, raw warp behavior, JOC
+semantic inference, or profile rule. `ETSI_STRICT` continues to reject raw
+warp 3 as reserved, and the vendor profile remains unchanged.

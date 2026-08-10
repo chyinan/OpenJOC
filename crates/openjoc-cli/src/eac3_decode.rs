@@ -48,7 +48,7 @@ impl fmt::Display for DecodeEac3Error {
             Self::Eac3(error) => write!(formatter, "failed to decode E-AC-3 frontend: {error}"),
             Self::Oamd(error) => write!(formatter, "failed to validate OAMD profile: {error}"),
             Self::Payload(error) => {
-                write!(formatter, "failed to reconstruct object frame: {error}")
+                write!(formatter, "failed to reconstruct JOC basis frame: {error}")
             }
             Self::EmptyStream => formatter.write_str("empty E-AC-3 stream"),
             Self::SampleCountOverflow => formatter.write_str("E-AC-3 sample count overflow"),

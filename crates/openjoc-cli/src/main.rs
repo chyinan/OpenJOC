@@ -158,7 +158,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
         "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
-        "      --reference-f64 Use explicit reference f64 object-stem output (default: f32)\n",
+        "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
     ));
     Ok(())
 }
@@ -1170,9 +1170,9 @@ fn write_scene(
     scene: &openjoc_scene::ObjectScene,
     sample_format: SampleFormat,
 ) -> Result<(), Box<dyn Error>> {
-    let objects = output.join("objects");
+    let rows = output.join("diagnostics/reconstruction_rows");
     let metadata = output.join("metadata");
-    fs::create_dir_all(&objects)?;
+    fs::create_dir_all(&rows)?;
     fs::create_dir_all(&metadata)?;
     fs::write(output.join("scene.json"), scene.to_manifest_json_pretty()?)?;
     fs::write(
@@ -1183,13 +1183,33 @@ fn write_scene(
         metadata.join("trim_timeline.json"),
         scene.to_trim_timeline_json_pretty()?,
     )?;
-    for object in &scene.objects {
-        let filename = format!("object_{:03}.wav", object.object_id);
+    fs::write(
+        output.join("diagnostics/reconstruction_basis.json"),
+        scene.to_reconstruction_basis_json_pretty()?,
+    )?;
+    if let Some(basis) = &scene.reconstruction_basis {
+        for (row_index, row) in basis.rows.iter().enumerate() {
+            let filename = format!("row_{row_index:03}.wav");
+            fs::write(
+                rows.join(filename),
+                encode_channels(
+                    scene.sample_rate,
+                    std::slice::from_ref(row),
+                    WaveEncodeOptions {
+                        sample_format,
+                        clipping: Clipping::Reject,
+                        dither: Dither::None,
+                    },
+                )?,
+            )?;
+        }
+    }
+    if let Some(base_lfe) = &scene.base_lfe_pcm {
         fs::write(
-            objects.join(filename),
+            output.join("diagnostics/base_lfe.wav"),
             encode_channels(
                 scene.sample_rate,
-                std::slice::from_ref(&object.pcm),
+                std::slice::from_ref(base_lfe),
                 WaveEncodeOptions {
                     sample_format,
                     clipping: Clipping::Reject,
@@ -1249,6 +1269,8 @@ fn write_debug(
             "opaque_unresolved"
         },
         trim_timeline_available: false,
+        semantic_binding_state: "unresolved",
+        reconstruction_audio_status: "diagnostic_rows_only",
         renderer_fidelity_eligible: false,
         opaque_elements: opaque_elements
             .iter()
@@ -1268,7 +1290,7 @@ fn write_debug(
         serde_json::to_vec_pretty(&status)?,
     )?;
     let mut status_text = format!(
-        "profile: {}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nrenderer_fidelity_eligible: {}\n",
+        "profile: {}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nsemantic_binding_state: {}\nreconstruction_audio_status: {}\nrenderer_fidelity_eligible: {}\n",
         status.profile,
         status.accepted_with_deviation,
         status.oamd_payload_structurally_accepted,
@@ -1276,6 +1298,8 @@ fn write_debug(
         status.object_metadata_status,
         status.trim_metadata_status,
         status.trim_timeline_available,
+        status.semantic_binding_state,
+        status.reconstruction_audio_status,
         status.renderer_fidelity_eligible,
     );
     for opaque in &status.opaque_elements {
@@ -1305,6 +1329,8 @@ struct OamdPartialStatusArtifact {
     object_metadata_status: &'static str,
     trim_metadata_status: &'static str,
     trim_timeline_available: bool,
+    semantic_binding_state: &'static str,
+    reconstruction_audio_status: &'static str,
     renderer_fidelity_eligible: bool,
     opaque_elements: Vec<OpaqueTrimArtifact>,
 }

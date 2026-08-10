@@ -2,6 +2,7 @@
 
 //! Renderer-independent object-scene model for the TS 103 420 decoder interface.
 
+use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::TrimElement;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
@@ -10,8 +11,8 @@ mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder};
 mod layout;
 pub use layout::{
-    ObjectAudioSource, ProgrammeAnchor, ProgrammeLayout, ProgrammeLayoutError,
-    ProgrammeObjectBinding, ProgrammeObjectClass,
+    ProgrammeAnchor, ProgrammeAudioSource, ProgrammeLayout, ProgrammeLayoutEntry,
+    ProgrammeLayoutError, ProgrammeObjectClass,
 };
 mod payload_decoder;
 pub use payload_decoder::{
@@ -107,13 +108,32 @@ pub enum ObjectClass {
     Dynamic,
 }
 
-/// One reconstructed object essence and its stable identity.
+/// One metadata object identity and class. Audio is deliberately not stored
+/// here: OAMD object identity is not proven to bind to a JOC reconstruction
+/// row in the current evidence boundary.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct ObjectTrack {
+pub struct MetadataObject {
     pub object_id: u32,
     pub class: ObjectClass,
-    /// Mono f64 PCM samples in decoder time.
-    pub pcm: Vec<f64>,
+}
+
+/// Compatibility name for callers that used the pre-J1R12 metadata type.
+pub type ObjectTrack = MetadataObject;
+
+/// Semantic state of the audio-to-authored-object relationship.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SemanticBindingState {
+    /// No independently verified authored-object/audio-row binding exists.
+    #[default]
+    Unresolved,
+    /// Only normative slot/row cardinality and ordering are established.
+    StructuralOnly,
+    /// Controlled spatial observations support a relationship, but do not
+    /// prove authored identity.
+    EmpiricalSpatialSupport,
+    /// Reserved for a future independently verified binding evidence package.
+    Verified,
 }
 
 /// One timed, fully resolved metadata update.
@@ -146,9 +166,17 @@ pub struct TrimUpdate {
 pub struct ObjectScene {
     pub sample_rate: u32,
     pub duration_samples: u64,
-    pub objects: Vec<ObjectTrack>,
+    pub objects: Vec<MetadataObject>,
     pub metadata_timeline: Vec<MetadataUpdate>,
     pub trim_timeline: Vec<TrimUpdate>,
+    /// Optional reconstruction rows, separate from metadata objects.
+    #[serde(default)]
+    pub reconstruction_basis: Option<ReconstructionBasis>,
+    /// Base-carried LFE remains separate from both OAMD identity and JOC rows.
+    #[serde(default)]
+    pub base_lfe_pcm: Option<Vec<f64>>,
+    #[serde(default)]
+    pub semantic_binding: SemanticBindingState,
 }
 
 #[derive(Serialize)]
@@ -158,13 +186,14 @@ struct SceneManifest {
     objects: Vec<ObjectManifest>,
     metadata_timeline: &'static str,
     trim_timeline: &'static str,
+    reconstruction_basis: Option<&'static str>,
+    semantic_binding: SemanticBindingState,
 }
 
 #[derive(Serialize)]
 struct ObjectManifest {
     object_id: u32,
     class: ObjectClass,
-    wav: String,
 }
 
 /// Scene-model and JSON validation failures.
@@ -174,8 +203,12 @@ pub enum SceneError {
     DuplicateObjectId {
         object_id: u32,
     },
-    TrackDurationMismatch {
-        object_id: u32,
+    ReconstructionRowDurationMismatch {
+        row_index: usize,
+        expected: u64,
+        actual: u64,
+    },
+    BaseLfeDurationMismatch {
         expected: u64,
         actual: u64,
     },
@@ -186,8 +219,11 @@ pub enum SceneError {
         object_id: u32,
         start_sample: u64,
     },
-    NonFiniteAudio {
-        object_id: u32,
+    NonFiniteReconstruction {
+        row_index: usize,
+        sample: usize,
+    },
+    NonFiniteBaseLfe {
         sample: usize,
     },
     NonFiniteMetadata {
@@ -211,13 +247,13 @@ impl fmt::Display for SceneError {
             Self::DuplicateObjectId { object_id } => {
                 write!(formatter, "duplicate scene object ID {object_id}")
             }
-            Self::TrackDurationMismatch {
-                object_id,
+            Self::ReconstructionRowDurationMismatch {
+                row_index,
                 expected,
                 actual,
             } => write!(
                 formatter,
-                "object {object_id} has {actual} samples, expected {expected}"
+                "reconstruction row {row_index} has {actual} samples, expected {expected}"
             ),
             Self::UnknownMetadataObject { object_id } => {
                 write!(formatter, "metadata references unknown object {object_id}")
@@ -229,9 +265,19 @@ impl fmt::Display for SceneError {
                 formatter,
                 "object {object_id} metadata starts outside scene at sample {start_sample}"
             ),
-            Self::NonFiniteAudio { object_id, sample } => write!(
+            Self::NonFiniteReconstruction { row_index, sample } => write!(
                 formatter,
-                "object {object_id} contains non-finite PCM at sample {sample}"
+                "reconstruction row {row_index} contains non-finite PCM at sample {sample}"
+            ),
+            Self::NonFiniteBaseLfe { sample } => {
+                write!(
+                    formatter,
+                    "base LFE contains non-finite PCM at sample {sample}"
+                )
+            }
+            Self::BaseLfeDurationMismatch { expected, actual } => write!(
+                formatter,
+                "base LFE has {actual} samples, expected {expected}"
             ),
             Self::NonFiniteMetadata { object_id } => {
                 write!(formatter, "object {object_id} contains non-finite metadata")
@@ -271,19 +317,32 @@ impl ObjectScene {
                     object_id: object.object_id,
                 });
             }
-            let actual = u64::try_from(object.pcm.len()).unwrap_or(u64::MAX);
+        }
+        if let Some(basis) = &self.reconstruction_basis {
+            for (row_index, row) in basis.rows.iter().enumerate() {
+                let actual = u64::try_from(row.len()).unwrap_or(u64::MAX);
+                if actual != self.duration_samples {
+                    return Err(SceneError::ReconstructionRowDurationMismatch {
+                        row_index,
+                        expected: self.duration_samples,
+                        actual,
+                    });
+                }
+                if let Some(sample) = row.iter().position(|value| !value.is_finite()) {
+                    return Err(SceneError::NonFiniteReconstruction { row_index, sample });
+                }
+            }
+        }
+        if let Some(lfe) = &self.base_lfe_pcm {
+            let actual = u64::try_from(lfe.len()).unwrap_or(u64::MAX);
             if actual != self.duration_samples {
-                return Err(SceneError::TrackDurationMismatch {
-                    object_id: object.object_id,
+                return Err(SceneError::BaseLfeDurationMismatch {
                     expected: self.duration_samples,
                     actual,
                 });
             }
-            if let Some(sample) = object.pcm.iter().position(|value| !value.is_finite()) {
-                return Err(SceneError::NonFiniteAudio {
-                    object_id: object.object_id,
-                    sample,
-                });
+            if let Some(sample) = lfe.iter().position(|value| !value.is_finite()) {
+                return Err(SceneError::NonFiniteBaseLfe { sample });
             }
         }
         for update in &self.metadata_timeline {
@@ -354,11 +413,15 @@ impl ObjectScene {
                 .map(|object| ObjectManifest {
                     object_id: object.object_id,
                     class: object.class,
-                    wav: format!("objects/object_{:03}.wav", object.object_id),
                 })
                 .collect(),
             metadata_timeline: "metadata/timeline.json",
             trim_timeline: "metadata/trim_timeline.json",
+            reconstruction_basis: self
+                .reconstruction_basis
+                .as_ref()
+                .map(|_| "diagnostics/reconstruction_basis.json"),
+            semantic_binding: self.semantic_binding,
         };
         serde_json::to_string_pretty(&manifest).map_err(|error| SceneError::Json(error.to_string()))
     }
@@ -370,6 +433,15 @@ impl ObjectScene {
     pub fn to_timeline_json_pretty(&self) -> Result<String, SceneError> {
         self.validate()?;
         serde_json::to_string_pretty(&self.metadata_timeline)
+            .map_err(|error| SceneError::Json(error.to_string()))
+    }
+
+    /// Serializes the diagnostic reconstruction basis separately from
+    /// metadata object identity. The rows intentionally contain no authored
+    /// object IDs.
+    pub fn to_reconstruction_basis_json_pretty(&self) -> Result<String, SceneError> {
+        self.validate()?;
+        serde_json::to_string_pretty(&self.reconstruction_basis)
             .map_err(|error| SceneError::Json(error.to_string()))
     }
 

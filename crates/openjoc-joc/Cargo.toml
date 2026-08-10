@@ -10,6 +10,7 @@ build = "build.rs"
 num-complex = "0.4"
 openjoc-bitio = { path = "../openjoc-bitio" }
 openjoc-qmf = { path = "../openjoc-qmf" }
+serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 import-etsi-tables = { path = "../../tools/import-etsi-tables" }

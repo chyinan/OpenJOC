@@ -70,7 +70,7 @@ fn frame_pipeline_reuses_absent_state_and_resets_on_sequence_zero() {
         .decode_frame(&frame(1, full_object(5)), &inputs())
         .expect("present frame");
     let coefficient = 5.0 * 820.0 / 4096.0;
-    assert!((first.object_qmf[0][0][0].re - 15.0 * coefficient).abs() < 1.0e-12);
+    assert!((first.reconstruction_qmf[0][0][0].re - 15.0 * coefficient).abs() < 1.0e-12);
     assert!(!first.state_reset);
     assert_eq!(
         first.stages[0].as_ref().expect("stages").quantized[0][0][0],
@@ -80,7 +80,10 @@ fn frame_pipeline_reuses_absent_state_and_resets_on_sequence_zero() {
     let reused = state
         .decode_frame(&frame(2, absent_object()), &inputs())
         .expect("absent frame reuses state");
-    assert!((reused.object_qmf[0][0][0].re - first.object_qmf[0][0][0].re).abs() < 1.0e-12);
+    assert!(
+        (reused.reconstruction_qmf[0][0][0].re - first.reconstruction_qmf[0][0][0].re).abs()
+            < 1.0e-12
+    );
     assert!(reused.stages[0].is_none());
     assert!(!reused.state_reset);
 
@@ -89,7 +92,7 @@ fn frame_pipeline_reuses_absent_state_and_resets_on_sequence_zero() {
         .expect("sequence zero resets state");
     assert!(reset.state_reset);
     assert!(
-        reset.object_qmf[0][0]
+        reset.reconstruction_qmf[0][0]
             .iter()
             .all(|sample| *sample == Complex64::ZERO)
     );
@@ -119,7 +122,7 @@ fn discontinuous_sequence_resets_interpolation_origin() {
 }
 
 #[test]
-fn object_qmf_is_synthesized_to_pcm_with_continuous_per_object_state() {
+fn reconstruction_qmf_is_synthesized_to_basis_rows_with_continuous_state() {
     let mut state = JocDecoderState::new();
     let first = state
         .decode_frame(&frame(1, full_object(5)), &inputs())
@@ -129,15 +132,21 @@ fn object_qmf_is_synthesized_to_pcm_with_continuous_per_object_state() {
         .expect("continuous frame");
 
     let mut reference = ReferenceQmf64F64::new();
-    let expected_first = reference.synthesize(&first.object_qmf[0][0]);
-    let expected_second = reference.synthesize(&second.object_qmf[0][0]);
-    assert_eq!(first.object_pcm, vec![expected_first.to_vec()]);
-    assert_eq!(second.object_pcm, vec![expected_second.to_vec()]);
+    let expected_first = reference.synthesize(&first.reconstruction_qmf[0][0]);
+    let expected_second = reference.synthesize(&second.reconstruction_qmf[0][0]);
+    assert_eq!(
+        first.reconstruction_basis.rows,
+        vec![expected_first.to_vec()]
+    );
+    assert_eq!(
+        second.reconstruction_basis.rows,
+        vec![expected_second.to_vec()]
+    );
 
     let reset = state
         .decode_frame(&frame(0, absent_object()), &inputs())
         .expect("reset frame");
-    assert_eq!(reset.object_pcm, vec![vec![0.0; 64]]);
+    assert_eq!(reset.reconstruction_basis.rows, vec![vec![0.0; 64]]);
 }
 
 #[test]
@@ -170,8 +179,8 @@ fn downmix_pcm_is_analyzed_before_object_reconstruction() {
     let mut staged = JocDecoderState::new();
     let expected = staged.decode_frame(&joc_frame, &qmf).expect("QMF frame");
 
-    assert_eq!(actual.object_qmf, expected.object_qmf);
-    assert_eq!(actual.object_pcm, expected.object_pcm);
+    assert_eq!(actual.reconstruction_qmf, expected.reconstruction_qmf);
+    assert_eq!(actual.reconstruction_basis, expected.reconstruction_basis);
 }
 
 #[test]

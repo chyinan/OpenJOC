@@ -415,8 +415,11 @@ fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/joc.txt").is_file());
-    let stem = decode(&fs::read(output.join("objects/object_000.wav")).expect("stem"))
-        .expect("decode stem");
+    let stem = decode(
+        &fs::read(output.join("diagnostics/reconstruction_rows/row_000.wav"))
+            .expect("reconstruction row"),
+    )
+    .expect("decode reconstruction row");
     assert_eq!(stem.sample_rate, 48_000);
     assert_eq!(stem.channels, vec![vec![0.0; 1536]]);
 
@@ -540,8 +543,11 @@ fn decode_command_internal_base_reaches_object_scene_from_raw_eac3() {
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/reconstruction.txt").is_file());
-    let stem = decode(&fs::read(output.join("objects/object_000.wav")).expect("stem"))
-        .expect("decode reconstructed stem");
+    let stem = decode(
+        &fs::read(output.join("diagnostics/reconstruction_rows/row_000.wav"))
+            .expect("reconstruction row"),
+    )
+    .expect("decode reconstructed row");
     assert_eq!(stem.sample_rate, 48_000);
     assert_eq!(stem.channels, vec![vec![0.0; 1536]]);
 

@@ -699,24 +699,33 @@ QMF object output
 
 OpenJOC 的核心产品不是“一个已经被 renderer 染色的 7.1.4 WAV”，而是**可检查的 object scene**。
 
-建议：
+当前证据边界要求将元数据、重建基与语义绑定分开：
 
 ```rust
 pub struct ObjectScene {
     pub sample_rate: u32,
     pub duration_samples: u64,
-    pub objects: Vec<ObjectTrack>,
+    pub objects: Vec<MetadataObject>,
     pub metadata_timeline: Vec<MetadataUpdate>,
+    pub trim_timeline: Vec<TrimUpdate>,
+    pub reconstruction_basis: Option<ReconstructionBasis>,
+    pub semantic_binding: SemanticBindingState,
 }
 ```
 
-每个 ObjectTrack：
+`MetadataObject` 只保留 OAMD 对象身份与类别；它不携带 PCM。JOC 输出使用
+独立的 `ReconstructionBasis`，其中的行只有结构索引，不携带 authored-object
+identity。默认 `SemanticBindingState::Unresolved`，不得使用隐式
+`object[i] = joc_row[i]`、dominant-row 或空间观察 fallback。
 
 ```rust
-pub struct ObjectTrack {
+pub struct MetadataObject {
     pub object_id: u32,
-    pub pcm: AudioBuffer,
     pub class: ObjectClass,
+}
+
+pub struct ReconstructionBasis {
+    pub rows: Vec<AudioBuffer>,
 }
 ```
 
@@ -725,16 +734,18 @@ pub struct ObjectTrack {
 ```text
 output/
 ├── scene.json
-├── objects/
-│   ├── object_000.wav
-│   ├── object_001.wav
-│   └── ...
 ├── metadata/
-│   └── timeline.json
+│   ├── timeline.json
+│   └── trim_timeline.json
+├── diagnostics/
+│   ├── reconstruction_basis.json
+│   └── reconstruction_rows/row_000.wav
 └── debug/                # 可选
 ```
 
-这层保证 decoder fidelity 与 renderer fidelity 可以独立评价。
+这层保证 metadata fidelity 与 reconstruction-row diagnostics 可以独立评价。
+Metadata-only `ObjectScene` 可通过；audio-bound `ObjectScene` 与 verified
+authored-object PCM 在独立证据建立前不可通过。
 
 ---
 
@@ -1224,4 +1235,3 @@ OpenJOC 应把“格式解码的正确性”和“最终空间渲染的主观品
 # 18. 给实现 Agent 的最后一句话
 
 **不要模仿 Dolby 的代码；复现 ETSI 所定义的行为。不要以“能播放”为目标；以“每一个 bitstream field、每一张 matrix、每一个 QMF sample 都能解释和验证”为目标。Reference correctness first, optimization second, renderer last.**
-

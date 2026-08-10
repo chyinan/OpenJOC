@@ -58,7 +58,7 @@ fn inactive_oamd() -> Vec<u8> {
 }
 
 #[test]
-fn decode_payload_command_writes_scene_stem_timeline_and_debug() {
+fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
     let nonce = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("clock")
@@ -102,7 +102,8 @@ fn decode_payload_command_writes_scene_stem_timeline_and_debug() {
     assert!(output.join("debug/frame_000/joc.txt").is_file());
     assert!(output.join("debug/frame_000/oamd.txt").is_file());
     assert!(output.join("debug/frame_000/reconstruction.txt").is_file());
-    let stem_bytes = fs::read(output.join("objects/object_000.wav")).expect("stem");
+    let stem_bytes = fs::read(output.join("diagnostics/reconstruction_rows/row_000.wav"))
+        .expect("reconstruction row");
     assert_eq!(
         u16::from_le_bytes(stem_bytes[20..22].try_into().unwrap()),
         3
@@ -111,7 +112,7 @@ fn decode_payload_command_writes_scene_stem_timeline_and_debug() {
         u16::from_le_bytes(stem_bytes[34..36].try_into().unwrap()),
         32
     );
-    let stem = decode(&stem_bytes).expect("decode stem");
+    let stem = decode(&stem_bytes).expect("decode reconstruction row");
     assert_eq!(stem.channels, vec![vec![0.0; 64]]);
 
     let reference_output = root.join("reference-output");
@@ -136,7 +137,8 @@ fn decode_payload_command_writes_scene_stem_timeline_and_debug() {
         String::from_utf8_lossy(&reference_result.stderr)
     );
     let reference_stem =
-        fs::read(reference_output.join("objects/object_000.wav")).expect("reference stem");
+        fs::read(reference_output.join("diagnostics/reconstruction_rows/row_000.wav"))
+            .expect("reference reconstruction row");
     assert_eq!(
         u16::from_le_bytes(reference_stem[34..36].try_into().unwrap()),
         64

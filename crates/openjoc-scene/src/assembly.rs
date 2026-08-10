@@ -2,9 +2,10 @@
 
 use crate::{
     Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, ProgrammeLayout, ProgrammeLayoutError, SceneError, SpeakerLabel, TrimUpdate,
-    ZoneConstraint, metadata_is_finite, trim_is_finite,
+    Position3, ProgrammeLayout, ProgrammeLayoutError, SceneError, SemanticBindingState,
+    SpeakerLabel, TrimUpdate, ZoneConstraint, metadata_is_finite, trim_is_finite,
 };
+use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{
     ExtendedObjectElement, Gain, IsfRing as OamdIsfRing, OamdContentPrefix, OamdElement, OamdError,
     OamdPayload, ObjectAnchor, ObjectElement, ReferenceScreen, RoomPosition,
@@ -12,7 +13,7 @@ use openjoc_oamd::{
 };
 use std::fmt;
 
-/// Failures while joining reconstructed PCM with decoded OAMD frames.
+/// Failures while joining reconstruction rows with decoded OAMD metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SceneBuildError {
     Oamd(OamdError),
@@ -45,7 +46,7 @@ impl fmt::Display for SceneBuildError {
                 "scene requires {expected} objects but frame contains {actual}"
             ),
             Self::FrameLengthMismatch => {
-                formatter.write_str("reconstructed object frame lengths differ")
+                formatter.write_str("reconstruction-row frame lengths differ")
             }
             Self::MetadataShapeMismatch => {
                 formatter.write_str("OAMD object/block metadata dimensions disagree")
@@ -78,7 +79,8 @@ impl From<SceneError> for SceneBuildError {
     }
 }
 
-/// Atomic cross-frame assembler for object PCM and OAMD metadata.
+/// Atomic cross-frame assembler for metadata and an unbound reconstruction
+/// basis. It never materializes JOC rows as authored-object PCM.
 #[derive(Clone, Debug)]
 pub struct SceneBuilder {
     scene: ObjectScene,
@@ -111,7 +113,6 @@ impl SceneBuilder {
                             ObjectClass::BedOrIsf
                         }
                     },
-                    pcm: Vec::new(),
                 })
             })
             .collect::<Result<Vec<_>, SceneBuildError>>()?;
@@ -122,31 +123,35 @@ impl SceneBuilder {
                 objects,
                 metadata_timeline: Vec::new(),
                 trim_timeline: Vec::new(),
+                reconstruction_basis: Some(ReconstructionBasis::default()),
+                base_lfe_pcm: None,
+                semantic_binding: SemanticBindingState::Unresolved,
             },
             anchors,
         })
     }
 
-    /// Atomically appends one aligned reconstructed-audio/OAMD frame.
+    /// Atomically appends one aligned reconstruction-row/OAMD metadata frame.
     ///
     /// # Errors
     /// Returns [`SceneBuildError`] for changed configuration, inconsistent
     /// dimensions/timing, invalid positions, or scene arithmetic failures.
     pub fn append_frame(
         &mut self,
-        object_pcm: &[Vec<f64>],
+        reconstruction_rows: &[Vec<f64>],
         oamd: &OamdPayload,
         reference_screen: Option<ReferenceScreen>,
     ) -> Result<(), SceneBuildError> {
         let layout = ProgrammeLayout::from_prefix(&oamd.prefix)?;
-        self.append_frame_with_layout(object_pcm, None, oamd, reference_screen, &layout)
+        self.append_frame_with_layout(reconstruction_rows, None, oamd, reference_screen, &layout)
     }
 
-    /// Atomically appends one frame after explicitly binding JOC rows and a
-    /// separately carried base LFE to the OAMD programme layout.
+    /// Atomically appends one frame while retaining reconstruction rows and
+    /// base LFE separately from metadata objects. `layout` is structural only;
+    /// no semantic audio binding is performed.
     pub fn append_frame_with_layout(
         &mut self,
-        joc_pcm: &[Vec<f64>],
+        reconstruction_rows: &[Vec<f64>],
         base_lfe_pcm: Option<&[f64]>,
         oamd: &OamdPayload,
         reference_screen: Option<ReferenceScreen>,
@@ -158,15 +163,24 @@ impl SceneBuilder {
         if ProgrammeLayout::from_prefix(&oamd.prefix)? != *layout {
             return Err(SceneBuildError::ProgrammeLayoutMismatch);
         }
-        let object_pcm = layout.bind_audio(joc_pcm, base_lfe_pcm)?;
-        if object_pcm.len() != self.scene.objects.len() {
-            return Err(SceneBuildError::ObjectCount {
-                expected: self.scene.objects.len(),
-                actual: object_pcm.len(),
-            });
+        layout.validate_reconstruction_basis(reconstruction_rows.len())?;
+        let frame_samples = reconstruction_rows
+            .first()
+            .map_or_else(|| base_lfe_pcm.map_or(0, <[f64]>::len), Vec::len);
+        if reconstruction_rows
+            .iter()
+            .any(|row| row.len() != frame_samples)
+        {
+            return Err(SceneBuildError::FrameLengthMismatch);
         }
-        let frame_samples = object_pcm.first().map_or(0, Vec::len);
-        if object_pcm.iter().any(|pcm| pcm.len() != frame_samples) {
+        if self
+            .scene
+            .reconstruction_basis
+            .as_ref()
+            .is_some_and(|basis| {
+                !basis.rows.is_empty() && basis.rows.len() != reconstruction_rows.len()
+            })
+        {
             return Err(SceneBuildError::FrameLengthMismatch);
         }
         let frame_offset = self.scene.duration_samples;
@@ -175,14 +189,19 @@ impl SceneBuilder {
         let next_duration = frame_offset
             .checked_add(frame_samples_u64)
             .ok_or(SceneBuildError::DurationOverflow)?;
-        for (object_id, pcm) in object_pcm.iter().enumerate() {
-            if let Some(sample) = pcm.iter().position(|value| !value.is_finite()) {
-                return Err(SceneBuildError::Scene(SceneError::NonFiniteAudio {
-                    object_id: u32::try_from(object_id)
-                        .map_err(|_| SceneBuildError::DurationOverflow)?,
-                    sample,
-                }));
+        for (row_index, row) in reconstruction_rows.iter().enumerate() {
+            if let Some(sample) = row.iter().position(|value| !value.is_finite()) {
+                return Err(SceneBuildError::Scene(
+                    SceneError::NonFiniteReconstruction { row_index, sample },
+                ));
             }
+        }
+        if let Some(lfe) = base_lfe_pcm
+            && let Some(sample) = lfe.iter().position(|value| !value.is_finite())
+        {
+            return Err(SceneBuildError::Scene(SceneError::NonFiniteBaseLfe {
+                sample,
+            }));
         }
 
         let trim = oamd.elements.iter().rev().find_map(|metadata| {
@@ -247,8 +266,25 @@ impl SceneBuilder {
             }
         }
         self.scene.duration_samples = next_duration;
-        for (track, pcm) in self.scene.objects.iter_mut().zip(object_pcm) {
-            track.pcm.extend_from_slice(&pcm);
+        let basis = self
+            .scene
+            .reconstruction_basis
+            .get_or_insert_with(ReconstructionBasis::default);
+        if basis.rows.len() != reconstruction_rows.len() {
+            if basis.rows.is_empty() {
+                basis.rows = vec![Vec::new(); reconstruction_rows.len()];
+            } else {
+                return Err(SceneBuildError::FrameLengthMismatch);
+            }
+        }
+        for (row, samples) in basis.rows.iter_mut().zip(reconstruction_rows) {
+            row.extend_from_slice(samples);
+        }
+        if let Some(lfe) = base_lfe_pcm {
+            self.scene
+                .base_lfe_pcm
+                .get_or_insert_with(Vec::new)
+                .extend_from_slice(lfe);
         }
         self.scene.metadata_timeline.extend(frame_metadata);
         self.scene.trim_timeline.extend(frame_trims);

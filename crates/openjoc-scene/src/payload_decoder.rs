@@ -173,7 +173,7 @@ impl PayloadDecoder {
             )?,
         };
         let layout = ProgrammeLayout::from_prefix(&oamd.prefix)?;
-        layout.validate_joc_output(usize::from(joc.header.object_count))?;
+        layout.validate_reconstruction_basis(usize::from(joc.header.object_count))?;
 
         let mut next_joc = self.joc.clone();
         let decoded = next_joc.decode_pcm_frame(&joc, input.downmix_pcm)?;
@@ -183,7 +183,7 @@ impl PayloadDecoder {
             .ok_or(PayloadDecodeError::FrameIndexOverflow)?;
         if let Some(builder) = self.builder.as_mut() {
             builder.append_frame_with_layout(
-                &decoded.object_pcm,
+                &decoded.reconstruction_basis.rows,
                 input.base_lfe_pcm,
                 &oamd,
                 self.config.reference_screen,
@@ -192,7 +192,7 @@ impl PayloadDecoder {
         } else {
             let mut builder = SceneBuilder::new(input.sample_rate, &oamd.prefix)?;
             builder.append_frame_with_layout(
-                &decoded.object_pcm,
+                &decoded.reconstruction_basis.rows,
                 input.base_lfe_pcm,
                 &oamd,
                 self.config.reference_screen,
