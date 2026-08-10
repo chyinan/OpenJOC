@@ -358,6 +358,26 @@ audio. `PayloadDecoder` likewise uses the atomic builder in place; only its
 bounded JOC codec state is copied for retry semantics. The row export is
 diagnostic and carries no authored-object identity.
 
+## J1R14 — Normative OAMD timeline/state admission (2026-08-10)
+
+The normative OAMD state audit is scoped to the existing parser and
+metadata-only scene path. TS 103 420 clauses 5.3.1-5.3.2 and 5.5.5-5.5.11
+remain the authoritative source for shared update timing, object-major syntax,
+defaults, full reuse, mixed update/reuse, inactive handling, and
+previous-object gain. Existing parser tests cover those transitions; timing
+state advances 1,536 samples per successfully decoded codec frame, with
+atomic failure and explicit reset behavior.
+
+One production ordering defect was corrected: `SceneBuilder` previously
+flattened object-major storage directly into `ObjectScene.metadata_timeline`,
+which produced `t0,t1,t0,t1` for two objects and two shared timing blocks. The
+assembler now retains object-major parser storage but emits the timeline
+block-major (`t0,t0,t1,t1`) and has a regression test for that invariant. No
+field is guessed, omitted state is invented, or cross-AU semantic binding is
+performed. `SemanticBindingState` remains `Unresolved`; authored-object PCM,
+ObjectScene audio binding, complete trim semantics, and warp-3 interpretation
+remain out of scope.
+
 ## Implemented increment: borrowed frame sink
 
 `PayloadDecoder::decode_frame_with` now lends each committed

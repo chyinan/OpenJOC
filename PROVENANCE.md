@@ -193,6 +193,12 @@ after complete timing syntax succeeds, exposes the clause 4.4 `frame_offset`,
 and provides an explicit discontinuity reset. Consecutive, rejected, and reset
 frame behavior is covered by integration tests.
 
+Scene admission retains the parser's normative object-major representation,
+then materializes the renderer-independent `metadata_timeline` in temporal
+block-major order. Because clause 5.3.2 makes each timing block common to all
+objects, a two-object/two-block scene is emitted as `t0,t0,t1,t1`; this is a
+timeline-ordering invariant, not an object/audio binding claim.
+
 ### OAMD basic object properties
 
 - Normative source: TS 103 420 clauses 5.5.10, 5.6.1.3, and 5.6.1.4,
@@ -270,7 +276,8 @@ frame behavior is covered by integration tests.
 - Validation: full dynamic updates, two-block mixed and full reuse, inactive
   defaults, bed/ISF render defaults, previous-object gain, exact bounded
   additional-data retention, truncation, reserved sample-offset coding, and
-  nonzero reserved object-element bits are tested.
+  nonzero reserved object-element bits are tested. Scene assembly separately
+  verifies that shared timing blocks remain time-ordered across objects.
 
 ### OAMD top-level payload and bounded element dispatch
 

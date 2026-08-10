@@ -769,3 +769,20 @@ controls, producer constraints, and WHO/WHERE/SLOT/ROW-or-basis/audio/context/
 time/repeatability/cross-state dimensions. The current Logic campaign is
 frozen; J1R13 created no new fixture and changed no warp, Size, profile, JOC,
 or renderer behavior.
+
+## J1R14 — Normative OAMD timeline/state admission (2026-08-10)
+
+J1R14 strengthens only the existing metadata-only path. ETSI timing state is
+kept frame-local and atomic: a successful codec frame advances `frame_offset`
+by 1,536 samples, a rejected frame does not advance it, and an explicit reset
+returns to zero. Object defaults, full reuse, mixed update/reuse, inactive and
+bed/ISF behavior, and previous-object gain remain limited to the normative
+paths already exercised by synthetic tests.
+
+The scene assembler now converts the parser's object-major storage into a
+temporal block-major timeline because the timing sequence is shared across all
+objects. This closes a concrete `t0,t1,t0,t1` ordering defect without making
+any object/audio identity claim. `SemanticBindingState::Unresolved` is
+unchanged. No new Logic fixture or media was created; reserved `warp=3`, trim
+continuation, authored-object PCM, and complete OAMD/JOC semantic fidelity
+remain open.

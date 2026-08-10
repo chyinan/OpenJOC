@@ -146,6 +146,45 @@ fn applies_extended_precision_before_scene_position_conversion() {
 }
 
 #[test]
+fn emits_shared_timing_blocks_in_temporal_order_across_objects() {
+    let mut oamd = payload();
+    oamd.prefix.object_count = 2;
+    oamd.object_classes = vec![OamdObjectClass::Dynamic, OamdObjectClass::Dynamic];
+    let OamdElement::Objects(objects) = &mut oamd.elements[0].element else {
+        panic!("payload object element");
+    };
+    objects.timing.blocks = vec![
+        MetadataBlockTiming {
+            start_sample: 1,
+            ramp_duration: 0,
+        },
+        MetadataBlockTiming {
+            start_sample: 33,
+            ramp_duration: 0,
+        },
+    ];
+    let first = objects.objects[0][0].clone();
+    let mut second = first.clone();
+    second.basic.gain = Gain::Decibels(-3);
+    objects.objects = vec![vec![first.clone(), second.clone()], vec![first, second]];
+
+    let mut builder = SceneBuilder::new(48_000, &oamd.prefix).expect("valid content");
+    builder
+        .append_frame(&[vec![0.0; 64], vec![0.0; 64]], &oamd, None)
+        .expect("aligned frame");
+    let scene = builder.finish().expect("valid scene");
+
+    assert_eq!(
+        scene
+            .metadata_timeline
+            .iter()
+            .map(|update| (update.object_id, update.start_sample))
+            .collect::<Vec<_>>(),
+        vec![(0, 1), (1, 1), (0, 33), (1, 33)]
+    );
+}
+
+#[test]
 fn retains_complete_trim_state_in_the_renderer_independent_scene() {
     let mut oamd = payload();
     if let OamdElement::Objects(objects) = &mut oamd.elements[0].element {

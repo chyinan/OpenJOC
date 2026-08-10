@@ -44,7 +44,7 @@ normative failures, and the decoder has no profile-specific signaling hacks.
 | Normative source | Requirement | Production target | Required evidence | Status |
 | --- | --- | --- | --- | --- |
 | TS 103 420 4.2-4.4 | Coordinate models and renderer-independent decoder interface | `openjoc-scene` | anchor-preserving scene model, all-anchor JSON roundtrips, atomic decoded-OAMD/PCM assembly, and invariant tests pass | implemented |
-| TS 103 420 5.1-5.4 | OAMD content, properties, timed update/reuse model | `openjoc-oamd` | multi-update and reuse integration tests | planned |
+| TS 103 420 5.1-5.4 | OAMD content, properties, timed update/reuse model | `openjoc-oamd` / `openjoc-scene` | multi-update, reuse, and shared-timing block-order integration tests | implemented; semantic binding open |
 | TS 103 420 5.5 | Complete OAMD bitstream syntax | `openjoc-oamd` | syntax vectors, truncation and malformed tests | planned |
 | TS 103 420 5.5.2-5.5.5, 5.6.4.2-5.6.4.5 | Top-level payload and bounded element metadata/dispatch | `openjoc-oamd` | integrated object/trim/extended elements, unaligned declared sizes, zero padding, unknown retention, discard/alternate IDs and object-class derivation pass | implemented |
 | TS 103 420 5.5.5-5.5.11 | Object element, per-object updates, basic/render information | `openjoc-oamd` | full, inactive, bed/ISF, mixed/reuse, previous-object gain, bounded additional-data, truncation and reserved-bit tests pass | verified |
@@ -208,7 +208,7 @@ complete OAMD, JOC, or renderer requirements to completion.
 | ADM ↔ X/Y numeric alignment | controlled numeric alignment only; no unproved coordinate conversion or renderer claim | verified |
 | Trim `warp_mode` raw 3 | `[526,528)` raw `11`; ETSI Table 32 `0b1X` is reserved; strict result remains structured `ReservedWarpMode { raw: 3 }` | open |
 | H0/H1/H2 semantic selection | all branches are labels over the same cursor and close identically; no semantic hypothesis selected | open |
-| Complete OAMD trim/timeline/state semantics | post-warp continuation, reuse, and previous-state timing remain unadmitted | open |
+| Complete OAMD trim/timeline/state semantics | post-warp continuation and reserved warp remain unadmitted; normative defaults/reuse and shared timing order are admitted for tested paths | partial; open |
 | OAMD ↔ JOC identity, object PCM, ObjectScene/render fidelity | no end-to-end real-vector acceptance or fidelity gate is claimed | open |
 
 ## Global quality gates

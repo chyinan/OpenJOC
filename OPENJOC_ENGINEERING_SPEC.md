@@ -442,6 +442,12 @@ Rust 实现必须做到：恶意输入只能返回 error，不得产生 OOB read
 
 标准允许每个 object 每个 codec frame 多次 metadata updates，因此 API 不可只返回“每帧一个坐标”。
 
+Bitstream parsing remains object-major as specified by clause 5.5.8, while the
+renderer-independent scene timeline is emitted in shared-timing block-major
+order. Since clause 5.3.2 defines one timing sequence for all objects, a
+two-object frame with two updates is materialized at `t0,t0,t1,t1`; this keeps
+temporal consumers ordered without introducing object/audio identity.
+
 建议内部模型：
 
 ```rust

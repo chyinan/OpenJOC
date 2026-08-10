@@ -355,10 +355,19 @@ fn append_object_updates(
         return Err(SceneBuildError::MetadataShapeMismatch);
     }
 
-    let mut output = Vec::new();
-    for (object_index, (anchor, updates)) in anchors.iter().zip(&objects.objects).enumerate() {
-        for (block_index, (timing, update)) in objects.timing.blocks.iter().zip(updates).enumerate()
-        {
+    let mut output = Vec::with_capacity(
+        anchors
+            .len()
+            .checked_mul(objects.timing.blocks.len())
+            .ok_or(SceneBuildError::DurationOverflow)?,
+    );
+    // The bitstream is object-major, but timing is shared by every object.
+    // Materialize the renderer-independent scene in temporal (block-major)
+    // order so consumers see t0 for every object before t1, without changing
+    // the parser's normative object-major representation.
+    for (block_index, timing) in objects.timing.blocks.iter().enumerate() {
+        for (object_index, (anchor, updates)) in anchors.iter().zip(&objects.objects).enumerate() {
+            let update = &updates[block_index];
             let object_id =
                 u32::try_from(object_index).map_err(|_| SceneBuildError::DurationOverflow)?;
             output.push(MetadataUpdate {
