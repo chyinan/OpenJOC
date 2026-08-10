@@ -1545,3 +1545,19 @@ metadata remains a separately declared duration-proportional cost. The
 decision is `DERIVED_ISOBMFF_SAMPLE_INDEX_ELIMINATED_FOR_SEQUENTIAL_DECODE`
 with `BOUNDED_ISOBMFF_SAMPLE_CURSOR_ESTABLISHED`. No semantic, warp, or
 binding behavior changed.
+
+## J1R23 — E-AC-3 coding-tool admission matrix
+
+The existing `CodingToolBlockInventory` and E-AC-3 implementation paths were
+audited without adding media. Four frozen diagnostic carriers provide
+observational activation for block switching, dither, exponent reuse, grouped
+mantissa state, and LFE. Existing unit/synthetic tests cover public table,
+branch, transform, coupling, SPX, AHT, rematrix, and malformed-input behavior,
+but no authorized real/reference vector activates the high-risk coupling/SPX/
+AHT/rematrix/dependent-substream effects in the controlled inventory.
+
+Accordingly the release status is `EAC3_CODING_TOOL_COVERAGE_PARTIAL`, not
+`FULL_EAC3_CODING_TOOL_FIDELITY_ESTABLISHED`. Parser presence is not treated as
+DSP validation, and DSP implementation is not treated as causal corpus
+coverage. `SemanticBindingState::Unresolved` and strict raw warp-3 rejection
+are unchanged.

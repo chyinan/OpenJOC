@@ -545,3 +545,18 @@ FFprobe still owns the underlying native-table interpretation, so stco/co64,
 stsc, stsz, and related metadata remain an external duration-proportional
 boundary. Semantic binding, ReconstructionBasis meaning, and raw warp=3
 strict behavior remain unchanged.
+
+## J1R23 — Normative E-AC-3 coding-tool admission matrix
+
+The coding-tool audit separates syntax parsing, DSP execution, unit validation,
+controlled-corpus activation, and state/reset evidence. Existing frozen
+diagnostics show block switching, deterministic caller-supplied dither,
+exponent reuse, grouped mantissa traversal, and LFE topology. They do not
+activate coupling, SPX, AHT, rematrix, or dependent-substream coding-tool
+effects. Those paths remain implemented but unvalidated for release purposes;
+absence from the corpus is not a pass.
+
+Decision: `EAC3_CODING_TOOL_COVERAGE_PARTIAL`. The next non-fixture blocker is
+an integrated, public-syntax-only activation/state-transition evidence task
+for the under-exercised tools. No vendor semantics, raw warp-3 interpretation,
+or semantic binding change is implied.

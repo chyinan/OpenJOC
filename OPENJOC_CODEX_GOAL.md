@@ -904,3 +904,18 @@ still reported honestly as an external duration-proportional boundary.
 Decision: `DERIVED_ISOBMFF_SAMPLE_INDEX_ELIMINATED_FOR_SEQUENTIAL_DECODE`,
 with `BOUNDED_ISOBMFF_SAMPLE_CURSOR_ESTABLISHED`. No semantic binding or warp
 interpretation follows from this memory-ownership result.
+
+## J1R23 — coding-tool evidence boundary
+
+OpenJOC now records a separate admission matrix for E-AC-3 coding tools. The
+matrix is explicit about parsed syntax, executed DSP, state/reset handling,
+unit validation, and actual frozen-corpus activation. Block switching, dither,
+exponent reuse, grouped mantissa state, and LFE topology are observed in the
+existing diagnostic corpus; coupling, SPX, AHT, rematrix, and dependent
+substream coding-tool effects remain `IMPLEMENTED_BUT_UNVALIDATED` because the
+corpus does not exercise them.
+
+The milestone decision is `EAC3_CODING_TOOL_COVERAGE_PARTIAL`. This does not
+resolve authored-object binding, does not admit authored-object PCM, does not
+change `SemanticBindingState::Unresolved`, and does not assign meaning to raw
+warp 3.

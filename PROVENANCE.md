@@ -2507,3 +2507,19 @@ format, clipping, and dither policy. Captured scene row/LFE exports now append
 chunks and patch sizes at finalization. ISO BMFF demux still materializes the
 stream-copy payload and retains the current container/AU index boundary; no
 seekless MP4 claim is made. No new fixture or media was created.
+
+## J1R23 — E-AC-3 coding-tool admission boundary (2026-08-10)
+
+J1R23 audits the production E-AC-3 coding-tool paths against the locally held
+ETSI TS 102 366 V1.4.1 reference and existing tests. The frozen diagnostic
+inventory observes block switching (121 block/channel records), dither
+(14,878), exponent reuse (12,051), grouped mantissa state (15,305), and LFE
+topology across four previously qualified diagnostic carriers. Coupling, SPX,
+AHT, rematrix, and dependent-substream coding-tool effects are not exercised
+by that controlled inventory; their parser/DSP/unit evidence is therefore
+classified `IMPLEMENTED_BUT_UNVALIDATED`, not passed by absence.
+
+The resulting release boundary is `EAC3_CODING_TOOL_COVERAGE_PARTIAL`. No new
+media was created, `SemanticBindingState` remains `Unresolved`, and ETSI
+strict raw warp 3 remains `ReservedWarpMode { raw: 3 }`. This matrix is not a
+claim of full E-AC-3 coding-tool fidelity or authored-object identity.

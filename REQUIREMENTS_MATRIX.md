@@ -628,3 +628,17 @@ semantic binding.
 The narrow decisions are `DERIVED_ISOBMFF_SAMPLE_INDEX_ELIMINATED_FOR_SEQUENTIAL_DECODE`
 and `BOUNDED_ISOBMFF_SAMPLE_CURSOR_ESTABLISHED`. This is not a claim of O(1)
 ISO BMFF container metadata.
+
+## J1R23 — Coding-tool coverage and admission (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Syntax/DSP audit | `CodingToolBlockInventory`, E-AC-3 source paths, local ETSI TS 102 366 reference | passed with explicit scope columns |
+| Existing controlled activation | A/D/E/F frozen inventories: block switch, dither, exponent reuse, grouped mantissa, LFE observed | passed as observational evidence |
+| Under-exercised high-risk tools | coupling, SPX, AHT, rematrix, dependent-substream effects absent from inventory | `IMPLEMENTED_BUT_UNVALIDATED` |
+| Unit/synthetic behavior | existing public-syntax/table/arithmetic tests | `PASS_WITH_DECLARED_LIMITATION` |
+| Public media vectors | no authorized decoded vector in `references/` | not exercised |
+| Release decision | no full-fidelity claim; next blocker is integrated public-syntax activation/state evidence | `EAC3_CODING_TOOL_COVERAGE_PARTIAL` |
+
+This milestone does not alter J1R14–J1R22 streaming contracts, semantic
+binding, or warp behavior.
