@@ -1923,6 +1923,11 @@ fn decodes_aht_coupling_after_the_first_participating_channel() {
     let blocks = decode_audio_blocks(&bytes, &[]).expect("AHT coupling traversal");
     assert_eq!(blocks.len(), 6);
     assert!(blocks[0].coupling_aht.is_some());
+    assert!(
+        blocks[1..]
+            .iter()
+            .all(|block| block.prefix.coupling == blocks[0].prefix.coupling)
+    );
     assert!(blocks[0].channel_aht.iter().all(Option::is_some));
     assert!(blocks[1..].iter().all(|block| {
         block.coupling_aht.is_none() && block.channel_aht.iter().all(Option::is_none)

@@ -932,3 +932,12 @@ its tested band formula is compared with an independent public oracle.
 The decisions are `PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED`
 and `EAC3_CODING_TOOL_STATE_ADMISSION_STRENGTHENED`. No semantic binding,
 authored-object PCM, renderer, vendor warp rule, or real media was added.
+
+## J1R25 — coupling state and coordinate admission
+
+The standard-coupling coordinate mapping is now independently checked across
+its complete bounded public code domain, and the existing six-block parser
+fixture locks coordinate/state reuse. This closes a scoped numerical/state
+admission milestone without claiming real-corpus coupling prevalence, full
+coupled-PCM fidelity, authored-object PCM, or semantic binding. The strict
+warp raw-3 boundary remains unchanged.

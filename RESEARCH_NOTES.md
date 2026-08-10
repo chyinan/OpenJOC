@@ -574,3 +574,19 @@ their existing bounded state tests.
 The real controlled corpus remains unchanged and does not exercise the target
 coding-tool effects. Synthetic activation is not a Dolby-encoder or authored
 object claim.
+
+## J1R25 — coupling state and coordinate admission
+
+The coupling boundary is now split into parser/state evidence, independent
+coordinate evidence, and final coupled-PCM fidelity. ETSI TS 102 366 V1.4.1
+clause 6.4.3 was transcribed into a separate test-only float64 oracle and
+compared exhaustively against the public standard-coupling reconstruction API
+(1,024 legal code combinations). Existing six-block parser coverage now also
+asserts exact coupling-state reuse after the first block. This is a bounded
+public-syntax admission result, not evidence that the Logic controlled corpus
+activates coupling and not an authored-object or ObjectScene result.
+
+Decision and limitation: `COUPLING_STATE_AND_COORDINATE_ADMISSION_ESTABLISHED`
+within the exercised parser/API scope; `FULL_COUPLED_PCM_FIDELITY_NOT_ESTABLISHED`.
+`SemanticBindingState::Unresolved` and strict raw warp-3 reservation are
+unchanged.

@@ -1576,3 +1576,19 @@ fidelity. Coupling, SPX, AHT, rematrix, and dependent-substream effects remain
 absent from the frozen controlled inventory. The decisions are
 `PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED` and
 `EAC3_CODING_TOOL_STATE_ADMISSION_STRENGTHENED`.
+
+## J1R25 — coupling state and coordinate admission
+
+J1R25 adds `tests/coupling_admission.rs`, a test-only float64 oracle
+independently transcribed from TS 102 366 V1.4.1 clause 6.4.3. It exhaustively
+compares all 1,024 legal standard coordinate codes with the public production
+reconstruction API and checks explicit rejection of out-of-domain codes.
+The six-block parser fixture now asserts that coupling coordinates/state are
+exactly reused after the first block. No production coupling expression was
+changed.
+
+The resulting acceptance is scoped to public syntax, parser/state reuse, and
+coordinate numerics. The Logic controlled corpus still has no coupling
+activation, so full coupled-PCM fidelity and semantic object binding remain
+open. `SemanticBindingState::Unresolved` and ETSI strict raw warp-3 handling
+are unchanged.

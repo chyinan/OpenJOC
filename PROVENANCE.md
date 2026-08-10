@@ -2538,3 +2538,19 @@ corpus activation: those target coding-tool effects remain
 `PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED` and
 `EAC3_CODING_TOOL_STATE_ADMISSION_STRENGTHENED`; full E-AC-3 coding-tool
 fidelity remains unclaimed.
+
+## J1R25 — coupling state and coordinate admission (2026-08-10)
+
+J1R25 adds a test-only, structurally independent float64 transcription of
+TS 102 366 V1.4.1 clause 6.4.3. It exhaustively compares all 16 exponent ×
+16 mantissa × 4 master-coordinate combinations against the public production
+reconstruction API, with a predeclared `1e-15` absolute tolerance and explicit
+rejection tests for out-of-domain fields. Existing parser-level synthetic
+frames, including six-block coordinate reuse, are retained and now assert that
+the reused coupling state is equal to the first admitted state.
+
+This establishes public-syntax coordinate and bounded reuse evidence only. The
+real controlled Logic corpus still has coupling activation
+`NOT_EXERCISED_BY_CONTROLLED_CORPUS`; full coupled-PCM fidelity and semantic
+object binding remain unestablished. `SemanticBindingState` remains
+`Unresolved`, and strict warp raw 3 remains reserved.
