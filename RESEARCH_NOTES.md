@@ -403,3 +403,21 @@ repeatability, negative controls, and cross-state behavior, with allowed
 provenance and a falsifier. The validator rejects equal-count/index,
 dominant-row, single-fixture, and field-name arguments. The current Logic
 campaign is frozen; no new fixture or semantic binding was created in J1R13.
+
+## J1R15 — ReconstructionBasis numerical acceptance
+
+J1R15 closes a narrower numerical milestone without reopening semantic
+binding. The nine usable frozen carriers have finite, structurally stable
+ReconstructionBasis output with deterministic repeated evidence. The decoder
+keeps QMF analysis/synthesis history across AU boundaries, resets only for
+sequence/configuration discontinuities, stages state atomically, and emits
+rows without hidden padding or startup trimming. `RcLfe` remains base-carried
+and separate. Controlled tone projections remain reproducible numerical
+signatures only; they are not object identity evidence.
+
+Decision: `RECONSTRUCTION_BASIS_NUMERICAL_ACCEPTANCE_ESTABLISHED` within this
+declared numerical/structural scope. `SemanticBindingState::Unresolved`,
+authored-object PCM inadmissibility, audio-bound ObjectScene inadmissibility,
+and ETSI reserved `warp=3` behavior are unchanged. No new media or fixtures
+were created. The private evidence package is under
+`OpenJOC-Private/reports/runs/20260810T151025Z_j1r15-reconstruction-basis-acceptance_ef3c43f/`.

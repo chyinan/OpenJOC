@@ -786,3 +786,19 @@ any object/audio identity claim. `SemanticBindingState::Unresolved` is
 unchanged. No new Logic fixture or media was created; reserved `warp=3`, trim
 continuation, authored-object PCM, and complete OAMD/JOC semantic fidelity
 remain open.
+
+## J1R15 — ReconstructionBasis numerical acceptance (2026-08-10)
+
+The reconstruction basis exposed by OpenJOC is now numerically accepted within
+its declared scope across the existing frozen controlled corpus. Row shape,
+finite samples, AU/state handling, deterministic repeated output, precision
+boundaries, RcLfe separation, and diagnostic row export are evidence-backed.
+This milestone creates no new Logic fixture or media and makes no production
+warp/profile change.
+
+The acceptance is deliberately not semantic binding: rows are not authored
+objects, numerical tone concentration is not object identity,
+`SemanticBindingState::Unresolved` remains unchanged, authored-object PCM and
+audio-bound ObjectScene remain inadmissible, and ETSI `warp=3` remains
+`ReservedWarpMode`. The next blocker is admissible semantic-binding evidence,
+not a numerical shortcut from row energy or slot order.

@@ -490,3 +490,18 @@ The private run and its aggregate evidence freeze are recorded in
 | Spatially anchored structure | These observations support spatially anchored JOC-row structure, not a global row/basis theorem | partially evidenced; scoped |
 | Strict/vendor warp boundary | `warp [526,528) = raw 3` remains ETSI-reserved; no vendor rule or production parser change | unchanged; unresolved |
 | ObjectScene, renderer, and fidelity | No ObjectScene admission, complete OAMD/JOC binding, object PCM claim, or rendering/fidelity comparison | open |
+
+## J1R15 ReconstructionBasis numerical acceptance (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Existing-corpus ReconstructionBasis audit | Nine already-frozen carriers; no new Logic/ADM/DD+/EC3 media | passed; numerical scope only |
+| Structural row shape | 15 structural rows where present; 129-AU controls = 198144 samples/row, J1R8 = 128 AUs, J1R9 = 125 AUs; no truncation/padding | passed |
+| Stateful AU handling | Sequence/configuration reset rules and QMF history are covered by stateful tests and frozen traces | passed; no invented waveform-continuity threshold |
+| Determinism | J1R10 primary/repeat reports and J1R9 pre-render matrix are byte-identical; fresh Center reference-f64 row WAV hashes repeat exactly | passed |
+| Numerical health | No NaN/Inf, clipping rejection, row-length mismatch, or amplitude-growth defect; inactive zero rows remain diagnostic only | passed |
+| Precision boundary | Internal reconstruction remains f64; f32/reference-f64 WAV formats differ intentionally with equal row/sample shape | passed; precision-scoped |
+| RcLfe separation | Base-carried RcLfe remains separate from dynamic ReconstructionBasis rows | passed |
+| Diagnostic export | `diagnostics/reconstruction_rows/row_NNN.wav`, no authored-object stem claim | passed |
+| Semantic binding | Numerical acceptance does not identify authored object, slot, row, or PCM stem | unchanged; `SemanticBindingState::Unresolved` |
+| Warp/profile behavior | `warp [526,528) = raw 3`; no vendor rule or production parser change | unchanged; unresolved |

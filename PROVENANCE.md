@@ -2420,3 +2420,20 @@ diagnostic ReconstructionBasis rows remain valid; audio-bound ObjectScene and
 verified authored-object PCM remain blocked. Evidence must be independently
 supportable through normative/public or controlled clean-room sources; private,
 decompiled, leaked, or unknown-constant material is not provenance.
+
+## J1R15 ReconstructionBasis numerical acceptance (2026-08-10)
+
+The existing frozen controlled corpus was audited and numerically exercised
+within the declared ReconstructionBasis scope. Nine usable carriers retained
+structural rows, finite samples, 1536-sample AU shape, stateful QMF history,
+and deterministic repeated signatures. A fresh Center export produced
+byte-identical reference-f64 row WAV hashes on repeat; f32 and reference-f64
+have the same row/sample shape but intentionally different sample formats.
+
+The decision is `RECONSTRUCTION_BASIS_NUMERICAL_ACCEPTANCE_ESTABLISHED`, scoped
+to numerical and structural correctness. Startup samples are retained, RcLfe
+is separate, and diagnostic files remain `row_NNN.wav` reconstruction rows.
+This does not admit authored-object PCM, audio-bound ObjectScene, or row/slot
+semantic identity. `SemanticBindingState::Unresolved` and ETSI raw `warp=3`
+reserved behavior are unchanged. Private evidence freeze:
+`20260810T151025Z_j1r15-reconstruction-basis-acceptance_ef3c43f/j1r15_evidence_freeze.json`.

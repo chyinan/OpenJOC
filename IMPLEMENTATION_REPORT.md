@@ -1392,3 +1392,20 @@ audio-bound ObjectScene is emitted. Metadata-only scenes, separate
 ReconstructionBasis rows, and RcLfe separation are unchanged. The J1R9–J1R11
 Logic campaign remains frozen because independent slot assignment has not been
 demonstrated; no fixture, ADM, DD+, EC3, warp, or Size behavior changed.
+
+## J1R15 — ReconstructionBasis numerical acceptance
+
+The full ReconstructionBasis path was audited from JOC input through QMF
+state, row aggregation, scene validation, and diagnostic WAV export. The
+existing frozen corpus passed finite-sample, row-shape, state-carry, repeated
+signature, and export checks. A direct Center re-run confirmed byte-identical
+reference-f64 row WAV hashes; f32/reference-f64 output uses the intended
+precision-aware container boundary. No production defect was found or fixed,
+and no new test/media fixture was needed. The milestone decision is
+`RECONSTRUCTION_BASIS_NUMERICAL_ACCEPTANCE_ESTABLISHED`.
+
+This is not an authored-object or renderer acceptance. Rows retain structural
+indices only, `RcLfe` remains separate, `SemanticBindingState::Unresolved`
+remains the production state, and no authored-object PCM or audio-bound
+ObjectScene is admissible. ETSI strict raw `warp=3` rejection and the vendor
+profile remain unchanged.
