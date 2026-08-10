@@ -576,3 +576,21 @@ not a claim of full end-to-end input-to-output streaming.
 The precise result is `STREAMING_INPUT_OUTPUT_ADMISSION_PARTIAL`: raw framing
 and seekable output writing are bounded primitives, while the existing CLI
 input/container path still has whole-stream and indexed metadata storage.
+
+## J1R20 incremental AU consumer / container ownership closure (2026-08-11)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Sequential raw AU consumer | `RawEac3AccessUnitReader<R: Read>` emits locally indexed one-AU batches with one-frame lookahead | passed |
+| Existing decoder reuse | Direct reader path calls the existing `JocAccessUnitPcmDecoder` and J1R18 `PayloadDecoder::streaming*` | passed |
+| Capture/direct equivalence | Frozen Center 997 direct and legacy base/LFE WAVs, inventories, and shared frame diagnostics are byte-identical | passed |
+| Memory plateau | Chunk/lookahead/truncation tests plus 128-AU sequence retain bounded carry/AU/lookahead state | passed |
+| Finalization/error propagation | Exact EOF, truncated frame, invalid AU start, and streaming decoder finalization remain structured | passed |
+| ISO BMFF ownership | Existing FFmpeg/sample-table/index boundary remains duration-proportional and explicitly declared | limitation retained |
+| Legacy API | `load_eac3` and slice/index APIs remain available as explicit capture/random-access contracts | passed |
+| Semantic binding | `SemanticBindingState::Unresolved`; authored-object PCM and audio-bound ObjectScene remain inadmissible | unchanged |
+| Warp/profile behavior | ETSI strict raw warp 3 remains `ReservedWarpMode`; no vendor rule or continuation interpretation | unchanged |
+
+The narrow decision is `DIRECT_RAW_EC3_STREAMING_DECODE_PATH_ESTABLISHED` for
+the sequential raw internal-base path. This does not claim O(1) ISO BMFF
+container metadata, authored-object identity, or resolved warp semantics.

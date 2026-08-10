@@ -1,4 +1,4 @@
-use openjoc_container::{InputMediaError, RawEac3FrameReader};
+use openjoc_container::{InputMediaError, RawEac3AccessUnitReader, RawEac3FrameReader};
 use std::io::{self, Read};
 
 fn push(bits: &mut Vec<bool>, value: u64, width: usize) {
@@ -155,4 +155,102 @@ fn raw_reader_enforces_declared_frame_bound() {
         reader.next_frame(),
         Err(InputMediaError::DemuxOutputTooLarge { limit: 8 })
     ));
+}
+
+#[test]
+fn access_unit_reader_emits_local_indices_with_one_frame_lookahead() {
+    let expected = vec![frame(0, 0, 16), frame(1, 0, 18), frame(0, 0, 20)];
+    let mut stream = Vec::new();
+    for bytes in &expected {
+        stream.extend_from_slice(bytes);
+    }
+    let mut reader = RawEac3AccessUnitReader::new(
+        Chunked {
+            bytes: &stream,
+            offset: 0,
+            chunk: 3,
+        },
+        64,
+    );
+
+    let first = reader
+        .next_access_unit()
+        .expect("first AU")
+        .expect("present");
+    assert_eq!(
+        first.bytes,
+        [expected[0].clone(), expected[1].clone()].concat()
+    );
+    assert_eq!(first.frames.len(), 2);
+    assert_eq!(first.frames[0].offset, 0);
+    assert_eq!(first.frames[1].offset, expected[0].len());
+    assert_eq!(first.unit.first_frame, 0);
+    assert_eq!(first.unit.frame_count, 2);
+
+    let second = reader
+        .next_access_unit()
+        .expect("second AU")
+        .expect("present");
+    assert_eq!(second.bytes, expected[2]);
+    assert_eq!(second.frames.len(), 1);
+    assert_eq!(second.frames[0].offset, 0);
+    assert_eq!(second.unit.first_frame, 0);
+    assert_eq!(second.unit.frame_count, 1);
+    assert_eq!(reader.next_access_unit().expect("exact EOF"), None);
+
+    let stats = reader.stats();
+    assert_eq!(stats.frames_emitted, 3);
+    assert_eq!(stats.access_units_emitted, 2);
+    assert_eq!(stats.max_au_frames, 2);
+    assert_eq!(stats.max_au_bytes, 34);
+    assert_eq!(stats.max_lookahead_frames, 1);
+    assert!(stats.max_complete_frames_retained <= 3);
+}
+
+#[test]
+fn access_unit_reader_rejects_non_independent_start() {
+    let bytes = frame(1, 0, 16);
+    let mut reader = RawEac3AccessUnitReader::new(
+        Chunked {
+            bytes: &bytes,
+            offset: 0,
+            chunk: 4,
+        },
+        64,
+    );
+    assert!(matches!(
+        reader.next_access_unit(),
+        Err(InputMediaError::InvalidDemuxedEac3(
+            openjoc_eac3::Eac3Error::MissingIndependentSubstreamZero { frame: 0 }
+        ))
+    ));
+}
+
+#[test]
+fn access_unit_reader_high_watermark_plateaus_over_long_sequence() {
+    let one = frame(0, 0, 16);
+    let mut stream = Vec::new();
+    for _ in 0..128 {
+        stream.extend_from_slice(&one);
+    }
+    let mut reader = RawEac3AccessUnitReader::new(
+        Chunked {
+            bytes: &stream,
+            offset: 0,
+            chunk: 5,
+        },
+        64,
+    );
+    let mut count = 0;
+    while reader.next_access_unit().expect("valid AU").is_some() {
+        count += 1;
+    }
+    assert_eq!(count, 128);
+    let stats = reader.stats();
+    assert_eq!(stats.frames_emitted, 128);
+    assert_eq!(stats.access_units_emitted, 128);
+    assert_eq!(stats.max_au_bytes, 16);
+    assert_eq!(stats.max_au_frames, 1);
+    assert!(stats.max_complete_frames_retained <= 2);
+    assert!(stats.max_input_carry_bytes <= 16);
 }

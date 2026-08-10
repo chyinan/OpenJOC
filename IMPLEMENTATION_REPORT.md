@@ -1486,3 +1486,22 @@ borrowed stream/index slices. Non-seekable MP4 streaming is not admitted. The
 milestone therefore stops at `STREAMING_INPUT_OUTPUT_ADMISSION_PARTIAL` rather
 than claiming universal O(1) container memory. SemanticBindingState, warp
 behavior, and all prior numerical/binding boundaries are unchanged.
+
+## J1R20 — Incremental AU consumer / container ownership closure
+
+`RawEac3AccessUnitReader<R: Read>` now bridges the bounded raw syncframe reader
+to the existing J1R18 streaming decoder. It retains one complete local AU and
+one frame of lookahead for the next independent substream-zero boundary;
+programme-wide input, syncframe, and AU indexes are not built on the direct
+raw path. The explicit CLI mode is `decode ... --internal-base --streaming`.
+The legacy `load_eac3`/slice/index APIs remain available as capture and
+random-access contracts rather than being silently changed.
+
+On the frozen Center 997 Hz carrier, direct and legacy decode artifacts are
+byte-identical for base full/JOC-input/LFE WAVs, inventories, and 1,161 shared
+per-frame diagnostics. Their dimensions agree at 48 kHz, 129 AUs, 198,144
+samples, 16 metadata objects, 2,064 metadata events, and 15 reconstruction
+basis rows. Chunk, lookahead, exact-EOF, truncation, invalid-start, and
+128-AU plateau regressions pass. ISO BMFF sample-table/index retention remains
+a declared limitation. No second decoder, semantic binding upgrade, warp rule,
+or new media was introduced.

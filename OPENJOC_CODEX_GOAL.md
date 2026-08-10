@@ -863,3 +863,20 @@ index, and ISO BMFF sample-table/index memory is not misrepresented as O(1).
 Non-seekable MP4 is not admitted. The narrow decision is
 `STREAMING_INPUT_OUTPUT_ADMISSION_PARTIAL`; no semantic binding, warp meaning,
 authored-object PCM, or new media was introduced.
+
+## J1R20 — Incremental AU consumer / container ownership closure
+
+The raw sequential internal-base path is now explicitly incremental:
+`RawEac3FrameReader` feeds `RawEac3AccessUnitReader`, which emits one locally
+indexed AU with at most one boundary lookahead to the existing J1R18
+`PayloadDecoder::streaming*` and sink path. The explicit CLI switch is
+`--streaming --internal-base`; the legacy whole-stream/index APIs remain
+available for capture and random access. A frozen Center 997 Hz direct-vs-
+legacy run is byte-identical for base/LFE WAVs, inventories, and shared frame
+diagnostics, with matching metadata and ReconstructionBasis dimensions.
+
+The decision is `DIRECT_RAW_EC3_STREAMING_DECODE_PATH_ESTABLISHED` within this
+raw sequential scope. ISO BMFF index metadata remains a declared limitation;
+`SemanticBindingState::Unresolved`, authored-object PCM inadmissibility, and
+ETSI strict raw warp=3 reservation are unchanged. No new fixture or media was
+created.

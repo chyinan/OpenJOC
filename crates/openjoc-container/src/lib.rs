@@ -8,7 +8,8 @@
 //! stream copy; it is not an audio decoder or a normative reference.
 
 use openjoc_eac3::{
-    Eac3Error, SyncframeHeader, group_access_units, index_syncframes, parse_syncframe_header,
+    AccessUnitIndex, Eac3Error, StreamType, SyncframeHeader, SyncframeIndexEntry,
+    group_access_units, index_syncframes, parse_syncframe_header,
 };
 use std::{
     fmt,
@@ -43,6 +44,31 @@ pub struct RawEac3ReaderStats {
     pub frames_emitted: usize,
     pub max_input_carry_bytes: usize,
     pub max_frame_bytes: usize,
+}
+
+/// One complete, locally indexed raw E-AC-3 access unit.
+///
+/// The byte and frame vectors are intentionally bounded to one access unit;
+/// callers can hand them to the codec decoder and release them before reading
+/// the next unit.  Offsets in `frames` are relative to `bytes`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RawEac3AccessUnit {
+    pub bytes: Vec<u8>,
+    pub frames: Vec<SyncframeIndexEntry>,
+    pub unit: AccessUnitIndex,
+}
+
+/// Deterministic high-watermarks for an incremental raw E-AC-3 AU consumer.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RawEac3AccessUnitReaderStats {
+    pub frames_emitted: usize,
+    pub access_units_emitted: usize,
+    pub max_input_carry_bytes: usize,
+    pub max_frame_bytes: usize,
+    pub max_complete_frames_retained: usize,
+    pub max_au_bytes: usize,
+    pub max_au_frames: usize,
+    pub max_lookahead_frames: usize,
 }
 
 /// Reader-based raw E-AC-3 syncframe framer.
@@ -155,6 +181,102 @@ impl<R> RawEac3FrameReader<R> {
     #[must_use]
     pub fn into_inner(self) -> R {
         self.reader
+    }
+}
+
+/// Sequential access-unit consumer built on [`RawEac3FrameReader`].
+///
+/// A single frame of lookahead is retained to detect the next independent
+/// substream-zero boundary.  No programme-wide frame or AU index is built.
+pub struct RawEac3AccessUnitReader<R> {
+    frame_reader: RawEac3FrameReader<R>,
+    lookahead: Option<Vec<u8>>,
+    stats: RawEac3AccessUnitReaderStats,
+}
+
+impl<R: Read> RawEac3AccessUnitReader<R> {
+    /// Creates a sequential AU reader with an explicit syncframe size bound.
+    #[must_use]
+    pub fn new(reader: R, max_frame_bytes: usize) -> Self {
+        Self {
+            frame_reader: RawEac3FrameReader::new(reader, max_frame_bytes),
+            lookahead: None,
+            stats: RawEac3AccessUnitReaderStats::default(),
+        }
+    }
+
+    /// Reads one complete AU, or `None` at an exact frame-boundary EOF.
+    pub fn next_access_unit(&mut self) -> Result<Option<RawEac3AccessUnit>, InputMediaError> {
+        let Some(first) = self.take_frame()? else {
+            return Ok(None);
+        };
+        let first_header = raw_frame_header(&first)?;
+        if first_header.stream_type != StreamType::Independent || first_header.substream_id != 0 {
+            return Err(InputMediaError::InvalidDemuxedEac3(
+                Eac3Error::MissingIndependentSubstreamZero { frame: 0 },
+            ));
+        }
+
+        let mut bytes = first;
+        let mut frames = vec![SyncframeIndexEntry {
+            offset: 0,
+            header: first_header,
+        }];
+        while let Some(next) = self.take_frame()? {
+            let header = raw_frame_header(&next)?;
+            if header.stream_type != StreamType::Dependent && header.substream_id == 0 {
+                self.lookahead = Some(next);
+                self.stats.max_lookahead_frames = self.stats.max_lookahead_frames.max(1);
+                break;
+            }
+            let offset = bytes.len();
+            bytes.extend_from_slice(&next);
+            frames.push(SyncframeIndexEntry { offset, header });
+        }
+
+        let units = group_access_units(&frames).map_err(InputMediaError::InvalidDemuxedEac3)?;
+        let unit = units
+            .into_iter()
+            .next()
+            .ok_or(InputMediaError::InvalidDemuxedEac3(
+                Eac3Error::InvalidAccessUnitRange,
+            ))?;
+        if unit.frame_count != frames.len() {
+            return Err(InputMediaError::InvalidDemuxedEac3(
+                Eac3Error::InvalidAccessUnitRange,
+            ));
+        }
+
+        self.stats.access_units_emitted = self.stats.access_units_emitted.saturating_add(1);
+        self.stats.max_au_bytes = self.stats.max_au_bytes.max(bytes.len());
+        self.stats.max_au_frames = self.stats.max_au_frames.max(frames.len());
+        self.stats.max_complete_frames_retained = self
+            .stats
+            .max_complete_frames_retained
+            .max(frames.len() + usize::from(self.lookahead.is_some()));
+        Ok(Some(RawEac3AccessUnit {
+            bytes,
+            frames,
+            unit,
+        }))
+    }
+
+    /// Returns deterministic sequential-reader high-watermarks.
+    #[must_use]
+    pub const fn stats(&self) -> RawEac3AccessUnitReaderStats {
+        self.stats
+    }
+
+    fn take_frame(&mut self) -> Result<Option<Vec<u8>>, InputMediaError> {
+        let frame = match self.lookahead.take() {
+            Some(frame) => Some(frame),
+            None => self.frame_reader.next_frame()?,
+        };
+        let frame_reader_stats = self.frame_reader.stats();
+        self.stats.frames_emitted = frame_reader_stats.frames_emitted;
+        self.stats.max_input_carry_bytes = frame_reader_stats.max_input_carry_bytes;
+        self.stats.max_frame_bytes = frame_reader_stats.max_frame_bytes;
+        Ok(frame)
     }
 }
 

@@ -495,3 +495,21 @@ borrowed slices. ISO BMFF stream-copy payload and sample-table/index metadata
 remain separate duration-proportional boundaries. `WaveWriter` is now used by
 captured scene row/LFE exports, with header finalization errors propagated.
 No media or fixture was created.
+
+## J1R20 — Incremental AU consumer / container ownership closure
+
+The raw sequential path now separates an explicit capture/index contract from
+an incremental contract. `RawEac3AccessUnitReader<R: Read>` consumes complete
+syncframes from `RawEac3FrameReader`, retains one bounded access unit plus one
+frame of boundary lookahead, and emits locally indexed bytes to the existing
+J1R18 decoder. The explicit CLI `--streaming --internal-base` mode uses this
+path; no second decoder or hidden warp rule was added.
+
+On the frozen Center 997 Hz carrier, direct and legacy paths produced
+byte-identical base/LFE WAVs, inventories, and all shared per-frame diagnostic
+files. The streaming summary matched sample rate, duration, frame count,
+object cardinality, metadata-event count, and ReconstructionBasis dimensions.
+Synthetic chunk, lookahead, truncation, exact-EOF, and 128-AU high-watermark
+tests pass. ISO BMFF and legacy capture/index APIs remain explicit
+duration-proportional boundaries. `SemanticBindingState::Unresolved` and ETSI
+strict raw warp=3 reservation are unchanged; no new media or fixture was made.

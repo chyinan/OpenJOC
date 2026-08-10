@@ -1,5 +1,6 @@
 // pattern: Functional Core
 
+use openjoc_container::{InputMediaError, RawEac3AccessUnitReader};
 use openjoc_eac3::{
     DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame,
     extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit, group_access_units,
@@ -15,10 +16,11 @@ use openjoc_scene::{
     PayloadDecoderConfig, StreamingSceneSummary,
 };
 use openjoc_wave::WavePcm;
-use std::fmt;
+use std::{fmt, io::Read};
 
 #[derive(Debug)]
 pub enum DecodeEac3Error {
+    Input(InputMediaError),
     Eac3(Eac3Error),
     Oamd(OamdError),
     Payload(PayloadDecodeError),
@@ -45,6 +47,7 @@ pub enum DecodeEac3Error {
 impl fmt::Display for DecodeEac3Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Input(error) => write!(formatter, "failed to read raw E-AC-3 input: {error}"),
             Self::Eac3(error) => write!(formatter, "failed to decode E-AC-3 frontend: {error}"),
             Self::Oamd(error) => write!(formatter, "failed to validate OAMD profile: {error}"),
             Self::Payload(error) => {
@@ -84,7 +87,23 @@ impl fmt::Display for DecodeEac3Error {
     }
 }
 
-impl std::error::Error for DecodeEac3Error {}
+impl std::error::Error for DecodeEac3Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Input(error) => Some(error),
+            Self::Eac3(error) => Some(error),
+            Self::Oamd(error) => Some(error),
+            Self::Payload(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<InputMediaError> for DecodeEac3Error {
+    fn from(value: InputMediaError) -> Self {
+        Self::Input(value)
+    }
+}
 
 impl From<Eac3Error> for DecodeEac3Error {
     fn from(value: Eac3Error) -> Self {
@@ -348,6 +367,93 @@ where
     )
 }
 
+/// Direct sequential raw-E-AC-3 decode path.
+///
+/// Unlike the legacy slice API, this path owns only one bounded access unit at
+/// a time. The J1R18 `PayloadDecoder` and `JocAccessUnitPcmDecoder` remain the
+/// sole decoding implementations; this function only supplies their input
+/// from the incremental container consumer.
+#[allow(clippy::too_many_arguments)]
+pub fn decode_internal_eac3_reader_with_base_sink_and_policy<R, S, B>(
+    reader: R,
+    max_frame_bytes: usize,
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    mut sink: S,
+    mut base_sink: B,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    R: Read,
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
+    let oamd_profile = match validation_profile {
+        JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
+        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
+    };
+    let mut decoder = PayloadDecoder::streaming_with_oamd_profile(config, oamd_profile);
+    let mut audio_decoder = JocAccessUnitPcmDecoder::new();
+    let mut access_units = RawEac3AccessUnitReader::new(reader, max_frame_bytes);
+    let mut unit_index = 0_usize;
+
+    while let Some(access_unit) = access_units.next_access_unit()? {
+        let pcm = audio_decoder.decode_with_policy(
+            &access_unit.bytes,
+            &access_unit.frames,
+            access_unit.unit,
+            dither_values,
+            base_policy,
+        )?;
+        if pcm.sample_rate != access_unit.unit.sample_rate
+            || pcm.samples != access_unit.unit.samples
+            || pcm.channels.is_empty()
+            || pcm
+                .channels
+                .iter()
+                .any(|channel| channel.len() != usize::from(access_unit.unit.samples))
+        {
+            return Err(DecodeEac3Error::InvalidPcmLength {
+                expected: usize::from(access_unit.unit.samples),
+            });
+        }
+        let metadata = required_metadata(
+            &access_unit.bytes,
+            &access_unit.frames,
+            access_unit.unit,
+            unit_index,
+            validation_profile,
+        )?;
+        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
+        validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let frame_number =
+            u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
+        decoder.decode_frame_with(
+            JocFrameInput {
+                sample_rate: access_unit.unit.sample_rate,
+                downmix_pcm: &pcm.channels,
+                base_lfe_pcm: pcm.lfe.as_deref(),
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: frame_number,
+            },
+            |frame| {
+                sink(unit_index, &metadata, frame)?;
+                base_sink(unit_index, &pcm)
+            },
+        )?;
+        unit_index = unit_index
+            .checked_add(1)
+            .ok_or(DecodeEac3Error::FrameIndexOverflow)?;
+    }
+
+    if unit_index == 0 {
+        return Err(DecodeEac3Error::EmptyStream);
+    }
+    Ok(decoder.finish_streaming()?)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn decode_internal_eac3_core<S, B, R, F>(
     stream: &[u8],
@@ -426,7 +532,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::DecodeEac3Error;
+    use super::{DecodeEac3Error, decode_internal_eac3_reader_with_base_sink_and_policy};
+    use openjoc_eac3::InternalBasePolicy;
+    use openjoc_emdf::JocValidationProfile;
+    use openjoc_oamd::OamdDecoderConfig;
+    use openjoc_scene::PayloadDecoderConfig;
+    use std::io::Cursor;
 
     #[test]
     fn reports_signaled_extension_without_emdf_as_actionable_error() {
@@ -438,5 +549,25 @@ mod tests {
             error.to_string(),
             "JOC extension complexity index 16 is signaled in access unit 4, but its required OAMD/JOC EMDF metadata is absent"
         );
+    }
+
+    #[test]
+    fn direct_reader_preserves_empty_stream_boundary() {
+        let result = decode_internal_eac3_reader_with_base_sink_and_policy(
+            Cursor::new(Vec::<u8>::new()),
+            64,
+            PayloadDecoderConfig {
+                reference_screen: None,
+                oamd: OamdDecoderConfig {
+                    trim_configuration_count: None,
+                },
+            },
+            JocValidationProfile::EtsiStrict,
+            &[],
+            InternalBasePolicy::CurrentDefault,
+            |_index, _metadata, _frame| Ok(()),
+            |_index, _pcm| Ok(()),
+        );
+        assert!(matches!(result, Err(DecodeEac3Error::EmptyStream)));
     }
 }

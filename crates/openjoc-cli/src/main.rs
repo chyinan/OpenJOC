@@ -9,7 +9,7 @@ mod oamd_oracle;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
-use openjoc_container::{InputMediaKind, load_eac3};
+use openjoc_container::{DEFAULT_MAX_EAC3_BYTES, InputMediaKind, detect_media, load_eac3};
 use openjoc_eac3::{
     DecodedAccessUnitPcm, InternalBasePolicy, emit_coding_tool_inventory,
     extract_joc_addbsi_access_unit,
@@ -25,13 +25,14 @@ use std::{
     error::Error,
     fmt::Write as _,
     fs, io,
+    io::Read,
     num::NonZeroU8,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -53,6 +54,7 @@ struct DecodeEac3Args {
     validation_profile: JocValidationProfile,
     trim_configuration_count: Option<NonZeroU8>,
     internal_base_policy: InternalBasePolicy,
+    streaming: bool,
 }
 
 fn main() -> ExitCode {
@@ -128,7 +130,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
-        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
+        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
         "                         [--validation-profile etsi-strict|dolby-vendor-compat]\n",
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--trim-config-count N]\n",
@@ -157,6 +159,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --no-banner Disable the interactive startup banner\n",
         "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
+        "      --streaming      Use the direct sequential raw E-AC-3 AU consumer (with --internal-base)\n",
         "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
         "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
     ));
@@ -603,12 +606,18 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let mut validation_profile = JocValidationProfile::EtsiStrict;
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
+    let mut streaming = false;
     let mut output = None;
     let mut index = 1;
     while index < values.len() {
         let flag = &values[index];
         if flag == "--internal-base" {
             internal_base = true;
+            index += 1;
+            continue;
+        }
+        if flag == "--streaming" {
+            streaming = true;
             index += 1;
             continue;
         }
@@ -646,6 +655,7 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         validation_profile,
         trim_configuration_count,
         internal_base_policy,
+        streaming,
     })
 }
 
@@ -691,6 +701,9 @@ fn parse_validation_profile(value: &str) -> Result<JocValidationProfile, io::Err
 }
 
 fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
+    if arguments.streaming {
+        return decode_eac3_streaming(arguments);
+    }
     let media = load_eac3(&arguments.input)?;
     let stream = &media.bytes;
     let config = PayloadDecoderConfig {
@@ -769,6 +782,90 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
         )?
     };
     write_scene(&arguments.output, &scene, arguments.output_format)
+}
+
+fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
+    if !arguments.internal_base {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--streaming currently requires --internal-base for a sequential raw E-AC-3 input",
+        )
+        .into());
+    }
+    let mut probe = fs::File::open(&arguments.input)?;
+    let mut prefix = [0_u8; 12];
+    let prefix_len = probe.read(&mut prefix)?;
+    if detect_media(&prefix[..prefix_len]) != InputMediaKind::RawEac3 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--streaming requires a raw E-AC-3 input; ISO BMFF remains an explicit indexed/capture path",
+        )
+        .into());
+    }
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig {
+            trim_configuration_count: arguments.trim_configuration_count,
+        },
+    };
+    let sink_output = arguments.output.clone();
+    let mut base_capture = InternalBasePcm {
+        base_policy: arguments.internal_base_policy,
+        ..InternalBasePcm::default()
+    };
+    let dither = deterministic_dither_values();
+    let summary = eac3_decode::decode_internal_eac3_reader_with_base_sink_and_policy(
+        fs::File::open(&arguments.input)?,
+        DEFAULT_MAX_EAC3_BYTES,
+        config,
+        arguments.validation_profile,
+        &dither,
+        arguments.internal_base_policy,
+        |frame_index, metadata, frame| {
+            write_validation_debug(&sink_output, frame_index, metadata)
+                .and_then(|()| {
+                    write_debug(
+                        &sink_output,
+                        frame_index,
+                        frame,
+                        metadata.validation_profile,
+                    )
+                })
+                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+        },
+        |access_unit, pcm| {
+            base_capture
+                .append(access_unit, pcm)
+                .map_err(eac3_decode::DecodeEac3Error::Sink)
+        },
+    )?;
+    base_capture.write(&arguments.output)?;
+    write_streaming_summary(&arguments.output, &summary)?;
+    Ok(())
+}
+
+fn write_streaming_summary(
+    output: &Path,
+    summary: &openjoc_scene::StreamingSceneSummary,
+) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(output.join("debug"))?;
+    let value = serde_json::json!({
+        "source": "OpenJOC direct raw E-AC-3 incremental AU consumer",
+        "sample_rate": summary.sample_rate,
+        "duration_samples": summary.duration_samples,
+        "frames": summary.frames,
+        "object_count": summary.object_count,
+        "max_reconstruction_rows": summary.max_reconstruction_rows,
+        "max_frame_samples": summary.max_frame_samples,
+        "metadata_events": summary.metadata_events,
+        "trim_events": summary.trim_events,
+        "retention": "streaming summary only; no ObjectScene capture",
+    });
+    fs::write(
+        output.join("debug/streaming_summary.json"),
+        serde_json::to_vec_pretty(&value)?,
+    )?;
+    Ok(())
 }
 
 fn deterministic_dither_values() -> Vec<f64> {
