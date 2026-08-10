@@ -594,3 +594,20 @@ input/container path still has whole-stream and indexed metadata storage.
 The narrow decision is `DIRECT_RAW_EC3_STREAMING_DECODE_PATH_ESTABLISHED` for
 the sequential raw internal-base path. This does not claim O(1) ISO BMFF
 container metadata, authored-object identity, or resolved warp semantics.
+
+## J1R21 seekable ISO BMFF delivery (2026-08-10)
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Seekable MP4 sample delivery | `SeekableIsoBmffEc3Reader<R: Read + Seek>` reads packet offsets/sizes and releases each current sample | passed |
+| Elementary-stream equivalence | Four frozen MP4/EC-3 pairs, 129 packets each, byte-identical packet sequence | passed |
+| Media working set | No full `mdat` or complete EC-3 payload is materialized; one current sample retained | passed |
+| Container index ownership | Derived packet-location entries are retained and reported as O(samples) metadata | explicit limitation |
+| Existing AU consumer | Reader adapter feeds J1R20 `RawEac3FrameReader`/AU path; one sample is not assumed to equal one AU | passed |
+| Non-seekable / fragmented MP4 | No generic fallback or fragmented-MP4 expansion | not admitted / out of scope |
+| Error and EOF boundaries | Malformed rows, wrong stream, bounds, sample limit, exact EOF regressions | passed |
+| Architecture/profile boundary | SemanticBindingState unresolved; strict raw warp=3 remains ReservedWarpMode; no vendor rule | unchanged |
+
+The narrow decision is `SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`.
+This is not a claim of O(1) sample-table/index memory or authored-object
+semantic binding.

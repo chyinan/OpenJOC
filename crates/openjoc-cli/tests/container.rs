@@ -1,6 +1,9 @@
-use openjoc_container::{InputMediaError, InputMediaKind, load_eac3};
+use openjoc_container::{
+    DEFAULT_MAX_EAC3_BYTES, InputMediaError, InputMediaKind, load_eac3, open_seekable_iso_bmff,
+};
 use std::{
     env, fs,
+    io::Read,
     path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
@@ -226,6 +229,36 @@ fn raw_eac3_remains_raw_input_kind() {
     assert_eq!(loaded.kind, InputMediaKind::RawEac3);
     assert_eq!(loaded.bytes, raw);
     fs::remove_dir_all(root).expect("remove fixture");
+}
+
+#[test]
+fn seekable_frozen_isobmff_samples_match_stream_copy() {
+    let container =
+        PathBuf::from("/Users/chyinan/Documents/OpenJOC-Private/logic/semantic-binding/J1/")
+            .join("J1R6_FR_997_R0_DDP_Atmos_ec3.mp4");
+    let raw_path =
+        PathBuf::from("/Users/chyinan/Documents/OpenJOC-Private/logic/semantic-binding/J1/")
+            .join("J1R6_FR_997_R0.ec3");
+    if !container.is_file()
+        || !raw_path.is_file()
+        || Command::new("ffprobe").arg("-version").output().is_err()
+    {
+        eprintln!("skipping frozen seekable ISO BMFF test: private fixture or ffprobe absent");
+        return;
+    }
+    let expected = fs::read(raw_path).expect("frozen raw stream");
+    let mut reader =
+        open_seekable_iso_bmff(&container, Path::new("ffprobe"), DEFAULT_MAX_EAC3_BYTES)
+            .expect("open seekable ISO BMFF");
+    let mut delivered = Vec::new();
+    reader
+        .read_to_end(&mut delivered)
+        .expect("read packet stream");
+    assert_eq!(delivered, expected);
+    let stats = reader.stats();
+    assert_eq!(stats.samples_delivered, stats.sample_count);
+    assert_eq!(stats.max_samples_simultaneously_retained, 1);
+    assert!(stats.derived_sample_index_entries > 0);
 }
 
 #[test]

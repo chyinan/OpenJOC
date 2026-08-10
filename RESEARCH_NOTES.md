@@ -513,3 +513,20 @@ Synthetic chunk, lookahead, truncation, exact-EOF, and 128-AU high-watermark
 tests pass. ISO BMFF and legacy capture/index APIs remain explicit
 duration-proportional boundaries. `SemanticBindingState::Unresolved` and ETSI
 strict raw warp=3 reservation are unchanged; no new media or fixture was made.
+
+## J1R21 — Seekable ISO BMFF boundary
+
+J1R21 separates seekable media payload ownership from container index
+ownership. The new reader retains an explicit O(samples) vector of FFprobe
+packet locations, but seeks and reads only the current E-AC-3 packet before
+passing its bytes into the existing incremental frame/AU consumer. Four
+existing frozen carriers (Center 997, Front Right 997, Rear Center 997, and
+Center 2003) produce packet sequences byte-identical to their raw stream-copy
+companions. This is evidence for delivery correctness, not a claim that the
+sample table is constant-memory.
+
+Generic non-seekable ISO BMFF and fragmented MP4 remain outside the admitted
+contract. The decoder, OAMD timeline handling, ReconstructionBasis meaning,
+SemanticBindingState, and ETSI strict raw warp=3 behavior were not changed.
+The decision is
+`SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`.

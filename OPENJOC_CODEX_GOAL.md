@@ -880,3 +880,15 @@ raw sequential scope. ISO BMFF index metadata remains a declared limitation;
 `SemanticBindingState::Unresolved`, authored-object PCM inadmissibility, and
 ETSI strict raw warp=3 reservation are unchanged. No new fixture or media was
 created.
+
+## J1R21 — Seekable container delivery
+
+The direct streaming path now supports seekable ISO BMFF E-AC-3 inputs without
+materializing the complete `mdat` or elementary stream. An explicit packet
+location index is retained as duration-proportional metadata, and a bounded
+reader owns only one current packet while reusing the existing raw AU
+consumer. Four frozen MP4/EC-3 pairs are byte-identical at the elementary
+stream boundary. Non-seekable and fragmented MP4 remain unadmitted; semantic
+binding and warp interpretation remain unchanged.
+
+Decision: `SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`.

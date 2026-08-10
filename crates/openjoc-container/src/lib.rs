@@ -313,6 +313,9 @@ pub enum InputMediaError {
     DemuxOutputTooLarge {
         limit: usize,
     },
+    MalformedPacketProbeRow {
+        row: String,
+    },
     EmptyDemuxOutput,
     TruncatedRawEac3 {
         offset: usize,
@@ -356,6 +359,12 @@ impl fmt::Display for InputMediaError {
                 formatter,
                 "demuxed E-AC-3 stream exceeds the configured {limit}-byte bound"
             ),
+            Self::MalformedPacketProbeRow { row } => {
+                write!(
+                    formatter,
+                    "FFprobe returned malformed ISO BMFF packet row: {row}"
+                )
+            }
             Self::EmptyDemuxOutput => {
                 formatter.write_str("ISO BMFF E-AC-3 demux produced an empty elementary stream")
             }
@@ -431,6 +440,272 @@ pub fn parse_audio_probe_output(output: &str) -> Result<Vec<(usize, String)>, In
         tracks.push((index, codec.to_owned()));
     }
     Ok(tracks)
+}
+
+/// One compressed ISO BMFF packet location for the selected E-AC-3 track.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IsoBmffSample {
+    pub offset: u64,
+    pub size: usize,
+}
+
+/// Deterministic ownership counters for a seekable ISO BMFF reader.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SeekableIsoBmffReaderStats {
+    pub samples_delivered: usize,
+    pub sample_count: usize,
+    pub max_current_sample_bytes: usize,
+    pub max_samples_simultaneously_retained: usize,
+    pub derived_sample_index_entries: usize,
+}
+
+/// Seekable ISO BMFF E-AC-3 sample reader.
+///
+/// The parsed packet locations are an explicit, duration-proportional derived
+/// index. Compressed media payload bytes are not materialized: each call seeks
+/// to and reads only the current packet. The type also implements [`Read`] so
+/// the existing raw frame/AU consumer can handle packet boundaries uniformly.
+pub struct SeekableIsoBmffEc3Reader<R> {
+    source: R,
+    samples: Vec<IsoBmffSample>,
+    next_sample: usize,
+    file_len: u64,
+    max_sample_bytes: usize,
+    current: Vec<u8>,
+    current_offset: usize,
+    stats: SeekableIsoBmffReaderStats,
+}
+
+impl<R: Read + io::Seek> SeekableIsoBmffEc3Reader<R> {
+    /// Creates a reader from a validated packet-location index.
+    pub fn new(
+        mut source: R,
+        samples: Vec<IsoBmffSample>,
+        max_sample_bytes: usize,
+    ) -> Result<Self, InputMediaError> {
+        let file_len = source
+            .seek(io::SeekFrom::End(0))
+            .map_err(|source| InputMediaError::Io {
+                operation: "seek ISO BMFF input",
+                source,
+            })?;
+        source
+            .seek(io::SeekFrom::Start(0))
+            .map_err(|source| InputMediaError::Io {
+                operation: "rewind ISO BMFF input",
+                source,
+            })?;
+        let stats = SeekableIsoBmffReaderStats {
+            sample_count: samples.len(),
+            derived_sample_index_entries: samples.len(),
+            ..SeekableIsoBmffReaderStats::default()
+        };
+        Ok(Self {
+            source,
+            samples,
+            next_sample: 0,
+            file_len,
+            max_sample_bytes,
+            current: Vec::new(),
+            current_offset: 0,
+            stats,
+        })
+    }
+
+    /// Reads the next compressed sample and releases the previous sample.
+    pub fn next_sample(&mut self) -> Result<Option<Vec<u8>>, InputMediaError> {
+        self.current.clear();
+        self.current_offset = 0;
+        let Some(sample) = self.samples.get(self.next_sample).copied() else {
+            return Ok(None);
+        };
+        self.next_sample += 1;
+        if sample.size > self.max_sample_bytes {
+            return Err(InputMediaError::DemuxOutputTooLarge {
+                limit: self.max_sample_bytes,
+            });
+        }
+        let end = sample
+            .offset
+            .checked_add(u64::try_from(sample.size).unwrap_or(u64::MAX))
+            .ok_or(InputMediaError::MalformedPacketProbeRow {
+                row: format!("offset={} size={}", sample.offset, sample.size),
+            })?;
+        if end > self.file_len {
+            return Err(InputMediaError::MalformedPacketProbeRow {
+                row: format!(
+                    "sample exceeds file bounds: offset={} size={}",
+                    sample.offset, sample.size
+                ),
+            });
+        }
+        self.source
+            .seek(io::SeekFrom::Start(sample.offset))
+            .map_err(|source| InputMediaError::Io {
+                operation: "seek ISO BMFF sample",
+                source,
+            })?;
+        let mut bytes = vec![0_u8; sample.size];
+        self.source
+            .read_exact(&mut bytes)
+            .map_err(|source| InputMediaError::Io {
+                operation: "read ISO BMFF sample",
+                source,
+            })?;
+        self.stats.samples_delivered += 1;
+        self.stats.max_current_sample_bytes = self.stats.max_current_sample_bytes.max(bytes.len());
+        self.stats.max_samples_simultaneously_retained = 1;
+        Ok(Some(bytes))
+    }
+
+    /// Returns deterministic ownership counters.
+    #[must_use]
+    pub const fn stats(&self) -> SeekableIsoBmffReaderStats {
+        self.stats
+    }
+}
+
+impl<R: Read + io::Seek> Read for SeekableIsoBmffEc3Reader<R> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            if self.current_offset < self.current.len() {
+                let count = output
+                    .len()
+                    .min(self.current.len().saturating_sub(self.current_offset));
+                output[..count].copy_from_slice(
+                    &self.current[self.current_offset..self.current_offset + count],
+                );
+                self.current_offset += count;
+                return Ok(count);
+            }
+            match self.next_sample() {
+                Ok(Some(sample)) => {
+                    self.current = sample;
+                    self.current_offset = 0;
+                }
+                Ok(None) => return Ok(0),
+                Err(error) => return Err(io::Error::other(error.to_string())),
+            }
+        }
+    }
+}
+
+/// Opens a seekable ISO BMFF E-AC-3 reader using FFprobe packet locations.
+pub fn open_seekable_iso_bmff(
+    path: &Path,
+    ffprobe: &Path,
+    max_sample_bytes: usize,
+) -> Result<SeekableIsoBmffEc3Reader<File>, InputMediaError> {
+    let samples = probe_iso_bmff_samples(path, ffprobe)?;
+    let source = File::open(path).map_err(|source| InputMediaError::Io {
+        operation: "open ISO BMFF input",
+        source,
+    })?;
+    SeekableIsoBmffEc3Reader::new(source, samples, max_sample_bytes)
+}
+
+/// Parses FFprobe packet rows in its stable `stream_index,size,pos` order.
+pub fn parse_packet_probe_output(
+    output: &str,
+    selected_stream: usize,
+) -> Result<Vec<IsoBmffSample>, InputMediaError> {
+    let mut samples = Vec::new();
+    for row in output.lines().map(str::trim).filter(|row| !row.is_empty()) {
+        let fields = row.split(',').map(str::trim).collect::<Vec<_>>();
+        let stream = fields.first().and_then(|field| field.parse::<usize>().ok());
+        let size = fields.get(1).and_then(|field| field.parse::<usize>().ok());
+        let offset = fields.get(2).and_then(|field| field.parse::<u64>().ok());
+        if fields.len() < 3 || stream != Some(selected_stream) || size.is_none() || offset.is_none()
+        {
+            return Err(InputMediaError::MalformedPacketProbeRow {
+                row: row.to_owned(),
+            });
+        }
+        let (Some(offset), Some(size)) = (offset, size) else {
+            return Err(InputMediaError::MalformedPacketProbeRow {
+                row: row.to_owned(),
+            });
+        };
+        samples.push(IsoBmffSample { offset, size });
+    }
+    if samples.is_empty() {
+        return Err(InputMediaError::EmptyDemuxOutput);
+    }
+    Ok(samples)
+}
+
+fn probe_iso_bmff_samples(
+    path: &Path,
+    ffprobe: &Path,
+) -> Result<Vec<IsoBmffSample>, InputMediaError> {
+    let probe = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index,codec_name",
+            "-of",
+            "csv=p=0:s=,",
+        ])
+        .arg(path)
+        .output()
+        .map_err(|source| InputMediaError::Io {
+            operation: "run FFprobe",
+            source,
+        })?;
+    if !probe.status.success() {
+        return Err(InputMediaError::ProbeFailed {
+            detail: command_detail(&probe.stderr),
+        });
+    }
+    let tracks = parse_audio_probe_output(&String::from_utf8_lossy(&probe.stdout))?;
+    let (stream_index, codec) = match tracks.as_slice() {
+        [] => return Err(InputMediaError::MissingAudioTrack),
+        [track] => track,
+        tracks => {
+            return Err(InputMediaError::MultipleAudioTracks {
+                count: tracks.len(),
+            });
+        }
+    };
+    if codec != "eac3" {
+        return Err(InputMediaError::NoMatchingAudioTrack {
+            codec: codec.clone(),
+        });
+    }
+    let stream_selector = stream_index.to_string();
+    let packet_probe = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            stream_selector.as_str(),
+            "-show_packets",
+            "-show_entries",
+            "packet=stream_index,size,pos",
+            "-of",
+            "csv=p=0:s=,",
+        ])
+        .arg(path)
+        .output()
+        .map_err(|source| InputMediaError::Io {
+            operation: "run FFprobe packet probe",
+            source,
+        })?;
+    if !packet_probe.status.success() {
+        return Err(InputMediaError::ProbeFailed {
+            detail: command_detail(&packet_probe.stderr),
+        });
+    }
+    parse_packet_probe_output(
+        &String::from_utf8_lossy(&packet_probe.stdout),
+        *stream_index,
+    )
 }
 
 /// Reads raw E-AC-3 or demuxes one E-AC-3 track from ISO BMFF.

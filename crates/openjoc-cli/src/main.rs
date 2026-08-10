@@ -9,7 +9,9 @@ mod oamd_oracle;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
-use openjoc_container::{DEFAULT_MAX_EAC3_BYTES, InputMediaKind, detect_media, load_eac3};
+use openjoc_container::{
+    DEFAULT_MAX_EAC3_BYTES, InputMediaKind, detect_media, load_eac3, open_seekable_iso_bmff,
+};
 use openjoc_eac3::{
     DecodedAccessUnitPcm, InternalBasePolicy, emit_coding_tool_inventory,
     extract_joc_addbsi_access_unit,
@@ -795,13 +797,22 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
     let mut probe = fs::File::open(&arguments.input)?;
     let mut prefix = [0_u8; 12];
     let prefix_len = probe.read(&mut prefix)?;
-    if detect_media(&prefix[..prefix_len]) != InputMediaKind::RawEac3 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "--streaming requires a raw E-AC-3 input; ISO BMFF remains an explicit indexed/capture path",
-        )
-        .into());
-    }
+    let input_kind = detect_media(&prefix[..prefix_len]);
+    let reader: Box<dyn Read> = match input_kind {
+        InputMediaKind::RawEac3 => Box::new(fs::File::open(&arguments.input)?),
+        InputMediaKind::IsoBmff => Box::new(open_seekable_iso_bmff(
+            &arguments.input,
+            Path::new("ffprobe"),
+            DEFAULT_MAX_EAC3_BYTES,
+        )?),
+        InputMediaKind::Unknown => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "--streaming requires raw E-AC-3 or seekable ISO BMFF input",
+            )
+            .into());
+        }
+    };
     let config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig {
@@ -815,7 +826,7 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
     };
     let dither = deterministic_dither_values();
     let summary = eac3_decode::decode_internal_eac3_reader_with_base_sink_and_policy(
-        fs::File::open(&arguments.input)?,
+        reader,
         DEFAULT_MAX_EAC3_BYTES,
         config,
         arguments.validation_profile,

@@ -1505,3 +1505,24 @@ basis rows. Chunk, lookahead, exact-EOF, truncation, invalid-start, and
 128-AU plateau regressions pass. ISO BMFF sample-table/index retention remains
 a declared limitation. No second decoder, semantic binding upgrade, warp rule,
 or new media was introduced.
+
+## J1R21 — Seekable ISO BMFF sample delivery and index ownership
+
+The explicit `decode --streaming --internal-base` path now admits seekable
+ISO BMFF E-AC-3 input. FFprobe supplies packet offsets and sizes, while
+`SeekableIsoBmffEc3Reader` seeks and reads one current compressed sample at a
+time and feeds the existing `RawEac3FrameReader`/AU consumer. It does not
+materialize the `mdat` or a complete elementary-stream `Vec<u8>`; the derived
+packet-location index remains an explicit O(samples) container-metadata cost.
+The frozen Center, Front Right, Rear Center, and Center 2003 carriers each
+match their stream-copy EC-3 byte-for-byte (129 packets of 3072 bytes).
+
+Malformed packet rows, wrong-track rows, out-of-bounds samples, bounded sample
+reads, exact EOF, and a frozen real MP4 reader regression are covered. Generic
+non-seekable and fragmented MP4 are not admitted. J1R20's existing decode
+equivalence, J1R14/J1R15/J1R17/J1R18 architecture, `SemanticBindingState`,
+and ETSI strict raw warp=3 reservation are unchanged. The narrow decision is
+`SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`;
+this does not claim O(1) container index memory or semantic object binding.
+Private evidence:
+`OpenJOC-Private/reports/runs/20260810T174335Z_j1r21-isobmff-streaming_bbee0a5/j1r21_evidence_freeze.json`.
