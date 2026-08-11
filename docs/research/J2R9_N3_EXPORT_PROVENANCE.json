@@ -1,0 +1,28 @@
+{
+  "schema": "openjoc.j2r9.public-report.v1",
+  "stage": "J2R9 — N3 Export-Execution Provenance Closure & J2R8 Classification Validation",
+  "decision": "N3_EXPORT_INDEPENDENCE_NOT_PROVEN_J2R8_DOWNGRADED_TO_NUMERICAL_FLOOR",
+  "public_classification": "FULL_COMPLEX_DIFFERENCE_ABOVE_NUMERICAL_FLOOR_PRODUCER_NULL_UNAVAILABLE",
+  "candidate_count": 6,
+  "payload_relationship": {
+    "elementary_payload_identical_pairs": 6,
+    "container_different_elementary_payload_identical_pairs": 6
+  },
+  "export_execution_provenance": {
+    "separate_export_executions_proven": 0,
+    "export_execution_independence_unverified": 6,
+    "reason": "No durable producer invocation and independent completion evidence exists in the frozen corpus."
+  },
+  "coverage": {
+    "static_candidates_in_prior_set": 4,
+    "dual_candidates_in_prior_set": 1,
+    "provenance_admitted_static": 0,
+    "provenance_admitted_dual": 0,
+    "c3_dual_requirement": "not relaxed; at least two dual N3 contrasts are still required"
+  },
+  "frozen_target_reapplication": "preserved IDs, windows and metrics; producer null unavailable",
+  "semantic_binding_state": "Unresolved",
+  "warp": "ETSI ReservedWarpMode { raw: 3 }; unchanged",
+  "new_media": false,
+  "production_decoder_changed": false
+}
