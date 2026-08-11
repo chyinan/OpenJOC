@@ -1,0 +1,27 @@
+{
+  "schema": "openjoc.j2r12.public-execution-queue.v1",
+  "corrected_matrix_hash": "5b08539c4887ae49ed119ae5ce6b9d18e62d0b4aee5f29240afceb5dd3bf11e4",
+  "producer_run_count": 8,
+  "producer_run_ids": [
+    "S_FL_PRODUCER_0",
+    "S_FL_PRODUCER_1",
+    "S_FR_PRODUCER_0",
+    "S_FR_PRODUCER_1",
+    "D_SWAP_PRODUCER_0",
+    "D_SWAP_PRODUCER_1",
+    "D_SWAP_PRODUCER_2",
+    "D_SWAP_PRODUCER_3"
+  ],
+  "pairs": [
+    {"pair_id": "N3_S_FL_PAIR", "runs": ["S_FL_PRODUCER_0", "S_FL_PRODUCER_1"]},
+    {"pair_id": "N3_S_FR_PAIR", "runs": ["S_FR_PRODUCER_0", "S_FR_PRODUCER_1"]},
+    {"pair_id": "N3_D_SWAP_PAIR_A", "runs": ["D_SWAP_PRODUCER_0", "D_SWAP_PRODUCER_1"]},
+    {"pair_id": "N3_D_SWAP_PAIR_B", "runs": ["D_SWAP_PRODUCER_2", "D_SWAP_PRODUCER_3"]}
+  ],
+  "d_swap_windows": [
+    {"window_id": "D_PRE", "measurement_only": true},
+    {"window_id": "D_POST", "measurement_only": true}
+  ],
+  "cross_pair_comparison_forbidden": true,
+  "immutable": true
+}

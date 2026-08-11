@@ -1,0 +1,28 @@
+{
+  "schema": "openjoc.j2r12.real-export-controller.v1",
+  "milestone": "J2R12",
+  "decision": "N3_REAL_EXPORT_CONTROLLER_ADMITTED",
+  "scope": "controller admission only; no producer export authorization",
+  "corrected_matrix_hash": "5b08539c4887ae49ed119ae5ce6b9d18e62d0b4aee5f29240afceb5dd3bf11e4",
+  "execution_queue_hash": "1d59c600a9a9a4839a013925a8fdb58f055d4497a28b62ee704c8d482c10c1e6",
+  "producer_run_count": 8,
+  "pair_count": 4,
+  "d_swap_window_count": 2,
+  "window_ids_are_producer_runs": false,
+  "authorization": {
+    "durable_one_shot_object_required": true,
+    "producer_export_true_required": true,
+    "ordinary_boolean_flag_sufficient": false,
+    "nonce_replay_rejected": true,
+    "destination_binding_required": true
+  },
+  "real_ui_maximum_state": "READY_TO_CONFIRM",
+  "final_confirmation_reachable_in_j2r12": false,
+  "mock_backend_without_media": true,
+  "fresh_process_cancel_only_rehearsals": 3,
+  "sigkill_required": false,
+  "new_media": false,
+  "producer_export": false,
+  "semantic_binding_state": "Unresolved",
+  "warp_raw3_changed": false
+}
