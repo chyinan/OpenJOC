@@ -1,0 +1,60 @@
+{
+  "schema": "openjoc.j2r5.phase-coherent-joint-transfer.v1",
+  "stage": "J2R5 — Phase-Coherent Joint Base/ReconstructionBasis Transfer, Context & Superposition Analysis",
+  "classification": "JOINT_TRANSFER_MODEL_NARROWED_BUT_UNDERDETERMINED",
+  "semantic_binding_state": "Unresolved",
+  "logic_launch": false,
+  "new_logic_fixture": false,
+  "new_media": false,
+  "observations": {
+    "usable_carrier_groups": 9,
+    "matched_frequency_strata": 2,
+    "matched_context_strata": 2,
+    "matched_singleton_dual_strata": 2,
+    "time_repeated_base_strata": 3
+  },
+  "component_schema": {
+    "base_full_band": ["FL", "FR", "FC", "SL", "SR"],
+    "base_lfe": ["LFE"],
+    "reconstruction_basis": "row_000..row_014",
+    "rclfe": ["RcLfe"],
+    "row_semantics": "basis rows, not authored objects"
+  },
+  "estimator": {
+    "method": "simultaneous sine/cosine least squares plus constant",
+    "sample_rate_hz": 48000,
+    "frequencies_hz": [997, 2003],
+    "complex_convention": "cosine - i*sine",
+    "oracle": "PASS",
+    "target_binary_threshold": "NOT_SET; incomplete complex joint vector"
+  },
+  "windows_seconds": {
+    "static_pre": [1.25, 1.75],
+    "static_late": [2.75, 3.25],
+    "dual_pre": [1.25, 1.75],
+    "dual_post": [2.75, 3.25]
+  },
+  "base_complex_comparisons": {
+    "dual_FL_cross_frequency": {"complex_coherence": 0.9999934884045109, "projective_residual": 0.0036087599778509196},
+    "dual_FR_cross_frequency": {"complex_coherence": 0.999993146379766, "projective_residual": 0.0037023227163740288},
+    "same_position_FL_single_vs_dual_997": {"complex_coherence": 0.9999939277910248, "projective_residual": 0.0034848789188314825},
+    "same_position_FR_single_vs_dual_997": {"complex_coherence": 0.9999937288212714, "projective_residual": 0.003541513536586496}
+  },
+  "reconstruction_basis": {
+    "phase_reference_status": "NOT_AVAILABLE_MAGNITUDE_ONLY_PARENT_ARTIFACT",
+    "complex_coherence": "NOT_COMPUTABLE",
+    "magnitude_only_cross_frequency_proxies": "available; not complex equivalence"
+  },
+  "secondary_results": {
+    "frequency_invariance_result": "BASE_COMPLEX_COMPARISON_AVAILABLE_BUT_JOINT_RESULT_UNDERDETERMINED",
+    "context_result": "BASE_COMPLEX_COMPARISON_AVAILABLE_BUT_RECONSTRUCTION_BASIS_PHASE_UNAVAILABLE",
+    "base_basis_covariance_result": "NOT_OBSERVABLE_AS_A_COMPLETE_COMPLEX_PARTITION",
+    "rclfe_result": "SEPARATE_AS_ESTABLISHED_BY_J1R15",
+    "superposition_result": "H_SUPERPOSITION_NOT_OBSERVABLE",
+    "temporal_result": "TIME_STABLE_WITHIN_TESTED_INTERVAL_FOR_BASE_ONLY",
+    "low_rank_result": "NOT_PERFORMED_INCOMPLETE_COMPLEX_MATRIX"
+  },
+  "identifiable_parameters": ["frozen base-channel complex coefficients", "magnitude-only ReconstructionBasis vectors", "scoped base projective comparisons", "synthetic estimator behavior"],
+  "non_identifiable_parameters": ["full complex ReconstructionBasis transfer", "complete joint base+basis phase equivalence", "absolute source phase for every carrier", "component-level superposition", "authored-object or slot identity"],
+  "warp_boundary": "raw warp 3 remains ETSI ReservedWarpMode; no semantic change"
+}
