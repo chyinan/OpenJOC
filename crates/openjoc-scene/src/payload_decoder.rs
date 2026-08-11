@@ -179,13 +179,13 @@ impl PayloadDecoder {
                 actual: input.frame_index,
             });
         }
-        if let Some(expected) = self.sample_rate
-            && input.sample_rate != expected
-        {
-            return Err(PayloadDecodeError::SampleRateChanged {
-                expected,
-                actual: input.sample_rate,
-            });
+        if let Some(expected) = self.sample_rate {
+            if input.sample_rate != expected {
+                return Err(PayloadDecodeError::SampleRateChanged {
+                    expected,
+                    actual: input.sample_rate,
+                });
+            }
         }
         let joc = parse_joc_payload(input.joc_payload).map_err(JocDecodeError::Parse)?;
         let oamd = match self.oamd_profile {

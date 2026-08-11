@@ -1029,21 +1029,21 @@ impl InternalBasePcm {
         {
             return Err("internal base channel frame length mismatch".to_owned());
         }
-        if let Some(expected) = self.sample_rate
-            && expected != pcm.sample_rate
-        {
-            return Err(format!(
-                "internal base sample rate changed from {} to {}",
-                expected, pcm.sample_rate
-            ));
+        if let Some(expected) = self.sample_rate {
+            if expected != pcm.sample_rate {
+                return Err(format!(
+                    "internal base sample rate changed from {} to {}",
+                    expected, pcm.sample_rate
+                ));
+            }
         }
         if pcm.lfe.is_some() != pcm.lfe_location.is_some() {
             return Err("internal base LFE PCM/location presence mismatch".to_owned());
         }
-        if let Some(lfe) = &pcm.lfe
-            && lfe.len() != frame_samples
-        {
-            return Err("internal base LFE frame length mismatch".to_owned());
+        if let Some(lfe) = &pcm.lfe {
+            if lfe.len() != frame_samples {
+                return Err("internal base LFE frame length mismatch".to_owned());
+            }
         }
         if self.access_units > 0 {
             if self.channel_locations.as_deref() != Some(pcm.channel_locations.as_slice()) {

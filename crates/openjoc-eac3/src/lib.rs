@@ -1950,13 +1950,13 @@ fn parse_joc_access_unit_impl(
     let Some((carrier_frame, parsed)) = found else {
         return Ok(None);
     };
-    if let Some(required_frame) = required_dependent
-        && carrier_frame != required_frame
-    {
-        return Err(Eac3Error::InvalidJocCarrierPlacement {
-            carrier_frame,
-            required_frame,
-        });
+    if let Some(required_frame) = required_dependent {
+        if carrier_frame != required_frame {
+            return Err(Eac3Error::InvalidJocCarrierPlacement {
+                carrier_frame,
+                required_frame,
+            });
+        }
     }
     let carrier_entry = frames
         .get(carrier_frame)

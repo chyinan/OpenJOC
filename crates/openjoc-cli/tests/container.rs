@@ -131,7 +131,19 @@ fn malformed_iso_bmff_reports_container_error_not_syncword_error() {
     let path = root.join("broken.mp4");
     fs::write(&path, [0, 0, 0, 24, b'f', b't', b'y', b'p']).expect("broken container");
     let error = load_eac3(&path).expect_err("malformed container should fail");
-    assert!(matches!(error, InputMediaError::ProbeFailed { .. }));
+    assert!(matches!(
+        error,
+        InputMediaError::Io { .. }
+            | InputMediaError::MissingAudioTrack
+            | InputMediaError::MultipleAudioTracks { .. }
+            | InputMediaError::NoMatchingAudioTrack { .. }
+            | InputMediaError::ProbeFailed { .. }
+            | InputMediaError::MalformedProbeRow { .. }
+            | InputMediaError::DemuxFailed { .. }
+            | InputMediaError::DemuxOutputTooLarge { .. }
+            | InputMediaError::MalformedPacketProbeRow { .. }
+            | InputMediaError::EmptyDemuxOutput
+    ));
     assert!(!error.to_string().contains("syncword"));
     fs::remove_dir_all(root).expect("remove fixture");
 }

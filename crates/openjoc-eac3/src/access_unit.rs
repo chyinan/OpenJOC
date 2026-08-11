@@ -281,19 +281,19 @@ impl JocAccessUnitPcmDecoder {
                 )
             })
             .transpose()?;
-        if let Some((info, _, _)) = &dependent
-            && (info.header.sample_rate != unit.sample_rate || info.header.samples != unit.samples)
-        {
-            return Err(Eac3Error::SubstreamTimingMismatch {
-                frame: unit.first_frame + 1,
-            });
+        if let Some((info, _, _)) = &dependent {
+            if info.header.sample_rate != unit.sample_rate || info.header.samples != unit.samples {
+                return Err(Eac3Error::SubstreamTimingMismatch {
+                    frame: unit.first_frame + 1,
+                });
+            }
         }
-        if let Some((info, _, _)) = &dependent
-            && info.header.audio_blocks != 6
-        {
-            return Err(Eac3Error::UnsupportedJocAudioBlockCount {
-                actual: info.header.audio_blocks,
-            });
+        if let Some((info, _, _)) = &dependent {
+            if info.header.audio_blocks != 6 {
+                return Err(Eac3Error::UnsupportedJocAudioBlockCount {
+                    actual: info.header.audio_blocks,
+                });
+            }
         }
         let output = merge_substreams(
             unit,

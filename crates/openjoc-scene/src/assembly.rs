@@ -255,12 +255,12 @@ impl SceneBuilder {
                 ));
             }
         }
-        if let Some(lfe) = base_lfe_pcm
-            && let Some(sample) = lfe.iter().position(|value| !value.is_finite())
-        {
-            return Err(SceneBuildError::Scene(SceneError::NonFiniteBaseLfe {
-                sample,
-            }));
+        if let Some(lfe) = base_lfe_pcm {
+            if let Some(sample) = lfe.iter().position(|value| !value.is_finite()) {
+                return Err(SceneBuildError::Scene(SceneError::NonFiniteBaseLfe {
+                    sample,
+                }));
+            }
         }
 
         let trim = oamd.elements.iter().rev().find_map(|metadata| {
@@ -445,18 +445,19 @@ fn append_object_updates(
     {
         return Err(SceneBuildError::MetadataShapeMismatch);
     }
-    if let Some(divergence) = extension.and_then(|value| value.divergence.as_ref())
-        && (divergence.len() != anchors.len()
+    if let Some(divergence) = extension.and_then(|value| value.divergence.as_ref()) {
+        if divergence.len() != anchors.len()
             || divergence
                 .iter()
-                .any(|updates| updates.len() != objects.timing.blocks.len()))
-    {
-        return Err(SceneBuildError::MetadataShapeMismatch);
+                .any(|updates| updates.len() != objects.timing.blocks.len())
+        {
+            return Err(SceneBuildError::MetadataShapeMismatch);
+        }
     }
-    if let Some(trim) = trim
-        && trim.disable_trim_per_object.len() != anchors.len()
-    {
-        return Err(SceneBuildError::MetadataShapeMismatch);
+    if let Some(trim) = trim {
+        if trim.disable_trim_per_object.len() != anchors.len() {
+            return Err(SceneBuildError::MetadataShapeMismatch);
+        }
     }
 
     let mut output = Vec::with_capacity(
