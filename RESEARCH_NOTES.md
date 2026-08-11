@@ -641,3 +641,26 @@ participation, isolation, central truncation, and fresh-call reset are covered,
 but a dependent-substream/configuration transition is not representable as a
 persistent SPX parser-state transition in the current public API. The Logic
 corpus remains SPX-off and full real-stream SPX PCM fidelity remains open.
+
+## J1R29 — AHT production reconstruction and numerical admission
+
+The audit found a complete production reconstruction path rather than a
+pointer-only stub: high-efficiency BAP drives VQ/GAQ payload decoding, the
+six-point inverse AHT DCT materializes one coefficient per audio block, and
+ordinary exponent shifting and downstream synthesis consume those values.
+The frame-local `AhtElementState` owns exactly the six-block lifetime; later
+blocks reuse the reconstructed array without rereading the first-block AHT
+payload.
+
+Independent tests now cover all 64 high-efficiency pointer addresses, all 956
+VQ entries by PDF-derived table digests, 99,302 GAQ codewords, all gain-word
+symbols, and 54 IDCT outputs. GAQ comparisons are exact; the largest observed
+IDCT absolute error is `2.220446049250313e-16` under the frozen `1e-12`
+tolerance. A parser-level bin independently follows Table E.3.4 → E.2.4.5
+IDCT → exponent shift across blocks 0–5. A matched disabled case confirms that
+the AHT flag is not merely parsed and ignored.
+
+No production defect was found. The result is deliberately limited to
+synthetic public syntax and reconstructed values. Existing real Logic
+carriers remain AHT-off, so full real-stream AHT PCM fidelity remains open;
+no object identity or binding conclusion follows.

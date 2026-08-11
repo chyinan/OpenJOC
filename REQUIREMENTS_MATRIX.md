@@ -653,3 +653,24 @@ binding, or warp behavior.
 | Dependent-substream state | existing parser/chanmap/merge/reset tests | `L2_STATE_TRANSITION_VALIDATED` with scope limit |
 | Real controlled corpus | unchanged A/D/E/F evidence | target effects remain not exercised |
 | Decision | harness and state admission only; no full-fidelity claim | `PUBLIC_SYNTAX_CODING_TOOL_ACTIVATION_HARNESS_ESTABLISHED` |
+
+## J1R29 — AHT production reconstruction and numerical admission
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Public-syntax activation | Six-block mono channel fixture enters production AHT parsing and reconstruction | passed |
+| Disabled-path discrimination | Matched AHT-enabled/disabled fixtures expose different metadata and coefficient paths | passed |
+| High-efficiency pointer table | All 64 Table E.2.1 addresses independently transcribed and compared | passed; exact |
+| VQ tables | 956 vectors / 5,736 printed 16-bit words match independent PDF-derived SHA-256 digests | passed; exact |
+| GAQ quantizers | 99,302 legal codewords across gain/small/large domains match an independent float64 oracle | passed; max absolute error 0 |
+| GAQ gain words | Modes 0–3, binary words and all 27 composite words including partial triplets | passed |
+| Six-point inverse DCT | Six basis plus zero/interior/boundary vectors, 54 outputs | passed; max absolute error `2.220446049250313e-16` |
+| Integrated reconstruction | One Table E.3.4 VQ bin matches the independent IDCT plus exponent shift over all six blocks | passed; `1e-12` bound |
+| State lifetime | AHT payload/state is frame-local, decoded once and consumed block 0–5; no cross-AU AHT state | passed; streaming state N/A |
+| Invalid/truncated inputs | Invalid pointer/VQ domains and truncated VQ/GAQ payloads return structured errors | passed; scoped |
+| Real corpus / PCM fidelity | Controlled Logic corpus remains AHT-off; complete real-stream AHT PCM comparator absent | open; not claimed |
+| Semantic/profile boundary | Binding remains unresolved; warp/vendor behavior unchanged | unchanged |
+
+Decision: `AHT_RECONSTRUCTION_NUMERICAL_ADMISSION_ESTABLISHED` for the
+public-syntax reconstruction domain. This is not
+`FULL_REAL_STREAM_AHT_PCM_FIDELITY_ESTABLISHED`.

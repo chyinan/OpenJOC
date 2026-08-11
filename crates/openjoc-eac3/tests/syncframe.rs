@@ -2,9 +2,9 @@ use openjoc_eac3::{
     AudioPcmSynthesizer, CouplingInformation, Eac3Error, InternalBasePolicy,
     JocAccessUnitPcmDecoder, JocAddbsi, StreamType, block_start_information_length,
     channel_end_mantissa, channel_exponent_group_count, classify_aux_emdf,
-    classify_skip_field_emdf, decode_audio_blocks, decode_audio_blocks_with_policy,
-    decode_audio_frame_pcm, decode_exponents, decode_first_audio_block,
-    decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
+    classify_skip_field_emdf, decode_audio_blocks, decode_audio_blocks_with_parsed_frame,
+    decode_audio_blocks_with_policy, decode_audio_frame_pcm, decode_exponents,
+    decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
     extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
     group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
     parse_bsi, parse_first_audio_block_prefix, parse_joc_access_unit, parse_joc_addbsi,
@@ -64,6 +64,28 @@ fn six_block_mono_frame(
     channel_map: Option<u16>,
     dynamic_range: Option<u8>,
 ) -> Vec<u8> {
+    six_block_mono_frame_with_aht(stream_type, channel_map, dynamic_range, true)
+}
+
+fn push_conventional_mono_mantissas(bits: &mut Bits) {
+    // The shared exponent/allocation controls used by this fixture produce
+    // [9, 8, 8, 8, 4, ...]. Conventional bap 9/8 words occupy 8/7 bits;
+    // the remaining 69 bap-4 mantissas are paired into 35 seven-bit groups.
+    bits.push(0, 8);
+    for _ in 0..3 {
+        bits.push(0, 7);
+    }
+    for _ in 0..35 {
+        bits.push(0, 7);
+    }
+}
+
+fn six_block_mono_frame_with_aht(
+    stream_type: u8,
+    channel_map: Option<u16>,
+    dynamic_range: Option<u8>,
+    aht: bool,
+) -> Vec<u8> {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
     bits.push(u64::from(stream_type), 2);
@@ -87,7 +109,7 @@ fn six_block_mono_frame(
     bits.push(0, 1); // no addbsi
 
     bits.push(1, 1); // per-block exponent strategies
-    bits.push(1, 1); // AHT syntax
+    bits.push(u64::from(aht), 1); // AHT syntax
     bits.push(1, 2); // SNR strategy 1
     bits.push(0, 1); // transient processing disabled
     bits.push(16, 7); // bit-allocation syntax enabled
@@ -97,7 +119,9 @@ fn six_block_mono_frame(
     if stream_type == 0 {
         bits.push(0, 5); // converter exponent strategy
     }
-    bits.push(1, 1); // mono channel uses AHT
+    if aht {
+        bits.push(1, 1); // mono channel uses AHT
+    }
     bits.push(0, 1); // no block-start information
 
     bits.push(u64::from(dynamic_range.is_some()), 1);
@@ -120,25 +144,29 @@ fn six_block_mono_frame(
     if stream_type == 0 {
         bits.push(0, 1); // converter SNR offset absent
     }
-    bits.push(1, 2); // AHT mode 1
-    bits.push(0, 1); // hebap 9 gain 1
-    bits.push(1, 1); // hebap 8 gain 2
-    bits.push(0, 1); // hebap 8 gain 1
-    bits.push(1, 1); // hebap 8 gain 2
-    for width in [4_u8; 6] {
-        bits.push(0, width);
-    }
-    for width in [2_u8; 6] {
-        bits.push(0, width);
-    }
-    for width in [3_u8; 6] {
-        bits.push(0, width);
-    }
-    for width in [2_u8; 6] {
-        bits.push(0, width);
-    }
-    for _ in 0..69 {
-        bits.push(0, 5);
+    if aht {
+        bits.push(1, 2); // AHT mode 1
+        bits.push(0, 1); // hebap 9 gain 1
+        bits.push(1, 1); // hebap 8 gain 2
+        bits.push(0, 1); // hebap 8 gain 1
+        bits.push(1, 1); // hebap 8 gain 2
+        for width in [4_u8; 6] {
+            bits.push(0, width);
+        }
+        for width in [2_u8; 6] {
+            bits.push(0, width);
+        }
+        for width in [3_u8; 6] {
+            bits.push(0, width);
+        }
+        for width in [2_u8; 6] {
+            bits.push(0, width);
+        }
+        for _ in 0..69 {
+            bits.push(0, 5);
+        }
+    } else {
+        push_conventional_mono_mantissas(&mut bits);
     }
     for _ in 1..6 {
         bits.push(0, 1); // dynamic range absent/reused
@@ -148,6 +176,9 @@ fn six_block_mono_frame(
         bits.push(0, 1); // block fine SNR offset absent
         if stream_type == 0 {
             bits.push(0, 1); // converter SNR offset absent
+        }
+        if !aht {
+            push_conventional_mono_mantissas(&mut bits);
         }
     }
     bits.bytes(4096)
@@ -1725,6 +1756,90 @@ fn decodes_aht_channel_across_all_six_blocks_without_repeating_payload() {
                 .any(|mantissa| mantissa.abs() > 1.0e-12)
         );
     }
+}
+
+#[test]
+fn aht_production_path_matches_an_independent_six_point_oracle() {
+    let bytes = six_block_mono_frame(0, None, None);
+    let parsed = parse_audio_frame(&bytes).expect("AHT frame syntax");
+    let direct = decode_audio_blocks(&bytes, &[]).expect("direct AHT traversal");
+    let repeated = decode_audio_blocks(&bytes, &[]).expect("repeated AHT traversal");
+    let preparsed = decode_audio_blocks_with_parsed_frame(
+        &bytes,
+        &parsed,
+        &[],
+        InternalBasePolicy::CurrentDefault,
+    )
+    .expect("pre-parsed AHT traversal");
+    assert_eq!(direct, repeated);
+    assert_eq!(direct, preparsed);
+
+    // The fifth spectral bin has hebap 4 and transmitted VQ index zero in the
+    // synthetic frame. The following six words are independently transcribed
+    // from TS 102 366 V1.4.1 Table E.3.4, then passed through the printed
+    // E.2.4.5 inverse-DCT equation without calling an AHT production helper.
+    let input = [0x5903_u16, 0x15c0, 0xe9e6, 0xff64, 0xfe06, 0xffdf]
+        .map(|word| f64::from(i16::from_be_bytes(word.to_be_bytes())) / 32768.0);
+    let mut coefficients = [0.0; 6];
+    for (block, coefficient) in coefficients.iter_mut().enumerate() {
+        let mut sum = 0.0;
+        for (transform, value) in input.iter().enumerate() {
+            let r = if transform == 0 {
+                1.0 / 2.0_f64.sqrt()
+            } else {
+                1.0
+            };
+            let angle = (transform * (2 * block + 1)) as f64 * core::f64::consts::PI / 12.0;
+            sum += r * value * angle.cos();
+        }
+        *coefficient = 2.0_f64.sqrt() * sum;
+    }
+    let exponent = direct[0].prefix.channel_exponents[0]
+        .as_ref()
+        .expect("first-block channel exponents")
+        .decoded[4];
+    let expected = coefficients.map(|value| value / 2_f64.powi(i32::from(exponent)));
+    for (block, expected) in direct.iter().zip(expected) {
+        let actual = block.channel_mantissas[0][4];
+        assert!((actual - expected).abs() <= 1.0e-12);
+    }
+    assert!(
+        direct
+            .windows(2)
+            .any(|pair| pair[0].channel_mantissas[0][4] != pair[1].channel_mantissas[0][4])
+    );
+}
+
+#[test]
+fn aht_enablement_selects_a_distinct_production_reconstruction_path() {
+    let enabled_bytes = six_block_mono_frame_with_aht(0, None, None, true);
+    let disabled_bytes = six_block_mono_frame_with_aht(0, None, None, false);
+    let enabled_frame = parse_audio_frame(&enabled_bytes).expect("AHT-enabled frame syntax");
+    let disabled_frame = parse_audio_frame(&disabled_bytes).expect("AHT-disabled frame syntax");
+    assert_eq!(enabled_frame.channel_aht_in_use, [true]);
+    assert_eq!(disabled_frame.channel_aht_in_use, [false]);
+
+    let enabled = decode_audio_blocks(&enabled_bytes, &[]).expect("AHT-enabled production path");
+    let disabled = decode_audio_blocks(&disabled_bytes, &[]).expect("conventional production path");
+    assert_eq!(enabled.len(), 6);
+    assert_eq!(disabled.len(), 6);
+    assert!(enabled[0].channel_aht[0].is_some());
+    assert!(disabled.iter().all(|block| block.channel_aht[0].is_none()));
+    assert_ne!(
+        enabled
+            .iter()
+            .map(|block| &block.channel_mantissas[0])
+            .collect::<Vec<_>>(),
+        disabled
+            .iter()
+            .map(|block| &block.channel_mantissas[0])
+            .collect::<Vec<_>>()
+    );
+    assert!(enabled.iter().chain(&disabled).all(|block| {
+        block.channel_mantissas[0]
+            .iter()
+            .all(|value| value.is_finite())
+    }));
 }
 
 #[test]

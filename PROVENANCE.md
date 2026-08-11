@@ -2612,3 +2612,28 @@ The evidence does not close dependent-substream/config reset because no
 persistent cross-substream SPX parser state is exposed by the current API. It
 also does not change the real-corpus SPX-off observation or establish full
 real-stream PCM fidelity.
+
+## J1R29 — AHT production reconstruction and numerical admission (2026-08-11)
+
+The authorized normative source remains ETSI TS 102 366 V1.4.1. Annex E
+pages 148–157 and the complete vector-quantizer tables on pages 175–191 were
+visually inspected. A test-only transcription independently locks all 64
+Table E.2.1 high-efficiency pointers and SHA-256 digests of all 956 vectors
+(5,736 signed 16-bit words) in Tables E.3.1–E.3.7. It also exhaustively
+compares 99,302 legal GAQ codewords with an independent Table E.2.5/E.2.6
+float64 oracle and checks the E.2.4.5 six-point inverse DCT.
+
+Production AHT does not stop at pointer selection: six-block public syntax
+selects high-efficiency BAP, decodes VQ/GAQ mantissas once, applies the inverse
+DCT, carries the six coefficients across their blocks, applies exponents, and
+feeds the ordinary downstream coefficient/synthesis path. A parser-level
+regression anchors one VQ bin across all six blocks to the independent formula
+and proves direct, pre-parsed, and repeated decode equivalence. The enabled
+and disabled fixtures take distinct reconstruction paths.
+
+This is synthetic public-syntax reconstruction admission, not a real-producer
+fidelity claim. The controlled Logic corpus remains
+`REAL_CONTROLLED_CORPUS_AHT_ACTIVATION_NOT_OBSERVED`; full real-stream AHT PCM
+fidelity is not established. No production AHT expression changed, no media
+was created, `SemanticBindingState::Unresolved` remains unchanged, and ETSI
+strict raw warp 3 remains reserved.

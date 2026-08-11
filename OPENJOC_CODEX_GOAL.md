@@ -974,3 +974,20 @@ This establishes scoped multi-channel parser state with partial error-path
 admission. It does not establish dependent-substream SPX reset, real Logic SPX
 activation, or full real-stream fidelity. No media, production semantics, or
 binding state changed.
+
+## J1R29 — AHT production reconstruction and numerical admission
+
+OpenJOC's public-syntax AHT path is now independently regression-protected
+beyond pointer selection. Complete pointer/VQ tables, the exhaustive bounded
+GAQ domain, gain modes, the six-point inverse DCT, frame-local six-block state,
+and one parser-to-exponent integrated VQ bin are validated against separate
+ETSI-derived expectations. AHT-enabled and conventional fixtures demonstrably
+take different reconstruction paths. The milestone decision is
+`AHT_RECONSTRUCTION_NUMERICAL_ADMISSION_ESTABLISHED`.
+
+This does not close full real-stream fidelity: the controlled Logic corpus
+still has no observed AHT activation. It also does not alter
+`SemanticBindingState::Unresolved`, admit authored-object PCM or an audio-bound
+ObjectScene, or change strict/vendor warp handling. The next release-value
+coding-tool boundary should be selected by the reviewer from remaining
+non-fixture gaps rather than by extending synthetic AHT claims into real media.

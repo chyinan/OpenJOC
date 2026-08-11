@@ -1647,3 +1647,24 @@ reset is still unresolved because the current parser state is frame-local and
 the public API exposes no persistent SPX state across substreams. The combined
 public-syntax evidence is therefore parser/state/numerical admission with that
 declared limitation, not real-stream PCM fidelity.
+
+## J1R29 — AHT production reconstruction and numerical admission
+
+Added `crates/openjoc-eac3/tests/aht_admission.rs` as a test-only independent
+normative oracle. It locks the complete high-efficiency pointer and VQ table
+domains, exhaustively traverses the implemented GAQ codeword domain, validates
+all gain-word symbols, checks bounded truncation, and compares the production
+six-point inverse DCT with a separately written float64 formula.
+
+The existing syncframe builder now has a conventional AHT-disabled companion.
+New integration regressions prove that enabled and disabled frames select
+different production reconstruction paths, that direct/pre-parsed/repeated
+decodes are exact, and that one independently transcribed VQ bin reaches the
+correct exponent-shifted coefficient in each of six audio blocks. Existing
+callers retain the original AHT-enabled helper behavior.
+
+No production implementation change was required. The accepted level is
+`AHT_L4_INDEPENDENT_NORMATIVE_ORACLE` for bounded table/GAQ/IDCT and one
+integrated bin, with `AHT_L2_RECONSTRUCTION_VALUES` established through the
+production parser. Real-stream AHT PCM fidelity remains unestablished because
+the frozen controlled corpus does not activate AHT.
