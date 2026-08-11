@@ -1,0 +1,71 @@
+{
+  "schema": "openjoc.j2r3.stable-track-swap-feasibility.v1",
+  "stage": "J2R3 — Stable-Track Content/Automation Swap Intervention & Autonomous Producer Feasibility",
+  "classification": "AUTONOMOUS_PRODUCER_FEASIBILITY_NOT_ESTABLISHED",
+  "scope": "non-rendering producer intervention feasibility only",
+  "new_logic_fixture": false,
+  "new_media": false,
+  "producer_export": false,
+  "logic_bounce": false,
+  "human_action_required": false,
+  "semantic_binding_state": "Unresolved",
+  "conditions": {
+    "A": {
+      "track_shell_A": "fixed producer object track T_A",
+      "track_shell_B": "fixed producer object track T_B",
+      "authored_pair_A": "997 Hz at Front Right",
+      "authored_pair_B": "2003 Hz at Front Left"
+    },
+    "B": {
+      "track_shell_A": "same fixed T_A",
+      "track_shell_B": "same fixed T_B",
+      "authored_pair_A": "2003 Hz at Front Left",
+      "authored_pair_B": "997 Hz at Front Right"
+    }
+  },
+  "fields_exchanged": [
+    "source region identity",
+    "region timing, length, offset and gain/fade/mute/loop state",
+    "position automation",
+    "object gain automation",
+    "size/spread/divergence automation where observable",
+    "active/inactive automation where observable"
+  ],
+  "fields_protected": [
+    "track shell identity and order",
+    "routing, output assignment and channel strips",
+    "plugins, inserts, sends and bed",
+    "project Atmos settings, sample rate, timing and boundaries",
+    "unrelated tracks and automation"
+  ],
+  "future_oamd_gate": {
+    "required": true,
+    "project_swap_is_slot_proof": false,
+    "requirements": [
+      "parse both separately authorized carriers",
+      "verify reciprocal observed OAMD slot assignment",
+      "verify equal position/state trajectories and timing",
+      "classify absent slot change as H_NULL_INVALID",
+      "keep SemanticBindingState Unresolved until all gates pass"
+    ]
+  },
+  "automation_audit": {
+    "candidate_mechanism": "verified Logic UI or trusted non-rendering interface",
+    "reusable_private_script": false,
+    "computer_use_state": "NOT_OBSERVED; com.apple.logic10 accessibility state timed out twice",
+    "dry_runs": "NOT_RUN",
+    "reason": "safe track identification, complete automation snapshot, and save/reopen verification were not observable without human interaction"
+  },
+  "media_boundary": {
+    "logic_copy_created": false,
+    "bounce_or_export": false,
+    "new_media": false
+  },
+  "claim_boundary": {
+    "oamd_slot_dependence": false,
+    "track_to_slot_identity": false,
+    "authored_object_pcm": false,
+    "audio_bound_object_scene": false,
+    "warp_raw3_semantics": false
+  }
+}
