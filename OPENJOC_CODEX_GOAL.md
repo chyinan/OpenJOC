@@ -1007,3 +1007,21 @@ not a real controlled-carrier fidelity result because the existing Logic
 corpus does not activate D0. Multiple dependent substreams are not admitted by
 the TS 103 420 E.3 JOC boundary. `SemanticBindingState::Unresolved`, authored-
 object PCM inadmissibility, and strict raw-warp handling remain unchanged.
+## J1R31 — OpenJOC 0.x user-visible contract closure
+
+The canonical 0.x capability table now lives at the top of
+`REQUIREMENTS_MATRIX.md`. It tells a user which paths are admitted, scoped,
+diagnostic-only, partial, unresolved, not admitted, or expected strict
+rejections without requiring the J1R1–J1R30 history.
+
+The CLI now has scoped per-command help, stable error-category prefixes,
+accurate raw-versus-seekable-ISO-BMFF streaming summaries, and explicit output
+semantics. Capture mode produces a metadata-only scene and separately named
+diagnostic ReconstructionBasis rows. Streaming mode produces internal-base
+diagnostics and a summary without scene/row capture. Channel orders remain
+machine-readable in the internal-base inventory.
+
+This closure changes no scientific admission boundary:
+`SemanticBindingState::Unresolved` remains; authored-object PCM and audio-bound
+ObjectScene remain inadmissible; strict raw warp 3 remains reserved; vendor
+continuation remains opaque/unresolved; no new media was generated.

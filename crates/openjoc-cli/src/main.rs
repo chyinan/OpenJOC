@@ -10,17 +10,19 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use openjoc_container::{
-    DEFAULT_MAX_EAC3_BYTES, InputMediaKind, detect_media, load_eac3, open_seekable_iso_bmff,
+    DEFAULT_MAX_EAC3_BYTES, InputMediaError, InputMediaKind, detect_media, load_eac3,
+    open_seekable_iso_bmff,
 };
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, InternalBasePolicy, emit_coding_tool_inventory,
-    extract_joc_addbsi_access_unit,
+    ChannelLocation, DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy,
+    emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
-use openjoc_oamd::{OamdDecoderConfig, OamdParseProfile, Position3, ReferenceScreen};
-use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
+use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
+use openjoc_scene::{JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{
-    Clipping, Dither, SampleFormat, WaveEncodeOptions, WavePcm, WaveWriter, decode, encode_channels,
+    Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WavePcm, WaveWriter, decode,
+    encode_channels,
 };
 use std::{
     env,
@@ -63,7 +65,13 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("openjoc: {error}");
+            let category = classify_cli_error(error.as_ref());
+            eprintln!("openjoc[{}]: {error}", category.as_str());
+            if category == CliErrorCategory::ProfileRejection {
+                eprintln!(
+                    "hint: the requested profile was not relaxed; inspect reports both profiles, and dolby-vendor-compat preserves only its documented partial/opaque scope"
+                );
+            }
             ExitCode::FAILURE
         }
     }
@@ -79,6 +87,11 @@ fn run() -> Result<(), Box<dyn Error>> {
     match arguments.first().map(String::as_str) {
         None if terminal.is_tty => print_root_page(terminal, false),
         Some("-h" | "--help") if arguments.len() == 1 => print_root_page(terminal, true),
+        Some(command)
+            if arguments.len() == 2 && matches!(arguments[1].as_str(), "-h" | "--help") =>
+        {
+            print_command_help(command)
+        }
         Some("inspect") => {
             let (input, trim_configuration_count) = parse_inspect(&arguments[1..])?;
             inspect(&input, trim_configuration_count)
@@ -99,7 +112,10 @@ fn print_root_page(terminal: TerminalCapabilities, help: bool) -> Result<(), Box
     if output.is_empty() {
         writeln!(output, "OpenJOC {}", metadata.version)?;
         writeln!(output, "{}", metadata.description)?;
-        writeln!(output, "Open the objects. Rebuild the space.\n")?;
+        writeln!(
+            output,
+            "Inspect metadata. Decode the reconstruction basis.\n"
+        )?;
     } else {
         output.push('\n');
     }
@@ -117,7 +133,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
-        "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base-policy current-default|codec-core] [--trim-config-count N] [--reference-f64]\n",
+        "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base] [--streaming]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
         "  openjoc decode-payload [OPTIONS]\n",
@@ -137,6 +153,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
+        "  openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
@@ -149,7 +166,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     append_heading(output, "COMMANDS", color)?;
     output.push_str(concat!(
         "  inspect         Inspect E-AC-3 access units and JOC metadata\n",
-        "  decode          Decode an E-AC-3 JOC stream into an object scene\n",
+        "  decode          Decode metadata plus diagnostic ReconstructionBasis rows\n",
+        "  diagnose-tools  Emit diagnostic-only E-AC-3 coding-tool inventory JSON\n",
         "  census          Census bounded metadata carriers from external fixtures\n",
         "  diagnose-oamd   Emit bit-exact EMDF/OAMD entry evidence\n",
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
@@ -161,10 +179,65 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --no-banner Disable the interactive startup banner\n",
         "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
-        "      --streaming      Use the direct sequential raw E-AC-3 AU consumer (with --internal-base)\n",
+        "      --streaming      Bounded AU decode from raw EC3 or seekable ordinary ISO BMFF; requires --internal-base\n",
         "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
         "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
+        "\n",
+        "OUTPUT CONTRACT\n",
+        "  capture decode writes a metadata-only scene manifest and diagnostic ReconstructionBasis row WAVs\n",
+        "  streaming decode writes internal-base diagnostics and a summary; it does not capture ObjectScene/rows\n",
+        "  ReconstructionBasis rows are not authored-object PCM; semantic binding remains unresolved\n",
+        "\n",
+        "PROFILE / CONTAINER BOUNDARIES\n",
+        "  ETSI strict is never auto-downgraded; reserved syntax is an expected non-zero profile rejection\n",
+        "  Dolby vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
+        "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
     ));
+    Ok(())
+}
+
+fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
+    let help = match command {
+        "inspect" => concat!(
+            "usage: openjoc inspect <FILE> [--trim-config-count N]\n\n",
+            "Inspects raw EC3 or a seekable ordinary MP4/M4A E-AC-3 track. Reports both\n",
+            "ETSI_STRICT and DOLBY_VENDOR_COMPAT validation outcomes without fallback.\n",
+        ),
+        "decode" => concat!(
+            "usage: openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
+            "       [--streaming] [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+            "       [--internal-base-policy current-default|codec-core]\n",
+            "       [--trim-config-count N] [--reference-f64]\n\n",
+            "Capture mode writes a metadata-only scene plus diagnostic ReconstructionBasis rows.\n",
+            "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
+            "and writes internal-base diagnostics plus a summary without ObjectScene/row capture.\n",
+            "Rows are not authored-object PCM. Profile selection is explicit and never downgraded.\n",
+        ),
+        "decode-payload" => concat!(
+            "usage: openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>\n",
+            "       [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64]\n",
+            "       [--trim-config-count N] [reference-screen options]\n\n",
+            "Diagnostic/API-level payload path. Output is a metadata-only scene and separately\n",
+            "named ReconstructionBasis rows, never verified authored-object PCM.\n",
+        ),
+        "diagnose-tools" => concat!(
+            "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",
+            "Emits diagnostic-only coding-tool activation/state inventory; production PCM is unchanged.\n",
+        ),
+        "census" => concat!(
+            "usage: openjoc census [MANIFEST] -o <DIR>\n\n",
+            "Creates deterministic bounded carrier/profile reports from an external fixture manifest.\n",
+        ),
+        "diagnose-oamd" => concat!(
+            "usage: openjoc diagnose-oamd <FILE> [-o <DIR>]\n",
+            "       [--access-unit N | --au START..END | --all-access-units]\n",
+            "       [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
+            "       [--adm-reference PATH] [--json PATH] [--force]\n\n",
+            "Forensic-only bit evidence. Warp hypotheses are diagnostic and do not change strict/vendor semantics.\n",
+        ),
+        _ => return Err(usage_error().into()),
+    };
+    io::Write::write_all(&mut io::stdout().lock(), help.as_bytes())?;
     Ok(())
 }
 
@@ -568,7 +641,7 @@ fn run_census(values: &[String]) -> Result<(), Box<dyn Error>> {
 
 fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
     let arguments = parse_decode_payload(values)?;
-    let downmix = decode(&fs::read(&arguments.downmix)?)?;
+    let downmix = read_input_wave(&arguments.downmix)?;
     let joc_payload = fs::read(&arguments.joc)?;
     let oamd_payload = fs::read(&arguments.oamd)?;
     let oamd_profile = match arguments.validation_profile {
@@ -756,7 +829,11 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             },
             None => decode_base_audio(&arguments.input, &arguments.output)?,
         };
-        let downmix = decode(&fs::read(&base_paths.downmix)?)?;
+        let downmix = if arguments.downmix.is_some() {
+            read_input_wave(&base_paths.downmix)?
+        } else {
+            decode(&fs::read(&base_paths.downmix)?)?
+        };
         let lfe = base_paths
             .lfe
             .as_ref()
@@ -851,17 +928,31 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
         },
     )?;
     base_capture.write(&arguments.output)?;
-    write_streaming_summary(&arguments.output, &summary)?;
+    write_streaming_summary(&arguments.output, input_kind, &summary)?;
     Ok(())
 }
 
 fn write_streaming_summary(
     output: &Path,
+    input_kind: InputMediaKind,
     summary: &openjoc_scene::StreamingSceneSummary,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output.join("debug"))?;
+    let (source, input_delivery) = match input_kind {
+        InputMediaKind::RawEac3 => (
+            "OpenJOC raw E-AC-3 incremental AU consumer",
+            "direct sequential raw E-AC-3",
+        ),
+        InputMediaKind::IsoBmff => (
+            "OpenJOC seekable ISO BMFF E-AC-3 sample consumer",
+            "seekable ordinary ISO BMFF packet cursor; one sample at a time",
+        ),
+        InputMediaKind::Unknown => unreachable!("unsupported input rejected before decode"),
+    };
     let value = serde_json::json!({
-        "source": "OpenJOC direct raw E-AC-3 incremental AU consumer",
+        "source": source,
+        "input_kind": media_kind_name(input_kind),
+        "input_delivery": input_delivery,
         "sample_rate": summary.sample_rate,
         "duration_samples": summary.duration_samples,
         "frames": summary.frames,
@@ -870,7 +961,9 @@ fn write_streaming_summary(
         "max_frame_samples": summary.max_frame_samples,
         "metadata_events": summary.metadata_events,
         "trim_events": summary.trim_events,
-        "retention": "streaming summary only; no ObjectScene capture",
+        "retention": "streaming summary only; no ObjectScene or ReconstructionBasis row capture",
+        "semantic_binding_state": "unresolved",
+        "authored_object_pcm_admissible": false,
     });
     fs::write(
         output.join("debug/streaming_summary.json"),
@@ -1249,6 +1342,17 @@ fn media_kind_name(kind: InputMediaKind) -> &'static str {
     }
 }
 
+fn read_input_wave(path: &Path) -> Result<WavePcm, Box<dyn Error>> {
+    let bytes = fs::read(path)?;
+    decode(&bytes).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("failed to decode input WAV {}: {error}", path.display()),
+        )
+        .into()
+    })
+}
+
 fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn Error>> {
     let mut downmix = None;
     let mut joc = None;
@@ -1590,6 +1694,153 @@ fn write_validation_debug(
     fs::write(frame.join("profile_validation.txt"), text)?;
     fs::write(frame.join("emdf.txt"), format!("{:#?}\n", metadata.emdf))?;
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CliErrorCategory {
+    Usage,
+    InvalidArgument,
+    UnsupportedInput,
+    MalformedInput,
+    ProfileRejection,
+    UnsupportedFeature,
+    DecodeFailure,
+    OutputFailure,
+    IoFailure,
+}
+
+impl CliErrorCategory {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Usage => "usage",
+            Self::InvalidArgument => "invalid-argument",
+            Self::UnsupportedInput => "unsupported-input",
+            Self::MalformedInput => "malformed-input",
+            Self::ProfileRejection => "profile-rejection",
+            Self::UnsupportedFeature => "unsupported-feature",
+            Self::DecodeFailure => "decode-failure",
+            Self::OutputFailure => "output-failure",
+            Self::IoFailure => "io-failure",
+        }
+    }
+}
+
+fn classify_cli_error(error: &(dyn Error + 'static)) -> CliErrorCategory {
+    if let Some(error) = error.downcast_ref::<eac3_decode::DecodeEac3Error>() {
+        return classify_decode_error(error);
+    }
+    if let Some(error) = error.downcast_ref::<InputMediaError>() {
+        return classify_input_error(error);
+    }
+    if let Some(error) = error.downcast_ref::<Eac3Error>() {
+        return classify_eac3_error(error);
+    }
+    if let Some(error) = error.downcast_ref::<PayloadDecodeError>() {
+        return classify_payload_error(error);
+    }
+    if let Some(error) = error.downcast_ref::<OamdError>() {
+        return classify_oamd_error(error);
+    }
+    if error.downcast_ref::<WaveError>().is_some() {
+        return CliErrorCategory::OutputFailure;
+    }
+    if let Some(error) = error.downcast_ref::<io::Error>() {
+        if error.to_string() == USAGE {
+            return CliErrorCategory::Usage;
+        }
+        return match error.kind() {
+            io::ErrorKind::InvalidInput => CliErrorCategory::InvalidArgument,
+            io::ErrorKind::UnexpectedEof | io::ErrorKind::InvalidData => {
+                CliErrorCategory::MalformedInput
+            }
+            _ => CliErrorCategory::IoFailure,
+        };
+    }
+    CliErrorCategory::DecodeFailure
+}
+
+const fn classify_input_error(error: &InputMediaError) -> CliErrorCategory {
+    match error {
+        InputMediaError::UnsupportedSignature
+        | InputMediaError::MissingAudioTrack
+        | InputMediaError::MultipleAudioTracks { .. }
+        | InputMediaError::NoMatchingAudioTrack { .. } => CliErrorCategory::UnsupportedInput,
+        InputMediaError::EmptyInput
+        | InputMediaError::TruncatedRawEac3 { .. }
+        | InputMediaError::InvalidDemuxedEac3(_)
+        | InputMediaError::ProbeFailed { .. }
+        | InputMediaError::MalformedProbeRow { .. }
+        | InputMediaError::DemuxFailed { .. }
+        | InputMediaError::MalformedPacketProbeRow { .. }
+        | InputMediaError::EmptyDemuxOutput => CliErrorCategory::MalformedInput,
+        InputMediaError::DemuxOutputTooLarge { .. } => CliErrorCategory::UnsupportedFeature,
+        InputMediaError::Io { .. } => CliErrorCategory::IoFailure,
+    }
+}
+
+const fn classify_eac3_error(error: &Eac3Error) -> CliErrorCategory {
+    match error {
+        Eac3Error::JocProfileValidation(_) => CliErrorCategory::ProfileRejection,
+        Eac3Error::TruncatedFrame { .. } | Eac3Error::Bit(_) => CliErrorCategory::MalformedInput,
+        Eac3Error::UnsupportedJocAccessUnitFrameCount { .. }
+        | Eac3Error::UnsupportedJocAudioBlockCount { .. }
+        | Eac3Error::UnsupportedJocChannelTopology { .. }
+        | Eac3Error::UnsupportedAdaptiveHybridTransform => CliErrorCategory::UnsupportedFeature,
+        _ => CliErrorCategory::DecodeFailure,
+    }
+}
+
+const fn classify_oamd_error(error: &OamdError) -> CliErrorCategory {
+    match error {
+        OamdError::ReservedIntermediateSpatialFormat { .. }
+        | OamdError::ReservedSampleOffsetCode
+        | OamdError::ReservedSizeIndex
+        | OamdError::ReservedZoneIndex { .. }
+        | OamdError::ReservedAlternateObjectData { .. }
+        | OamdError::ReservedWarpMode { .. }
+        | OamdError::ReservedGlobalTrimMode
+        | OamdError::ReservedTrimCode { .. }
+        | OamdError::ReservedObjectDivergenceMode
+        | OamdError::ReservedObjectDivergenceCode => CliErrorCategory::ProfileRejection,
+        OamdError::UnsupportedKnownElement { .. } | OamdError::VendorProfilePayloadId { .. } => {
+            CliErrorCategory::UnsupportedFeature
+        }
+        OamdError::MissingTrimConfigurationCount => CliErrorCategory::InvalidArgument,
+        OamdError::Bit(_) => CliErrorCategory::MalformedInput,
+        _ => CliErrorCategory::DecodeFailure,
+    }
+}
+
+const fn classify_payload_error(error: &PayloadDecodeError) -> CliErrorCategory {
+    match error {
+        PayloadDecodeError::Oamd(error) => classify_oamd_error(error),
+        PayloadDecodeError::EmptyStream => CliErrorCategory::MalformedInput,
+        PayloadDecodeError::ProgrammeLayout(_) => CliErrorCategory::UnsupportedFeature,
+        PayloadDecodeError::Joc(_)
+        | PayloadDecodeError::Scene(_)
+        | PayloadDecodeError::UnexpectedFrameIndex { .. }
+        | PayloadDecodeError::SampleRateChanged { .. }
+        | PayloadDecodeError::FrameIndexOverflow => CliErrorCategory::DecodeFailure,
+    }
+}
+
+const fn classify_decode_error(error: &eac3_decode::DecodeEac3Error) -> CliErrorCategory {
+    match error {
+        eac3_decode::DecodeEac3Error::Input(error) => classify_input_error(error),
+        eac3_decode::DecodeEac3Error::Eac3(error) => classify_eac3_error(error),
+        eac3_decode::DecodeEac3Error::Oamd(error) => classify_oamd_error(error),
+        eac3_decode::DecodeEac3Error::Payload(error) => classify_payload_error(error),
+        eac3_decode::DecodeEac3Error::EmptyStream => CliErrorCategory::MalformedInput,
+        eac3_decode::DecodeEac3Error::MissingMetadata { .. }
+        | eac3_decode::DecodeEac3Error::JocExtensionWithoutMetadata { .. } => {
+            CliErrorCategory::UnsupportedFeature
+        }
+        eac3_decode::DecodeEac3Error::Sink(_) => CliErrorCategory::OutputFailure,
+        eac3_decode::DecodeEac3Error::SampleCountOverflow
+        | eac3_decode::DecodeEac3Error::InvalidPcmLength { .. }
+        | eac3_decode::DecodeEac3Error::SampleRateMismatch { .. }
+        | eac3_decode::DecodeEac3Error::FrameIndexOverflow => CliErrorCategory::DecodeFailure,
+    }
 }
 
 fn usage_error() -> io::Error {

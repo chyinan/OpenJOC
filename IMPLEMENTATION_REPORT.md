@@ -325,7 +325,8 @@ validated against known ground truth.
 ## Implemented increment: wave output semantics
 
 `openjoc-wave` now exposes an explicit `SampleFormat` abstraction for f32, f64,
-s24, and s16. CLI object stems default to f32; `--reference-f64` selects the
+s24, and s16. CLI diagnostic reconstruction-row WAVs default to f32;
+`--reference-f64` selects the
 lossless reference representation. Integer output requires an explicit
 clipping policy (`Reject` or `Hard`) and an explicit dither policy (`None` or
 seeded triangular one-LSB dither); no integer clipping or dither is implicit.
@@ -1697,3 +1698,33 @@ AU-local PCM, and bounded incremental I0/D0 grouping.
 Decision: `DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED` for
 public syntax. Real controlled-corpus activation and full real-stream fidelity
 remain unavailable.
+## J1R31 — OpenJOC 0.x capability and CLI contract
+
+J1R31 consolidates the current evidence boundary into the canonical
+`REQUIREMENTS_MATRIX.md` capability table. The table separates production
+status from evidence class and explicitly covers raw/ISO-BMFF input, base
+E-AC-3 tools, OAMD/JOC profiles, ReconstructionBasis, metadata-only scenes,
+and capture/streaming output. It does not promote public-syntax tests to
+real-stream fidelity.
+
+The CLI contract was tightened without changing codec semantics. Root and
+per-command help now state that capture output is a metadata-only scene plus
+diagnostic ReconstructionBasis rows; rows are not authored-object PCM.
+`--streaming` is accurately scoped to raw EC3 or seekable ordinary ISO BMFF,
+requires `--internal-base`, and does not capture a scene or reconstruction
+rows. Streaming summaries now report the actual input kind/delivery mechanism
+instead of labelling an ISO-BMFF sample path as raw input.
+
+Top-level failures now expose stable categories (`usage`, `invalid-argument`,
+`unsupported-input`, `malformed-input`, `profile-rejection`,
+`unsupported-feature`, `decode-failure`, `output-failure`, and `io-failure`)
+while retaining a single zero/non-zero process-status convention. Strict
+profile rejection remains explicit and is never auto-downgraded. The only
+actionable vendor hint says that vendor compatibility is partial/opaque and
+does not promise semantics.
+
+The package description/banner no longer claims to open authored objects or
+rebuild a rendered space. Output naming remains `reconstruction_rows`,
+`base_lfe`, and metadata artifacts. `SemanticBindingState::Unresolved`, strict
+raw-warp rejection, opaque vendor continuation, authored-object PCM
+inadmissibility, and audio-bound ObjectScene inadmissibility are unchanged.

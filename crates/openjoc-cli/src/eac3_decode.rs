@@ -47,7 +47,9 @@ pub enum DecodeEac3Error {
 impl fmt::Display for DecodeEac3Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Input(error) => write!(formatter, "failed to read raw E-AC-3 input: {error}"),
+            Self::Input(error) => {
+                write!(formatter, "failed to read E-AC-3 input/container: {error}")
+            }
             Self::Eac3(error) => write!(formatter, "failed to decode E-AC-3 frontend: {error}"),
             Self::Oamd(error) => write!(formatter, "failed to validate OAMD profile: {error}"),
             Self::Payload(error) => {

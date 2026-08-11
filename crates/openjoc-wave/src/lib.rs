@@ -1,6 +1,6 @@
 // pattern: Functional Core
 
-//! Checked reference serialization for reconstructed object WAV stems.
+//! Checked WAV serialization for diagnostic reconstruction-basis rows and base PCM.
 
 use std::{fmt, io, io::Seek, io::SeekFrom, io::Write};
 

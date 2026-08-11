@@ -306,6 +306,39 @@ fn inspect_command_reports_timing_profile_payloads_and_complexity() {
 }
 
 #[test]
+fn inspect_errors_expose_stable_input_categories() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-inspect-errors-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+
+    let unsupported = root.join("unsupported.bin");
+    fs::write(&unsupported, b"not an audio container").expect("unsupported input");
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["inspect", unsupported.to_str().expect("input path")])
+        .output()
+        .expect("run unsupported inspect");
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).starts_with("openjoc[unsupported-input]:"));
+
+    let truncated = root.join("truncated.ec3");
+    fs::write(&truncated, [0x0b, 0x77, 0x00]).expect("truncated raw input");
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["inspect", truncated.to_str().expect("input path")])
+        .output()
+        .expect("run truncated inspect");
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).starts_with("openjoc[malformed-input]:"));
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
 fn inspect_distinguishes_normative_failure_from_vendor_compatibility() {
     let nonce = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -485,7 +518,11 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
         .output()
         .expect("run strict decode");
     assert!(!strict.status.success());
-    assert!(String::from_utf8_lossy(&strict.stderr).contains("ETSI_STRICT validation failed"));
+    let strict_stderr = String::from_utf8_lossy(&strict.stderr);
+    assert!(strict_stderr.starts_with("openjoc[profile-rejection]:"));
+    assert!(strict_stderr.contains("ETSI_STRICT validation failed"));
+    assert!(strict_stderr.contains("requested profile was not relaxed"));
+    assert!(strict_stderr.contains("partial/opaque scope"));
 
     let compatible = Command::new(env!("CARGO_BIN_EXE_openjoc"))
         .args([
@@ -587,6 +624,68 @@ fn decode_command_internal_base_reaches_object_scene_from_raw_eac3() {
     .expect("decode reconstructed row");
     assert_eq!(stem.sample_rate, 48_000);
     assert_eq!(stem.channels, vec![vec![0.0; 1536]]);
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn streaming_decode_reports_raw_delivery_and_no_scene_capture() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-streaming-contract-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("profile.ec3");
+    let output = root.join("output");
+    let emdf = joc_emdf(&inactive_oamd(), &absent_joc());
+    fs::write(&input, five_channel_audio_frame(&emdf)).expect("write E-AC-3");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--internal-base",
+            "--streaming",
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run streaming decode");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("debug/streaming_summary.json")).expect("streaming summary"),
+    )
+    .expect("streaming JSON");
+    assert_eq!(summary["input_kind"], "raw E-AC-3");
+    assert_eq!(summary["input_delivery"], "direct sequential raw E-AC-3");
+    assert_eq!(summary["semantic_binding_state"], "unresolved");
+    assert_eq!(summary["authored_object_pcm_admissible"], false);
+    assert!(
+        summary["retention"]
+            .as_str()
+            .expect("retention text")
+            .contains("no ObjectScene or ReconstructionBasis row capture")
+    );
+    assert!(!output.join("scene.json").exists());
+    assert!(!output.join("diagnostics/reconstruction_rows").exists());
+
+    let inventory: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("debug/internal_base_inventory.json"))
+            .expect("internal base inventory"),
+    )
+    .expect("inventory JSON");
+    assert_eq!(
+        inventory["joc_input"]["channel_order"],
+        serde_json::json!(["L", "R", "C", "Ls", "Rs"])
+    );
 
     fs::remove_dir_all(&root).expect("remove test directory");
 }

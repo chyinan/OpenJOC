@@ -426,12 +426,16 @@ timeline-ordering invariant, not an object/audio binding claim.
 - Design rationale: keep file I/O in an imperative shell. Read multichannel WAV
   plus one aligned raw JOC/OAMD frame, invoke `JocFrameInput`, and write a
   PCM-free `scene.json` manifest, complete `metadata/timeline.json`, lossless
-  f64 object WAV stems, and retained syntax/reconstruction debug text. Screen
+  f64 diagnostic reconstruction-row WAVs, and retained syntax/reconstruction
+  debug text. These rows were historically described as object stems before
+  the J1R12/J1R13 binding evidence closure; the current contract does not assign
+  authored-object identity. Screen
   geometry is optional but must be supplied explicitly if screen anchoring is
   encountered; no non-normative default geometry is inferred.
 - Validation: executable integration test invokes the actual `openjoc`
-  binary and reopens the emitted object stem to verify all-zero reconstructed
-  PCM plus the required scene, timeline, and debug artifact paths.
+  binary and reopens the emitted diagnostic reconstruction row to verify
+  all-zero reconstructed PCM plus the required scene, timeline, and debug
+  artifact paths.
 
 ### EMDF container and payload extraction
 
@@ -1100,7 +1104,7 @@ timeline-ordering invariant, not an object/audio binding claim.
   `crates/openjoc-eac3/tests/syncframe.rs` and the access-unit module tests.
   `crates/openjoc-cli/tests/inspect.rs` drives a legal synthetic five-channel
   I0 frame with carried OAMD/JOC EMDF through `--internal-base` and verifies
-  the reconstructed ObjectScene/stem output.
+  the metadata-only scene and diagnostic reconstruction-row output.
 
 ### Enhanced AC-3 auxiliary EMDF carrier
 
@@ -1257,7 +1261,7 @@ timeline-ordering invariant, not an object/audio binding claim.
 - Validation: an actual CLI-process test supplies one 1,536-sample access unit,
   five-channel aligned PCM, valid inactive OAMD, and valid absent-object JOC;
   the direct `.ec3` command writes a scene, timeline, per-frame debug dumps,
-  and an exact 1,536-sample reconstructed object WAV. A legal encoded JOC
+  and an exact 1,536-sample diagnostic reconstruction-row WAV. A legal encoded JOC
   vector, complete legal-carrier coverage, and real-vector PCM evidence remain
   required before this path is fully verified.
 
@@ -2664,3 +2668,20 @@ public-syntax JOC scope. Existing controlled Logic carriers do not activate a
 dependent substream, so `FULL_REAL_STREAM_DEPENDENT_SUBSTREAM_FIDELITY_ESTABLISHED`
 is not claimed. No media was created, semantic binding remains unresolved,
 and strict raw warp 3 remains reserved.
+## J1R31 capability-contract provenance
+
+The canonical 0.x matrix in `REQUIREMENTS_MATRIX.md` is a consolidation of
+existing frozen evidence, not a new semantic experiment. Coding-tool claims are
+bounded by the J1R23–J1R30 evidence freezes: coupling has the public normative
+coordinate/state admission; SPX has public-syntax numerical, state,
+multichannel, and partial error/substream scope; AHT has bounded independent
+table/GAQ/IDCT and integrated-bin evidence; rematrix has the scoped public
+sum/difference oracle; dependent-substream assembly has the exhaustive chanmap
+oracle and one-I0/optional-D0 Table-47 assembly evidence. None has a newly
+created real-media activation claim.
+
+The J1R31 CLI changes are presentation/contract changes only. Error categories
+are derived from existing typed input, E-AC-3, profile, OAMD, payload, WAV, and
+I/O failures. Help and streaming summaries expose already implemented path
+boundaries. No codec expression, parser meaning, profile rule, vendor mapping,
+semantic binding, renderer, or fixture was added.

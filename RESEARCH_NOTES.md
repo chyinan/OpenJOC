@@ -690,3 +690,21 @@ rejects mid-stream shape changes before mutation.
 This is a codec-channel result only. A substream ID or channel location is not
 an Atmos object identity. The controlled Logic corpus remains D0-off, so the
 result cannot establish real-encoder prevalence or full real-stream fidelity.
+## J1R31 — Capability/evidence separation and CLI observability
+
+The 0.x support contract now uses a bounded status vocabulary and records the
+strongest evidence class separately. In particular, coupling, SPX, AHT,
+rematrix, and dependent-substream work derived from public ETSI syntax remains
+scoped even when its production path is admitted; absence of activation in the
+controlled Logic corpus and absence of full real-stream fidelity remain visible.
+
+Observed vendor behavior is not normative evidence. `ETSI_STRICT` continues to
+reject the reserved raw warp value 3. `DOLBY_VENDOR_COMPAT` remains an explicit,
+partial structural/deviation-preservation profile with opaque continuation and
+unresolved interpretation. Neither CLI help nor an error hint changes this
+scientific boundary.
+
+Metadata object identity, diagnostic reconstruction-row identity, and authored
+object identity remain three separate domains. The public CLI names only the
+first two. A metadata-only ObjectScene is admissible; authored-object PCM and an
+audio-bound ObjectScene are not.

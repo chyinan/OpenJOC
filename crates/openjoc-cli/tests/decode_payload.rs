@@ -102,6 +102,24 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
     assert!(output.join("debug/frame_000/joc.txt").is_file());
     assert!(output.join("debug/frame_000/oamd.txt").is_file());
     assert!(output.join("debug/frame_000/reconstruction.txt").is_file());
+    let scene: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("scene.json")).expect("metadata-only scene manifest"),
+    )
+    .expect("scene JSON");
+    assert_eq!(scene["semantic_binding"], "unresolved");
+    assert_eq!(
+        scene["reconstruction_basis"],
+        "diagnostics/reconstruction_basis.json"
+    );
+    let basis: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("diagnostics/reconstruction_basis.json"))
+            .expect("reconstruction-basis manifest"),
+    )
+    .expect("basis JSON");
+    assert!(basis.to_string().contains("rows"));
+    assert!(!basis.to_string().contains("object_id"));
+    assert!(!output.join("object_stems").exists());
+    assert!(!output.join("object_pcm").exists());
     let stem_bytes = fs::read(output.join("diagnostics/reconstruction_rows/row_000.wav"))
         .expect("reconstruction row");
     assert_eq!(
@@ -143,6 +161,48 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
         u16::from_le_bytes(reference_stem[34..36].try_into().unwrap()),
         64
     );
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn decode_payload_classifies_malformed_user_wave_as_input() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-cli-malformed-wave-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let downmix_path = root.join("downmix.wav");
+    let joc_path = root.join("joc.bin");
+    let oamd_path = root.join("oamd.bin");
+    let output = root.join("output");
+    fs::write(&downmix_path, b"not a wave file").expect("write malformed WAV");
+    fs::write(&joc_path, absent_joc()).expect("write JOC");
+    fs::write(&oamd_path, inactive_oamd()).expect("write OAMD");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode-payload",
+            "--downmix",
+            downmix_path.to_str().expect("downmix path"),
+            "--joc",
+            joc_path.to_str().expect("JOC path"),
+            "--oamd",
+            oamd_path.to_str().expect("OAMD path"),
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run openjoc");
+
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.starts_with("openjoc[malformed-input]:"), "{stderr}");
+    assert!(stderr.contains("failed to decode input WAV"), "{stderr}");
 
     fs::remove_dir_all(&root).expect("remove test directory");
 }

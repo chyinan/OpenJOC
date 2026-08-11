@@ -4,7 +4,7 @@ use std::fmt::Write;
 
 const FULL_WIDTH: u16 = 100;
 const COMPACT_WIDTH: u16 = 72;
-const TAGLINE: &str = "Open the objects. Rebuild the space.";
+const TAGLINE: &str = "Inspect metadata. Decode the reconstruction basis.";
 const ANSI_RESET: &str = "\x1b[0m";
 const SUPPORTING_COPY_COLOR: Rgb = Rgb(0x77, 0xd6, 0x5a);
 const GRADIENT_STOPS: [Rgb; 4] = [
@@ -226,7 +226,7 @@ mod tests {
     const METADATA: ProjectMetadata<'_> = ProjectMetadata {
         version: "1.2.3-dev",
         license: "Apache-2.0",
-        description: "Open-source JOC decoder",
+        description: "Research-grade E-AC-3 JOC metadata and reconstruction-basis decoder",
     };
 
     fn root_context(width: u16) -> BannerContext {
@@ -299,8 +299,8 @@ mod tests {
                 "    \\::/  /       \\:\\__\\      \\::/  /       \\:\\__\\        /:/  /     \\::/  /       \\::/  /\n",
                 "     \\/__/         \\/__/       \\/__/         \\/__/        \\/__/       \\/__/         \\/__/\n",
                 "\n",
-                "Open-source JOC decoder\n",
-                "Open the objects. Rebuild the space.\n",
+                "Research-grade E-AC-3 JOC metadata and reconstruction-basis decoder\n",
+                "Inspect metadata. Decode the reconstruction basis.\n",
                 "\n",
                 "Version: 1.2.3-dev  |  License: Apache-2.0\n",
             )
@@ -321,7 +321,7 @@ mod tests {
                 "  \\___/| .__/ \\___|_| |_|\\___/ \\___/ \\____|\n",
                 "       |_|\n",
                 "\n",
-                "Open the objects. Rebuild the space.\n",
+                "Inspect metadata. Decode the reconstruction basis.\n",
                 "1.2.3-dev  |  Apache-2.0\n",
             )
         );
@@ -333,7 +333,7 @@ mod tests {
         context.no_color = true;
         assert_eq!(
             render_banner(context, METADATA),
-            "OpenJOC 1.2.3-dev\nOpen the objects. Rebuild the space.\n"
+            "OpenJOC 1.2.3-dev\nInspect metadata. Decode the reconstruction basis.\n"
         );
 
         context.terminal_width = Some(20);
@@ -372,12 +372,12 @@ mod tests {
         let output = render_banner(root_context(120), METADATA);
         assert!(output.contains(concat!(
             "\x1b[38;2;119;214;90m",
-            "Open-source JOC decoder",
+            "Research-grade E-AC-3 JOC metadata and reconstruction-basis decoder",
             "\x1b[0m"
         )));
         assert!(output.contains(concat!(
             "\x1b[38;2;119;214;90m",
-            "Open the objects. Rebuild the space.",
+            "Inspect metadata. Decode the reconstruction basis.",
             "\x1b[0m"
         )));
     }

@@ -17,6 +17,10 @@ fn redirected_root_help_is_plain_and_lists_real_commands() {
     assert!(stdout.contains("openjoc inspect <FILE>"));
     assert!(stdout.contains("openjoc decode <FILE>"));
     assert!(stdout.contains("openjoc decode-payload"));
+    assert!(stdout.contains("metadata-only scene"));
+    assert!(stdout.contains("ReconstructionBasis rows are not authored-object PCM"));
+    assert!(stdout.contains("seekable ordinary ISO BMFF"));
+    assert!(stdout.contains("never auto-downgraded"));
     assert!(!stdout.contains("\x1b["));
     assert!(!stdout.contains("o---O"));
 }
@@ -53,7 +57,7 @@ fn root_without_arguments_remains_script_safe_when_redirected() {
     assert!(!result.status.success());
     assert!(result.stdout.is_empty());
     let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
-    assert!(stderr.starts_with("openjoc: usage:"));
+    assert!(stderr.starts_with("openjoc[usage]: usage:"));
     assert!(!stderr.contains("\x1b["));
     assert!(!stderr.contains("o---O"));
 }
@@ -64,7 +68,59 @@ fn actual_subcommand_error_output_is_not_polluted_by_a_banner() {
     assert!(!result.status.success());
     assert!(result.stdout.is_empty());
     let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
-    assert!(stderr.starts_with("openjoc: usage:"));
+    assert!(stderr.starts_with("openjoc[usage]: usage:"));
     assert!(!stderr.contains("Open the objects"));
     assert!(!stderr.contains("\x1b["));
+}
+
+#[test]
+fn every_public_command_has_successful_scoped_help() {
+    for command in [
+        "inspect",
+        "decode",
+        "decode-payload",
+        "diagnose-tools",
+        "census",
+        "diagnose-oamd",
+    ] {
+        let result = openjoc()
+            .args([command, "--help"])
+            .output()
+            .expect("run subcommand help");
+        assert!(
+            result.status.success(),
+            "{command}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let stdout = String::from_utf8(result.stdout).expect("UTF-8 help");
+        assert!(stdout.starts_with(&format!("usage: openjoc {command}")));
+        assert!(result.stderr.is_empty());
+    }
+}
+
+#[test]
+fn decode_help_freezes_semantic_profile_and_streaming_boundaries() {
+    let result = openjoc()
+        .args(["decode", "--help"])
+        .output()
+        .expect("run decode help");
+    assert!(result.status.success());
+    let stdout = String::from_utf8(result.stdout).expect("UTF-8 help");
+    assert!(stdout.contains("metadata-only scene"));
+    assert!(stdout.contains("not authored-object PCM"));
+    assert!(stdout.contains("seekable ordinary ISO BMFF"));
+    assert!(stdout.contains("never downgraded"));
+    assert!(!stdout.contains("object stems"));
+}
+
+#[test]
+fn unsupported_streaming_combination_has_stable_category_and_nonzero_exit() {
+    let result = openjoc()
+        .args(["decode", "missing.ec3", "--streaming", "-o", "out"])
+        .output()
+        .expect("run invalid streaming combination");
+    assert!(!result.status.success());
+    let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
+    assert!(stderr.starts_with("openjoc[invalid-argument]:"));
+    assert!(stderr.contains("requires --internal-base"));
 }
