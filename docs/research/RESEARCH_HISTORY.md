@@ -1,5 +1,9 @@
 # OpenJOC Research Notes
 
+> Historical research record. This file is not the canonical current
+> capability, limitation, requirement, or roadmap document. Dated statements
+> describe what was known at the time; current truth belongs in `docs/`.
+
 ## Clean-room boundary
 
 OpenJOC is an independent implementation based only on the normative ETSI

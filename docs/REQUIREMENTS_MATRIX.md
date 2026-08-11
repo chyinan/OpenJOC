@@ -1,5 +1,8 @@
 # OpenJOC Requirements Matrix
 
+> Canonical owner: the engineering requirement/status truth table. This file
+> does not own onboarding, future roadmap, or research chronology.
+
 Status values are `planned`, `implemented`, `verified`, `completed`, `open`, or
 `partially evidenced`. A row may be marked `verified` only with fresh test or
 artifact evidence; `completed` marks an integrated milestone whose scoped

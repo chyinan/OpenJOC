@@ -1,19 +1,29 @@
 # OpenJOC
 
-OpenJOC is an independent, research-grade E-AC-3 JOC metadata and
-reconstruction-basis decoder. Its 0.x command-line contract deliberately
-separates supported decoding from unresolved authored-object semantics.
+OpenJOC is an independent, clean-room, research-grade E-AC-3 JOC metadata
+and reconstruction-basis decoder. It implements behavior from public ETSI
+specifications and controlled, permitted evidence; it does not copy Dolby
+private implementations.
 
-The canonical support matrix is in
-[`REQUIREMENTS_MATRIX.md`](REQUIREMENTS_MATRIX.md). In particular:
+The current 0.x contract is deliberately narrow:
 
-- `scene.json` is a metadata-only scene;
+- `scene.json` is metadata-only;
 - `diagnostics/reconstruction_rows/row_NNN.wav` contains diagnostic
   `ReconstructionBasis` rows, not verified authored-object PCM;
 - `SemanticBindingState` remains `Unresolved`;
 - `ETSI_STRICT` is the default and is never silently downgraded;
 - `DOLBY_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
+
+Read the canonical documentation:
+
+- [Capabilities](docs/CAPABILITIES.md) — what 0.x supports today.
+- [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
+- [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
+- [Requirements matrix](docs/REQUIREMENTS_MATRIX.md) — engineering truth table.
+- [Provenance and clean-room policy](docs/PROVENANCE.md) — why claims are admissible.
+- [Roadmap](docs/ROADMAP.md) — future priorities only.
+- [Research history](docs/research/README.md) — dated evidence and negative results.
 
 ## Build from source
 
@@ -45,28 +55,22 @@ cargo install --path crates/openjoc-cli --locked --root /path/to/prefix
 /path/to/prefix/bin/openjoc --help
 ```
 
-No prebuilt binary, Homebrew formula, or crates.io installation is currently
-advertised. The verified 0.x installation path is the workspace source tree.
+No prebuilt binary, Homebrew formula, or crates.io installation is advertised
+by the source repository. The verified 0.x installation path is the workspace
+source tree.
 
-## Runtime tools and input scope
+## Basic CLI
 
-Raw EC3 parsing and internal-base decoding run in-process. Some paths use
-external FFmpeg tools:
+```sh
+openjoc inspect input.ec3
+openjoc decode input.ec3 -o output/ --internal-base
+openjoc decode input.mp4 -o output/ --internal-base --streaming
+openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
+```
 
-- ordinary seekable MP4/M4A inspection or capture uses `ffprobe` and/or
-  `ffmpeg` for container selection/demux;
-- seekable ISO BMFF streaming uses `ffprobe` for the sample cursor;
-- compatible-base generation uses `ffprobe` and `ffmpeg`.
-
-Non-seekable and fragmented MP4 are not admitted by the 0.x contract. Logic
-Pro, ADM authoring tools, Poppler, Python, and private research fixtures are not
-runtime dependencies of the installed CLI.
-
-## Platform scope
-
-Release packaging is currently exercised on Apple silicon macOS. Rust code may
-be portable to other supported Rust targets, but Windows and Linux release
-readiness are not claimed without corresponding CI or host evidence.
+Raw EC3 parsing and internal-base decoding run in-process. Some seekable
+MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
+[capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
 ## Assemble a local release candidate
 
@@ -83,13 +87,23 @@ cd openjoc-0.1.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
-The build script uses `git archive HEAD`, a fresh target directory, and
-`cargo build --release --locked --offline`. It refuses tracked worktree/index
-changes. Python is release-assembly tooling, not a runtime dependency of the
-OpenJOC executable or bundled verifier. The candidate is not Developer-ID
-signed and is not notarized; the Mach-O carries only the toolchain's automatic
-linker ad-hoc signature. It is local-only and scoped to
-`aarch64-apple-darwin`; the command does not tag, upload, or publish anything.
+The candidate includes the canonical `docs/` tree, uses `git archive HEAD`,
+builds with the locked dependency set, and refuses tracked worktree/index
+changes. It is local-only, not Developer-ID signed, and not notarized.
+
+## Platform scope
+
+Release packaging is currently exercised on Apple silicon macOS. Windows,
+Linux, and Intel macOS release readiness are not claimed without corresponding
+CI or host evidence. The local candidate is not Developer-ID signed and is not
+notarized.
+
+## Contributing and provenance
+
+Before changing codec behavior, read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[the clean-room policy](docs/PROVENANCE.md). The project treats public normative
+sources, permitted synthetic tests, and controlled evidence as separate claim
+classes.
 
 ## License
 

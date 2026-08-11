@@ -10,14 +10,17 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 cat > "$expected" <<'EOF'
-KNOWN_LIMITATIONS.md
 LICENSE
 README.md
 RELEASE_MANIFEST.json
 SHA256SUMS
 bin/openjoc
-verify.sh
 EOF
+(
+    cd "$bundle_root"
+    find docs -type f -print | LC_ALL=C sort
+) >> "$expected"
+printf '%s\n' verify.sh >> "$expected"
 
 (
     cd "$bundle_root"
@@ -31,9 +34,11 @@ if ! cmp -s "$expected" "$actual"; then
 fi
 
 for required in \
-    KNOWN_LIMITATIONS.md \
     LICENSE \
     README.md \
+    docs/CAPABILITIES.md \
+    docs/KNOWN_LIMITATIONS.md \
+    docs/README.md \
     RELEASE_MANIFEST.json \
     SHA256SUMS \
     bin/openjoc \
@@ -57,6 +62,8 @@ grep -Fq '"target": "aarch64-apple-darwin"' "$manifest"
 grep -Fq '"developer_identity_signed": false' "$manifest"
 grep -Fq '"linker_adhoc_signed": true' "$manifest"
 grep -Fq '"notarized": false' "$manifest"
+grep -Fq '"capability_contract": "docs/CAPABILITIES.md"' "$manifest"
+grep -Fq '"known_limitations": "docs/KNOWN_LIMITATIONS.md"' "$manifest"
 
 while read -r digest relative; do
     relative=${relative#\*}

@@ -1,5 +1,8 @@
 # OpenJOC 0.x known limitations
 
+> Canonical owner: current user-visible limitations and non-claims. Historical
+> research and requirement status belong in the linked documents under `docs/`.
+
 This snapshot is part of the local release-candidate contract. It states the
 same user-visible boundary as the canonical repository documentation without
 claiming capabilities that the current evidence does not support.

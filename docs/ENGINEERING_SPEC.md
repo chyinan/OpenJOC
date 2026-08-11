@@ -1,9 +1,15 @@
 # OpenJOC 工程规格书（Clean-room Reference Decoder）
 
-**文档状态：** Implementation-ready / Codex Goal Mode 输入规格  
+> Responsibility: normative engineering design and module-level specification.
+> Current support status is owned by `CAPABILITIES.md`, current boundaries by
+> `KNOWN_LIMITATIONS.md`, and historical experiments by `research/`. The legacy
+> Codex workflow sections are retained only as historical context, not as a
+> public control-plane or resumability protocol.
+
+**文档状态：** Historical design specification with implemented boundaries cross-referenced to the canonical current docs
 **目标项目名：** OpenJOC  
 **建议实现语言：** Rust 2024 Edition  
-**首要目标：** 依据公开标准独立实现 E-AC-3 JOC 的对象重建与 OAMD 解码，输出可验证的对象音频（object essences）与时间戳元数据；渲染器与耳机虚拟化不属于首版核心解码器。
+**首要目标：** 依据公开标准独立实现 E-AC-3 JOC 的 OAMD/JOC 解析与 renderer-independent reconstruction-basis output；当前不将输出宣称为已验证 authored-object PCM。
 
 ---
 
@@ -28,7 +34,8 @@ E-AC-3 bitstream
                                               inverse complex QMF
                                                         │
                                                         ▼
-                                      ObjectScene + per-object PCM/WAV
+                                      metadata-only ObjectScene +
+                                      diagnostic ReconstructionBasis rows
 ```
 
 首版成功标准不是“能出声”，而是：**规范一致、可测量、可导出、可追踪每一步中间状态，并能用用户自己制作的合法 Atmos/JOC 测试素材做定量验证。**
@@ -792,11 +799,11 @@ openjoc inspect input.ec3
 openjoc decode input.ec3 -o output/
 ```
 
-产出：
+当前实现的诊断产出：
 
 ```text
 scene.json
-objects/*.wav
+diagnostics/reconstruction_rows/row_NNN.wav
 ```
 
 ```bash
@@ -1020,60 +1027,17 @@ Codex 必须遵守：
 
 ---
 
-# 12. Codex 工作方式（Goal Mode）
+# 12. Engineering change discipline
 
-Codex 的任务不是“一次生成很多代码然后停止”，而是**在一个 Goal 内循环执行：研究 → 实现 → 编译 → 测试 → 修复 → 端到端验证**。
+The public contributor workflow is maintained in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md). This specification records the
+engineering design; it is not an agent orchestration or resumability document.
 
-必须遵循：
-
-```text
-1. 先读取本规格书
-2. 检查 references/etsi 中的官方文件
-3. 建立 RESEARCH_NOTES.md
-4. 建立 REQUIREMENTS_MATRIX.md：每个 ETSI clause → source module → tests
-5. 先写 reference implementation
-6. 每实现一层立刻写测试
-7. cargo test
-8. 发现失败就修复，不允许跳过/disable test
-9. 完成 real vector end-to-end 后才进入优化
-10. 最终生成 IMPLEMENTATION_REPORT.md
-```
-
-`REQUIREMENTS_MATRIX.md` 至少追踪：
-
-```text
-ETSI 4.4    decoder interface        -> openjoc-scene
-ETSI 5      OAMD                     -> openjoc-oamd
-ETSI 6.2/3  JOC syntax/semantics     -> openjoc-joc
-ETSI 6.5    band mapping             -> openjoc-joc
-ETSI 6.6.2  differential decode      -> openjoc-joc
-ETSI 6.6.3  Huffman                  -> openjoc-joc
-ETSI 6.6.4  dequantization           -> openjoc-joc
-ETSI 6.6.5  interpolation            -> openjoc-joc
-ETSI 6.6.6  object reconstruction    -> openjoc-joc
-ETSI 7      QMF                      -> openjoc-qmf
-ETSI 8      E-AC-3/EMDF integration  -> openjoc-eac3/openjoc-emdf
-Annex B     ADM conversion           -> openjoc-scene
-```
-
----
-
-# 13. 禁止 Codex 做的“看似聪明但会毁项目”的事情
-
-- 不要只因为某个 WAV 能播放就宣告 decoder 正确；
-- 不要把 5.1 downmix 直接当对象输出；
-- 不要假装 FFmpeg 普通 E-AC-3 decode 已经重建 JOC objects；
-- 不要用 HRTF/rendered output 掩盖 object reconstruction 错误；
-- 不要把 OAMD object coordinates 用“常见 Atmos 坐标”猜出来；
-- 不要把 64 QMF bands 换成 STFT；
-- 不要用随机/平均 band mapping 替代 Table 54；
-- 不要把 smooth interpolation 改成 nearest/linear in wrong domain；
-- 不要忽略 cross-frame `prev_matrix`；
-- 不要把历史 proprietary Dolby source 复制进 repo；
-- 不要因为测试向量少就 hard-code 某个文件的 object count/layout；
-- 不要在没有 benchmark 的情况下宣称“bit-perfect Dolby decoder”。
-
----
+Every implementation change should remain explainable from the permitted
+normative/provenance classes, add a focused regression, and preserve the
+separation between metadata, reconstruction basis, and semantic binding.
+Current status belongs in [`CAPABILITIES.md`](CAPABILITIES.md) and current
+requirements belong in [`REQUIREMENTS_MATRIX.md`](REQUIREMENTS_MATRIX.md).
 
 # 14. 第一版 README 应该如何描述项目
 

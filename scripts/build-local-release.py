@@ -19,14 +19,12 @@ import tempfile
 REPOSITORY = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "aarch64-apple-darwin"
 PAYLOAD_PATHS = (
-    "KNOWN_LIMITATIONS.md",
     "LICENSE",
     "README.md",
     "bin/openjoc",
     "verify.sh",
 )
-BUNDLE_PATHS = (
-    "KNOWN_LIMITATIONS.md",
+STATIC_BUNDLE_PATHS = (
     "LICENSE",
     "README.md",
     "RELEASE_MANIFEST.json",
@@ -222,9 +220,11 @@ def main() -> int:
         shutil.copy2(target / "release/openjoc", bundle_root / "bin/openjoc")
         shutil.copy2(source / "LICENSE", bundle_root / "LICENSE")
         shutil.copy2(source / "README.md", bundle_root / "README.md")
-        shutil.copy2(
-            source / "KNOWN_LIMITATIONS.md", bundle_root / "KNOWN_LIMITATIONS.md"
-        )
+        # Ship the canonical documentation tree so the standalone release
+        # README keeps its source-relative links intact.  This is a copy of
+        # public repository documentation only; private evidence and media
+        # remain outside both the source archive and the binary bundle.
+        shutil.copytree(source / "docs", bundle_root / "docs")
         shutil.copy2(
             source / "scripts/verify-release-bundle.sh", bundle_root / "verify.sh"
         )
@@ -248,8 +248,16 @@ def main() -> int:
             raise SystemExit("release binary does not have the expected linker ad-hoc signature")
 
         lock_hash = sha256(source / "Cargo.lock")
+        doc_paths = tuple(
+            sorted(
+                path.relative_to(bundle_root).as_posix()
+                for path in (bundle_root / "docs").rglob("*")
+                if path.is_file()
+            )
+        )
+        payload_paths = PAYLOAD_PATHS + doc_paths
         payload_records = [
-            record(bundle_root / relative, bundle_root) for relative in PAYLOAD_PATHS
+            record(bundle_root / relative, bundle_root) for relative in payload_paths
         ]
         inner_manifest = {
             "artifact_filename": bundle_name,
@@ -259,13 +267,13 @@ def main() -> int:
             "build_claim": (
                 "same committed source/toolchain/host; no Developer-ID identity"
             ),
-            "capability_contract": "README.md",
+            "capability_contract": "docs/CAPABILITIES.md",
             "cargo_lock_sha256": lock_hash,
             "cargo_version": cargo.splitlines()[0],
             "declared_source_commit": commit,
             "debug_path_remap": "active Cargo home -> /cargo",
             "files": payload_records,
-            "known_limitations": "KNOWN_LIMITATIONS.md",
+            "known_limitations": "docs/KNOWN_LIMITATIONS.md",
             "notarized": False,
             "signing": {
                 "developer_identity_signed": False,
@@ -296,7 +304,8 @@ def main() -> int:
                 if path.is_file()
             )
         )
-        if actual_paths != tuple(sorted(BUNDLE_PATHS)):
+        expected_paths = tuple(sorted(STATIC_BUNDLE_PATHS + doc_paths))
+        if actual_paths != expected_paths:
             raise SystemExit(f"bundle inventory mismatch: {actual_paths!r}")
 
         bundle_path = output / bundle_name
@@ -305,7 +314,7 @@ def main() -> int:
         deterministic_gzip(source_tar, source_path)
 
         all_bundle_records = [
-            record(bundle_root / relative, bundle_root) for relative in BUNDLE_PATHS
+            record(bundle_root / relative, bundle_root) for relative in actual_paths
         ]
         outer_manifest = {
             "artifacts": [

@@ -1,5 +1,9 @@
 # OpenJOC Implementation Provenance
 
+> Canonical owner: clean-room policy, permitted sources, evidence classes, and
+> claim-admission provenance. Current capability status belongs in
+> `CAPABILITIES.md`; future work belongs in `ROADMAP.md`.
+
 OpenJOC is a clean-room implementation. Production behavior is derived only
 from the public normative specifications listed below, the official ETSI
 companion archive, and public mathematical/DSP literature where explicitly

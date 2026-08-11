@@ -1,5 +1,9 @@
 # OpenJOC implementation report
 
+> Historical implementation and verification record. This file preserves
+> milestone details and negative results; it is not the current capability,
+> limitation, requirement, or roadmap source.
+
 ## Evidence boundary
 
 The repository currently supports a clean-room raw E-AC-3 path with aligned
