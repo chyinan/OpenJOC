@@ -1,6 +1,6 @@
-# OpenJOC 0.x capabilities
+# OpenJOC v0.1.0 capabilities
 
-This is the canonical current capability status for OpenJOC 0.x. It is a
+This is the canonical current capability status for OpenJOC v0.1.0. It is a
 release-facing snapshot, not a research journal. Engineering requirement
 details belong in [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md); historical
 evidence belongs in [research history](research/README.md).

@@ -44,7 +44,7 @@ parse what exists -> JocPayload/ParsedJocAccessUnit
 The parser never normalizes vendor metadata, the strict validator retains all
 normative failures, and the decoder has no profile-specific signaling hacks.
 
-## OpenJOC 0.x capability contract (J1R31)
+## OpenJOC v0.1.0 capability contract (J1R31)
 
 This is the canonical user-facing support summary. Detailed rows and historical
 milestones below provide provenance, but do not expand this contract. Production
@@ -53,12 +53,12 @@ status uses only `ADMITTED`, `ADMITTED_WITH_SCOPE`, `DIAGNOSTIC_ONLY`, `PARTIAL`
 Evidence class is stated separately so public-syntax coverage is never presented
 as real-corpus fidelity.
 
-| Area | Capability | Production status | Strongest evidence | 0.x CLI contract / limitation |
+| Area | Capability | Production status | Strongest evidence | v0.1.0 CLI contract / limitation |
 | --- | --- | --- | --- | --- |
 | Input | Raw E-AC-3 file | ADMITTED | controlled corpus + public-syntax validation | `inspect`; capture `decode`; bounded AU delivery with `decode --internal-base --streaming` |
 | Input | Seekable ordinary MP4/M4A with one E-AC-3 track | ADMITTED_WITH_SCOPE | controlled stream-copy equivalence | capture uses bounded stream-copy; streaming uses a seekable one-sample cursor; FFprobe/FFmpeg are runtime container tools |
 | Input | Non-seekable ordinary ISO BMFF | NOT_ADMITTED | NOT_APPLICABLE | CLI requires a seekable file path |
-| Input | Fragmented MP4 | NOT_ADMITTED | not exercised | no 0.x compatibility promise |
+| Input | Fragmented MP4 | NOT_ADMITTED | not exercised | no v0.1.0 compatibility promise |
 | Input | Malformed, truncated, wrong-codec, or ambiguous-track input | EXPECTED_STRICT_REJECTION | structured regression tests | non-zero exit with `malformed-input` or `unsupported-input` category |
 | Base E-AC-3 | Ordinary base decode, TDAC/history, block switching, exponents/BAP/grouped mantissas/dither/dynamic range | ADMITTED_WITH_SCOPE | public syntax + controlled activation where available | internal-base PCM is diagnostic/base PCM, not a speaker render; full cross-decoder real-stream fidelity is not established |
 | Base E-AC-3 | Channel labels and LFE identity | ADMITTED | public-syntax topology regressions | `debug/internal_base_inventory.json` reports explicit channel order; LFE/LFE2 identity is not conflated |
@@ -134,7 +134,7 @@ changes the requested profile automatically.
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
 | Engineering spec 5.7 | ObjectScene metadata and diagnostic reconstruction basis | `openjoc-scene`, `openjoc-wave` | metadata-only JSON roundtrip, separate reconstruction-basis rows, explicit unresolved binding state, invariants, and diagnostic row WAV export pass; verified authored-object PCM remains inadmissible | implemented |
-| Engineering spec 6 | CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and capture-mode `.ec3`/container `decode` write a metadata-only scene/timeline, diagnostic reconstruction-row WAVs, and debug artifacts; explicit `--reference-f64` retains reference row output; `inspect` reports bounded profile timing/carrier details, `decode --validation-profile` selects the explicit profile, and `--trim-config-count` remains caller-supplied | implemented with explicit 0.x limitations |
+| Engineering spec 6 | CLI command surface and debug dumps | `openjoc-cli` | actual-binary `decode-payload` and capture-mode `.ec3`/container `decode` write a metadata-only scene/timeline, diagnostic reconstruction-row WAVs, and debug artifacts; explicit `--reference-f64` retains reference row output; `inspect` reports bounded profile timing/carrier details, `decode --validation-profile` selects the explicit profile, and `--trim-config-count` remains caller-supplied | implemented with explicit v0.1.0 limitations |
 | Engineering spec 6 / OAMD forensic boundary | Bit-exact OAMD entry evidence | `openjoc-cli`, `openjoc-emdf`, `openjoc-oamd` | `diagnose-oamd` records MP4 sample/AU/substream, exact skip-field and EMDF/payload/config/body spans in named coordinate systems, OAMD warp bit/window/raw value, original-byte dumps, all-AU continuity, and explicit trim-count provenance without changing decode semantics | implemented |
 | Engineering spec 6 / OAMD forensic round 2 | AU timing, payload-11 differential, independent bit oracle, ADM comparison, diagnostic warp hypotheses | `openjoc-cli` | `--au START..END`, `--diff-payload-11`, deterministic timing/diff JSON/TXT, independent cursor-free oracle, explicit raw-vs-MP4 equality, and diagnostic-only hypotheses; strict parser remains reserved-value failure; private A-F corpus evidence is retained outside Git, with B/C canonical automation semantics explicitly unresolved | implemented |
 | Engineering spec 6 / OAMD forensic round 3 | Reproducible raw/MP4/ADM refresh and Logic canonical-copy audit | private controlled run + public docs | New non-overwriting batch `2026-08-05T1042Z_logic-warp-evidence_952b052` covers A-F (12 carrier reports, six ADM reports); all 126 AUs close; four-way warp oracle remains `[526,528) = 3`; B/C remain explicitly non-canonical after a discarded Logic editing experiment; no vendor rule added | evidence refresh; semantics unresolved |
@@ -740,7 +740,7 @@ Decision: `DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED` within
 the public-syntax one-I0/optional-D0 JOC contract. Full real-stream fidelity
 and semantic object binding remain unestablished.
 
-## OpenJOC 0.x source/install contract (J1R32)
+## OpenJOC v0.1.0 source/install contract (J1R32)
 
 | Release boundary | Evidence | Status |
 | --- | --- | --- |
@@ -759,7 +759,7 @@ This is a `CLEAN_SOURCE_ISOLATED_BUILD`, not a literal clean-machine or
 cross-platform certification. Offline success means the locked dependencies are
 already available in Cargo's cache.
 
-## OpenJOC 0.x local release-artifact contract (J1R33)
+## OpenJOC v0.1.0 local release-artifact contract (J1R33)
 
 | Artifact boundary | Contract | Status |
 | --- | --- | --- |

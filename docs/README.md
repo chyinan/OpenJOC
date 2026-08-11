@@ -5,7 +5,7 @@ Use the document that owns the question:
 | Question | Canonical document |
 |---|---|
 | What is OpenJOC and how do I run it? | [root README](../README.md) |
-| What does 0.x support today? | [CAPABILITIES.md](CAPABILITIES.md) |
+| What does v0.1.0 support today? | [CAPABILITIES.md](CAPABILITIES.md) |
 | What does it not support? | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |
 | How is production code structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | What requirements exist and what is their status? | [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md) |

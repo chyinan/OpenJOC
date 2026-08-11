@@ -2,9 +2,9 @@
 
 > Responsibility: normative engineering design and module-level specification.
 > Current support status is owned by `CAPABILITIES.md`, current boundaries by
-> `KNOWN_LIMITATIONS.md`, and historical experiments by `research/`. The legacy
-> Codex workflow sections are retained only as historical context, not as a
-> public control-plane or resumability protocol.
+> `KNOWN_LIMITATIONS.md`, and historical experiments by `research/`. Earlier
+> workflow notes are retained only as historical design context, not as current
+> project status or contributor procedure.
 
 **文档状态：** Historical design specification with implemented boundaries cross-referenced to the canonical current docs
 **目标项目名：** OpenJOC  
@@ -77,7 +77,7 @@ E-AC-3 bitstream
 - skip field / EMDF carriage
 - E-AC-3 channel-based downmix 解码边界
 
-**Codex 不得凭记忆或网上二手描述猜测 TS 102 366 的 bitstream 字段。没有本地 PDF 时，应先实现可插拔 frontend，并把需要 TS 102 366 的部分明确标记为未完成，而不是编造。**
+**实现不得凭记忆或网上二手描述猜测 TS 102 366 的 bitstream 字段。没有本地 PDF 时，应先实现可插拔 frontend，并把需要 TS 102 366 的部分明确标记为未完成，而不是编造。**
 
 ---
 
@@ -129,7 +129,7 @@ ETSI PDF 与 companion archive 有其自身版权声明。项目不得擅自把�
 2. `tools/import-etsi-tables` 验证上面的 SHA-256；
    1. 解析 `ts_103420_tables.c` 并生成本地 `target/generated/etsi_tables.rs`；
 
-3. 是否把生成后的常量直接提交到公共仓库，必须在项目发布前单独确认许可/法律状态，不由 Codex 自行判断。
+3. 是否把生成后的常量直接提交到公共仓库，必须在项目发布前单独确认许可/法律状态，并由维护者明确记录决定。
 
 ---
 
@@ -180,7 +180,7 @@ AES 140th Convention (2016)：
 
 - 从明确标注 confidential / proprietary 的 Dolby 源码逐函数翻写
 - 通过改变量名/结构方式复制私有实现
-- 将历史 vendor proprietary source 作为代码生成上下文直接喂给实现 Agent
+- 将历史 vendor proprietary source 作为代码生成上下文直接喂给实现
 - 将 Dolby/Atmos logo、认证标志或“官方兼容/认证”等措辞用于 OpenJOC 品牌
 
 ## 2.3 专利/IPR 风险
@@ -974,7 +974,7 @@ Fast path
 
 # 10. 代码质量硬约束
 
-Codex 必须遵守：
+实现与贡献必须遵守：
 
 1. 禁止 `unsafe`，除非有单独 design note + benchmark 证明必要；首版原则上 0 unsafe。
 2. 不允许 `unwrap()`/`expect()` 处理外部输入。
@@ -989,7 +989,7 @@ Codex 必须遵守：
 
 ---
 
-# 11. Definition of Done（Codex 不得提前宣布成功）
+# 11. Definition of Done（验收条件）
 
 ## Mandatory
 
@@ -1031,7 +1031,7 @@ Codex 必须遵守：
 
 The public contributor workflow is maintained in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md). This specification records the
-engineering design; it is not an agent orchestration or resumability document.
+engineering design; it is not a project-status document.
 
 Every implementation change should remain explainable from the permitted
 normative/provenance classes, add a focused regression, and preserve the
@@ -1202,7 +1202,7 @@ OpenJOC 应把“格式解码的正确性”和“最终空间渲染的主观品
 
 ---
 
-# 18. 给实现 Agent 的最后一句话
+# 18. 实现原则
 
 **不要模仿 Dolby 的代码；复现 ETSI 所定义的行为。不要以“能播放”为目标；以“每一个 bitstream field、每一张 matrix、每一个 QMF sample 都能解释和验证”为目标。Reference correctness first, optimization second, renderer last.**
 

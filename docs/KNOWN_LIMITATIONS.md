@@ -1,4 +1,4 @@
-# OpenJOC 0.x known limitations
+# OpenJOC v0.1.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and requirement status belong in the linked documents under `docs/`.
@@ -20,7 +20,7 @@ claiming capabilities that the current evidence does not support.
   activation in the qualified real corpus. Full real-world fidelity is not
   claimed.
 - Raw E-AC-3 streaming is supported internally. Seekable ISO BMFF uses
-  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the 0.x
+  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the v0.1.0
   contract. Capture/demux and compatible-base workflows may also require
   `ffmpeg`.
 - This local binary release-candidate workflow is admitted only for
@@ -31,5 +31,5 @@ claiming capabilities that the current evidence does not support.
   ad-hoc signature required by the measured Apple-silicon toolchain. It is not
   an official published release.
 
-See `README.md` in the bundle and `REQUIREMENTS_MATRIX.md` in the corresponding
-source archive for the full capability contract.
+See `README.md` in the bundle and `docs/REQUIREMENTS_MATRIX.md` in the
+corresponding source archive for the full capability contract.

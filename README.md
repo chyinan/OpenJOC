@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/openjoc-header.png" alt="OpenJOC — open-source Dolby JOC decoder" width="100%">
+</p>
+
 # OpenJOC
 
 OpenJOC is an independent, clean-room, research-grade E-AC-3 JOC metadata
@@ -5,7 +9,7 @@ and reconstruction-basis decoder. It implements behavior from public ETSI
 specifications and controlled, permitted evidence; it does not copy Dolby
 private implementations.
 
-The current 0.x contract is deliberately narrow:
+The current v0.1.0 contract is deliberately narrow:
 
 - `scene.json` is metadata-only;
 - `diagnostics/reconstruction_rows/row_NNN.wav` contains diagnostic
@@ -17,7 +21,7 @@ The current 0.x contract is deliberately narrow:
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — what 0.x supports today.
+- [Capabilities](docs/CAPABILITIES.md) — what v0.1.0 supports today.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Requirements matrix](docs/REQUIREMENTS_MATRIX.md) — engineering truth table.
@@ -56,7 +60,7 @@ cargo install --path crates/openjoc-cli --locked --root /path/to/prefix
 ```
 
 No prebuilt binary, Homebrew formula, or crates.io installation is advertised
-by the source repository. The verified 0.x installation path is the workspace
+by the source repository. The verified v0.1.0 installation path is the workspace
 source tree.
 
 ## Basic CLI

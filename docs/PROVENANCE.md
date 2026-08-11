@@ -2674,7 +2674,7 @@ is not claimed. No media was created, semantic binding remains unresolved,
 and strict raw warp 3 remains reserved.
 ## J1R31 capability-contract provenance
 
-The canonical 0.x matrix in `REQUIREMENTS_MATRIX.md` is a consolidation of
+The canonical v0.1.0 matrix in `REQUIREMENTS_MATRIX.md` is a consolidation of
 existing frozen evidence, not a new semantic experiment. Coding-tool claims are
 bounded by the J1R23–J1R30 evidence freezes: coupling has the public normative
 coordinate/state admission; SPX has public-syntax numerical, state,
