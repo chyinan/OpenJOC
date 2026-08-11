@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Bounded raw E-AC-3 and seekable ISO BMFF input for OpenJOC"
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

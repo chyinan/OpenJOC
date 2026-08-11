@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Research-grade E-AC-3 syntax and base-audio decoding for OpenJOC"
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

@@ -9,6 +9,13 @@ from the public normative specifications listed below, the official ETSI
 companion archive, and public mathematical/DSP literature where explicitly
 recorded. No existing JOC decoder source code is an implementation reference.
 
+OpenJOC is an independent project and is not affiliated with, endorsed by, or
+sponsored by Dolby Laboratories. References to Dolby, Dolby Atmos, E-AC-3 and
+JOC describe relevant technologies and interoperability contexts; they do not
+claim certification or ownership of third-party marks. The Apache-2.0 license
+covers rights granted by OpenJOC contributors according to its terms and does
+not purport to grant rights owned by unrelated third parties.
+
 ### JOC interoperability profile provenance
 
 The profile split is an architectural boundary, not a standards judgment.

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "ETSI QMF analysis and synthesis for OpenJOC"
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 

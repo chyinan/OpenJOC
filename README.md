@@ -9,6 +9,10 @@ and reconstruction-basis decoder. It implements behavior from public ETSI
 specifications and controlled, permitted evidence; it does not copy Dolby
 private implementations.
 
+OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby
+Laboratories. Dolby, Dolby Atmos, and related marks are trademarks of their
+respective owners.
+
 The current v0.1.0 contract is deliberately narrow:
 
 - `scene.json` is metadata-only;
@@ -111,5 +115,5 @@ classes.
 
 ## License
 
-Apache-2.0. The source archive includes the complete `LICENSE` text, and Cargo
-package metadata carries the SPDX license identifier.
+Licensed under [Apache-2.0](LICENSE). The source archive includes the complete
+license text, and Cargo package metadata carries the SPDX license identifier.

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Bounded EMDF parsing and explicit JOC profile validation"
 edition.workspace = true
 license.workspace = true
+license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
