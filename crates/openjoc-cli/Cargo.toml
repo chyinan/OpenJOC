@@ -2,8 +2,10 @@
 name = "openjoc-cli"
 version = "0.1.0"
 description = "Research-grade E-AC-3 JOC metadata and reconstruction-basis decoder"
+readme = "../../README.md"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [[bin]]
@@ -11,20 +13,20 @@ name = "openjoc"
 path = "src/main.rs"
 
 [dependencies]
-openjoc-eac3 = { path = "../openjoc-eac3" }
-openjoc-emdf = { path = "../openjoc-emdf" }
-openjoc-container = { path = "../openjoc-container" }
-openjoc-joc = { path = "../openjoc-joc" }
-openjoc-oamd = { path = "../openjoc-oamd" }
-openjoc-scene = { path = "../openjoc-scene" }
-openjoc-wave = { path = "../openjoc-wave" }
+openjoc-eac3 = { version = "0.1.0", path = "../openjoc-eac3" }
+openjoc-emdf = { version = "0.1.0", path = "../openjoc-emdf" }
+openjoc-container = { version = "0.1.0", path = "../openjoc-container" }
+openjoc-joc = { version = "0.1.0", path = "../openjoc-joc" }
+openjoc-oamd = { version = "0.1.0", path = "../openjoc-oamd" }
+openjoc-scene = { version = "0.1.0", path = "../openjoc-scene" }
+openjoc-wave = { version = "0.1.0", path = "../openjoc-wave" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 terminal_size = "0.4"
 
 [dev-dependencies]
-openjoc-wave = { path = "../openjoc-wave" }
+openjoc-wave = { version = "0.1.0", path = "../openjoc-wave" }
 
 [lints]
 workspace = true

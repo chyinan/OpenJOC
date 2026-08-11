@@ -1,13 +1,15 @@
 [package]
 name = "openjoc-eac3"
 version = "0.1.0"
+description = "Research-grade E-AC-3 syntax and base-audio decoding for OpenJOC"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-bitio = { path = "../openjoc-bitio" }
-openjoc-emdf = { path = "../openjoc-emdf" }
+openjoc-bitio = { version = "0.1.0", path = "../openjoc-bitio" }
+openjoc-emdf = { version = "0.1.0", path = "../openjoc-emdf" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

@@ -736,3 +736,22 @@ public-syntax reconstruction domain. This is not
 Decision: `DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED` within
 the public-syntax one-I0/optional-D0 JOC contract. Full real-stream fidelity
 and semantic object binding remain unestablished.
+
+## OpenJOC 0.x source/install contract (J1R32)
+
+| Release boundary | Evidence | Status |
+| --- | --- | --- |
+| Committed source archive without `.git`, `references/`, private reports, media, `.DS_Store`, or `target/` | `git archive` clean-source build with `--release --locked --offline` | admitted on the tested macOS host with a populated Cargo dependency cache |
+| Normative runtime tables | checked-in generated Rust constants carry the official companion source SHA-256; the importer re-generates and compares them when the authorized attachment is supplied | admitted; production builds do not read `references/` |
+| Cargo package chain | all workspace path dependencies have explicit `0.1.0` requirements; `cargo package --workspace --locked --offline` packages and verifies all eleven crates in dependency order | admitted for local package verification; nothing was published |
+| Source install | `cargo install --path crates/openjoc-cli --locked --offline --root PREFIX` from the clean archive | admitted with cached dependencies; installed CLI passes root and all six subcommand help checks outside the repository |
+| Package/private-data hygiene | complete source/package inventories and content/path scans | passed; no private report/media, controlled fixtures, `references/`, `.DS_Store`, developer absolute path, or temporary output is included |
+| Same-source release binary reproducibility | two clean source copies, separate target directories, Rust 1.94.0, `aarch64-apple-darwin` | byte-identical on the same host/toolchain; no cross-host or cross-platform reproducibility claim |
+| Cargo archive reproducibility | two complete workspace packaging runs in separate target roots | all eleven `.crate` archives byte-identical on the same host/toolchain |
+| Host dynamic dependencies | macOS `otool -L` | only `/usr/lib/libiconv.2.dylib` and `/usr/lib/libSystem.B.dylib` |
+| External CLI tools | source/runtime audit and missing-tool smoke | raw EC3 internal paths are in-process; selected ISO-BMFF/compatible-base paths require `ffprobe` and/or `ffmpeg` and fail explicitly when unavailable |
+| Toolchain/platform scope | workspace MSRV and host inventory | Rust minimum is 1.85, exact compiler is not pinned; packaging is tested on Apple-silicon macOS only |
+
+This is a `CLEAN_SOURCE_ISOLATED_BUILD`, not a literal clean-machine or
+cross-platform certification. Offline success means the locked dependencies are
+already available in Cargo's cache.

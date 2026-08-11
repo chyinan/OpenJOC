@@ -1,12 +1,14 @@
 [package]
 name = "openjoc-emdf"
 version = "0.1.0"
+description = "Bounded EMDF parsing and explicit JOC profile validation"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-bitio = { path = "../openjoc-bitio" }
+openjoc-bitio = { version = "0.1.0", path = "../openjoc-bitio" }
 
 [lints]
 workspace = true

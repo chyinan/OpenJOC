@@ -1025,3 +1025,21 @@ This closure changes no scientific admission boundary:
 `SemanticBindingState::Unresolved` remains; authored-object PCM and audio-bound
 ObjectScene remain inadmissible; strict raw warp 3 remains reserved; vendor
 continuation remains opaque/unresolved; no new media was generated.
+
+## J1R32 — source distribution admission
+
+OpenJOC 0.x now builds from a committed `git archive` with no `.git`, private
+media, `references/`, or developer target directory. The CLI installs into an
+isolated prefix and runs outside the repository. Cargo locally packages and
+verifies the complete workspace dependency chain, and the public README records
+the tested build/install commands plus the FFmpeg/container and platform scope.
+
+On the recorded Apple-silicon macOS/Rust 1.94.0 environment, two clean release
+builds and two complete package runs were byte-identical. This does not claim a
+literal clean machine, cross-toolchain reproducibility, or Windows/Linux release
+readiness. The exact Rust toolchain remains unpinned; the declared MSRV is 1.85.
+
+The release work changes no codec or semantic boundary. The next release-facing
+work should exercise an installed-binary end-user smoke/negative-path suite from
+only public synthetic inputs and then freeze a release-candidate checklist,
+without adding media or semantic claims.

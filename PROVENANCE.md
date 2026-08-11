@@ -2685,3 +2685,28 @@ are derived from existing typed input, E-AC-3, profile, OAMD, payload, WAV, and
 I/O failures. Help and streaming summaries expose already implemented path
 boundaries. No codec expression, parser meaning, profile rule, vendor mapping,
 semantic binding, renderer, or fixture was added.
+
+## J1R32 packaging provenance
+
+The committed runtime table files were emitted by the existing
+`import-etsi-tables` tool from the authorized official TS 103 420 V1.2.1
+companion archive. The importer first verifies ZIP SHA-256
+`a79cf108c4529b7d9ca9525c871183a70b1732ed6df03a3d85b2f31be46eeced`
+and source SHA-256
+`4db8ae83e3c2e9269e88365be92a1a3ed6a9e6ee3851afac8ca03902723b1fcd`.
+Both checked-in generated files are byte-identical and record the latter hash.
+The attachment itself remains outside Git and outside all source/package
+archives.
+
+Release evidence is derived from a tracked-file `git archive`, Cargo's package
+file lists and package verification, isolated target/prefix directories,
+`shasum -a 256`, `cmp`, `file`, `otool -L`, the installed CLI help surface, and
+the existing Rust gates. The tested host is Apple-silicon macOS 26.6 with
+Homebrew Rust/Cargo 1.94.0. The workspace declares Rust 1.85 as its minimum but
+does not pin the exact compiler, so reproducibility is explicitly scoped to the
+recorded host/toolchain/environment.
+
+FFmpeg/FFprobe 8.1.2 are external runtime tools only for the documented
+container/compatible-base paths. Logic, ADM tools, Poppler, Python, private
+fixtures, and the ETSI attachment importer are not production CLI runtime
+requirements. Nothing was published, tagged, uploaded, or released.

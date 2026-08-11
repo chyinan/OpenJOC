@@ -18,7 +18,7 @@ pub use reconstruction::{
 };
 
 mod generated {
-    include!(concat!(env!("OUT_DIR"), "/etsi_tables.rs"));
+    include!("generated_etsi_tables.rs");
 }
 
 /// A named normative Huffman tree from TS 103 420 Annex A.1.

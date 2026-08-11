@@ -708,3 +708,24 @@ Metadata object identity, diagnostic reconstruction-row identity, and authored
 object identity remain three separate domains. The public CLI names only the
 first two. A metadata-only ObjectScene is admissible; authored-object PCM and an
 audio-bound ObjectScene are not.
+
+## J1R32 — clean source is not a clean machine
+
+The packaging experiment deliberately distinguishes four claims. A committed
+source archive is closed when it builds without the developer worktree,
+untracked references, or `.git`. An isolated install is usable when its binary
+runs outside that source tree. Offline build means the locked registry
+dependencies are already cached, not that a fresh machine needs no dependency
+download. Binary/archive reproducibility is claimed only for the same source,
+host, target, and Rust toolchain that were measured.
+
+Checking generated normative tables into the consuming crates does not weaken
+their provenance: the generator and both official hashes remain the trust
+boundary, while a regression compares committed output to freshly imported
+output whenever the authorized companion archive is available. It removes a
+developer-machine build dependency without embedding the external attachment.
+
+The package audit also treats test-only absolute private paths as leaks even
+when they cannot affect production. Replacing that path with an explicit opt-in
+environment variable keeps the scientific fixture private and the public
+package location-independent.

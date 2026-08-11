@@ -326,7 +326,6 @@ dependencies = [
 name = "openjoc-joc"
 version = "0.1.0"
 dependencies = [
- "import-etsi-tables",
  "num-complex",
  "openjoc-bitio",
  "openjoc-qmf",
@@ -346,7 +345,6 @@ dependencies = [
 name = "openjoc-qmf"
 version = "0.1.0"
 dependencies = [
- "import-etsi-tables",
  "num-complex",
 ]
 

@@ -1,12 +1,14 @@
 [package]
 name = "openjoc-container"
 version = "0.1.0"
+description = "Bounded raw E-AC-3 and seekable ISO BMFF input for OpenJOC"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-eac3 = { path = "../openjoc-eac3" }
+openjoc-eac3 = { version = "0.1.0", path = "../openjoc-eac3" }
 
 [lints]
 workspace = true

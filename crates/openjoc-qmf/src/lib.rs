@@ -13,7 +13,7 @@ const SYNTHESIS_LENGTH: usize = 2 * QMF_LENGTH;
 
 #[allow(dead_code)]
 mod generated {
-    include!(concat!(env!("OUT_DIR"), "/etsi_tables.rs"));
+    include!("generated_etsi_tables.rs");
 }
 
 /// Stateful, direct-equation f64 implementation of the clause 7 transform pair.

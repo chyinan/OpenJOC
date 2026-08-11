@@ -1728,3 +1728,38 @@ rebuild a rendered space. Output naming remains `reconstruction_rows`,
 `base_lfe`, and metadata artifacts. `SemanticBindingState::Unresolved`, strict
 raw-warp rejection, opaque vendor continuation, authored-object PCM
 inadmissibility, and audio-bound ObjectScene inadmissibility are unchanged.
+
+## J1R32 — clean-source packaging, install, and reproducibility
+
+The first `git archive` release build exposed a real packaging defect: the JOC
+and QMF build scripts required an official ETSI companion ZIP from the
+untracked `references/` directory. OpenJOC now commits the importer's
+deterministic Rust output in both consuming crates. Each generated file records
+the companion C-source SHA-256, and importer tests reproduce/compare the files
+when `OPENJOC_ETSI_TABLE_ARCHIVE` (or the development-tree attachment) is
+available. Production compilation no longer reads an external reference file.
+
+A second defect prevented Cargo packaging: workspace path dependencies lacked
+version requirements. Every internal `0.1.0` dependency now declares both its
+path and version, and package metadata includes descriptions and the public
+repository. `cargo package --workspace --locked --offline` can therefore
+assemble and verify the full eleven-crate dependency chain locally. The CLI
+package carries the new source/install README. No crate was published.
+
+An absolute private-fixture path in one opt-in CLI integration test was removed
+in favor of `OPENJOC_PRIVATE_J1_FIXTURE_DIR`. Complete package inventories
+contain no private media, private directories, `references/`, `.DS_Store`, or
+temporary artifacts, and production-source scans contain no developer absolute
+paths. Historical documentation may still name private evidence locations as
+provenance without embedding the evidence itself.
+
+Two release builds from separate clean source and target directories produced
+the same executable bytes on Rust 1.94.0/aarch64 macOS. An isolated-prefix
+`cargo install` produced that same binary, and root plus all six subcommand help
+paths passed from `/tmp`. Two workspace packaging runs also produced identical
+hashes for all eleven `.crate` files. These are same-host/same-toolchain results,
+not clean-machine or cross-platform certification.
+
+No codec expression, validation profile, semantic binding, renderer behavior,
+or media changed. `SemanticBindingState::Unresolved` and strict raw-warp
+rejection remain unchanged.

@@ -233,12 +233,13 @@ fn raw_eac3_remains_raw_input_kind() {
 
 #[test]
 fn seekable_frozen_isobmff_samples_match_stream_copy() {
-    let container =
-        PathBuf::from("/Users/chyinan/Documents/OpenJOC-Private/logic/semantic-binding/J1/")
-            .join("J1R6_FR_997_R0_DDP_Atmos_ec3.mp4");
-    let raw_path =
-        PathBuf::from("/Users/chyinan/Documents/OpenJOC-Private/logic/semantic-binding/J1/")
-            .join("J1R6_FR_997_R0.ec3");
+    let Some(fixture_directory) = env::var_os("OPENJOC_PRIVATE_J1_FIXTURE_DIR").map(PathBuf::from)
+    else {
+        eprintln!("skipping frozen seekable ISO BMFF test: set OPENJOC_PRIVATE_J1_FIXTURE_DIR");
+        return;
+    };
+    let container = fixture_directory.join("J1R6_FR_997_R0_DDP_Atmos_ec3.mp4");
+    let raw_path = fixture_directory.join("J1R6_FR_997_R0.ec3");
     if !container.is_file()
         || !raw_path.is_file()
         || Command::new("ffprobe").arg("-version").output().is_err()

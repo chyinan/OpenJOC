@@ -1,17 +1,14 @@
 [package]
 name = "openjoc-qmf"
 version = "0.1.0"
+description = "ETSI QMF analysis and synthesis for OpenJOC"
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
-build = "build.rs"
 
 [dependencies]
 num-complex = "0.4"
 
-[build-dependencies]
-import-etsi-tables = { path = "../../tools/import-etsi-tables" }
-
 [lints]
 workspace = true
-
