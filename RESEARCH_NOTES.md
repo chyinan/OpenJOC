@@ -729,3 +729,17 @@ The package audit also treats test-only absolute private paths as leaks even
 when they cannot affect production. Replacing that path with an explicit opt-in
 environment variable keeps the scientific fixture private and the public
 package location-independent.
+
+## J1R33 — release verification is not semantic verification
+
+The local bundle closes a distribution-mechanics question only: can a user
+account for every byte, verify exact inventory and digests, and run the admitted
+CLI help surface without the developer repository? It does not strengthen the
+meaning of ReconstructionBasis rows, bind audio to authored objects, interpret
+reserved warp 3, or convert opaque vendor continuation into semantics.
+
+The manifest's source commit is a declaration supported by same-host
+reproducible-build evidence, not a cryptographic signature. The automatic
+linker ad-hoc Mach-O signature is recorded separately from absent Developer-ID
+signing and notarization. Artifact reproducibility is evaluated independently
+from codec fidelity and only under the measured host/toolchain inputs.

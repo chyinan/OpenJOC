@@ -755,3 +755,16 @@ and semantic object binding remain unestablished.
 This is a `CLEAN_SOURCE_ISOLATED_BUILD`, not a literal clean-machine or
 cross-platform certification. Offline success means the locked dependencies are
 already available in Cargo's cache.
+
+## OpenJOC 0.x local release-artifact contract (J1R33)
+
+| Artifact boundary | Contract | Status |
+| --- | --- | --- |
+| Binary bundle | `openjoc-0.1.0-aarch64-apple-darwin.tar.gz` contains the CLI, project license, README, frozen known limitations, inner manifest/checksums, and offline verifier | local-only; no Developer ID identity and no notarization; automatic linker ad-hoc signature recorded |
+| Clean source archive | deterministic gzip of `git archive HEAD`, named separately from the binary bundle | source/build input; never confused with the binary artifact |
+| Identity | Cargo package version, declared Git commit, Cargo.lock SHA-256, actual Rust target and toolchain | deterministic metadata; not a signed attestation |
+| Verification | outer SHA-256 surface plus bundle `verify.sh`; exact inventory, per-file hashes, manifest fields, version and seven help paths | no source tree, `.git`, private evidence, or network required |
+| Tamper response | modified, missing, and unexpected-file copies must all fail | required release-assembly regression |
+| Capability snapshot | bundled README plus `KNOWN_LIMITATIONS.md` preserve the J1R31 semantic/streaming/vendor/platform boundaries | no authored-object or warp/vendor semantic claim |
+| Reproducibility | two complete clean assemblies on the admitted host/toolchain | byte identity required for local admission; no cross-host claim |
+| Publication | build script writes outside the repository and performs no tag, upload, signing, notarization, or publish action | explicitly not a public release |

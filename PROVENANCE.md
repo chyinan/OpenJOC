@@ -2710,3 +2710,24 @@ FFmpeg/FFprobe 8.1.2 are external runtime tools only for the documented
 container/compatible-base paths. Logic, ADM tools, Poppler, Python, private
 fixtures, and the ETSI attachment importer are not production CLI runtime
 requirements. Nothing was published, tagged, uploaded, or released.
+
+## J1R33 local release-candidate provenance
+
+The local candidate builder starts from `git archive HEAD`, builds the CLI in a
+fresh temporary target with the locked offline graph, and copies that exact
+binary into the bundle assembled by the same process. Python 3.10+ is public
+release-assembly tooling only; the candidate verifier uses the macOS shell and
+`shasum` and does not read the repository, `.git`, private evidence, or the
+network.
+
+The machine-readable manifests declare the source commit, Cargo.lock digest,
+target, Rust/Cargo versions, binary and archive digests, exact bundle inventory,
+runtime-tool boundaries, and identity-signing/notarization status. A declared
+commit is not a signed attestation. Reproducibility remains scoped to the same
+committed source, host, target, toolchain, and cached dependency inputs. No
+candidate is published, tagged, uploaded, or committed.
+
+On the admitted Apple-silicon host, `codesign -dv` reports the Rust-linked
+Mach-O as `adhoc,linker-signed`. This automatic linker signature uses no user or
+Developer ID credential. The manifest records it separately from
+`developer_identity_signed=false` and `notarized=false`.

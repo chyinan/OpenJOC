@@ -1763,3 +1763,34 @@ not clean-machine or cross-platform certification.
 No codec expression, validation profile, semantic binding, renderer behavior,
 or media changed. `SemanticBindingState::Unresolved` and strict raw-warp
 rejection remain unchanged.
+
+## J1R33 — verifiable local release-candidate assembly
+
+`scripts/build-local-release.py` defines the admitted macOS-arm64 artifact
+lineage: require a clean tracked tree, archive the exact committed HEAD, build
+in fresh source/target roots with `--release --locked --offline`, and package
+that same binary. It produces a minimal binary bundle, a separate clean source
+archive, an outer release manifest, and conventional SHA-256 checksums. Archive
+ordering, permissions, ownership labels, mtimes, and gzip metadata are fixed for
+same-environment reproducibility.
+
+Release assembly remaps the active Cargo home to `/cargo` in Rust diagnostic
+paths and rejects binaries containing `/Users/` or `OpenJOC-Private`. This
+prevents dependency panic/debug metadata from disclosing a developer home path
+without changing executable behavior.
+
+The bundle carries `scripts/verify-release-bundle.sh` as `verify.sh`, the
+project license, README, a release-scoped `KNOWN_LIMITATIONS.md`, an inner
+manifest, and payload checksums. The verifier enforces exact inventory,
+per-file hashes, target/version/signing-state manifest fields, and root plus all
+six public help paths without using source, `.git`, private resources, or network.
+The public script and docs never publish, tag, upload, sign, or notarize.
+
+The builder verifies the Apple-silicon toolchain's automatic linker ad-hoc
+signature and records it separately from Developer-ID signing. No user signing
+identity or credential is used, and the candidate is not notarized.
+
+This infrastructure does not alter parsing, decoding, validation profiles,
+semantic binding, renderer output, or media. The local candidate remains
+without a Developer-ID identity, not notarized, and scoped only to
+`aarch64-apple-darwin` on the measured host/toolchain.

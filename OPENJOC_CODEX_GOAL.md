@@ -1043,3 +1043,20 @@ The release work changes no codec or semantic boundary. The next release-facing
 work should exercise an installed-binary end-user smoke/negative-path suite from
 only public synthetic inputs and then freeze a release-candidate checklist,
 without adding media or semantic claims.
+
+## J1R33 — local candidate verification boundary
+
+OpenJOC now has reusable infrastructure for a local macOS-arm64
+candidate: a clean-HEAD builder, deterministic binary/source archives, stable
+manifests and checksums, an exact-inventory offline verifier, a concise known-
+limitations snapshot, and tamper/missing/extra negative-test hooks. Generated
+candidates stay outside Git and are never published by the script.
+
+The candidate is only a distribution contract. `SemanticBindingState` remains
+`Unresolved`; authored-object PCM and audio-bound ObjectScene remain
+inadmissible; strict raw warp 3 remains reserved; vendor continuation remains
+opaque; cross-platform release readiness, signing, notarization, and public
+release remain open.
+
+The measured Mach-O has the toolchain's automatic linker ad-hoc signature, but
+no Developer-ID identity is used and no notarization is performed.

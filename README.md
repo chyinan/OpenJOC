@@ -68,6 +68,29 @@ Release packaging is currently exercised on Apple silicon macOS. Rust code may
 be portable to other supported Rust targets, but Windows and Linux release
 readiness are not claimed without corresponding CI or host evidence.
 
+## Assemble a local release candidate
+
+On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
+dependencies already cached, a clean committed tree can assemble the admitted
+local candidate without publishing anything:
+
+```sh
+python3 scripts/build-local-release.py --output /path/to/empty/output
+cd /path/to/empty/output
+shasum -a 256 -c openjoc-0.1.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.1.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.1.0-aarch64-apple-darwin
+./verify.sh
+```
+
+The build script uses `git archive HEAD`, a fresh target directory, and
+`cargo build --release --locked --offline`. It refuses tracked worktree/index
+changes. Python is release-assembly tooling, not a runtime dependency of the
+OpenJOC executable or bundled verifier. The candidate is not Developer-ID
+signed and is not notarized; the Mach-O carries only the toolchain's automatic
+linker ad-hoc signature. It is local-only and scoped to
+`aarch64-apple-darwin`; the command does not tag, upload, or publish anything.
+
 ## License
 
 Apache-2.0. The source archive includes the complete `LICENSE` text, and Cargo
