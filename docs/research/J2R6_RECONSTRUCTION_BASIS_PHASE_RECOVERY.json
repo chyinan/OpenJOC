@@ -1,0 +1,64 @@
+{
+  "schema": "openjoc.j2r6.public-phase-recovery.v1",
+  "classification": "FULL_COMPLEX_JOINT_TRANSFER_MODEL_NARROWED_BUT_UNDERDETERMINED",
+  "phase_evidence": "RECOVERED_WITH_DECLARED_LIMITATION",
+  "decoder_path": {
+    "source": "DecodedJocFrame.reconstruction_basis.rows",
+    "representation": "signed f64 PCM rows synthesized from ReferenceQmf64F64",
+    "row_count": 15,
+    "semantic_contract": "structural reconstruction-basis rows, not authored objects"
+  },
+  "existing_carriers": {
+    "groups_recovered": 9,
+    "static_controls_au": 129,
+    "dual_current_recovery_au": 126,
+    "dual_inherited_analysis_window_au": 125,
+    "j1r8_current_recovery_au": 129,
+    "j1r8_parent_inventory_au": 128,
+    "no_new_media": true,
+    "no_new_logic_fixture": true
+  },
+  "determinism": {
+    "center_duplicate_all_15_rows_byte_identical": true,
+    "all_samples_finite": true,
+    "row_lengths_uniform": true,
+    "decoder_state": "carried across one streaming call"
+  },
+  "complex_regression": {
+    "dual_fl_cross_frequency": {
+      "coherence": 0.9999950445171523,
+      "projective_residual": 0.0031481647255409075
+    },
+    "dual_fr_cross_frequency": {
+      "coherence": 0.9999947720269414,
+      "projective_residual": 0.003233561316158136
+    },
+    "static_fl_vs_dual_fl_997": {
+      "coherence": 0.9999949602760011,
+      "projective_residual": 0.003174810639891323
+    },
+    "static_fr_vs_dual_fr_997": {
+      "coherence": 0.0012047532087236777,
+      "projective_residual": 0.9999992742845898
+    },
+    "interpretation": "reproducible numerical contrast; causal joint-transfer model remains underdetermined"
+  },
+  "temporal_regression": {
+    "description": "static-control projective residuals are approximately 1e-7 in declared windows",
+    "semantic_inference": false
+  },
+  "boundaries": {
+    "semantic_binding_state": "Unresolved",
+    "authored_object_pcm_admissible": false,
+    "audio_bound_object_scene_admissible": false,
+    "rclfe_mixed_into_reconstruction_basis": false,
+    "warp_raw3_semantics_changed": false,
+    "warp_strict_result": "ReservedWarpMode { raw: 3 }"
+  },
+  "alignment_limitations": [
+    "J1R8 current recovery has 129 AU while the older parent inventory lists 128 AU",
+    "J1R9 current recovery has 126 AU while the frozen parent analysis window covers 125 AU",
+    "no silent trim or pad; dual comparisons use the explicitly declared first-125-AU window"
+  ],
+  "next_non_fixture_blocker": "admissible semantic-binding evidence or a reviewer-authorized predeclared complex-transfer threshold"
+}
