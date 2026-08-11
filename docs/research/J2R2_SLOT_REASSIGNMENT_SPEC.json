@@ -1,0 +1,123 @@
+{
+  "schema": "openjoc.j2r2.slot-reassignment-spec.v1",
+  "stage": "J2R2 — OAMD Slot-Reassignment Causal Experiment Preregistration & Autonomous Feasibility Admission",
+  "classification": "AUTONOMOUS_PRODUCER_FEASIBILITY_NOT_ESTABLISHED",
+  "j2r1_dependency": "MODEL_CLASS_NARROWED_BUT_UNDERDETERMINED; SemanticBindingState remains Unresolved",
+  "media_authorized": false,
+  "new_logic_fixture": false,
+  "new_media": false,
+  "producer_export": false,
+  "human_action_required": false,
+  "conditions": {
+    "A": {
+      "target": "997 Hz source at Front Right",
+      "companion": "2003 Hz source at Front Left",
+      "assignment": "producer/OAMD assignment A"
+    },
+    "B": {
+      "target": "same 997 Hz source at same Front Right position",
+      "companion": "same 2003 Hz source at same Front Left position",
+      "assignment": "producer/OAMD assignment B, differing only if an independently verifiable slot intervention exists"
+    }
+  },
+  "terminology": {
+    "authored_source": "the controlled 997 Hz or 2003 Hz waveform",
+    "authored_track": "the Logic track carrying the source region",
+    "producer_object": "the producer-side object/track representation",
+    "oamd_slot": "the decoded dynamic metadata slot index",
+    "reconstruction_row": "a structural JOC ReconstructionBasis row index",
+    "position": "the independently measured OAMD/ADM spatial state",
+    "base_pcm": "the decoded base-carried PCM component",
+    "basis_contribution": "the decoded ReconstructionBasis contribution; never an authored-object stem"
+  },
+  "candidate_intervention": {
+    "operation": "swap two producer object assignments or another documented producer control while preserving source regions and automation",
+    "track_order_reorder": "not admitted as slot-only intervention; prior J1R11 save/reopen evidence did not show the reorder persisted",
+    "required_precondition": "a documented or directly observable operation must produce a changed decoded OAMD slot assignment"
+  },
+  "controlled_variables": [
+    "source PCM, amplitude, phase, start sample and frequency",
+    "object count and active state",
+    "target/companion position and position automation",
+    "gain, timing, programme range and duration",
+    "sample rate, pre-roll and history",
+    "bed, routing, channel strips, plugins and project boundaries",
+    "encoder profile, bitrate and export settings"
+  ],
+  "nuisance_variables": [
+    "producer object ordering not known to equal OAMD slot order",
+    "base/basis energy allocation",
+    "global row permutation",
+    "global scale, source amplitude, sign or phase",
+    "encoder reoptimization",
+    "startup, pre-roll or decoder history",
+    "unverified GUI state or object identity"
+  ],
+  "hypotheses": {
+    "H_POS": "target vector is determined by position/state and fixed scene context, not slot",
+    "H_SLOT": "target vector changes materially when independently verified slot changes",
+    "H_ROW_PERMUTATION": "both target and companion are explained by one bounded shared row permutation",
+    "H_BASE_REALLOCATION": "assignment changes base/basis decomposition, so basis-only change is not causal slot evidence",
+    "H_CONTEXT_OR_REOPTIMIZATION": "another codec/context variable changed",
+    "H_HISTORY": "difference is startup/pre-roll/preceding-state history",
+    "H_NULL_INVALID": "slot intervention is not observable or was not applied"
+  },
+  "required_outputs": [
+    "raw per-row amplitude/energy",
+    "normalized 15-row magnitude vector",
+    "phase-aware coefficient when independently supported",
+    "total basis energy and corresponding base PCM component",
+    "RcLfe measurement",
+    "time-window consistency and AU alignment",
+    "OAMD slot/state/position sequence",
+    "decoder state/profile and exact carrier hashes"
+  ],
+  "analysis": {
+    "sample_rate_hz": 48000,
+    "analysis_interval": "pre-registered steady-state interval after identical pre-roll; exact AU range to be frozen before media generation",
+    "estimator": "coherent least-squares sinusoid projection, retaining complete 15-row vector",
+    "normalization": "L2 normalization after row vector extraction",
+    "near_zero": "retain rows; do not treat zero/near-zero as semantic identity",
+    "phase": "not currently admissible from J1R10 magnitude-only outputs; future use requires declared reference and alignment",
+    "row_permutation": "identity plus one independently justified common permutation only; arbitrary 15! search prohibited",
+    "classification": "report H_POS/H_SLOT/H_ROW_PERMUTATION/H_BASE_REALLOCATION/H_CONTEXT_OR_REOPTIMIZATION/H_HISTORY/H_NULL_INVALID separately"
+  },
+  "thresholds": {
+    "same_condition_repeat": "raw carrier and canonical f64 row artifacts must be byte-identical; otherwise A/B causal classification is invalid",
+    "f32_numeric_repeat": "max absolute sample difference <= 1e-6 when format conversion is unavoidable, based on J1R15 precision evidence",
+    "normalized_vector_equivalence": "L2 distance <= 1e-6 after admitted alignment",
+    "material_vector_change": "L2 distance > 1e-3; values between thresholds are INCONCLUSIVE",
+    "base_invariance": "exact channel-wise PCM equality where the same-condition path supports it; otherwise max absolute difference <= 1e-6 and no material frequency-energy redistribution",
+    "oamd_equivalence": "exact object count, source identity, position/state and timing equality except the intended verified slot index",
+    "threshold_source": "J1R5 deterministic repeatability/precision evidence and J1R9/J1R10 vector distances; fixed before any future A/B output"
+  },
+  "base_basis_rule": "If base PCM or base-plus-basis energy changes beyond the preregistered repeatability boundary, classify H_BASE_REALLOCATION or H_CONTEXT_OR_REOPTIMIZATION; do not call a basis-only difference H_SLOT.",
+  "row_permutation_rule": "A row permutation is explanatory only when independently constrained and applied consistently to target and companion; otherwise report row-label ambiguity and do not select H_SLOT.",
+  "independent_slot_verification": {
+    "required": true,
+    "evidence": ["authoring manifest", "decoded OAMD slot/state records", "source-frequency identity", "deterministic hashes"],
+    "track_order_assumption": false,
+    "current_status": "NOT_ESTABLISHED"
+  },
+  "producer_automation": {
+    "required_apps": ["Logic Pro", "OpenJOC CLI/tools"],
+    "current_position_authoring": "human-assisted automation-lane entry; Object Panner readback only",
+    "current_slot_control": "no documented, independently verified slot-assignment control",
+    "prior_track_order_attempt": "J1R11 reorder was not reflected after save/reopen",
+    "non_rendering_dry_run": "NOT_RUN; prior frozen failure is sufficient and no new Logic interaction is authorized",
+    "failure_detection": "would require saved project state plus decoded OAMD verification",
+    "autonomous_status": "NOT_ESTABLISHED"
+  },
+  "minimality": {
+    "candidate_future_fixture_count": 2,
+    "why_two_are_needed": "one A/B pair is the smallest contrast for a slot-only intervention, but only after exact repeatability and metadata gates",
+    "why_two_are_not_yet_admitted": "the producer operation has not been shown to change only OAMD slot assignment; a third carrier cannot repair an unverified intervention",
+    "additional_controls": "not justified until a real slot-only control exists"
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "authored_object_pcm": false,
+    "audio_bound_objectscene": false,
+    "warp_raw3_changed": false
+  }
+}
