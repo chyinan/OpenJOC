@@ -1,0 +1,42 @@
+{
+  "schema": "openjoc.j2r4.existing-corpus-slot-census.v1",
+  "stage": "J2R4 — Existing-Corpus OAMD Slot Natural-Experiment Census & Confounding-Rank Analysis",
+  "classification": "EXISTING_CORPUS_SLOT_EFFECT_NOT_IDENTIFIABLE",
+  "scope": "existing frozen OAMD/ReconstructionBasis analysis windows; structural row/slot labels only",
+  "semantic_binding_state": "Unresolved",
+  "logic_launch": false,
+  "new_logic_fixture": false,
+  "new_media": false,
+  "observation_count": 13,
+  "usable_carrier_count": 9,
+  "observed_slot_histogram": {"0": 11, "3": 2},
+  "slot_admission": {
+    "direct": 0,
+    "ambiguous": 13,
+    "unavailable": 0,
+    "reason": "No independently verified within-scene slot intervention; row/slot index is not authored-object identity evidence."
+  },
+  "pairwise": {
+    "pair_count": 78,
+    "exact_controlled_slot_contrast": 0,
+    "near_same_position_source_context_diff": 2,
+    "near_same_position_context_source_diff": 2,
+    "same_position_slot_diff_confounded": 1,
+    "same_position_same_slot_control": 1,
+    "ambiguous_other": 72,
+    "exact_pair_outcome": "NOT_APPLICABLE_NO_EXACT_PAIR"
+  },
+  "design_rank": {
+    "matrix_shape": [13, 13],
+    "exact_fraction_rank": 12,
+    "nullity": 1,
+    "slot_contrast_estimable": false,
+    "factors": ["position", "source_frequency_hz", "context", "observed_slot"],
+    "interpretation": "descriptive alias audit, not a causal slot estimate"
+  },
+  "history_context": "CONFOUNDED",
+  "base_basis": "NO_ADMISSIBLE_PAIRED_BASE_MEASUREMENT",
+  "row_permutation": "NOT_APPLICABLE",
+  "minimum_missing_observation": "A reciprocal two-object same-scene/same-position/same-context intervention with independent OAMD slot verification and unchanged source/timing fields.",
+  "warp_boundary": "warp raw 3 remains ETSI ReservedWarpMode; no vendor interpretation was performed"
+}
