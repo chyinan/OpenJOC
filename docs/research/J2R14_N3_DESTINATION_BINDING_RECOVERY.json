@@ -1,0 +1,14 @@
+{
+  "schema": "openjoc.j2r14.n3-destination-binding-recovery.v1",
+  "destination_contract": "PARENT_PLUS_LEAF",
+  "old_queue": "RETIRED",
+  "consumed_run": "TERMINAL",
+  "fresh_recovery_namespace": true,
+  "non_media_resolution_oracle": "PASS",
+  "fresh_logic_cancel_rehearsals": 4,
+  "save_actions": 0,
+  "media_generated": 0,
+  "n3_evidence_admitted": false,
+  "semantic_binding_state": "Unresolved",
+  "warp_raw3_semantics_changed": false
+}

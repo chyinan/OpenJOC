@@ -1,0 +1,11 @@
+{
+  "schema": "openjoc.j2r13.n3-producer-export-execution.v1",
+  "producer_invocation_count": 1,
+  "destination_binding": "FAILED",
+  "partial_output": "QUARANTINED_PRIVATE_HASH_FROZEN",
+  "consumed_run_terminalized": true,
+  "remaining_queue_executed": false,
+  "n3_evidence_admitted": false,
+  "semantic_binding_state": "Unresolved",
+  "follow_up": "J2R14_DESTINATION_BINDING_REPAIR_AND_RECOVERY_QUEUE"
+}

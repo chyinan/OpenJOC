@@ -1,0 +1,16 @@
+{
+  "schema": "openjoc.j2r14.public-recovery-execution-queue.v1",
+  "queue_revision": 2,
+  "scientific_matrix_hash": "5b08539c4887ae49ed119ae5ce6b9d18e62d0b4aee5f29240afceb5dd3bf11e4",
+  "old_execution_queue_hash": "1d59c600a9a9a4839a013925a8fdb58f055d4497a28b62ee704c8d482c10c1e6",
+  "recovery_queue_hash": "cb3a8eaa313e114f4eca9b21b54b6ee4b95fa7a667d8aed51cd7e64a49e5aa88",
+  "baseline_projects": ["S_FL", "S_FR", "D_SWAP"],
+  "pair_assignments": [
+    {"pair_id": "N3_RECOVERY_S_FL_PAIR", "runs": ["S_FL_RECOVERY_PRODUCER_0", "S_FL_RECOVERY_PRODUCER_1"]},
+    {"pair_id": "N3_RECOVERY_S_FR_PAIR", "runs": ["S_FR_RECOVERY_PRODUCER_0", "S_FR_RECOVERY_PRODUCER_1"]},
+    {"pair_id": "N3_RECOVERY_D_SWAP_PAIR_A", "runs": ["D_SWAP_RECOVERY_PRODUCER_0", "D_SWAP_RECOVERY_PRODUCER_1"]},
+    {"pair_id": "N3_RECOVERY_D_SWAP_PAIR_B", "runs": ["D_SWAP_RECOVERY_PRODUCER_2", "D_SWAP_RECOVERY_PRODUCER_3"]}
+  ],
+  "producer_export_authorized_in_j2r14": false,
+  "private_paths_included": false
+}
