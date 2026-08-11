@@ -991,3 +991,19 @@ still has no observed AHT activation. It also does not alter
 ObjectScene, or change strict/vendor warp handling. The next release-value
 coding-tool boundary should be selected by the reviewer from remaining
 non-fixture gaps rather than by extending synthetic AHT claims into real media.
+
+## J1R30 — dependent-substream assembly and channel topology
+
+The one-I0/optional-D0 JOC path now has independent public-syntax evidence for
+parent association, the complete 16-bit channel-map representation, Table 47
+topology admission, channel-labelled sentinel PCM merge, LFE separation,
+configuration-specific TDAC reset, failure atomicity, and bounded streaming.
+Valid seven-channel internal-base output is retained by the CLI rather than
+rejected by a five-channel-only diagnostic assumption.
+
+The milestone decision is
+`DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED`. It is explicitly
+not a real controlled-carrier fidelity result because the existing Logic
+corpus does not activate D0. Multiple dependent substreams are not admitted by
+the TS 103 420 E.3 JOC boundary. `SemanticBindingState::Unresolved`, authored-
+object PCM inadmissibility, and strict raw-warp handling remain unchanged.

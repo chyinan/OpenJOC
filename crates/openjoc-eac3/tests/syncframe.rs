@@ -1,5 +1,6 @@
+use openjoc_bitio::BitError;
 use openjoc_eac3::{
-    AudioPcmSynthesizer, CouplingInformation, Eac3Error, InternalBasePolicy,
+    AudioPcmSynthesizer, ChannelLocation, CouplingInformation, Eac3Error, InternalBasePolicy,
     JocAccessUnitPcmDecoder, JocAddbsi, StreamType, block_start_information_length,
     channel_end_mantissa, channel_exponent_group_count, classify_aux_emdf,
     classify_skip_field_emdf, decode_audio_blocks, decode_audio_blocks_with_parsed_frame,
@@ -420,6 +421,7 @@ fn decodes_an_indexed_independent_joc_access_unit_to_pcm() {
     assert_eq!(pcm.sample_rate, 48_000);
     assert_eq!(pcm.samples, 1536);
     assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channel_locations, vec![ChannelLocation::Centre]);
     assert_eq!(pcm.channels[0].len(), 1536);
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
 }
@@ -437,6 +439,7 @@ fn decodes_a_raw_dependent_d0_custom_map_through_pcm_and_replaces_i0() {
         .expect("dependent D0 PCM");
     assert_eq!(pcm.samples, 1536);
     assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channel_locations, vec![ChannelLocation::Centre]);
     assert_eq!(pcm.channels[0].len(), 1536);
 
     let mut independent_decoder = JocAccessUnitPcmDecoder::new();
@@ -455,6 +458,181 @@ fn decodes_a_raw_dependent_d0_custom_map_through_pcm_and_replaces_i0() {
         .expect("independent PCM");
     assert_ne!(pcm.channels[0], independent_pcm.channels[0]);
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn dependent_configuration_change_resets_only_dependent_tdac_history() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let centre_dependent = six_block_mono_frame(1, Some(0x4000), Some(0xa5));
+    let left_dependent = six_block_mono_frame(1, Some(0x8000), Some(0xa5));
+
+    let centre_bytes = [independent.clone(), centre_dependent].concat();
+    let centre_frames = index_syncframes(&centre_bytes).expect("centre I0/D0 frames");
+    let centre_unit = group_access_units(&centre_frames).expect("centre AU")[0];
+    let mut continuing = JocAccessUnitPcmDecoder::new();
+    continuing
+        .decode(&centre_bytes, &centre_frames, centre_unit, &[0.5; 512])
+        .expect("prime dependent TDAC state");
+    let mut independent_control = JocAccessUnitPcmDecoder::new();
+    independent_control
+        .decode(&centre_bytes, &centre_frames, centre_unit, &[0.5; 512])
+        .expect("prime independent control state");
+
+    let left_bytes = [independent, left_dependent].concat();
+    let left_frames = index_syncframes(&left_bytes).expect("left I0/D0 frames");
+    let left_unit = group_access_units(&left_frames).expect("left AU")[0];
+    let transitioned = continuing
+        .decode(&left_bytes, &left_frames, left_unit, &[0.5; 512])
+        .expect("changed dependent map");
+    let fresh = JocAccessUnitPcmDecoder::new()
+        .decode(&left_bytes, &left_frames, left_unit, &[0.5; 512])
+        .expect("fresh changed-map decode");
+    let independent_frames =
+        index_syncframes(&left_bytes[..left_frames[1].offset]).expect("independent-only frame");
+    let independent_unit = group_access_units(&independent_frames).expect("independent AU")[0];
+    let continued_independent = independent_control
+        .decode(
+            &left_bytes[..left_frames[1].offset],
+            &independent_frames,
+            independent_unit,
+            &[0.5; 512],
+        )
+        .expect("continued independent TDAC state");
+
+    // The first canonical output is dependent Left. Its coded-channel TDAC
+    // history must not inherit the previous Centre identity.
+    assert_eq!(transitioned.channels[0], fresh.channels[0]);
+    assert_eq!(transitioned.channels.len(), 2);
+    assert_eq!(
+        transitioned.channel_locations,
+        vec![ChannelLocation::Left, ChannelLocation::Centre]
+    );
+    assert_eq!(transitioned.channels[1], continued_independent.channels[0]);
+}
+
+#[test]
+fn capture_and_access_unit_local_decode_have_identical_dependent_pcm() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent = six_block_mono_frame(1, Some(0x8000), Some(0xa5));
+    let one_unit = [independent, dependent].concat();
+    let stream = [one_unit.clone(), one_unit.clone(), one_unit.clone()].concat();
+    let frames = index_syncframes(&stream).expect("capture frames");
+    let units = group_access_units(&frames).expect("capture AUs");
+
+    let mut capture_decoder = JocAccessUnitPcmDecoder::new();
+    let capture = units
+        .iter()
+        .copied()
+        .map(|unit| {
+            capture_decoder
+                .decode(&stream, &frames, unit, &[0.5; 512])
+                .expect("capture decode")
+        })
+        .collect::<Vec<_>>();
+
+    let mut local_decoder = JocAccessUnitPcmDecoder::new();
+    let local = stream
+        .chunks_exact(one_unit.len())
+        .map(|bytes| {
+            let local_frames = index_syncframes(bytes).expect("local frames");
+            let local_unit = group_access_units(&local_frames).expect("local AU")[0];
+            local_decoder
+                .decode(bytes, &local_frames, local_unit, &[0.5; 512])
+                .expect("AU-local decode")
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(local, capture);
+}
+
+#[test]
+fn failed_dependent_decode_is_atomic_for_both_substream_histories() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent = six_block_mono_frame(1, Some(0x4000), Some(0xa5));
+    let valid = [independent, dependent].concat();
+    let frames = index_syncframes(&valid).expect("valid I0/D0 frames");
+    let unit = group_access_units(&frames).expect("valid AU")[0];
+    let mut subject = JocAccessUnitPcmDecoder::new();
+    let mut control = JocAccessUnitPcmDecoder::new();
+    subject
+        .decode(&valid, &frames, unit, &[0.5; 512])
+        .expect("subject first AU");
+    control
+        .decode(&valid, &frames, unit, &[0.5; 512])
+        .expect("control first AU");
+
+    let truncated = &valid[..valid.len() - 1];
+    assert!(matches!(
+        subject.decode(truncated, &frames, unit, &[0.5; 512]),
+        Err(Eac3Error::TruncatedFrame { .. })
+    ));
+
+    let subject_next = subject
+        .decode(&valid, &frames, unit, &[0.5; 512])
+        .expect("subject retry after failed D0");
+    let control_next = control
+        .decode(&valid, &frames, unit, &[0.5; 512])
+        .expect("control uninterrupted second AU");
+    assert_eq!(subject_next, control_next);
+}
+
+#[test]
+fn explicit_access_unit_decoder_reset_matches_a_fresh_decoder() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent = six_block_mono_frame(1, Some(0x4000), Some(0xa5));
+    let bytes = [independent, dependent].concat();
+    let frames = index_syncframes(&bytes).expect("I0/D0 frames");
+    let unit = group_access_units(&frames).expect("AU")[0];
+    let mut reset = JocAccessUnitPcmDecoder::new();
+    reset
+        .decode(&bytes, &frames, unit, &[0.5; 512])
+        .expect("prime decoder");
+    reset.reset();
+    let reset_output = reset
+        .decode(&bytes, &frames, unit, &[0.5; 512])
+        .expect("decode after reset");
+    let fresh_output = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &[0.5; 512])
+        .expect("fresh decode");
+    assert_eq!(reset_output, fresh_output);
+}
+
+#[test]
+fn joc_decoder_rejects_more_than_one_dependent_substream() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent_zero = six_block_mono_frame(1, Some(0x4000), Some(0xa5));
+    let mut dependent_one = six_block_mono_frame(1, Some(0x8000), Some(0xa5));
+    // substreamid is the three bits immediately after strmtyp.
+    dependent_one[2] = (dependent_one[2] & 0xc7) | 0x08;
+    let bytes = [independent, dependent_zero, dependent_one].concat();
+    let frames = index_syncframes(&bytes).expect("I0/D0/D1 frames");
+    let unit = group_access_units(&frames).expect("general E-AC-3 grouping")[0];
+    assert_eq!(unit.frame_count, 3);
+    assert_eq!(
+        JocAccessUnitPcmDecoder::new().decode(&bytes, &frames, unit, &[0.5; 512]),
+        Err(Eac3Error::UnsupportedJocAccessUnitFrameCount { actual: 3 })
+    );
+}
+
+#[test]
+fn truncated_dependent_chanmap_is_a_bounded_parser_error() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(1, 2); // dependent
+    bits.push(0, 3); // D0
+    bits.push(3, 11); // eight-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(3, 2); // six blocks
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // bsid
+    bits.push(31, 5); // dialnorm
+    bits.push(0, 1); // no compression word
+    bits.push(1, 1); // chanmape; fewer than 16 bits remain
+    assert!(matches!(
+        parse_bsi(&bits.bytes(8)),
+        Err(Eac3Error::Bit(BitError::EndOfInput { requested: 16, .. }))
+    ));
 }
 
 #[test]
@@ -2107,6 +2285,23 @@ fn rejects_nonsequential_substreams_and_timing_mismatch() {
     assert_eq!(
         group_access_units(&index_syncframes(&bad_timing).expect("headers")),
         Err(Eac3Error::SubstreamTimingMismatch { frame: 1 })
+    );
+}
+
+#[test]
+fn rejects_orphan_and_dependent_after_converted_independent_substreams() {
+    let orphan = frame(1, 0, 16, 0, 3);
+    assert_eq!(
+        group_access_units(&index_syncframes(&orphan).expect("orphan header")),
+        Err(Eac3Error::MissingIndependentSubstreamZero { frame: 0 })
+    );
+
+    let converted_then_dependent = [frame(2, 0, 16, 0, 3), frame(1, 0, 16, 0, 3)].concat();
+    assert_eq!(
+        group_access_units(
+            &index_syncframes(&converted_then_dependent).expect("converted headers")
+        ),
+        Err(Eac3Error::DependentAfterConvertedSubstream { frame: 1 })
     );
 }
 

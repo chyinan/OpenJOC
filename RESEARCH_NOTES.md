@@ -664,3 +664,29 @@ No production defect was found. The result is deliberately limited to
 synthetic public syntax and reconstructed values. Existing real Logic
 carriers remain AHT-off, so full real-stream AHT PCM fidelity remains open;
 no object identity or binding conclusion follows.
+
+## J1R30 — dependent-substream assembly observations
+
+TS 102 366 Annex E establishes parent-first ordering and Table E.1.4 channel
+locations; matching locations from a dependent substream replace the
+independent location rather than forming an invalid duplicate. TS 103 420 E.3
+narrows JOC to one I0 plus optional D0, six blocks, and a Table 47 output
+configuration. The test oracle therefore keeps two distinct questions:
+complete low-level `chanmap` representation and the smaller admitted JOC
+topology set.
+
+All 65,536 `chanmap` words match an independent table transcription. Sentinel
+PCM proves replacement and supplements reach the declared logical channels,
+including rear and height alternatives. The height carrier locations retain
+Table E.1.4's `Vhl/Vhr` labels; Table 47 separately names the 5.X+2 output
+pair `Tfl/Tfr`. The audit found that TDAC history had
+been keyed only by substream role, so a D0 chanmap change could carry overlap
+history from an old logical channel into a new one. A configuration signature
+now resets only that substream; an independent I0 control proves its history
+continues. A separate CLI defect rejected valid seven-channel assembled PCM
+and could not report its labels; the capture boundary now retains topology and
+rejects mid-stream shape changes before mutation.
+
+This is a codec-channel result only. A substream ID or channel location is not
+an Atmos object identity. The controlled Logic corpus remains D0-off, so the
+result cannot establish real-encoder prevalence or full real-stream fidelity.

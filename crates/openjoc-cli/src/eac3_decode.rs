@@ -406,6 +406,7 @@ where
             dither_values,
             base_policy,
         )?;
+        pcm.validate_joc_topology()?;
         if pcm.sample_rate != access_unit.unit.sample_rate
             || pcm.samples != access_unit.unit.samples
             || pcm.channels.is_empty()
@@ -494,6 +495,7 @@ where
             dither_values,
             base_policy,
         )?;
+        pcm.validate_joc_topology()?;
         if pcm.sample_rate != unit.sample_rate
             || pcm.samples != unit.samples
             || pcm.channels.is_empty()

@@ -2637,3 +2637,30 @@ fidelity claim. The controlled Logic corpus remains
 fidelity is not established. No production AHT expression changed, no media
 was created, `SemanticBindingState::Unresolved` remains unchanged, and ETSI
 strict raw warp 3 remains reserved.
+
+## J1R30 — dependent-substream assembly and channel topology (2026-08-11)
+
+The authorized normative sources are ETSI TS 102 366 V1.4.1 Annex E and ETSI
+TS 103 420 V1.2.1 clauses 8.1/E.3 and Table 47. The public 16-bit `chanmap`
+was independently transcribed MSB-first from Table E.1.4 and compared with the
+production mapper for all 65,536 bit patterns. Sentinel PCM tests separately
+lock matching-location replacement, Lrs/Rrs and Vhl/Vhr supplementation,
+canonical ordering, LFE replacement, and LFE/LFE2 distinction. The complete
+JOC path now explicitly admits only Table 47 5.X, 7.X, and 5.X+2 topologies;
+the lower E-AC-3 diagnostic mapper continues to represent the complete public
+Table E.1.4 domain without promoting every map to a valid JOC layout.
+
+Production fixes reset only the affected substream's TDAC history when its
+rate/acmod/LFE/chanmap configuration changes, preserve channel-location labels
+through `DecodedAccessUnitPcm`, and let the CLI capture a valid seven-channel
+base instead of rejecting every non-five-channel result. Failed dependent
+decodes remain atomic. Capture and AU-local PCM decoding compare exactly, and
+the incremental AU reader retains one bounded lookahead frame across 128
+I0/D0 units. Multiple dependent substreams remain outside TS 103 420 E.3's
+one-I0/optional-D0 JOC contract and are rejected by the JOC decoder.
+
+Decision: `DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED` for the
+public-syntax JOC scope. Existing controlled Logic carriers do not activate a
+dependent substream, so `FULL_REAL_STREAM_DEPENDENT_SUBSTREAM_FIDELITY_ESTABLISHED`
+is not claimed. No media was created, semantic binding remains unresolved,
+and strict raw warp 3 remains reserved.

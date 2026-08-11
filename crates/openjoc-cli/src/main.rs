@@ -13,7 +13,7 @@ use openjoc_container::{
     DEFAULT_MAX_EAC3_BYTES, InputMediaKind, detect_media, load_eac3, open_seekable_iso_bmff,
 };
 use openjoc_eac3::{
-    DecodedAccessUnitPcm, InternalBasePolicy, emit_coding_tool_inventory,
+    ChannelLocation, DecodedAccessUnitPcm, InternalBasePolicy, emit_coding_tool_inventory,
     extract_joc_addbsi_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
@@ -904,6 +904,8 @@ struct CompatibleBasePaths {
 struct InternalBasePcm {
     base_policy: InternalBasePolicy,
     sample_rate: Option<u32>,
+    channel_locations: Option<Vec<ChannelLocation>>,
+    lfe_location: Option<ChannelLocation>,
     full: Vec<Vec<f64>>,
     joc_input: Vec<Vec<f64>>,
     lfe: Option<Vec<f64>>,
@@ -919,10 +921,11 @@ impl InternalBasePcm {
                 self.access_units, access_unit
             ));
         }
-        if pcm.channels.len() != 5 {
+        if pcm.channels.is_empty() || pcm.channel_locations.len() != pcm.channels.len() {
             return Err(format!(
-                "internal base exposes {} full-band channels; expected five JOC inputs",
-                pcm.channels.len()
+                "internal base exposes {} full-band channels but {} channel locations",
+                pcm.channels.len(),
+                pcm.channel_locations.len()
             ));
         }
         let frame_samples = usize::from(pcm.samples);
@@ -941,7 +944,45 @@ impl InternalBasePcm {
                 expected, pcm.sample_rate
             ));
         }
+        if pcm.lfe.is_some() != pcm.lfe_location.is_some() {
+            return Err("internal base LFE PCM/location presence mismatch".to_owned());
+        }
+        if let Some(lfe) = &pcm.lfe
+            && lfe.len() != frame_samples
+        {
+            return Err("internal base LFE frame length mismatch".to_owned());
+        }
+        if self.access_units > 0 {
+            if self.channel_locations.as_deref() != Some(pcm.channel_locations.as_slice()) {
+                return Err(
+                    "internal base channel topology changed between access units".to_owned(),
+                );
+            }
+            if self.lfe_location != pcm.lfe_location {
+                return Err("internal base LFE topology changed between access units".to_owned());
+            }
+        }
+
+        let mut frame_full = pcm.channels.clone();
+        if let Some(lfe) = &pcm.lfe {
+            let insertion = pcm
+                .channel_locations
+                .iter()
+                .position(|location| *location == ChannelLocation::Centre)
+                .map_or(frame_full.len(), |index| index + 1);
+            frame_full.insert(insertion, lfe.clone());
+        }
+        if !self.full.is_empty() && self.full.len() != frame_full.len() {
+            return Err(
+                "internal base full channel topology changed between access units".to_owned(),
+            );
+        }
+
         self.sample_rate.get_or_insert(pcm.sample_rate);
+        if self.channel_locations.is_none() {
+            self.channel_locations = Some(pcm.channel_locations.clone());
+            self.lfe_location = pcm.lfe_location;
+        }
         if self.joc_input.is_empty() {
             self.joc_input = vec![Vec::new(); pcm.channels.len()];
         }
@@ -951,36 +992,15 @@ impl InternalBasePcm {
         match (&mut self.lfe, &pcm.lfe) {
             (None, None) => {}
             (None, Some(source)) => {
-                if source.len() != frame_samples {
-                    return Err("internal base LFE frame length mismatch".to_owned());
-                }
                 self.lfe = Some(source.clone());
             }
             (Some(destination), Some(source)) => {
-                if source.len() != frame_samples {
-                    return Err("internal base LFE frame length mismatch".to_owned());
-                }
                 destination.extend_from_slice(source);
             }
             (Some(_), None) => {
                 return Err("internal base LFE presence changed between access units".to_owned());
             }
         }
-        let frame_full = if let Some(lfe) = &pcm.lfe {
-            if lfe.len() != frame_samples {
-                return Err("internal base LFE frame length mismatch".to_owned());
-            }
-            vec![
-                pcm.channels[0].clone(),
-                pcm.channels[1].clone(),
-                pcm.channels[2].clone(),
-                lfe.clone(),
-                pcm.channels[3].clone(),
-                pcm.channels[4].clone(),
-            ]
-        } else {
-            pcm.channels.clone()
-        };
         if self.full.is_empty() {
             self.full = vec![Vec::new(); frame_full.len()];
         }
@@ -1017,11 +1037,19 @@ impl InternalBasePcm {
                 encode_channels(sample_rate, std::slice::from_ref(lfe), options)?,
             )?;
         }
-        let full_order = if self.lfe.is_some() {
-            vec!["FL", "FR", "FC", "LFE", "SL", "SR"]
-        } else {
-            vec!["FL", "FR", "FC", "SL", "SR"]
-        };
+        let joc_locations = self.channel_locations.as_deref().unwrap_or(&[]);
+        let joc_order = joc_locations
+            .iter()
+            .map(|location| location.label())
+            .collect::<Vec<_>>();
+        let mut full_order = joc_order.clone();
+        if let Some(lfe_location) = self.lfe_location {
+            let insertion = joc_locations
+                .iter()
+                .position(|location| *location == ChannelLocation::Centre)
+                .map_or(full_order.len(), |index| index + 1);
+            full_order.insert(insertion, lfe_location.label());
+        }
         let inventory = serde_json::json!({
             "source": "OpenJOC internal E-AC-3 decoder",
             "base_policy": format!("{:?}", self.base_policy),
@@ -1036,13 +1064,13 @@ impl InternalBasePcm {
             },
             "joc_input": {
                 "wav": "debug/internal_base_joc_input.wav",
-                "channel_order": ["FL", "FR", "FC", "SL", "SR"],
+                "channel_order": joc_order,
                 "channel_count": self.joc_input.len(),
                 "lfe_excluded": true,
             },
             "lfe": {
                 "wav": self.lfe.as_ref().map(|_| "debug/internal_base_lfe.wav"),
-                "channel_order": ["LFE"],
+                "channel_order": self.lfe_location.map(ChannelLocation::label),
                 "present": self.lfe.is_some(),
             },
             "decoder_delay": "not independently exposed; compare-base report estimates bounded alignment",
@@ -1571,15 +1599,23 @@ fn usage_error() -> io::Error {
 #[cfg(test)]
 mod internal_base_tests {
     use super::InternalBasePcm;
-    use openjoc_eac3::DecodedAccessUnitPcm;
+    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
 
     fn frame(value: f64, lfe: Option<f64>) -> DecodedAccessUnitPcm {
         DecodedAccessUnitPcm {
             sample_rate: 48_000,
             samples: 2,
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ],
             channels: (0..5)
                 .map(|channel| vec![value + channel as f64, value + channel as f64 + 0.5])
                 .collect(),
+            lfe_location: lfe.map(|_| ChannelLocation::Lfe(0)),
             lfe: lfe.map(|value| vec![value, value + 0.5]),
         }
     }
@@ -1610,6 +1646,38 @@ mod internal_base_tests {
         let mut invalid = frame(0.0, None);
         invalid.channels.pop();
         let error = shape.append(0, &invalid).unwrap_err();
-        assert!(error.contains("expected five JOC inputs"));
+        assert!(error.contains("5 channel locations"));
+    }
+
+    #[test]
+    fn captures_seven_channel_dependent_topology_without_losing_labels() {
+        let mut capture = InternalBasePcm::default();
+        let mut seven = frame(1.0, Some(10.0));
+        seven
+            .channel_locations
+            .extend([ChannelLocation::LeftBack, ChannelLocation::RightBack]);
+        seven.channels.extend([vec![20.0, 20.5], vec![21.0, 21.5]]);
+        capture.append(0, &seven).expect("seven-channel topology");
+
+        assert_eq!(capture.joc_input.len(), 7);
+        assert_eq!(capture.full.len(), 8);
+        assert_eq!(capture.channel_locations, Some(seven.channel_locations));
+        assert_eq!(capture.lfe_location, Some(ChannelLocation::Lfe(0)));
+        assert_eq!(capture.full[3], vec![10.0, 10.5]);
+        assert_eq!(capture.full[6], vec![20.0, 20.5]);
+        assert_eq!(capture.full[7], vec![21.0, 21.5]);
+    }
+
+    #[test]
+    fn rejects_topology_changes_before_mutating_accumulated_pcm() {
+        let mut capture = InternalBasePcm::default();
+        capture.append(0, &frame(1.0, None)).expect("first frame");
+        let before = capture.joc_input.clone();
+        let mut changed = frame(2.0, None);
+        changed.channel_locations[4] = ChannelLocation::RightBack;
+
+        assert!(capture.append(1, &changed).is_err());
+        assert_eq!(capture.joc_input, before);
+        assert_eq!(capture.access_units, 1);
     }
 }

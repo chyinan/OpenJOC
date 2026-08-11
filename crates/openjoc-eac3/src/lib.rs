@@ -40,7 +40,7 @@ mod rematrix;
 mod spx;
 mod transform;
 
-pub use access_unit::{DecodedAccessUnitPcm, JocAccessUnitPcmDecoder};
+pub use access_unit::{ChannelLocation, DecodedAccessUnitPcm, JocAccessUnitPcmDecoder};
 pub use aht::{
     decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
     expand_aht_gaq_gains,
@@ -369,6 +369,10 @@ pub enum Eac3Error {
     UnsupportedJocAudioBlockCount {
         actual: u8,
     },
+    UnsupportedJocChannelTopology {
+        full_band_channels: usize,
+        lfe_present: bool,
+    },
     InvalidDependentChannelMap {
         expected: usize,
         actual: usize,
@@ -464,6 +468,13 @@ impl Eac3Error {
             Self::UnsupportedJocAudioBlockCount { actual } => Some(write!(
                 formatter,
                 "JOC E-AC-3 syncframe contains {actual} audio blocks; expected six"
+            )),
+            Self::UnsupportedJocChannelTopology {
+                full_band_channels,
+                lfe_present,
+            } => Some(write!(
+                formatter,
+                "JOC E-AC-3 access unit exposes unsupported Table 47 topology: {full_band_channels} full-band channels, LFE present={lfe_present}"
             )),
             Self::InvalidDependentChannelMap { expected, actual } => Some(write!(
                 formatter,
@@ -771,6 +782,7 @@ impl fmt::Display for Eac3Error {
             | Self::InvalidAccessUnitRange
             | Self::UnsupportedJocAccessUnitFrameCount { .. }
             | Self::UnsupportedJocAudioBlockCount { .. }
+            | Self::UnsupportedJocChannelTopology { .. }
             | Self::InvalidDependentChannelMap { .. }
             | Self::MultipleLfeChannels
             | Self::AccessUnitPcmSampleCountMismatch { .. }

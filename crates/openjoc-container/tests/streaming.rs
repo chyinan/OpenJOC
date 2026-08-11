@@ -1,4 +1,5 @@
 use openjoc_container::{InputMediaError, RawEac3AccessUnitReader, RawEac3FrameReader};
+use openjoc_eac3::{group_access_units, index_syncframes};
 use std::io::{self, Read};
 
 fn push(bits: &mut Vec<bool>, value: u64, width: usize) {
@@ -253,4 +254,63 @@ fn access_unit_reader_high_watermark_plateaus_over_long_sequence() {
     assert_eq!(stats.max_au_frames, 1);
     assert!(stats.max_complete_frames_retained <= 2);
     assert!(stats.max_input_carry_bytes <= 16);
+}
+
+#[test]
+fn dependent_access_units_match_capture_grouping_with_bounded_lookahead() {
+    let independent = frame(0, 0, 16);
+    let dependent = frame(1, 0, 18);
+    let mut stream = Vec::new();
+    for _ in 0..128 {
+        stream.extend_from_slice(&independent);
+        stream.extend_from_slice(&dependent);
+    }
+
+    let captured_frames = index_syncframes(&stream).expect("capture frame index");
+    let captured_units = group_access_units(&captured_frames).expect("capture AU grouping");
+    assert_eq!(captured_units.len(), 128);
+
+    let mut reader = RawEac3AccessUnitReader::new(
+        Chunked {
+            bytes: &stream,
+            offset: 0,
+            chunk: 3,
+        },
+        64,
+    );
+    for captured in captured_units {
+        let streamed = reader
+            .next_access_unit()
+            .expect("streamed dependent AU")
+            .expect("present dependent AU");
+        assert_eq!(streamed.unit.first_frame, 0);
+        assert_eq!(streamed.unit.frame_count, captured.frame_count);
+        assert_eq!(streamed.unit.sample_rate, captured.sample_rate);
+        assert_eq!(streamed.unit.samples, captured.samples);
+
+        let capture_start = captured_frames[captured.first_frame].offset;
+        let capture_last = captured_frames[captured.first_frame + captured.frame_count - 1];
+        let capture_end = capture_last.offset + capture_last.header.frame_size;
+        assert_eq!(streamed.bytes, stream[capture_start..capture_end]);
+        assert_eq!(
+            streamed
+                .frames
+                .iter()
+                .map(|entry| entry.header)
+                .collect::<Vec<_>>(),
+            captured_frames[captured.first_frame..captured.first_frame + captured.frame_count]
+                .iter()
+                .map(|entry| entry.header)
+                .collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(reader.next_access_unit().expect("exact EOF"), None);
+    let stats = reader.stats();
+    assert_eq!(stats.access_units_emitted, 128);
+    assert_eq!(stats.frames_emitted, 256);
+    assert_eq!(stats.max_au_frames, 2);
+    assert_eq!(stats.max_au_bytes, 34);
+    assert_eq!(stats.max_lookahead_frames, 1);
+    assert!(stats.max_complete_frames_retained <= 3);
+    assert!(stats.max_input_carry_bytes <= 18);
 }

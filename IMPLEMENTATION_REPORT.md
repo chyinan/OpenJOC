@@ -1668,3 +1668,32 @@ No production implementation change was required. The accepted level is
 integrated bin, with `AHT_L2_RECONSTRUCTION_VALUES` established through the
 production parser. Real-stream AHT PCM fidelity remains unestablished because
 the frozen controlled corpus does not activate AHT.
+
+## J1R30 — dependent-substream assembly and topology admission
+
+`JocAccessUnitPcmDecoder` continues to decode I0 and optional D0 with separate
+TDAC synthesizers, but now records each substream's sample-rate/acmod/LFE/map
+configuration. A changed configuration resets the affected synthesizer before
+decode; decode and merge still operate on clones and commit only after the
+complete AU succeeds. `DecodedAccessUnitPcm` now carries canonical
+`ChannelLocation` values and a separate LFE location alongside PCM, preventing
+7.X and 5.X+2 from becoming indistinguishable channel-count-only results.
+
+The low-level mapper covers the complete public Table E.1.4 bit domain. The
+complete JOC path calls `validate_joc_topology` to admit only Table 47 5.X,
+7.X, and 5.X+2. Matching dependent locations replace I0 PCM as specified;
+new locations supplement it. Distinct LFE and LFE2 locations are not silently
+collapsed. Sample mismatch diagnostics now report the actual mismatched
+channel length.
+
+The CLI internal-base collector no longer assumes exactly five full-band
+channels. It retains the first AU's labels, supports valid seven-channel JOC
+input, inserts the separately bypassed LFE after C for diagnostics, and rejects
+later topology changes before mutating accumulated PCM. Regression coverage
+includes exhaustive map comparison, parser activation, sentinel merges,
+configuration reset/isolation, malformed input atomicity, exact capture versus
+AU-local PCM, and bounded incremental I0/D0 grouping.
+
+Decision: `DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED` for
+public syntax. Real controlled-corpus activation and full real-stream fidelity
+remain unavailable.

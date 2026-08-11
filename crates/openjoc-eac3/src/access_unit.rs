@@ -16,8 +16,119 @@ use crate::{
 pub struct DecodedAccessUnitPcm {
     pub sample_rate: u32,
     pub samples: u16,
+    /// Canonical logical location for each entry in [`Self::channels`].
+    pub channel_locations: Vec<ChannelLocation>,
     pub channels: Vec<Vec<f64>>,
+    /// Logical LFE location retained in [`Self::lfe`], when present.
+    pub lfe_location: Option<ChannelLocation>,
     pub lfe: Option<Vec<f64>>,
+}
+
+impl DecodedAccessUnitPcm {
+    /// Validates the channel sets admitted by TS 103 420 Table 47.
+    ///
+    /// The lower-level E-AC-3 assembler intentionally remains able to
+    /// represent every public Table E.1.4 location for diagnostics. The
+    /// complete JOC payload path calls this stricter admission boundary.
+    ///
+    /// # Errors
+    /// Returns [`Eac3Error::UnsupportedJocChannelTopology`] for a channel set
+    /// outside 5.X, 7.X, or 5.X+2, including an LFE2-only presentation.
+    pub fn validate_joc_topology(&self) -> Result<(), Eac3Error> {
+        const FIVE: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+        ];
+        const SEVEN_REAR: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        const SEVEN_HEIGHT: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::TopFrontLeft,
+            ChannelLocation::TopFrontRight,
+        ];
+        let full_band_valid = matches!(
+            self.channel_locations.as_slice(),
+            FIVE | SEVEN_REAR | SEVEN_HEIGHT
+        );
+        let lfe_valid = self
+            .lfe_location
+            .is_none_or(|location| location == ChannelLocation::Lfe(0))
+            && self.lfe.is_some() == self.lfe_location.is_some();
+        if !full_band_valid || !lfe_valid || self.channel_locations.len() != self.channels.len() {
+            return Err(Eac3Error::UnsupportedJocChannelTopology {
+                full_band_channels: self.channel_locations.len(),
+                lfe_present: self.lfe.is_some(),
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Logical channel location from TS 102 366 Table E.1.4.
+///
+/// OpenJOC keeps the table's paired locations distinct after expanding a
+/// `chanmap` bit. `Other(n)` is a stable internal ordering identifier whose
+/// exact public table label is returned by [`Self::label`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ChannelLocation {
+    Left,
+    Right,
+    Centre,
+    LeftSurround,
+    RightSurround,
+    LeftBack,
+    RightBack,
+    TopFrontLeft,
+    TopFrontRight,
+    Other(u8),
+    Lfe(u8),
+}
+
+impl ChannelLocation {
+    /// Returns the exact short label used by the public channel-map table.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Left => "L",
+            Self::Right => "R",
+            Self::Centre => "C",
+            Self::LeftSurround => "Ls",
+            Self::RightSurround => "Rs",
+            Self::LeftBack => "Lrs",
+            Self::RightBack => "Rrs",
+            Self::TopFrontLeft => "Vhl",
+            Self::TopFrontRight => "Vhr",
+            Self::Other(1) => "Lc",
+            Self::Other(2) => "Rc",
+            Self::Other(3) => "Cs",
+            Self::Other(4) => "Ts",
+            Self::Other(5) => "Lsd",
+            Self::Other(6) => "Rsd",
+            Self::Other(7) => "Lw",
+            Self::Other(8) => "Rw",
+            Self::Other(9) => "Vhc",
+            Self::Other(10) => "Lts",
+            Self::Other(11) => "Rts",
+            Self::Other(_) => "unknown",
+            Self::Lfe(0) => "LFE",
+            Self::Lfe(1) => "LFE2",
+            Self::Lfe(_) => "unknown-LFE",
+        }
+    }
 }
 
 /// Stateful decoder for the one-I0/optional-D0 JOC elementary-stream shape.
@@ -32,6 +143,27 @@ pub struct JocAccessUnitPcmDecoder {
     independent: AudioPcmSynthesizer,
     dependent: AudioPcmSynthesizer,
     dependent_present: bool,
+    independent_configuration: Option<SubstreamPcmConfiguration>,
+    dependent_configuration: Option<SubstreamPcmConfiguration>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SubstreamPcmConfiguration {
+    sample_rate: u32,
+    audio_coding_mode: u8,
+    lfe_on: bool,
+    channel_map: Option<u16>,
+}
+
+impl From<&BitstreamInformation> for SubstreamPcmConfiguration {
+    fn from(info: &BitstreamInformation) -> Self {
+        Self {
+            sample_rate: info.header.sample_rate,
+            audio_coding_mode: info.audio_coding_mode,
+            lfe_on: info.lfe_on,
+            channel_map: info.channel_map,
+        }
+    }
 }
 
 impl JocAccessUnitPcmDecoder {
@@ -129,19 +261,34 @@ impl JocAccessUnitPcmDecoder {
         if dependent_entry.is_some() != self.dependent_present {
             dependent_synth.reset();
         }
-        let (independent_info, independent) =
-            decode_frame(stream, first, dither_values, &mut independent_synth, policy)?;
+        let (independent_info, independent, independent_configuration) = decode_frame(
+            stream,
+            first,
+            dither_values,
+            &mut independent_synth,
+            self.independent_configuration,
+            policy,
+        )?;
         let dependent = dependent_entry
-            .map(|entry| decode_frame(stream, entry, dither_values, &mut dependent_synth, policy))
+            .map(|entry| {
+                decode_frame(
+                    stream,
+                    entry,
+                    dither_values,
+                    &mut dependent_synth,
+                    self.dependent_configuration,
+                    policy,
+                )
+            })
             .transpose()?;
-        if let Some((info, _)) = &dependent
+        if let Some((info, _, _)) = &dependent
             && (info.header.sample_rate != unit.sample_rate || info.header.samples != unit.samples)
         {
             return Err(Eac3Error::SubstreamTimingMismatch {
                 frame: unit.first_frame + 1,
             });
         }
-        if let Some((info, _)) = &dependent
+        if let Some((info, _, _)) = &dependent
             && info.header.audio_blocks != 6
         {
             return Err(Eac3Error::UnsupportedJocAudioBlockCount {
@@ -152,12 +299,14 @@ impl JocAccessUnitPcmDecoder {
             unit,
             &independent_info,
             independent,
-            dependent.as_ref().map(|(info, pcm)| (info, pcm)),
+            dependent.as_ref().map(|(info, pcm, _)| (info, pcm)),
         )?;
 
         self.independent = independent_synth;
         self.dependent = dependent_synth;
         self.dependent_present = dependent_entry.is_some();
+        self.independent_configuration = Some(independent_configuration);
+        self.dependent_configuration = dependent.map(|(_, _, configuration)| configuration);
         Ok(output)
     }
 }
@@ -167,8 +316,16 @@ fn decode_frame(
     entry: SyncframeIndexEntry,
     dither_values: &[f64],
     synthesizer: &mut AudioPcmSynthesizer,
+    previous_configuration: Option<SubstreamPcmConfiguration>,
     policy: InternalBasePolicy,
-) -> Result<(BitstreamInformation, DecodedAudioPcm), Eac3Error> {
+) -> Result<
+    (
+        BitstreamInformation,
+        DecodedAudioPcm,
+        SubstreamPcmConfiguration,
+    ),
+    Eac3Error,
+> {
     let end = entry
         .offset
         .checked_add(entry.header.frame_size)
@@ -181,23 +338,12 @@ fn decode_frame(
             available: stream.len().saturating_sub(entry.offset),
         })?;
     let info = crate::parse_audio_frame(bytes)?.bsi;
+    let configuration = SubstreamPcmConfiguration::from(&info);
+    if previous_configuration.is_some_and(|previous| previous != configuration) {
+        synthesizer.reset();
+    }
     let pcm = decode_audio_frame_pcm_with_policy(bytes, dither_values, synthesizer, policy)?;
-    Ok((info, pcm))
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum ChannelLocation {
-    Left,
-    Right,
-    Centre,
-    LeftSurround,
-    RightSurround,
-    LeftBack,
-    RightBack,
-    TopFrontLeft,
-    TopFrontRight,
-    Other(u8),
-    Lfe(u8),
+    Ok((info, pcm, configuration))
 }
 
 fn standard_channel_locations(
@@ -290,21 +436,30 @@ fn merge_substreams(
     let independent_locations = channel_locations(independent_info)?;
     insert_channels(&mut channels, independent_locations, &independent)?;
     let mut lfe = independent.lfe.clone();
+    let mut lfe_location = lfe_channel_location(independent_info)?;
     if let Some((info, pcm)) = dependent {
         let locations = channel_locations(info)?;
         insert_channels(&mut channels, locations, pcm)?;
         if let Some(dependent_lfe) = &pcm.lfe {
+            let dependent_lfe_location =
+                lfe_channel_location(info)?.ok_or(Eac3Error::InvalidDependentChannelMap {
+                    expected: 1,
+                    actual: 0,
+                })?;
+            if lfe_location.is_some_and(|current| current != dependent_lfe_location) {
+                return Err(Eac3Error::MultipleLfeChannels);
+            }
+            lfe_location = Some(dependent_lfe_location);
             lfe = Some(dependent_lfe.clone());
         }
     }
-    if channels
+    if let Some((_, mismatched)) = channels
         .iter()
-        .any(|(_, pcm)| pcm.len() != usize::from(unit.samples))
+        .find(|(_, pcm)| pcm.len() != usize::from(unit.samples))
     {
-        let actual = channels.first().map_or(0, |(_, pcm)| pcm.len());
         return Err(Eac3Error::AccessUnitPcmSampleCountMismatch {
             expected: usize::from(unit.samples),
-            actual,
+            actual: mismatched.len(),
         });
     }
     if lfe
@@ -317,12 +472,27 @@ fn merge_substreams(
         });
     }
     channels.sort_by_key(|(location, _)| location_rank(*location));
+    let (channel_locations, channels) = channels.into_iter().unzip();
     Ok(DecodedAccessUnitPcm {
         sample_rate: unit.sample_rate,
         samples: unit.samples,
-        channels: channels.into_iter().map(|(_, pcm)| pcm).collect(),
+        channel_locations,
+        channels,
+        lfe_location,
         lfe,
     })
+}
+
+fn lfe_channel_location(info: &BitstreamInformation) -> Result<Option<ChannelLocation>, Eac3Error> {
+    let locations = channel_locations(info)?;
+    let mut lfe_locations = locations
+        .into_iter()
+        .filter(|location| matches!(location, ChannelLocation::Lfe(_)));
+    let first = lfe_locations.next();
+    if lfe_locations.next().is_some() {
+        return Err(Eac3Error::MultipleLfeChannels);
+    }
+    Ok(first)
 }
 
 fn insert_channels(
@@ -384,6 +554,14 @@ mod tests {
     use super::*;
 
     fn info(audio_coding_mode: u8, channel_map: Option<u16>) -> BitstreamInformation {
+        info_with(audio_coding_mode, false, channel_map)
+    }
+
+    fn info_with(
+        audio_coding_mode: u8,
+        lfe_on: bool,
+        channel_map: Option<u16>,
+    ) -> BitstreamInformation {
         BitstreamInformation {
             header: crate::SyncframeHeader {
                 stream_type: StreamType::Independent,
@@ -394,10 +572,53 @@ mod tests {
                 samples: 1,
             },
             audio_coding_mode,
-            lfe_on: false,
+            lfe_on,
             bitstream_id: 16,
             channel_map,
             addbsi: None,
+        }
+    }
+
+    fn independent_channel_map_oracle(map: u16) -> Vec<ChannelLocation> {
+        let mut locations = Vec::new();
+        for bit in 0..16_u8 {
+            if map & (1_u16 << (15 - bit)) == 0 {
+                continue;
+            }
+            match bit {
+                0 => locations.push(ChannelLocation::Left),
+                1 => locations.push(ChannelLocation::Centre),
+                2 => locations.push(ChannelLocation::Right),
+                3 => locations.push(ChannelLocation::LeftSurround),
+                4 => locations.push(ChannelLocation::RightSurround),
+                5 => locations.extend([ChannelLocation::Other(1), ChannelLocation::Other(2)]),
+                6 => locations.extend([ChannelLocation::LeftBack, ChannelLocation::RightBack]),
+                7 => locations.push(ChannelLocation::Other(3)),
+                8 => locations.push(ChannelLocation::Other(4)),
+                9 => locations.extend([ChannelLocation::Other(5), ChannelLocation::Other(6)]),
+                10 => locations.extend([ChannelLocation::Other(7), ChannelLocation::Other(8)]),
+                11 => locations.extend([
+                    ChannelLocation::TopFrontLeft,
+                    ChannelLocation::TopFrontRight,
+                ]),
+                12 => locations.push(ChannelLocation::Other(9)),
+                13 => locations.extend([ChannelLocation::Other(10), ChannelLocation::Other(11)]),
+                14 => locations.push(ChannelLocation::Lfe(1)),
+                15 => locations.push(ChannelLocation::Lfe(0)),
+                _ => unreachable!(),
+            }
+        }
+        locations
+    }
+
+    #[test]
+    fn every_chanmap_value_matches_an_independent_table_e_1_4_transcription() {
+        for map in 0..=u16::MAX {
+            assert_eq!(
+                channel_locations(&info(1, Some(map))).expect("bounded channel map"),
+                independent_channel_map_oracle(map),
+                "chanmap {map:#06x}"
+            );
         }
     }
 
@@ -436,6 +657,7 @@ mod tests {
                 vec![7.0]
             ]
         );
+        output.validate_joc_topology().expect("Table 47 7.X");
     }
 
     #[test]
@@ -465,6 +687,231 @@ mod tests {
             output.channels,
             vec![vec![9.0], vec![8.0], vec![2.0], vec![4.0], vec![5.0]]
         );
+    }
+
+    #[test]
+    fn custom_map_replaces_left_and_supplements_rear_pair_in_canonical_order() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]],
+            lfe: None,
+        };
+        let dependent = DecodedAudioPcm {
+            channels: vec![vec![10.0], vec![20.0], vec![21.0]],
+            lfe: None,
+        };
+        let output = merge_substreams(
+            AccessUnitIndex {
+                first_frame: 0,
+                frame_count: 2,
+                sample_rate: 48_000,
+                samples: 1,
+            },
+            &info(7, None),
+            independent,
+            Some((&info(3, Some(0x8200)), &dependent)),
+        )
+        .expect("replacement plus Lrs/Rrs supplement");
+        assert_eq!(
+            output.channels,
+            vec![
+                vec![10.0],
+                vec![3.0],
+                vec![2.0],
+                vec![4.0],
+                vec![5.0],
+                vec![20.0],
+                vec![21.0]
+            ]
+        );
+        output.validate_joc_topology().expect("Table 47 7.X");
+    }
+
+    #[test]
+    fn custom_map_supplements_the_height_pair_in_canonical_order() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]],
+            lfe: None,
+        };
+        let dependent = DecodedAudioPcm {
+            channels: vec![vec![30.0], vec![31.0]],
+            lfe: None,
+        };
+        let output = merge_substreams(
+            AccessUnitIndex {
+                first_frame: 0,
+                frame_count: 2,
+                sample_rate: 48_000,
+                samples: 1,
+            },
+            &info(7, None),
+            independent,
+            Some((&info(2, Some(0x0010)), &dependent)),
+        )
+        .expect("Vhl/Vhr supplement");
+        assert_eq!(
+            output.channels,
+            vec![
+                vec![1.0],
+                vec![3.0],
+                vec![2.0],
+                vec![4.0],
+                vec![5.0],
+                vec![30.0],
+                vec![31.0]
+            ]
+        );
+        output.validate_joc_topology().expect("Table 47 5.X+2");
+    }
+
+    #[test]
+    fn dependent_custom_map_replaces_centre_and_lfe_without_touching_other_channels() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]],
+            lfe: Some(vec![6.0]),
+        };
+        let dependent = DecodedAudioPcm {
+            channels: vec![vec![9.0]],
+            lfe: Some(vec![99.0]),
+        };
+        let output = merge_substreams(
+            AccessUnitIndex {
+                first_frame: 0,
+                frame_count: 2,
+                sample_rate: 48_000,
+                samples: 1,
+            },
+            &info_with(7, true, None),
+            independent,
+            Some((&info_with(1, true, Some(0x4001)), &dependent)),
+        )
+        .expect("centre and LFE replacement");
+        assert_eq!(
+            output.channels,
+            vec![vec![1.0], vec![3.0], vec![9.0], vec![4.0], vec![5.0]]
+        );
+        assert_eq!(output.lfe, Some(vec![99.0]));
+        output.validate_joc_topology().expect("Table 47 5.1");
+    }
+
+    #[test]
+    fn sample_count_error_reports_the_actual_mismatched_channel() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0], vec![2.0]],
+            lfe: None,
+        };
+        let dependent = DecodedAudioPcm {
+            channels: vec![vec![9.0, 9.5]],
+            lfe: None,
+        };
+        assert_eq!(
+            merge_substreams(
+                AccessUnitIndex {
+                    first_frame: 0,
+                    frame_count: 2,
+                    sample_rate: 48_000,
+                    samples: 1,
+                },
+                &info(2, None),
+                independent,
+                Some((&info(1, Some(0x4000)), &dependent)),
+            ),
+            Err(Eac3Error::AccessUnitPcmSampleCountMismatch {
+                expected: 1,
+                actual: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn two_lfe_locations_are_rejected_instead_of_silently_collapsing() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0]],
+            lfe: None,
+        };
+        let dependent = DecodedAudioPcm {
+            channels: Vec::new(),
+            lfe: Some(vec![2.0]),
+        };
+        assert_eq!(
+            merge_substreams(
+                AccessUnitIndex {
+                    first_frame: 0,
+                    frame_count: 2,
+                    sample_rate: 48_000,
+                    samples: 1,
+                },
+                &info(1, None),
+                independent,
+                Some((&info_with(1, true, Some(0x0003)), &dependent)),
+            ),
+            Err(Eac3Error::MultipleLfeChannels)
+        );
+    }
+
+    #[test]
+    fn distinct_lfe_locations_across_substreams_are_not_conflated() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0]],
+            lfe: Some(vec![2.0]),
+        };
+        let dependent = DecodedAudioPcm {
+            channels: Vec::new(),
+            lfe: Some(vec![3.0]),
+        };
+        assert_eq!(
+            merge_substreams(
+                AccessUnitIndex {
+                    first_frame: 0,
+                    frame_count: 2,
+                    sample_rate: 48_000,
+                    samples: 1,
+                },
+                &info_with(1, true, None),
+                independent,
+                Some((&info_with(1, true, Some(0x0002)), &dependent)),
+            ),
+            Err(Eac3Error::MultipleLfeChannels)
+        );
+    }
+
+    #[test]
+    fn complete_joc_boundary_rejects_non_table_47_topology() {
+        let mono = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: vec![ChannelLocation::Centre],
+            channels: vec![vec![1.0]],
+            lfe_location: None,
+            lfe: None,
+        };
+        assert_eq!(
+            mono.validate_joc_topology(),
+            Err(Eac3Error::UnsupportedJocChannelTopology {
+                full_band_channels: 1,
+                lfe_present: false,
+            })
+        );
+
+        let mut lfe2 = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ],
+            channels: vec![vec![1.0]; 5],
+            lfe_location: Some(ChannelLocation::Lfe(1)),
+            lfe: Some(vec![2.0]),
+        };
+        assert!(matches!(
+            lfe2.validate_joc_topology(),
+            Err(Eac3Error::UnsupportedJocChannelTopology { .. })
+        ));
+        lfe2.lfe_location = Some(ChannelLocation::Lfe(0));
+        lfe2.validate_joc_topology().expect("Table 47 5.1");
     }
 
     #[test]

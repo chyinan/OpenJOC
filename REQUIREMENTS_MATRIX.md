@@ -83,7 +83,7 @@ normative failures, and the decoder has no profile-specific signaling hacks.
 | TS 102 366 6.2, E.2.4.3 | Fixed-point decoder bit allocation | `openjoc-eac3` | exhaustive exponent-to-PSD, Table 6.14 log-addition/integration, Tables 6.6-6.16 and E.2.1 parameter/band/masking/pointer mappings, excitation/masking/delta/BAP, conventional mantissa, and AHT GAQ/VQ traversal tests pass | verified |
 | TS 102 366 6.4.3-6.5.4, 6.9.4 | Coupling, rematrix, and inverse TDAC primitives | `openjoc-eac3` | rendered-page coordinate scaling, sub-band expansion, right-channel phase restoration, clause 6.5 rematrix band boundaries/sum-difference restoration, 512/256 inverse-transform vectors, Table 6.33 windowing, overlap/add state, decoded audio-block PCM synthesis, and I0/D0 access-unit PCM merge tests pass; J1R25 independently exhaustively checks the standard coordinate code domain and bounded six-block reuse | implemented with scoped coordinate/state admission; real-corpus coupling and full coupled-PCM fidelity remain open |
 | TS 102 366 E.1.3.2.28, E.1.3.3.1-E.1.3.3.13, E.2.6.2-E.2.6.4.3, Tables E.2.11-E.2.12 | Spectral-extension coefficient synthesis and state | `openjoc-eac3` | rendered-page table-indexed translation, band grouping, RMS/noise blend, coordinate scale, symmetric attenuation notch, and bounded audio-block integration tests pass; J1R26 independently checks 1,024 translation/coordinate cases; J1R27 checks exact public-syntax reuse/replacement/disable/re-enable lifetime; J1R28 drives stereo public syntax through A-only/B-only/A+B participation, per-channel fresh/reuse/replacement state, truncation rejection, fresh-call recovery, path equivalence, and 256 exact repetitions; dependent-substream reset and legal real-vector fidelity remain pending | implemented with scoped public-syntax parser/state/numerical admission; substream reset unresolved |
-| TS 102 366 E.1.3.1.2, E.2.8 | Independent/dependent substream relationships | `openjoc-eac3` | access-unit grouping, sequential IDs, immediate dependency, converted-stream exclusion, and timing tests pass | verified |
+| TS 102 366 E.1.3.1.2, E.2.8, Table E.1.4; TS 103 420 8.1, Table 47, E.3 | Independent/dependent substream relationships and JOC channel assembly | `openjoc-eac3`, `openjoc-container`, `openjoc-cli` | sequential parent/ID/timing checks; exhaustive 65,536-value independent chanmap transcription; sentinel replacement/supplement/LFE topology; configuration-specific TDAC reset; atomic failure; capture/AU-local PCM equality; bounded 128-AU I0/D0 streaming; explicit 5.X/7.X/5.X+2 JOC admission | public-syntax channel-assembly admission established; real controlled-corpus activation not observed |
 | TS 102 366 Annex H.2 | EMDF sync/container/config/protection | `openjoc-emdf` | group-offset, conditional config, bounded payload, all protection lengths, version/reserved/padding/truncation tests pass | verified |
 | Engineering spec 5.1 | Checked MSB-first bit reader | `openjoc-bitio` | 6 unit/property tests pass; fuzz target remains | implemented |
 | Engineering spec 5.2 | Official attachment importer with both SHA-256 gates | `import-etsi-tables` | 4 importer/CLI tests pass; fmt and clippy clean | verified |
@@ -674,3 +674,22 @@ binding, or warp behavior.
 Decision: `AHT_RECONSTRUCTION_NUMERICAL_ADMISSION_ESTABLISHED` for the
 public-syntax reconstruction domain. This is not
 `FULL_REAL_STREAM_AHT_PCM_FIDELITY_ESTABLISHED`.
+
+## J1R30 — dependent-substream channel assembly
+
+| requirement | evidence | status |
+| --- | --- | --- |
+| Parser and association | production `strmtyp`/`substreamid` parsing, parent-first grouping, sequential IDs, matching rate/block timing | passed |
+| Chanmap oracle | independent MSB-first Table E.1.4 transcription compared for all 65,536 values | passed; complete representational domain |
+| JOC topology admission | explicit Table 47 5.X, 7.X and 5.X+2 validation; the 5.X+2 carrier pair retains Table E.1.4 `Vhl/Vhr` labels while Table 47 names the output pair `Tfl/Tfr`; unsupported low-level maps do not enter complete JOC decode | passed |
+| PCM replacement/supplement | distinct sentinel sequences for L/R/C, Lrs/Rrs, Vhl/Vhr and LFE; location labels retained in output | passed |
+| Timing and errors | six-block JOC boundary, sample/rate mismatch errors, orphan/nonsequential/truncated cases, failure atomicity | passed |
+| Configuration transition | affected substream TDAC history resets on rate/acmod/LFE/chanmap change; unrelated I0 history continues | passed; production fix |
+| Streaming | capture and AU-local PCM exact; 128 I0/D0 AUs use one lookahead and at most three retained complete frames | passed; bounded |
+| Multiple dependents | general E-AC-3 grouping represents them; TS 103 420 E.3 JOC decoder rejects more than D0 | explicitly not admitted |
+| CLI base capture | five- and seven-channel topology retained with actual labels and stable topology checks | passed; production fix |
+| Real controlled corpus | no frozen controlled carrier activates D0 | `NOT_EXERCISED_BY_CONTROLLED_CORPUS` |
+
+Decision: `DEPENDENT_SUBSTREAM_CHANNEL_ASSEMBLY_ADMISSION_ESTABLISHED` within
+the public-syntax one-I0/optional-D0 JOC contract. Full real-stream fidelity
+and semantic object binding remain unestablished.
