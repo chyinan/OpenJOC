@@ -33,3 +33,21 @@ git diff --check
 If a documentation change moves or retires a file, repair tracked links and
 update the release-assembly documentation inventory as part of the same
 focused change.
+
+## CI and release automation
+
+GitHub Actions validates pull requests and pushes to `master` with the Linux
+quality contract, the documented Rust 1.85 MSRV check, and platform-neutral
+Windows x64 / macOS arm64 build and test jobs. Optional container tests that
+need `ffmpeg`, `ffprobe`, or MP4Box remain explicitly skipped when those tools
+or private fixtures are absent; no private Logic, ADM, DD+, EC-3, or evidence
+files are used by CI.
+
+Releases are human-authorized by pushing a stable `vMAJOR.MINOR.PATCH` tag.
+The release workflow validates the tag against Cargo metadata, checks the tag
+commit and `Cargo.lock`, reuses the canonical macOS-arm64 release builder, runs
+the bundle verifier, and publishes only the generated artifact set. It does
+not create tags, publish Linux/Windows binaries, sign, notarize, or overwrite
+an existing GitHub Release. Configure branch protection only after hosted CI
+job names have stabilized; recommended required checks are `quality`,
+`msrv-1.85`, `platform-windows`, and `platform-macos-arm64`.

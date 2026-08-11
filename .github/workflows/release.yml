@@ -1,0 +1,218 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 1
+
+jobs:
+  validate-tag:
+    name: validate-tag-source
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the exact pushed tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Validate stable tag and Cargo version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+          if match is None:
+              raise SystemExit(
+                  f"unsupported release tag {tag!r}; only stable vMAJOR.MINOR.PATCH tags are admitted"
+              )
+          metadata = json.loads(
+              subprocess.check_output(
+                  ["cargo", "metadata", "--format-version", "1", "--locked", "--no-deps"],
+                  text=True,
+              )
+          )
+          packages = [
+              package
+              for package in metadata["packages"]
+              if package["name"] == "openjoc-cli"
+          ]
+          if len(packages) != 1:
+              raise SystemExit("expected exactly one openjoc-cli package in Cargo metadata")
+          cargo_version = packages[0]["version"]
+          expected = ".".join(match.groups())
+          if cargo_version != expected:
+              raise SystemExit(
+                  f"tag/Cargo mismatch: tag={tag!r}, openjoc-cli={cargo_version!r}"
+              )
+          print(f"validated stable release {tag} against Cargo version {cargo_version}")
+          PY
+
+      - name: Verify tag points at the checked-out commit
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          tag_commit=$(git rev-parse "${RELEASE_REF}^{commit}")
+          head_commit=$(git rev-parse HEAD)
+          test "$tag_commit" = "$head_commit"
+          printf 'tag=%s\ncommit=%s\n' "${GITHUB_REF_NAME}" "$head_commit"
+          printf 'Cargo.lock sha256='
+          shasum -a 256 Cargo.lock
+
+      - name: Check the committed tree is clean
+        run: |
+          git diff --quiet
+          git diff --cached --quiet
+          git diff --check
+
+  build-release:
+    name: build-verify-macos-arm64-release
+    needs: validate-tag
+    runs-on: macos-14
+    steps:
+      - name: Check out the exact pushed tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Set up the required Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sw_vers
+          uname -m
+          rustc -vV
+          cargo -Vv
+
+      - name: Re-run the release quality contract
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --workspace --all-features --locked
+          cargo build --workspace --release --locked
+          cargo package --workspace --locked
+          git diff --check
+
+      - name: Build the canonical macOS-arm64 candidate
+        run: |
+          python3 scripts/build-local-release.py --output "${RUNNER_TEMP}/openjoc-release"
+
+      - name: Verify checksums and bundle inventory
+        run: |
+          release_dir="${RUNNER_TEMP}/openjoc-release"
+          shopt -s nullglob
+          checksum_files=("$release_dir"/*.SHA256SUMS)
+          test "${#checksum_files[@]}" -eq 1
+          checksum_file="${checksum_files[0]}"
+          (
+            cd "$release_dir"
+            shasum -a 256 -c "$(basename "$checksum_file")"
+          )
+          bundles=("$release_dir"/openjoc-*-aarch64-apple-darwin.tar.gz)
+          test "${#bundles[@]}" -eq 1
+          bundle="${bundles[0]}"
+          extracted="${RUNNER_TEMP}/openjoc-release-extracted"
+          mkdir -p "$extracted"
+          tar -xzf "$bundle" -C "$extracted"
+          bundle_root=$(tar -tzf "$bundle" | awk -F/ 'NF > 1 { print $1; exit }')
+          test -n "$bundle_root"
+          "$extracted/$bundle_root/verify.sh"
+
+      - name: Upload the verified release artifact set
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-release-${{ github.ref_name }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-release/*.tar.gz
+            ${{ runner.temp }}/openjoc-release/*.manifest.json
+            ${{ runner.temp }}/openjoc-release/*.SHA256SUMS
+
+  publish-release:
+    name: publish-github-release
+    needs: build-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the exact pushed tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Download the verified artifact set
+        uses: actions/download-artifact@v4
+        with:
+          name: openjoc-release-${{ github.ref_name }}
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Verify the remote tag and required assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git ls-remote --exit-code --refs origin "refs/tags/${RELEASE_TAG}" >/dev/null
+          asset_dir="${RUNNER_TEMP}/release-assets"
+          shopt -s nullglob
+          assets=("$asset_dir"/*.tar.gz "$asset_dir"/*.manifest.json "$asset_dir"/*.SHA256SUMS)
+          test "${#assets[@]}" -eq 4
+          printf '%s\n' "${assets[@]}"
+
+      - name: Refuse to overwrite an existing GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists; refusing to overwrite it" >&2
+            exit 1
+          else
+            status=$?
+            test "$status" -eq 1
+          fi
+
+      - name: Create a draft release, upload all assets, then publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="${RUNNER_TEMP}/openjoc-release-notes.md"
+          cat > "$notes" <<'EOF'
+          OpenJOC release artifacts produced from this exact version tag by the GitHub Actions release workflow.
+
+          The README, CAPABILITIES, and KNOWN_LIMITATIONS documents define the supported scope. The binary target is the currently admitted macOS arm64 target; CI success on Linux or Windows is not release admission for those platforms.
+          EOF
+          asset_dir="${RUNNER_TEMP}/release-assets"
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "OpenJOC $RELEASE_TAG" \
+            --notes-file "$notes"
+          gh release upload "$RELEASE_TAG" "$asset_dir"/* --repo "$GITHUB_REPOSITORY"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false

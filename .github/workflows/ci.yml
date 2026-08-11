@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 1
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the committed source
+        uses: actions/checkout@v4
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+          cargo -Vv
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Workspace tests
+        run: cargo test --workspace --all-features --locked
+
+      - name: Release build
+        run: cargo build --workspace --release --locked
+
+      - name: Cargo package verification
+        run: cargo package --workspace --locked
+
+      - name: Diff check
+        run: git diff --check
+
+  platform-windows:
+    name: platform-windows
+    runs-on: windows-2025
+    steps:
+      - name: Check out the committed source
+        uses: actions/checkout@v4
+
+      - name: Select the current stable Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+          cargo -Vv
+
+      - name: Platform-neutral workspace tests
+        shell: pwsh
+        run: cargo test --workspace --all-features --locked
+
+      - name: Platform-neutral release build
+        shell: pwsh
+        run: cargo build --workspace --release --locked
+
+  platform-macos:
+    name: platform-macos-arm64
+    runs-on: macos-14
+    steps:
+      - name: Check out the committed source
+        uses: actions/checkout@v4
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sw_vers
+          uname -m
+          rustc -vV
+          cargo -Vv
+
+      - name: Platform-neutral workspace tests
+        run: cargo test --workspace --all-features --locked
+
+      - name: Platform-neutral release build
+        run: cargo build --workspace --release --locked
+
+  msrv:
+    name: msrv-1.85
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the committed source
+        uses: actions/checkout@v4
+
+      - name: Check the documented minimum Rust version
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          rustc +1.85.0 -vV
+          cargo +1.85.0 -Vv
+          cargo +1.85.0 check --workspace --all-features --locked

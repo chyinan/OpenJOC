@@ -99,6 +99,23 @@ The candidate includes the canonical `docs/` tree, uses `git archive HEAD`,
 builds with the locked dependency set, and refuses tracked worktree/index
 changes. It is local-only, not Developer-ID signed, and not notarized.
 
+## CI and tagged releases
+
+Pull requests and pushes to `master` run the public GitHub Actions CI matrix.
+It checks the documented Rust 1.85 MSRV, Linux quality gates, and
+platform-neutral builds/tests on Windows x64 and macOS arm64. CI results are
+build/test evidence; Linux or Windows CI success does not by itself admit a
+published binary release for those platforms.
+
+Only a human-created stable tag such as `v0.1.0` can start release automation.
+The workflow requires the tag to match the Cargo package version exactly, then
+reuses `scripts/build-local-release.py` to build and verify the currently
+admitted macOS arm64 candidate. It uploads the generated binary bundle, clean
+source archive, manifest, and `SHA256SUMS` before publishing the GitHub Release.
+The workflow never creates or pushes tags, and refuses to overwrite an existing
+GitHub Release. Artifact attestation is not currently enabled; SHA-256 and
+`verify.sh` remain the release verification surfaces.
+
 ## Platform scope
 
 Release packaging is currently exercised on Apple silicon macOS. Windows,
