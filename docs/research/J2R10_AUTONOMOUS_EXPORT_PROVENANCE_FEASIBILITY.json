@@ -1,0 +1,38 @@
+{
+  "schema": "openjoc.j2r10.public-report.v1",
+  "stage": "J2R10 — Autonomous Export-Only Logic Workflow & Durable N3 Provenance Admission",
+  "decision": "EXPORT_ONLY_WORKFLOW_ADMITTED_PROVENANCE_REQUIRES_REDESIGN",
+  "logic_version_observed": "12.3",
+  "conditions": {
+    "S_FL": "BASELINE_COMPLETE",
+    "S_FR": "BASELINE_COMPLETE",
+    "D_FL997_FR2003": "BASELINE_PROJECTIVE_ONLY",
+    "D_FR997_FL2003": "BASELINE_PROJECTIVE_ONLY"
+  },
+  "dialog_rehearsal": {
+    "all_four_reached": true,
+    "format": "Dolby Digital Plus with Dolby Atmos",
+    "profile": "Music",
+    "bitrate_bps": 768000,
+    "cancelled_before_render": true,
+    "static_repeat": true,
+    "dual_repeat": true,
+    "no_media_generated": true
+  },
+  "provenance_limitations": [
+    "Logic remains resident after project-window close; exact-PID fallback was required because Dock Quit was not reliably addressable.",
+    "Dual baselines are projective-only J1R9 swap windows, not full-run static condition projects."
+  ],
+  "future_n3_plan": {
+    "conditions": 4,
+    "producer_runs_per_condition": 2,
+    "total_outputs": 8,
+    "executed_in_j2r10": false,
+    "exact_target_admitted": false
+  },
+  "new_logic_fixture": false,
+  "new_media": false,
+  "producer_export": false,
+  "semantic_binding_state": "Unresolved",
+  "warp_semantics_changed": false
+}
