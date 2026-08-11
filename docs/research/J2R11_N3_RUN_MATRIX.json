@@ -1,0 +1,22 @@
+{
+  "schema": "openjoc.j2r11.corrected-run-matrix.v1",
+  "topology": "ONE_DUAL_PROJECT_TWO_FROZEN_WINDOWS",
+  "baseline_projects": ["S_FL", "S_FR", "D_SWAP"],
+  "future_producer_run_count": 8,
+  "pairs": [
+    {"pair_id": "S_FL_pair", "baseline_project": "S_FL", "runs": ["S_FL_0", "S_FL_1"], "windows": ["static_FL"]},
+    {"pair_id": "S_FR_pair", "baseline_project": "S_FR", "runs": ["S_FR_0", "S_FR_1"], "windows": ["static_FR"]},
+    {"pair_id": "D_SWAP_pair_A", "baseline_project": "D_SWAP", "runs": ["D_SWAP_0", "D_SWAP_1"], "windows": ["D_PRE", "D_POST"]},
+    {"pair_id": "D_SWAP_pair_B", "baseline_project": "D_SWAP", "runs": ["D_SWAP_2", "D_SWAP_3"], "windows": ["D_PRE", "D_POST"]}
+  ],
+  "anti_cross_pair_comparison": true,
+  "d_swap_window_note": "D_PRE and D_POST are temporally distinct states within one output and are not separate producer executions.",
+  "settings": {
+    "container": "Dolby Digital Plus with Dolby Atmos",
+    "profile": "Music",
+    "bitrate_bps": 768000,
+    "sample_rate_hz": 48000,
+    "scope": "Project",
+    "adm_companion": false
+  }
+}

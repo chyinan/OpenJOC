@@ -1,0 +1,18 @@
+{
+  "schema": "openjoc.j2r11.execution-controller.v1",
+  "milestone": "J2R11",
+  "decision": "N3_MATRIX_ADMITTED_PROCESS_LIFECYCLE_REQUIRES_REDESIGN",
+  "topology": "ONE_DUAL_PROJECT_TWO_FROZEN_WINDOWS",
+  "baseline_projects": ["S_FL", "S_FR", "D_SWAP"],
+  "planned_future_producer_runs": 8,
+  "planned_pair_ids": ["S_FL_pair", "S_FR_pair", "D_SWAP_pair_A", "D_SWAP_pair_B"],
+  "window_rule": "D_PRE and D_POST are measurements inside every D_SWAP output, not producer identities.",
+  "dry_run_only": true,
+  "producer_export": false,
+  "new_media": false,
+  "exact_pid_start_time_boundary": true,
+  "graceful_quit_admitted": false,
+  "semantic_binding": "Unresolved",
+  "warp_raw3_changed": false,
+  "next_blocker": "Strengthen graceful-quit/exact-PID lifecycle and obtain explicit producer-export authorization before rendering."
+}
