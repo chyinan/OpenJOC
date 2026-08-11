@@ -1,0 +1,65 @@
+{
+  "schema": "openjoc.j2r8.existing-n3-complex-null.v1",
+  "stage": "J2R8 — Existing N3 Producer-Repeatability Complex Recovery & Frozen Context Reclassification",
+  "decision": "EXISTING_N3_COMPLEX_ENVELOPE_ESTABLISHED_SCOPED_CONTEXT_DEPENDENCE_ADMITTED",
+  "candidate_list_sha256": "dd24dd726e6535800a0d9ac9f6fb77f9b198dc9c868c811575024102fe28f09c",
+  "candidate_count": 6,
+  "candidate_relevance_counts": {
+    "STATIC_TARGET_COMPATIBLE": 4,
+    "DUAL_TARGET_COMPATIBLE": 1,
+    "WORKFLOW_COMPATIBLE_SCENE_DIFFERENT": 1
+  },
+  "independence": {
+    "classification": "INDEPENDENT_PRODUCER_EXPORT",
+    "admitted_count": 6,
+    "rejected_count": 0
+  },
+  "same_condition": {
+    "classification": "SAME_CONDITION_PROJECTIVE_ONLY",
+    "count": 6,
+    "absolute_phase_or_gain_admitted": false
+  },
+  "phase_recovery": {
+    "structural_rows": 15,
+    "static_and_z_au_count": 129,
+    "dual_au_count": 126,
+    "all_samples_finite": true,
+    "all_r0_r1_raw_equal": true,
+    "all_r0_r1_base_equal": true,
+    "all_r0_r1_reconstruction_basis_equal": true,
+    "missing_rows": 0,
+    "extra_rows": 0
+  },
+  "producer_envelope": {
+    "base_full_band_max_projective_residual": 3.740537645303071e-16,
+    "reconstruction_basis_max_projective_residual": 4.964101166512434e-16,
+    "complete_descriptor_max_projective_residual": 2.4737811574534086e-16,
+    "empirical_max_is_not_population_bound": true,
+    "manifest_sha256": "2b19b49dcf837593f2f0303a6c89dbefd05a7abe01cb33893f18351ca2435fac"
+  },
+  "c2_sanity": {
+    "result": "PASS_C2_EXTREME_RESIDUAL_IS_OBSERVABLE_COMPONENT_DIFFERENCE",
+    "static_vector_norm": 0.05575847064445246,
+    "dual_vector_norm": 0.2443995333918825,
+    "observability_floor": 1e-15,
+    "maximum_regression_condition_estimate": 2.0033531737621555,
+    "sample_shift": 0,
+    "overlap_rows": [0, 1, 2, 3],
+    "dual_only_rows": [4, 5, 6, 7, 8],
+    "largest_component_residual_row": 3
+  },
+  "target_reclassification": {
+    "C1": "ABOVE_COMBINED_ENVELOPE",
+    "C2": "ABOVE_COMBINED_ENVELOPE",
+    "C3": "FREQUENCY_CLASSIFICATION_UNAVAILABLE_REQUIRES_AT_LEAST_TWO_DUAL_N3_CONTRASTS"
+  },
+  "semantic_binding_state": "Unresolved",
+  "authored_object_pcm_admissible": false,
+  "audio_bound_object_scene_admissible": false,
+  "warp_raw3_semantics_changed": false,
+  "new_logic_fixture": false,
+  "new_media": false,
+  "producer_export": false,
+  "public_paths_or_private_media_embedded": false,
+  "evidence_freeze_sha256": "d25e8063993181d5f2d91684a8df163698d63735d253cd741dbd2c90a34e84e1"
+}
