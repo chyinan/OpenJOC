@@ -2590,3 +2590,25 @@ current frame/channel state rather than an accumulating history. This is a
 public-syntax state-lifetime admission only: the Logic corpus remains SPX-off,
 multi-channel participation and parser-specific truncation cases remain open,
 and full real-stream SPX PCM fidelity is not established.
+
+## J1R28 — SPX multi-channel participation and parser errors (2026-08-11)
+
+The authorized normative source remains ETSI TS 102 366 V1.4.1. Annex
+E.1.3.2.28 defines the first-coordinate condition per channel; E.1.3.3.1-.8
+define block strategy, participation, and shared copy/band configuration;
+E.1.3.3.9-.13 define per-channel coordinate reuse and values. E.2.6.3 states
+that coordinates are carried for participating channels at least once per
+audio frame. PDF pages 139-140 and 162 were inspected; `references/` remained
+read-only.
+
+A new test-only stereo public-syntax builder drives the production parser,
+not an injected state object. It proves per-channel participation isolation,
+fresh state after absence, independent reuse/replacement, structural
+end-of-input rejection at participation and coordinate boundaries, recovery
+on a fresh call, exact path equivalence, and bounded deterministic repetition.
+No proprietary or third-party decoder source and no new media were used.
+
+The evidence does not close dependent-substream/config reset because no
+persistent cross-substream SPX parser state is exposed by the current API. It
+also does not change the real-corpus SPX-off observation or establish full
+real-stream PCM fidelity.

@@ -1622,3 +1622,28 @@ Decision: `SPX_STATE_REUSE_AND_RESET_ADMISSION_ESTABLISHED` for the exercised
 mono public-syntax path, combined with J1R26's scoped numerical mapping. This
 does not establish multi-channel participation, parser-specific truncation,
 real Logic SPX activation, or full real-stream SPX PCM fidelity.
+
+## J1R28 — SPX multi-channel participation and parser errors
+
+`tests/spx_multichannel.rs` adds a bounded stereo public-syntax harness. Its
+six blocks establish independent A/B coordinates, exact dual-channel reuse,
+A-only replacement, B-only fresh entry, A fresh entry while B reuses, and A
+reuse while B is replaced. Shared start/begin/end/band configuration remains
+stable while `channel_in_use` and the two coordinate slots follow the encoded
+participation state exactly. Separate disabled and A-only first blocks cover
+activation baselines.
+
+The harness records bit offsets 127, 144, and 175 for the participation and
+coordinate boundaries. Declared-frame truncation at the corresponding byte
+limits is rejected as bounded end-of-input. A malformed call cannot poison a
+fresh frame decode, invalid coordinate dimensions return the structured
+dimension error, direct/pre-parsed/diagnostic paths compare exactly, and 256
+repetitions remain deterministic.
+
+Decision:
+`SPX_MULTICHANNEL_STATE_ADMISSION_ESTABLISHED_ERROR_PATH_PARTIAL`. No
+production source change was required. Dependent-substream/config transition
+reset is still unresolved because the current parser state is frame-local and
+the public API exposes no persistent SPX state across substreams. The combined
+public-syntax evidence is therefore parser/state/numerical admission with that
+declared limitation, not real-stream PCM fidelity.

@@ -619,3 +619,25 @@ exercised mono public-syntax scope, combined with J1R26 as
 `SPX_PUBLIC_SYNTAX_STATE_AND_NUMERICAL_ADMISSION_ESTABLISHED`. Channel-local
 participation, parser-specific truncation, real controlled-corpus SPX
 activation, and full real-stream SPX PCM fidelity remain unestablished.
+
+## J1R28 — SPX multi-channel participation and parser errors
+
+J1R28 drives a bounded stereo six-block public-syntax frame through distinct
+channel states A/B, exact reuse, A-only and B-only participation, fresh state
+after a channel leaves and returns, one-channel replacement while the other
+reuses, and a final mixed reuse/replacement block. The complete parsed
+`SpectralExtensionInformation` is compared at every block. Separate all-off
+and initial A-only frames establish the activation controls.
+
+Exact declared-frame truncations at the second participation flag and each
+per-channel coordinate boundary return `BitError::EndOfInput`. A failed parse
+cannot poison a fresh decode; direct, pre-parsed, and diagnostic paths agree,
+and 256 complete repetitions remain exact. Invalid coordinate dimensions are
+rejected without indexing or fallback. No production defect was exposed.
+
+The narrow decision is
+`SPX_MULTICHANNEL_STATE_ADMISSION_ESTABLISHED_ERROR_PATH_PARTIAL`: parser-level
+participation, isolation, central truncation, and fresh-call reset are covered,
+but a dependent-substream/configuration transition is not representable as a
+persistent SPX parser-state transition in the current public API. The Logic
+corpus remains SPX-off and full real-stream SPX PCM fidelity remains open.

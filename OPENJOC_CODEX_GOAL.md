@@ -959,3 +959,18 @@ Together with J1R26 this establishes scoped public-syntax state plus numerical
 admission. It does not turn synthetic activation into Logic-corpus evidence,
 and `SemanticBindingState::Unresolved` and strict raw-warp handling remain
 unchanged.
+
+## J1R28 — SPX multi-channel participation and parser errors
+
+Stereo public-syntax regressions now lock shared SPX configuration alongside
+per-channel participation and coordinate state across A-only, B-only, and
+simultaneous participation. Leaving participation invalidates that channel's
+reuse eligibility, so re-entry requires fresh coordinates; the other channel
+remains independently reusable. Central participation/coordinate truncations
+fail structurally, a failed call cannot affect a subsequent fresh call, and
+direct/pre-parsed/diagnostic paths remain equivalent.
+
+This establishes scoped multi-channel parser state with partial error-path
+admission. It does not establish dependent-substream SPX reset, real Logic SPX
+activation, or full real-stream fidelity. No media, production semantics, or
+binding state changed.
