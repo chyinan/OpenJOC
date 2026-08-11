@@ -1,0 +1,69 @@
+{
+  "schema": "openjoc.j2r7.public-calibration.v1",
+  "decision": "FULL_COMPLEX_DIFFERENCE_ABOVE_NUMERICAL_FLOOR_PRODUCER_NULL_UNAVAILABLE",
+  "scope": "existing full-complex ReconstructionBasis captures; no new media",
+  "au_lineage": {
+    "static_current_au": 129,
+    "static_historical_analysis_au": 129,
+    "j1r8_current_au": 129,
+    "j1r8_historical_analysis_au": 128,
+    "dual_current_au": 126,
+    "dual_historical_analysis_au": 125,
+    "dual_common_interval_samples": [0, 192000],
+    "pre_window_samples": [60000, 84000],
+    "late_window_samples": [132000, 156000],
+    "sample_rate_hz": 48000,
+    "frame_samples": 1536,
+    "status": "CLOSED_FOR_DECLARED_WINDOWS_NO_SILENT_TRIM_OR_PAD"
+  },
+  "lineage": {
+    "target_status": "PARTIAL_PROJECTIVE_ONLY",
+    "n0_complete_same_input": 1,
+    "n1_phase_bearing": 14,
+    "n2_complex_admitted": 0,
+    "n3_carrier_nulls": 6,
+    "n3_complex_metric_admitted": 0,
+    "producer_complex_envelope": "UNAVAILABLE"
+  },
+  "calibration": {
+    "target_leakage": false,
+    "formula": "maximum admitted N0/N1 residual, no multiplier",
+    "envelope": {
+      "base_full_band_projective_residual": 0.0000037834930931104663,
+      "reconstruction_basis_projective_residual": 0.00000023853247222861374,
+      "complete_descriptor_projective_residual": 0.0000037834930931104663
+    }
+  },
+  "targets": {
+    "C1_static_FL_vs_dual_FL": {
+      "reconstruction_basis_projective_residual": 0.003174810639891323,
+      "base_full_band_projective_residual": 0.0034848789188314825,
+      "classification": "CROSS_CARRIER_DIFFERENCE_ABOVE_NUMERICAL_FLOOR_BUT_PRODUCER_NULL_UNAVAILABLE"
+    },
+    "C2_static_FR_vs_dual_FR": {
+      "reconstruction_basis_projective_residual": 0.9999992742845898,
+      "base_full_band_projective_residual": 0.0035417176701007364,
+      "classification": "CROSS_CARRIER_DIFFERENCE_ABOVE_NUMERICAL_FLOOR_BUT_PRODUCER_NULL_UNAVAILABLE"
+    },
+    "C3_dual_reciprocal_frequency": {
+      "reconstruction_basis_projective_residual_range": [0.0031481647255409075, 0.003233561316158136],
+      "base_full_band_projective_residual_range": [0.0036087599778509196, 0.0037023227163740288],
+      "classification": "FREQUENCY_DIFFERENCE_ABOVE_NUMERICAL_FLOOR_BUT_PRODUCER_NULL_UNAVAILABLE"
+    }
+  },
+  "localization": {
+    "base_partition": "varies_beyond_n0_n1_floor",
+    "reconstruction_basis": "varies_beyond_n0_n1_floor",
+    "complete_descriptor": "varies_beyond_n0_n1_floor",
+    "rclfe": "separate_not_phase_captured",
+    "row_permutation": "not_admissible_without_predeclared_common_permutation"
+  },
+  "semantic_binding_state": "Unresolved",
+  "authored_object_pcm_admissible": false,
+  "audio_bound_object_scene_admissible": false,
+  "warp_raw3_semantics_changed": false,
+  "logic_launch": false,
+  "new_media": false,
+  "canonical_corpus_modified": false,
+  "private_evidence": "detailed hashes and arrays remain in the private J2R7 evidence package"
+}
