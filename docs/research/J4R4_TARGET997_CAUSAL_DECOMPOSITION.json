@@ -1,0 +1,499 @@
+{
+  "schema": "openjoc.research.j4r4.target997-causal-decomposition.v1",
+  "stage": "J4R4",
+  "decision": "J4R4_COMPANION_PCM_EFFECT_NOT_OBSERVED_WITH_FIXED_TOPOLOGY",
+  "scope": "fixed-topology target-997 ON/OFF comparison on the frozen J4R2 carrier, plus a descriptive existing-corpus S0-to-S1 structural contrast",
+  "j4r3_admission": {
+    "companion_propagation": "COMPANION_2003_CARRIER_PROPAGATION_CONFIRMED",
+    "off_state_reversibility": "OFF_STATE_REVERSIBILITY_SUPPORTED_UNDER_COMPATIBLE_N1",
+    "j4r2_failed_absolute_gate_unchanged": true,
+    "compatible_n1_envelopes": {
+      "Base": 0.009248177275882511,
+      "ReconstructionBasis": 0.008424653820934484,
+      "Joint": 0.008857503764548379
+    },
+    "retained_lower_floors_non_gating": {
+      "j3r14_n0_n3": {
+        "Base": 0.0000037834930931104663,
+        "ReconstructionBasis": 2.3853247222861374e-7,
+        "Joint": 0.0000037834930931104663
+      },
+      "j3r13_exact_n3": {
+        "Base": 0.0,
+        "ReconstructionBasis": 0.0,
+        "Joint": 0.0
+      },
+      "role": "retained provenance only; not used as J4R4 decision gates"
+    },
+    "limitation": "the frozen compatible-N1 envelopes include the broad post-intervention nuisance term and are not an unconditional stationarity bound"
+  },
+  "frozen_inputs": {
+    "analysis_head": "528bd4d3be0332a983681193cebca55264f455c0",
+    "predeclared_protocol_sha256": "57355ae63debbd9fa54594fadbc7e01fd8d705dfadd4078018820b927ffa5947",
+    "static_s0_lineage_protocol_sha256": "92c6223a095d998dd156ea3bd9a394986380227c7530595a8e2e19ffdb604d2f",
+    "j4r2_raw_ec3_sha256": "389b0e17a1a5766da89b8ef39f154d1f7217a56d949f8828f4b1c8b0f88d186d",
+    "j4r2_access_units": 251,
+    "s0_raw_ec3_sha256": "1d349872f81d2d477ff18360a4782700fb88a823473c51bc7f257f426f20ddb7",
+    "s0_access_units": 129,
+    "s0_r0_r1_byte_identical": true,
+    "same_decoder_head": true,
+    "decoder_policy": {
+      "profile": "DOLBY_VENDOR_COMPAT",
+      "trim_configuration_count": 1,
+      "base_policy": "CurrentDefault",
+      "precision": "reference-f64"
+    },
+    "new_logic_fixture": false,
+    "new_media": false,
+    "producer_export": false
+  },
+  "alignment": {
+    "mapping": "decoded_sample = source_sample + 1536",
+    "delay_samples": 1536,
+    "sample_rate_hz": 48000,
+    "window_samples": 24000
+  },
+  "windows": {
+    "OFF_A": {
+      "state": "S1",
+      "source_samples": [60000, 84000],
+      "decoded_samples": [61536, 85536],
+      "companion_pcm": "silent"
+    },
+    "OFF_B": {
+      "state": "S1",
+      "source_samples": [204000, 228000],
+      "decoded_samples": [205536, 229536],
+      "companion_pcm": "silent"
+    },
+    "ON_PRIMARY": {
+      "state": "S2",
+      "source_samples": [156000, 180000],
+      "decoded_samples": [157536, 181536],
+      "companion_pcm": "active"
+    },
+    "ON_REPLICATION": {
+      "state": "S2",
+      "source_samples": [108000, 132000],
+      "decoded_samples": [109536, 133536],
+      "companion_pcm": "active"
+    },
+    "S0_D_POST": {
+      "state": "S0",
+      "source_samples": [132000, 156000],
+      "decoded_samples": [133536, 157536],
+      "context": "static Front-Right existing-corpus control"
+    }
+  },
+  "companion_propagation_confirmation": {
+    "status": "PASS",
+    "frozen_metric_compatible_floor": 0.00016745250526579124,
+    "joint_2003_norms": {
+      "OFF_A": 0.00015179408833906213,
+      "OFF_B": 0.00015102053650661352,
+      "ON_PRIMARY": 0.2788167423372097,
+      "ON_REPLICATION": 0.2788147626169152
+    },
+    "both_off_below_floor": true,
+    "both_on_above_floor": true,
+    "threshold_refit": false
+  },
+  "metadata_constancy": {
+    "status": "PASS_FIXED_STRUCTURAL_METADATA_TOPOLOGY",
+    "payload_11_unique_count": 1,
+    "payload_11_changed_access_units": [],
+    "object_count_histogram": {"16": 251},
+    "element_count_histogram": {"2": 251},
+    "metadata_block_count_histogram": {"1": 251},
+    "target_position": {"X": 1.0, "Y": 1.0, "Z": 0.0, "Size": 0},
+    "companion_position": {"X": -1.0, "Y": 1.0, "Z": 0.0, "Size": 0},
+    "position_and_routing_controls_constant": true,
+    "scope_limit": "carrier-wide payload-11 constancy plus frozen project controls; no slot identity or independent per-AU position-semantic claim"
+  },
+  "target_997_estimator_integrity": {
+    "status": "PASS",
+    "frequencies_hz": [997, 2003],
+    "complex_convention": "cosine - i*sine",
+    "fit_rank": 5,
+    "design_condition_number": 1.414215725716106,
+    "gram_condition_number": 2.000006118862726,
+    "maximum_997_2003_basis_inner_product": 1.4034848451579923e-15,
+    "all_finite": true,
+    "sample_length_per_window": 24000,
+    "component_order": [
+      "Base.FL", "Base.FR", "Base.FC", "Base.SL", "Base.SR",
+      "RB.row_000", "RB.row_001", "RB.row_002", "RB.row_003", "RB.row_004",
+      "RB.row_005", "RB.row_006", "RB.row_007", "RB.row_008", "RB.row_009",
+      "RB.row_010", "RB.row_011", "RB.row_012", "RB.row_013", "RB.row_014"
+    ],
+    "rclfe_component_order": "separate; excluded from Joint",
+    "window_fit_health": {
+      "OFF_A": {"residual_bounded_by_segment_rms": true, "max_residual_to_segment_rms_nonzero": 0.9981888068780772},
+      "OFF_B": {"residual_bounded_by_segment_rms": true, "max_residual_to_segment_rms_nonzero": 0.9981894685968169},
+      "ON_PRIMARY": {"residual_bounded_by_segment_rms": true, "max_residual_to_segment_rms_nonzero": 0.9981916069594867},
+      "ON_REPLICATION": {"residual_bounded_by_segment_rms": true, "max_residual_to_segment_rms_nonzero": 0.9981815417529182},
+      "S0_D_POST": {"residual_bounded_by_segment_rms": true, "max_residual_to_segment_rms_nonzero": 0.9999999997532311}
+    },
+    "joint_997_norms": {
+      "OFF_A": 0.27849094418509845,
+      "OFF_B": 0.2784916316679788,
+      "ON_PRIMARY": 0.2784904953203073,
+      "ON_REPLICATION": 0.27849104932976704,
+      "S0_D_POST": 0.0799286128925039
+    }
+  },
+  "four_on_off_comparisons": {
+    "metric": "projective residual after optimal complex scalar fit",
+    "relative_magnitude_definition": "magnitude of the fitted optimal complex alpha",
+    "relative_phase_definition": "maximum componentwise relative-phase residual in radians",
+    "no_averaging_rule": true,
+    "comparisons": {
+      "ON_PRIMARY_vs_OFF_A": {
+        "Base": {
+          "projective_residual": 0.0000035066973400846875,
+          "complex_coherence": 0.9999999999938516,
+          "relative_magnitude": 0.9999996223158839,
+          "relative_phase_residual_max_rad": 0.001397351618854874,
+          "above_envelope": false
+        },
+        "ReconstructionBasis": {
+          "projective_residual": 0.0008097186228788494,
+          "complex_coherence": 0.9999996721778222,
+          "relative_magnitude": 0.9999967552714562,
+          "relative_phase_residual_max_rad": 0.002695667672991954,
+          "above_envelope": false
+        },
+        "Joint": {
+          "projective_residual": 0.0005644989466507735,
+          "complex_coherence": 0.9999998406704571,
+          "relative_magnitude": 0.9999982288955358,
+          "relative_phase_residual_max_rad": 0.0026955670021019083,
+          "above_envelope": false
+        },
+        "rb_support": {
+          "before": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "after": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "support_changed": false,
+          "gained": [],
+          "lost": []
+        },
+        "RcLfe": {
+          "result": "ZERO_REFERENCE",
+          "before_magnitude": 0.0,
+          "after_magnitude": 0.0,
+          "absolute_complex_delta": 0.0,
+          "excluded_from_joint": true
+        }
+      },
+      "ON_PRIMARY_vs_OFF_B": {
+        "Base": {
+          "projective_residual": 0.000005867853596763149,
+          "complex_coherence": 0.9999999999827841,
+          "relative_magnitude": 0.9999968110806086,
+          "relative_phase_residual_max_rad": 0.00214343149073439,
+          "above_envelope": false
+        },
+        "ReconstructionBasis": {
+          "projective_residual": 0.0008039202384708338,
+          "complex_coherence": 0.9999996768560732,
+          "relative_magnitude": 0.9999946537148413,
+          "relative_phase_residual_max_rad": 0.0017814718157139295,
+          "above_envelope": false
+        },
+        "Joint": {
+          "projective_residual": 0.0005604660464713796,
+          "complex_coherence": 0.9999998429388929,
+          "relative_magnitude": 0.9999957625739418,
+          "relative_phase_residual_max_rad": 0.0021435621866143294,
+          "above_envelope": false
+        },
+        "rb_support": {
+          "before": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "after": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "support_changed": false,
+          "gained": [],
+          "lost": []
+        },
+        "RcLfe": {
+          "result": "ZERO_REFERENCE",
+          "before_magnitude": 0.0,
+          "after_magnitude": 0.0,
+          "absolute_complex_delta": 0.0,
+          "excluded_from_joint": true
+        }
+      },
+      "ON_REPLICATION_vs_OFF_A": {
+        "Base": {
+          "projective_residual": 0.0000030481417072663545,
+          "complex_coherence": 0.9999999999953544,
+          "relative_magnitude": 1.0000006349568094,
+          "relative_phase_residual_max_rad": 0.0006840806210427584,
+          "above_envelope": false
+        },
+        "ReconstructionBasis": {
+          "projective_residual": 0.000015797967034459133,
+          "complex_coherence": 0.999999999875212,
+          "relative_magnitude": 1.0000001052004135,
+          "relative_phase_residual_max_rad": 0.0025523171593796207,
+          "above_envelope": false
+        },
+        "Joint": {
+          "projective_residual": 0.000011231446406359067,
+          "complex_coherence": 0.999999999936927,
+          "relative_magnitude": 1.0000003774884088,
+          "relative_phase_residual_max_rad": 0.002552262883626345,
+          "above_envelope": false
+        },
+        "rb_support": {
+          "before": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "after": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "support_changed": false,
+          "gained": [],
+          "lost": []
+        },
+        "RcLfe": {
+          "result": "ZERO_REFERENCE",
+          "before_magnitude": 0.0,
+          "after_magnitude": 0.0,
+          "absolute_complex_delta": 0.0,
+          "excluded_from_joint": true
+        }
+      },
+      "ON_REPLICATION_vs_OFF_B": {
+        "Base": {
+          "projective_residual": 3.900922970921702e-7,
+          "complex_coherence": 0.9999999999999237,
+          "relative_magnitude": 0.9999978237343242,
+          "relative_phase_residual_max_rad": 0.00007761666343190712,
+          "above_envelope": false
+        },
+        "ReconstructionBasis": {
+          "projective_residual": 0.00002057986969047448,
+          "complex_coherence": 0.9999999997882347,
+          "relative_magnitude": 0.9999979988715382,
+          "relative_phase_residual_max_rad": 0.0016381259651563635,
+          "above_envelope": false
+        },
+        "Joint": {
+          "projective_residual": 0.00001435045895074733,
+          "complex_coherence": 0.9999999998970323,
+          "relative_magnitude": 0.9999979088531894,
+          "relative_phase_residual_max_rad": 0.0016380317432609429,
+          "above_envelope": false
+        },
+        "rb_support": {
+          "before": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "after": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+          "support_changed": false,
+          "gained": [],
+          "lost": []
+        },
+        "RcLfe": {
+          "result": "ZERO_REFERENCE",
+          "before_magnitude": 0.0,
+          "after_magnitude": 0.0,
+          "absolute_complex_delta": 0.0,
+          "excluded_from_joint": true
+        }
+      }
+    },
+    "all_four_above_frozen_envelope": {
+      "Base": false,
+      "ReconstructionBasis": false,
+      "Joint": false
+    },
+    "all_four_within_frozen_envelope": {
+      "Base": true,
+      "ReconstructionBasis": true,
+      "Joint": true
+    }
+  },
+  "rb_support": {
+    "support_floor": 9.54129888914455e-7,
+    "OFF_A": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "OFF_B": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "ON_PRIMARY": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "ON_REPLICATION": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "all_fixed_topology_masks_identical": true,
+    "shared_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "created_in_both_on_absent_both_off": [],
+    "classification": "NO_RB_SIGNAL_EFFECT_OBSERVED",
+    "window_details": {
+      "OFF_A": {
+        "support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "shared_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "gained_vs_shared": [],
+        "lost_vs_shared": [],
+        "row_magnitudes": [0.00027570821829819874, 0.000643456193892806, 0.00013208134162589282, 0.1941474347226772, 0.00007087267356280798, 0.00013208134162764166, 0.00013208134162589282, 0.00007087267356447146, 0.00013208134162764166, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "OFF_B": {
+        "support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "shared_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "gained_vs_shared": [],
+        "lost_vs_shared": [],
+        "row_magnitudes": [0.0002749798567574933, 0.0006424060505235119, 0.00013190430220966258, 0.1941478487024672, 0.00007079140501507227, 0.00013190430221121196, 0.00013190430220966258, 0.00007079140501595841, 0.00013190430221121196, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "ON_PRIMARY": {
+        "support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "shared_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "gained_vs_shared": [],
+        "lost_vs_shared": [],
+        "row_magnitudes": [0.0002725189474327358, 0.0004995819345765701, 0.00010250674201212818, 0.1941473782034969, 0.00005498763414900988, 0.00010250674200963487, 0.00010250674201212818, 0.000054987634147723517, 0.00010250674200963487, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      },
+      "ON_REPLICATION": {
+        "support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "shared_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "gained_vs_shared": [],
+        "lost_vs_shared": [],
+        "row_magnitudes": [0.0002786425483314037, 0.0006436762920541782, 0.00013216293580995442, 0.19414744998959446, 0.00007092895341568426, 0.00013216293581616576, 0.00013216293580995442, 0.0000709289534194708, 0.00013216293581616576, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      }
+    },
+    "row_magnitude_order": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008", "row_009", "row_010", "row_011", "row_012", "row_013", "row_014"]
+  },
+  "static_s0": {
+    "identity": "N3R2_S_FR deterministic producer pair",
+    "source_pcm": {
+      "file_sha256": "8664d74090fa5072c88eb0a231f80a232cbfb31a65caab418acba6067839fc96",
+      "pcm_sha256": "37ef436c0898d8badef429ecb5f48e716ff6cfe3dd6fc86f58d8a85bcef4c536",
+      "samples": 193536,
+      "description": "variable-envelope 997 Hz control"
+    },
+    "j4r2_target_pcm": {
+      "wav_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570",
+      "pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287",
+      "samples": 288000,
+      "description": "constant-amplitude 0.2 997 Hz sine"
+    },
+    "source_pcm_sample_identical": false,
+    "strict_shell_causality": false,
+    "lineage_admission": "DESCRIPTIVE_EXISTING_CORPUS_PROJECTIVE_CONTEXT_ASSOCIATION_ONLY"
+  },
+  "s0_to_s1_structural_contrast": {
+    "comparisons": {
+      "S1_A_vs_S0": {
+        "Base": {"projective_residual": 0.004204709878243303, "above_envelope": false},
+        "ReconstructionBasis": {"projective_residual": 0.9999989915784783, "above_envelope": true},
+        "Joint": {"projective_residual": 0.8581700170729656, "above_envelope": true}
+      },
+      "S1_B_vs_S0": {
+        "Base": {"projective_residual": 0.004205167942600052, "above_envelope": false},
+        "ReconstructionBasis": {"projective_residual": 0.9999989969033863, "above_envelope": true},
+        "Joint": {"projective_residual": 0.8581687676491548, "above_envelope": true}
+      }
+    },
+    "s0_support": ["row_000"],
+    "s1_a_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "s1_b_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "gained_rows_in_both_s1": ["row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "limitation": "S0 and J4R2 target PCM differ in amplitude/envelope, duration, and sample identity; projective gauge does not eliminate every nonlinear source-lineage confound"
+  },
+  "three_state_decomposition": {
+    "S0": "static single-object context",
+    "S1": "dual-object topology with companion source silent",
+    "S2": "same dual-object topology with companion source active",
+    "structural_rb_reproduced_against_both_silent_states": true,
+    "signal_rb_reproduced_all_four_comparisons": false,
+    "classification": "STRUCTURAL_CONTEXT_ONLY",
+    "not_additive_operator_decomposition": true
+  },
+  "base_and_rclfe": {
+    "base_classification": "NO_REPRODUCIBLE_BASE_CHANGE_ABOVE_COMPATIBLE_N1",
+    "base_all_four_above_compatible_n1": false,
+    "base_rb_physical_additivity_assumed": false,
+    "rclfe_997_all_windows": 0.0,
+    "rclfe_excluded_from_joint": true,
+    "rclfe_scope": "separate base-carried path"
+  },
+  "rb_residual_directions": {
+    "vector_encoding": "ordered [real,imag] pairs for row_000..row_008; row_009..row_014 are exactly zero",
+    "structural": {
+      "S0_to_S1_A": {
+        "raw_residual_above_floor": ["row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "normalized_vector": [[9.51309736936554e-8, -1.7202516847182343e-8], [-0.0019239835195473157, 0.0026986107859087844], [-0.0005093204473922234, 0.0004510150632775487], [0.15333238654432846, -0.9881680409844188], [-0.0003169225103363249, 0.0001811537800844008], [-0.0005093204687353086, 0.0004510150794646236], [-0.0005093204687133749, 0.0004510150794758056], [-0.0003169225103497667, 0.00018115378007815027], [-0.0005093204687353086, 0.0004510150794646236]]
+      },
+      "S0_to_S1_B": {
+        "raw_residual_above_floor": ["row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "normalized_vector": [[9.513097703355153e-8, -1.7201786236117676e-8], [-0.0019251563177154023, 0.002691117923852859], [-0.0005092963587170375, 0.00044966353046335385], [0.15333286465092483, -0.9881679877702246], [-0.000316784782988288, 0.00018054910220660105], [-0.0005092963800052024, 0.00044966354660163233], [-0.0005092963799965916, 0.0004496635465993278], [-0.00031678478299289407, 0.00018054910220773713], [-0.0005092963800052024, 0.00044966354660163233]]
+      }
+    },
+    "signal_activity": {
+      "OFF_A_to_ON_PRIMARY": {
+        "raw_residual_above_floor": ["row_000", "row_001", "row_002", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "normalized_vector": [[0.007969117771288805, -0.019233511431495025], [0.5296866929916165, -0.7463249623935732], [0.1405475608169647, -0.1250494660563693], [0.0005449184779946358, -0.0036067847858086625], [0.087571126662196, -0.05041314024633208], [0.1405475608493911, -0.12504946606046483], [0.1405475608169647, -0.1250494660563693], [0.0875711266814675, -0.05041314025044509], [0.1405475608493911, -0.12504946606046483]]
+      },
+      "OFF_A_to_ON_REPLICATION": {
+        "raw_residual_above_floor": ["row_000"],
+        "normalized_vector": [[-0.7438865452625205, 0.6442629631561386], [-0.15835810778981926, -0.024859086693156795], [-0.03559273320202474, -0.00008344762597768364], [-0.001121954580467565, 0.0015275458852272636], [-0.01974980111813635, 0.002416361451960983], [-0.03559273341320702, -0.00008344566995449566], [-0.03559273320202474, -0.00008344762597768364], [-0.019749801088315255, 0.0024163628993067936], [-0.03559273341320702, -0.00008344566995449566]]
+      },
+      "OFF_B_to_ON_PRIMARY": {
+        "raw_residual_above_floor": ["row_000", "row_001", "row_002", "row_004", "row_005", "row_006", "row_007", "row_008"],
+        "normalized_vector": [[0.0066272569117680705, -0.014633632216837], [0.5349643275904282, -0.7423887665794422], [0.14153104183941428, -0.12427054821246293], [0.0005649274957571641, -0.003591624437497941], [0.08803131749595952, -0.05002479013449847], [0.1415310418555022, -0.12427054823336388], [0.14153104183941428, -0.12427054821246293], [0.08803131750437916, -0.0500247901478294], [0.1415310418555022, -0.12427054823336388]]
+      },
+      "OFF_B_to_ON_REPLICATION": {
+        "raw_residual_above_floor": ["row_000", "row_001"],
+        "normalized_vector": [[-0.625701749667305, 0.6796693990172195], [-0.06464008397545731, 0.34495599058409143], [-0.02850384132557951, 0.06559587744001907], [0.000026237479868592304, 0.0025869704763794438], [-0.021857437161974986, 0.03122908559806281], [-0.028503842135062556, 0.0655958782862228], [-0.02850384132557951, 0.06559587744001907], [-0.021857437568422636, 0.031229086350182095], [-0.028503842135062556, 0.0655958782862228]]
+      }
+    },
+    "cross_contrast_absolute_complex_coherence": {
+      "S0_to_S1_A": {
+        "OFF_A_to_ON_PRIMARY": 0.000029566496894477903,
+        "OFF_A_to_ON_REPLICATION": 0.0013975687413243219,
+        "OFF_B_to_ON_PRIMARY": 0.000019461595212519092,
+        "OFF_B_to_ON_REPLICATION": 0.0013054909650238608
+      },
+      "S0_to_S1_B": {
+        "OFF_A_to_ON_PRIMARY": 0.00003457061364657052,
+        "OFF_A_to_ON_REPLICATION": 0.0013975426710707965,
+        "OFF_B_to_ON_PRIMARY": 0.00002275371329814783,
+        "OFF_B_to_ON_REPLICATION": 0.0013085085664360351
+      }
+    },
+    "interpretation": "descriptive only because every signal-activity residual is below compatible N1; no latent transform admitted"
+  },
+  "model_consequence": {
+    "classification": "OBJECT_POPULATION_OR_STRUCTURAL_CONTEXT_ESTABLISHES_RB_SUPPORT",
+    "status": "DESCRIPTIVE_EXISTING_CORPUS_ASSOCIATION_NOT_STRICT_CAUSAL_ESTABLISHMENT",
+    "signal_activity_additional_target_997_effect": "NOT_OBSERVED_ABOVE_COMPATIBLE_N1",
+    "universal_vendor_transform": false,
+    "complete_additive_operator": false
+  },
+  "remaining_ambiguity": [
+    "S0 and J4R2 target-source PCM are not sample-identical",
+    "the compatible-N1 envelope contains a broad post-intervention nuisance term",
+    "effects below compatible-N1 sensitivity are not excluded",
+    "the structural feature responsible for the S1 coordinate expansion is not identified"
+  ],
+  "final_classifications": {
+    "primary": "J4R4_COMPANION_PCM_EFFECT_NOT_OBSERVED_WITH_FIXED_TOPOLOGY",
+    "reconstruction_basis": "NO_RB_SIGNAL_EFFECT_OBSERVED",
+    "base": "NO_REPRODUCIBLE_BASE_CHANGE_ABOVE_COMPATIBLE_N1",
+    "structural_vs_signal_context_decomposition": "STRUCTURAL_CONTEXT_ONLY",
+    "model_consequence": "OBJECT_POPULATION_OR_STRUCTURAL_CONTEXT_ESTABLISHES_RB_SUPPORT"
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "rb_rows_are_coordinate_labels_only": true,
+    "authored_object_to_row_identity": false,
+    "authored_object_pcm_inside_joc": false,
+    "complete_reconstruction_operator": false,
+    "renderer": false,
+    "physical_rendered_field": false,
+    "audio_bound_object_scene": false,
+    "rclfe_separate": true,
+    "warp_raw3": "ETSI reserved; unchanged",
+    "new_vendor_semantic_rule": false
+  },
+  "determinism": {
+    "analysis_passes": 2,
+    "compact_reports_byte_identical": true,
+    "pass_aggregate_sha256": "db519f963f8e31404b4ac86646df0f29bdcf49e253f54b20a6b201ea181cc83a"
+  },
+  "storage": {
+    "large_derived_artifact_generation_frozen": true,
+    "capture_passes_generated": 2,
+    "temporary_logical_bytes_generated": 144914072,
+    "temporary_large_derived_bytes_retained": 0,
+    "full_pcm_retained": false,
+    "new_producer_media": false
+  }
+}

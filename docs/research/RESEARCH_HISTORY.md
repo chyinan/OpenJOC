@@ -874,3 +874,28 @@ or renderer claim was added; `SemanticBindingState::Unresolved` is unchanged.
 
 See [J4R3_PROPAGATION_FLOOR_AND_HISTORY.md](J4R3_PROPAGATION_FLOOR_AND_HISTORY.md)
 and [its machine-readable record](J4R3_PROPAGATION_FLOOR_AND_HISTORY.json).
+
+## J4R4 — fixed-topology target-997 causal decomposition
+
+J4R4 applies the J4R3 compatible-N1 calibration to four independently frozen
+target-997 comparisons on the source-verified J4R2 carrier. Companion 2003 Hz
+propagation, fixed payload-11 topology, target observability, alignment, and
+same-HEAD gates pass. Every Base, ReconstructionBasis, and labeled Joint
+ON-versus-OFF projective residual remains within its frozen envelope, and all
+four target RB support masks remain `row_000..row_008`. The primary result is
+therefore `J4R4_COMPANION_PCM_EFFECT_NOT_OBSERVED_WITH_FIXED_TOPOLOGY`, with
+`NO_RB_SIGNAL_EFFECT_OBSERVED`; it does not prove physical independence or
+exclude effects below the broad compatible-N1 sensitivity.
+
+An older static Front-Right carrier has only `row_000` target support, whereas
+both dual-topology companion-silent windows have `row_000..row_008`. This
+supports the secondary descriptive classification `STRUCTURAL_CONTEXT_ONLY`
+and the bounded model label
+`OBJECT_POPULATION_OR_STRUCTURAL_CONTEXT_ESTABLISHES_RB_SUPPORT`. It is not a
+strict object-population or shell-only causal claim: the static and J4R2 target
+sources are not sample-identical and differ in envelope, amplitude, and
+duration. `SemanticBindingState::Unresolved`, RcLfe separation, and the ETSI
+reserved status of warp raw 3 remain unchanged.
+
+See [J4R4_TARGET997_CAUSAL_DECOMPOSITION.md](J4R4_TARGET997_CAUSAL_DECOMPOSITION.md)
+and [its machine-readable record](J4R4_TARGET997_CAUSAL_DECOMPOSITION.json).
