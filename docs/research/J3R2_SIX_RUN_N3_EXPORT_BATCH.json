@@ -1,57 +1,53 @@
 {
-  "schema": "openjoc.j3r2.six-run-n3-export-batch.v1",
-  "settings": {
-    "logic_version": "12.3",
-    "format": "Dolby Digital Plus Atmos",
-    "profile": "Music, 768 kbps",
-    "scope": "Project",
-    "adm_companion": false
-  },
+  "schema": "openjoc.j3r2.six-run-n3-export-batch-recovery.v1",
   "runs": {
     "S_FL": 2,
     "S_FR": 2,
     "D_SWAP": 2,
     "total": 6
   },
-  "producer_output": {
-    "each_execution_one_output": true,
-    "within_condition_pairs_byte_identical": false,
-    "within_condition_variability_observed": true,
-    "retry_on_variability": false
-  },
   "carrier_structure": {
-    "container": "ISO BMFF E-AC-3",
+    "container": "ISO BMFF E-AC-3/JOC",
     "sample_rate_hz": 48000,
     "samples_per_access_unit": 1536,
-    "packet_bytes": 3072,
     "access_units": {
       "S_FL": 129,
       "S_FR": 129,
       "D_SWAP": 126
     },
-    "observed_boundaries_closed": true
+    "structural_paths_closed": true,
+    "reconstruction_basis_rows": 15,
+    "rclfe_separate": true,
+    "finite_output": true
+  },
+  "same_condition_byte_relations": {
+    "containers": "CONTAINER_DIFFERENT",
+    "elementary_payloads": "ELEMENTARY_PAYLOAD_IDENTICAL",
+    "producer_envelope_admitted": false
   },
   "validation": {
-    "etsi_strict": "failed_with_observed_commercial_deviations",
-    "dolby_vendor_compat": "accepted_with_deviation",
+    "etsi_strict": "UNCHANGED_NORMATIVE_FAILURE",
+    "dolby_vendor_compat": "UNCHANGED_ACCEPTED_WITH_DEVIATION",
     "new_vendor_rule": false,
     "warp_semantics_changed": false
   },
-  "reconstruction_basis": {
-    "diagnostic_trim_config_count": 1,
-    "rows_per_carrier": 15,
-    "f32_repeated_capture_byte_identical": true,
-    "finite_samples": true,
-    "rclfe_separate": true,
-    "semantic_binding_state": "Unresolved",
-    "authored_object_pcm_admissible": false,
-    "audio_bound_object_scene_admissible": false
+  "provenance": {
+    "distinct_pids_retained": true,
+    "terminal_nonce_states_proven": false,
+    "process_start_times_proven": false,
+    "logic_instance_ids_proven": false,
+    "export_completion_records_proven": false,
+    "same_condition_pairs_admitted": false
   },
-  "limitations": {
-    "reference_f64": "NOT_RUN_ENOSPC_DURING_UNBOUNDED_DEBUG_OUTPUT",
-    "capture_stream_equivalence": "CONDITION_LEVEL_SMOKE_ONLY",
-    "semantic_inference": false
+  "enospc_containment": {
+    "producer_evidence_corrupted": false,
+    "debug_retention_repaired": true,
+    "max_debug_records": 64,
+    "max_debug_artifact_bytes": 65536,
+    "max_retained_pcm_bytes": 134217728,
+    "max_reconstruction_basis_json_bytes": 134217728
   },
-  "decision": "RECONSTRUCTION_BASIS_NUMERICAL_HANDLING_STRENGTHENED",
-  "private_evidence": "exact hashes and canonical cache retained outside repository"
+  "semantic_binding_state": "Unresolved",
+  "completion_classification": "J3R2_N3_EXPORT_AUTHORIZATION_OR_DESTINATION_INTEGRITY_FAILED",
+  "j3r3_authorized": false
 }

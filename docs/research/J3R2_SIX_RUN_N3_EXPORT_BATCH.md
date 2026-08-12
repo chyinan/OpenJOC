@@ -1,66 +1,62 @@
-# J3R2 — Six-Run N3 Producer Export Batch
+# J3R2 — Six-Run N3 Producer Batch: Recovery Classification
 
-J3R2 freezes a bounded, exact-condition producer batch for the N3
-ReconstructionBasis question. The batch uses Logic Pro 12.3 with Dolby Digital
-Plus Atmos, Music, 768 kbps, Project scope, and no ADM companion export.
-`SemanticBindingState` remains `Unresolved`.
+J3R2 produced six private, exact-condition Logic Pro 12.3 Dolby Digital Plus
+Atmos carriers: two S_FL, two S_FR, and two D_SWAP. All remain available as
+private producer originals. This document records their bounded structural
+audit and, importantly, the provenance limit discovered during same-stage
+recovery.
 
-## Batch
+## Recoverable facts
 
-Six authorized producer executions were completed, without creating a new
-Logic fixture or changing the controlled source projects:
+All six outputs are recognized as ISO BMFF E-AC-3/JOC at 48 kHz with 1536
+samples per access unit. S_FL and S_FR each contain 129 access units; D_SWAP
+contains 126. The observed base, skip-field, and EMDF paths close structurally.
+Each bounded f32 capture retained 15 ReconstructionBasis rows, finite samples,
+and a separate RcLfe artifact.
 
-```text
-S_FL_PRODUCER_0, S_FL_PRODUCER_1
-S_FR_PRODUCER_0, S_FR_PRODUCER_1
-D_SWAP_PRODUCER_0, D_SWAP_PRODUCER_1
-```
+Within every same-condition pair, the MP4 containers differ bytewise while the
+stream-copied elementary E-AC-3 payload is identical. This is a byte-relation
+observation only: it does not establish a producer variability envelope,
+context dependence, or any semantic property of a reconstruction row.
 
-Each execution used its own approved output parent and produced exactly one
-stream-copied E-AC-3 carrier. The three within-condition pairs were all
-bytewise different. This is recorded as producer variability; no retry was
-used and no determinism pass is claimed.
+`ETSI_STRICT` remains a normative failure for the observed commercial
+signaling, including the reserved warp value. `DOLBY_VENDOR_COMPAT` continues
+to accept with recorded deviations. No profile rule or warp interpretation was
+added. `SemanticBindingState` remains `Unresolved`.
 
-All six carriers were recognized as ISO BMFF E-AC-3 containers at 48 kHz with
-1536 samples per access unit and 3072-byte packet frames. The static pairs have
-129 access units each; the dual-object swap pair has 126 access units each.
-The inspect path closed the observed audio-block, skip-field, and EMDF
-boundaries for every carrier.
+## Provenance admission result
 
-## Decoder boundary
-
-`ETSI_STRICT` behavior is unchanged: the observed commercial signaling remains
-a normative validation failure, including `codecdatae=0`,
-`payload_frame_aligned=0`, and the reserved warp value. The explicit
-`DOLBY_VENDOR_COMPAT` profile accepts the observed carrier with deviations; no
-new vendor rule or warp interpretation was added.
-
-With the explicit diagnostic `trim-config-count=1`, the internal f32 capture
-path produced 15 ReconstructionBasis rows for every carrier. Repeated captures
-from the same frozen input were byte-identical at the retained JSON and WAV
-boundaries, all retained samples were finite, and row lengths matched the
-carrier duration. RcLfe remains a separate base-LFE artifact and is not part of
-the row semantics. Diagnostic names continue to describe reconstruction-basis
-rows, never authored-object PCM.
-
-The reference-f64 probe was not admitted: the first bounded attempt exhausted
-available space while the CLI was emitting unbounded per-frame debug output.
-Full six-way capture/stream equivalence was likewise not claimed; one
-representative streaming smoke run per condition was retained. These are
-declared limitations, not relaxed thresholds.
-
-## Result and boundary
+The six physical outputs cannot be admitted as a completed J3R2 provenance
+batch. The original durable records retained distinct PIDs, approved parents,
+typed/final leaf names, and output hashes, but did not retain terminal nonce
+states, process start times, Logic instance IDs, or export-completion records.
+Those missing facts cannot be reconstructed truthfully after the executions.
 
 ```text
-RECONSTRUCTION_BASIS_NUMERICAL_HANDLING_STRENGTHENED
+J3R2_N3_EXPORT_AUTHORIZATION_OR_DESTINATION_INTEGRITY_FAILED
 ```
 
-The result establishes a finite, structurally stable, repeated f32 numerical
-signature for the retained ReconstructionBasis output within this batch. It
-does not establish authored-object identity, object PCM, ObjectScene audio
-binding, renderer fidelity, or any meaning for the reserved warp value.
+This does not invalidate the physical carrier files or their structural audit.
+It prevents the stronger claim that the three same-condition pairs are
+provenance-admitted for a future producer-envelope experiment. J3R3 and all
+C1/C2/C3 analysis therefore remain unauthorized.
 
-Private evidence contains the exact carrier and capture hashes, output-parent
-provenance, canonical compressed decode cache, and deterministic report hashes.
-Producer media and private evidence are intentionally excluded from this
-repository document.
+## Debug-retention containment
+
+The initial reference-f64 probe was not admitted. Its per-frame Debug output
+formatted complete reconstruction arrays, creating a current-stage
+regenerable-debug spill that exhausted disk space. It did not corrupt producer
+outputs, run records, or repository files; the spill was inventoried and
+removed under the current-stage recovery policy.
+
+The CLI now fails closed under a bounded retention contract: at most 64 frame
+debug records, at most 64 KiB per textual debug artifact, at most 128 MiB of
+retained diagnostic PCM, and at most 128 MiB of ReconstructionBasis JSON.
+After the frame limit, it writes one explicit truncation marker rather than
+retaining additional frame traces. Per-sample reconstruction Debug formatting
+is replaced by a structural summary. This is an output-retention safety repair,
+not a decoder-semantic change.
+
+Private evidence contains the per-run hashes, exact failure inventory, and the
+deterministic recovery manifest. No private paths, media, or producer originals
+are included in the repository.

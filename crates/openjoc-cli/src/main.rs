@@ -38,6 +38,15 @@ use terminal::TerminalCapabilities;
 
 const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
+// Capture diagnostics are deliberately bounded. Full sample arrays belong in
+// the explicit row WAV artifacts; per-frame Debug output must never duplicate
+// them and turn a routine decode into an unbounded disk consumer.
+const MAX_RETAINED_DEBUG_FRAMES: usize = 64;
+const MAX_DEBUG_ARTIFACT_BYTES: usize = 64 * 1024;
+const MAX_RETAINED_CAPTURE_PCM_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_RECONSTRUCTION_BASIS_JSON_BYTES: usize = 128 * 1024 * 1024;
+const ESTIMATED_JSON_BYTES_PER_SAMPLE: u64 = 32;
+
 struct DecodePayloadArgs {
     downmix: PathBuf,
     joc: PathBuf,
@@ -801,15 +810,7 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             &dither,
             arguments.internal_base_policy,
             |frame_index, metadata, frame| {
-                write_validation_debug(&sink_output, frame_index, metadata)
-                    .and_then(|()| {
-                        write_debug(
-                            &sink_output,
-                            frame_index,
-                            frame,
-                            metadata.validation_profile,
-                        )
-                    })
+                write_frame_debug(&sink_output, frame_index, metadata, frame)
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
             |access_unit, pcm| {
@@ -847,15 +848,7 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             config,
             arguments.validation_profile,
             |frame_index, metadata, frame| {
-                write_validation_debug(&sink_output, frame_index, metadata)
-                    .and_then(|()| {
-                        write_debug(
-                            &sink_output,
-                            frame_index,
-                            frame,
-                            metadata.validation_profile,
-                        )
-                    })
+                write_frame_debug(&sink_output, frame_index, metadata, frame)
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
         )?
@@ -910,15 +903,7 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
         &dither,
         arguments.internal_base_policy,
         |frame_index, metadata, frame| {
-            write_validation_debug(&sink_output, frame_index, metadata)
-                .and_then(|()| {
-                    write_debug(
-                        &sink_output,
-                        frame_index,
-                        frame,
-                        metadata.validation_profile,
-                    )
-                })
+            write_frame_debug(&sink_output, frame_index, metadata, frame)
                 .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
         },
         |access_unit, pcm| {
@@ -1109,6 +1094,15 @@ impl InternalBasePcm {
         let sample_rate = self
             .sample_rate
             .ok_or_else(|| io::Error::other("internal base produced no PCM"))?;
+        let retained_samples = self
+            .full
+            .iter()
+            .chain(self.joc_input.iter())
+            .map(Vec::len)
+            .try_fold(0_usize, usize::checked_add)
+            .and_then(|total| total.checked_add(self.lfe.as_ref().map_or(0, Vec::len)))
+            .ok_or_else(|| io::Error::other("internal-base diagnostic sample count overflow"))?;
+        ensure_retained_pcm_bytes(retained_samples, 8, "internal-base diagnostic")?;
         let options = WaveEncodeOptions {
             sample_format: SampleFormat::F64,
             clipping: Clipping::Reject,
@@ -1422,6 +1416,21 @@ fn write_scene(
     scene: &openjoc_scene::ObjectScene,
     sample_format: SampleFormat,
 ) -> Result<(), Box<dyn Error>> {
+    let basis_samples = scene
+        .reconstruction_basis
+        .as_ref()
+        .map_or(0, |basis| basis.rows.iter().map(Vec::len).sum());
+    let lfe_samples = scene.base_lfe_pcm.as_ref().map_or(0, Vec::len);
+    ensure_capture_retention_budget(basis_samples, lfe_samples, sample_format)?;
+    let reconstruction_basis_json = scene.to_reconstruction_basis_json_pretty()?;
+    if reconstruction_basis_json.len() > MAX_RECONSTRUCTION_BASIS_JSON_BYTES {
+        return Err(io::Error::other(format!(
+            "reconstruction-basis JSON is {} bytes, above the {}-byte retained diagnostic limit",
+            reconstruction_basis_json.len(),
+            MAX_RECONSTRUCTION_BASIS_JSON_BYTES,
+        ))
+        .into());
+    }
     let rows = output.join("diagnostics/reconstruction_rows");
     let metadata = output.join("metadata");
     fs::create_dir_all(&rows)?;
@@ -1437,7 +1446,19 @@ fn write_scene(
     )?;
     fs::write(
         output.join("diagnostics/reconstruction_basis.json"),
-        scene.to_reconstruction_basis_json_pretty()?,
+        reconstruction_basis_json,
+    )?;
+    fs::write(
+        output.join("diagnostics/retention.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "max_debug_log_bytes": MAX_DEBUG_ARTIFACT_BYTES,
+            "max_diagnostic_records": MAX_RETAINED_DEBUG_FRAMES,
+            "max_retained_pcm_bytes": MAX_RETAINED_CAPTURE_PCM_BYTES,
+            "max_reconstruction_basis_json_bytes": MAX_RECONSTRUCTION_BASIS_JSON_BYTES,
+            "streaming_or_ring_buffer_behavior": "frame debug stops after the retained frame limit; a truncation marker is written once",
+            "truncation_marker": "DEBUG_FRAME_RETENTION_TRUNCATED",
+            "overflow_classification": "output-failure before retained PCM/JSON is written",
+        }))?,
     )?;
     if let Some(basis) = &scene.reconstruction_basis {
         for (row_index, row) in basis.rows.iter().enumerate() {
@@ -1452,6 +1473,55 @@ fn write_scene(
             base_lfe,
             sample_format,
         )?;
+    }
+    Ok(())
+}
+
+fn ensure_capture_retention_budget(
+    basis_samples: usize,
+    lfe_samples: usize,
+    sample_format: SampleFormat,
+) -> io::Result<()> {
+    let sample_width = match sample_format {
+        SampleFormat::F32 => 4_u64,
+        SampleFormat::F64 => 8_u64,
+        SampleFormat::S24 => 3_u64,
+        SampleFormat::S16 => 2_u64,
+    };
+    let retained_samples = u64::try_from(basis_samples)
+        .and_then(|basis| u64::try_from(lfe_samples).map(|lfe| basis.saturating_add(lfe)))
+        .map_err(|_| io::Error::other("capture diagnostic sample count overflow"))?;
+    ensure_retained_pcm_bytes(
+        usize::try_from(retained_samples)
+            .map_err(|_| io::Error::other("capture diagnostic sample count overflow"))?,
+        sample_width,
+        "capture diagnostic",
+    )?;
+    let estimated_json_bytes = u64::try_from(basis_samples)
+        .ok()
+        .and_then(|samples| samples.checked_mul(ESTIMATED_JSON_BYTES_PER_SAMPLE))
+        .ok_or_else(|| io::Error::other("reconstruction-basis JSON estimate overflow"))?;
+    if estimated_json_bytes > u64::try_from(MAX_RECONSTRUCTION_BASIS_JSON_BYTES).unwrap() {
+        return Err(io::Error::other(format!(
+            "reconstruction-basis JSON estimate would be {estimated_json_bytes} bytes, above the {MAX_RECONSTRUCTION_BASIS_JSON_BYTES}-byte limit",
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_retained_pcm_bytes(
+    samples: usize,
+    bytes_per_sample: u64,
+    artifact: &str,
+) -> io::Result<()> {
+    let pcm_bytes = u64::try_from(samples)
+        .ok()
+        .and_then(|count| count.checked_mul(bytes_per_sample))
+        .ok_or_else(|| io::Error::other("capture diagnostic PCM byte count overflow"))?;
+    if pcm_bytes > MAX_RETAINED_CAPTURE_PCM_BYTES {
+        return Err(io::Error::other(format!(
+            "{artifact} PCM would be {pcm_bytes} bytes, above the {MAX_RETAINED_CAPTURE_PCM_BYTES}-byte limit",
+        )));
     }
     Ok(())
 }
@@ -1484,15 +1554,29 @@ fn write_debug(
 ) -> Result<(), Box<dyn Error>> {
     let frame = output.join(format!("debug/frame_{frame_index:03}"));
     fs::create_dir_all(&frame)?;
-    fs::write(frame.join("joc.txt"), format!("{:#?}\n", decoded.joc))?;
-    fs::write(frame.join("oamd.txt"), format!("{:#?}\n", decoded.oamd))?;
+    write_bounded_debug_text(&frame.join("joc.txt"), format!("{:#?}\n", decoded.joc))?;
+    write_bounded_debug_text(&frame.join("oamd.txt"), format!("{:#?}\n", decoded.oamd))?;
     fs::write(
         frame.join("programme_layout.json"),
         serde_json::to_vec_pretty(&decoded.programme_layout)?,
     )?;
-    fs::write(
-        frame.join("reconstruction.txt"),
-        format!("{:#?}\n", decoded.decoded),
+    let reconstruction = &decoded.decoded.reconstruction_basis;
+    let samples_per_row = reconstruction.rows.iter().map(Vec::len).collect::<Vec<_>>();
+    let reconstruction_summary = serde_json::json!({
+        "retention": "bounded summary; full per-sample Debug trace suppressed",
+        "row_count": reconstruction.rows.len(),
+        "samples_per_row": samples_per_row,
+        "state_reset": decoded.decoded.state_reset,
+        "qmf_row_count": decoded.decoded.reconstruction_qmf.len(),
+        "stage_count": decoded.decoded.stages.len(),
+        "max_debug_artifact_bytes": MAX_DEBUG_ARTIFACT_BYTES,
+    });
+    write_bounded_debug_text(
+        &frame.join("reconstruction.txt"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&reconstruction_summary)?
+        ),
     )?;
     let opaque_elements = decoded
         .oamd
@@ -1601,6 +1685,45 @@ fn write_debug(
     Ok(())
 }
 
+fn write_frame_debug(
+    output: &Path,
+    frame_index: usize,
+    metadata: &openjoc_eac3::JocMetadataFrame,
+    decoded: &openjoc_scene::DecodedPayloadFrame,
+) -> Result<(), Box<dyn Error>> {
+    if frame_index < MAX_RETAINED_DEBUG_FRAMES {
+        return write_validation_debug(output, frame_index, metadata)
+            .and_then(|()| write_debug(output, frame_index, decoded, metadata.validation_profile));
+    }
+    if frame_index == MAX_RETAINED_DEBUG_FRAMES {
+        fs::create_dir_all(output.join("debug"))?;
+        fs::write(
+            output.join("debug/retention.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "status": "DEBUG_FRAME_RETENTION_TRUNCATED",
+                "max_retained_frames": MAX_RETAINED_DEBUG_FRAMES,
+                "first_omitted_frame": frame_index,
+                "per_artifact_max_bytes": MAX_DEBUG_ARTIFACT_BYTES,
+                "overflow_classification": "bounded_debug_retention",
+            }))?,
+        )?;
+    }
+    Ok(())
+}
+
+fn write_bounded_debug_text(path: &Path, value: String) -> io::Result<()> {
+    if value.len() <= MAX_DEBUG_ARTIFACT_BYTES {
+        return fs::write(path, value);
+    }
+    let mut cutoff = MAX_DEBUG_ARTIFACT_BYTES;
+    while !value.is_char_boundary(cutoff) {
+        cutoff -= 1;
+    }
+    let mut retained = value[..cutoff].to_owned();
+    retained.push_str("\n[OpenJOC debug artifact truncated by retention policy]\n");
+    fs::write(path, retained)
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(serde::Serialize)]
 struct OamdPartialStatusArtifact {
@@ -1692,7 +1815,7 @@ fn write_validation_debug(
         )?;
     }
     fs::write(frame.join("profile_validation.txt"), text)?;
-    fs::write(frame.join("emdf.txt"), format!("{:#?}\n", metadata.emdf))?;
+    write_bounded_debug_text(&frame.join("emdf.txt"), format!("{:#?}\n", metadata.emdf))?;
     Ok(())
 }
 
@@ -1845,6 +1968,32 @@ const fn classify_decode_error(error: &eac3_decode::DecodeEac3Error) -> CliError
 
 fn usage_error() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, USAGE)
+}
+
+#[cfg(test)]
+mod retention_tests {
+    use super::{
+        ESTIMATED_JSON_BYTES_PER_SAMPLE, MAX_RECONSTRUCTION_BASIS_JSON_BYTES,
+        MAX_RETAINED_DEBUG_FRAMES, SampleFormat, ensure_capture_retention_budget,
+    };
+
+    #[test]
+    fn capture_retention_fails_closed_before_large_diagnostic_serialization() {
+        let maximum_samples = MAX_RECONSTRUCTION_BASIS_JSON_BYTES
+            / usize::try_from(ESTIMATED_JSON_BYTES_PER_SAMPLE).unwrap();
+        assert!(ensure_capture_retention_budget(maximum_samples, 0, SampleFormat::F32).is_ok());
+        assert!(
+            ensure_capture_retention_budget(maximum_samples + 1, 0, SampleFormat::F32)
+                .unwrap_err()
+                .to_string()
+                .contains("JSON estimate")
+        );
+    }
+
+    #[test]
+    fn debug_frame_retention_has_an_explicit_first_omitted_frame() {
+        assert_eq!(MAX_RETAINED_DEBUG_FRAMES, 64);
+    }
 }
 
 #[cfg(test)]
