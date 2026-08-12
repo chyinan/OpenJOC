@@ -1,0 +1,26 @@
+{
+  "schema": "openjoc.j3r7.nssavepanel-challenge-response.v1",
+  "decision": "N3_VISUAL_GO_CONTROL_REQUIRES_REDESIGN",
+  "j3r6_disposition": "N3_NSSAVEPANEL_NAVIGATION_REQUIRES_REDESIGN",
+  "visual_go_method": {
+    "go_sheet_opened": true,
+    "exact_parent_path_enterable": true,
+    "accessibility_go_control_exposed": false,
+    "visual_geometry_available": false,
+    "screenshot_resolution_sufficient_for_control_identity": false,
+    "absolute_coordinate_used": false,
+    "return_or_enter_used": false,
+    "result": "NOT_ADMITTED"
+  },
+  "directory_witness_challenge": {
+    "A_and_B_created": true,
+    "A_and_B_observation_in_panel": "NOT_RUN_AFTER_GO_CONTROL_FAIL",
+    "C_dynamic_challenge": "NOT_RUN_AFTER_GO_CONTROL_FAIL",
+    "wrong_parent_challenge": "NOT_RUN_AFTER_GO_CONTROL_FAIL",
+    "witness_cleanup": "PENDING_CURRENT_STAGE_DISPOSABLE_CLEANUP"
+  },
+  "real_logic_rehearsals": "NOT_RUN_AFTER_STANDARD_ORACLE_FAIL",
+  "final_action_allowed": false,
+  "media_generated": false,
+  "semantic_binding_state": "Unresolved"
+}
