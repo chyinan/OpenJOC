@@ -1,0 +1,165 @@
+{
+  "schema": "openjoc.research.j4r2.companion-signal-intervention.v1",
+  "stage": "J4R2",
+  "decision": "J4R2_COMPANION_SIGNAL_PROPAGATION_FAILED",
+  "scope": "one source-verified fixed-topology companion OFF-to-ON-to-OFF JOC intervention",
+  "dependency": {
+    "j4r1": "J4R1_ADM_OBJECT_PCM_PROPAGATION_ADMITTED",
+    "j3r15": "J3R15_EXPERIMENT_EXECUTION_OR_LINEAGE_INADMISSIBLE"
+  },
+  "sources": {
+    "sample_rate_hz": 48000,
+    "bits_per_sample": 24,
+    "sample_count": 288000,
+    "target": {
+      "signal": "continuous 997 Hz",
+      "wav_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570",
+      "pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287"
+    },
+    "companion": {
+      "signal": "zero / 2003 Hz / zero",
+      "wav_sha256": "879d73a0d71eeaa4138ddb3423964abe6f813b14a717360625ca1ff0833d78e6",
+      "pcm_sha256": "7b8b22c96c0a78e1738ced9ed9504d2e132b097e710fd61bd7eab8a73bde13d2",
+      "timeline_samples": {
+        "OFF_A": [0, 96000],
+        "ON": [96000, 192000],
+        "OFF_B": [192000, 288000]
+      }
+    }
+  },
+  "project": {
+    "identity": "J4R2_COMPANION_SIGNAL_INTERVENTION",
+    "logic_version": "12.3 (6674)",
+    "target_position": {"x": 1.0, "y": 1.0, "z": 0.0, "size": 0},
+    "companion_position": {"x": -1.0, "y": 1.0, "z": 0.0, "size": 0},
+    "regions_at_origin": true,
+    "save_close_reopen": true,
+    "human_assist_used": false,
+    "human_judgment_required": false
+  },
+  "pre_ddplus_track_gate": {
+    "result": "PASS_SOURCE_EXACT",
+    "samples_compared_per_track": 288000,
+    "delay_samples": 0,
+    "gain": 1.0,
+    "polarity": 1,
+    "correlation": 1.0,
+    "max_integer_residual": 0
+  },
+  "producer": {
+    "format": "Dolby Digital Plus with Dolby Atmos",
+    "profile": "Music",
+    "bitrate_kbps": 768,
+    "scope": "Project",
+    "simultaneous_adm_bwf": false,
+    "export_count": 1,
+    "one_shot_nonce_consumed": true,
+    "final_action_count": 1,
+    "preinvocation_absence": true,
+    "original_output_attested": true
+  },
+  "carrier": {
+    "mp4_sha256": "2fbf231b9b1cf677b6d671dfb6dd8951873646abf43f42b1d92030ebf79daf1b",
+    "mp4_bytes": 774855,
+    "mp4_duration_seconds": 8.0,
+    "raw_ec3_sha256": "389b0e17a1a5766da89b8ef39f154d1f7217a56d949f8828f4b1c8b0f88d186d",
+    "raw_ec3_bytes": 771072,
+    "access_units": 251,
+    "bytes_per_access_unit": 3072,
+    "samples_per_access_unit": 1536,
+    "raw_sample_count": 385536,
+    "raw_duration_seconds": 8.032,
+    "sample_rate_hz": 48000
+  },
+  "structural_metadata": {
+    "raw_mp4_access_unit_signatures_equal": true,
+    "payload_ids": [11, 14, 2, 1],
+    "payload_11_bit_length": 536,
+    "payload_11_unique_count": 1,
+    "payload_11_sha256": "f24fcee1e5af10619ca538e0b4adf6032d2ae4c201305c883d8341ad8947dec5",
+    "object_count": 16,
+    "element_count": 2,
+    "element_ids": [1, 2],
+    "warp_raw_distribution": {"3": 251},
+    "etsi_strict": "ReservedWarpMode { raw: 3 }",
+    "new_vendor_rule": false
+  },
+  "metadata_constancy": {
+    "status": "PASS_EMPIRICAL_FIXED_TOPOLOGY",
+    "payload_11_constant_across_all_access_units": true,
+    "object_and_element_counts_constant": true,
+    "position_and_routing_controls_constant": true,
+    "limitation": "empirical structural constancy only; no post-reserved-warp semantic continuation"
+  },
+  "alignment": {
+    "derivation": "companion 2003 Hz transition timing before target-effect inspection",
+    "decoded_sample_equals_source_sample_plus": 1536,
+    "source_windows": {
+      "OFF_A": [60000, 84000],
+      "ON": [156000, 180000],
+      "OFF_B": [204000, 228000]
+    }
+  },
+  "companion_propagation": {
+    "estimator": "simultaneous 997/2003 Hz complex least squares",
+    "predeclared_observability_floor": 9.54129888914455e-7,
+    "floor_origin": "frozen J3R14 coordinate-support threshold used as a conservative predeclared detection rule",
+    "base_2003_max_magnitude": {
+      "OFF_A": 0.00008451694908771966,
+      "ON": 0.19989168806040084,
+      "OFF_B": 0.00008440709922518699
+    },
+    "reconstruction_basis_2003_max_magnitude": {
+      "OFF_A": 0.00008223385622973041,
+      "ON": 0.19437610900704297,
+      "OFF_B": 0.00008137006489807574
+    },
+    "off_a_below_floor": false,
+    "on_above_floor": true,
+    "off_b_below_floor": false,
+    "result": "FAIL"
+  },
+  "reversibility": {
+    "admission_status": "DIAGNOSTIC_ONLY_AFTER_UPSTREAM_GATE_FAILURE",
+    "base_projective_residual": 0.000003161521176861448,
+    "base_n0_n1_envelope": 3.7834930931104663e-6,
+    "base_within_envelope": true,
+    "reconstruction_basis_projective_residual": 0.000009019654664813326,
+    "reconstruction_basis_n0_n1_envelope": 2.3853247222861374e-7,
+    "reconstruction_basis_within_envelope": false,
+    "rclfe": "ZERO_REFERENCE"
+  },
+  "target_on_off": {
+    "status": "NOT_ADMITTED_AFTER_PROPAGATION_GATE_FAILURE",
+    "symmetric_off_reference": "NOT_CONSTRUCTED_FOR_CAUSAL_ADMISSION",
+    "base": "NOT_APPLICABLE",
+    "reconstruction_basis": "NOT_APPLICABLE",
+    "joint": "NOT_APPLICABLE",
+    "support_change": "NOT_APPLICABLE"
+  },
+  "base_lfe": {
+    "status": "ZERO_REFERENCE",
+    "separate_from_reconstruction_basis": true,
+    "target_on_off_analysis": "NOT_RUN_AFTER_PROPAGATION_GATE_FAILURE"
+  },
+  "joint_descriptor": {
+    "definition": "ordered labeled Base full-band plus 15 ReconstructionBasis coordinates; Base LFE excluded",
+    "reversibility_status": "DIAGNOSTIC_ONLY_AFTER_UPSTREAM_GATE_FAILURE",
+    "target_on_off_analysis": "NOT_RUN_AFTER_PROPAGATION_GATE_FAILURE"
+  },
+  "model_consequence": {
+    "companion_signal_dependent_cross_coordinate_mixing": "NOT_ADMITTED",
+    "fixed_topology_no_effect": "NOT_ADMITTED",
+    "reason": "predeclared companion OFF/ON/OFF propagation gate failed before target causal analysis"
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "rb_rows_are_coordinate_labels_only": true,
+    "authored_object_to_row_identity": false,
+    "authored_object_pcm_inside_joc": false,
+    "renderer": false,
+    "audio_bound_object_scene": false,
+    "warp_semantics_changed": false
+  },
+  "recommended_next_milestone": "predeclared codec-domain silent-condition null calibration before any new target causal inference"
+}

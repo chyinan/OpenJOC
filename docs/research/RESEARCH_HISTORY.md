@@ -833,3 +833,21 @@ object/row binding, or vendor-semantic work was performed, and
 
 See [J4R1_ADM_OBJECT_PCM_PROPAGATION.md](J4R1_ADM_OBJECT_PCM_PROPAGATION.md)
 and [its machine-readable record](J4R1_ADM_OBJECT_PCM_PROPAGATION.json).
+
+## J4R2 — source-verified companion-signal intervention
+
+J4R2 generated exactly one source-verified, fixed-topology DD+ Atmos carrier.
+Its companion 2003 Hz ON interval is strongly visible, but both authored-silent
+OFF windows exceed the absolute observability floor frozen before export. The
+predeclared propagation gate therefore fails as
+`J4R2_COMPANION_SIGNAL_PROPAGATION_FAILED`; this is neither a no-effect result
+nor an admission of signal-dependent cross-coordinate mixing.
+
+The carrier is structurally valid across 251 access units and its payload-11
+body and observed object/element topology are invariant. Warp raw 3 remains
+ETSI `ReservedWarpMode`; no vendor interpretation was added. Downstream target
+997 Hz ON/OFF inference is not admitted, ReconstructionBasis rows remain
+coordinate labels, and `SemanticBindingState::Unresolved` is unchanged.
+
+See [J4R2_COMPANION_SIGNAL_INTERVENTION.md](J4R2_COMPANION_SIGNAL_INTERVENTION.md)
+and [its machine-readable record](J4R2_COMPANION_SIGNAL_INTERVENTION.json).
