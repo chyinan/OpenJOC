@@ -1,0 +1,14 @@
+{
+  "schema": "openjoc.j3r4.project-open-controller.v1",
+  "decision": "N3_PROJECT_OPEN_CONTROL_NOT_ESTABLISHED",
+  "project_open_mechanism": "/usr/bin/open -a Logic Pro exact disposable logicx path",
+  "s_fl_open_request": "OS_REQUESTED_RECOVERY_DIALOG_PRESENT",
+  "recovery_dialog_detected": true,
+  "recovery_dialog_action": "FAIL_CLOSED_EXACT_PID_TERMINATED",
+  "project_identity_verified": false,
+  "export_dialog_reached": false,
+  "final_action_allowed": false,
+  "media_generated": false,
+  "replacement_queue_hash": "de1fbd2cd3d4820f4dec7f2c1c14fe2cd333af027eef76668b24a3f429eb2fe8",
+  "semantic_binding_state": "Unresolved"
+}
