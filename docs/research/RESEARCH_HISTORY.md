@@ -747,3 +747,20 @@ reproducible-build evidence, not a cryptographic signature. The automatic
 linker ad-hoc Mach-O signature is recorded separately from absent Developer-ID
 signing and notarization. Artifact reproducibility is evaluated independently
 from codec fidelity and only under the measured host/toolchain inputs.
+
+## J3R12 — human-assisted six-run N3 producer batch
+
+The replacement queue was executed as exactly six Logic Pro 12.3 Dolby Digital
+Plus Atmos Music/768 kbps/48 kHz exports: static Front Left, static Front Right,
+and dual-object swap, each as a two-run pair. Human assistance was limited to a
+single mechanical Save click after controller verification; all six outputs
+were observed once in the frozen discovery realm with consumed nonces and
+`RUN_VERIFIED` controller states.
+
+The stream-copied raw EC-3 carrier was byte-identical within all three pairs
+(129/129 AU for each static pair and 126/126 AU for the dual-object pair).
+MP4 container hashes differed within pairs and were not used as the
+determinism boundary. The bounded structural audit continued to report
+`ETSI_STRICT` failure and explicit `DOLBY_VENDOR_COMPAT`
+`accepted_with_deviation`; no warp rule, semantic binding, JOC/ObjectScene
+interpretation, authored-object PCM, or renderer claim was added.

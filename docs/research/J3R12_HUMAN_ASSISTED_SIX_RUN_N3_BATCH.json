@@ -1,0 +1,65 @@
+{
+  "schema": "openjoc.public.j3r12.human-assisted-six-run-n3-batch.v1",
+  "stage": "J3R12",
+  "classification": "J3R12_HUMAN_ASSISTED_SIX_RUN_N3_BATCH_COMPLETED_AND_PROVENANCE_ADMITTED",
+  "authorization": {
+    "run_count": 6,
+    "new_logic_fixture": false,
+    "human_judgment": false,
+    "human_action": "single final Save click after controller verification",
+    "settings": {
+      "logic_version": "12.3",
+      "format": "Dolby Digital Plus with Dolby Atmos",
+      "profile": "Music",
+      "bitrate_kbps": 768,
+      "sample_rate_hz": 48000
+    }
+  },
+  "pairs": [
+    {
+      "pair_id": "N3R2_S_FL_PAIR",
+      "runs": ["N3R2_S_FL_0", "N3R2_S_FL_1"],
+      "access_units": [129, 129],
+      "raw_ec3_byte_identical": true,
+      "raw_ec3_sha256": "948e774b998121457b91da006d92c4bc62f976bcc6515cbca52d0345efca6cc5"
+    },
+    {
+      "pair_id": "N3R2_S_FR_PAIR",
+      "runs": ["N3R2_S_FR_0", "N3R2_S_FR_1"],
+      "access_units": [129, 129],
+      "raw_ec3_byte_identical": true,
+      "raw_ec3_sha256": "1d349872f81d2d477ff18360a4782700fb88a823473c51bc7f257f426f20ddb7"
+    },
+    {
+      "pair_id": "N3R2_D_SWAP_PAIR",
+      "runs": ["N3R2_D_SWAP_0", "N3R2_D_SWAP_1"],
+      "access_units": [126, 126],
+      "raw_ec3_byte_identical": true,
+      "raw_ec3_sha256": "d35aee5421e965d2fa0eb80d4b6dd071ba719dcd12686a40bf8a87cacfdc452e"
+    }
+  ],
+  "container_hashes": {
+    "N3R2_S_FL_0": "d73afbe98880bdba5f14f4ba2f217999cf5bfe59d55a99b148b3322147087efd",
+    "N3R2_S_FL_1": "732f2457852e900c4f8f6453a284821f26a69510183fb4065ee3e2bad625d38b",
+    "N3R2_S_FR_0": "0c26fee138931846302f8889b5b824058bef55811bc02490cb9f45765bc1d921",
+    "N3R2_S_FR_1": "b879432790bb48a57aa72fb40f2ea1b2a6b6898cf7ab6fd104d3dc3446131947",
+    "N3R2_D_SWAP_0": "03f6292a6b1714763737088263991b9b8351a66efc8c88bde51e56668996af79",
+    "N3R2_D_SWAP_1": "53c93fce802bd347af2d22e8f6942dc16b40de9c163a89e18f57dc266c3eceac"
+  },
+  "profiles": {
+    "ETSI_STRICT": "unchanged failure on real-world signaling deviations",
+    "DOLBY_VENDOR_COMPAT": "unchanged accepted_with_deviation",
+    "warp_semantics": "unchanged"
+  },
+  "limitations": {
+    "payload_ids": "not exposed by bounded inspect",
+    "object_count": "not exposed without trim configuration",
+    "element_count": "not exposed without trim configuration",
+    "metadata_block_count": "not available without trim configuration",
+    "joc": "not run",
+    "object_scene": "not run",
+    "authored_object_pcm": "inadmissible",
+    "semantic_binding_state": "Unresolved"
+  },
+  "private_evidence": "OpenJOC-Private/reports/runs/20260812T_j3r12-human-assisted-six-run-n3_38f374b"
+}
