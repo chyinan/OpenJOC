@@ -1,0 +1,50 @@
+{
+  "schema": "openjoc.j3r11.controller-owned-final-actuator.v1",
+  "decision": "N3_FINAL_ACTION_AUTHORITY_REQUIRES_REDESIGN",
+  "j3r10_disposition": "J3R10_N3_BATCH_PARTIAL_RECOVERY_REQUIRED",
+  "incident_output": {
+    "size": 400055,
+    "sha256": "758329837da26f2c1654e9129c478efa175173047b62b4724b94a323a474c141",
+    "scientific_admission": "CONTROLLER_PROVENANCE_INCIDENT_ONLY",
+    "nonce_original_state": "RESERVED",
+    "nonce_terminal_state": "NONCE_RETIRED_COMPROMISED_UNCONSUMED",
+    "quarantined": true
+  },
+  "root_cause": "COMPUTER_USE_DIRECT_FINAL_ACTION_BYPASS",
+  "computer_use_final_action_allowed": false,
+  "controller": {
+    "mechanism": "semantic AXPress-equivalent controller callback",
+    "durable_ordering": [
+      "INVOCATION_ARMED",
+      "atomic durable checkpoint",
+      "RESERVED->CONSUMED",
+      "EXPORT_INVOKE_PENDING",
+      "control identity revalidation",
+      "CONTROLLER_FINAL_ACTUATOR_ENABLED",
+      "FINAL_ACTUATOR_CALLED",
+      "OUTPUT_OBSERVED",
+      "EXPORT_COMPLETED"
+    ],
+    "self_test": "PASS",
+    "standard_nonmedia_oracle": "NOT_ADMITTED"
+  },
+  "cancel_only": {
+    "new_logic_fixture": false,
+    "new_media": false,
+    "fresh_post_controller_rehearsal": "NOT_RUN_AFTER_STANDARD_ORACLE_BLOCK"
+  },
+  "replacement_queue": {
+    "revision": 2,
+    "status": "FROZEN_NOT_EXECUTED",
+    "run_count": 6,
+    "pair_count": 3,
+    "run_ids": [
+      "N3R2_S_FL_0", "N3R2_S_FL_1",
+      "N3R2_S_FR_0", "N3R2_S_FR_1",
+      "N3R2_D_SWAP_0", "N3R2_D_SWAP_1"
+    ],
+    "pair_ids": ["N3R2_S_FL_PAIR", "N3R2_S_FR_PAIR", "N3R2_D_SWAP_PAIR"]
+  },
+  "semantic_binding_state": "Unresolved",
+  "warp_semantics": "unchanged"
+}
