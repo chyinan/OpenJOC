@@ -1,0 +1,32 @@
+{
+  "schema": "openjoc.j3r6.nssavepanel-destination-binding.v1",
+  "decision": "N3_NSSAVEPANEL_NAVIGATION_REQUIRES_REDESIGN",
+  "j3r5_disposition": "N3_REAL_UI_CONTROLLER_REQUIRES_REDESIGN",
+  "return_or_enter_folder_navigation": "PROHIBITED",
+  "standard_nssavepanel_oracle": {
+    "requested_parent_path": "accepted as text input",
+    "semantic_go_control_exposed": false,
+    "semantic_open_action_result": "NO_NAVIGATION",
+    "candidate_row_click_result": "AMBIGUOUS_SELECTION_CHANGED_TO_WRONG_PARENT",
+    "two_signal_parent_readback": "NOT_AVAILABLE",
+    "resolved_destination": "NOT_ADMITTED",
+    "save_or_export_activated": false
+  },
+  "destination_contract": {
+    "approved_parent": "requires canonical realpath/device/inode validation",
+    "typed_leaf": "<authorized_stem>.mp4",
+    "expected_producer_final_leaf": "<authorized_stem>_ec3.mp4",
+    "readback_disagreement": "REJECT",
+    "parent_substitution": "REVOKE_READINESS",
+    "final_action_allowed": false
+  },
+  "real_logic_rehearsals": {
+    "S_FL": "NOT_RUN_AFTER_ORACLE_FAIL",
+    "S_FR": "NOT_RUN_AFTER_ORACLE_FAIL",
+    "D_SWAP": "NOT_RUN_AFTER_ORACLE_FAIL",
+    "repeat": "NOT_RUN_AFTER_ORACLE_FAIL"
+  },
+  "media_generated": false,
+  "semantic_binding_state": "Unresolved",
+  "next_required_change": "A real save-panel adapter must expose an unambiguous, semantic folder-location confirmation and two independent parent readback signals before producer work may resume."
+}
