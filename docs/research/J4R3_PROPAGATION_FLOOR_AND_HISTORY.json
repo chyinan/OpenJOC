@@ -1,0 +1,201 @@
+{
+  "schema": "openjoc.research.j4r3.propagation-floor-and-history.v1",
+  "stage": "J4R3",
+  "decision": "J4R3_COMPANION_PROPAGATION_CONFIRMED_AND_OFF_REVERSIBILITY_SUPPORTED",
+  "scope": "metric-compatible companion 2003 Hz propagation calibration and target-997 OFF-state history characterization on one frozen J4R2 carrier",
+  "dependency": {
+    "j4r2": "J4R2_COMPANION_SIGNAL_PROPAGATION_FAILED remains unchanged",
+    "j4r1": "J4R1_ADM_OBJECT_PCM_PROPAGATION_ADMITTED"
+  },
+  "frozen_inputs": {
+    "raw_ec3_sha256": "389b0e17a1a5766da89b8ef39f154d1f7217a56d949f8828f4b1c8b0f88d186d",
+    "target_wav_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570",
+    "companion_wav_sha256": "879d73a0d71eeaa4138ddb3423964abe6f813b14a717360625ca1ff0833d78e6",
+    "new_logic_fixture": false,
+    "new_media": false,
+    "producer_export": false
+  },
+  "alignment": {
+    "mapping": "decoded_sample = source_sample + 1536",
+    "delay_samples": 1536,
+    "sample_rate_hz": 48000,
+    "window_samples": 24000
+  },
+  "preregistration": {
+    "reviewer_authorization_persisted_before_protocol": true,
+    "protocol_frozen_before_on_dependent_evaluation": true,
+    "durable_directory_ordering_defect_reconciled": true,
+    "post_activation_replay_byte_identical": true,
+    "final_evidence_uses_activated_authoritative_directory": true
+  },
+  "calibration_windows": {
+    "A1": {"role": "calibration", "source_samples": [24000, 48000], "decoded_samples": [25536, 49536]},
+    "A2": {"role": "holdout", "source_samples": [60000, 84000], "decoded_samples": [61536, 85536]},
+    "B1": {"role": "holdout", "source_samples": [204000, 228000], "decoded_samples": [205536, 229536]},
+    "B2": {"role": "calibration", "source_samples": [240000, 264000], "decoded_samples": [241536, 265536]},
+    "ON": {"role": "source-active observation", "source_samples": [156000, 180000], "decoded_samples": [157536, 181536]}
+  },
+  "estimator_integrity": {
+    "status": "PASS",
+    "frequencies_hz": [997, 2003],
+    "complex_convention": "cosine - i*sine",
+    "difference_cycles_per_window": 503,
+    "design_condition_number": 1.4142157257161052,
+    "gram_condition_number": 2.0000061188627316,
+    "maximum_997_2003_basis_inner_product": 5.735412145213555e-16,
+    "maximum_synthetic_cross_frequency_leakage": 1.136254379351928e-16,
+    "estimator_cross_frequency_result": "EXCLUDED_AS_OFF_FLOOR_ORIGIN"
+  },
+  "source_domain_null": {
+    "status": "PASS",
+    "off_a_exact_zero": true,
+    "off_b_exact_zero": true,
+    "off_window_2003_coefficients": {
+      "A1": 0.0,
+      "A2": 0.0,
+      "B1": 0.0,
+      "B2": 0.0
+    },
+    "on_2003_magnitude": 0.20000000053627348
+  },
+  "component_localized_2003": {
+    "metric": "Euclidean norm of labeled Base full-band FL/FR/FC/SL/SR plus RB row_000..row_014; Base LFE and RcLfe separate",
+    "rclfe_all_windows": 0.0,
+    "windows": {
+      "A1": {
+        "base_norm": 0.00011151427718659628,
+        "reconstruction_basis_norm": 0.00010108630611286723,
+        "joint_norm": 0.00015051204370412796,
+        "dominant_base": {"coordinate": "Base.FC", "magnitude": 0.00008434800864606355},
+        "dominant_reconstruction_basis": {"coordinate": "RB.row_001", "magnitude": 0.00008137104496041072}
+      },
+      "A2": {
+        "base_norm": 0.00011238711265800712,
+        "reconstruction_basis_norm": 0.00010203226040367532,
+        "joint_norm": 0.00015179408833906213,
+        "dominant_base": {"coordinate": "Base.FC", "magnitude": 0.00008451694908772046},
+        "dominant_reconstruction_basis": {"coordinate": "RB.row_001", "magnitude": 0.00008223385622973007}
+      },
+      "B1": {
+        "base_norm": 0.00011225276465452756,
+        "reconstruction_basis_norm": 0.00010102731944459698,
+        "joint_norm": 0.00015102053650661352,
+        "dominant_base": {"coordinate": "Base.FC", "magnitude": 0.00008440709922518713},
+        "dominant_reconstruction_basis": {"coordinate": "RB.row_001", "magnitude": 0.00008137006489807582}
+      },
+      "B2": {
+        "base_norm": 0.00011319793521130185,
+        "reconstruction_basis_norm": 0.00010178439679374422,
+        "joint_norm": 0.0001522295502416284,
+        "dominant_base": {"coordinate": "Base.FC", "magnitude": 0.00008444835963623801},
+        "dominant_reconstruction_basis": {"coordinate": "RB.row_001", "magnitude": 0.00008222064905972568}
+      },
+      "ON": {
+        "base_norm": 0.19989171650208698,
+        "reconstruction_basis_norm": 0.1943761237430752,
+        "joint_norm": 0.2788167423372097,
+        "dominant_base": {"coordinate": "Base.FL", "magnitude": 0.19989168806040095},
+        "dominant_reconstruction_basis": {"coordinate": "RB.row_000", "magnitude": 0.19437610900704316}
+      }
+    },
+    "semantic_identity_inferred": false
+  },
+  "symmetric_spectral_controls": {
+    "frequencies_hz": [1987, 1995, 2003, 2011, 2019],
+    "off_observation": "joint norms remain approximately 1.49e-4 to 1.54e-4 around 2003 Hz",
+    "on_observation": "only 2003 Hz rises to approximately 0.2788 in the ON window",
+    "frequency_scan_for_favorable_result": false
+  },
+  "metric_compatible_2003_floor": {
+    "calibration_margin": 1.1,
+    "calibration_joint_norms": {"A1": 0.00015051204370412796, "B2": 0.0001522295502416284},
+    "upper_floor": 0.00016745250526579124,
+    "holdout_joint_norms": {"A2": 0.00015179408833906213, "B1": 0.00015102053650661352},
+    "holdout_pass": true,
+    "on_derived_threshold": false
+  },
+  "propagation_contrast": {
+    "on_joint_norm": 0.2788167423372097,
+    "max_off_joint_norm": 0.0001522295502416284,
+    "on_to_max_off_ratio": 1831.5546613299068,
+    "on_minus_max_off": 0.2786645127869681
+  },
+  "companion_2003_propagation": {
+    "status": "COMPANION_2003_CARRIER_PROPAGATION_CONFIRMED",
+    "source_off_coefficients_zero": true,
+    "source_on_coefficient_present": true,
+    "estimator_leakage_excluded": true,
+    "off_floor_bounded_by_calibration": true,
+    "correct_off_on_off_temporal_pattern": true,
+    "deterministic": true
+  },
+  "carrier_off_2003_origin": {
+    "classification": "DETERMINISTIC_CODEC_SPECTRAL_FLOOR",
+    "basis": [
+      "exact source-domain OFF null",
+      "synthetic estimator leakage excluded",
+      "bounded reproducible OFF carrier observations",
+      "symmetric neighboring-frequency controls",
+      "independent compatible-base decoder corroboration"
+    ],
+    "external_decoder_scope": "black-box numerical corroboration only; not a normative or semantic oracle"
+  },
+  "target_997_n1_calibration": {
+    "partitions": {
+      "base_full_band": {"within_a": 0.000020465309094983093, "within_b": 0.008407433887165918, "mechanical_compatible_envelope": 0.009248177275882511},
+      "reconstruction_basis": {"within_a": 0.000009004091635181723, "within_b": 0.0076587762008495305, "mechanical_compatible_envelope": 0.008424653820934484},
+      "joint_labeled_base_plus_rb": {"within_a": 0.00001599020159607889, "within_b": 0.008052276149589435, "mechanical_compatible_envelope": 0.008857503764548379}
+    },
+    "maximum_cross_state_residuals": {
+      "base_full_band": 0.008417291942309267,
+      "reconstruction_basis": 0.0076653554232189135,
+      "joint_labeled_base_plus_rb": 0.00805758094666297
+    },
+    "all_cross_state_observations_within_compatible_envelope": true,
+    "classification": "OFF_STATE_REVERSIBILITY_SUPPORTED_UNDER_COMPATIBLE_N1",
+    "limitation": "the envelope includes the much larger within-B term and is broad; support is under the frozen compatible-N1 rule and does not establish stronger absolute stationarity or a cause"
+  },
+  "off_a_stationarity": "ESTABLISHED_WITHIN_PRE_INTERVENTION_PAIR",
+  "off_b_stationarity": "ESTABLISHED_UNDER_FROZEN_COMPATIBLE_N1_WITH_BROAD_ENVELOPE_LIMITATION",
+  "cross_off_reversibility": "OFF_STATE_REVERSIBILITY_SUPPORTED_UNDER_COMPATIBLE_N1",
+  "post_intervention_recovery": {
+    "status": "NOT_RUN_NO_SHIFT",
+    "decay_model_fitted": false
+  },
+  "target_on_off": {
+    "causal_classification": "NOT_RUN_PROHIBITED",
+    "companion_signal_dependent_cross_coordinate_mixing": "NOT_ADMITTED",
+    "companion_pcm_effect_not_observed": "NOT_ADMITTED"
+  },
+  "model_consequence": {
+    "companion_2003_carrier_propagation": "CONFIRMED",
+    "target_997_off_state_reversibility": "SUPPORTED_UNDER_COMPATIBLE_N1",
+    "within_b_variability_cause": "UNRESOLVED",
+    "target_997_causal_effect": "NOT_TESTED"
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "rb_rows_are_coordinate_labels_only": true,
+    "authored_object_to_row_identity": false,
+    "authored_object_pcm_inside_joc": false,
+    "slot_identity": false,
+    "complete_reconstruction_operator": false,
+    "renderer": false,
+    "audio_bound_object_scene": false,
+    "rclfe_separate": true,
+    "warp_raw3": "ETSI reserved; unchanged",
+    "new_vendor_semantic_rule": false
+  },
+  "determinism": {
+    "analysis_passes": 2,
+    "compact_reports_byte_identical": true
+  },
+  "storage": {
+    "large_derived_artifact_generation_frozen": true,
+    "temporary_logical_bytes_generated": 85022223,
+    "temporary_large_derived_bytes_retained": 0,
+    "full_pcm_retained": false,
+    "new_producer_media": false
+  },
+  "recommended_next_milestone": "perform the previously blocked target-997 ON/OFF causal analysis on this frozen carrier using admitted metric-compatible floors"
+}

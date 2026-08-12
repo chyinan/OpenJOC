@@ -851,3 +851,26 @@ coordinate labels, and `SemanticBindingState::Unresolved` is unchanged.
 
 See [J4R2_COMPANION_SIGNAL_INTERVENTION.md](J4R2_COMPANION_SIGNAL_INTERVENTION.md)
 and [its machine-readable record](J4R2_COMPANION_SIGNAL_INTERVENTION.json).
+
+## J4R3 — metric-compatible propagation floor and OFF-state history
+
+J4R3 independently admits companion 2003 Hz carrier propagation without
+changing J4R2's correctly failed preregistered result. Exact source OFF nulls,
+an independently checked two-frequency estimator, two OFF calibration windows,
+two holdouts, and symmetric neighboring-frequency controls establish a
+metric-compatible joint floor of `1.6745250526579124e-4`. The ON joint norm is
+`0.2788167423372097`, about 1,832 times the largest OFF observation. The OFF
+nuisance is classified as `DETERMINISTIC_CODEC_SPECTRAL_FLOOR`, with bounded
+black-box compatible-base corroboration.
+
+The frozen compatible-N1 classifier supports OFF-state reversibility because
+all cross-state residuals fall below 110% of the larger within-state residual.
+Within-B variation is nevertheless about 0.8%, roughly 504 times the within-A
+joint residual; the supported result is therefore explicitly scoped to that
+broad compatible envelope. J4R3 closes as
+`J4R3_COMPANION_PROPAGATION_CONFIRMED_AND_OFF_REVERSIBILITY_SUPPORTED`. No
+target causal ON/OFF result, object/row identity, vendor warp interpretation,
+or renderer claim was added; `SemanticBindingState::Unresolved` is unchanged.
+
+See [J4R3_PROPAGATION_FLOOR_AND_HISTORY.md](J4R3_PROPAGATION_FLOOR_AND_HISTORY.md)
+and [its machine-readable record](J4R3_PROPAGATION_FLOOR_AND_HISTORY.json).
