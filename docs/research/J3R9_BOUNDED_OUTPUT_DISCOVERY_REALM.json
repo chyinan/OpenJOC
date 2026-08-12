@@ -1,0 +1,50 @@
+{
+  "schema": "openjoc.j3r9.bounded-output-discovery-realm.v1",
+  "decision": "N3_BOUNDED_POST_EXPORT_DISCOVERY_REALM_ADMITTED",
+  "probe_run_id": "J3R9_DISCOVERY_REALM_PROBE_0",
+  "scientific_admission": "CONTROLLER_PROBE_ONLY",
+  "n3_null_admission": false,
+  "destination_model": "high_entropy_leaf_plus_frozen_private_realm_plus_post_export_original_path_attestation",
+  "authorized_stem_entropy_bits_minimum": 128,
+  "typed_panel_leaf_grammar": "OJ3R9_<128-bit-fragment>.mp4",
+  "expected_final_leaf_grammar": "OJ3R9_<128-bit-fragment>_ec3.mp4",
+  "export_settings": {
+    "format": "Dolby Digital Plus with Dolby Atmos",
+    "profile": "Music",
+    "bitrate_kbps": 768,
+    "sample_rate_hz": 48000,
+    "range": "Project",
+    "adm_export": false
+  },
+  "controller": {
+    "fresh_logic_process_verified": true,
+    "fresh_disposable_project_verified": true,
+    "nonce_consumed_before_final_action": true,
+    "final_action_count": 1,
+    "folder_navigation_used": false,
+    "return_enter_navigation_count": 0,
+    "preinvocation_exact_name_absence": true
+  },
+  "output": {
+    "matching_output_count": 1,
+    "inside_frozen_realm": true,
+    "inside_forbidden_subtree": false,
+    "second_media_output_count": 0,
+    "size_stable": true,
+    "container_smoke": "MP4 with 48 kHz E-AC-3 stream",
+    "original_path_attested_before_any_move": true
+  },
+  "policy_tests": {
+    "outside_realm_rejected": true,
+    "forbidden_subtree_rejected": true,
+    "preexisting_match_detected": true,
+    "duplicate_same_stem_detected": true,
+    "wrong_suffix_rejected": true,
+    "realm_mutation_rejected": true
+  },
+  "replacement_queue_hash": "de1fbd2cd3d4820f4dec7f2c1c14fe2cd333af027eef76668b24a3f429eb2fe8",
+  "future_replacement_destination_contract": "ADMITTED",
+  "semantic_binding_state": "Unresolved",
+  "warp_semantics_changed": false,
+  "public_media_committed": false
+}
