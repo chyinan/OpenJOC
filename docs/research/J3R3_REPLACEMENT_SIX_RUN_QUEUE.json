@@ -1,0 +1,12 @@
+{
+  "schema": "openjoc.j3r3.replacement-queue.v1",
+  "n3r_run_ids": ["N3R_S_FL_0", "N3R_S_FL_1", "N3R_S_FR_0", "N3R_S_FR_1", "N3R_D_SWAP_0", "N3R_D_SWAP_1"],
+  "pair_ids": ["N3R_S_FL_PAIR", "N3R_S_FR_PAIR", "N3R_D_SWAP_PAIR"],
+  "old_j3r2_ids_rejected": true,
+  "producer_export": false,
+  "new_media": false,
+  "stage4_authorizations_created": 0,
+  "future_c1_supported": true,
+  "future_c2_supported": true,
+  "future_c3_supported": false
+}

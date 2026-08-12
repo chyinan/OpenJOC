@@ -1,0 +1,14 @@
+{
+  "schema": "openjoc.j3r3.provenance-controller.v1",
+  "decision": "N3_DURABLE_PROVENANCE_CONTROLLER_REQUIRES_REDESIGN",
+  "j3r2_disposition": "EXISTING_NON_N3_STRUCTURAL_CARRIERS",
+  "n3_null_admission": false,
+  "root_cause": "final UI path bypassed durable nonce/invocation/completion checkpointing",
+  "atomic_write": "file_fsync_then_rename_then_parent_directory_fsync",
+  "final_action_authority": "controller capability only",
+  "output_with_unconsumed_nonce": "PROVENANCE_INTEGRITY_FAILED",
+  "mock_controller_tests": "PASS",
+  "cancel_only_logic_rehearsals": "NOT_STARTED_GUI_SEMANTIC_OPEN_ACTION_UNAVAILABLE",
+  "new_media": false,
+  "semantic_binding_state": "Unresolved"
+}
