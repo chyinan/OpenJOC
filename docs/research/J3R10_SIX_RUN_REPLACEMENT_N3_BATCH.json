@@ -1,0 +1,21 @@
+{
+  "schema": "openjoc.public.j3r10.six-run-replacement-n3-batch.v1",
+  "stage": "J3R10",
+  "classification": "J3R10_N3_BATCH_PARTIAL_RECOVERY_REQUIRED",
+  "authorized_run_count": 6,
+  "completed_run_count": 1,
+  "valid_output_count": 0,
+  "admitted_pair_count": 0,
+  "post_invocation_failure_count": 1,
+  "remaining_authorizations_revoked": 5,
+  "failure_reason": "OUTPUT_WITH_UNCONSUMED_NONCE_OR_PREINVOCATION_STATE",
+  "semantic_binding_state": "Unresolved",
+  "new_logic_fixture": false,
+  "new_public_media": false,
+  "large_derived_artifact_generation_frozen": true,
+  "producer_envelope": "NOT_RUN",
+  "c1": "NOT_RUN",
+  "c2": "NOT_RUN",
+  "warp_semantics": "UNCHANGED",
+  "next_blocker": "repair and independently test final-action controller ordering before another producer authorization"
+}
