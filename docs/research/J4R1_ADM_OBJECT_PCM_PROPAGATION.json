@@ -1,0 +1,186 @@
+{
+  "adm": {
+    "bits_per_sample": 24,
+    "bytes": 13850456,
+    "channels": 12,
+    "duration_seconds": 8.0,
+    "export_command": "Logic project-as-ADM-BWF export",
+    "export_dialog_option_inventory": "NOT_CAPTURED",
+    "explicit_zero_tail_samples": [
+      288000,
+      384000
+    ],
+    "export_count": 1,
+    "sample_count": 384000,
+    "sample_rate_hz": 48000,
+    "sha256": "67dc46927edd241f48ce6cc2ac4ad2a293d73451c79548c7eb8aa24df49977d3",
+    "configured_programme_range": "NOT_CAPTURED",
+    "source_span_samples": [
+      0,
+      288000
+    ]
+  },
+  "companion_adm_pcm": {
+    "OFF_A": "EXACT_ZERO",
+    "OFF_B": "EXACT_ZERO",
+    "ON": {
+      "amplitude": 0.20000000053627373,
+      "frequency_hz": 2003
+    },
+    "result": "EXACT_PCM_AT_ORIGIN"
+  },
+  "decision": "J4R1_ADM_OBJECT_PCM_PROPAGATION_ADMITTED",
+  "evidence_freeze_aggregate_sha256": "75590c49058c688af123993ecde4bc15085a085f1b4ff450bc7d356903260862",
+  "determinism": {
+    "analysis_runs": 2,
+    "report_sha256": "a34e1aadc020a4922f3c042531727b29616d556b63f07a915d3b1285d71d2200",
+    "reports_byte_identical": true
+  },
+  "j3r15_consequence": {
+    "old_carrier_reclassified": false,
+    "root_cause_explained": true
+  },
+  "logic_project": {
+    "human_assist_used": false,
+    "human_judgment_required": false,
+    "identity": "J4R1_ADM_PCM_PROPAGATION",
+    "logic_version": "12.3 (6674)",
+    "regions_at_origin": true,
+    "tracks": [
+      {
+        "experimental_role": "TARGET_OBJECT",
+        "logic_track_name": "OBJ_997HZ",
+        "region_name": "TARGET_997"
+      },
+      {
+        "experimental_role": "COMPANION_OBJECT",
+        "logic_track_name": "OBJ_2003HZ",
+        "region_name": "COMPANION_OFF_ON_OFF"
+      }
+    ],
+    "sample_rate_hz": 48000,
+    "save_close_reopen": true
+  },
+  "metadata_linkage": {
+    "companion": {
+      "audio_object": "AO_100C",
+      "channel_index_1_based": 12,
+      "track_uid": "ATU_0000000C",
+      "x": -1.0,
+      "y": 1.0,
+      "z_ui_readback": 0.0,
+      "size_ui_readback": 0
+    },
+    "direct_reference_gate": true,
+    "target": {
+      "audio_object": "AO_100B",
+      "channel_index_1_based": 11,
+      "track_uid": "ATU_0000000B",
+      "x": 1.0,
+      "y": 1.0,
+      "z_ui_readback": 0.0,
+      "size_ui_readback": 0
+    }
+  },
+  "pre_adm_track_pcm_gate": {
+    "companion_bounce_sha256": "2eb811cfd37de8e9742fcd6cc96806e41f355123a57ef5794e1f33b82bb852d8",
+    "companion_pcm_sha256": "7b8b22c96c0a78e1738ced9ed9504d2e132b097e710fd61bd7eab8a73bde13d2",
+    "result": "PASS_SOURCE_EXACT",
+    "target_bounce_sha256": "650cbe599456c8e6fd8a5e2fcb0f455ef482417efa078b272f31d3ee92a35b20",
+    "target_pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287"
+  },
+  "prior_lineage": {
+    "active_to_unused_region_transition": true,
+    "early_adm_source_pcm": "EXACT",
+    "j3r15_disposition": "J3R15_EXPERIMENT_EXECUTION_OR_LINEAGE_INADMISSIBLE",
+    "later_static_adm_object_pcm": "ALL_ZERO"
+  },
+  "recommended_next_milestone": "reproduce fixed-target companion OFF-to-ON-to-OFF JOC intervention using the admitted ADM propagation gate",
+  "root_cause": {
+    "class": "REGION_NOT_BOUND_TO_EXPECTED_TRACK",
+    "correction": "explicit source-region binding at project origin plus a source-exact pre-ADM track gate",
+    "exact_gui_action": "UNRESOLVED"
+  },
+  "schema": "openjoc.research.j4r1.adm-object-pcm-propagation.v1",
+  "scope": "ADM authoring-representation PCM and metadata linkage only",
+  "semantic_boundary": {
+    "authored_object_pcm_scope": "ADM authoring representation only",
+    "ddplus_export": false,
+    "joc_carrier_generation": false,
+    "joc_decode": false,
+    "renderer": false,
+    "semantic_binding_state": "Unresolved",
+    "warp_semantics_changed": false
+  },
+  "source_oracle": {
+    "bits_per_sample": 24,
+    "channels": 1,
+    "companion": {
+      "file_sha256": "879d73a0d71eeaa4138ddb3423964abe6f813b14a717360625ca1ff0833d78e6",
+      "pcm_sha256": "7b8b22c96c0a78e1738ced9ed9504d2e132b097e710fd61bd7eab8a73bde13d2",
+      "peak": 0.2,
+      "timeline": "OFF_A / 2003 Hz ON / OFF_B",
+      "windows_samples": {
+        "OFF_A": [
+          0,
+          96000
+        ],
+        "OFF_B": [
+          192000,
+          288000
+        ],
+        "ON": [
+          96000,
+          192000
+        ]
+      }
+    },
+    "duration_seconds": 6.0,
+    "sample_count": 288000,
+    "sample_rate_hz": 48000,
+    "target": {
+      "file_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570",
+      "frequency_hz": 997,
+      "pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287",
+      "peak": 0.2
+    }
+  },
+  "source_to_adm": {
+    "alignment_samples": 0,
+    "correlation": 1.0,
+    "gain": 1.0,
+    "max_abs_residual_integer": 0,
+    "polarity": 1,
+    "per_pair": {
+      "companion": "EXACT_PCM_AT_ORIGIN",
+      "target": "EXACT_PCM_AT_ORIGIN"
+    },
+    "raw_pcm_byte_identical": true,
+    "residual_rms": 0.0
+  },
+  "stage": "J4R1",
+  "start_head": "255ea39b2212d2c3cb157032093da86c1ff54649",
+  "storage": {
+    "disposable_diagnostic_bytes_deleted_after_provenance_freeze": 2901136,
+    "filesystem_free_bytes_end": 12983005184,
+    "filesystem_free_bytes_start": 13273214976,
+    "large_derived_bytes_generated": 4631480,
+    "large_derived_bytes_retained": 1730344,
+    "new_adm_bytes": 13850456,
+    "new_source_bytes": 1728088,
+    "private_analysis_bytes_definition": "logical bytes of retained private analysis inputs and core reports at the pre-finalization boundary, excluding recursively generated storage, reference-manifest, determinism, and evidence-freeze records",
+    "private_analysis_bytes_generated": 1786640,
+    "reconstruction_basis_pcm_bytes": 0,
+    "reference_f64_bytes": 0,
+    "unbounded_debug_array_bytes": 0
+  },
+  "target_adm_pcm": {
+    "frequency_hz": 997,
+    "result": "EXACT_PCM_AT_ORIGIN",
+    "segment_amplitudes": [
+      0.20000000053627362,
+      0.20000000053627287,
+      0.20000000053627218
+    ]
+  }
+}

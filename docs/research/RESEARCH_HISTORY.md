@@ -813,3 +813,23 @@ Diagnostic row differences cannot be assigned to companion-signal causality.
 J3R14's context-conditioned class remains underdetermined,
 `SemanticBindingState` remains `Unresolved`, and warp raw 3 remains ETSI
 `ReservedWarpMode`.
+
+## J4R1 — ADM object-channel PCM propagation gate
+
+J4R1 admitted a reproducible source-to-ADM authoring contract. Deterministic
+997 Hz and zero/2003 Hz/zero mono source PCM payloads were recovered
+byte-for-byte first from bounded Logic track bounces and then from their
+AXML/CHNA-linked ADM object channels at sample origin. The eight-second ADM
+contains the declared six-second source interval followed by a two-second zero
+producer tail.
+
+The prior J3R15 failure was localized to
+`REGION_NOT_BOUND_TO_EXPECTED_TRACK`: project lineage records show the source
+media changing from active audio to unused media before the all-zero
+object-channel export, although the exact GUI action remains unresolved. The
+old J3R15 carrier remains inadmissible. No DD+, JOC decode, renderer,
+object/row binding, or vendor-semantic work was performed, and
+`SemanticBindingState::Unresolved` remains unchanged.
+
+See [J4R1_ADM_OBJECT_PCM_PROPAGATION.md](J4R1_ADM_OBJECT_PCM_PROPAGATION.md)
+and [its machine-readable record](J4R1_ADM_OBJECT_PCM_PROPAGATION.json).
