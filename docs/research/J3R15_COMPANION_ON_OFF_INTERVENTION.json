@@ -1,0 +1,109 @@
+{
+  "schema": "openjoc.research.j3r15.companion-on-off.v1",
+  "stage": "J3R15",
+  "j3r14_dependency": "J3R14_CONTEXT_DEPENDENCE_REQUIRES_SUPPORT_CREATING_CROSS_COORDINATE_MIXING",
+  "decision": "J3R15_EXPERIMENT_EXECUTION_OR_LINEAGE_INADMISSIBLE",
+  "causal_question": "does companion PCM silence-to-2003-Hz-to-silence alter the fixed target 997-Hz ReconstructionBasis representation under fixed topology",
+  "sources": {
+    "sample_rate_hz": 48000,
+    "sample_count": 288000,
+    "target": {
+      "frequency_hz": 997,
+      "position": "Front Right",
+      "sha256": "89862d6afbd2e8d213ca37ea8824f374f4dfdb3a2e6f5a10ee337d7f59aa483e"
+    },
+    "companion": {
+      "frequency_hz": 2003,
+      "position": "Front Left",
+      "sha256": "b4082d4d4c6c1f842a53eb3c88cecaa99b030679cb4c25b10580ab6995ae702c",
+      "timeline_samples": {
+        "OFF_A": [0, 96000],
+        "ON": [96000, 192000],
+        "OFF_B": [192000, 288000]
+      }
+    },
+    "logic_embedded_pcm_sample_identical": true
+  },
+  "analysis_windows_samples": {
+    "OFF_A": [60000, 84000],
+    "ON": [156000, 180000],
+    "OFF_B": [204000, 228000]
+  },
+  "human_assist": {
+    "used": true,
+    "type": "MECHANICAL_UI_ACTION",
+    "human_judgment": false,
+    "codex_post_state_verification": true
+  },
+  "producer": {
+    "ddplus_export_count": 1,
+    "producer_repeat_determinism": "NOT_RUN_BY_PROTOCOL",
+    "mp4_sha256": "17c3b005b4fc8c1ff88a394d4f5b003204e04b9841a4ef675ba35ab12d518aa1",
+    "raw_ec3_sha256": "9a24c22adf39ee6906ca8d4625456f0ff41cd746f7e166adfe1fb0c4d269d55d",
+    "raw_access_units": 251,
+    "raw_duration_seconds": 8.032,
+    "source_intervention_duration_seconds": 6.0,
+    "export_boundary_limitation": "Logic shell produced an 8.0-second export; all frozen windows remain inside the 0-6-second source intervention"
+  },
+  "metadata_gate": {
+    "adm_positions_constant": true,
+    "target_position": {"X": 1.0, "Y": 1.0},
+    "companion_position": {"X": -1.0, "Y": 1.0},
+    "payload_11_unique_count": 1,
+    "payload_11_bits": 536,
+    "object_count": 16,
+    "element_count": 2,
+    "warp_raw3_access_units": 251,
+    "warp_semantics": "ETSI ReservedWarpMode; unchanged",
+    "adm_object_pcm": {
+      "target_track_11_nonzero_samples": 0,
+      "companion_track_12_nonzero_samples": 0,
+      "sample_count_per_track": 384000,
+      "result": "FAIL_ALL_ZERO_OBJECT_TRACKS"
+    }
+  },
+  "signal_gate": {
+    "source_off_on_off_valid": true,
+    "producer_off_on_off_observable": false,
+    "joint_2003_norms": {
+      "OFF_A": 0.00015755161961256847,
+      "ON": 0.00015398908190998142,
+      "OFF_B": 0.000156965910887735
+    },
+    "result": "FAIL_COMPANION_SIGNAL_NOT_PROPAGATED_TO_PRODUCER_OUTPUT"
+  },
+  "diagnostic_only_results": {
+    "off_a_off_b_997_projective_residual": {
+      "base": 0.000766133329392753,
+      "reconstruction_basis": 0.0005243030138727352,
+      "joint": 0.0012778919065390873,
+      "rclfe": "ZERO_REFERENCE"
+    },
+    "off_a_on_997_projective_residual": {
+      "base": 0.000983010811224399,
+      "reconstruction_basis": 0.0006832086601077347,
+      "joint": 0.1229152718277358,
+      "rclfe": "ZERO_REFERENCE"
+    },
+    "reconstruction_basis_support_rows": {
+      "OFF_A": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      "ON": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      "OFF_B": [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    },
+    "gained_support_rows": [],
+    "lost_support_rows": [],
+    "causal_admission": false
+  },
+  "model_consequence": "J3R14 general context-conditioned mixing remains underdetermined; no signal-dependent refinement admitted",
+  "remaining_causal_ambiguity": "the Logic producer-to-export object-audio lineage failed despite correct frozen and embedded source PCM",
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "authored_object_pcm": "INADMISSIBLE",
+    "audio_bound_object_scene": "INADMISSIBLE",
+    "row_object_identity": "NOT_INFERRED",
+    "slot_identity": "NOT_INFERRED",
+    "renderer": "NOT_RUN",
+    "warp_vendor_semantics": "NOT_ADMITTED"
+  },
+  "no_stage_16": true
+}

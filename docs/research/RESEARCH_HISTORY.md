@@ -796,3 +796,20 @@ It describes a coordinate-level ReconstructionBasis observation, not an
 authored-object, slot, renderer, or Dolby semantic binding. `SemanticBindingState`
 remains `Unresolved`; no new media or Logic fixture was used; and warp raw 3
 remains ETSI `ReservedWarpMode`.
+
+## J3R15 — companion intervention was not propagated by the producer
+
+J3R15 attempted one fixed-topology, within-carrier intervention: a continuous
+997 Hz Front Right target with a Front Left companion whose frozen PCM was
+silence, then 2003 Hz, then silence. The source and Logic-embedded PCM are
+sample-identical, and save/reopen plus ADM independently establish the fixed
+positions. Human assistance was mechanical value entry only.
+
+The qualified ADM object tracks are nevertheless digital zero throughout, and
+the DD+ carrier does not show the required 2003 Hz OFF/ON/OFF signal pattern.
+The primary result is therefore
+`J3R15_EXPERIMENT_EXECUTION_OR_LINEAGE_INADMISSIBLE`, not a no-effect result.
+Diagnostic row differences cannot be assigned to companion-signal causality.
+J3R14's context-conditioned class remains underdetermined,
+`SemanticBindingState` remains `Unresolved`, and warp raw 3 remains ETSI
+`ReservedWarpMode`.
