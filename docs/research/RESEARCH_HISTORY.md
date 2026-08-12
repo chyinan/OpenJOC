@@ -762,5 +762,19 @@ The stream-copied raw EC-3 carrier was byte-identical within all three pairs
 MP4 container hashes differed within pairs and were not used as the
 determinism boundary. The bounded structural audit continued to report
 `ETSI_STRICT` failure and explicit `DOLBY_VENDOR_COMPAT`
-`accepted_with_deviation`; no warp rule, semantic binding, JOC/ObjectScene
-interpretation, authored-object PCM, or renderer claim was added.
+  `accepted_with_deviation`; no warp rule, semantic binding, JOC/ObjectScene
+  interpretation, authored-object PCM, or renderer claim was added.
+
+## J3R13 — exact-condition N3 context analysis
+
+J3R13 uses the three J3R12 byte-identical raw-EC3 producer pairs as an exact
+full-complex null envelope and reproduces the frozen J2R7 C1/C2 target
+definitions with the fixed 48 kHz, 997/2003 Hz sine/cosine estimator. Both
+contrasts exceed that envelope. C1 Base/RB/joint residuals are
+0.0034848789188314825 / 0.0031748106398913228 / 0.2974217716899793; C2 is
+0.0035417176701007364 / 0.9999992742845898 / 0.857715331578793.
+
+The result is scoped context-dependence admission only. It does not establish
+object, slot, authored-PCM, renderer, or universal frequency semantics.
+`SemanticBindingState` remains `Unresolved`, RcLfe remains separate, C3 is
+not analyzed, and warp raw 3 remains the ETSI strict reserved value.

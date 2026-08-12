@@ -1,0 +1,19 @@
+{
+  "schema": "openjoc.j3r13.n3-calibration.v1",
+  "sample_rate_hz": 48000,
+  "frequencies_hz": [997, 2003],
+  "estimator": "simultaneous sine/cosine least-squares; complex coefficient cosine-i-sine",
+  "gauge": "one common complex scalar per labeled partition",
+  "components": {
+    "base_full_band": ["L", "R", "C", "Ls", "Rs"],
+    "base_lfe": "separate",
+    "reconstruction_basis": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008", "row_009", "row_010", "row_011", "row_012", "row_013", "row_014"],
+    "joint": "labeled concatenation; not an object or renderer vector"
+  },
+  "null_membership": ["N3R2_S_FL_PAIR", "N3R2_S_FR_PAIR", "N3R2_D_SWAP_PAIR"],
+  "envelope": {"base_full_band": 0.0, "reconstruction_basis": 0.0, "joint": 0.0},
+  "target_derived_threshold": false,
+  "free_row_permutation": false,
+  "c3": "NOT_RUN",
+  "semantic_conclusion": "none; context dependence is scoped and causal variable remains unresolved"
+}

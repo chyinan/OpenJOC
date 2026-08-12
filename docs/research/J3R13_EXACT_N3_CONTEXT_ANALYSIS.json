@@ -1,0 +1,22 @@
+{
+  "schema": "openjoc.j3r13.exact-n3-context-analysis.v1",
+  "stage": "J3R13",
+  "decision": "J3R13_EXACT_N3_ENVELOPE_ESTABLISHED_SCOPED_CONTEXT_DEPENDENCE_ADMITTED",
+  "producer_null_pairs": [
+    {"id": "N3R2_S_FL_PAIR", "raw_ec3_sha256": "948e774b998121457b91da006d92c4bc62f976bcc6515cbca52d0345efca6cc5", "byte_identical": true},
+    {"id": "N3R2_S_FR_PAIR", "raw_ec3_sha256": "1d349872f81d2d477ff18360a4782700fb88a823473c51bc7f257f426f20ddb7", "byte_identical": true},
+    {"id": "N3R2_D_SWAP_PAIR", "raw_ec3_sha256": "d35aee5421e965d2fa0eb80d4b6dd071ba719dcd12686a40bf8a87cacfdc452e", "byte_identical": true}
+  ],
+  "null_envelope": {"base_full_band": 0.0, "reconstruction_basis": 0.0, "joint_labeled_base_plus_reconstruction_basis": 0.0},
+  "windows_samples": {"D_PRE": [60000, 84000], "D_POST": [132000, 156000]},
+  "windows_seconds": {"D_PRE": [1.25, 1.75], "D_POST": [2.75, 3.25]},
+  "target_selection": {"C1": "frozen static FL 997 vs D_PRE 997", "C2": "frozen static FR 997 vs D_POST 997", "C3": "NOT_RUN"},
+  "targets": {
+    "C1": {"base_full_band": 0.0034848789188314825, "reconstruction_basis": 0.0031748106398913228, "joint": 0.2974217716899793},
+    "C2": {"base_full_band": 0.0035417176701007364, "reconstruction_basis": 0.9999992742845898, "joint": 0.857715331578793}
+  },
+  "semantic_binding_state": "Unresolved",
+  "warp": "raw3 remains ETSI ReservedWarpMode",
+  "new_media": false,
+  "logic": "not used"
+}
