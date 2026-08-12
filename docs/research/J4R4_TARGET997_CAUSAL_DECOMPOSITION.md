@@ -34,7 +34,7 @@ carrier. J4R4 did not refit those thresholds after reading target results:
 | ReconstructionBasis | `0.008424653820934484` |
 | Joint labeled Base+RB | `0.008857503764548379` |
 
-For provenance, the lower J3R14 N0/N3 floors are retained as Base
+For provenance, the lower inherited J2R7 N0/N1 floors are retained as Base
 `3.7834930931104663e-6`, RB `2.3853247222861374e-7`, and Joint
 `3.7834930931104663e-6`; the J3R13 exact-N3 floors are zero in all three
 partitions. These lower floors are recorded but do not gate J4R4.
