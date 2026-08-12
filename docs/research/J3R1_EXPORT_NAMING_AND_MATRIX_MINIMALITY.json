@@ -1,0 +1,115 @@
+{
+  "decision": "PRODUCER_OUTPUT_DIRECTORY_SCOPED_CONTRACT_ADMITTED",
+  "incident": {
+    "filename": "S_FL_CANCEL_ONLY_ec3.mp4",
+    "quarantined": true,
+    "return_enter_rule": "RETURN_OR_ENTER_IS_NEVER_A_FOLDER_NAVIGATION_ACTION_IN_LOGIC_NSSAVEPANEL",
+    "scientific_admission": "INCIDENT_FILENAME_ONLY; AUDIO_CONTENT_NOT_ANALYZED",
+    "sha256": "d6c5b7289c8a6416f46dc2befe93bd0ab1573c45c6d8547b0683ea510e8cc030",
+    "size_bytes": 400055
+  },
+  "matrix": {
+    "c1_supported": true,
+    "c2_supported": true,
+    "c3_supported": false,
+    "classification": "SIX_EXPORT_MATRIX_SUFFICIENT_FOR_PRIMARY_SCOPED_CONTEXT_TEST",
+    "d_pre_d_post_not_independent_pairs": true,
+    "design_6": {
+      "c1_supported": true,
+      "c2_supported": true,
+      "c3_supported": false,
+      "exports": [
+        "S_FL x2",
+        "S_FR x2",
+        "D_SWAP x2"
+      ],
+      "independent_pairs": {
+        "D_SWAP": 1,
+        "S_FL": 1,
+        "S_FR": 1
+      },
+      "limitation": "One independent D_SWAP pair supplies the producer-repeatability observation for both reciprocal windows; producer variability is weakly sampled.",
+      "shared_dswap_pair_windows": [
+        "D_PRE",
+        "D_POST"
+      ],
+      "total": 6
+    },
+    "design_8": {
+      "c1_supported_if_run": true,
+      "c2_supported_if_run": true,
+      "c3_supported_if_run": true,
+      "exports": [
+        "S_FL x2",
+        "S_FR x2",
+        "D_SWAP x4"
+      ],
+      "second_dswap_pair": {
+        "information_value": "Would add one independent D_SWAP producer-repeatability estimate and is relevant to stronger/C3 admission, not required to identify C1/C2 scope.",
+        "observed_value": "NOT_OBSERVED; both runs were revoked before invocation when J2R15 stopped.",
+        "pair_id": "N3_RECOVERY_D_SWAP_PAIR_B",
+        "runs": [
+          "D_SWAP_RECOVERY_PRODUCER_2",
+          "D_SWAP_RECOVERY_PRODUCER_3"
+        ]
+      },
+      "total": 8
+    },
+    "dual_independent_pair_count": 1,
+    "schema": "openjoc.j3r1r.n3-matrix-minimality.v1",
+    "scientific_n3_execution": "NOT_PERFORMED",
+    "selected_future_export_count": 6
+  },
+  "naming": {
+    "classification": "PRODUCER_OUTPUT_DIRECTORY_SCOPED_CONTRACT_ADMITTED",
+    "directory_binding": [
+      "unique empty approved parent",
+      "producer_run_id",
+      "authorized stem",
+      "exact tested export configuration",
+      "approved extension .mp4",
+      "exactly one new media file after invocation",
+      "no output outside approved parent",
+      "no pre-existing output",
+      "no second media output",
+      "no symlink or alias substitution",
+      "no colon-encoded path artifact"
+    ],
+    "evidence_basis": "Two independent real producer executions under the same Logic 12.3 DD+ Atmos configuration observed carrier.mp4 -> carrier_ec3.mp4 and S_FL_CANCEL_ONLY.mp4 -> S_FL_CANCEL_ONLY_ec3.mp4.",
+    "grammar": {
+      "allowed_final_leaf": "X_ec3.mp4",
+      "authorized_stem": "X",
+      "not_universal_beyond_scope": true,
+      "rule": "final_leaf == authorized_stem + '_ec3.mp4'"
+    },
+    "limitation": "This admits a scoped operational contract, not a universal Logic filename law and not N3 scientific evidence.",
+    "schema": "openjoc.j3r1r.naming-contract.v1",
+    "scope": {
+      "adm_companion": false,
+      "bitrate": "Music, 768 kbps",
+      "format": "Dolby Digital Plus with Dolby Atmos",
+      "logic_version": "12.3",
+      "scope": "Project"
+    },
+    "single_probe_required": false,
+    "unexpected_output": "Reject and quarantine; never accept 'whatever single file appears'."
+  },
+  "public_media_count": 0,
+  "recovery_scope": {
+    "large_derived_bytes_generated": 0,
+    "logic_launch": false,
+    "new_media": false,
+    "producer_export": false
+  },
+  "schema": "openjoc.j3r1.export-naming-matrix-minimality.v1",
+  "semantic_binding_state": "Unresolved",
+  "stage": "J3R1-R — Incident-Bounded Naming Recovery & Matrix-Minimality Completion",
+  "storage_policy": {
+    "additional_gc": false,
+    "combined_physical_recovery_bytes": 9136758784,
+    "exact_au_physical_recovery_bytes": 5058596864,
+    "large_derived_artifact_generation_frozen": true,
+    "tdac_physical_recovery_bytes": 4078161920
+  },
+  "warp_semantics_changed": false
+}
