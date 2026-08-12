@@ -1,0 +1,51 @@
+{
+  "schema": "openjoc.j3r5.clean-logic-lifecycle.v1",
+  "decision": "N3_REAL_UI_CONTROLLER_REQUIRES_REDESIGN",
+  "scope": "Logic lifecycle and cancel-only project-open/export rehearsals; no producer export",
+  "application_lifecycle": {
+    "baseline_clean_relaunch": "PASS",
+    "graceful_quit_method": "application Quit command",
+    "post_rehearsal_clean_relaunch": "PASS",
+    "recovery_dialog_on_clean_application_relaunch": false,
+    "audio_device_warning": "OBSERVED_SEPARATELY_AND_DISMISSED"
+  },
+  "project_open_binding": {
+    "mechanism": "standard macOS exact-document open request",
+    "disposable_projects": ["S_FL", "S_FR", "D_SWAP", "S_FL_REPEAT"],
+    "window_title_and_document_url_identity": "PASS_FOR_ALL_REHEARSALS",
+    "canonical_project_opened": false,
+    "wrong_project_request": "REJECTED_BY_CONTROLLER_CONTRACT"
+  },
+  "recovery_state": {
+    "classification": "PROJECT_SPECIFIC_RECOVERY_STATE",
+    "observed_on": ["S_FL", "S_FL_REPEAT"],
+    "action": "OPEN_LAST_SAVED_VERSION_ONLY",
+    "autosaved_version_restored": false,
+    "observed_on_s_fr_or_d_swap": false
+  },
+  "cancel_only_export_rehearsals": {
+    "count": 4,
+    "format": "Dolby Digital Plus with Dolby Atmos",
+    "profile": "Music, 768 kbps",
+    "range": "Project",
+    "additional_adm_master": false,
+    "final_action_allowed": false,
+    "all_dialogs_cancelled": true,
+    "media_generated": false,
+    "directory_scoped_destination_binding": "NOT_VALIDATED"
+  },
+  "controller_contract": {
+    "mock_transition_self_test": "PASS",
+    "wrong_path_rejected": true,
+    "output_reservation_rejected": true,
+    "safe_restart_recovery": true,
+    "real_ui_destination_selection": "REQUIRES_REDESIGN"
+  },
+  "unchanged_boundaries": {
+    "semantic_binding_state": "Unresolved",
+    "new_logic_fixture": false,
+    "new_media": false,
+    "producer_export": false,
+    "warp_or_vendor_semantics_changed": false
+  }
+}
