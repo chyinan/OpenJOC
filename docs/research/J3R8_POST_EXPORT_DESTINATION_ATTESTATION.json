@@ -1,0 +1,42 @@
+{
+  "schema": "openjoc.j3r8.post-export-destination-attestation.v1",
+  "decision": "N3_OUTPUT_DISCOVERY_SCOPE_REQUIRES_REDESIGN",
+  "probe_run_id": "J3R8_DESTINATION_PROBE_0",
+  "scientific_admission": "CONTROLLER_PROBE_ONLY",
+  "n3_null_admission": false,
+  "preinvocation_parent_binding_retired": true,
+  "destination_model": "high_entropy_leaf_plus_bounded_discovery_plus_post_export_original_path_attestation",
+  "authorized_stem_entropy_bits_minimum": 128,
+  "typed_panel_leaf_grammar": "OJ3R8_<128-bit-fragment>.mp4",
+  "expected_final_leaf_grammar": "OJ3R8_<128-bit-fragment>_ec3.mp4",
+  "export_settings": {
+    "format": "Dolby Digital Plus with Dolby Atmos",
+    "profile": "Music",
+    "bitrate_kbps": 768,
+    "sample_rate_hz": 48000,
+    "range": "Project",
+    "adm_export": false
+  },
+  "controller": {
+    "nonce_consumed_before_final_action": true,
+    "final_action_count": 1,
+    "folder_navigation_used": false,
+    "return_enter_navigation_count": 0,
+    "typed_leaf_readback_verified": true,
+    "fresh_disposable_project_verified": true,
+    "fresh_process_tuple_verified": true
+  },
+  "output": {
+    "matching_output_count": 1,
+    "unexpected_output_count": 1,
+    "outside_scope_matching_output_count": 1,
+    "second_media_output_count": 0,
+    "container_smoke": "MP4 with 48 kHz Dolby Digital Plus + Dolby Atmos stream; duration 4.096 s",
+    "original_output_attestation_frozen_before_quarantine": true
+  },
+  "future_n3_destination_contract_status": "NOT_ADMITTED_REQUIRES_SCOPE_REDESIGN",
+  "replacement_queue_hash": "de1fbd2cd3d4820f4dec7f2c1c14fe2cd333af027eef76668b24a3f429eb2fe8",
+  "semantic_binding_state": "Unresolved",
+  "warp_semantics_changed": false,
+  "public_media_committed": false
+}
