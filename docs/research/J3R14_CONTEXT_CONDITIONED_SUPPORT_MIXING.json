@@ -1,0 +1,46 @@
+{
+  "schema": "openjoc.research.j3r14.v1",
+  "stage": "J3R14",
+  "decision": "J3R14_CONTEXT_DEPENDENCE_REQUIRES_SUPPORT_CREATING_CROSS_COORDINATE_MIXING",
+  "scope": "tested exact-N3-calibrated C1/C2 ReconstructionBasis coordinate vectors",
+  "support_threshold": 9.54129888914455e-7,
+  "support_threshold_basis": "4x frozen J2R7 N0/N1 RB envelope; exact J3R13 N3 null is zero",
+  "cases": {
+    "C1": {
+      "static_position": "Front Left",
+      "dual_window": "D_PRE",
+      "static_support": [0],
+      "dual_support": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      "dual_only_support": [1, 2, 3, 4, 5, 6, 7, 8],
+      "global_gauge_projective_residual": 0.0031748106398913224
+    },
+    "C2": {
+      "static_position": "Front Right",
+      "dual_window": "D_POST",
+      "static_support": [0],
+      "dual_support": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      "dual_only_support": [1, 2, 3, 4, 5, 6, 7, 8],
+      "global_gauge_projective_residual": 0.9999992742845898
+    }
+  },
+  "model_results": {
+    "global_gauge": "REJECTED_WITHIN_TESTED_CORPUS",
+    "support_preserving": "REJECTED_WITHIN_TESTED_CORPUS",
+    "common_diagonal": "REJECTED_WITHIN_TESTED_CORPUS",
+    "common_additive_context": "REJECTED_WITHIN_TESTED_CORPUS",
+    "common_row_permutation": "NOT_ADMITTED",
+    "static_position_reindexing": "NOT_IDENTIFIABLE",
+    "static_atlas_span": "DUAL_OUTSIDE_STATIC_ATLAS_SPAN",
+    "general_context_conditioned_mixing": "REMAINING_UNDERDETERMINED_CLASS"
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "authored_object_pcm": "INADMISSIBLE",
+    "audio_bound_object_scene": "INADMISSIBLE",
+    "warp_raw3": "ETSI ReservedWarpMode",
+    "rclfe": "separate",
+    "new_media": false,
+    "logic_launched": false
+  },
+  "minimum_next_experiment": "one fixed-target companion on/off intervention; not executed"
+}

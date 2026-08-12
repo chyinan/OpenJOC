@@ -778,3 +778,21 @@ The result is scoped context-dependence admission only. It does not establish
 object, slot, authored-PCM, renderer, or universal frequency semantics.
 `SemanticBindingState` remains `Unresolved`, RcLfe remains separate, C3 is
 not analyzed, and warp raw 3 remains the ETSI strict reserved value.
+
+## J3R14 — context dependence requires support-creating coordinate mixing
+
+J3R14 froze a support threshold from the exact N3 producer null and the prior
+N0/N1 numerical envelope before evaluating the C1/C2 target vectors. Both dual
+contexts contain ReconstructionBasis coordinates that are below that floor in
+their corresponding static controls. A global gauge, support-preserving
+diagonal operator, and bounded common-additive cross-prediction are rejected
+within the tested corpus. No common row permutation was admitted, and the
+dual vectors do not match or lie within the frozen static-position atlas at the
+exact producer envelope.
+
+The result is deliberately narrow:
+`J3R14_CONTEXT_DEPENDENCE_REQUIRES_SUPPORT_CREATING_CROSS_COORDINATE_MIXING`.
+It describes a coordinate-level ReconstructionBasis observation, not an
+authored-object, slot, renderer, or Dolby semantic binding. `SemanticBindingState`
+remains `Unresolved`; no new media or Logic fixture was used; and warp raw 3
+remains ETSI `ReservedWarpMode`.
