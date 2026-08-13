@@ -1,4 +1,4 @@
-# OpenJOC v0.2.0-rc.1 known limitations
+# OpenJOC v0.2.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and requirement status belong in the linked documents under `docs/`.
@@ -25,7 +25,7 @@ claiming capabilities that the current evidence does not support.
   activation in the qualified real corpus. Full real-world fidelity is not
   claimed.
 - Raw E-AC-3 streaming is supported internally. Seekable ISO BMFF uses
-  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the 0.2.0-rc.1
+  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the 0.2.0
   contract. Capture/demux and compatible-base workflows may also require
   `ffmpeg`.
 - Machine-readable scene, component, streaming-summary, retention, and

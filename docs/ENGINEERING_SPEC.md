@@ -795,9 +795,10 @@ The 0.x release policy is:
 - development proceeds through a release-candidate stage before a final release;
 - the final source version, Git tag, and published release version must agree.
 
-J4R14 prepares `0.2.0-rc.1` only. It does not create tags, publish artifacts,
-upload bundles, or modify remotes; those actions require a later explicit human
-decision after release-candidate acceptance.
+J4R14 prepared `0.2.0-rc.1`; J4R15 promotes the source line to `0.2.0` only
+after release-candidate acceptance. Neither stage creates tags, publishes
+artifacts, uploads bundles, or modifies remotes; those actions require a later
+explicit human decision.
 
 必须提供：
 

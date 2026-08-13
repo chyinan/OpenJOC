@@ -13,7 +13,7 @@ OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby
 Laboratories. Dolby, Dolby Atmos, and related marks are trademarks of their
 respective owners.
 
-The current v0.2.0-rc.1 candidate contract is deliberately narrow:
+The current v0.2.0 contract is deliberately narrow:
 
 - `scene.json` is metadata-only;
 - `diagnostics/reconstruction_rows/row_NNN.wav` contains diagnostic
@@ -25,7 +25,7 @@ The current v0.2.0-rc.1 candidate contract is deliberately narrow:
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — what v0.2.0-rc.1 supports today.
+- [Capabilities](docs/CAPABILITIES.md) — what v0.2.0 supports today.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Requirements matrix](docs/REQUIREMENTS_MATRIX.md) — engineering truth table.
@@ -64,7 +64,7 @@ cargo install --path crates/openjoc-cli --locked --root /path/to/prefix
 ```
 
 No prebuilt binary, Homebrew formula, or crates.io installation is advertised
-by the source repository. The verified 0.2.0-rc.1 candidate installation path
+by the source repository. The verified 0.2.0 installation path
 is the workspace source tree.
 
 ## Basic CLI
@@ -89,9 +89,9 @@ local candidate without publishing anything:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.2.0-rc.1-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.2.0-rc.1-aarch64-apple-darwin.tar.gz
-cd openjoc-0.2.0-rc.1-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.2.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.2.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.2.0-aarch64-apple-darwin
 ./verify.sh
 ```
 

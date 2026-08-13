@@ -1,8 +1,9 @@
 # Changelog
 
-## [0.2.0-rc.1] — unreleased
+## [0.2.0] — 2026-08-13
 
-This is a local release candidate, not a final or published release.
+Prepared as a local release freeze. Tagging and publication remain separate
+human-controlled actions.
 
 ### Added
 

@@ -1,7 +1,6 @@
-# OpenJOC v0.2.0-rc.1 capabilities
+# OpenJOC v0.2.0 capabilities
 
-This is the canonical current capability status for the OpenJOC v0.2.0-rc.1
-candidate. It is a
+This is the canonical current capability status for OpenJOC v0.2.0. It is a
 release-facing snapshot, not a research journal. Engineering requirement
 details belong in [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md); historical
 evidence belongs in [research history](research/README.md).
@@ -33,7 +32,7 @@ evidence belongs in [research history](research/README.md).
 | Components | Typed decoded-component manifest | `ADMITTED` | `diagnostics/components.json` separates Base, Base LFE, indexed RB coordinates, RcLfe boundary and unresolved binding | PCM-free layout; no authored-object identity |
 | Semantics | Authored-object binding and verified object PCM | `NOT_ADMITTED` | One-row-per-authored-object model rejected | `SemanticBindingState::Unresolved` remains the production state |
 | Rendering | Audio-bound `ObjectScene` or renderer fidelity | `NOT_ADMITTED` | Insufficient semantic evidence | No speaker/binaural renderer or fidelity claim |
-| Release | Local macOS-arm64 0.2.0-rc.1 candidate | `ADMITTED_WITH_SCOPE` | Double assembly, offline verification, package/install | Local engineering candidate only; not published, Developer-ID signed, or notarized |
+| Release | Local macOS-arm64 0.2.0 candidate | `ADMITTED_WITH_SCOPE` | Double assembly, offline verification, package/install | Local engineering candidate only; not published, Developer-ID signed, or notarized |
 
 The matrix deliberately separates production status from evidence class. A
 numerically valid reconstruction row is not an authored object, and a real

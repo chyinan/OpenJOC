@@ -1,0 +1,25 @@
+{
+  "schema": "openjoc.release-acceptance.v1",
+  "version": "0.2.0",
+  "classification": "OPENJOC_0_2_0_RELEASE_GO_WITH_DOCUMENTED_LIMITATIONS",
+  "historical_release_preserved": "0.1.0",
+  "publication_performed": false,
+  "quality_gates": "PASS",
+  "release_bundle_verifier": "PASS",
+  "semantic_binding_state": "Unresolved",
+  "authored_object_pcm_admitted": false,
+  "audio_bound_object_scene_admitted": false,
+  "renderer_admitted": false,
+  "rc_lfe_separate": true,
+  "warp_raw3_etsi_status": "ReservedWarpMode",
+  "machine_schema_markers": [
+    "openjoc.scene.v1",
+    "openjoc.components.v1",
+    "openjoc.streaming-summary.v1",
+    "openjoc.retention.v1",
+    "openjoc.internal-base-inventory.v1",
+    "openjoc.coding-tool-inventory.v1"
+  ],
+  "platform_scope": "documented Apple-silicon macOS workflow",
+  "signed_or_notarized": false
+}

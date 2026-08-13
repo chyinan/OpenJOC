@@ -32,7 +32,7 @@ not hide vendor compatibility decisions.
 
 Raw E-AC-3 uses the in-process incremental reader. Ordinary seekable ISO BMFF
 uses a sample cursor with container ownership kept separate from the AU
-consumer. Non-seekable and fragmented MP4 are outside the v0.2.0-rc.1 contract.
+consumer. Non-seekable and fragmented MP4 are outside the v0.2.0 contract.
 
 ### E-AC-3 base
 
