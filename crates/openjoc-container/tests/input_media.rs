@@ -1,8 +1,14 @@
 use openjoc_container::{
-    InputMediaKind, IsoBmffSample, SeekableIsoBmffEc3Reader, detect_media,
-    parse_audio_probe_output, parse_packet_probe_output,
+    InputMediaError, InputMediaKind, IsoBmffSample, SeekableIsoBmffEc3Reader, detect_media,
+    load_eac3_with_tools, parse_audio_probe_output, parse_packet_probe_output,
 };
-use std::io::{Cursor, Read};
+use openjoc_eac3::index_syncframes;
+use std::{
+    fs,
+    io::{Cursor, Read},
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[test]
 fn detects_raw_eac3_by_syncword_signature() {
@@ -94,4 +100,52 @@ fn seekable_reader_rejects_sample_beyond_file_bounds() {
     let mut reader = SeekableIsoBmffEc3Reader::new(Cursor::new(b"short".to_vec()), samples, 8)
         .expect("seekable reader");
     assert!(reader.next_sample().is_err());
+}
+
+#[test]
+fn seekable_reader_rejects_sample_larger_than_limit_before_allocation() {
+    let samples = vec![IsoBmffSample {
+        offset: 0,
+        size: 65,
+    }];
+    let mut reader =
+        SeekableIsoBmffEc3Reader::new(Cursor::new(vec![0_u8; 128]), samples, 64).expect("reader");
+    assert!(matches!(
+        reader.next_sample(),
+        Err(InputMediaError::DemuxOutputTooLarge { limit: 64 })
+    ));
+}
+
+#[test]
+fn seekable_reader_rejects_offset_overflow_without_allocation() {
+    let samples = vec![IsoBmffSample {
+        offset: u64::MAX,
+        size: usize::MAX,
+    }];
+    let mut reader =
+        SeekableIsoBmffEc3Reader::new(Cursor::new(vec![0_u8; 1]), samples, 64).expect("reader");
+    assert!(matches!(
+        reader.next_sample(),
+        Err(InputMediaError::DemuxOutputTooLarge { limit: 64 })
+    ));
+}
+
+#[test]
+fn malformed_raw_file_stays_bounded_and_codec_parser_rejects_it() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("openjoc-malformed-raw-{nonce}.ec3"));
+    fs::write(&path, [0x0b, 0x77, 0, 0]).expect("write malformed raw");
+    let loaded = load_eac3_with_tools(
+        &path,
+        Path::new("missing-ffprobe"),
+        Path::new("missing-ffmpeg"),
+        64,
+    )
+    .expect("raw loading is intentionally a bounded byte boundary");
+    assert_eq!(loaded.kind, InputMediaKind::RawEac3);
+    assert!(index_syncframes(&loaded.bytes).is_err());
+    fs::remove_file(path).expect("remove test file");
 }

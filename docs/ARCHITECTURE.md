@@ -77,6 +77,9 @@ and streaming remain available.
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses
 bounded AU/frame state and incremental output finalization; it does not silently
 capture an unbounded ObjectScene or reconstruction-row vector.
+Malformed or truncated raw E-AC-3 and consumed ISO BMFF structures are rejected
+with bounded diagnostics; streaming output is staged and promoted only after a
+complete successful decode, so failure cannot publish a canonical partial.
 
 ## Error and evidence model
 

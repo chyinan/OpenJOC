@@ -159,6 +159,73 @@ fn raw_reader_enforces_declared_frame_bound() {
 }
 
 #[test]
+fn raw_reader_rejects_short_and_bad_sync_input_without_panicking() {
+    for bytes in [vec![], vec![0x0b], vec![0; 8]] {
+        let mut reader = RawEac3FrameReader::new(
+            Chunked {
+                bytes: &bytes,
+                offset: 0,
+                chunk: 1,
+            },
+            64,
+        );
+        let result = reader.next_frame();
+        if bytes.is_empty() {
+            assert_eq!(result.expect("empty input is an exact EOF"), None);
+        } else {
+            assert!(result.is_err(), "malformed input must fail: {bytes:?}");
+        }
+    }
+}
+
+#[test]
+fn raw_reader_rejects_reserved_header_values() {
+    let mut bytes = frame(0, 0, 16);
+    bytes[4] |= 0xc0; // reserved sample-rate code 3
+    let mut reader = RawEac3FrameReader::new(
+        Chunked {
+            bytes: &bytes,
+            offset: 0,
+            chunk: 8,
+        },
+        64,
+    );
+    assert!(matches!(
+        reader.next_frame(),
+        Err(InputMediaError::InvalidDemuxedEac3(
+            openjoc_eac3::Eac3Error::ReservedSampleRate
+        ))
+    ));
+}
+
+#[test]
+fn raw_reader_rejects_absurd_declared_size_before_allocating_it() {
+    let mut bytes = frame(0, 0, 16);
+    let declared_words = 0x7ff_u16;
+    for index in 0..11 {
+        let bit = (declared_words >> (10 - index)) & 1;
+        let position = 21 + index;
+        if bit != 0 {
+            bytes[position / 8] |= 0x80 >> (position % 8);
+        } else {
+            bytes[position / 8] &= !(0x80 >> (position % 8));
+        }
+    }
+    let mut reader = RawEac3FrameReader::new(
+        Chunked {
+            bytes: &bytes,
+            offset: 0,
+            chunk: 8,
+        },
+        64,
+    );
+    assert!(matches!(
+        reader.next_frame(),
+        Err(InputMediaError::DemuxOutputTooLarge { limit: 64 })
+    ));
+}
+
+#[test]
 fn access_unit_reader_emits_local_indices_with_one_frame_lookahead() {
     let expected = vec![frame(0, 0, 16), frame(1, 0, 18), frame(0, 0, 20)];
     let mut stream = Vec::new();

@@ -101,6 +101,9 @@ impl<R: Read> RawEac3FrameReader<R> {
     }
 
     /// Reads the next complete syncframe, or `None` at an exact frame-boundary EOF.
+    ///
+    /// A framing error is terminal for this reader: callers must discard the
+    /// reader rather than treating a later call as a recovery/reset operation.
     pub fn next_frame(&mut self) -> Result<Option<Vec<u8>>, InputMediaError> {
         const HEADER_PROBE_BYTES: usize = 8;
         while self.carry.len() < HEADER_PROBE_BYTES {
@@ -154,7 +157,12 @@ impl<R: Read> RawEac3FrameReader<R> {
             return Ok(false);
         }
         let start = self.carry.len();
-        self.carry.resize(start + requested, 0);
+        let end = start
+            .checked_add(requested)
+            .ok_or(InputMediaError::DemuxOutputTooLarge {
+                limit: self.max_frame_bytes,
+            })?;
+        self.carry.resize(end, 0);
         let mut read = 0;
         while read < requested {
             let count = self
