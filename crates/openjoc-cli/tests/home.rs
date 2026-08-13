@@ -21,8 +21,20 @@ fn redirected_root_help_is_plain_and_lists_real_commands() {
     assert!(stdout.contains("ReconstructionBasis rows are not authored-object PCM"));
     assert!(stdout.contains("seekable ordinary ISO BMFF"));
     assert!(stdout.contains("never auto-downgraded"));
+    assert!(stdout.contains("openjoc --version"));
     assert!(!stdout.contains("\x1b["));
     assert!(!stdout.contains("o---O"));
+}
+
+#[test]
+fn version_is_a_script_safe_stdout_only_contract() {
+    let result = openjoc().arg("--version").output().expect("run openjoc");
+    assert!(result.status.success());
+    assert_eq!(
+        String::from_utf8(result.stdout).expect("UTF-8 version"),
+        format!("OpenJOC {}\n", env!("CARGO_PKG_VERSION"))
+    );
+    assert!(result.stderr.is_empty());
 }
 
 #[test]

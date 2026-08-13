@@ -174,6 +174,8 @@ pub struct BaseLfeComponent {
 /// authored-object identity or retaining another copy of decoded samples.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DecodedComponentLayout {
+    /// Stable machine-readable schema identifier for this PCM-free manifest.
+    pub schema: &'static str,
     pub base_full_band: Vec<BaseFullBandChannel>,
     pub base_lfe: Option<BaseLfeComponent>,
     pub reconstruction_basis: Vec<ReconstructionBasisComponent>,
@@ -225,6 +227,7 @@ pub struct ObjectScene {
 
 #[derive(Serialize)]
 struct SceneManifest {
+    schema: &'static str,
     sample_rate: u32,
     duration_samples: u64,
     objects: Vec<ObjectManifest>,
@@ -378,6 +381,7 @@ impl ObjectScene {
             })
             .unwrap_or_default();
         DecodedComponentLayout {
+            schema: "openjoc.components.v1",
             base_full_band,
             base_lfe: self.base_lfe_pcm.as_ref().map(|_| BaseLfeComponent {
                 component_role: "base_lfe",
@@ -503,6 +507,7 @@ impl ObjectScene {
     pub fn to_manifest_json_pretty(&self) -> Result<String, SceneError> {
         self.validate()?;
         let manifest = SceneManifest {
+            schema: "openjoc.scene.v1",
             sample_rate: self.sample_rate,
             duration_samples: self.duration_samples,
             objects: self

@@ -38,7 +38,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -99,6 +99,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     match arguments.first().map(String::as_str) {
         None if terminal.is_tty => print_root_page(terminal, false),
         Some("-h" | "--help") if arguments.len() == 1 => print_root_page(terminal, true),
+        Some("-V" | "--version") if arguments.len() == 1 => print_version(),
         Some(command)
             if arguments.len() == 2 && matches!(arguments[1].as_str(), "-h" | "--help") =>
         {
@@ -115,6 +116,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some("diagnose-oamd") => oamd_forensics::run(&arguments[1..]),
         _ => Err(usage_error().into()),
     }
+}
+
+fn print_version() -> Result<(), Box<dyn Error>> {
+    let version = format!("OpenJOC {}\n", package_metadata().version);
+    io::Write::write_all(&mut io::stdout().lock(), version.as_bytes())?;
+    Ok(())
 }
 
 fn print_root_page(terminal: TerminalCapabilities, help: bool) -> Result<(), Box<dyn Error>> {
@@ -150,6 +157,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc --help\n",
+        "  openjoc --version\n",
         "\n",
         "Run 'openjoc --help' for all commands and options.\n",
     ));
@@ -187,7 +195,9 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     ));
     append_heading(output, "OPTIONS", color)?;
     output.push_str(concat!(
+        "  openjoc --version\n",
         "  -h, --help       Print root command help\n",
+        "  -V, --version    Print the package version and exit\n",
         "      --no-banner Disable the interactive startup banner\n",
         "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
@@ -653,6 +663,7 @@ fn run_census(values: &[String]) -> Result<(), Box<dyn Error>> {
 
 fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
     let arguments = parse_decode_payload(values)?;
+    ensure_output_directory_available(&arguments.output)?;
     let downmix = read_input_wave(&arguments.downmix)?;
     let joc_payload = fs::read(&arguments.joc)?;
     let oamd_payload = fs::read(&arguments.oamd)?;
@@ -788,6 +799,7 @@ fn parse_validation_profile(value: &str) -> Result<JocValidationProfile, io::Err
 }
 
 fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
+    ensure_output_directory_available(&arguments.output)?;
     if arguments.streaming {
         return decode_eac3_streaming(arguments);
     }
@@ -857,6 +869,20 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
         )?
     };
     write_scene(&arguments.output, &scene, arguments.output_format)
+}
+
+fn ensure_output_directory_available(output: &Path) -> Result<(), Box<dyn Error>> {
+    if output.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "refusing to overwrite output directory {}",
+                output.display()
+            ),
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
@@ -996,6 +1022,7 @@ fn write_streaming_summary(
         InputMediaKind::Unknown => unreachable!("unsupported input rejected before decode"),
     };
     let value = serde_json::json!({
+        "schema": "openjoc.streaming-summary.v1",
         "source": source,
         "input_kind": media_kind_name(input_kind),
         "input_delivery": input_delivery,
@@ -1111,6 +1138,7 @@ impl StreamingComponentExport {
             fs::write(
                 self.output.join("debug/retention.json"),
                 serde_json::to_vec_pretty(&serde_json::json!({
+                    "schema": "openjoc.retention.v1",
                     "status": "DEBUG_FRAME_RETENTION_TRUNCATED",
                     "max_retained_frames": MAX_RETAINED_DEBUG_FRAMES,
                     "first_omitted_frame": frame_index,
@@ -1190,6 +1218,7 @@ impl StreamingComponentExport {
         fs::write(
             self.output.join("diagnostics/components.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": "openjoc.components.v1",
                 "base_full_band": base_full_band,
                 "base_lfe": base_lfe.map(|_| serde_json::json!({
                     "component_role": "base_lfe",
@@ -1205,6 +1234,7 @@ impl StreamingComponentExport {
         fs::write(
             self.output.join("diagnostics/retention.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": "openjoc.retention.v1",
                 "mode": "streaming",
                 "max_buffered_output_chunks": MAX_STREAMING_OUTPUT_CHUNKS,
                 "full_duration_pcm_retained": false,
@@ -1383,6 +1413,7 @@ impl StreamingBaseWriters {
         fs::write(
             self.output.join("debug/internal_base_inventory.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": "openjoc.internal-base-inventory.v1",
                 "source": "OpenJOC internal E-AC-3 decoder",
                 "retention": "streaming; one access-unit PCM chunk at a time",
                 "sample_rate": inventory.sample_rate,
@@ -1571,6 +1602,7 @@ impl InternalBasePcm {
             full_order.insert(insertion, lfe_location.label());
         }
         let inventory = serde_json::json!({
+            "schema": "openjoc.internal-base-inventory.v1",
             "source": "OpenJOC internal E-AC-3 decoder",
             "base_policy": format!("{:?}", self.base_policy),
             "sample_rate": sample_rate,
@@ -1895,6 +1927,7 @@ fn write_scene(
     fs::write(
         output.join("diagnostics/retention.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
+            "schema": "openjoc.retention.v1",
             "max_debug_log_bytes": MAX_DEBUG_ARTIFACT_BYTES,
             "max_diagnostic_records": MAX_RETAINED_DEBUG_FRAMES,
             "max_retained_pcm_bytes": MAX_RETAINED_CAPTURE_PCM_BYTES,

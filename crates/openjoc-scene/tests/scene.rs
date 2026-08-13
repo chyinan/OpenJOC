@@ -189,6 +189,7 @@ fn artifact_json_separates_metadata_from_reconstruction_rows() {
     let timeline = scene.to_timeline_json_pretty().expect("metadata timeline");
 
     assert!(manifest.contains("diagnostics/reconstruction_basis.json"));
+    assert!(manifest.contains("openjoc.scene.v1"));
     assert!(!manifest.contains("\"pcm\""));
     assert!(manifest.contains("metadata/timeline.json"));
     assert!(manifest.contains("diagnostics/components.json"));
@@ -213,6 +214,7 @@ fn decoded_component_layout_never_upgrades_rows_to_authored_objects() {
         "reconstruction_basis"
     );
     let json = serde_json::to_string(&layout).expect("component layout");
+    assert!(json.contains("openjoc.components.v1"));
     assert!(!json.contains("object_id"));
     assert!(!json.contains("object_stem"));
     assert_eq!(

@@ -28,6 +28,10 @@ claiming capabilities that the current evidence does not support.
   `ffprobe`; non-seekable and fragmented MP4 are not admitted by the v0.1.0
   contract. Capture/demux and compatible-base workflows may also require
   `ffmpeg`.
+- Machine-readable scene, component, streaming-summary, retention, and
+  internal-base manifests carry explicit `openjoc.*.v1` schema identifiers.
+  Decode commands refuse to reuse an existing output directory; callers must
+  choose a fresh destination and consume artifact paths relative to it.
 - This local binary release-candidate workflow is admitted only for
   `aarch64-apple-darwin`. Linux, Windows, and Intel macOS release readiness are
   not claimed.

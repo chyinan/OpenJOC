@@ -48,8 +48,11 @@ openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR
 openjoc diagnose-tools FILE --vector-id ID --json OUTPUT
 openjoc census [MANIFEST] -o DIR
 openjoc diagnose-oamd FILE [OPTIONS]
+openjoc --version
 ```
 
 The CLI emits structured failures, never silently downgrades the selected
 validation profile, and names diagnostic outputs as reconstruction rows rather
-than authored-object stems.
+than authored-object stems. Decode output directories are create-once
+destinations, and stable machine-readable manifests identify their schema with
+`openjoc.*.v1` markers.

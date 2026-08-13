@@ -106,6 +106,7 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
         &fs::read(output.join("scene.json")).expect("metadata-only scene manifest"),
     )
     .expect("scene JSON");
+    assert_eq!(scene["schema"], "openjoc.scene.v1");
     assert_eq!(scene["semantic_binding"], "unresolved");
     assert_eq!(scene["decoded_components"], "diagnostics/components.json");
     assert_eq!(
@@ -125,6 +126,7 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
         &fs::read(output.join("diagnostics/components.json")).expect("component manifest"),
     )
     .expect("component JSON");
+    assert_eq!(components["schema"], "openjoc.components.v1");
     assert_eq!(components["semantic_binding"], "unresolved");
     assert_eq!(components["base_full_band"][0], "front_left");
     assert_eq!(components["base_full_band"][4], "side_right");
@@ -146,6 +148,31 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
     );
     let stem = decode(&stem_bytes).expect("decode reconstruction row");
     assert_eq!(stem.channels, vec![vec![0.0; 64]]);
+
+    fs::write(output.join("sentinel.txt"), b"preserve").expect("write collision sentinel");
+    let collision = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode-payload",
+            "--downmix",
+            downmix_path.to_str().expect("downmix path"),
+            "--joc",
+            joc_path.to_str().expect("JOC path"),
+            "--oamd",
+            oamd_path.to_str().expect("OAMD path"),
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run collision decode");
+    assert!(!collision.status.success());
+    assert!(
+        String::from_utf8_lossy(&collision.stderr)
+            .contains("refusing to overwrite output directory")
+    );
+    assert_eq!(
+        fs::read(output.join("sentinel.txt")).expect("sentinel"),
+        b"preserve"
+    );
 
     let reference_output = root.join("reference-output");
     let reference_result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
