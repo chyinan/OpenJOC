@@ -1,0 +1,130 @@
+{
+  "schema": "openjoc.research.j4r8.active-companion-matched-intervention.v1",
+  "stage": "J4R8",
+  "decision": "J4R8_ACTIVE_COMPANION_PCM_CAUSES_TARGET_RB_CHANGE_ADMITTED",
+  "rb_secondary": "ACTIVE_COMPANION_SUPPORT_PRESERVING_REDISTRIBUTION",
+  "scope": "source/project-matched silent-versus-active companion PCM intervention",
+  "dependencies": {
+    "j4r5_b_control": "target plus exact-zero companion",
+    "j4r7_legacy_blocker": "closed; not reopened",
+    "historical_j3r13_j3r14": "retained as corpus descriptions"
+  },
+  "sources": {
+    "target": {
+      "frequency_hz": 997,
+      "sample_rate_hz": 48000,
+      "sample_count": 288000,
+      "wav_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570",
+      "pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287"
+    },
+    "active_companion": {
+      "frequency_hz": 2003,
+      "nominal_amplitude": 0.2,
+      "fitted_amplitude": 0.19999999942673055,
+      "sample_rate_hz": 48000,
+      "sample_count": 288000,
+      "wav_sha256": "9f47a90273299e689b0f799090adeeeafe4b18100edf1dd29cab46b974f3c4d5",
+      "pcm_sha256": "35db8857cf3209d81d1431bfdf3444247f41e60b783ff891a08e109a7d266872"
+    }
+  },
+  "intervention": {
+    "B": "target plus exact-zero companion",
+    "C": "same target, companion track, routing and position; companion PCM continuous 2003 Hz",
+    "only_active_variable": "companion PCM content",
+    "save_close_full_quit_reopen": true,
+    "pre_ddplus_source_exact": true,
+    "human_judgment_required": false
+  },
+  "producer": {
+    "C_export_count": 2,
+    "third_export": false,
+    "C0_mp4_sha256": "3a891bab671f0420559bd1ec338429a01831f3e6b9f43aea2f502f04a2bd72e1",
+    "C1_mp4_sha256": "6e09b82df7372318cee32c596983987ab7abe1b6bbe3f7dc25b99169086a4738",
+    "C_raw_ec3_byte_identical": true,
+    "C_raw_ec3_sha256": "05c2ff7df2e9791101615893a3e35119cb791bae0d19003a248a97023f52eed3",
+    "B_raw_ec3_byte_identical": true,
+    "settings": "DD+ Atmos, Music, 768 kbps, Project"
+  },
+  "carrier": {
+    "access_units": 251,
+    "bytes_per_au": 3072,
+    "sample_rate_hz": 48000,
+    "samples": 385536,
+    "base_full_band_order": ["FL", "FR", "FC", "SL", "SR"],
+    "rb_row_count": 15,
+    "rclfe": "separate"
+  },
+  "metadata_topology": {
+    "result": "PASS_OBSERVED_STRUCTURE_UNCHANGED",
+    "payload_ids": [11, 14, 2, 1],
+    "payload_11_bits": 536,
+    "payload_11_sha256": "f24fcee1e5af10619ca538e0b4adf6032d2ae4c201305c883d8341ad8947dec5",
+    "object_count": 16,
+    "element_ids": [1, 2],
+    "addbsi_complexity_index": 16,
+    "warp_raw": 3,
+    "boundary": "ETSI ReservedWarpMode; no vendor semantics"
+  },
+  "analysis": {
+    "head": "878105679e853f3465812c2a4ac69adf856b3906",
+    "profile": "DOLBY_VENDOR_COMPAT",
+    "trim_config_count": 1,
+    "internal_base_policy": "CurrentDefault",
+    "precision": "reference-f64",
+    "estimator": "simultaneous complex least squares at 997 and 2003 Hz",
+    "alignment_samples": 1536,
+    "alignment_evidence": "decoded Base exact-equal over [0,1536), first B/C difference at 1536 for every repeat pairing",
+    "windows_source": {
+      "W1": [60000, 84000],
+      "W2": [156000, 180000],
+      "W3": [204000, 228000]
+    }
+  },
+  "companion_2003_joint_norms": {
+    "C0": {"W1": 0.27881789756347214, "W2": 0.2788167422898916, "W3": 0.2788180520343959},
+    "C1": {"W1": 0.27881789756347214, "W2": 0.2788167422898916, "W3": 0.2788180520343959},
+    "required_floor": 0.00016745250526579124,
+    "result": "PASS"
+  },
+  "E_ACTIVITY": {
+    "formula": "max(compatible numerical floor, B repeat, C repeat); no multiplier; no J4R3 N1",
+    "Base": 0.0000037834930931104663,
+    "RB": 2.3853247222861374e-7,
+    "Joint": 0.0000037834930931104663
+  },
+  "cross_condition": {
+    "comparison_count": 12,
+    "representative_by_window": {
+      "W1": {"Base": 1.5242341150598972e-6, "RB": 1.6350083054675358e-5, "Joint": 1.145091292184873e-5},
+      "W2": {"Base": 3.5104069567585366e-7, "RB": 0.00030134562889656103, "Joint": 0.00021008193444960242},
+      "W3": {"Base": 1.973539286453972e-7, "RB": 1.881715164302418e-5, "Joint": 1.311942214170177e-5}
+    },
+    "all_12_Base_below_E_ACTIVITY": true,
+    "all_12_RB_above_E_ACTIVITY": true,
+    "all_12_Joint_above_E_ACTIVITY": true,
+    "rb_support_before": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "rb_support_after": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "support_gained": [],
+    "support_lost": [],
+    "support_floor": 9.54129888914455e-7,
+    "rclfe": "ZERO_REFERENCE_UNCHANGED"
+  },
+  "determinism": {
+    "analysis_runs": 2,
+    "byte_identical": true,
+    "same_condition_raw_pairs_byte_identical": true
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "row_identity": "not inferred",
+    "slot_semantics": "not inferred",
+    "complete_operator": "not inferred",
+    "renderer": "not run",
+    "warp_semantics_changed": false
+  },
+  "storage": {
+    "large_derived_artifact_generation_frozen": true,
+    "temporary_decode_retained_bytes": 0
+  },
+  "recommended_next_milestone": "characterize the observed transform using existing B/C carriers only; no immediate amplitude matrix"
+}

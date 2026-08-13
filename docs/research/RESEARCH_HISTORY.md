@@ -942,3 +942,23 @@ and [its machine-readable record](J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.json).
 ### J4R7 — Legacy canonical-source swap
 
 J4R7 replaced only the legacy static-FR source with an exact-length prefix of the canonical target. The source-swapped legacy carrier remained `row_000`-only and raw-EC3 deterministic, while the admitted new-lineage A carrier retained `row_000..row_008`. The legacy S0 chain is therefore closed with residual project/container-lineage dependence; the exact hidden producer state remains unidentified and no further S0 experiment is recommended. See [the report](J4R7_LEGACY_CANONICAL_SOURCE_SWAP.md) and [machine-readable record](J4R7_LEGACY_CANONICAL_SOURCE_SWAP.json).
+
+## J4R8 — source/project-matched active companion
+
+J4R8 changed only the companion Object PCM in the admitted J4R5 B lineage,
+from exact zero to continuous 2003 Hz. Target and companion pre-export bounces
+were source-exact, both C producer runs yielded byte-identical raw EC-3, and
+all bounded observed OAMD structural fields remained identical between B and
+C. Companion propagation passed in all three frozen windows.
+
+All twelve B-to-C target comparisons kept Base below its tight producer-null
+envelope while RB and labeled Joint exceeded their envelopes. RB support
+remained `row_000..row_008`, so the result closes as
+`J4R8_ACTIVE_COMPANION_PCM_CAUSES_TARGET_RB_CHANGE_ADMITTED` with
+`ACTIVE_COMPANION_SUPPORT_PRESERVING_REDISTRIBUTION`. This is a change in RB
+coordinate representation, not an object-to-row identity or hidden-algorithm
+claim. `SemanticBindingState::Unresolved` and the ETSI-reserved status of warp
+raw 3 remain unchanged.
+
+See [J4R8_ACTIVE_COMPANION_MATCHED_INTERVENTION.md](J4R8_ACTIVE_COMPANION_MATCHED_INTERVENTION.md)
+and [its machine-readable record](J4R8_ACTIVE_COMPANION_MATCHED_INTERVENTION.json).
