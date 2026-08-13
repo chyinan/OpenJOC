@@ -64,6 +64,14 @@ numerical behavior. The rows are an exposed reconstruction basis for analysis,
 not verified authored-object PCM. Diagnostic WAV export uses
 `diagnostics/reconstruction_rows/row_NNN.wav`.
 
+The stable component boundary uses `ReconstructionBasisRowIndex` as a local
+decoder-coordinate identity. `DecodedComponentLayout` and the CLI
+`diagnostics/components.json` manifest distinguish Base full-band channels,
+separate Base LFE, indexed RB rows, and `SemanticBindingState::Unresolved`
+without retaining another PCM copy. Operations requiring authored-object audio
+identity fail explicitly while binding is unresolved; component-domain decode
+and streaming remain available.
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

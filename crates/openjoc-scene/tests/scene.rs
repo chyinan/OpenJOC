@@ -1,9 +1,9 @@
 use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{GlobalTrim, TrimElement, WarpMode};
 use openjoc_scene::{
-    BindingAdmissionRequirements, BindingEvidenceClass, BindingEvidenceDimensions,
-    BindingProvenance, BindingRelationKind, Extent3, IsfLabel, IsfRing, MetadataObject,
-    MetadataUpdate, ObjectClass, ObjectScene, Position, Position3, SceneError,
+    BaseFullBandChannel, BindingAdmissionRequirements, BindingEvidenceClass,
+    BindingEvidenceDimensions, BindingProvenance, BindingRelationKind, Extent3, IsfLabel, IsfRing,
+    MetadataObject, MetadataUpdate, ObjectClass, ObjectScene, Position, Position3, SceneError,
     SemanticBindingEvidence, SemanticBindingState, SpeakerLabel, TrimUpdate, ZoneConstraint,
 };
 
@@ -191,7 +191,34 @@ fn artifact_json_separates_metadata_from_reconstruction_rows() {
     assert!(manifest.contains("diagnostics/reconstruction_basis.json"));
     assert!(!manifest.contains("\"pcm\""));
     assert!(manifest.contains("metadata/timeline.json"));
+    assert!(manifest.contains("diagnostics/components.json"));
     assert!(timeline.contains("\"start_sample\": 1"));
+}
+
+#[test]
+fn decoded_component_layout_never_upgrades_rows_to_authored_objects() {
+    let scene = scene();
+    let layout = scene.decoded_component_layout(vec![
+        BaseFullBandChannel::FrontLeft,
+        BaseFullBandChannel::FrontRight,
+        BaseFullBandChannel::FrontCentre,
+        BaseFullBandChannel::SideLeft,
+        BaseFullBandChannel::SideRight,
+    ]);
+    assert_eq!(layout.semantic_binding, SemanticBindingState::Unresolved);
+    assert_eq!(layout.reconstruction_basis.len(), 1);
+    assert_eq!(layout.reconstruction_basis[0].row_index.0, 0);
+    assert_eq!(
+        layout.reconstruction_basis[0].component_role,
+        "reconstruction_basis"
+    );
+    let json = serde_json::to_string(&layout).expect("component layout");
+    assert!(!json.contains("object_id"));
+    assert!(!json.contains("object_stem"));
+    assert_eq!(
+        scene.require_authored_object_audio_binding(),
+        Err(SceneError::SemanticBindingUnresolved)
+    );
 }
 
 #[test]

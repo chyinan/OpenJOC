@@ -107,6 +107,7 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
     )
     .expect("scene JSON");
     assert_eq!(scene["semantic_binding"], "unresolved");
+    assert_eq!(scene["decoded_components"], "diagnostics/components.json");
     assert_eq!(
         scene["reconstruction_basis"],
         "diagnostics/reconstruction_basis.json"
@@ -120,6 +121,19 @@ fn decode_payload_command_writes_metadata_and_reconstruction_row_artifacts() {
     assert!(!basis.to_string().contains("object_id"));
     assert!(!output.join("object_stems").exists());
     assert!(!output.join("object_pcm").exists());
+    let components: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("diagnostics/components.json")).expect("component manifest"),
+    )
+    .expect("component JSON");
+    assert_eq!(components["semantic_binding"], "unresolved");
+    assert_eq!(components["base_full_band"][0], "front_left");
+    assert_eq!(components["base_full_band"][4], "side_right");
+    assert_eq!(
+        components["reconstruction_basis"][0]["component_role"],
+        "reconstruction_basis"
+    );
+    assert_eq!(components["reconstruction_basis"][0]["row_index"], 0);
+    assert!(components.get("objects").is_none());
     let stem_bytes = fs::read(output.join("diagnostics/reconstruction_rows/row_000.wav"))
         .expect("reconstruction row");
     assert_eq!(

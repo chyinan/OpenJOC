@@ -304,11 +304,13 @@ scene entries      == total OAMD programme entries
 ```
 
 For all private Logic A-F carriers, the parsed anchor sequence is
-`OAMD[0] = RcLfe` followed by `OAMD[1..15] = Dynamic`. The resulting binding
-is `OAMD[0] -> BaseLfe(channel 0)` and dynamic slot `i -> JOC row i` for
-`i = 0..14`. No row is deleted, synthesized, or shifted inside the JOC core;
-the base LFE is never sent to the five-channel JOC matrix. The scene manifest
-serializes entry 0 as `lfe`, followed by 15 `dynamic` entries.
+`OAMD[0] = RcLfe` followed by `OAMD[1..15] = Dynamic`. Structurally, RcLfe is
+carried as separate Base LFE while the dynamic-slot count and JOC-row count are
+both 15 in this corpus. This cardinality/order correspondence is not an
+authored-object-to-row semantic binding. No row is deleted, synthesized, or
+shifted inside the JOC core; the base LFE is never sent to the five-channel JOC
+matrix. The metadata scene serializes entry 0 as `lfe`, followed by 15
+`dynamic` entries, while RB rows remain separately indexed decoder coordinates.
 
 The private run
 `2026-08-05T044606Z_object-cardinality_a4f88af_r3` contains raw forensic

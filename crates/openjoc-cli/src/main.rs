@@ -193,7 +193,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
         "\n",
         "OUTPUT CONTRACT\n",
-        "  capture decode writes a metadata-only scene manifest and diagnostic ReconstructionBasis row WAVs\n",
+        "  capture decode writes a metadata-only scene manifest, a truthful decoded-component manifest, and diagnostic ReconstructionBasis row WAVs\n",
         "  streaming decode writes internal-base diagnostics and a summary; it does not capture ObjectScene/rows\n",
         "  ReconstructionBasis rows are not authored-object PCM; semantic binding remains unresolved\n",
         "\n",
@@ -1436,6 +1436,17 @@ fn write_scene(
     fs::create_dir_all(&rows)?;
     fs::create_dir_all(&metadata)?;
     fs::write(output.join("scene.json"), scene.to_manifest_json_pretty()?)?;
+    let component_layout = scene.decoded_component_layout(vec![
+        openjoc_scene::BaseFullBandChannel::FrontLeft,
+        openjoc_scene::BaseFullBandChannel::FrontRight,
+        openjoc_scene::BaseFullBandChannel::FrontCentre,
+        openjoc_scene::BaseFullBandChannel::SideLeft,
+        openjoc_scene::BaseFullBandChannel::SideRight,
+    ]);
+    fs::write(
+        output.join("diagnostics/components.json"),
+        serde_json::to_vec_pretty(&component_layout)?,
+    )?;
     fs::write(
         metadata.join("timeline.json"),
         scene.to_timeline_json_pretty()?,

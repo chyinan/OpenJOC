@@ -29,6 +29,7 @@ evidence belongs in [research history](research/README.md).
 | OAMD | `DOLBY_VENDOR_COMPAT` profile | `PARTIAL` | Explicit observed-signaling acceptance and deviation evidence | Continuation is retained opaquely; no vendor semantic interpretation |
 | Scene | Metadata-only `ObjectScene` | `ADMITTED` | Schema, timeline, assembly and atomicity tests | No audio binding is implied |
 | Reconstruction | `ReconstructionBasis` rows | `DIAGNOSTIC_ONLY` | Deterministic numerical, continuity and WAV-export tests | Rows are not authored-object PCM or object stems |
+| Components | Typed decoded-component manifest | `ADMITTED` | `diagnostics/components.json` separates Base, Base LFE, indexed RB coordinates, RcLfe boundary and unresolved binding | PCM-free layout; no authored-object identity |
 | Semantics | Authored-object binding and verified object PCM | `NOT_ADMITTED` | One-row-per-authored-object model rejected | `SemanticBindingState::Unresolved` remains the production state |
 | Rendering | Audio-bound `ObjectScene` or renderer fidelity | `NOT_ADMITTED` | Insufficient semantic evidence | No speaker/binaural renderer or fidelity claim |
 | Release | Local macOS-arm64 0.1.0 candidate | `ADMITTED_WITH_SCOPE` | Double assembly, offline verification, package/install | Local engineering candidate only; not published, Developer-ID signed, or notarized |

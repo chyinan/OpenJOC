@@ -2,7 +2,7 @@
 
 //! Renderer-independent object-scene model for the TS 103 420 decoder interface.
 
-use openjoc_joc::ReconstructionBasis;
+use openjoc_joc::{ReconstructionBasis, ReconstructionBasisRowIndex};
 use openjoc_oamd::TrimElement;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
@@ -139,6 +139,47 @@ pub enum SemanticBindingState {
     Unresolved,
 }
 
+/// Deterministic label for one full-band Base channel at the JOC boundary.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BaseFullBandChannel {
+    FrontLeft,
+    FrontRight,
+    FrontCentre,
+    SideLeft,
+    SideRight,
+}
+
+/// Machine-readable description of one ReconstructionBasis coordinate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReconstructionBasisComponent {
+    pub component_role: &'static str,
+    pub row_index: ReconstructionBasisRowIndex,
+    pub pcm_artifact: String,
+    pub semantic_binding: SemanticBindingState,
+}
+
+/// Base-carried low-frequency component and its OAMD speaker anchor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BaseLfeComponent {
+    pub component_role: &'static str,
+    pub pcm_artifact: &'static str,
+    pub metadata_anchor: SpeakerLabel,
+    pub reconstruction_basis_member: bool,
+}
+
+/// Stable, PCM-free decoded-component layout for API and CLI consumers.
+///
+/// This structure reports decoder roles and artifacts without manufacturing
+/// authored-object identity or retaining another copy of decoded samples.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DecodedComponentLayout {
+    pub base_full_band: Vec<BaseFullBandChannel>,
+    pub base_lfe: Option<BaseLfeComponent>,
+    pub reconstruction_basis: Vec<ReconstructionBasisComponent>,
+    pub semantic_binding: SemanticBindingState,
+}
+
 /// One timed, fully resolved metadata update.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MetadataUpdate {
@@ -190,6 +231,7 @@ struct SceneManifest {
     metadata_timeline: &'static str,
     trim_timeline: &'static str,
     reconstruction_basis: Option<&'static str>,
+    decoded_components: &'static str,
     semantic_binding: SemanticBindingState,
 }
 
@@ -203,6 +245,7 @@ struct ObjectManifest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SceneError {
     InvalidSampleRate,
+    SemanticBindingUnresolved,
     DuplicateObjectId {
         object_id: u32,
     },
@@ -247,6 +290,9 @@ impl fmt::Display for SceneError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidSampleRate => formatter.write_str("invalid scene sample rate"),
+            Self::SemanticBindingUnresolved => formatter.write_str(
+                "authored-object audio identity is unavailable while semantic binding is unresolved",
+            ),
             Self::DuplicateObjectId { object_id } => {
                 write!(formatter, "duplicate scene object ID {object_id}")
             }
@@ -304,6 +350,55 @@ impl fmt::Display for SceneError {
 impl std::error::Error for SceneError {}
 
 impl ObjectScene {
+    /// Produces a PCM-free component layout with explicit decoder roles.
+    ///
+    /// `base_full_band` must describe the already-decoded Base channel order;
+    /// this method does not infer channel labels from row counts.
+    #[must_use]
+    pub fn decoded_component_layout(
+        &self,
+        base_full_band: Vec<BaseFullBandChannel>,
+    ) -> DecodedComponentLayout {
+        let reconstruction_basis = self
+            .reconstruction_basis
+            .as_ref()
+            .map(|basis| {
+                basis
+                    .iter_rows()
+                    .map(|row| ReconstructionBasisComponent {
+                        component_role: "reconstruction_basis",
+                        row_index: row.index,
+                        pcm_artifact: format!(
+                            "diagnostics/reconstruction_rows/row_{:03}.wav",
+                            row.index.0
+                        ),
+                        semantic_binding: self.semantic_binding,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        DecodedComponentLayout {
+            base_full_band,
+            base_lfe: self.base_lfe_pcm.as_ref().map(|_| BaseLfeComponent {
+                component_role: "base_lfe",
+                pcm_artifact: "diagnostics/base_lfe.wav",
+                metadata_anchor: SpeakerLabel::RcLfe,
+                reconstruction_basis_member: false,
+            }),
+            reconstruction_basis,
+            semantic_binding: self.semantic_binding,
+        }
+    }
+
+    /// Requires admitted authored-object/audio binding for semantic consumers.
+    ///
+    /// Component-domain decoding remains available when this gate fails.
+    pub fn require_authored_object_audio_binding(&self) -> Result<(), SceneError> {
+        match self.semantic_binding {
+            SemanticBindingState::Unresolved => Err(SceneError::SemanticBindingUnresolved),
+        }
+    }
+
     /// Validates cross-field invariants required for scene export.
     ///
     /// # Errors
@@ -424,6 +519,7 @@ impl ObjectScene {
                 .reconstruction_basis
                 .as_ref()
                 .map(|_| "diagnostics/reconstruction_basis.json"),
+            decoded_components: "diagnostics/components.json",
             semantic_binding: self.semantic_binding,
         };
         serde_json::to_string_pretty(&manifest).map_err(|error| SceneError::Json(error.to_string()))

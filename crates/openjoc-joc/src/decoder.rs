@@ -42,6 +42,36 @@ pub struct ReconstructionBasis {
     pub rows: Vec<Vec<f64>>,
 }
 
+/// Stable identity for one decoder reconstruction-basis coordinate.
+///
+/// This index is local to the decoded basis. It is deliberately not an
+/// authored-object ID, OAMD slot, or output-channel identity.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct ReconstructionBasisRowIndex(pub usize);
+
+/// Borrowed PCM for one decoder reconstruction-basis coordinate.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReconstructionBasisRow<'a> {
+    pub index: ReconstructionBasisRowIndex,
+    pub pcm: &'a [f64],
+}
+
+impl ReconstructionBasis {
+    /// Iterates rows in deterministic decoder-coordinate order.
+    ///
+    /// The returned indices carry no authored-object semantics.
+    pub fn iter_rows(&self) -> impl ExactSizeIterator<Item = ReconstructionBasisRow<'_>> {
+        self.rows
+            .iter()
+            .enumerate()
+            .map(|(index, pcm)| ReconstructionBasisRow {
+                index: ReconstructionBasisRowIndex(index),
+                pcm,
+            })
+    }
+}
+
 /// Failures joining syntax, differential, interpolation, and object stages.
 #[derive(Debug)]
 pub enum JocDecodeError {

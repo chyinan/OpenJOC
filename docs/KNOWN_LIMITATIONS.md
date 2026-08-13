@@ -12,6 +12,11 @@ claiming capabilities that the current evidence does not support.
 - Diagnostic `ReconstructionBasis` rows are available, but they are not
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
+- `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
+  window-dependent RB redistribution is admitted, but common gauge,
+  row-transfer and rank-1 models are rejected. No implementation-ready
+  universal operator is known; this is deferred until it blocks a required
+  decoder or renderer capability or new admissible evidence appears.
 - `ETSI_STRICT` rejects the observed reserved OAMD warp value `raw=3`.
 - `DOLBY_VENDOR_COMPAT` is explicit and partial. Observed continuation remains
   opaque; warp-3 and vendor continuation semantics are unresolved.
