@@ -177,6 +177,33 @@ fn consumes_a_decoded_frame_through_a_borrowed_sink() {
 }
 
 #[test]
+fn streaming_sink_error_propagates_without_silent_continuation() {
+    let joc = absent_joc_payload(0);
+    let oamd = inactive_oamd_payload();
+    let downmix = vec![vec![1.0; 64]; 5];
+    let mut decoder = PayloadDecoder::streaming(PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::default(),
+    });
+    let result = decoder.decode_frame_with(
+        JocFrameInput {
+            sample_rate: 48_000,
+            downmix_pcm: &downmix,
+            base_lfe_pcm: None,
+            joc_payload: &joc,
+            oamd_payload: &oamd,
+            frame_index: 0,
+        },
+        |_frame| Err::<(), PayloadDecodeError>(PayloadDecodeError::EmptyStream),
+    );
+    assert!(matches!(result, Err(PayloadDecodeError::EmptyStream)));
+    assert_eq!(
+        decoder.finish_streaming().expect("committed frame").frames,
+        1
+    );
+}
+
+#[test]
 fn streaming_decoder_retains_only_bounded_frame_state() {
     let oamd = inactive_oamd_payload();
     let downmix = vec![vec![1.0; 64]; 5];

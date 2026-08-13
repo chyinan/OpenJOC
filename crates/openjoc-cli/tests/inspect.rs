@@ -641,6 +641,7 @@ fn streaming_decode_reports_raw_delivery_and_no_scene_capture() {
     fs::create_dir_all(&root).expect("test directory");
     let input = root.join("profile.ec3");
     let output = root.join("output");
+    let legacy_output = root.join("legacy-output");
     let emdf = joc_emdf(&inactive_oamd(), &absent_joc());
     fs::write(&input, five_channel_audio_frame(&emdf)).expect("write E-AC-3");
 
@@ -650,6 +651,7 @@ fn streaming_decode_reports_raw_delivery_and_no_scene_capture() {
             input.to_str().expect("input path"),
             "--internal-base",
             "--streaming",
+            "--reference-f64",
             "-o",
             output.to_str().expect("output path"),
         ])
@@ -672,10 +674,35 @@ fn streaming_decode_reports_raw_delivery_and_no_scene_capture() {
         summary["retention"]
             .as_str()
             .expect("retention text")
-            .contains("no ObjectScene or ReconstructionBasis row capture")
+            .contains("no ObjectScene")
     );
     assert!(!output.join("scene.json").exists());
-    assert!(!output.join("diagnostics/reconstruction_rows").exists());
+    assert!(
+        output
+            .join("diagnostics/reconstruction_rows/row_000.wav")
+            .is_file()
+    );
+    assert!(output.join("diagnostics/components.json").is_file());
+    let components: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("diagnostics/components.json")).expect("component manifest"),
+    )
+    .expect("component JSON");
+    assert_eq!(components["semantic_binding"], "unresolved");
+    assert_eq!(
+        components["reconstruction_basis"][0]["component_role"],
+        "reconstruction_basis"
+    );
+    assert!(
+        components["reconstruction_basis"][0]["pcm_artifact"]
+            .as_str()
+            .expect("row artifact")
+            .contains("reconstruction_rows/row_000.wav")
+    );
+    let retention: serde_json::Value = serde_json::from_slice(
+        &fs::read(output.join("diagnostics/retention.json")).expect("retention report"),
+    )
+    .expect("retention JSON");
+    assert_eq!(retention["max_buffered_output_chunks"], 1);
 
     let inventory: serde_json::Value = serde_json::from_slice(
         &fs::read(output.join("debug/internal_base_inventory.json"))
@@ -687,5 +714,75 @@ fn streaming_decode_reports_raw_delivery_and_no_scene_capture() {
         serde_json::json!(["L", "R", "C", "Ls", "Rs"])
     );
 
+    let legacy = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--internal-base",
+            "--reference-f64",
+            "-o",
+            legacy_output.to_str().expect("legacy output path"),
+        ])
+        .output()
+        .expect("run legacy decode");
+    assert!(
+        legacy.status.success(),
+        "{}",
+        String::from_utf8_lossy(&legacy.stderr)
+    );
+    for relative in [
+        "diagnostics/reconstruction_rows/row_000.wav",
+        "debug/internal_base_full.wav",
+        "debug/internal_base_joc_input.wav",
+    ] {
+        assert_eq!(
+            fs::read(output.join(relative)).expect("streaming output"),
+            fs::read(legacy_output.join(relative)).expect("legacy output"),
+            "streaming and legacy output differ for {relative}"
+        );
+    }
+
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn streaming_decode_removes_partial_output_after_input_failure() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-streaming-transaction-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("broken.ec3");
+    let output = root.join("output");
+    fs::write(&input, b"not-an-eac3-stream").expect("write broken input");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--internal-base",
+            "--streaming",
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run streaming decode");
+    assert!(!result.status.success());
+    assert!(!output.exists());
+    let partials = fs::read_dir(&root)
+        .expect("list staging parent")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains(".output.partial-")
+        })
+        .count();
+    assert_eq!(partials, 0, "failed decode left a partial output directory");
     fs::remove_dir_all(&root).expect("remove test directory");
 }

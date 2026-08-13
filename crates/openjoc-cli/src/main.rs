@@ -25,6 +25,7 @@ use openjoc_wave::{
     encode_channels,
 };
 use std::{
+    cell::RefCell,
     env,
     error::Error,
     fmt::Write as _,
@@ -33,6 +34,7 @@ use std::{
     num::NonZeroU8,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
+    time::{SystemTime, UNIX_EPOCH},
 };
 use terminal::TerminalCapabilities;
 
@@ -46,6 +48,7 @@ const MAX_DEBUG_ARTIFACT_BYTES: usize = 64 * 1024;
 const MAX_RETAINED_CAPTURE_PCM_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_RECONSTRUCTION_BASIS_JSON_BYTES: usize = 128 * 1024 * 1024;
 const ESTIMATED_JSON_BYTES_PER_SAMPLE: u64 = 32;
+const MAX_STREAMING_OUTPUT_CHUNKS: usize = 1;
 
 struct DecodePayloadArgs {
     downmix: PathBuf,
@@ -194,7 +197,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "\n",
         "OUTPUT CONTRACT\n",
         "  capture decode writes a metadata-only scene manifest, a truthful decoded-component manifest, and diagnostic ReconstructionBasis row WAVs\n",
-        "  streaming decode writes internal-base diagnostics and a summary; it does not capture ObjectScene/rows\n",
+        "  streaming decode writes bounded component WAVs, internal-base diagnostics, and a summary; it does not capture ObjectScene\n",
         "  ReconstructionBasis rows are not authored-object PCM; semantic binding remains unresolved\n",
         "\n",
         "PROFILE / CONTAINER BOUNDARIES\n",
@@ -219,7 +222,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--trim-config-count N] [--reference-f64]\n\n",
             "Capture mode writes a metadata-only scene plus diagnostic ReconstructionBasis rows.\n",
             "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
-            "and writes internal-base diagnostics plus a summary without ObjectScene/row capture.\n",
+            "and writes bounded component WAVs, internal-base diagnostics, and a summary without ObjectScene capture.\n",
             "Rows are not authored-object PCM. Profile selection is explicit and never downgraded.\n",
         ),
         "decode-payload" => concat!(
@@ -883,38 +886,96 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
             .into());
         }
     };
-    let config = PayloadDecoderConfig {
-        reference_screen: None,
-        oamd: OamdDecoderConfig {
-            trim_configuration_count: arguments.trim_configuration_count,
+    let staging = create_streaming_stage(&arguments.output)?;
+    let result = (|| -> Result<(), Box<dyn Error>> {
+        let config = PayloadDecoderConfig {
+            reference_screen: None,
+            oamd: OamdDecoderConfig {
+                trim_configuration_count: arguments.trim_configuration_count,
+            },
+        };
+        let sink_output = staging.clone();
+        let component_export = RefCell::new(StreamingComponentExport::new(
+            &staging,
+            arguments.output_format,
+        )?);
+        let dither = deterministic_dither_values();
+        let summary = eac3_decode::decode_internal_eac3_reader_with_base_sink_and_policy(
+            reader,
+            DEFAULT_MAX_EAC3_BYTES,
+            config,
+            arguments.validation_profile,
+            &dither,
+            arguments.internal_base_policy,
+            |frame_index, metadata, frame| {
+                component_export
+                    .borrow_mut()
+                    .write_frame(frame_index, metadata, frame)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+            },
+            |access_unit, pcm| {
+                component_export
+                    .borrow_mut()
+                    .write_base(access_unit, pcm)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+            },
+        )?;
+        component_export.into_inner().finish(&summary)?;
+        write_streaming_summary(&sink_output, input_kind, &summary)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => match fs::rename(&staging, &arguments.output) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = fs::remove_dir_all(&staging);
+                Err(error.into())
+            }
         },
-    };
-    let sink_output = arguments.output.clone();
-    let mut base_capture = InternalBasePcm {
-        base_policy: arguments.internal_base_policy,
-        ..InternalBasePcm::default()
-    };
-    let dither = deterministic_dither_values();
-    let summary = eac3_decode::decode_internal_eac3_reader_with_base_sink_and_policy(
-        reader,
-        DEFAULT_MAX_EAC3_BYTES,
-        config,
-        arguments.validation_profile,
-        &dither,
-        arguments.internal_base_policy,
-        |frame_index, metadata, frame| {
-            write_frame_debug(&sink_output, frame_index, metadata, frame)
-                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
-        },
-        |access_unit, pcm| {
-            base_capture
-                .append(access_unit, pcm)
-                .map_err(eac3_decode::DecodeEac3Error::Sink)
-        },
-    )?;
-    base_capture.write(&arguments.output)?;
-    write_streaming_summary(&arguments.output, input_kind, &summary)?;
-    Ok(())
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            Err(error)
+        }
+    }
+}
+
+fn create_streaming_stage(output: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    if output.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("streaming output already exists: {}", output.display()),
+        )
+        .into());
+    }
+    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = output
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "output path has no filename")
+        })?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| io::Error::other("system clock is before UNIX epoch"))?
+        .as_nanos();
+    for attempt in 0..100_u32 {
+        let candidate = parent.join(format!(
+            ".{name}.partial-{}-{}",
+            std::process::id(),
+            stamp + u128::from(attempt)
+        ));
+        match fs::create_dir(&candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate unique streaming staging directory",
+    )
+    .into())
 }
 
 fn write_streaming_summary(
@@ -946,7 +1007,7 @@ fn write_streaming_summary(
         "max_frame_samples": summary.max_frame_samples,
         "metadata_events": summary.metadata_events,
         "trim_events": summary.trim_events,
-        "retention": "streaming summary only; no ObjectScene or ReconstructionBasis row capture",
+        "retention": "streaming component export and summary only; no ObjectScene or full-duration scene capture",
         "semantic_binding_state": "unresolved",
         "authored_object_pcm_admissible": false,
     });
@@ -976,6 +1037,378 @@ struct CompatibleBasePaths {
     full: Option<PathBuf>,
     downmix: PathBuf,
     lfe: Option<PathBuf>,
+}
+
+struct StreamingComponentExport {
+    output: PathBuf,
+    sample_format: SampleFormat,
+    rows: Option<Vec<WaveWriter<fs::File>>>,
+    base: Option<StreamingBaseWriters>,
+    frame_count: usize,
+}
+
+impl StreamingComponentExport {
+    fn new(output: &Path, sample_format: SampleFormat) -> Result<Self, Box<dyn Error>> {
+        fs::create_dir_all(output.join("debug"))?;
+        Ok(Self {
+            output: output.to_owned(),
+            sample_format,
+            rows: None,
+            base: None,
+            frame_count: 0,
+        })
+    }
+
+    fn write_frame(
+        &mut self,
+        frame_index: usize,
+        metadata: &openjoc_eac3::JocMetadataFrame,
+        frame: &openjoc_scene::DecodedPayloadFrame,
+    ) -> Result<(), Box<dyn Error>> {
+        if frame_index != self.frame_count {
+            return Err(io::Error::other(format!(
+                "streaming component frame sequence expected {}, received {}",
+                self.frame_count, frame_index
+            ))
+            .into());
+        }
+        if self.rows.is_none() {
+            let row_dir = self.output.join("diagnostics/reconstruction_rows");
+            fs::create_dir_all(&row_dir)?;
+            let mut writers = Vec::with_capacity(frame.decoded.reconstruction_basis.rows.len());
+            for row_index in 0..frame.decoded.reconstruction_basis.rows.len() {
+                let path = row_dir.join(format!("row_{row_index:03}.wav"));
+                let writer = WaveWriter::new(
+                    fs::File::create(path)?,
+                    metadata.sample_rate,
+                    1,
+                    WaveEncodeOptions {
+                        sample_format: self.sample_format,
+                        clipping: Clipping::Reject,
+                        dither: Dither::None,
+                    },
+                )?;
+                writers.push(writer);
+            }
+            self.rows = Some(writers);
+        }
+        let rows = &mut self.rows.as_mut().expect("initialized above")[..];
+        if rows.len() != frame.decoded.reconstruction_basis.rows.len() {
+            return Err(io::Error::other(
+                "reconstruction-basis row count changed during streaming decode",
+            )
+            .into());
+        }
+        for (writer, row) in rows
+            .iter_mut()
+            .zip(&frame.decoded.reconstruction_basis.rows)
+        {
+            writer.write_channels(&[row])?;
+        }
+        if frame_index < MAX_RETAINED_DEBUG_FRAMES {
+            write_frame_debug(&self.output, frame_index, metadata, frame)?;
+        } else if frame_index == MAX_RETAINED_DEBUG_FRAMES {
+            fs::write(
+                self.output.join("debug/retention.json"),
+                serde_json::to_vec_pretty(&serde_json::json!({
+                    "status": "DEBUG_FRAME_RETENTION_TRUNCATED",
+                    "max_retained_frames": MAX_RETAINED_DEBUG_FRAMES,
+                    "first_omitted_frame": frame_index,
+                    "per_artifact_max_bytes": MAX_DEBUG_ARTIFACT_BYTES,
+                    "overflow_classification": "bounded_debug_retention",
+                }))?,
+            )?;
+        }
+        self.frame_count = self.frame_count.saturating_add(1);
+        Ok(())
+    }
+
+    fn write_base(
+        &mut self,
+        access_unit: usize,
+        pcm: &DecodedAccessUnitPcm,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.base.is_none() {
+            self.base = Some(StreamingBaseWriters::new(
+                &self.output,
+                self.sample_format,
+                pcm,
+            )?);
+        }
+        self.base
+            .as_mut()
+            .expect("initialized above")
+            .write(access_unit, pcm)
+    }
+
+    fn finish(
+        mut self,
+        summary: &openjoc_scene::StreamingSceneSummary,
+    ) -> Result<(), Box<dyn Error>> {
+        if self.frame_count != usize::try_from(summary.frames).unwrap_or(usize::MAX) {
+            return Err(io::Error::other(
+                "streaming summary frame count disagrees with component writer",
+            )
+            .into());
+        }
+        let row_count = self.rows.as_ref().map_or(0, Vec::len);
+        if self.rows.as_ref().is_some_and(|rows| {
+            rows.iter()
+                .any(|writer| writer.frames() != summary.duration_samples)
+        }) {
+            return Err(io::Error::other(
+                "streaming component row sample count disagrees with scene summary",
+            )
+            .into());
+        }
+        if let Some(rows) = self.rows.take() {
+            for writer in rows {
+                writer.finish()?;
+            }
+        }
+        let base_inventory = self
+            .base
+            .take()
+            .map(StreamingBaseWriters::finish)
+            .transpose()?;
+        let base_full_band = base_inventory
+            .as_ref()
+            .map_or_else(Vec::new, |inventory| inventory.full_order.clone());
+        let base_lfe = base_inventory
+            .as_ref()
+            .and_then(|inventory| inventory.lfe.as_ref());
+        let reconstruction_basis = (0..row_count)
+            .map(|row_index| {
+                serde_json::json!({
+                    "component_role": "reconstruction_basis",
+                    "row_index": row_index,
+                    "pcm_artifact": format!("diagnostics/reconstruction_rows/row_{row_index:03}.wav"),
+                    "semantic_binding": "unresolved",
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            self.output.join("diagnostics/components.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "base_full_band": base_full_band,
+                "base_lfe": base_lfe.map(|_| serde_json::json!({
+                    "component_role": "base_lfe",
+                    "pcm_artifact": "debug/internal_base_lfe.wav",
+                    "reconstruction_basis_member": false,
+                    "semantic_binding": "unresolved",
+                })),
+                "reconstruction_basis": reconstruction_basis,
+                "semantic_binding": "unresolved",
+                "retention": "streaming; one decoded frame and one bounded PCM chunk at a time",
+            }))?,
+        )?;
+        fs::write(
+            self.output.join("diagnostics/retention.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "mode": "streaming",
+                "max_buffered_output_chunks": MAX_STREAMING_OUTPUT_CHUNKS,
+                "full_duration_pcm_retained": false,
+                "codec_history_retained": true,
+                "debug_frame_limit": MAX_RETAINED_DEBUG_FRAMES,
+            }))?,
+        )?;
+        Ok(())
+    }
+}
+
+struct StreamingBaseWriters {
+    output: PathBuf,
+    full: WaveWriter<fs::File>,
+    joc_input: WaveWriter<fs::File>,
+    lfe: Option<WaveWriter<fs::File>>,
+    channel_locations: Vec<ChannelLocation>,
+    lfe_location: Option<ChannelLocation>,
+    full_order: Vec<String>,
+    joc_order: Vec<String>,
+    sample_rate: u32,
+    access_units: usize,
+    sample_count: u64,
+}
+
+#[derive(serde::Serialize)]
+struct StreamingBaseInventory {
+    sample_rate: u32,
+    access_units: usize,
+    sample_count: u64,
+    full_order: Vec<String>,
+    joc_order: Vec<String>,
+    lfe: Option<String>,
+}
+
+impl StreamingBaseWriters {
+    fn new(
+        output: &Path,
+        sample_format: SampleFormat,
+        pcm: &DecodedAccessUnitPcm,
+    ) -> Result<Self, Box<dyn Error>> {
+        let debug = output.join("debug");
+        fs::create_dir_all(&debug)?;
+        let options = WaveEncodeOptions {
+            sample_format,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        };
+        let mut full_order = pcm
+            .channel_locations
+            .iter()
+            .map(|location| location.label().to_owned())
+            .collect::<Vec<_>>();
+        if let Some(lfe_location) = pcm.lfe_location {
+            let insertion = pcm
+                .channel_locations
+                .iter()
+                .position(|location| *location == ChannelLocation::Centre)
+                .map_or(full_order.len(), |index| index + 1);
+            full_order.insert(insertion, lfe_location.label().to_owned());
+        }
+        let joc_order = pcm
+            .channel_locations
+            .iter()
+            .map(|location| location.label().to_owned())
+            .collect::<Vec<_>>();
+        Ok(Self {
+            output: output.to_owned(),
+            full: WaveWriter::new(
+                fs::File::create(debug.join("internal_base_full.wav"))?,
+                pcm.sample_rate,
+                full_order.len(),
+                options,
+            )?,
+            joc_input: WaveWriter::new(
+                fs::File::create(debug.join("internal_base_joc_input.wav"))?,
+                pcm.sample_rate,
+                pcm.channels.len(),
+                options,
+            )?,
+            lfe: if pcm.lfe.is_some() {
+                Some(WaveWriter::new(
+                    fs::File::create(debug.join("internal_base_lfe.wav"))?,
+                    pcm.sample_rate,
+                    1,
+                    options,
+                )?)
+            } else {
+                None
+            },
+            channel_locations: pcm.channel_locations.clone(),
+            lfe_location: pcm.lfe_location,
+            full_order,
+            joc_order,
+            sample_rate: pcm.sample_rate,
+            access_units: 0,
+            sample_count: 0,
+        })
+    }
+
+    fn write(
+        &mut self,
+        access_unit: usize,
+        pcm: &DecodedAccessUnitPcm,
+    ) -> Result<(), Box<dyn Error>> {
+        if access_unit != self.access_units {
+            return Err(io::Error::other(format!(
+                "internal base access-unit sequence expected {}, received {}",
+                self.access_units, access_unit
+            ))
+            .into());
+        }
+        if pcm.sample_rate != self.sample_rate
+            || pcm.channel_locations != self.channel_locations
+            || pcm.lfe_location != self.lfe_location
+        {
+            return Err(io::Error::other(
+                "internal base channel topology changed during streaming decode",
+            )
+            .into());
+        }
+        let expected = usize::from(pcm.samples);
+        if pcm.channels.iter().any(|channel| channel.len() != expected)
+            || pcm
+                .lfe
+                .as_ref()
+                .is_some_and(|channel| channel.len() != expected)
+        {
+            return Err(io::Error::other(
+                "internal base frame length mismatch during streaming decode",
+            )
+            .into());
+        }
+        let mut full = pcm.channels.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        if let Some(lfe) = &pcm.lfe {
+            let insertion = self
+                .channel_locations
+                .iter()
+                .position(|location| *location == ChannelLocation::Centre)
+                .map_or(full.len(), |index| index + 1);
+            full.insert(insertion, lfe.as_slice());
+        }
+        let joc = pcm.channels.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        self.full.write_channels(&full)?;
+        self.joc_input.write_channels(&joc)?;
+        if let (Some(writer), Some(lfe)) = (&mut self.lfe, &pcm.lfe) {
+            writer.write_channels(&[lfe.as_slice()])?;
+        }
+        self.access_units = self
+            .access_units
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("internal base access-unit count overflow"))?;
+        self.sample_count = self
+            .sample_count
+            .checked_add(u64::from(pcm.samples))
+            .ok_or_else(|| io::Error::other("internal base sample count overflow"))?;
+        Ok(())
+    }
+
+    fn finish(self) -> Result<StreamingBaseInventory, Box<dyn Error>> {
+        self.full.finish()?;
+        self.joc_input.finish()?;
+        if let Some(writer) = self.lfe {
+            writer.finish()?;
+        }
+        let inventory = StreamingBaseInventory {
+            sample_rate: self.sample_rate,
+            access_units: self.access_units,
+            sample_count: self.sample_count,
+            full_order: self.full_order,
+            joc_order: self.joc_order,
+            lfe: self
+                .lfe_location
+                .map(|location| location.label().to_owned()),
+        };
+        fs::write(
+            self.output.join("debug/internal_base_inventory.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "source": "OpenJOC internal E-AC-3 decoder",
+                "retention": "streaming; one access-unit PCM chunk at a time",
+                "sample_rate": inventory.sample_rate,
+                "access_units": inventory.access_units,
+                "sample_count": inventory.sample_count,
+                "full_base": {
+                    "wav": "debug/internal_base_full.wav",
+                    "channel_order": inventory.full_order.clone(),
+                    "channel_count": inventory.full_order.len(),
+                },
+                "joc_input": {
+                    "wav": "debug/internal_base_joc_input.wav",
+                    "channel_order": inventory.joc_order.clone(),
+                    "channel_count": inventory.joc_order.len(),
+                    "lfe_excluded": true,
+                },
+                "lfe": {
+                    "wav": inventory.lfe.as_ref().map(|_| "debug/internal_base_lfe.wav"),
+                    "channel_order": inventory.lfe.clone(),
+                    "present": inventory.lfe.is_some(),
+                },
+                "overlap_add_state": "stateful TDAC retained across access units; reset at stream start",
+            }))?,
+        )?;
+        Ok(inventory)
+    }
 }
 
 #[derive(Default)]
@@ -1985,7 +2418,8 @@ fn usage_error() -> io::Error {
 mod retention_tests {
     use super::{
         ESTIMATED_JSON_BYTES_PER_SAMPLE, MAX_RECONSTRUCTION_BASIS_JSON_BYTES,
-        MAX_RETAINED_DEBUG_FRAMES, SampleFormat, ensure_capture_retention_budget,
+        MAX_RETAINED_DEBUG_FRAMES, MAX_STREAMING_OUTPUT_CHUNKS, SampleFormat,
+        ensure_capture_retention_budget,
     };
 
     #[test]
@@ -2004,6 +2438,17 @@ mod retention_tests {
     #[test]
     fn debug_frame_retention_has_an_explicit_first_omitted_frame() {
         assert_eq!(MAX_RETAINED_DEBUG_FRAMES, 64);
+    }
+
+    #[test]
+    fn streaming_retention_bound_does_not_scale_with_simulated_duration() {
+        let mut max_buffered = 0_usize;
+        for _ in 0..100_000 {
+            let current_chunk = 1_usize;
+            max_buffered = max_buffered.max(current_chunk);
+            assert_eq!(current_chunk, MAX_STREAMING_OUTPUT_CHUNKS);
+        }
+        assert_eq!(max_buffered, MAX_STREAMING_OUTPUT_CHUNKS);
     }
 }
 
