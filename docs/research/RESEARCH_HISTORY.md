@@ -939,3 +939,6 @@ single source-replacement intervention inside the legacy project lineage.
 
 See [J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.md](J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.md)
 and [its machine-readable record](J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.json).
+### J4R7 — Legacy canonical-source swap
+
+J4R7 replaced only the legacy static-FR source with an exact-length prefix of the canonical target. The source-swapped legacy carrier remained `row_000`-only and raw-EC3 deterministic, while the admitted new-lineage A carrier retained `row_000..row_008`. The legacy S0 chain is therefore closed with residual project/container-lineage dependence; the exact hidden producer state remains unidentified and no further S0 experiment is recommended. See [the report](J4R7_LEGACY_CANONICAL_SOURCE_SWAP.md) and [machine-readable record](J4R7_LEGACY_CANONICAL_SOURCE_SWAP.json).

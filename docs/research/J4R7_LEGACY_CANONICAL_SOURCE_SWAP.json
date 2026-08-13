@@ -1,0 +1,41 @@
+{
+  "schema": "openjoc.research.j4r7.legacy-canonical-source-swap.v1",
+  "stage": "J4R7",
+  "decision": "J4R7_LEGACY_PROJECT_CONTAINER_STILL_DOMINANT_AFTER_SOURCE_SWAP",
+  "intervention": {
+    "independent_variable": "source PCM only",
+    "canonical_prefix_samples": 193536,
+    "canonical_prefix_pcm_sha256": "c461551467abba25a1e9e4327405f3678da349446a0201d5f67ee33ebba70e05",
+    "preserved": ["legacy project", "track", "Object routing", "Front Right automation", "gain", "region timing", "programme range", "DD+ Music 768 kbps settings"]
+  },
+  "producer_repeatability": {
+    "export_count": 2,
+    "third_export_prohibited": true,
+    "mp4_byte_identical": false,
+    "raw_ec3_byte_identical": true,
+    "raw_ec3_sha256": "4a2f2eebe7e6b32d709a2984d854f5605e523ba86ed4d301b1cddfde59de2dfd"
+  },
+  "analysis": {
+    "head": "7e6df335374c94f65ab38fb9079e14a564bdd354",
+    "source_window_samples": [60000, 84000],
+    "decoded_window_samples": [61536, 85536],
+    "rb_support_floor": 9.54129888914455e-7,
+    "support_masks": {
+      "old_legacy_s0": ["row_000"],
+      "legacy_canonical_source": ["row_000"],
+      "new_lineage_a": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"]
+    },
+    "legacy_canonical_to_a": {"base_projective_residual": 0.004204705367193466, "rb_projective_residual": 0.9999989916995119, "joint_projective_residual": 0.8581699764976211},
+    "old_s0_to_legacy_canonical": {"base_projective_residual": 5.35738258219441e-8, "rb_projective_residual": 5.612303420963065e-8, "joint_projective_residual": 0.009870100155122049}
+  },
+  "carrier_structure": {"access_units": 129, "bytes_per_au": 3072, "payload_ids": [11, 14, 2, 1], "object_count": 16, "element_count": 2, "warp_raw3_count": 129, "payload_11_unique_count": 3},
+  "model_consequence": {
+    "source_waveform_sufficient": false,
+    "legacy_project_container_still_dominant": true,
+    "exact_hidden_cause_identified": false,
+    "legacy_s0_blocker_closed": true,
+    "further_s0_experiments_recommended": false
+  },
+  "semantic_boundary": {"semantic_binding_state": "Unresolved", "rb_rows_are_authored_objects": false, "warp_raw3": "ETSI_RESERVED", "vendor_rule_added": false, "renderer_claim": false},
+  "recommended_next_mainline": "Return to the admitted new-lineage A/B causal chain; do not repeat legacy S0 lineage archaeology."
+}
