@@ -1,6 +1,6 @@
 [package]
 name = "openjoc-oamd"
-version = "0.1.0"
+version.workspace = true
 description = "ETSI OAMD metadata parsing with explicit strict/vendor boundaries"
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-bitio = { version = "0.1.0", path = "../openjoc-bitio" }
+openjoc-bitio = { version = "0.2.0-rc.1", path = "../openjoc-bitio" }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 

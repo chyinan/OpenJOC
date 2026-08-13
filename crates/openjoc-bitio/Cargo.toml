@@ -1,6 +1,6 @@
 [package]
 name = "openjoc-bitio"
-version = "0.1.0"
+version.workspace = true
 description = "Checked MSB-first bit reader for OpenJOC codec syntax"
 edition.workspace = true
 license.workspace = true

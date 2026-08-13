@@ -779,6 +779,26 @@ OpenJOC Renderer = 独立项目/独立 crate（以后）
 
 # 6. CLI 规格
 
+### 6.1 Release/version governance
+
+The workspace package version is the single source of truth for the product
+version, including CLI `--version` output and local release-bundle names.
+Machine-readable output schemas remain independently versioned (`*.v1`) and
+must not be advanced merely because the product line changes.
+
+The 0.x release policy is:
+
+- PATCH releases are reserved for robustness, documentation, and changes with
+  no meaningful new public capability;
+- MINOR releases are used for a new public decoder, CLI, API, schema, renderer,
+  or other meaningful public contract;
+- development proceeds through a release-candidate stage before a final release;
+- the final source version, Git tag, and published release version must agree.
+
+J4R14 prepares `0.2.0-rc.1` only. It does not create tags, publish artifacts,
+upload bundles, or modify remotes; those actions require a later explicit human
+decision after release-candidate acceptance.
+
 必须提供：
 
 ```bash

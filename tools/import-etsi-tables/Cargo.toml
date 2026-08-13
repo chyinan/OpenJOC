@@ -1,6 +1,6 @@
 [package]
 name = "import-etsi-tables"
-version = "0.1.0"
+version.workspace = true
 description = "Verified importer for official ETSI TS 103 420 companion tables"
 edition.workspace = true
 license.workspace = true

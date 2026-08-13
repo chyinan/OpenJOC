@@ -1,6 +1,6 @@
 [package]
 name = "openjoc-qmf"
-version = "0.1.0"
+version.workspace = true
 description = "ETSI QMF analysis and synthesis for OpenJOC"
 edition.workspace = true
 license.workspace = true

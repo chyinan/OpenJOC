@@ -56,8 +56,13 @@ done
 )
 
 manifest="$bundle_root/RELEASE_MANIFEST.json"
+version=$(grep -E '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "$manifest" | head -n 1 | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+if [ -z "$version" ]; then
+    echo "openjoc release verification: manifest version missing" >&2
+    exit 1
+fi
 grep -Fq '"schema": "openjoc.bundle-manifest.v1"' "$manifest"
-grep -Fq '"version": "0.1.0"' "$manifest"
+grep -Fq "\"version\": \"$version\"" "$manifest"
 grep -Fq '"target": "aarch64-apple-darwin"' "$manifest"
 grep -Fq '"developer_identity_signed": false' "$manifest"
 grep -Fq '"linker_adhoc_signed": true' "$manifest"
@@ -88,7 +93,7 @@ esac
 
 help_output=$($bundle_root/bin/openjoc --help)
 case "$help_output" in
-    "OpenJOC 0.1.0"*) ;;
+    "OpenJOC $version"*) ;;
     *)
         echo "openjoc release verification: binary version/help mismatch" >&2
         exit 1
