@@ -962,3 +962,16 @@ raw 3 remain unchanged.
 
 See [J4R8_ACTIVE_COMPANION_MATCHED_INTERVENTION.md](J4R8_ACTIVE_COMPANION_MATCHED_INTERVENTION.md)
 and [its machine-readable record](J4R8_ACTIVE_COMPANION_MATCHED_INTERVENTION.json).
+
+## J4R9 — active-companion RB redistribution geometry
+
+J4R9 finds that J4R8's admitted support-preserving RB change cannot be
+explained across W1/W2/W3 by one common rank-1 residual direction or one
+common row-wise transfer at the compatible RB null. The bounded classification
+is `J4R9_ACTIVE_COMPANION_RB_REDISTRIBUTION_REQUIRES_WINDOW_DEPENDENT_TRANSFORM`.
+Base remains within its null, observable coding-state covariation is
+underdetermined, and metadata constancy plus the ETSI-reserved warp-raw3
+boundary are retained. `SemanticBindingState::Unresolved` is unchanged.
+
+See [J4R9_ACTIVE_COMPANION_RB_GEOMETRY.md](J4R9_ACTIVE_COMPANION_RB_GEOMETRY.md)
+and [its machine-readable record](J4R9_ACTIVE_COMPANION_RB_GEOMETRY.json).
