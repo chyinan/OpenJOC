@@ -899,3 +899,24 @@ reserved status of warp raw 3 remain unchanged.
 
 See [J4R4_TARGET997_CAUSAL_DECOMPOSITION.md](J4R4_TARGET997_CAUSAL_DECOMPOSITION.md)
 and [its machine-readable record](J4R4_TARGET997_CAUSAL_DECOMPOSITION.json).
+
+## J4R5 — source-matched silent-companion structural intervention
+
+J4R5 isolates the silent authored-shell question with one frozen target source,
+a cloned target-track lineage, and four fresh-process producer exports. The A
+condition contains the target Object track only; the B condition adds one
+Object-routed six-second exact-zero companion region. Immediate track bounces
+prove the target source exact in all four runs and the companion exact zero in
+both B runs.
+
+All four stream-copied raw EC-3 carriers are byte-identical. The observed OAMD
+structure, Base/RB/Joint target-997 coefficient vectors, RcLfe, and RB support
+mask `row_000..row_008` are likewise unchanged in every one of twelve
+predeclared A×B×window comparisons. J4R5 therefore closes as
+`J4R5_STRUCTURAL_EFFECT_NOT_REPRODUCED_WITH_SOURCE_MATCHED_CONTROL`. The older
+J4R4 S0→S1 association is downgraded as source/project-lineage confounded; it
+is not retained as a silent-shell causal result. `SemanticBindingState::Unresolved`
+and the ETSI-reserved status of warp raw 3 remain unchanged.
+
+See [J4R5_SILENT_COMPANION_STRUCTURAL_INTERVENTION.md](J4R5_SILENT_COMPANION_STRUCTURAL_INTERVENTION.md)
+and [its machine-readable record](J4R5_SILENT_COMPANION_STRUCTURAL_INTERVENTION.json).

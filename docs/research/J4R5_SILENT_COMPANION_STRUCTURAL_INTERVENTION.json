@@ -1,0 +1,150 @@
+{
+  "schema": "openjoc.research.j4r5.silent-companion-structural-intervention.v1",
+  "stage": "J4R5",
+  "decision": "J4R5_STRUCTURAL_EFFECT_NOT_REPRODUCED_WITH_SOURCE_MATCHED_CONTROL",
+  "scope": "source-matched target-only versus target-plus-exact-zero-authored-object-shell producer intervention",
+  "dependency": {
+    "j4r4_decision": "J4R4_COMPANION_PCM_EFFECT_NOT_OBSERVED_WITH_FIXED_TOPOLOGY",
+    "j4r4_structural_contrast_status_before_j4r5": "DESCRIPTIVE_ONLY_NON_IDENTICAL_SOURCE_LINEAGE",
+    "compatible_n1_limitation_retained": true
+  },
+  "sources": {
+    "target": {
+      "wav_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570",
+      "pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287",
+      "sample_rate_hz": 48000,
+      "bits_per_sample": 24,
+      "sample_count": 288000,
+      "duration_seconds": 6.0,
+      "frequency_hz": 997
+    },
+    "silent_companion": {
+      "wav_sha256": "65644cc35c39276b826e858126fcb0023225ae58220cf5994071bf2894ecd490",
+      "pcm_sha256": "724f1dbcb897906cf72a211434de246daaa84a62e24baf6762f94d690edad6e0",
+      "sample_rate_hz": 48000,
+      "bits_per_sample": 24,
+      "sample_count": 288000,
+      "duration_seconds": 6.0,
+      "nonzero_samples": 0,
+      "exact_digital_zero": true,
+      "generated_source_count": 1
+    }
+  },
+  "project_lineage": {
+    "canonical_project_modified": false,
+    "base": "frozen target-only APFS clone of admitted J4R1 project",
+    "clone_dag": "BASE_TARGET_ONLY -> A0,A1,B_TEMPLATE; B_TEMPLATE -> B0,B1",
+    "save_close_reopen_pass": true,
+    "logic_version": "12.3 (6674)",
+    "fresh_logic_process_per_run": true,
+    "logic_process_absent_between_runs": true,
+    "human_assist_used": true,
+    "human_assist_scope": "bounded entry of predeclared companion X automation value -100",
+    "human_judgment_required": false
+  },
+  "intervention": {
+    "A": "target Object track only",
+    "B": "same target lineage plus one Object-routed exact-zero six-second companion region",
+    "target_position": {"X": 1.0, "Y": 1.0, "Z": 0.0, "Size": 0.0},
+    "companion_position": {"X": -1.0, "Y": 1.0, "Z": 0.0, "Size": 0.0},
+    "target_pcm_exact_all_four": true,
+    "companion_pcm_exact_zero_b0_b1": true,
+    "no_plugins_fades_normalization_mute_or_solo": true
+  },
+  "runs": {
+    "A0": {"condition": "TARGET_ONLY", "mp4_sha256": "392fdeeec39a1346454f8effb4b9e751a42b83d8a8d49364d1a3e50aa7f44a82"},
+    "A1": {"condition": "TARGET_ONLY", "mp4_sha256": "b576a07a35cf03a7fe3e90a56598bc9697b9ffe39a4b1ddb38f7413493eeda4e"},
+    "B0": {"condition": "TARGET_PLUS_SILENT_COMPANION", "mp4_sha256": "8390c57efc0bf274e0a211b7b388c93d20ae25f2bf6e783c7a3b097f520023d1"},
+    "B1": {"condition": "TARGET_PLUS_SILENT_COMPANION", "mp4_sha256": "106c28be254718481d1a81d83a96a1e01705bf25ada02fddb2db28652ce1182c"}
+  },
+  "producer": {
+    "settings": {"format": "Dolby Digital Plus with Dolby Atmos", "profile": "Music", "bitrate_kbps": 768, "scope": "Project", "adm_companion": false},
+    "export_count": 4,
+    "original_output_attestations": 4,
+    "unique_nonces": 4,
+    "fifth_export": false,
+    "raw_ec3_bytes_each": 771072,
+    "raw_ec3_sha256_all_four": "94ca909823a9480881add1a9ef20b1c522f7078f8e47032b110ebeadffcfb19a",
+    "a0_a1_byte_identical": true,
+    "b0_b1_byte_identical": true,
+    "a_b_byte_identical": true
+  },
+  "carrier_structure": {
+    "access_units": 251,
+    "bytes_per_access_unit": 3072,
+    "payload_ids": [11, 14, 2, 1],
+    "payload_11_bits": 536,
+    "payload_11_unique_count_per_carrier": 1,
+    "payload_11_equal_all_four": true,
+    "parser_observed_object_count": 16,
+    "element_count": 2,
+    "element_ids": [1, 2],
+    "warp_raw": 3,
+    "warp_count": 251,
+    "strict_result": "ReservedWarpMode { raw: 3 }"
+  },
+  "metadata": {
+    "classification": "CARRIER_METADATA_UNCHANGED_DESPITE_AUTHORING_INTERVENTION",
+    "structural_signatures_equal_all_four": true,
+    "scope_limit": "parser-observed carrier structure only; no authored-object-count, slot, hidden-state, or vendor-semantic inference"
+  },
+  "analysis": {
+    "head": "29b24f39e33a498d3c48a93f9558f201e15cf96d",
+    "profile": "DOLBY_VENDOR_COMPAT",
+    "trim_configuration_count": 1,
+    "base_policy": "CurrentDefault",
+    "precision": "reference-f64",
+    "alignment_samples": 1536,
+    "windows_source_samples": {"W1": [60000, 84000], "W2": [156000, 180000], "W3": [204000, 228000]},
+    "component_order": {"Base": ["FL", "FR", "FC", "SL", "SR"], "ReconstructionBasis": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008", "row_009", "row_010", "row_011", "row_012", "row_013", "row_014"], "RcLfe": "separate"},
+    "support_floor": 9.54129888914455e-7,
+    "envelopes": {
+      "Base": {"E_A": 0.0, "E_B": 0.0, "E_STRUCTURAL": 3.7834930931104663e-6},
+      "ReconstructionBasis": {"E_A": 0.0, "E_B": 0.0, "E_STRUCTURAL": 2.3853247222861374e-7},
+      "Joint": {"E_A": 0.0, "E_B": 0.0, "E_STRUCTURAL": 3.7834930931104663e-6}
+    },
+    "cross_condition_observation_count": 12,
+    "cross_condition_summary": {
+      "base_projective_residual_min_max": [0.0, 0.0],
+      "rb_projective_residual_min_max": [0.0, 0.0],
+      "joint_projective_residual_min_max": [0.0, 0.0],
+      "alpha_magnitude": 1.0,
+      "relative_magnitude_residual": 0.0,
+      "relative_phase_residual": "numerical zero",
+      "complex_coherence": "numerical unity",
+      "rclfe_absolute_complex_delta": 0.0,
+      "all_rb_above_E_STRUCTURAL": false
+    },
+    "rb_support_masks": {
+      "all_runs_all_windows": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+      "a_consistent": true,
+      "b_consistent": true,
+      "gained_rows": [],
+      "lost_rows": []
+    },
+    "deterministic_analysis_passes": 2,
+    "analysis_outputs_byte_identical": true
+  },
+  "j4r4_consequence": {
+    "prior_source_matched_causal_structural_claim_retained": false,
+    "downgrade": "older S0-to-S1 association is source/project-lineage confounded",
+    "next_question": "revisit the older S0 lineage difference before adding a new semantic model or fixture"
+  },
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "rb_rows": "coordinate labels, not authored objects",
+    "rclfe_separate": true,
+    "warp_raw3_etsi_reserved": true,
+    "vendor_rule_added": false,
+    "renderer_claim": false,
+    "objectscene_audio_binding": false
+  },
+  "storage": {
+    "large_derived_artifact_generation_frozen": true,
+    "temporary_reference_f64_retained_bytes": 0,
+    "private_producer_media_only": true,
+    "public_media_committed": false
+  },
+  "final_classification": "J4R5_STRUCTURAL_EFFECT_NOT_REPRODUCED_WITH_SOURCE_MATCHED_CONTROL",
+  "recommended_next_milestone": "revisit the prior S0 source/project-lineage difference using existing evidence before new fixture or semantic modeling"
+}
