@@ -920,3 +920,22 @@ and the ETSI-reserved status of warp raw 3 remain unchanged.
 
 See [J4R5_SILENT_COMPANION_STRUCTURAL_INTERVENTION.md](J4R5_SILENT_COMPANION_STRUCTURAL_INTERVENTION.md)
 and [its machine-readable record](J4R5_SILENT_COMPANION_STRUCTURAL_INTERVENTION.json).
+
+## J4R6 — legacy S0 lineage differential
+
+J4R6 reproduced the hidden baseline boundary at one decoder HEAD and one
+predeclared source-domain steady window: legacy static FR supports only
+`row_000`, while the source-matched J4R5 target-only carrier supports
+`row_000..row_008`. The RB projective residual is approximately `0.999999`.
+
+The endpoints differ in sample-exact source PCM, amplitude/envelope, source and
+export duration, project lineage, track/region identity, and payload-state
+behavior. Producer format/profile/bitrate, FR position, and recovered active
+Object population match. Existing bridges eliminate exact-zero companion
+presence, companion signal activity, and FR position, but no frozen carrier
+separates source PCM from project lineage. J4R6 therefore closes as
+`J4R6_LEGACY_S0_DIFFERENCE_NARROWED_TO_MULTIPLE_BOUNDED_AXES` and recommends a
+single source-replacement intervention inside the legacy project lineage.
+
+See [J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.md](J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.md)
+and [its machine-readable record](J4R6_LEGACY_S0_LINEAGE_DIFFERENTIAL.json).

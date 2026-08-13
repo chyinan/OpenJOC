@@ -1,0 +1,65 @@
+{
+  "schema": "openjoc.research.j4r6.legacy-s0-lineage-differential.v1",
+  "stage": "J4R6",
+  "decision": "J4R6_LEGACY_S0_DIFFERENCE_NARROWED_TO_MULTIPLE_BOUNDED_AXES",
+  "j4r5_consequence": {
+    "raw_ec3_all_four_byte_identical": true,
+    "eliminated_axis": "EXACT_ZERO_SILENT_COMPANION_PRESENCE",
+    "j4r4_s0_s1_status": "SOURCE_OR_PROJECT_LINEAGE_CONFOUNDED"
+  },
+  "endpoints": {
+    "S0_STATIC_FR": {"raw_ec3_sha256": "1d349872f81d2d477ff18360a4782700fb88a823473c51bc7f257f426f20ddb7", "au_count": 129},
+    "A_TARGET_ONLY": {"raw_ec3_sha256": "94ca909823a9480881add1a9ef20b1c522f7078f8e47032b110ebeadffcfb19a", "au_count": 251}
+  },
+  "analysis": {
+    "head": "29b24f39e33a498d3c48a93f9558f201e15cf96d",
+    "policy": "DOLBY_VENDOR_COMPAT / trim=1 / CurrentDefault / reference-f64",
+    "common_source_window": [60000, 84000],
+    "common_decoded_window": [61536, 85536],
+    "two_pass_byte_identical": true,
+    "qualitative_boundary_reproduced": true
+  },
+  "phenotype": {
+    "S0_support": ["row_000"],
+    "A_support": ["row_000", "row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "gained": ["row_001", "row_002", "row_003", "row_004", "row_005", "row_006", "row_007", "row_008"],
+    "base_projective_residual": 0.0042046975543231615,
+    "rb_projective_residual": 0.9999989917408474,
+    "joint_projective_residual": 0.8611192789020674,
+    "rclfe_absolute_delta": 0.0
+  },
+  "sources": {
+    "S0": {"wav_sha256": "8664d74090fa5072c88eb0a231f80a232cbfb31a65caab418acba6067839fc96", "pcm_sha256": "37ef436c0898d8badef429ecb5f48e716ff6cfe3dd6fc86f58d8a85bcef4c536", "sample_count": 193536, "duration_seconds": 4.032, "peak": 0.10800004005432129, "rms": 0.05959476306064991, "fitted_997_amplitude": 0.07761870560144395, "dc": 0.000006331042164847964},
+    "A": {"wav_sha256": "611587d6369b6bbd58afdfe06b4d307a5eed9fd31eda5ef84abd56a341a51570", "pcm_sha256": "502431d4b8d16c62e67a27f7ab9a4655c9e2c16e6183ae1b68a4fed213fb1287", "sample_count": 288000, "duration_seconds": 6.0, "peak": 0.20000004768371582, "rms": 0.14142135661651653, "fitted_997_amplitude": 0.20000000053627373, "dc": 0.0}
+  },
+  "difference_vector": {
+    "SOURCE_PCM": "UNMATCHED",
+    "SOURCE_DURATION": "UNMATCHED",
+    "SOURCE_ENVELOPE": "UNMATCHED",
+    "PROJECT_LINEAGE": "UNMATCHED",
+    "TARGET_TRACK_IDENTITY": "UNMATCHED",
+    "AUTHORING_OBJECT_POPULATION": "MATCHED_WITHIN_RECOVERED_ACTIVE_TOPOLOGY",
+    "EXPORT_RANGE": "UNMATCHED",
+    "PRODUCER_SETTINGS": "MATCHED",
+    "ENCODED_METADATA": "UNMATCHED",
+    "OTHER_RECOVERABLE_DIFFERENCE": "UNKNOWN"
+  },
+  "carrier_structure": {
+    "common": ["3072 bytes/AU", "payload IDs 11,14,2,1", "object_count 16", "element_count 2", "element IDs 1,2", "warp raw3 throughout", "15 RB rows"],
+    "S0_payload11_unique_count": 3,
+    "A_payload11_unique_count": 1,
+    "duration_axis_unmatched": true
+  },
+  "within_family": {"S0_pair_raw_identical": true, "A_pair_raw_identical": true, "phenotypes_stable": true},
+  "bridge_search": {
+    "membership_frozen_before_results": true,
+    "single_axis_bridge_found": false,
+    "j4r5_silent_shell": "BRIDGE_DOES_NOT_SUPPORT_AXIS",
+    "j4r2_companion_activity": "BRIDGE_DOES_NOT_SUPPORT_AXIS",
+    "legacy_position_atlas": "BRIDGE_DOES_NOT_SUPPORT_AXIS",
+    "remaining_axes": ["SOURCE_PCM including amplitude/envelope/duration", "PROJECT_LINEAGE / TARGET_TRACK_IDENTITY / EXPORT_RANGE bundle"]
+  },
+  "recommended_minimum_j4r7": "Clone legacy S0 and replace only its target region source with the matching-duration prefix of canonical TARGET_997.wav; preserve legacy track, FR automation, region/project/export range and settings; source-exact gate; two repeats.",
+  "semantic_boundary": {"semantic_binding_state": "Unresolved", "row_object_identity": "INADMISSIBLE", "warp_raw3": "ETSI Reserved", "new_media": false, "logic_launch": false, "producer_export": false, "renderer": false},
+  "storage": {"temporary_reference_f64_retained_bytes": 0, "large_derived_artifacts_retained": false}
+}
