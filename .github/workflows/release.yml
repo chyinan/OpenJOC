@@ -76,6 +76,28 @@ jobs:
           printf 'Cargo.lock sha256='
           shasum -a 256 Cargo.lock
 
+      - name: Validate the matching changelog entry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ["RELEASE_TAG"]
+          version = tag.removeprefix("v")
+          heading = re.compile(
+              rf"^##\s+\[{re.escape(version)}\](?:\s|$)"
+          )
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          if not any(heading.match(line) for line in lines):
+              raise SystemExit(
+                  f"CHANGELOG.md has no section for release tag {tag!r}"
+              )
+          print(f"validated CHANGELOG.md entry for {tag}")
+          PY
+
       - name: Check the committed tree is clean
         run: |
           git diff --quiet
@@ -202,11 +224,46 @@ jobs:
         run: |
           set -euo pipefail
           notes="${RUNNER_TEMP}/openjoc-release-notes.md"
-          cat > "$notes" <<'EOF'
-          OpenJOC release artifacts produced from this exact version tag by the GitHub Actions release workflow.
+          python3 - "$RELEASE_TAG" CHANGELOG.md "$notes" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
 
-          The README, CAPABILITIES, and KNOWN_LIMITATIONS documents define the supported scope. The binary target is the currently admitted macOS arm64 target; CI success on Linux or Windows is not release admission for those platforms.
-          EOF
+          tag, changelog_path, notes_path = sys.argv[1:]
+          version = tag.removeprefix("v")
+          heading = re.compile(
+              rf"^##\s+\[{re.escape(version)}\](?:\s|$)"
+          )
+          next_heading = re.compile(r"^##\s+\[")
+          lines = Path(changelog_path).read_text(encoding="utf-8").splitlines()
+          start = next(
+              (index for index, line in enumerate(lines) if heading.match(line)),
+              None,
+          )
+          if start is None:
+              raise SystemExit(
+                  f"CHANGELOG.md has no section for release tag {tag!r}"
+              )
+          end = next(
+              (
+                  index
+                  for index in range(start + 1, len(lines))
+                  if next_heading.match(lines[index])
+              ),
+              len(lines),
+          )
+          section = lines[start:end]
+          if len(section) < 2:
+              raise SystemExit(f"CHANGELOG.md section for {tag!r} is empty")
+          Path(notes_path).write_text(
+              "\n".join(section).rstrip()
+              + "\n\n## Verification\n\n"
+              + "- GitHub Actions verified the exact version tag, source tree, and release artifact checksums.\n"
+              + "- The published binary target is the currently admitted macOS arm64 workflow.\n"
+              + "- CI success on Linux or Windows is verification evidence, not release admission for those platforms.\n",
+              encoding="utf-8",
+          )
+          PY
           asset_dir="${RUNNER_TEMP}/release-assets"
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
