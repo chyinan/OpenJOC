@@ -115,7 +115,19 @@ direction, their complete public-order gain vectors must agree or rendering
 fails with an ambiguity error. Partial layouts fail explicitly for unsupported
 directions, and LFE/bass management remains outside this renderer contract.
 The 3D renderer accepts only explicit sources and caller-owned planar `f64`
-outputs; it has no trajectory, JOC, ObjectScene, or authored-object bridge.
+outputs. `SpatialState3d`, `TrajectorySegment3d`, `SourceTrajectory3d`, and
+`TrajectorySourceBlock3d` add an additive sample-accurate dynamic path over
+that same immutable topology. Each segment uses shortest great-circle SLERP
+between canonical unit directions, a stable small-angle branch, linear gain
+interpolation, and explicit rejection of antipodal ambiguity. Callers supply
+intermediate keyframes for longer routes; no path inference is performed.
+`LayoutRenderer3d::render_trajectory_block` evaluates absolute sample indices
+and preserves static output equivalence, endpoint/keyframe continuity, and
+byte-identical block-partition invariance. It preflights every sample before
+clearing caller-owned planar `f64` outputs and performs no per-sample heap
+allocation. Distance, Doppler, listener orientation, room effects, LFE,
+HRTF/binaural rendering, JOC, ObjectScene, and authored-object bridges remain
+outside the contract.
 
 ### Capture and streaming
 

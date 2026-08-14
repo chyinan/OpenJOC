@@ -20,9 +20,12 @@ claiming capabilities that the current evidence does not support.
   hull, and best-triplet inference are deliberately absent. Both renderers
   reject uncovered directions and have no LFE/bass-management, JOC semantic
   bridge, binaural renderer, room model, or Dolby renderer fidelity
-  implementation. Its optional trajectories are sample-accurate
-  piecewise-linear azimuth/gain paths on an absolute sample timeline; they do
-  not model radius, distance, Doppler, elevation, or acceleration smoothing.
+  implementation. Its trajectories are sample-accurate absolute-timeline
+  paths: 2D uses explicit azimuth policy, while 3D uses piecewise-shortest
+  great-circle segments over caller-declared triplets with linear gain. 3D
+  antipodal routes require explicit intermediate keyframes. Neither path
+  models radius, distance, Doppler, listener orientation, room effects,
+  elevation smoothing, or acceleration physics.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
   window-dependent RB redistribution is admitted, but common gauge,
   row-transfer and rank-1 models are rejected. No implementation-ready

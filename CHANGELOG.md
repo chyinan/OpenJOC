@@ -12,6 +12,9 @@
 - Explicit 3D speaker order and triplet topology with checked 3×3 VBAP gains,
   deterministic exact-speaker hits, ambiguity rejection, and bounded planar
   block rendering. Automatic triangulation is intentionally not included.
+- Sample-accurate 3D source trajectories using shortest great-circle segments,
+  linear gain ramps, explicit intermediate keyframes around antipodes, and
+  byte-identical block-partition-invariant triplet rendering.
 
 ### Scope
 
@@ -19,6 +22,8 @@
   ReconstructionBasis rows are not converted into authored-object sources.
 - The 2D renderer ignores elevation, excludes LFE/bass management, rejects
   uncovered angular gaps, and does not provide a JOC semantic bridge.
+- The 3D trajectory path remains directional and explicit-topology only: it has
+  no distance, Doppler, listener orientation, room, LFE, HRTF, or JOC bridge.
 
 ## [0.2.0] — 2026-08-13
 

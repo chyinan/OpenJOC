@@ -11,9 +11,10 @@
 //! checked public VBAP-style pair mathematics. J5R3 adds sample-accurate,
 //! absolute-timeline azimuth and gain trajectories on top of both renderers.
 //! J5R4 adds explicit caller-declared three-dimensional speaker topology and
-//! checked 3x3 VBAP triplet gains. Elevation, distance, room acoustics,
-//! occlusion, HRTF, and JOC semantic binding remain explicit non-features of
-//! this foundation.
+//! checked 3x3 VBAP triplet gains. J5R5 adds sample-accurate three-dimensional
+//! great-circle trajectories over that immutable topology. Distance, room
+//! acoustics, occlusion, HRTF, and JOC semantic binding remain explicit
+//! non-features of this foundation.
 
 use std::fmt;
 
@@ -407,6 +408,291 @@ pub struct TrajectorySourceBlock<'a> {
     samples: &'a [f64],
     trajectory: &'a SourceTrajectory2d,
     block_start_sample: u64,
+}
+
+/// A canonical unit-direction state for a three-dimensional source trajectory.
+///
+/// The input Cartesian vector is normalized at construction. Its magnitude is
+/// never interpreted as distance or attenuation; only the explicit linear
+/// gain is rendered.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpatialState3d {
+    direction: [f64; 3],
+    gain: f64,
+}
+
+impl SpatialState3d {
+    /// Creates a finite, nonzero directional state with a linear gain.
+    pub fn new(position: CartesianPosition, gain: f64) -> Result<Self, RenderError> {
+        let direction = normalized_3d(position)?;
+        validate_gain(gain)?;
+        Ok(Self { direction, gain })
+    }
+
+    /// Returns the canonical unit direction as a Cartesian position.
+    #[must_use]
+    pub const fn position(self) -> CartesianPosition {
+        CartesianPosition::new(self.direction[0], self.direction[1], self.direction[2])
+    }
+
+    /// Returns the canonical unit direction components in x/y/z order.
+    #[must_use]
+    pub const fn direction(self) -> [f64; 3] {
+        self.direction
+    }
+
+    /// Returns the finite linear source gain.
+    #[must_use]
+    pub const fn gain(self) -> f64 {
+        self.gain
+    }
+}
+
+/// One inclusive shortest-great-circle segment on an absolute sample timeline.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrajectorySegment3d {
+    start_sample: u64,
+    end_sample: u64,
+    start_state: SpatialState3d,
+    end_state: SpatialState3d,
+}
+
+impl TrajectorySegment3d {
+    /// Creates a segment with inclusive endpoints and shortest-arc semantics.
+    pub fn new(
+        start_sample: u64,
+        end_sample: u64,
+        start_state: SpatialState3d,
+        end_state: SpatialState3d,
+    ) -> Result<Self, RenderError> {
+        if end_sample <= start_sample {
+            return Err(RenderError::InvalidTrajectorySegment {
+                start_sample,
+                end_sample,
+            });
+        }
+        let span = end_sample - start_sample;
+        if span > MAX_EXACT_INTERPOLATION_SPAN {
+            return Err(RenderError::TrajectorySpanTooLarge { span });
+        }
+        // Validate the path policy at construction, before any caller output
+        // can be touched. Exact endpoints are handled separately in evaluate.
+        let _ = great_circle_direction(start_state.direction, end_state.direction, 0.5)?;
+        Ok(Self {
+            start_sample,
+            end_sample,
+            start_state,
+            end_state,
+        })
+    }
+
+    /// Returns the inclusive first sample index.
+    #[must_use]
+    pub const fn start_sample(self) -> u64 {
+        self.start_sample
+    }
+
+    /// Returns the inclusive final sample index.
+    #[must_use]
+    pub const fn end_sample(self) -> u64 {
+        self.end_sample
+    }
+
+    /// Returns the exact canonical start state.
+    #[must_use]
+    pub const fn start_state(self) -> SpatialState3d {
+        self.start_state
+    }
+
+    /// Returns the exact canonical end state.
+    #[must_use]
+    pub const fn end_state(self) -> SpatialState3d {
+        self.end_state
+    }
+
+    fn evaluate(self, sample: u64) -> Result<SpatialState3d, RenderError> {
+        if sample < self.start_sample || sample > self.end_sample {
+            return Err(RenderError::TrajectorySampleOutOfRange { sample });
+        }
+        if sample == self.start_sample {
+            return Ok(self.start_state);
+        }
+        if sample == self.end_sample {
+            return Ok(self.end_state);
+        }
+        let span = self.end_sample - self.start_sample;
+        let offset = sample - self.start_sample;
+        let t = offset as f64 / span as f64;
+        let direction =
+            great_circle_direction(self.start_state.direction, self.end_state.direction, t)?;
+        let gain = self
+            .start_state
+            .gain
+            .mul_add(1.0 - t, self.end_state.gain * t);
+        SpatialState3d::from_direction(direction, gain)
+    }
+}
+
+impl SpatialState3d {
+    fn from_direction(direction: [f64; 3], gain: f64) -> Result<Self, RenderError> {
+        if direction.iter().any(|value| !value.is_finite()) {
+            return Err(RenderError::Invalid3dTrajectoryState);
+        }
+        validate_gain(gain)?;
+        let norm = direction
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt();
+        if !norm.is_finite() || norm <= 0.0 {
+            return Err(RenderError::Invalid3dTrajectoryState);
+        }
+        Ok(Self {
+            direction: [
+                direction[0] / norm,
+                direction[1] / norm,
+                direction[2] / norm,
+            ],
+            gain,
+        })
+    }
+}
+
+/// A contiguous, validated piecewise-shortest-great-circle source trajectory.
+#[derive(Clone, Debug)]
+pub struct SourceTrajectory3d {
+    segments: Vec<TrajectorySegment3d>,
+}
+
+impl SourceTrajectory3d {
+    /// Creates a non-empty trajectory with contiguous, continuous keyframes.
+    pub fn new(segments: Vec<TrajectorySegment3d>) -> Result<Self, RenderError> {
+        segments
+            .first()
+            .copied()
+            .ok_or(RenderError::EmptyTrajectory)?;
+        for pair in segments.windows(2) {
+            let previous = pair[0];
+            let next = pair[1];
+            if next.start_sample() != previous.end_sample() {
+                return Err(RenderError::NonContiguousTrajectory {
+                    previous_end: previous.end_sample(),
+                    next_start: next.start_sample(),
+                });
+            }
+            if !trajectory_states_match_3d(previous.end_state(), next.start_state()) {
+                return Err(RenderError::Discontinuous3dTrajectory {
+                    boundary: next.start_sample(),
+                });
+            }
+        }
+        Ok(Self { segments })
+    }
+
+    /// Returns the inclusive trajectory domain.
+    #[must_use]
+    pub fn domain(&self) -> (u64, u64) {
+        (
+            self.segments[0].start_sample(),
+            self.segments[self.segments.len() - 1].end_sample(),
+        )
+    }
+
+    /// Returns the validated segments.
+    #[must_use]
+    pub fn segments(&self) -> &[TrajectorySegment3d] {
+        &self.segments
+    }
+
+    /// Evaluates one absolute sample index.
+    pub fn evaluate(&self, sample: u64) -> Result<SpatialState3d, RenderError> {
+        let (start, end) = self.domain();
+        if sample < start || sample > end {
+            return Err(RenderError::TrajectorySampleOutOfRange { sample });
+        }
+        let index = self
+            .segments
+            .partition_point(|segment| segment.end_sample() < sample);
+        self.segments[index.min(self.segments.len() - 1)].evaluate(sample)
+    }
+
+    fn validate_block(&self, start: u64, length: usize) -> Result<(), RenderError> {
+        let end_exclusive = start
+            .checked_add(length as u64)
+            .ok_or(RenderError::SampleIndexOverflow)?;
+        let (domain_start, domain_end) = self.domain();
+        if length > 0 && (start < domain_start || end_exclusive - 1 > domain_end) {
+            return Err(RenderError::TrajectoryBlockOutOfRange {
+                start,
+                length,
+                domain_start,
+                domain_end,
+            });
+        }
+        if length == 0 && (start < domain_start || start > domain_end.saturating_add(1)) {
+            return Err(RenderError::TrajectoryBlockOutOfRange {
+                start,
+                length,
+                domain_start,
+                domain_end,
+            });
+        }
+        Ok(())
+    }
+}
+
+/// A borrowed mono PCM block bound to a 3D trajectory and absolute offset.
+#[derive(Clone, Copy, Debug)]
+pub struct TrajectorySourceBlock3d<'a> {
+    id: SourceId,
+    samples: &'a [f64],
+    trajectory: &'a SourceTrajectory3d,
+    block_start_sample: u64,
+}
+
+impl<'a> TrajectorySourceBlock3d<'a> {
+    /// Creates a block after validating its samples and absolute range.
+    pub fn new(
+        id: SourceId,
+        samples: &'a [f64],
+        trajectory: &'a SourceTrajectory3d,
+        block_start_sample: u64,
+    ) -> Result<Self, RenderError> {
+        trajectory.validate_block(block_start_sample, samples.len())?;
+        if let Some(sample_index) = samples.iter().position(|sample| !sample.is_finite()) {
+            return Err(RenderError::NonFiniteSourceSample { id, sample_index });
+        }
+        Ok(Self {
+            id,
+            samples,
+            trajectory,
+            block_start_sample,
+        })
+    }
+
+    /// Returns the source identity.
+    #[must_use]
+    pub const fn id(self) -> SourceId {
+        self.id
+    }
+
+    /// Returns the borrowed source samples.
+    #[must_use]
+    pub const fn samples(self) -> &'a [f64] {
+        self.samples
+    }
+
+    /// Returns the referenced 3D trajectory.
+    #[must_use]
+    pub const fn trajectory(self) -> &'a SourceTrajectory3d {
+        self.trajectory
+    }
+
+    /// Returns the absolute index of the first sample in this block.
+    #[must_use]
+    pub const fn block_start_sample(self) -> u64 {
+        self.block_start_sample
+    }
 }
 
 impl<'a> TrajectorySourceBlock<'a> {
@@ -1315,6 +1601,60 @@ impl LayoutRenderer3d {
         }
         Ok(())
     }
+    /// Renders sample-accurate 3D trajectory blocks into caller-owned outputs.
+    ///
+    /// Every sample is evaluated from its absolute trajectory index using the
+    /// immutable explicit triplet topology. A complete preflight is performed
+    /// before outputs are cleared, so unsupported directions, ambiguous
+    /// overlaps, invalid timelines, and duplicate source IDs leave caller
+    /// buffers unchanged. Numeric overflow during accumulation clears outputs
+    /// and returns an error.
+    pub fn render_trajectory_block(
+        &self,
+        sources: &[TrajectorySourceBlock3d<'_>],
+        outputs: &mut [&mut [f64]],
+    ) -> Result<(), RenderError> {
+        validate_speaker_outputs(self.layout.speaker_count(), outputs)?;
+        let block_length = outputs.first().map_or(0, |output| output.len());
+        validate_trajectory_sources_3d(sources, block_length)?;
+        for source in sources {
+            for offset in 0..block_length {
+                let sample = source
+                    .block_start_sample
+                    .checked_add(offset as u64)
+                    .ok_or(RenderError::SampleIndexOverflow)?;
+                let state = source.trajectory.evaluate(sample)?;
+                self.layout.gains(state.position())?;
+                validate_gain(state.gain())?;
+            }
+        }
+
+        for output in outputs.iter_mut() {
+            output.fill(0.0);
+        }
+        let mut full_gains = vec![0.0; self.layout.speaker_count()];
+        for source in sources {
+            for (offset, &sample_value) in source.samples.iter().enumerate() {
+                let sample = source
+                    .block_start_sample
+                    .checked_add(offset as u64)
+                    .ok_or(RenderError::SampleIndexOverflow)?;
+                let state = source.trajectory.evaluate(sample)?;
+                self.layout.gains_into(state.position(), &mut full_gains)?;
+                for (speaker_index, output) in outputs.iter_mut().enumerate() {
+                    output[offset] += sample_value * state.gain() * full_gains[speaker_index];
+                    if !output[offset].is_finite() {
+                        clear_outputs(outputs);
+                        return Err(RenderError::NonFiniteOutput {
+                            channel: OutputChannel::Speaker(speaker_index),
+                            sample_index: offset,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn normalized_3d(position: CartesianPosition) -> Result<[f64; 3], RenderError> {
@@ -1330,6 +1670,68 @@ fn normalized_3d(position: CartesianPosition) -> Result<[f64; 3], RenderError> {
         return Err(RenderError::Undefined3dSpeakerDirection);
     }
     Ok([position.x / norm, position.y / norm, position.z / norm])
+}
+
+fn normalize_direction_3d(direction: [f64; 3]) -> Result<[f64; 3], RenderError> {
+    let norm = direction
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    if !norm.is_finite() || norm <= 0.0 {
+        return Err(RenderError::Invalid3dTrajectoryState);
+    }
+    Ok([
+        direction[0] / norm,
+        direction[1] / norm,
+        direction[2] / norm,
+    ])
+}
+
+fn great_circle_direction(start: [f64; 3], end: [f64; 3], t: f64) -> Result<[f64; 3], RenderError> {
+    if !t.is_finite() || !(0.0..=1.0).contains(&t) {
+        return Err(RenderError::Invalid3dTrajectoryState);
+    }
+    let dot = start
+        .iter()
+        .zip(end)
+        .map(|(left, right)| left * right)
+        .sum::<f64>()
+        .clamp(-1.0, 1.0);
+    let omega = dot.acos();
+    if !omega.is_finite() {
+        return Err(RenderError::Invalid3dTrajectoryState);
+    }
+    if std::f64::consts::PI - omega <= ANTIPODAL_3D_TOLERANCE {
+        return Err(RenderError::AmbiguousAntipodal3dPath);
+    }
+    if omega <= SMALL_ANGLE_3D_TOLERANCE {
+        return normalize_direction_3d([
+            start[0].mul_add(1.0 - t, end[0] * t),
+            start[1].mul_add(1.0 - t, end[1] * t),
+            start[2].mul_add(1.0 - t, end[2] * t),
+        ]);
+    }
+    let sin_omega = omega.sin();
+    if !sin_omega.is_finite() || sin_omega.abs() <= f64::MIN_POSITIVE {
+        return Err(RenderError::Invalid3dTrajectoryState);
+    }
+    let first_weight = ((1.0 - t) * omega).sin() / sin_omega;
+    let second_weight = (t * omega).sin() / sin_omega;
+    normalize_direction_3d([
+        start[0].mul_add(first_weight, end[0] * second_weight),
+        start[1].mul_add(first_weight, end[1] * second_weight),
+        start[2].mul_add(first_weight, end[2] * second_weight),
+    ])
+}
+
+fn trajectory_states_match_3d(first: SpatialState3d, second: SpatialState3d) -> bool {
+    first
+        .direction
+        .iter()
+        .zip(second.direction)
+        .all(|(left, right)| (left - right).abs() <= TRAJECTORY_3D_STATE_TOLERANCE)
+        && (first.gain - second.gain).abs() <= TRAJECTORY_3D_STATE_TOLERANCE
 }
 
 fn direction_distance_squared(first: [f64; 3], second: [f64; 3]) -> f64 {
@@ -1381,6 +1783,9 @@ const DETERMINANT_TOLERANCE: f64 = 1.0e-12;
 const GAIN_TOLERANCE: f64 = 1.0e-12;
 const DIRECTION_TOLERANCE: f64 = 1.0e-12;
 const AMBIGUITY_TOLERANCE: f64 = 1.0e-10;
+const SMALL_ANGLE_3D_TOLERANCE: f64 = 1.0e-8;
+const ANTIPODAL_3D_TOLERANCE: f64 = 1.0e-10;
+const TRAJECTORY_3D_STATE_TOLERANCE: f64 = 1.0e-12;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 const MAX_EXACT_INTERPOLATION_SPAN: u64 = 1_u64 << 53;
 
@@ -1426,6 +1831,37 @@ fn validate_trajectory_sources(
                 id: source.id,
                 expected: block_length,
                 actual: source.samples.len(),
+            });
+        }
+        source
+            .trajectory
+            .validate_block(source.block_start_sample, block_length)?;
+    }
+    Ok(())
+}
+
+fn validate_trajectory_sources_3d(
+    sources: &[TrajectorySourceBlock3d<'_>],
+    block_length: usize,
+) -> Result<(), RenderError> {
+    for (index, source) in sources.iter().enumerate() {
+        if sources[index + 1..]
+            .iter()
+            .any(|other| other.id == source.id)
+        {
+            return Err(RenderError::DuplicateSourceId { id: source.id });
+        }
+        if source.samples.len() != block_length {
+            return Err(RenderError::SourceBlockLengthMismatch {
+                id: source.id,
+                expected: block_length,
+                actual: source.samples.len(),
+            });
+        }
+        if let Some(sample_index) = source.samples.iter().position(|sample| !sample.is_finite()) {
+            return Err(RenderError::NonFiniteSourceSample {
+                id: source.id,
+                sample_index,
             });
         }
         source
@@ -1654,6 +2090,7 @@ pub enum RenderError {
     },
     InvalidAzimuthPath,
     AmbiguousAntipodalPath,
+    AmbiguousAntipodal3dPath,
     NonContiguousTrajectory {
         previous_end: u64,
         next_start: u64,
@@ -1661,6 +2098,10 @@ pub enum RenderError {
     DiscontinuousTrajectory {
         boundary: u64,
     },
+    Discontinuous3dTrajectory {
+        boundary: u64,
+    },
+    Invalid3dTrajectoryState,
     TrajectorySampleOutOfRange {
         sample: u64,
     },
@@ -1821,6 +2262,8 @@ impl fmt::Display for RenderError {
             Self::AmbiguousAntipodalPath => {
                 formatter.write_str("shortest azimuth path is ambiguous for antipodal endpoints")
             }
+            Self::AmbiguousAntipodal3dPath => formatter
+                .write_str("shortest 3D great-circle path is ambiguous for antipodal endpoints"),
             Self::NonContiguousTrajectory {
                 previous_end,
                 next_start,
@@ -1832,6 +2275,13 @@ impl fmt::Display for RenderError {
                 formatter,
                 "trajectory keyframe state is discontinuous at sample {boundary}"
             ),
+            Self::Discontinuous3dTrajectory { boundary } => write!(
+                formatter,
+                "3D trajectory keyframe state is discontinuous at sample {boundary}"
+            ),
+            Self::Invalid3dTrajectoryState => {
+                formatter.write_str("3D trajectory state is invalid or non-finite")
+            }
             Self::TrajectorySampleOutOfRange { sample } => {
                 write!(
                     formatter,
@@ -2898,6 +3348,310 @@ mod tests {
             .write_full_gains(&mut result)
             .unwrap();
         result
+    }
+
+    fn state3(x: f64, y: f64, z: f64, gain: f64) -> SpatialState3d {
+        SpatialState3d::new(CartesianPosition::new(x, y, z), gain).unwrap()
+    }
+
+    fn segment3(
+        start: u64,
+        end: u64,
+        start_state: SpatialState3d,
+        end_state: SpatialState3d,
+    ) -> TrajectorySegment3d {
+        TrajectorySegment3d::new(start, end, start_state, end_state).unwrap()
+    }
+
+    fn render_trajectory3(
+        renderer: &LayoutRenderer3d,
+        sources: &[TrajectorySourceBlock3d<'_>],
+        length: usize,
+    ) -> Vec<Vec<f64>> {
+        let mut planes = vec![vec![0.0; length]; renderer.layout().speaker_count()];
+        let mut outputs: Vec<&mut [f64]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+        renderer
+            .render_trajectory_block(sources, &mut outputs)
+            .unwrap();
+        planes
+    }
+
+    fn oracle_normalize3(vector: [f64; 3]) -> [f64; 3] {
+        let norm = (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]).sqrt();
+        [vector[0] / norm, vector[1] / norm, vector[2] / norm]
+    }
+
+    fn oracle_slerp3(start: [f64; 3], end: [f64; 3], t: f64) -> [f64; 3] {
+        let dot = (start[0] * end[0] + start[1] * end[1] + start[2] * end[2]).clamp(-1.0, 1.0);
+        let omega = dot.acos();
+        if omega <= SMALL_ANGLE_3D_TOLERANCE {
+            return oracle_normalize3([
+                (1.0 - t) * start[0] + t * end[0],
+                (1.0 - t) * start[1] + t * end[1],
+                (1.0 - t) * start[2] + t * end[2],
+            ]);
+        }
+        let denominator = omega.sin();
+        oracle_normalize3([
+            (((1.0 - t) * omega).sin() / denominator) * start[0]
+                + ((t * omega).sin() / denominator) * end[0],
+            (((1.0 - t) * omega).sin() / denominator) * start[1]
+                + ((t * omega).sin() / denominator) * end[1],
+            (((1.0 - t) * omega).sin() / denominator) * start[2]
+                + ((t * omega).sin() / denominator) * end[2],
+        ])
+    }
+
+    #[test]
+    fn trajectory_3d_matches_independent_slerp_oracle_and_gain_ramp() {
+        let start = state3(0.0, 1.0, 0.0, 0.25);
+        let end = state3(0.0, 0.0, 1.0, 0.75);
+        let trajectory = SourceTrajectory3d::new(vec![segment3(10, 20, start, end)]).unwrap();
+        for sample in 10..=20 {
+            let t = (sample - 10) as f64 / 10.0;
+            let expected = if sample == 10 {
+                start.direction()
+            } else if sample == 20 {
+                end.direction()
+            } else {
+                oracle_slerp3(start.direction(), end.direction(), t)
+            };
+            let actual = trajectory.evaluate(sample).unwrap();
+            assert!(
+                actual
+                    .direction()
+                    .iter()
+                    .zip(expected)
+                    .all(|(left, right)| (*left - right).abs() <= 2.0e-12)
+            );
+            assert!((actual.gain() - (0.25 + 0.5 * t)).abs() <= EPSILON);
+            assert!(
+                (actual
+                    .direction()
+                    .iter()
+                    .map(|value| value * value)
+                    .sum::<f64>()
+                    - 1.0)
+                    .abs()
+                    <= EPSILON
+            );
+        }
+    }
+
+    #[test]
+    fn trajectory_3d_small_angle_branch_is_finite_and_continuous() {
+        let start = state3(1.0, 0.0, 0.0, 0.5);
+        let end = state3(1.0, 1.0e-10, 0.0, 0.75);
+        let trajectory = SourceTrajectory3d::new(vec![segment3(0, 8, start, end)]).unwrap();
+        let mut previous = start.direction();
+        for sample in 0..=8 {
+            let state = trajectory.evaluate(sample).unwrap();
+            assert!(state.direction().iter().all(|value| value.is_finite()));
+            assert!(
+                (state
+                    .direction()
+                    .iter()
+                    .map(|value| value * value)
+                    .sum::<f64>()
+                    - 1.0)
+                    .abs()
+                    <= EPSILON
+            );
+            if sample > 0 {
+                let delta = state
+                    .direction()
+                    .iter()
+                    .zip(previous)
+                    .map(|(left, right)| (left - right).abs())
+                    .fold(0.0, f64::max);
+                assert!(delta <= 2.0e-11);
+            }
+            previous = state.direction();
+        }
+        assert_eq!(trajectory.evaluate(0).unwrap(), start);
+        assert_eq!(trajectory.evaluate(8).unwrap(), end);
+    }
+
+    #[test]
+    fn trajectory_3d_angular_rate_is_constant_on_great_circle() {
+        let start = state3(1.0, 0.0, 0.0, 1.0);
+        let end = state3(0.0, 1.0, 0.0, 1.0);
+        let trajectory = SourceTrajectory3d::new(vec![segment3(100, 200, start, end)]).unwrap();
+        let omega = std::f64::consts::FRAC_PI_2;
+        for sample in [101, 125, 150, 175, 199] {
+            let actual = trajectory.evaluate(sample).unwrap().direction();
+            let angle = actual[1].atan2(actual[0]);
+            let expected = omega * (sample - 100) as f64 / 100.0;
+            assert!((angle - expected).abs() <= 2.0e-12);
+        }
+    }
+
+    #[test]
+    fn trajectory_3d_is_static_equivalent_and_partition_invariant() {
+        let renderer = LayoutRenderer3d::new(octahedron_layout());
+        let samples: Vec<f64> = (0..=16).map(|index| index as f64 / 17.0 - 0.25).collect();
+        let static_position = CartesianPosition::new(0.3, 1.0, 0.4);
+        let static_source = source(
+            290,
+            &samples,
+            static_position.x,
+            static_position.y,
+            static_position.z,
+            0.8,
+        );
+        let static_planes = render_planes3(&renderer, &[static_source], samples.len());
+        let static_state = state3(static_position.x, static_position.y, static_position.z, 0.8);
+        let trajectory =
+            SourceTrajectory3d::new(vec![segment3(0, 16, static_state, static_state)]).unwrap();
+        let dynamic =
+            TrajectorySourceBlock3d::new(SourceId::new(290), &samples, &trajectory, 0).unwrap();
+        let whole = render_trajectory3(&renderer, &[dynamic], samples.len());
+        assert_eq!(static_planes, whole);
+
+        let moving = SourceTrajectory3d::new(vec![segment3(
+            0,
+            16,
+            state3(0.0, 1.0, 0.0, 0.5),
+            state3(0.0, 0.0, 1.0, 1.0),
+        )])
+        .unwrap();
+        let mut partitioned = vec![vec![0.0; samples.len()]; renderer.layout().speaker_count()];
+        for (start, end) in [(0_usize, 1_usize), (1, 5), (5, 6), (6, 11), (11, 17)] {
+            let block = TrajectorySourceBlock3d::new(
+                SourceId::new(291),
+                &samples[start..end],
+                &moving,
+                start as u64,
+            )
+            .unwrap();
+            let mut outputs: Vec<&mut [f64]> = partitioned
+                .iter_mut()
+                .map(|plane| &mut plane[start..end])
+                .collect();
+            renderer
+                .render_trajectory_block(&[block], &mut outputs)
+                .unwrap();
+        }
+        let whole_moving = render_trajectory3(
+            &renderer,
+            &[TrajectorySourceBlock3d::new(SourceId::new(291), &samples, &moving, 0).unwrap()],
+            samples.len(),
+        );
+        assert_eq!(partitioned, whole_moving);
+    }
+
+    #[test]
+    fn trajectory_3d_handles_keyframes_edges_vertices_and_multiple_sources() {
+        let renderer = LayoutRenderer3d::new(octahedron_layout());
+        let top = state3(0.0, 0.0, 1.0, 0.75);
+        let trajectory = SourceTrajectory3d::new(vec![
+            segment3(0, 4, state3(0.0, 1.0, 0.0, 0.5), top),
+            segment3(4, 8, top, state3(0.0, -1.0, 0.0, 1.0)),
+        ])
+        .unwrap();
+        assert_eq!(trajectory.evaluate(4).unwrap(), top);
+        let samples = [1.0; 9];
+        let first =
+            TrajectorySourceBlock3d::new(SourceId::new(292), &samples, &trajectory, 0).unwrap();
+        let second_samples = [0.5; 9];
+        let second =
+            TrajectorySourceBlock3d::new(SourceId::new(293), &second_samples, &trajectory, 0)
+                .unwrap();
+        let combined = render_trajectory3(&renderer, &[first, second], samples.len());
+        let first_only = render_trajectory3(
+            &renderer,
+            &[TrajectorySourceBlock3d::new(SourceId::new(292), &samples, &trajectory, 0).unwrap()],
+            samples.len(),
+        );
+        let second_only = render_trajectory3(
+            &renderer,
+            &[
+                TrajectorySourceBlock3d::new(SourceId::new(293), &second_samples, &trajectory, 0)
+                    .unwrap(),
+            ],
+            samples.len(),
+        );
+        for speaker in 0..combined.len() {
+            for sample in 0..samples.len() {
+                assert_eq!(
+                    combined[speaker][sample],
+                    first_only[speaker][sample] + second_only[speaker][sample]
+                );
+            }
+        }
+        let vertex = renderer
+            .layout()
+            .gains(CartesianPosition::new(0.0, 0.0, 1.0))
+            .unwrap();
+        let mut vertex_full = [0.0; 6];
+        vertex.write_full_gains(&mut vertex_full).unwrap();
+        assert_eq!(vertex_full, [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn trajectory_3d_rejects_antipodes_and_bad_or_atomic_ranges() {
+        let front = state3(0.0, 1.0, 0.0, 1.0);
+        let rear = state3(0.0, -1.0, 0.0, 1.0);
+        assert!(matches!(
+            TrajectorySegment3d::new(0, 4, front, rear),
+            Err(RenderError::AmbiguousAntipodal3dPath)
+        ));
+        let near_antipode = state3(1.0e-12, -1.0, 0.0, 1.0);
+        assert!(matches!(
+            TrajectorySegment3d::new(0, 4, front, near_antipode),
+            Err(RenderError::AmbiguousAntipodal3dPath)
+        ));
+
+        let first = segment3(0, 4, front, state3(0.0, 0.0, 1.0, 1.0));
+        let gap = segment3(5, 8, state3(0.0, 0.0, 1.0, 1.0), rear);
+        assert!(matches!(
+            SourceTrajectory3d::new(vec![first, gap]),
+            Err(RenderError::NonContiguousTrajectory { .. })
+        ));
+        assert!(matches!(
+            TrajectorySegment3d::new(0, MAX_EXACT_INTERPOLATION_SPAN + 1, front, rear),
+            Err(RenderError::TrajectorySpanTooLarge { .. })
+        ));
+
+        let partial = SpeakerLayout3d::new(
+            vec![
+                speaker3(294, 1.0, 0.0, 0.0),
+                speaker3(295, 0.0, 1.0, 0.0),
+                speaker3(296, 0.0, 0.0, 1.0),
+            ],
+            vec![triplet(294, 295, 296)],
+        )
+        .unwrap();
+        let renderer = LayoutRenderer3d::new(partial);
+        let trajectory =
+            SourceTrajectory3d::new(vec![segment3(0, 2, front, state3(-1.0, 0.0, 0.0, 1.0))])
+                .unwrap();
+        let source =
+            TrajectorySourceBlock3d::new(SourceId::new(297), &[1.0, 1.0, 1.0], &trajectory, 0)
+                .unwrap();
+        let mut outputs = vec![vec![7.0; 3]; 3];
+        let mut refs: Vec<&mut [f64]> = outputs.iter_mut().map(Vec::as_mut_slice).collect();
+        assert!(matches!(
+            renderer.render_trajectory_block(&[source], &mut refs),
+            Err(RenderError::Unsupported3dDirection { .. })
+        ));
+        assert_eq!(outputs, vec![vec![7.0; 3]; 3]);
+
+        let first =
+            TrajectorySourceBlock3d::new(SourceId::new(298), &[1.0, 1.0, 1.0], &trajectory, 0)
+                .unwrap();
+        let duplicate =
+            TrajectorySourceBlock3d::new(SourceId::new(298), &[1.0, 1.0, 1.0], &trajectory, 0)
+                .unwrap();
+        let mut unchanged = vec![vec![9.0; 3]; 6];
+        let mut refs: Vec<&mut [f64]> = unchanged.iter_mut().map(Vec::as_mut_slice).collect();
+        let duplicate_result = LayoutRenderer3d::new(octahedron_layout())
+            .render_trajectory_block(&[first, duplicate], &mut refs);
+        assert!(matches!(
+            duplicate_result,
+            Err(RenderError::DuplicateSourceId { .. })
+        ));
+        assert_eq!(unchanged, vec![vec![9.0; 3]; 6]);
     }
 
     #[test]

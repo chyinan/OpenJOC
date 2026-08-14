@@ -9,6 +9,9 @@ current capability matrix or a historical milestone log.
   future maintainer explicitly wants it; `LayoutRenderer3d` intentionally
   keeps caller-declared speaker triplets and performs no triangulation. Do not
   infer 3D rendering from the unresolved JOC semantic bridge.
+- Keep the admitted 3D trajectory contract stable: shortest great-circle
+  segments, explicit intermediate keyframes, and absolute-sample partition
+  invariance. Optimization requires measured byte-identical regressions.
 - Add a pluggable public/user-supplied HRTF path only after the speaker-scene
   contract is stable.
 - Extend public-syntax and malformed-input hardening, including fuzz coverage.
