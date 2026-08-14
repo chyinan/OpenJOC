@@ -44,6 +44,16 @@ parse what exists -> JocPayload/ParsedJocAccessUnit
 The parser never normalizes vendor metadata, the strict validator retains all
 normative failures, and the decoder has no profile-specific signaling hacks.
 
+## OpenJOC v0.2.0 platform validation
+
+The v0.2.0 GitHub Release provides prebuilt assets for Apple silicon macOS,
+Windows 11 x86_64, and GNU/Linux x86_64. Windows source, build, and CLI
+runtime validation was completed natively on Windows 11 Pro x86_64. The
+GNU/Linux binary was built and validated under Ubuntu 20.04.6 LTS on WSL2.
+This Linux evidence does not claim native Linux hardware support or validation
+across all Linux distributions. The macOS local candidate is not Developer-ID
+signed and is not notarized.
+
 ## OpenJOC v0.1.0 capability contract (J1R31)
 
 This is the canonical user-facing support summary. Detailed rows and historical
@@ -755,7 +765,7 @@ and semantic object binding remain unestablished.
 | Cargo archive reproducibility | two complete workspace packaging runs in separate target roots | all eleven `.crate` archives byte-identical on the same host/toolchain |
 | Host dynamic dependencies | macOS `otool -L` | only `/usr/lib/libiconv.2.dylib` and `/usr/lib/libSystem.B.dylib` |
 | External CLI tools | source/runtime audit and missing-tool smoke | raw EC3 internal paths are in-process; selected ISO-BMFF/compatible-base paths require `ffprobe` and/or `ffmpeg` and fail explicitly when unavailable |
-| Toolchain/platform scope | workspace MSRV and host inventory | Rust minimum is 1.85, exact compiler is not pinned; packaging is tested on Apple-silicon macOS only |
+| Toolchain/platform scope | workspace MSRV and host inventory | For the v0.1.0 contract, Rust minimum is 1.85, exact compiler is not pinned, and packaging was tested on Apple-silicon macOS only; current v0.2.0 platform scope is recorded above |
 
 This is a `CLEAN_SOURCE_ISOLATED_BUILD`, not a literal clean-machine or
 cross-platform certification. Offline success means the locked dependencies are

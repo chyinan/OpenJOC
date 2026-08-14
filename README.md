@@ -63,9 +63,11 @@ cargo install --path crates/openjoc-cli --locked --root /path/to/prefix
 /path/to/prefix/bin/openjoc --help
 ```
 
-No prebuilt binary, Homebrew formula, or crates.io installation is advertised
-by the source repository. The verified 0.2.0 installation path
-is the workspace source tree.
+Prebuilt binaries for OpenJOC 0.2.0 are available from the
+[GitHub Release](https://github.com/chyinan/OpenJOC/releases/tag/v0.2.0) for
+Apple silicon macOS, Windows 11 x86_64, and GNU/Linux x86_64. No Homebrew
+formula or crates.io installation is advertised by the source repository. The
+source installation path remains the workspace source tree.
 
 ## Basic CLI
 
@@ -119,12 +121,15 @@ GitHub Release. Artifact attestation is not currently enabled; SHA-256 and
 
 ## Platform scope
 
-Release packaging is currently exercised on Apple silicon macOS. Source,
-build, and CLI runtime validation has also been completed on Windows 11 x86_64
-and Ubuntu 20.04.6 LTS under WSL2 for the current OpenJOC 0.2.0 revision. This
-does not claim native Linux hardware support or published Windows/Linux binary
-release readiness. The local candidate is not Developer-ID signed and is not
-notarized.
+OpenJOC 0.2.0 provides prebuilt release assets for Apple silicon macOS,
+Windows 11 x86_64, and GNU/Linux x86_64.
+
+Windows was validated natively on Windows 11 Pro x86_64. The GNU/Linux binary
+was built and validated under Ubuntu 20.04.6 LTS on WSL2. This Linux validation
+does not claim native Linux hardware support or validation across all Linux
+distributions.
+
+The macOS local candidate is not Developer-ID signed and is not notarized.
 
 ## Contributing and provenance
 
