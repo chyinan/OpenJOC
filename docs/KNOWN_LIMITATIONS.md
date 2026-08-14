@@ -36,6 +36,14 @@ claiming capabilities that the current evidence does not support.
   SOFA parser, nearest-direction lookup, angular interpolation, moving source,
   head tracking, room/distance model, adaptive/nonuniform partitioning, or
   automatic backend selection.
+- The strict `openjoc-sofa` loader accepts only caller-specified local
+  `SimpleFreeFieldHRIR` SOFA files in the portable NetCDF classic CDF-1 form
+  exercised by the project tests. It requires exactly two fixed receivers,
+  fixed listener pose, spherical `degree, degree, metre` source positions,
+  common integer sample rate, and nonnegative integer `Data.Delay` samples.
+  Receiver geometry determines left/right ear order. HDF5/NetCDF-4, other SOFA
+  conventions, fractional delays, resampling, interpolation, nearest lookup,
+  writing, dataset downloads, and license inference are not supported.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
   window-dependent RB redistribution is admitted, but common gauge,
   row-transfer and rank-1 models are rejected. No implementation-ready

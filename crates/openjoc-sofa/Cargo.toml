@@ -1,0 +1,18 @@
+[package]
+name = "openjoc-sofa"
+version.workspace = true
+description = "Strict, read-only SimpleFreeFieldHRIR SOFA ingestion for OpenJOC"
+edition.workspace = true
+license.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+openjoc-render = { path = "../openjoc-render" }
+
+[dev-dependencies]
+openjoc-render = { path = "../openjoc-render" }
+
+[lints]
+workspace = true

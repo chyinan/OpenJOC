@@ -375,6 +375,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "openjoc-sofa"
+version = "0.3.0-dev"
+dependencies = [
+ "openjoc-render",
+]
+
+[[package]]
 name = "openjoc-wave"
 version = "0.3.0-dev"
 

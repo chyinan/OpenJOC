@@ -149,6 +149,19 @@ duration-proportional PCM history or adaptive backend selection is used.
 Direct FIR remains the numerical oracle, so cross-backend validation is
 numerical rather than a promise of bit identity.
 
+The separate `openjoc-sofa` crate is a construction-time, read-only adapter
+from a deliberately narrow `SimpleFreeFieldHRIR` SOFA contract into
+`HrirBank`. It depends on `openjoc-render`; the renderer remains independent
+of file parsing, NetCDF/HDF5 libraries, and OS-specific APIs. The current
+portable reader accepts the project-tested NetCDF classic CDF-1 subset, fixed
+listener pose, spherical degree/degree/metre source positions, exactly two
+receivers, common sample rate, and integer sample delays. Receiver geometry,
+not array order, determines left/right ear mapping. After construction no
+SOFA file handle is retained and neither renderer performs file I/O per audio
+block. HDF5/NetCDF-4, interpolation, nearest-direction fallback, moving
+sources, SOFA writing, dataset downloads, and any JOC semantic bridge remain
+outside this boundary.
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

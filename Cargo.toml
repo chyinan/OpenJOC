@@ -9,6 +9,7 @@ members = [
     "crates/openjoc-oamd",
     "crates/openjoc-qmf",
     "crates/openjoc-render",
+    "crates/openjoc-sofa",
     "crates/openjoc-scene",
     "crates/openjoc-wave",
     "tools/import-etsi-tables",

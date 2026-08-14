@@ -22,8 +22,10 @@ current capability matrix or a historical milestone log.
   preserves exact final partial-input and `M-1` tail semantics. It must not
   silently add SOFA parsing, interpolation, moving sources, or listener pose
   semantics; backend selection remains caller-owned.
-- Add a pluggable public/user-supplied HRTF path only after the speaker-scene
-  contract is stable.
+- Extend the admitted user-supplied HRTF path only through separately bounded
+  contracts; J5R8 currently provides strict local `SimpleFreeFieldHRIR` SOFA
+  loading into `HrirBank`, while interpolation and direction resolution remain
+  future milestones.
 - Extend public-syntax and malformed-input hardening, including fuzz coverage.
 - Keep container and output streaming contracts explicit as new input forms are
   considered.

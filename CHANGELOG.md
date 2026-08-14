@@ -24,6 +24,11 @@
   final partial input, bounded exact tail draining, and reset/lifecycle
   semantics. No SOFA, interpolation, moving source, or adaptive backend
   selection is included.
+- Strict, read-only `SimpleFreeFieldHRIR` SOFA ingestion into `HrirBank`,
+  using a portable NetCDF classic CDF-1 reader with listener-basis conversion,
+  geometry-derived ear ordering, integer sample-delay materialization, and
+  resource limits. HDF5/NetCDF-4, interpolation, and nearest-direction lookup
+  remain explicit non-features.
 
 ### Scope
 
@@ -37,6 +42,11 @@
   accepts only caller-supplied synthetic/test or runtime HRIR taps, requires
   exact direction and sample-rate matches, and does not claim proprietary HRTF
   or perceptual renderer fidelity.
+- SOFA loading is local-file-only and construction-time-only. The strict
+  loader supports the project-tested `SimpleFreeFieldHRIR` 1.0–1.2 contract
+  in portable NetCDF classic CDF-1 form, with exactly two receivers and
+  spherical degree/degree/metre source positions. It does not write SOFA,
+  download datasets, or grant rights to a caller-supplied dataset.
 
 ## [0.2.0] — 2026-08-13
 
