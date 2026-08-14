@@ -36,6 +36,10 @@ current capability matrix or a historical milestone log.
 
 ## Research priorities
 
+- Resolve the single JOC spatial bridge blocker: the independently testable
+  time-varying operator `T(t)` and its complete state inputs. The codec-domain
+  bridge is now explicit, but it must not be bypassed with a fixed RB-row/object
+  assumption.
 - Obtain admissible evidence for unresolved vendor OAMD continuation without
   weakening `ETSI_STRICT`.
 - Separate metadata understanding from any future authored-object binding

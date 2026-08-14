@@ -1,0 +1,187 @@
+{
+  "schema": "openjoc.joc-reconstruction-readiness.v1",
+  "stage": "J5R10",
+  "classification": "J5R10_JOC_MATRIX_BRIDGE_FOUNDATION_ADMITTED_OPERATOR_UNRESOLVED",
+  "scope": "codec-domain decoder input and readiness only; no authored-object binding or real-JOC render",
+  "operator_model": {
+    "codec_coordinates": "c(t) = [Base(t), ReconstructionBasis(t), RcLfe(t)]",
+    "unknown_operator": "o(t) = T(t)c(t)",
+    "renderer_composition": "y(t) = R(metadata(t))T(t)c(t)",
+    "fixed_row_to_object_mapping": false,
+    "matrix_domain_future_path": true,
+    "operator_state": "unresolved"
+  },
+  "required_operator_inputs": [
+    {
+      "name": "base_full_band_pcm",
+      "source": "TS 102 366 base decode and OpenJOC access-unit PCM",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "CodecBasisBlock.base_full_band_pcm"
+    },
+    {
+      "name": "base_full_band_coordinate_order",
+      "source": "OpenJOC channel-topology boundary",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "CodecBasisBlock.base_full_band_coordinates"
+    },
+    {
+      "name": "reconstruction_basis_pcm_and_row_index",
+      "source": "TS 103 420 JOC reconstruction implementation",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "CodecBasisBlock.reconstruction_basis",
+      "semantic_note": "row index is a decoder coordinate, not an authored-object identity"
+    },
+    {
+      "name": "rclfe",
+      "source": "OpenJOC base/LFE boundary",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "CodecBasisBlock.rclfe_pcm",
+      "semantic_note": "kept outside dynamic ReconstructionBasis rows"
+    },
+    {
+      "name": "oamd_metadata_for_interval",
+      "source": "TS 103 420 OAMD prefix and OpenJOC OAMD parser",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "JocSpatialMetadataFrame.oamd"
+    },
+    {
+      "name": "programme_dimensions",
+      "source": "OpenJOC structural ProgrammeLayout",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "JocSpatialMetadataFrame.programme_layout",
+      "semantic_note": "dimensional compatibility only; no audio binding"
+    },
+    {
+      "name": "absolute_sample_range",
+      "source": "OpenJOC sequential payload decoder timing contract",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "JocSpatialReconstructionFrame.sample_range"
+    },
+    {
+      "name": "joc_sequence_and_temporal_state",
+      "source": "TS 103 420 JOC frame syntax and decoder state",
+      "implementation_state": "IMPLEMENTED_AND_TESTED",
+      "runtime_available": true,
+      "bridge_field": "JocSpatialReconstructionFrame.frame_index"
+    },
+    {
+      "name": "complete_authored_object_reconstruction_operator",
+      "source": "No complete public equation admitted by current evidence",
+      "implementation_state": "SEMANTICS_NOT_ESTABLISHED",
+      "runtime_available": false,
+      "blocker": true
+    },
+    {
+      "name": "reserved_warp_3_continuation_semantics",
+      "source": "ETSI strict boundary",
+      "implementation_state": "UNSUPPORTED_RESERVED",
+      "runtime_available": false,
+      "blocker": "only if a future operator depends on this continuation"
+    }
+  ],
+  "normative_code_census": [
+    {
+      "item": "JOC payload syntax, quantization, interpolation and matrix reconstruction",
+      "normative_source": "TS 103 420 clauses 6.2-6.6",
+      "parser": "IMPLEMENTED_AND_TESTED",
+      "decoder": "IMPLEMENTED_AND_TESTED",
+      "affects_operator": "codec basis generation only"
+    },
+    {
+      "item": "OAMD prefix object anchors, positions, timing and state",
+      "normative_source": "TS 103 420 OAMD prefix tables and OpenJOC provenance record",
+      "parser": "IMPLEMENTED_AND_TESTED",
+      "decoder": "IMPLEMENTED_AND_TESTED",
+      "affects_operator": "metadata input available; authored audio equation absent"
+    },
+    {
+      "item": "Base PCM channel topology and RcLfe separation",
+      "normative_source": "TS 102 366 channel topology plus OpenJOC decoder contract",
+      "parser": "IMPLEMENTED_AND_TESTED",
+      "decoder": "IMPLEMENTED_AND_TESTED",
+      "affects_operator": "codec coordinate input"
+    },
+    {
+      "item": "Coding-tool state inventory (coupling, SPX, AHT, rematrix, dependent substream)",
+      "normative_source": "TS 102 366 public syntax",
+      "parser": "IMPLEMENTED_AND_TESTED",
+      "decoder": "IMPLEMENTED_AND_TESTED",
+      "affects_operator": "not established as the missing T(t) equation"
+    },
+    {
+      "item": "OAMD warp raw=3 continuation",
+      "normative_source": "ETSI strict validation boundary",
+      "parser": "UNSUPPORTED_RESERVED",
+      "decoder": "UNSUPPORTED_RESERVED",
+      "affects_operator": "unresolved dependency only; no vendor rule added"
+    },
+    {
+      "item": "Authored-object audio binding from codec basis",
+      "normative_source": "not established by authorized public material/evidence",
+      "parser": "SEMANTICS_NOT_ESTABLISHED",
+      "decoder": "SEMANTICS_NOT_ESTABLISHED",
+      "affects_operator": true
+    }
+  ],
+  "existing_fixture_census": {
+    "status": "PASS_BOUNDED_EXISTING_CORPUS",
+    "fixture_sets": [
+      "J1 controlled seven-fixture 997 Hz corpus",
+      "J4R1/J4R2 fixed target and companion carriers",
+      "J4R8 active-companion matched carriers",
+      "J4R9 active-companion geometry carriers"
+    ],
+    "observations": {
+      "base_coordinate_count": "available from decoded access-unit topology",
+      "reconstruction_basis_row_count": "available per decoded JOC frame",
+      "oamd_dynamic_count": "available from ProgrammeLayout",
+      "absolute_timing": "available as SampleRange per committed frame",
+      "operator_state": "Unresolved for every real fixture",
+      "row_object_identity": "not inferred"
+    },
+    "new_producer_media": false,
+    "new_logic_fixture": false
+  },
+  "bridge_contract": {
+    "schema": "openjoc.joc-spatial-reconstruction.v1",
+    "streaming": true,
+    "borrowed_current_frame": true,
+    "duration_proportional_retention": false,
+    "per_sample_heap_allocation": false,
+    "explicit_sample_range": true,
+    "rclfe_separate": true,
+    "semantic_binding_state": "Unresolved",
+    "automatic_explicit_scene_conversion": false,
+    "renderer_admission": false
+  },
+  "offline_discriminators": [
+    "J4R8 active-companion support-preserving redistribution review",
+    "J4R9 window-dependent transform review",
+    "normative/code field availability cross-check"
+  ],
+  "primary_missing_operator_fact": "The public, independently testable time-varying T(t) equation and its complete state inputs that map codec-domain Base/RB/RcLfe coordinates to authored spatial contributions remain unestablished.",
+  "evidence_that_it_blocks_T": "J4R8/J4R9 reject a common fixed row/object transfer model and admit window/context-dependent RB redistribution, while no authorized public equation or fully identified state stream resolves that dependence.",
+  "already_exhausted_methods": "normative parser/code census, existing JOC reconstruction implementation audit, existing J4R8/J4R9 frozen evidence, and bounded fixture readiness instrumentation",
+  "next_clean_room_discriminator": "One narrowly predeclared public-syntax or existing-carrier discriminator targeting the missing transform state, chosen only after reviewer authorization; do not infer row/object identity.",
+  "blocker_classification": "HARD_RESEARCH_BLOCKER",
+  "semantic_boundary": {
+    "semantic_binding_state": "Unresolved",
+    "authored_object_pcm": false,
+    "audio_bound_object_scene": false,
+    "warp_raw3": "ETSI ReservedWarpMode { raw: 3 }",
+    "vendor_semantics": false,
+    "renderer": "independent explicit-scene renderer remains admitted within its own contract"
+  },
+  "determinism": {
+    "readiness_report": "byte-identical across two generated passes",
+    "bridge_tests": "deterministic",
+    "decoder_output_regression": "required quality gate"
+  }
+}

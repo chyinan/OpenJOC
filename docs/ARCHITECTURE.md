@@ -24,6 +24,9 @@ input/container ownership and access-unit delivery
                   └── JOC  ──► reconstruction-basis rows
                                       │
                                       ▼
+                         codec-domain JOC bridge (T(t) unresolved)
+                                       │
+                                       ▼
                               metadata-only ObjectScene
 ```
 
@@ -76,6 +79,24 @@ separate Base LFE, indexed RB rows, and `SemanticBindingState::Unresolved`
 without retaining another PCM copy. Operations requiring authored-object audio
 identity fail explicitly while binding is unresolved; component-domain decode
 and streaming remain available.
+
+### JOC spatial reconstruction bridge
+
+`openjoc-scene` exposes `JocSpatialBridge` and the versioned
+`openjoc.joc-spatial-reconstruction.v1` codec-domain contract. A borrowed
+`CodecBasisBlock` carries explicitly labelled Base full-band PCM, indexed
+ReconstructionBasis rows, and separate RcLfe; `JocSpatialMetadataFrame` carries
+the current OAMD payload and structural programme dimensions; and
+`SampleRange` gives each committed decoder frame an absolute half-open sample
+interval. The bridge is streaming and retains no duration-proportional PCM.
+
+The semantic operation is modelled as `o(t) = T(t)c(t)` followed by the
+independent renderer operator. `T(t)` is not known: `JocSpatialOperatorState`
+therefore remains `Unresolved`, and `require_resolved_operator()` is a hard
+gate. There is no automatic conversion from decoded components to
+`ExplicitSpatialScene`, no fixed RB-row/object mapping, and no implicit matrix
+or permutation. The readiness census is in
+[`joc_reconstruction_readiness.json`](joc_reconstruction_readiness.json).
 
 ### Explicit spatial renderer
 

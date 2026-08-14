@@ -16,6 +16,10 @@ claiming capabilities that the current evidence does not support.
 - Diagnostic `ReconstructionBasis` rows are available, but they are not
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
+- The codec-domain `JocSpatialBridge` exposes aligned Base/RB/RcLfe/OAMD
+  inputs and an explicit unresolved-operator gate, but the time-varying
+  reconstruction operator `T(t)` is not established. It cannot produce an
+  `ExplicitSpatialScene` or real-JOC speaker/binaural output.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
   speaker-layout renderer with public 2D VBAP-style pair gains, plus an

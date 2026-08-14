@@ -2437,7 +2437,8 @@ const fn classify_payload_error(error: &PayloadDecodeError) -> CliErrorCategory 
         | PayloadDecodeError::Scene(_)
         | PayloadDecodeError::UnexpectedFrameIndex { .. }
         | PayloadDecodeError::SampleRateChanged { .. }
-        | PayloadDecodeError::FrameIndexOverflow => CliErrorCategory::DecodeFailure,
+        | PayloadDecodeError::FrameIndexOverflow
+        | PayloadDecodeError::SampleRangeOverflow => CliErrorCategory::DecodeFailure,
     }
 }
 

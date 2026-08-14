@@ -1,7 +1,7 @@
 // pattern: Functional Core
 
 use crate::{
-    ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SceneBuildError, SceneBuilder,
+    ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SampleRange, SceneBuildError, SceneBuilder,
     StreamingSceneSummary,
 };
 use openjoc_joc::{DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, parse_joc_payload};
@@ -32,6 +32,12 @@ pub struct PayloadDecoderConfig {
 /// Retained syntax and reconstruction stages for one decoded payload frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedPayloadFrame {
+    /// Sequential codec-frame identity, retained independently of metadata
+    /// object identity.
+    pub frame_index: u64,
+    pub sample_rate: u32,
+    /// Absolute half-open PCM interval for this committed frame.
+    pub sample_range: SampleRange,
     pub joc: JocFrame,
     pub oamd: OamdPayload,
     pub decoded: DecodedJocFrame,
@@ -48,6 +54,7 @@ pub enum PayloadDecodeError {
     UnexpectedFrameIndex { expected: u64, actual: u64 },
     SampleRateChanged { expected: u32, actual: u32 },
     FrameIndexOverflow,
+    SampleRangeOverflow,
     EmptyStream,
 }
 
@@ -74,6 +81,7 @@ impl fmt::Display for PayloadDecodeError {
                 "sample rate changed from {expected} Hz to {actual} Hz without reset"
             ),
             Self::FrameIndexOverflow => formatter.write_str("payload frame index overflow"),
+            Self::SampleRangeOverflow => formatter.write_str("payload sample range overflow"),
             Self::EmptyStream => formatter.write_str("cannot finish an empty payload stream"),
         }
     }
@@ -115,6 +123,7 @@ pub struct PayloadDecoder {
     streaming: bool,
     sample_rate: Option<u32>,
     next_frame_index: u64,
+    next_sample: u64,
 }
 
 impl PayloadDecoder {
@@ -129,6 +138,7 @@ impl PayloadDecoder {
             streaming: false,
             sample_rate: None,
             next_frame_index: 0,
+            next_sample: 0,
         }
     }
 
@@ -204,6 +214,16 @@ impl PayloadDecoder {
 
         let mut next_joc = self.joc.clone();
         let decoded = next_joc.decode_pcm_frame(&joc, input.downmix_pcm)?;
+        let frame_samples = input.downmix_pcm.first().map_or(0, Vec::len);
+        let sample_range_end = self
+            .next_sample
+            .checked_add(
+                u64::try_from(frame_samples)
+                    .map_err(|_| PayloadDecodeError::SampleRangeOverflow)?,
+            )
+            .ok_or(PayloadDecodeError::SampleRangeOverflow)?;
+        let sample_range = SampleRange::new(self.next_sample, sample_range_end)
+            .map_err(|_| PayloadDecodeError::SampleRangeOverflow)?;
         let next_frame_index = self
             .next_frame_index
             .checked_add(1)
@@ -235,7 +255,11 @@ impl PayloadDecoder {
         self.joc = next_joc;
         self.sample_rate = Some(input.sample_rate);
         self.next_frame_index = next_frame_index;
+        self.next_sample = sample_range_end;
         Ok(DecodedPayloadFrame {
+            frame_index: input.frame_index,
+            sample_rate: input.sample_rate,
+            sample_range,
             joc,
             oamd,
             decoded,

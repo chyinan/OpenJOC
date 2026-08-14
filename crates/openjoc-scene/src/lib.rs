@@ -9,6 +9,12 @@ use std::{collections::HashSet, fmt};
 
 mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder, StreamingSceneSummary};
+mod bridge;
+pub use bridge::{
+    BaseFullBandCoordinate, BridgeError, CodecBasisBlock, JOC_SPATIAL_RECONSTRUCTION_SCHEMA,
+    JocSpatialBridge, JocSpatialMetadataFrame, JocSpatialOperatorState,
+    JocSpatialOperatorUnresolvedReason, JocSpatialReconstructionFrame, SampleRange,
+};
 mod binding;
 pub use binding::{
     BindingAdmissionError, BindingAdmissionRequirements, BindingAdmissionStatus,

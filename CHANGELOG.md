@@ -4,6 +4,11 @@
 
 ### Added
 
+- Added the codec-domain `openjoc.joc-spatial-reconstruction.v1` bridge with
+  borrowed Base/RB/RcLfe/OAMD inputs, absolute sample ranges, typed unresolved
+  operator state, strict dimension/finite validation, and a hard gate against
+  automatic JOC-to-scene conversion. Added the reconstruction readiness census.
+
 - Added `openjoc render-scene` with the versioned `openjoc.render-scene.v1`
   explicit-source contract, strict SOFA-backed static binaural rendering,
   transactional float32 WAV output, and `openjoc sofa inspect`.
