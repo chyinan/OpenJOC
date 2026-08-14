@@ -3016,16 +3016,26 @@ mod tests {
 
     #[test]
     fn irregular_closed_topology_and_dense_face_sweep_are_deterministic() {
-        let a = unit_direction(1.0, 0.2, 0.3);
-        let b = unit_direction(-0.4, 1.0, 0.1);
-        let c = unit_direction(0.2, -0.3, 1.0);
-        let d = unit_direction(-0.8, -0.6, -0.7);
+        let first_direction = unit_direction(1.0, 0.2, 0.3);
+        let second_direction = unit_direction(-0.4, 1.0, 0.1);
+        let third_direction = unit_direction(0.2, -0.3, 1.0);
+        let fourth_direction = unit_direction(-0.8, -0.6, -0.7);
         let layout = SpeakerLayout3d::new(
             vec![
-                speaker3(224, a.x, a.y, a.z),
-                speaker3(225, b.x, b.y, b.z),
-                speaker3(226, c.x, c.y, c.z),
-                speaker3(227, d.x, d.y, d.z),
+                speaker3(224, first_direction.x, first_direction.y, first_direction.z),
+                speaker3(
+                    225,
+                    second_direction.x,
+                    second_direction.y,
+                    second_direction.z,
+                ),
+                speaker3(226, third_direction.x, third_direction.y, third_direction.z),
+                speaker3(
+                    227,
+                    fourth_direction.x,
+                    fourth_direction.y,
+                    fourth_direction.z,
+                ),
             ],
             vec![
                 triplet(224, 225, 226),
@@ -3035,7 +3045,12 @@ mod tests {
             ],
         )
         .unwrap();
-        for (first, second, third) in [(a, b, c), (a, d, b), (a, c, d), (b, d, c)] {
+        for (first, second, third) in [
+            (first_direction, second_direction, third_direction),
+            (first_direction, fourth_direction, second_direction),
+            (first_direction, third_direction, fourth_direction),
+            (second_direction, fourth_direction, third_direction),
+        ] {
             let gains = layout.gains(sum_positions(first, second, third)).unwrap();
             assert!(
                 gains
@@ -3044,16 +3059,21 @@ mod tests {
                     .all(|gain| (*gain - 1.0 / 3.0_f64.sqrt()).abs() <= EPSILON)
             );
         }
-        let faces = [(a, b, c), (a, d, b), (a, c, d), (b, d, c)];
+        let faces = [
+            (first_direction, second_direction, third_direction),
+            (first_direction, fourth_direction, second_direction),
+            (first_direction, third_direction, fourth_direction),
+            (second_direction, fourth_direction, third_direction),
+        ];
         let mut samples = 0;
         for (first, second, third) in faces {
             for i in 1..=8 {
                 for j in 1..=8 - i {
-                    let k = 9 - i - j;
+                    let third_weight = 9 - i - j;
                     let position = CartesianPosition::new(
-                        first.x * i as f64 + second.x * j as f64 + third.x * k as f64,
-                        first.y * i as f64 + second.y * j as f64 + third.y * k as f64,
-                        first.z * i as f64 + second.z * j as f64 + third.z * k as f64,
+                        first.x * i as f64 + second.x * j as f64 + third.x * third_weight as f64,
+                        first.y * i as f64 + second.y * j as f64 + third.y * third_weight as f64,
+                        first.z * i as f64 + second.z * j as f64 + third.z * third_weight as f64,
                     );
                     let gains = layout.gains(position).unwrap();
                     assert!(
