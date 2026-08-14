@@ -26,6 +26,13 @@ claiming capabilities that the current evidence does not support.
   antipodal routes require explicit intermediate keyframes. Neither path
   models radius, distance, Doppler, listener orientation, room effects,
   elevation smoothing, or acceleration physics.
+- Static binaural rendering is a direct-FIR reference path only. The caller
+  supplies finite HRIR tap pairs and exact source directions at the renderer
+  sample rate; the fixed listener convention emits left then right ear PCM and
+  preserves causal delay and drainable tail state. There is no measured HRTF
+  database, proprietary/Dolby HRTF claim, SOFA parser, nearest-direction
+  lookup, angular interpolation, moving source, head tracking, room/distance
+  model, or FFT/partitioned convolution.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
   window-dependent RB redistribution is admitted, but common gauge,
   row-transfer and rank-1 models are rejected. No implementation-ready

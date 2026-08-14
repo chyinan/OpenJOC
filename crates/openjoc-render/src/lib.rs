@@ -12,9 +12,11 @@
 //! absolute-timeline azimuth and gain trajectories on top of both renderers.
 //! J5R4 adds explicit caller-declared three-dimensional speaker topology and
 //! checked 3x3 VBAP triplet gains. J5R5 adds sample-accurate three-dimensional
-//! great-circle trajectories over that immutable topology. Distance, room
-//! acoustics, occlusion, HRTF, and JOC semantic binding remain explicit
-//! non-features of this foundation.
+//! great-circle trajectories over that immutable topology. J5R6 adds a static,
+//! caller-supplied exact-direction HRIR provider and direct causal binaural
+//! FIR stream with explicit history and tail draining. SOFA, interpolation,
+//! moving binaural sources, partitioned convolution, distance, room acoustics,
+//! occlusion, and JOC semantic binding remain explicit non-features.
 
 use std::fmt;
 
@@ -692,6 +694,625 @@ impl<'a> TrajectorySourceBlock3d<'a> {
     #[must_use]
     pub const fn block_start_sample(self) -> u64 {
         self.block_start_sample
+    }
+}
+
+/// Opaque identity for one caller-supplied HRIR entry.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct HrirEntryId(u64);
+
+impl HrirEntryId {
+    /// Creates an HRIR entry identity from a caller-owned value.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the caller-owned identity value.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Selects one ear of a caller-supplied HRIR pair.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HrirEar {
+    /// Left-ear impulse response.
+    Left,
+    /// Right-ear impulse response.
+    Right,
+}
+
+/// A validated, caller-supplied pair of causal HRIR/FIR taps.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HrirPair {
+    sample_rate_hz: u32,
+    left: Vec<f64>,
+    right: Vec<f64>,
+}
+
+impl HrirPair {
+    /// Creates a pair without changing, normalizing, trimming, or resampling taps.
+    pub fn new(sample_rate_hz: u32, left: Vec<f64>, right: Vec<f64>) -> Result<Self, RenderError> {
+        if sample_rate_hz == 0 {
+            return Err(RenderError::InvalidSampleRate);
+        }
+        if left.is_empty() || right.is_empty() {
+            return Err(RenderError::EmptyHrir);
+        }
+        if left.len() != right.len() {
+            return Err(RenderError::MismatchedHrirTapLength {
+                left: left.len(),
+                right: right.len(),
+            });
+        }
+        for (ear, taps) in [(HrirEar::Left, &left), (HrirEar::Right, &right)] {
+            if let Some(tap_index) = taps.iter().position(|tap| !tap.is_finite()) {
+                return Err(RenderError::NonFiniteHrirTap { ear, tap_index });
+            }
+        }
+        Ok(Self {
+            sample_rate_hz,
+            left,
+            right,
+        })
+    }
+
+    /// Returns the exact source sample rate.
+    #[must_use]
+    pub const fn sample_rate_hz(&self) -> u32 {
+        self.sample_rate_hz
+    }
+
+    /// Returns the left-ear taps in causal order.
+    #[must_use]
+    pub fn left_taps(&self) -> &[f64] {
+        &self.left
+    }
+
+    /// Returns the right-ear taps in causal order.
+    #[must_use]
+    pub fn right_taps(&self) -> &[f64] {
+        &self.right
+    }
+
+    /// Returns the equal left/right tap count.
+    #[must_use]
+    pub fn tap_count(&self) -> usize {
+        self.left.len()
+    }
+}
+
+/// One exact-direction HRIR entry in an immutable caller-provided bank.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HrirEntry {
+    id: HrirEntryId,
+    direction: [f64; 3],
+    pair: HrirPair,
+}
+
+impl HrirEntry {
+    /// Creates an entry and canonicalizes its finite nonzero direction.
+    pub fn new(
+        id: HrirEntryId,
+        direction: CartesianPosition,
+        pair: HrirPair,
+    ) -> Result<Self, RenderError> {
+        Ok(Self {
+            id,
+            direction: normalized_3d(direction)?,
+            pair,
+        })
+    }
+
+    /// Returns this entry's stable identity.
+    #[must_use]
+    pub const fn id(&self) -> HrirEntryId {
+        self.id
+    }
+
+    /// Returns this entry's canonical unit direction.
+    #[must_use]
+    pub const fn direction(&self) -> [f64; 3] {
+        self.direction
+    }
+
+    /// Returns the authoritative pair of causal taps.
+    #[must_use]
+    pub const fn pair(&self) -> &HrirPair {
+        &self.pair
+    }
+}
+
+/// An immutable exact-direction HRIR provider; it performs no interpolation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HrirBank {
+    sample_rate_hz: u32,
+    entries: Vec<HrirEntry>,
+}
+
+impl HrirBank {
+    /// Creates a nonempty bank with one exact sample rate and unique directions.
+    pub fn new(sample_rate_hz: u32, entries: Vec<HrirEntry>) -> Result<Self, RenderError> {
+        if sample_rate_hz == 0 {
+            return Err(RenderError::InvalidSampleRate);
+        }
+        if entries.is_empty() {
+            return Err(RenderError::EmptyHrirBank);
+        }
+        for entry in &entries {
+            if entry.pair.sample_rate_hz() != sample_rate_hz {
+                return Err(RenderError::HrirSampleRateMismatch {
+                    expected: sample_rate_hz,
+                    actual: entry.pair.sample_rate_hz(),
+                });
+            }
+        }
+        for first in 0..entries.len() {
+            for second in first + 1..entries.len() {
+                if entries[first].id == entries[second].id {
+                    return Err(RenderError::DuplicateHrirEntryId {
+                        id: entries[first].id,
+                    });
+                }
+                if same_direction_3d(entries[first].direction, entries[second].direction) {
+                    return Err(RenderError::DuplicateHrirDirection { first, second });
+                }
+            }
+        }
+        Ok(Self {
+            sample_rate_hz,
+            entries,
+        })
+    }
+
+    /// Returns the bank sample rate.
+    #[must_use]
+    pub const fn sample_rate_hz(&self) -> u32 {
+        self.sample_rate_hz
+    }
+
+    /// Returns entries in immutable caller order.
+    #[must_use]
+    pub fn entries(&self) -> &[HrirEntry] {
+        &self.entries
+    }
+
+    /// Resolves one exact direction, rejecting unsupported and ambiguous queries.
+    pub fn resolve_exact(&self, direction: CartesianPosition) -> Result<&HrirEntry, RenderError> {
+        let direction = normalized_3d(direction)?;
+        let mut match_index = None;
+        for (index, entry) in self.entries.iter().enumerate() {
+            if same_direction_3d(direction, entry.direction) {
+                if let Some(first) = match_index {
+                    return Err(RenderError::AmbiguousHrirDirection {
+                        first,
+                        second: index,
+                    });
+                }
+                match_index = Some(index);
+            }
+        }
+        match_index
+            .map(|index| &self.entries[index])
+            .ok_or(RenderError::UnsupportedHrirDirection {
+                x: direction[0],
+                y: direction[1],
+                z: direction[2],
+            })
+    }
+}
+
+/// A fixed explicit source binding for one static binaural renderer stream.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StaticBinauralSource {
+    id: SourceId,
+    direction: [f64; 3],
+    gain: f64,
+    hrir_entry: HrirEntryId,
+}
+
+impl StaticBinauralSource {
+    /// Creates a source bound to one exact HRIR entry identity.
+    pub fn new(
+        id: SourceId,
+        direction: CartesianPosition,
+        gain: f64,
+        hrir_entry: HrirEntryId,
+    ) -> Result<Self, RenderError> {
+        let direction = normalized_3d(direction)?;
+        validate_gain(gain)?;
+        Ok(Self {
+            id,
+            direction,
+            gain,
+            hrir_entry,
+        })
+    }
+
+    /// Returns the source identity.
+    #[must_use]
+    pub const fn id(self) -> SourceId {
+        self.id
+    }
+
+    /// Returns the canonical static source direction.
+    #[must_use]
+    pub const fn direction(self) -> [f64; 3] {
+        self.direction
+    }
+
+    /// Returns the explicit linear source gain.
+    #[must_use]
+    pub const fn gain(self) -> f64 {
+        self.gain
+    }
+
+    /// Returns the bound HRIR entry identity.
+    #[must_use]
+    pub const fn hrir_entry(self) -> HrirEntryId {
+        self.hrir_entry
+    }
+}
+
+/// One caller-owned mono block identified by a registered source ID.
+#[derive(Clone, Copy, Debug)]
+pub struct BinauralSourceBlock<'a> {
+    id: SourceId,
+    samples: &'a [f64],
+}
+
+impl<'a> BinauralSourceBlock<'a> {
+    /// Creates an input block without copying caller PCM.
+    #[must_use]
+    pub const fn new(id: SourceId, samples: &'a [f64]) -> Self {
+        Self { id, samples }
+    }
+
+    /// Returns the source identity.
+    #[must_use]
+    pub const fn id(self) -> SourceId {
+        self.id
+    }
+
+    /// Returns the borrowed mono samples.
+    #[must_use]
+    pub const fn samples(self) -> &'a [f64] {
+        self.samples
+    }
+}
+
+#[derive(Clone, Debug)]
+struct BinauralRegisteredSource {
+    definition: StaticBinauralSource,
+    left_taps: Vec<f64>,
+    right_taps: Vec<f64>,
+    history: Vec<f64>,
+    tail_remaining: usize,
+}
+
+/// A static-source binaural renderer using caller-supplied exact-direction HRIRs.
+#[derive(Clone, Debug)]
+pub struct BinauralRenderer {
+    sample_rate_hz: u32,
+    sources: Vec<BinauralRegisteredSource>,
+    tail_started: bool,
+    finished: bool,
+    requires_reset: bool,
+}
+
+impl BinauralRenderer {
+    /// Creates a fixed source set and resolves every source to one exact HRIR entry.
+    pub fn new(
+        sample_rate_hz: u32,
+        bank: HrirBank,
+        sources: Vec<StaticBinauralSource>,
+    ) -> Result<Self, RenderError> {
+        let HrirBank {
+            sample_rate_hz: bank_sample_rate_hz,
+            entries,
+        } = bank;
+        if sample_rate_hz == 0 {
+            return Err(RenderError::InvalidSampleRate);
+        }
+        if bank_sample_rate_hz != sample_rate_hz {
+            return Err(RenderError::HrirSampleRateMismatch {
+                expected: sample_rate_hz,
+                actual: bank_sample_rate_hz,
+            });
+        }
+        if sources.is_empty() {
+            return Err(RenderError::EmptyBinauralSourceSet);
+        }
+        for first in 0..sources.len() {
+            for second in first + 1..sources.len() {
+                if sources[first].id == sources[second].id {
+                    return Err(RenderError::DuplicateSourceId {
+                        id: sources[first].id,
+                    });
+                }
+            }
+        }
+        let mut registered = Vec::with_capacity(sources.len());
+        for definition in sources {
+            let entry = entries
+                .iter()
+                .find(|entry| entry.id == definition.hrir_entry)
+                .ok_or(RenderError::UnknownHrirEntry {
+                    id: definition.hrir_entry,
+                })?;
+            if !same_direction_3d(definition.direction, entry.direction) {
+                return Err(RenderError::HrirEntryDirectionMismatch {
+                    source: definition.id,
+                    entry: definition.hrir_entry,
+                });
+            }
+            let history_len = entry
+                .pair
+                .tap_count()
+                .checked_sub(1)
+                .ok_or(RenderError::HrirStateSizeOverflow)?;
+            registered.push(BinauralRegisteredSource {
+                definition,
+                left_taps: entry.pair.left.clone(),
+                right_taps: entry.pair.right.clone(),
+                history: vec![0.0; history_len],
+                tail_remaining: 0,
+            });
+        }
+        Ok(Self {
+            sample_rate_hz,
+            sources: registered,
+            tail_started: false,
+            finished: false,
+            requires_reset: false,
+        })
+    }
+
+    /// Returns the renderer's exact PCM sample rate.
+    #[must_use]
+    pub const fn sample_rate_hz(&self) -> u32 {
+        self.sample_rate_hz
+    }
+
+    /// Returns the frozen registered source count.
+    #[must_use]
+    pub fn source_count(&self) -> usize {
+        self.sources.len()
+    }
+
+    /// Returns the fixed source definitions in registration order.
+    #[must_use = "the registered source definitions are needed to inspect the renderer contract"]
+    pub fn sources(&self) -> impl Iterator<Item = StaticBinauralSource> + '_ {
+        self.sources.iter().map(|source| source.definition)
+    }
+
+    /// Returns the largest remaining causal FIR tail in samples.
+    #[must_use]
+    pub fn remaining_tail_samples(&self) -> usize {
+        self.sources
+            .iter()
+            .map(|source| source.tail_remaining)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Returns whether zero-input tail draining has begun.
+    #[must_use]
+    pub const fn tail_started(&self) -> bool {
+        self.tail_started
+    }
+
+    /// Returns whether the stream has completed its tail.
+    #[must_use]
+    pub const fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    /// Renders one equal-length mono block per registered source.
+    ///
+    /// Blocks are resolved by `SourceId`, so caller declaration order does not
+    /// affect deterministic registered-source accumulation order. Structural
+    /// errors are validated before outputs or FIR history are changed.
+    pub fn render_block(
+        &mut self,
+        blocks: &[BinauralSourceBlock<'_>],
+        left: &mut [f64],
+        right: &mut [f64],
+    ) -> Result<(), RenderError> {
+        self.ensure_renderable()?;
+        validate_binaural_outputs(left, right)?;
+        if blocks.len() != self.sources.len() {
+            return Err(RenderError::BinauralSourceCountMismatch {
+                expected: self.sources.len(),
+                actual: blocks.len(),
+            });
+        }
+        let block_length = left.len();
+        for (block_index, block) in blocks.iter().enumerate() {
+            if block.samples.len() != block_length {
+                return Err(RenderError::SourceBlockLengthMismatch {
+                    id: block.id,
+                    expected: block_length,
+                    actual: block.samples.len(),
+                });
+            }
+            if self
+                .sources
+                .iter()
+                .all(|source| source.definition.id != block.id)
+            {
+                return Err(RenderError::UnknownBinauralSource { id: block.id });
+            }
+            if blocks[..block_index]
+                .iter()
+                .any(|previous| previous.id == block.id)
+            {
+                return Err(RenderError::DuplicateBinauralSource { id: block.id });
+            }
+            if let Some(sample_index) = block.samples.iter().position(|sample| !sample.is_finite())
+            {
+                return Err(RenderError::NonFiniteSourceSample {
+                    id: block.id,
+                    sample_index,
+                });
+            }
+        }
+        for source in &self.sources {
+            if blocks.iter().all(|block| block.id != source.definition.id) {
+                return Err(RenderError::MissingBinauralSource {
+                    id: source.definition.id,
+                });
+            }
+        }
+        left.fill(0.0);
+        right.fill(0.0);
+        if block_length == 0 {
+            return Ok(());
+        }
+        for source in &mut self.sources {
+            let block = blocks
+                .iter()
+                .find(|block| block.id == source.definition.id)
+                .ok_or(RenderError::MissingBinauralSource {
+                    id: source.definition.id,
+                })?;
+            let history_len = source.history.len();
+            for offset in 0..block_length {
+                for tap_index in 0..source.left_taps.len() {
+                    let input = if tap_index <= offset {
+                        block.samples[offset - tap_index] * source.definition.gain
+                    } else {
+                        source.history[history_len - (tap_index - offset)]
+                    };
+                    left[offset] += input * source.left_taps[tap_index];
+                    right[offset] += input * source.right_taps[tap_index];
+                }
+                if !left[offset].is_finite() {
+                    return self.numeric_failure(left, right, OutputChannel::Left, offset);
+                }
+                if !right[offset].is_finite() {
+                    return self.numeric_failure(left, right, OutputChannel::Right, offset);
+                }
+            }
+        }
+        for source in &mut self.sources {
+            let block = blocks
+                .iter()
+                .find(|block| block.id == source.definition.id)
+                .ok_or(RenderError::MissingBinauralSource {
+                    id: source.definition.id,
+                })?;
+            update_binaural_history(&mut source.history, block.samples, source.definition.gain);
+            source.tail_remaining = source.history.len();
+        }
+        Ok(())
+    }
+
+    /// Drains a bounded caller-owned block of the remaining causal FIR tail.
+    pub fn drain_tail_block(
+        &mut self,
+        left: &mut [f64],
+        right: &mut [f64],
+    ) -> Result<(), RenderError> {
+        if self.requires_reset {
+            return Err(RenderError::BinauralRequiresReset);
+        }
+        if self.finished {
+            return Err(RenderError::BinauralAlreadyFinished);
+        }
+        validate_binaural_outputs(left, right)?;
+        let requested = left.len();
+        let remaining = self.remaining_tail_samples();
+        if requested > remaining {
+            return Err(RenderError::TailOutputLengthMismatch {
+                requested,
+                remaining,
+            });
+        }
+        self.tail_started = true;
+        left.fill(0.0);
+        right.fill(0.0);
+        for source in &self.sources {
+            for offset in 0..requested {
+                if offset >= source.tail_remaining {
+                    continue;
+                }
+                let history_len = source.history.len();
+                for tap_index in 0..source.left_taps.len() {
+                    let input = if tap_index == 0 || tap_index <= offset {
+                        0.0
+                    } else {
+                        let history_index = history_len - tap_index + offset;
+                        if history_index < history_len {
+                            source.history[history_index]
+                        } else {
+                            0.0
+                        }
+                    };
+                    left[offset] += input * source.left_taps[tap_index];
+                    right[offset] += input * source.right_taps[tap_index];
+                }
+                if !left[offset].is_finite() {
+                    return self.numeric_failure(left, right, OutputChannel::Left, offset);
+                }
+                if !right[offset].is_finite() {
+                    return self.numeric_failure(left, right, OutputChannel::Right, offset);
+                }
+            }
+        }
+        for source in &mut self.sources {
+            if requested >= source.history.len() {
+                source.history.fill(0.0);
+            } else if requested > 0 {
+                source.history.copy_within(requested.., 0);
+                let fill_start = source.history.len() - requested;
+                source.history[fill_start..].fill(0.0);
+            }
+            source.tail_remaining -= requested.min(source.tail_remaining);
+        }
+        if self.remaining_tail_samples() == 0 {
+            self.finished = true;
+        }
+        Ok(())
+    }
+
+    /// Clears FIR history and lifecycle state while preserving source registration.
+    pub fn reset(&mut self) {
+        for source in &mut self.sources {
+            source.history.fill(0.0);
+            source.tail_remaining = 0;
+        }
+        self.tail_started = false;
+        self.finished = false;
+        self.requires_reset = false;
+    }
+
+    fn ensure_renderable(&self) -> Result<(), RenderError> {
+        if self.requires_reset {
+            return Err(RenderError::BinauralRequiresReset);
+        }
+        if self.tail_started {
+            return Err(RenderError::BinauralInputAfterTailStart);
+        }
+        Ok(())
+    }
+
+    fn numeric_failure(
+        &mut self,
+        left: &mut [f64],
+        right: &mut [f64],
+        channel: OutputChannel,
+        sample_index: usize,
+    ) -> Result<(), RenderError> {
+        left.fill(0.0);
+        right.fill(0.0);
+        self.requires_reset = true;
+        Err(RenderError::NonFiniteOutput {
+            channel,
+            sample_index,
+        })
     }
 }
 
@@ -1672,6 +2293,60 @@ fn normalized_3d(position: CartesianPosition) -> Result<[f64; 3], RenderError> {
     Ok([position.x / norm, position.y / norm, position.z / norm])
 }
 
+fn same_direction_3d(first: [f64; 3], second: [f64; 3]) -> bool {
+    let dot = first
+        .iter()
+        .zip(second)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    (1.0 - dot).abs() <= HRIR_DIRECTION_DOT_TOLERANCE
+}
+
+fn validate_binaural_outputs(left: &[f64], right: &[f64]) -> Result<(), RenderError> {
+    if left.len() != right.len() {
+        return Err(RenderError::BinauralOutputLengthMismatch {
+            left: left.len(),
+            right: right.len(),
+        });
+    }
+    if slices_overlap(left, right) {
+        return Err(RenderError::BinauralOutputAliased);
+    }
+    Ok(())
+}
+
+fn slices_overlap(first: &[f64], second: &[f64]) -> bool {
+    if first.is_empty() || second.is_empty() {
+        return false;
+    }
+    let first_start = first.as_ptr() as usize;
+    let second_start = second.as_ptr() as usize;
+    let first_bytes = first.len().saturating_mul(std::mem::size_of::<f64>());
+    let second_bytes = second.len().saturating_mul(std::mem::size_of::<f64>());
+    let first_end = first_start.saturating_add(first_bytes);
+    let second_end = second_start.saturating_add(second_bytes);
+    first_start < second_end && second_start < first_end
+}
+
+fn update_binaural_history(history: &mut [f64], block: &[f64], gain: f64) {
+    if history.is_empty() {
+        return;
+    }
+    if block.len() >= history.len() {
+        let first = block.len() - history.len();
+        for (slot, &sample) in history.iter_mut().zip(&block[first..]) {
+            *slot = sample * gain;
+        }
+    } else {
+        let shift = block.len();
+        history.copy_within(shift.., 0);
+        let start = history.len() - shift;
+        for (slot, &sample) in history[start..].iter_mut().zip(block) {
+            *slot = sample * gain;
+        }
+    }
+}
+
 fn normalize_direction_3d(direction: [f64; 3]) -> Result<[f64; 3], RenderError> {
     let norm = direction
         .iter()
@@ -1786,6 +2461,7 @@ const AMBIGUITY_TOLERANCE: f64 = 1.0e-10;
 const SMALL_ANGLE_3D_TOLERANCE: f64 = 1.0e-8;
 const ANTIPODAL_3D_TOLERANCE: f64 = 1.0e-10;
 const TRAJECTORY_3D_STATE_TOLERANCE: f64 = 1.0e-12;
+const HRIR_DIRECTION_DOT_TOLERANCE: f64 = 1.0e-12;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 const MAX_EXACT_INTERPOLATION_SPAN: u64 = 1_u64 << 53;
 
@@ -2003,6 +2679,70 @@ pub enum RenderError {
         id: SourceId,
         sample_index: usize,
     },
+    EmptyHrir,
+    EmptyHrirBank,
+    MismatchedHrirTapLength {
+        left: usize,
+        right: usize,
+    },
+    NonFiniteHrirTap {
+        ear: HrirEar,
+        tap_index: usize,
+    },
+    HrirSampleRateMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    DuplicateHrirDirection {
+        first: usize,
+        second: usize,
+    },
+    DuplicateHrirEntryId {
+        id: HrirEntryId,
+    },
+    UnsupportedHrirDirection {
+        x: f64,
+        y: f64,
+        z: f64,
+    },
+    AmbiguousHrirDirection {
+        first: usize,
+        second: usize,
+    },
+    UnknownHrirEntry {
+        id: HrirEntryId,
+    },
+    HrirEntryDirectionMismatch {
+        source: SourceId,
+        entry: HrirEntryId,
+    },
+    HrirStateSizeOverflow,
+    EmptyBinauralSourceSet,
+    BinauralSourceCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    UnknownBinauralSource {
+        id: SourceId,
+    },
+    MissingBinauralSource {
+        id: SourceId,
+    },
+    DuplicateBinauralSource {
+        id: SourceId,
+    },
+    BinauralOutputLengthMismatch {
+        left: usize,
+        right: usize,
+    },
+    BinauralOutputAliased,
+    BinauralInputAfterTailStart,
+    BinauralRequiresReset,
+    BinauralAlreadyFinished,
+    TailOutputLengthMismatch {
+        requested: usize,
+        remaining: usize,
+    },
     UndefinedHorizontalDirection,
     RearHemisphereUnsupported {
         y: f64,
@@ -2128,6 +2868,82 @@ impl fmt::Display for RenderError {
                 formatter,
                 "source {} contains a non-finite sample at index {sample_index}",
                 id.0
+            ),
+            Self::EmptyHrir => formatter.write_str("HRIR taps must be non-empty"),
+            Self::EmptyHrirBank => formatter.write_str("HRIR bank must contain at least one entry"),
+            Self::MismatchedHrirTapLength { left, right } => write!(
+                formatter,
+                "HRIR ear tap lengths differ: left={left}, right={right}"
+            ),
+            Self::NonFiniteHrirTap { ear, tap_index } => {
+                write!(
+                    formatter,
+                    "{ear:?} HRIR tap is non-finite at index {tap_index}"
+                )
+            }
+            Self::HrirSampleRateMismatch { expected, actual } => write!(
+                formatter,
+                "HRIR sample rate mismatch: expected {expected}, actual {actual}"
+            ),
+            Self::DuplicateHrirDirection { first, second } => write!(
+                formatter,
+                "HRIR entries {first} and {second} have indistinguishable directions"
+            ),
+            Self::DuplicateHrirEntryId { id } => {
+                write!(formatter, "duplicate HRIR entry ID {}", id.0)
+            }
+            Self::UnsupportedHrirDirection { x, y, z } => {
+                write!(formatter, "no exact HRIR direction matches ({x}, {y}, {z})")
+            }
+            Self::AmbiguousHrirDirection { first, second } => write!(
+                formatter,
+                "HRIR direction matches multiple entries {first} and {second}"
+            ),
+            Self::UnknownHrirEntry { id } => write!(formatter, "unknown HRIR entry ID {}", id.0),
+            Self::HrirEntryDirectionMismatch { source, entry } => write!(
+                formatter,
+                "source {} direction does not match HRIR entry {}",
+                source.0, entry.0
+            ),
+            Self::HrirStateSizeOverflow => formatter.write_str("HRIR state size overflow"),
+            Self::EmptyBinauralSourceSet => {
+                formatter.write_str("binaural renderer requires at least one source")
+            }
+            Self::BinauralSourceCountMismatch { expected, actual } => write!(
+                formatter,
+                "binaural source block count mismatch: expected {expected}, actual {actual}"
+            ),
+            Self::UnknownBinauralSource { id } => {
+                write!(formatter, "unknown binaural source ID {}", id.0)
+            }
+            Self::MissingBinauralSource { id } => {
+                write!(formatter, "missing binaural source ID {}", id.0)
+            }
+            Self::DuplicateBinauralSource { id } => {
+                write!(formatter, "duplicate binaural source block ID {}", id.0)
+            }
+            Self::BinauralOutputLengthMismatch { left, right } => write!(
+                formatter,
+                "binaural output lengths differ: left={left}, right={right}"
+            ),
+            Self::BinauralOutputAliased => {
+                formatter.write_str("binaural output planes may not alias")
+            }
+            Self::BinauralInputAfterTailStart => {
+                formatter.write_str("binaural input is unavailable after tail draining begins")
+            }
+            Self::BinauralRequiresReset => {
+                formatter.write_str("binaural renderer requires reset after numeric failure")
+            }
+            Self::BinauralAlreadyFinished => {
+                formatter.write_str("binaural tail is already finished")
+            }
+            Self::TailOutputLengthMismatch {
+                requested,
+                remaining,
+            } => write!(
+                formatter,
+                "tail output request {requested} exceeds remaining tail {remaining}"
             ),
             Self::UndefinedHorizontalDirection => {
                 formatter.write_str("horizontal direction is undefined at x=0, y=0")
@@ -3376,6 +4192,89 @@ mod tests {
         planes
     }
 
+    fn hrir_entry_test(
+        id: u64,
+        direction: CartesianPosition,
+        left: &[f64],
+        right: &[f64],
+    ) -> HrirEntry {
+        HrirEntry::new(
+            HrirEntryId::new(id),
+            direction,
+            HrirPair::new(48_000, left.to_vec(), right.to_vec()).unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn binaural_test_bank() -> HrirBank {
+        HrirBank::new(
+            48_000,
+            vec![
+                hrir_entry_test(
+                    1,
+                    CartesianPosition::new(0.0, 1.0, 0.0),
+                    &[0.0, 1.0, 0.5],
+                    &[0.0, 0.25, -0.5],
+                ),
+                hrir_entry_test(
+                    2,
+                    CartesianPosition::new(-1.0, 1.0, 0.0),
+                    &[1.0, -0.25],
+                    &[0.0, 0.75],
+                ),
+                hrir_entry_test(3, CartesianPosition::new(1.0, 1.0, 0.0), &[1.0], &[0.5]),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn oracle_full_convolution(samples: &[f64], gain: f64, taps: &[f64]) -> Vec<f64> {
+        let mut output = vec![0.0; samples.len() + taps.len() - 1];
+        for (sample_index, &sample) in samples.iter().enumerate() {
+            for (tap_index, &tap) in taps.iter().enumerate() {
+                output[sample_index + tap_index] += sample * gain * tap;
+            }
+        }
+        output
+    }
+
+    fn render_binaural_partitioned(
+        renderer: &mut BinauralRenderer,
+        source_blocks: &[(&[f64], SourceId)],
+        partitions: &[usize],
+        tail_partitions: &[usize],
+    ) -> (Vec<f64>, Vec<f64>) {
+        let mut left_all = Vec::new();
+        let mut right_all = Vec::new();
+        let mut offset = 0;
+        for &length in partitions {
+            let blocks: Vec<_> = source_blocks
+                .iter()
+                .rev()
+                .map(|(samples, id)| {
+                    BinauralSourceBlock::new(*id, &samples[offset..offset + length])
+                })
+                .collect();
+            let mut left = vec![0.0; length];
+            let mut right = vec![0.0; length];
+            renderer
+                .render_block(&blocks, &mut left, &mut right)
+                .unwrap();
+            left_all.extend(left);
+            right_all.extend(right);
+            offset += length;
+        }
+        assert_eq!(offset, source_blocks[0].0.len());
+        for &length in tail_partitions {
+            let mut left = vec![0.0; length];
+            let mut right = vec![0.0; length];
+            renderer.drain_tail_block(&mut left, &mut right).unwrap();
+            left_all.extend(left);
+            right_all.extend(right);
+        }
+        (left_all, right_all)
+    }
+
     fn oracle_normalize3(vector: [f64; 3]) -> [f64; 3] {
         let norm = (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]).sqrt();
         [vector[0] / norm, vector[1] / norm, vector[2] / norm]
@@ -3652,6 +4551,275 @@ mod tests {
             Err(RenderError::DuplicateSourceId { .. })
         ));
         assert_eq!(unchanged, vec![vec![9.0; 3]; 6]);
+    }
+
+    #[test]
+    fn binaural_hrir_validation_and_exact_direction_lookup_are_strict() {
+        assert!(matches!(
+            HrirPair::new(0, vec![1.0], vec![1.0]),
+            Err(RenderError::InvalidSampleRate)
+        ));
+        assert!(matches!(
+            HrirPair::new(48_000, Vec::new(), vec![1.0]),
+            Err(RenderError::EmptyHrir)
+        ));
+        assert!(matches!(
+            HrirPair::new(48_000, vec![1.0], vec![1.0, 2.0]),
+            Err(RenderError::MismatchedHrirTapLength { .. })
+        ));
+        assert!(matches!(
+            HrirPair::new(48_000, vec![f64::NAN], vec![1.0]),
+            Err(RenderError::NonFiniteHrirTap {
+                ear: HrirEar::Left,
+                ..
+            })
+        ));
+        let duplicate_id = vec![
+            hrir_entry_test(10, CartesianPosition::new(0.0, 1.0, 0.0), &[1.0], &[1.0]),
+            hrir_entry_test(10, CartesianPosition::new(1.0, 0.0, 0.0), &[1.0], &[1.0]),
+        ];
+        assert!(matches!(
+            HrirBank::new(48_000, duplicate_id),
+            Err(RenderError::DuplicateHrirEntryId { .. })
+        ));
+        let duplicate_direction = vec![
+            hrir_entry_test(11, CartesianPosition::new(0.0, 1.0, 0.0), &[1.0], &[1.0]),
+            hrir_entry_test(
+                12,
+                CartesianPosition::new(0.0, 1.0 + 1.0e-8, 0.0),
+                &[1.0],
+                &[1.0],
+            ),
+        ];
+        assert!(matches!(
+            HrirBank::new(48_000, duplicate_direction),
+            Err(RenderError::DuplicateHrirDirection { .. })
+        ));
+        let bank = binaural_test_bank();
+        assert_eq!(
+            bank.resolve_exact(CartesianPosition::new(0.0, 1.0, 0.0))
+                .unwrap()
+                .id(),
+            HrirEntryId::new(1)
+        );
+        assert!(matches!(
+            bank.resolve_exact(CartesianPosition::new(0.0, 0.0, 1.0)),
+            Err(RenderError::UnsupportedHrirDirection { .. })
+        ));
+        assert!(matches!(
+            BinauralRenderer::new(
+                44_100,
+                bank,
+                vec![
+                    StaticBinauralSource::new(
+                        SourceId::new(1),
+                        CartesianPosition::new(0.0, 1.0, 0.0),
+                        1.0,
+                        HrirEntryId::new(1),
+                    )
+                    .unwrap()
+                ],
+            ),
+            Err(RenderError::HrirSampleRateMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn binaural_direct_fir_matches_independent_oracle_and_preserves_ear_delay() {
+        let bank = binaural_test_bank();
+        let source = StaticBinauralSource::new(
+            SourceId::new(20),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            2.0,
+            HrirEntryId::new(1),
+        )
+        .unwrap();
+        let samples = [1.0, -0.5, 0.25];
+        let mut renderer = BinauralRenderer::new(48_000, bank, vec![source]).unwrap();
+        let (left, right) = render_binaural_partitioned(
+            &mut renderer,
+            &[(&samples, SourceId::new(20))],
+            &[3],
+            &[1, 1],
+        );
+        let expected_left = oracle_full_convolution(&samples, 2.0, &[0.0, 1.0, 0.5]);
+        let expected_right = oracle_full_convolution(&samples, 2.0, &[0.0, 0.25, -0.5]);
+        assert_eq!(left, expected_left);
+        assert_eq!(right, expected_right);
+        assert_ne!(left, right);
+        assert_eq!(renderer.remaining_tail_samples(), 0);
+        assert!(renderer.is_finished());
+    }
+
+    #[test]
+    fn binaural_input_and_tail_partitions_are_byte_identical_for_multiple_sources() {
+        let samples_a = [1.0, 0.5, -0.25, 0.75, 0.0];
+        let samples_b = [-0.5, 0.25, 0.5, -0.75, 1.0];
+        let source_a = StaticBinauralSource::new(
+            SourceId::new(21),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            0.75,
+            HrirEntryId::new(1),
+        )
+        .unwrap();
+        let source_b = StaticBinauralSource::new(
+            SourceId::new(22),
+            CartesianPosition::new(-1.0, 1.0, 0.0),
+            -0.5,
+            HrirEntryId::new(2),
+        )
+        .unwrap();
+        let make_renderer = || {
+            BinauralRenderer::new(48_000, binaural_test_bank(), vec![source_a, source_b]).unwrap()
+        };
+        let blocks = [
+            (&samples_a[..], SourceId::new(21)),
+            (&samples_b[..], SourceId::new(22)),
+        ];
+        let whole = render_binaural_partitioned(&mut make_renderer(), &blocks, &[5], &[2]);
+        let irregular =
+            render_binaural_partitioned(&mut make_renderer(), &blocks, &[1, 2, 1, 1], &[1, 1]);
+        let one_sample =
+            render_binaural_partitioned(&mut make_renderer(), &blocks, &[1, 1, 1, 1, 1], &[1, 1]);
+        assert_eq!(whole, irregular);
+        assert_eq!(whole, one_sample);
+    }
+
+    #[test]
+    fn binaural_history_reset_and_failure_paths_are_bounded_and_atomic() {
+        let source = StaticBinauralSource::new(
+            SourceId::new(23),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            1.0,
+            HrirEntryId::new(1),
+        )
+        .unwrap();
+        let samples = [1.0, 2.0, 3.0, 4.0];
+        let mut split = BinauralRenderer::new(48_000, binaural_test_bank(), vec![source]).unwrap();
+        let first = BinauralSourceBlock::new(SourceId::new(23), &samples[..2]);
+        let second = BinauralSourceBlock::new(SourceId::new(23), &samples[2..]);
+        let mut left = [0.0; 2];
+        let mut right = [0.0; 2];
+        split.render_block(&[first], &mut left, &mut right).unwrap();
+        split
+            .render_block(&[second], &mut left, &mut right)
+            .unwrap();
+        let split_tail = split.remaining_tail_samples();
+        assert_eq!(split_tail, 2);
+        split.reset();
+        let reset_result = render_binaural_partitioned(
+            &mut split,
+            &[(&samples, SourceId::new(23))],
+            &[4],
+            &[1, 1],
+        );
+        let mut fresh = BinauralRenderer::new(48_000, binaural_test_bank(), vec![source]).unwrap();
+        let fresh_result = render_binaural_partitioned(
+            &mut fresh,
+            &[(&samples, SourceId::new(23))],
+            &[4],
+            &[1, 1],
+        );
+        assert_eq!(reset_result, fresh_result);
+
+        let mut atomic = BinauralRenderer::new(48_000, binaural_test_bank(), vec![source]).unwrap();
+        let mut unchanged_left = [9.0; 4];
+        let mut unchanged_right = [8.0; 4];
+        let unknown = BinauralSourceBlock::new(SourceId::new(999), &samples);
+        assert!(matches!(
+            atomic.render_block(&[unknown], &mut unchanged_left, &mut unchanged_right),
+            Err(RenderError::UnknownBinauralSource { .. })
+        ));
+        assert_eq!(unchanged_left, [9.0; 4]);
+        assert_eq!(unchanged_right, [8.0; 4]);
+        let valid = BinauralSourceBlock::new(SourceId::new(23), &samples);
+        atomic
+            .render_block(&[valid], &mut unchanged_left, &mut unchanged_right)
+            .unwrap();
+
+        let huge_pair = HrirPair::new(48_000, vec![f64::MAX], vec![f64::MAX]).unwrap();
+        let huge_bank = HrirBank::new(
+            48_000,
+            vec![
+                HrirEntry::new(
+                    HrirEntryId::new(99),
+                    CartesianPosition::new(0.0, 1.0, 0.0),
+                    huge_pair,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+        let huge_source = StaticBinauralSource::new(
+            SourceId::new(24),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            1.0,
+            HrirEntryId::new(99),
+        )
+        .unwrap();
+        let mut overflow = BinauralRenderer::new(48_000, huge_bank, vec![huge_source]).unwrap();
+        let mut overflow_left = [7.0];
+        let mut overflow_right = [8.0];
+        assert!(matches!(
+            overflow.render_block(
+                &[BinauralSourceBlock::new(SourceId::new(24), &[f64::MAX])],
+                &mut overflow_left,
+                &mut overflow_right,
+            ),
+            Err(RenderError::NonFiniteOutput { .. })
+        ));
+        assert_eq!(overflow_left, [0.0]);
+        assert_eq!(overflow_right, [0.0]);
+        assert!(matches!(
+            overflow.render_block(
+                &[BinauralSourceBlock::new(SourceId::new(24), &[0.0])],
+                &mut overflow_left,
+                &mut overflow_right,
+            ),
+            Err(RenderError::BinauralRequiresReset)
+        ));
+    }
+
+    #[test]
+    fn binaural_one_tap_has_zero_tail_and_rejects_input_after_drain() {
+        let bank = HrirBank::new(
+            48_000,
+            vec![hrir_entry_test(
+                30,
+                CartesianPosition::new(0.0, 1.0, 0.0),
+                &[1.0],
+                &[0.5],
+            )],
+        )
+        .unwrap();
+        let source = StaticBinauralSource::new(
+            SourceId::new(30),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            1.0,
+            HrirEntryId::new(30),
+        )
+        .unwrap();
+        let mut renderer = BinauralRenderer::new(48_000, bank, vec![source]).unwrap();
+        let mut left = [0.0; 2];
+        let mut right = [0.0; 2];
+        renderer
+            .render_block(
+                &[BinauralSourceBlock::new(SourceId::new(30), &[1.0, 2.0])],
+                &mut left,
+                &mut right,
+            )
+            .unwrap();
+        assert_eq!(renderer.remaining_tail_samples(), 0);
+        renderer.drain_tail_block(&mut [], &mut []).unwrap();
+        assert!(renderer.is_finished());
+        assert!(matches!(
+            renderer.render_block(
+                &[BinauralSourceBlock::new(SourceId::new(30), &[0.0])],
+                &mut [],
+                &mut [],
+            ),
+            Err(RenderError::BinauralInputAfterTailStart)
+        ));
     }
 
     #[test]

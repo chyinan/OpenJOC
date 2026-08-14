@@ -129,6 +129,18 @@ allocation. Distance, Doppler, listener orientation, room effects, LFE,
 HRTF/binaural rendering, JOC, ObjectScene, and authored-object bridges remain
 outside the contract.
 
+`HrirPair`, `HrirEntry`, and `HrirBank` provide a compact caller-supplied
+exact-direction HRIR contract. `StaticBinauralSource` binds a fixed explicit
+source ID, canonical direction, linear gain, and HRIR entry; it does not infer
+authored-object identity. `BinauralRenderer` uses the fixed listener convention
+(`+Y` forward, `+X` right, `+Z` up), emits `LEFT_EAR` then `RIGHT_EAR`, and
+performs direct causal time-domain FIR convolution. It preserves leading HRIR
+delay, keeps bounded per-source history across caller-owned input blocks, and
+exposes explicit tail draining and reset semantics. Exact direction and
+sample-rate matching are mandatory; there is no nearest-neighbor lookup,
+interpolation, SOFA parser, moving source, listener pose, room, distance,
+Doppler, FFT/partitioned convolution, or JOC semantic bridge.
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

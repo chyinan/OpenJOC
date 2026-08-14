@@ -12,6 +12,13 @@ current capability matrix or a historical milestone log.
 - Keep the admitted 3D trajectory contract stable: shortest great-circle
   segments, explicit intermediate keyframes, and absolute-sample partition
   invariance. Optimization requires measured byte-identical regressions.
+- Keep J5R6 direct-FIR binaural rendering as the compact numerical oracle:
+  exact caller-supplied HRIR lookup, static source registration, bounded
+  history, and complete tail draining remain the reference contract. Any
+  future optimization must preserve byte-identical direct-path regressions.
+- A separately authorized future stage may add uniform partitioned convolution
+  for long HRIRs; it must not silently add SOFA parsing, interpolation, moving
+  sources, or listener pose semantics.
 - Add a pluggable public/user-supplied HRTF path only after the speaker-scene
   contract is stable.
 - Extend public-syntax and malformed-input hardening, including fuzz coverage.

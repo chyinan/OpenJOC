@@ -15,6 +15,10 @@
 - Sample-accurate 3D source trajectories using shortest great-circle segments,
   linear gain ramps, explicit intermediate keyframes around antipodes, and
   byte-identical block-partition-invariant triplet rendering.
+- Caller-supplied exact-direction HRIR banks, static explicit binaural source
+  registration, direct causal f64 FIR streaming, bounded history, and complete
+  block-partition-invariant tail draining. No SOFA, interpolation, or
+  partitioned convolution is included.
 
 ### Scope
 
@@ -24,6 +28,10 @@
   uncovered angular gaps, and does not provide a JOC semantic bridge.
 - The 3D trajectory path remains directional and explicit-topology only: it has
   no distance, Doppler, listener orientation, room, LFE, HRTF, or JOC bridge.
+- The binaural path is a fixed-listener, static-source reference renderer: it
+  accepts only caller-supplied synthetic/test or runtime HRIR taps, requires
+  exact direction and sample-rate matches, and does not claim proprietary HRTF
+  or perceptual renderer fidelity.
 
 ## [0.2.0] — 2026-08-13
 
