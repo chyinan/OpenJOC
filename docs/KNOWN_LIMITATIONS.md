@@ -14,10 +14,13 @@ claiming capabilities that the current evidence does not support.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
-  speaker-layout renderer with public 2D VBAP-style pair gains. It rejects
-  uncovered angular gaps, ignores elevation, and has no LFE/bass-management,
-  JOC semantic bridge, binaural renderer, room model, or Dolby renderer
-  fidelity implementation. Its optional trajectories are sample-accurate
+  speaker-layout renderer with public 2D VBAP-style pair gains, plus an
+  explicit 3D speaker topology/triplet renderer. The 3D caller must provide
+  public speaker order and every triplet; automatic triangulation, Delaunay,
+  hull, and best-triplet inference are deliberately absent. Both renderers
+  reject uncovered directions and have no LFE/bass-management, JOC semantic
+  bridge, binaural renderer, room model, or Dolby renderer fidelity
+  implementation. Its optional trajectories are sample-accurate
   piecewise-linear azimuth/gain paths on an absolute sample timeline; they do
   not model radius, distance, Doppler, elevation, or acceleration smoothing.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,

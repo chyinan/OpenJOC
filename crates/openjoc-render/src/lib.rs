@@ -10,8 +10,10 @@
 //! separate explicit-scene two-dimensional speaker-layout renderer using
 //! checked public VBAP-style pair mathematics. J5R3 adds sample-accurate,
 //! absolute-timeline azimuth and gain trajectories on top of both renderers.
-//! Elevation, distance, room acoustics, occlusion, HRTF, and JOC semantic
-//! binding remain explicit non-features of this foundation.
+//! J5R4 adds explicit caller-declared three-dimensional speaker topology and
+//! checked 3x3 VBAP triplet gains. Elevation, distance, room acoustics,
+//! occlusion, HRTF, and JOC semantic binding remain explicit non-features of
+//! this foundation.
 
 use std::fmt;
 
@@ -902,9 +904,483 @@ impl LayoutRenderer2d {
     }
 }
 
+/// One caller-declared three-dimensional output speaker direction.
+///
+/// The direction is normalized only for the internal VBAP solve. Speaker
+/// order is never inferred from geometry; it is the output order supplied to
+/// the layout.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Speaker3d {
+    id: SpeakerId,
+    position: CartesianPosition,
+}
+
+impl Speaker3d {
+    /// Creates a speaker with a finite, nonzero 3D direction.
+    pub fn new(id: SpeakerId, position: CartesianPosition) -> Result<Self, RenderError> {
+        validate_position(position)?;
+        normalized_3d(position)?;
+        Ok(Self { id, position })
+    }
+
+    /// Returns the opaque speaker identity.
+    #[must_use]
+    pub const fn id(self) -> SpeakerId {
+        self.id
+    }
+
+    /// Returns the caller-declared Cartesian direction.
+    #[must_use]
+    pub const fn position(self) -> CartesianPosition {
+        self.position
+    }
+}
+
+/// One explicit 3D VBAP triplet in caller-declared speaker-ID order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpeakerTriplet3d {
+    first: SpeakerId,
+    second: SpeakerId,
+    third: SpeakerId,
+}
+
+impl SpeakerTriplet3d {
+    /// Creates a triplet. The three IDs must be distinct.
+    pub fn new(first: SpeakerId, second: SpeakerId, third: SpeakerId) -> Result<Self, RenderError> {
+        if first == second || first == third || second == third {
+            return Err(RenderError::DuplicateTripletSpeaker);
+        }
+        Ok(Self {
+            first,
+            second,
+            third,
+        })
+    }
+
+    /// Returns the first declared speaker ID.
+    #[must_use]
+    pub const fn first(self) -> SpeakerId {
+        self.first
+    }
+
+    /// Returns the second declared speaker ID.
+    #[must_use]
+    pub const fn second(self) -> SpeakerId {
+        self.second
+    }
+
+    /// Returns the third declared speaker ID.
+    #[must_use]
+    pub const fn third(self) -> SpeakerId {
+        self.third
+    }
+
+    const fn ids(self) -> [SpeakerId; 3] {
+        [self.first, self.second, self.third]
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TripletRecord3d {
+    triplet: SpeakerTriplet3d,
+    indices: [usize; 3],
+    columns: [[f64; 3]; 3],
+}
+
+/// A validated explicit 3D speaker topology.
+///
+/// The caller supplies both the public output order and every admissible
+/// triplet. The layout never constructs Delaunay triangles, a convex hull, or
+/// a “best” triplet implicitly. A direction covered by more than one declared
+/// triplet is accepted only when all resulting public-order gain vectors agree
+/// within the fixed numerical ambiguity tolerance.
+#[derive(Clone, Debug)]
+pub struct SpeakerLayout3d {
+    speakers: Vec<Speaker3d>,
+    directions: Vec<[f64; 3]>,
+    triplets: Vec<TripletRecord3d>,
+    declared_triplets: Vec<SpeakerTriplet3d>,
+}
+
+impl SpeakerLayout3d {
+    /// Builds an immutable topology from caller-declared speakers and triplets.
+    pub fn new(
+        speakers: Vec<Speaker3d>,
+        triplets: Vec<SpeakerTriplet3d>,
+    ) -> Result<Self, RenderError> {
+        if speakers.len() < 3 {
+            return Err(RenderError::TooFew3dSpeakers {
+                actual: speakers.len(),
+            });
+        }
+        for (index, speaker) in speakers.iter().enumerate() {
+            if speakers[index + 1..]
+                .iter()
+                .any(|other| other.id == speaker.id)
+            {
+                return Err(RenderError::DuplicateSpeakerId { id: speaker.id });
+            }
+        }
+        let directions: Vec<_> = speakers
+            .iter()
+            .map(|speaker| normalized_3d(speaker.position))
+            .collect::<Result<_, _>>()?;
+        for first in 0..directions.len() {
+            for second in first + 1..directions.len() {
+                if direction_distance_squared(directions[first], directions[second])
+                    <= DIRECTION_TOLERANCE * DIRECTION_TOLERANCE
+                {
+                    return Err(RenderError::DuplicateSpeakerDirection { first, second });
+                }
+            }
+        }
+
+        let mut records = Vec::with_capacity(triplets.len());
+        for triplet in triplets {
+            let ids = triplet.ids();
+            let mut indices = [0_usize; 3];
+            for (slot, id) in ids.into_iter().enumerate() {
+                indices[slot] = speakers
+                    .iter()
+                    .position(|speaker| speaker.id == id)
+                    .ok_or(RenderError::MissingTripletSpeaker { id })?;
+            }
+            let mut canonical = indices;
+            canonical.sort_unstable();
+            if records.iter().any(|record: &TripletRecord3d| {
+                let mut prior = record.indices;
+                prior.sort_unstable();
+                prior == canonical
+            }) {
+                return Err(RenderError::DuplicateTriplet);
+            }
+            let columns = [
+                directions[indices[0]],
+                directions[indices[1]],
+                directions[indices[2]],
+            ];
+            let determinant = determinant3(columns);
+            if !determinant.is_finite() || determinant.abs() <= DETERMINANT_TOLERANCE {
+                return Err(RenderError::DegenerateTriplet { indices });
+            }
+            records.push(TripletRecord3d {
+                triplet,
+                indices,
+                columns,
+            });
+        }
+        if records.is_empty() {
+            return Err(RenderError::NoDeclared3dTriplet);
+        }
+        Ok(Self {
+            speakers,
+            directions,
+            declared_triplets: records.iter().map(|record| record.triplet).collect(),
+            triplets: records,
+        })
+    }
+
+    /// Returns the caller-declared public output order.
+    #[must_use]
+    pub fn speakers(&self) -> &[Speaker3d] {
+        &self.speakers
+    }
+
+    /// Returns the number of public output speakers.
+    #[must_use]
+    pub fn speaker_count(&self) -> usize {
+        self.speakers.len()
+    }
+
+    /// Returns the number of explicitly declared candidate triplets.
+    #[must_use]
+    pub fn triplet_count(&self) -> usize {
+        self.triplets.len()
+    }
+
+    /// Returns the caller-declared triplets in declaration order.
+    #[must_use]
+    pub fn triplets(&self) -> &[SpeakerTriplet3d] {
+        &self.declared_triplets
+    }
+
+    /// Resolves one position to deterministic energy-normalized triplet gains.
+    pub fn gains(&self, position: CartesianPosition) -> Result<TripletGains3d, RenderError> {
+        validate_position(position)?;
+        let direction = normalized_3d(position)?;
+        for (index, &speaker_direction) in self.directions.iter().enumerate() {
+            if direction_distance_squared(direction, speaker_direction)
+                <= DIRECTION_TOLERANCE * DIRECTION_TOLERANCE
+            {
+                return Ok(TripletGains3d {
+                    triplet: None,
+                    indices: [index, index, index],
+                    gains: [1.0, 0.0, 0.0],
+                    exact_index: Some(index),
+                    speaker_count: self.speakers.len(),
+                });
+            }
+        }
+
+        let mut selected: Option<([usize; 3], [f64; 3], SpeakerTriplet3d)> = None;
+        for record in &self.triplets {
+            let mut gains = solve_3x3_for(record.columns, direction)?;
+            if gains.iter().any(|gain| *gain < -GAIN_TOLERANCE) {
+                continue;
+            }
+            for gain in &mut gains {
+                if *gain < 0.0 {
+                    *gain = 0.0;
+                }
+            }
+            let norm = gains.iter().fold(0.0, |sum, gain| sum + gain * gain).sqrt();
+            if !norm.is_finite() || norm <= DETERMINANT_TOLERANCE {
+                continue;
+            }
+            for gain in &mut gains {
+                *gain /= norm;
+            }
+            if let Some((prior_indices, prior_gains, _)) = selected {
+                for speaker_index in 0..self.speakers.len() {
+                    let prior = gain_at(prior_indices, prior_gains, speaker_index);
+                    let current = gain_at(record.indices, gains, speaker_index);
+                    if (prior - current).abs() > AMBIGUITY_TOLERANCE {
+                        return Err(RenderError::Ambiguous3dCoverage);
+                    }
+                }
+            } else {
+                selected = Some((record.indices, gains, record.triplet));
+            }
+        }
+        let (indices, gains, triplet) = selected.ok_or(RenderError::Unsupported3dDirection {
+            x: direction[0],
+            y: direction[1],
+            z: direction[2],
+        })?;
+        Ok(TripletGains3d {
+            triplet: Some(triplet),
+            indices,
+            gains,
+            exact_index: None,
+            speaker_count: self.speakers.len(),
+        })
+    }
+
+    fn gains_into(
+        &self,
+        position: CartesianPosition,
+        output: &mut [f64],
+    ) -> Result<(), RenderError> {
+        self.gains(position)?.write_full_gains(output)
+    }
+}
+
+/// Energy-normalized gains for one explicit 3D triplet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TripletGains3d {
+    triplet: Option<SpeakerTriplet3d>,
+    indices: [usize; 3],
+    gains: [f64; 3],
+    exact_index: Option<usize>,
+    speaker_count: usize,
+}
+
+impl TripletGains3d {
+    /// Returns the declared triplet, or `None` for an exact one-speaker hit.
+    #[must_use]
+    pub const fn triplet(self) -> Option<SpeakerTriplet3d> {
+        self.triplet
+    }
+
+    /// Returns the three gains in declared triplet order.
+    #[must_use]
+    pub const fn gains(self) -> [f64; 3] {
+        self.gains
+    }
+
+    /// Returns the first triplet gain.
+    #[must_use]
+    pub const fn first(self) -> f64 {
+        self.gains[0]
+    }
+
+    /// Returns the second triplet gain.
+    #[must_use]
+    pub const fn second(self) -> f64 {
+        self.gains[1]
+    }
+
+    /// Returns the third triplet gain.
+    #[must_use]
+    pub const fn third(self) -> f64 {
+        self.gains[2]
+    }
+
+    /// Expands gains into the layout's caller-declared output order.
+    pub fn write_full_gains(self, output: &mut [f64]) -> Result<(), RenderError> {
+        if output.len() != self.speaker_count {
+            return Err(RenderError::SpeakerOutputCountMismatch {
+                expected: self.speaker_count,
+                actual: output.len(),
+            });
+        }
+        output.fill(0.0);
+        if let Some(index) = self.exact_index {
+            output[index] = 1.0;
+        } else {
+            for (index, gain) in self.indices.into_iter().zip(self.gains) {
+                output[index] = gain;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Stateless block renderer for an explicit 3D speaker topology.
+#[derive(Clone, Debug)]
+pub struct LayoutRenderer3d {
+    layout: SpeakerLayout3d,
+}
+
+impl LayoutRenderer3d {
+    /// Creates a renderer for a validated explicit 3D topology.
+    #[must_use]
+    pub fn new(layout: SpeakerLayout3d) -> Self {
+        Self { layout }
+    }
+
+    /// Returns the immutable explicit topology.
+    #[must_use]
+    pub const fn layout(&self) -> &SpeakerLayout3d {
+        &self.layout
+    }
+
+    /// Renders static explicit sources into caller-owned planar outputs.
+    ///
+    /// All structure, source data, and 3D gain resolution are preflighted
+    /// before outputs are cleared. Mixing uses one reusable speaker-gain
+    /// scratch vector per call and never allocates per sample or per source
+    /// sample. A numeric failure clears all outputs.
+    pub fn render_block(
+        &self,
+        sources: &[ExplicitSpatialSource<'_>],
+        outputs: &mut [&mut [f64]],
+    ) -> Result<(), RenderError> {
+        validate_speaker_outputs(self.layout.speaker_count(), outputs)?;
+        let block_length = outputs.first().map_or(0, |output| output.len());
+        for (index, source) in sources.iter().enumerate() {
+            if sources[index + 1..]
+                .iter()
+                .any(|other| other.id == source.id)
+            {
+                return Err(RenderError::DuplicateSourceId { id: source.id });
+            }
+            if source.samples.len() != block_length {
+                return Err(RenderError::SourceBlockLengthMismatch {
+                    id: source.id,
+                    expected: block_length,
+                    actual: source.samples.len(),
+                });
+            }
+            validate_position(source.position)?;
+            validate_gain(source.gain)?;
+            if let Some(sample_index) = source.samples.iter().position(|sample| !sample.is_finite())
+            {
+                return Err(RenderError::NonFiniteSourceSample {
+                    id: source.id,
+                    sample_index,
+                });
+            }
+            self.layout.gains(source.position)?;
+        }
+
+        for output in outputs.iter_mut() {
+            output.fill(0.0);
+        }
+        let mut full_gains = vec![0.0; self.layout.speaker_count()];
+        for source in sources {
+            self.layout.gains_into(source.position, &mut full_gains)?;
+            for (sample_index, &sample) in source.samples.iter().enumerate() {
+                for (speaker_index, output) in outputs.iter_mut().enumerate() {
+                    output[sample_index] += sample * source.gain * full_gains[speaker_index];
+                    if !output[sample_index].is_finite() {
+                        clear_outputs(outputs);
+                        return Err(RenderError::NonFiniteOutput {
+                            channel: OutputChannel::Speaker(speaker_index),
+                            sample_index,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn normalized_3d(position: CartesianPosition) -> Result<[f64; 3], RenderError> {
+    validate_position(position)?;
+    let norm = position
+        .x
+        .mul_add(
+            position.x,
+            position.y.mul_add(position.y, position.z * position.z),
+        )
+        .sqrt();
+    if !norm.is_finite() || norm <= 0.0 {
+        return Err(RenderError::Undefined3dSpeakerDirection);
+    }
+    Ok([position.x / norm, position.y / norm, position.z / norm])
+}
+
+fn direction_distance_squared(first: [f64; 3], second: [f64; 3]) -> f64 {
+    let dx = first[0] - second[0];
+    let dy = first[1] - second[1];
+    let dz = first[2] - second[2];
+    dx.mul_add(dx, dy.mul_add(dy, dz * dz))
+}
+
+fn determinant3(columns: [[f64; 3]; 3]) -> f64 {
+    let [a, b, c] = columns;
+    a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+        + a[2] * (b[0] * c[1] - b[1] * c[0])
+}
+
+fn solve_3x3_for(columns: [[f64; 3]; 3], vector: [f64; 3]) -> Result<[f64; 3], RenderError> {
+    let determinant = determinant3(columns);
+    if !determinant.is_finite() || determinant.abs() <= DETERMINANT_TOLERANCE {
+        return Err(RenderError::Invalid3dGains);
+    }
+    let mut first = columns;
+    first[0] = vector;
+    let mut second = columns;
+    second[1] = vector;
+    let mut third = columns;
+    third[2] = vector;
+    let result = [
+        determinant3(first) / determinant,
+        determinant3(second) / determinant,
+        determinant3(third) / determinant,
+    ];
+    if result.iter().all(|gain| gain.is_finite()) {
+        Ok(result)
+    } else {
+        Err(RenderError::Invalid3dGains)
+    }
+}
+
+fn gain_at(indices: [usize; 3], gains: [f64; 3], index: usize) -> f64 {
+    indices
+        .into_iter()
+        .zip(gains)
+        .find_map(|(candidate, gain)| (candidate == index).then_some(gain))
+        .unwrap_or(0.0)
+}
+
 const ANGLE_TOLERANCE: f64 = 1.0e-12;
 const DETERMINANT_TOLERANCE: f64 = 1.0e-12;
 const GAIN_TOLERANCE: f64 = 1.0e-12;
+const DIRECTION_TOLERANCE: f64 = 1.0e-12;
+const AMBIGUITY_TOLERANCE: f64 = 1.0e-10;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 const MAX_EXACT_INTERPOLATION_SPAN: u64 = 1_u64 << 53;
 
@@ -1117,8 +1593,32 @@ pub enum RenderError {
     UndefinedSpeakerDirection {
         id: SpeakerId,
     },
+    Undefined3dSpeakerDirection,
     DuplicateSpeakerId {
         id: SpeakerId,
+    },
+    TooFew3dSpeakers {
+        actual: usize,
+    },
+    DuplicateSpeakerDirection {
+        first: usize,
+        second: usize,
+    },
+    DuplicateTripletSpeaker,
+    MissingTripletSpeaker {
+        id: SpeakerId,
+    },
+    DuplicateTriplet,
+    DegenerateTriplet {
+        indices: [usize; 3],
+    },
+    NoDeclared3dTriplet,
+    Invalid3dGains,
+    Ambiguous3dCoverage,
+    Unsupported3dDirection {
+        x: f64,
+        y: f64,
+        z: f64,
     },
     DuplicateSpeakerAzimuth {
         first: usize,
@@ -1233,9 +1733,47 @@ impl fmt::Display for RenderError {
                     id.0
                 )
             }
+            Self::Undefined3dSpeakerDirection => {
+                formatter.write_str("3D speaker direction is undefined at zero length")
+            }
             Self::DuplicateSpeakerId { id } => {
                 write!(formatter, "duplicate speaker ID {}", id.0)
             }
+            Self::TooFew3dSpeakers { actual } => {
+                write!(
+                    formatter,
+                    "a 3D layout needs at least three speakers; got {actual}"
+                )
+            }
+            Self::DuplicateSpeakerDirection { first, second } => write!(
+                formatter,
+                "3D speakers {first} and {second} have duplicate normalized directions"
+            ),
+            Self::DuplicateTripletSpeaker => {
+                formatter.write_str("a 3D triplet must contain three distinct speaker IDs")
+            }
+            Self::MissingTripletSpeaker { id } => {
+                write!(formatter, "3D triplet references missing speaker {}", id.0)
+            }
+            Self::DuplicateTriplet => {
+                formatter.write_str("3D triplets must be unique ignoring declaration order")
+            }
+            Self::DegenerateTriplet { indices } => write!(
+                formatter,
+                "3D triplet [{}, {}, {}] has a singular speaker matrix",
+                indices[0], indices[1], indices[2]
+            ),
+            Self::NoDeclared3dTriplet => {
+                formatter.write_str("3D layout requires at least one declared triplet")
+            }
+            Self::Invalid3dGains => formatter.write_str("3D VBAP gains are invalid or degenerate"),
+            Self::Ambiguous3dCoverage => {
+                formatter.write_str("multiple declared 3D triplets produce different gains")
+            }
+            Self::Unsupported3dDirection { x, y, z } => write!(
+                formatter,
+                "explicit 3D speaker topology does not cover direction ({x}, {y}, {z})"
+            ),
             Self::DuplicateSpeakerAzimuth { first, second } => write!(
                 formatter,
                 "speakers {first} and {second} have duplicate azimuths"
@@ -2285,5 +2823,282 @@ mod tests {
         ));
         assert_eq!(left, [7.0; 2]);
         assert_eq!(right, [8.0; 2]);
+    }
+
+    fn speaker3(id: u64, x: f64, y: f64, z: f64) -> Speaker3d {
+        Speaker3d::new(SpeakerId::new(id), CartesianPosition::new(x, y, z)).unwrap()
+    }
+
+    fn triplet(first: u64, second: u64, third: u64) -> SpeakerTriplet3d {
+        SpeakerTriplet3d::new(
+            SpeakerId::new(first),
+            SpeakerId::new(second),
+            SpeakerId::new(third),
+        )
+        .unwrap()
+    }
+
+    fn octahedron_layout() -> SpeakerLayout3d {
+        SpeakerLayout3d::new(
+            vec![
+                speaker3(200, 1.0, 0.0, 0.0),
+                speaker3(201, -1.0, 0.0, 0.0),
+                speaker3(202, 0.0, 1.0, 0.0),
+                speaker3(203, 0.0, -1.0, 0.0),
+                speaker3(204, 0.0, 0.0, 1.0),
+                speaker3(205, 0.0, 0.0, -1.0),
+            ],
+            vec![
+                triplet(200, 202, 204),
+                triplet(200, 204, 203),
+                triplet(200, 203, 205),
+                triplet(200, 205, 202),
+                triplet(201, 204, 202),
+                triplet(201, 203, 204),
+                triplet(201, 205, 203),
+                triplet(201, 202, 205),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn render_planes3(
+        renderer: &LayoutRenderer3d,
+        sources: &[ExplicitSpatialSource<'_>],
+        length: usize,
+    ) -> Vec<Vec<f64>> {
+        let mut planes = vec![vec![0.0; length]; renderer.layout().speaker_count()];
+        let mut outputs: Vec<&mut [f64]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+        renderer.render_block(sources, &mut outputs).unwrap();
+        planes
+    }
+
+    #[test]
+    fn vbap_3d_matches_independent_axis_oracle_and_normalizes_energy() {
+        let layout = SpeakerLayout3d::new(
+            vec![
+                speaker3(210, 1.0, 0.0, 0.0),
+                speaker3(211, 0.0, 1.0, 0.0),
+                speaker3(212, 0.0, 0.0, 1.0),
+            ],
+            vec![triplet(210, 211, 212)],
+        )
+        .unwrap();
+        let gains = layout.gains(CartesianPosition::new(1.0, 2.0, 3.0)).unwrap();
+        let norm = 14.0_f64.sqrt();
+        assert_eq!(gains.triplet(), Some(triplet(210, 211, 212)));
+        assert!((gains.first() - 1.0 / norm).abs() <= EPSILON);
+        assert!((gains.second() - 2.0 / norm).abs() <= EPSILON);
+        assert!((gains.third() - 3.0 / norm).abs() <= EPSILON);
+        assert!((gains.gains().iter().map(|gain| gain * gain).sum::<f64>() - 1.0).abs() <= EPSILON);
+        let mut full = [99.0; 3];
+        gains.write_full_gains(&mut full).unwrap();
+        assert_eq!(full, [gains.first(), gains.second(), gains.third()]);
+
+        let reordered = SpeakerLayout3d::new(
+            vec![
+                speaker3(212, 0.0, 0.0, 1.0),
+                speaker3(210, 1.0, 0.0, 0.0),
+                speaker3(211, 0.0, 1.0, 0.0),
+            ],
+            vec![triplet(212, 210, 211)],
+        )
+        .unwrap();
+        let reordered_gains = reordered
+            .gains(CartesianPosition::new(1.0, 2.0, 3.0))
+            .unwrap();
+        let mut reordered_full = [0.0; 3];
+        reordered_gains
+            .write_full_gains(&mut reordered_full)
+            .unwrap();
+        assert_eq!(
+            reordered_full,
+            [gains.third(), gains.first(), gains.second()]
+        );
+    }
+
+    #[test]
+    fn exact_cardinal_3d_hits_are_deterministic_one_hot_gains() {
+        let layout = octahedron_layout();
+        for (index, position) in [
+            CartesianPosition::new(1.0, 0.0, 0.0),
+            CartesianPosition::new(-1.0, 0.0, 0.0),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            CartesianPosition::new(0.0, -1.0, 0.0),
+            CartesianPosition::new(0.0, 0.0, 1.0),
+            CartesianPosition::new(0.0, 0.0, -1.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let gains = layout.gains(position).unwrap();
+            let mut full = [0.0; 6];
+            gains.write_full_gains(&mut full).unwrap();
+            assert_eq!(full[index], 1.0);
+            assert_eq!(full.iter().filter(|value| **value != 0.0).count(), 1);
+        }
+    }
+
+    #[test]
+    fn tetrahedron_faces_and_shared_edges_are_continuous() {
+        let scale = 3.0_f64.sqrt();
+        let layout = SpeakerLayout3d::new(
+            vec![
+                speaker3(220, 1.0, 1.0, 1.0),
+                speaker3(221, -1.0, -1.0, 1.0),
+                speaker3(222, -1.0, 1.0, -1.0),
+                speaker3(223, 1.0, -1.0, -1.0),
+            ],
+            vec![
+                triplet(220, 221, 222),
+                triplet(220, 223, 221),
+                triplet(220, 222, 223),
+                triplet(221, 223, 222),
+            ],
+        )
+        .unwrap();
+        for position in [
+            CartesianPosition::new(-1.0, 1.0, 1.0),
+            CartesianPosition::new(1.0, -1.0, 1.0),
+            CartesianPosition::new(-1.0, -1.0, -1.0),
+            CartesianPosition::new(1.0, 1.0, -1.0),
+        ] {
+            let gains = layout.gains(position).unwrap();
+            assert!(
+                gains
+                    .gains()
+                    .iter()
+                    .all(|gain| (*gain - 1.0 / scale).abs() <= EPSILON)
+            );
+        }
+        let edge = layout.gains(CartesianPosition::new(0.0, 0.0, 1.0)).unwrap();
+        assert!((edge.first() - 2.0_f64.sqrt().recip()).abs() <= EPSILON);
+        assert!((edge.second() - 2.0_f64.sqrt().recip()).abs() <= EPSILON);
+        assert!(edge.third().abs() <= EPSILON);
+    }
+
+    #[test]
+    fn partial_topology_rejects_uncovered_direction_and_overlap_is_ambiguous() {
+        let partial = SpeakerLayout3d::new(
+            vec![
+                speaker3(230, 1.0, 0.0, 0.0),
+                speaker3(231, 0.0, 1.0, 0.0),
+                speaker3(232, 0.0, 0.0, 1.0),
+            ],
+            vec![triplet(230, 231, 232)],
+        )
+        .unwrap();
+        assert!(matches!(
+            partial.gains(CartesianPosition::new(-1.0, 0.0, 0.0)),
+            Err(RenderError::Unsupported3dDirection { .. })
+        ));
+
+        let ambiguous = SpeakerLayout3d::new(
+            vec![
+                speaker3(240, 1.0, 0.0, 0.0),
+                speaker3(241, 0.0, 1.0, 0.0),
+                speaker3(242, 0.0, 0.0, 1.0),
+                speaker3(243, 0.0, 1.0, 1.0),
+            ],
+            vec![triplet(240, 241, 242), triplet(240, 241, 243)],
+        )
+        .unwrap();
+        assert!(matches!(
+            ambiguous.gains(CartesianPosition::new(0.2, 1.0, 0.5)),
+            Err(RenderError::Ambiguous3dCoverage)
+        ));
+    }
+
+    #[test]
+    fn layout_3d_validation_rejects_implicit_or_degenerate_topology() {
+        assert!(matches!(
+            Speaker3d::new(SpeakerId::new(250), CartesianPosition::new(0.0, 0.0, 0.0)),
+            Err(RenderError::Undefined3dSpeakerDirection)
+        ));
+        assert!(matches!(
+            SpeakerLayout3d::new(
+                vec![speaker3(251, 1.0, 0.0, 0.0), speaker3(252, 0.0, 1.0, 0.0)],
+                vec![]
+            ),
+            Err(RenderError::TooFew3dSpeakers { .. })
+        ));
+        assert!(matches!(
+            SpeakerTriplet3d::new(
+                SpeakerId::new(253),
+                SpeakerId::new(253),
+                SpeakerId::new(254)
+            ),
+            Err(RenderError::DuplicateTripletSpeaker)
+        ));
+        let duplicate_direction = SpeakerLayout3d::new(
+            vec![
+                speaker3(255, 1.0, 0.0, 0.0),
+                speaker3(256, 2.0, 0.0, 0.0),
+                speaker3(257, 0.0, 1.0, 0.0),
+            ],
+            vec![triplet(255, 256, 257)],
+        );
+        assert!(matches!(
+            duplicate_direction,
+            Err(RenderError::DuplicateSpeakerDirection { .. })
+        ));
+        let degenerate = SpeakerLayout3d::new(
+            vec![
+                speaker3(258, 1.0, 0.0, 0.0),
+                speaker3(259, 0.0, 1.0, 0.0),
+                speaker3(260, 1.0, 1.0, 0.0),
+            ],
+            vec![triplet(258, 259, 260)],
+        );
+        assert!(matches!(
+            degenerate,
+            Err(RenderError::DegenerateTriplet { .. })
+        ));
+    }
+
+    #[test]
+    fn renderer_3d_is_linear_partition_invariant_and_atomic() {
+        let renderer = LayoutRenderer3d::new(
+            SpeakerLayout3d::new(
+                vec![
+                    speaker3(270, 1.0, 0.0, 0.0),
+                    speaker3(271, 0.0, 1.0, 0.0),
+                    speaker3(272, 0.0, 0.0, 1.0),
+                ],
+                vec![triplet(270, 271, 272)],
+            )
+            .unwrap(),
+        );
+        let samples = [0.25, -0.5, 0.75, -1.0];
+        let full_source = source(273, &samples, 1.0, 2.0, 3.0, 0.5);
+        let whole = render_planes3(&renderer, &[full_source], samples.len());
+        let mut partitioned = vec![vec![0.0; samples.len()]; 3];
+        for (start, end) in [(0, 1), (1, 3), (3, 4)] {
+            let part = source(273, &samples[start..end], 1.0, 2.0, 3.0, 0.5);
+            let mut outputs: Vec<&mut [f64]> = partitioned
+                .iter_mut()
+                .map(|plane| &mut plane[start..end])
+                .collect();
+            renderer.render_block(&[part], &mut outputs).unwrap();
+        }
+        assert_eq!(whole, partitioned);
+
+        let invalid = source(274, &[1.0], -1.0, 0.0, 0.0, 1.0);
+        let mut stale = vec![vec![7.0; 1]; 3];
+        let mut outputs: Vec<&mut [f64]> = stale.iter_mut().map(Vec::as_mut_slice).collect();
+        assert!(matches!(
+            renderer.render_block(&[invalid], &mut outputs),
+            Err(RenderError::Unsupported3dDirection { .. })
+        ));
+        assert_eq!(stale, vec![vec![7.0; 1]; 3]);
+    }
+
+    #[test]
+    fn renderer_3d_has_no_decoder_or_semantic_bridge() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(!manifest.contains("openjoc-scene"));
+        assert!(!manifest.contains("openjoc-joc"));
+        assert!(!manifest.contains("DecodedJocComponents"));
+        assert!(Speaker3d::new(SpeakerId::new(280), CartesianPosition::new(0.0, 0.0, 1.0)).is_ok());
     }
 }

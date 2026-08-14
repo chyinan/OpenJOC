@@ -9,6 +9,9 @@
   public VBAP-style panning and caller-owned planar block outputs.
 - Sample-accurate, absolute-timeline position/gain trajectories for stereo and
   general 2D layouts, with explicit azimuth paths and block-partition invariance.
+- Explicit 3D speaker order and triplet topology with checked 3×3 VBAP gains,
+  deterministic exact-speaker hits, ambiguity rejection, and bounded planar
+  block rendering. Automatic triangulation is intentionally not included.
 
 ### Scope
 

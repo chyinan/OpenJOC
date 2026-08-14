@@ -104,6 +104,19 @@ planes, perform bounded preflight validation, and allocate neither per sample
 nor for the full timeline. The trajectory is directional only: radius, z,
 distance, Doppler, room effects, elevation, and HRTF are not rendered.
 
+`Speaker3d`, `SpeakerTriplet3d`, and `SpeakerLayout3d` add an explicit
+three-dimensional topology contract. The caller supplies the public speaker
+order and every admissible VBAP triplet; `LayoutRenderer3d` never performs
+Delaunay, hull, coverage, or “best triplet” inference. Each declared triplet
+is solved as the public 3×3 system `S g = p`, with finite/non-singular checks,
+non-negative gain checks, and unit-energy normalization. Exact speaker hits
+are deterministic one-hot gains. If multiple declared triplets cover a
+direction, their complete public-order gain vectors must agree or rendering
+fails with an ambiguity error. Partial layouts fail explicitly for unsupported
+directions, and LFE/bass management remains outside this renderer contract.
+The 3D renderer accepts only explicit sources and caller-owned planar `f64`
+outputs; it has no trajectory, JOC, ObjectScene, or authored-object bridge.
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

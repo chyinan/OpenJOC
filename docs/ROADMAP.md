@@ -5,8 +5,10 @@ current capability matrix or a historical milestone log.
 
 ## Near-term engineering priorities
 
-- Add 3D/elevation layout support only as a separately bounded public renderer
-  milestone; do not infer it from the unresolved JOC semantic bridge.
+- Consider a separately bounded automatic topology-generator module only if a
+  future maintainer explicitly wants it; `LayoutRenderer3d` intentionally
+  keeps caller-declared speaker triplets and performs no triangulation. Do not
+  infer 3D rendering from the unresolved JOC semantic bridge.
 - Add a pluggable public/user-supplied HRTF path only after the speaker-scene
   contract is stable.
 - Extend public-syntax and malformed-input hardening, including fuzz coverage.
