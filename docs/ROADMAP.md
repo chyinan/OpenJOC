@@ -39,9 +39,10 @@ current capability matrix or a historical milestone log.
 - Resolve the single JOC spatial bridge blocker: the independently testable
   time-varying operator `T(t)` and its complete state inputs. The codec-domain
   bridge is now explicit. J5R11 narrowed the next question to the temporal
-  class of one companion-induced forward column, but the instantaneous and
-  permitted two-tap source-locked models both remain unadmitted; do not bypass
-  this blocker with a fixed RB-row/object assumption.
+  class of one companion-induced forward column. J5R12 then rejected both
+  authorized AU-synchronous and 256-sample codec-block-synchronous
+  source-locked models; do not bypass this blocker with a finer ad-hoc model
+  or a fixed RB-row/object assumption.
 - Obtain admissible evidence for unresolved vendor OAMD continuation without
   weakening `ETSI_STRICT`.
 - Separate metadata understanding from any future authored-object binding

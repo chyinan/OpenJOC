@@ -73,6 +73,29 @@ source-locked column or the permitted two-tap temporal class. No coefficient
 is an object identifier, no RB row is an authored object, and no inverse
 `T(t)` or renderer scene is admitted.
 
+## J5R12 codec-grid temporal discriminator
+
+J5R12 kept the same frozen B0/B1/C0/C1 carriers, exact companion PCM, 1536
+sample alignment, and W1/W2/W3 windows. It tested only the two predeclared
+codec grids: complete 1536-sample access units, followed (because the AU
+model failed) by complete 256-sample codec audio blocks. Each segment used
+the bounded source-locked pair `s[n]` and `s[n-1]`, with even absolute
+samples for fitting and odd samples held out.
+
+The AU model failed in all three windows. The block model also failed: its
+normalized full/holdout RB residuals were approximately 0.000455/0.000454 in
+W1, 0.003965/0.003965 in W2, and 0.000512/0.000511 in W3, while the frozen
+absolute holdout guard is `1e-3`. The B/C repeats were byte-identical and the
+Base 997 Hz null remained inside its inherited envelope, so this is not an
+alignment or corpus-integrity failure.
+
+The resulting classification is
+`J5R12_CODEC_BLOCK_MODEL_INSUFFICIENT_TEMPORAL_STATE_UNRESOLVED`.
+The existing corpus therefore does not identify an AU- or 256-sample
+block-synchronous source-locked transfer. No finer segmentation, longer FIR,
+production empirical coefficient table, RB-row/object binding, or warp-3
+interpretation was attempted.
+
 ## Boundaries retained
 
 - `SemanticBindingState` remains `Unresolved`.

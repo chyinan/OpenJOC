@@ -17,6 +17,14 @@
   temporal class remains unresolved; no RB-row/object or renderer semantic
   claim was added.
 
+- J5R12 tested the same source-locked two-tap transfer only at the two
+  authorized codec grids: 1536-sample access units and, after AU failure,
+  256-sample codec audio blocks. Both failed the frozen source/holdout and
+  absolute-quality gates despite byte-identical repeats and a passing Base
+  null. The minimum temporal/state class remains unresolved; no finer model,
+  production coefficient table, RB-row/object binding, or warp-3 semantic
+  rule was added.
+
 - Added `openjoc render-scene` with the versioned `openjoc.render-scene.v1`
   explicit-source contract, strict SOFA-backed static binaural rendering,
   transactional float32 WAV output, and `openjoc sofa inspect`.
