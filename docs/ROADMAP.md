@@ -42,7 +42,9 @@ current capability matrix or a historical milestone log.
   class of one companion-induced forward column. J5R12 then rejected both
   authorized AU-synchronous and 256-sample codec-block-synchronous
   source-locked models; do not bypass this blocker with a finer ad-hoc model
-  or a fixed RB-row/object assumption.
+  or a fixed RB-row/object assumption. J5R13 additionally rejected the only
+  authorized global 256-phase and 1536-phase cyclostationary templates, so
+  the single-tone corpus is exhausted for this temporal-class question.
 - Obtain admissible evidence for unresolved vendor OAMD continuation without
   weakening `ETSI_STRICT`.
 - Separate metadata understanding from any future authored-object binding

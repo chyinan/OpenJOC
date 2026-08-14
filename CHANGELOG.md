@@ -25,6 +25,13 @@
   production coefficient table, RB-row/object binding, or warp-3 semantic
   rule was added.
 
+- J5R13 tested globally anchored 256-phase and conditional 1536-phase
+  source-locked templates on the same frozen corpus. Both failed their
+  preregistered cross-block/AU holdout and full-coordinate gates, so fixed
+  codec-phase periodicity is insufficient within this corpus. Smaller-period
+  searches, longer FIRs, empirical production templates, and semantic binding
+  remain out of scope.
+
 - Added `openjoc render-scene` with the versioned `openjoc.render-scene.v1`
   explicit-source contract, strict SOFA-backed static binaural rendering,
   transactional float32 WAV output, and `openjoc sofa inspect`.

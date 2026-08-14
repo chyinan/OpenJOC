@@ -96,6 +96,32 @@ block-synchronous source-locked transfer. No finer segmentation, longer FIR,
 production empirical coefficient table, RB-row/object binding, or warp-3
 interpretation was attempted.
 
+## J5R13 fixed codec-phase template discriminator
+
+J5R13 tested the remaining two globally anchored periodic hypotheses on the
+same B0/B1/C0/C1 corpus: a single 256-phase `alpha/beta` template, followed
+only after that failure by a single 1536-phase (six-block AU) template. Phase
+origin was the absolute decoder sample timeline; no window reset, phase shift,
+period search, or smaller-period fallback was used.
+
+The 256-phase template failed its global and per-window holdout gates (global
+holdout approximately 0.00321; W1 0.000106, W2 0.005589, W3 0.000281), and
+did not meet the four-times improvement or full-coordinate checks against the
+J5R12 block baseline. The conditional 1536-phase template also failed (global
+holdout approximately 0.001096; W1 0.000999, W2 0.001200, W3 0.001064), with
+the full RB coordinate checks failing as well. Repeated templates were
+numerically identical, while Base null and corpus integrity remained valid.
+
+The resulting classification is
+`J5R13_FIXED_CODEC_PHASE_TEMPLATE_INSUFFICIENT_EXISTING_CORPUS_EXHAUSTED`.
+Within this single-tone controlled corpus, fixed 256- or 1536-sample
+cyclostationarity is insufficient to explain the remaining source-to-codec
+basis temporal behavior. The stop-loss is intentional: no P128/P64/P32/P16,
+per-sample template, longer FIR, or empirical production correction was added.
+The next choice is a separately authorized new discriminator, a specific
+normative investigation, or freezing this blocker; it is not an implicit
+RB-row/object or renderer semantic result.
+
 ## Boundaries retained
 
 - `SemanticBindingState` remains `Unresolved`.
