@@ -55,6 +55,24 @@ and J4R9 already rule out a common fixed row/object transfer model. A future
 milestone must target that single blocker using authorized clean-room
 evidence; this stage does not add a vendor warp rule or new producer media.
 
+## J5R11 local-column discriminator
+
+The first source-locked test on the frozen J4R8 B/C corpus is deliberately
+negative and bounded. With the exact authored 2003 Hz companion PCM and the
+fixed 1536-sample source/decoder alignment, the B/C `ReconstructionBasis`
+delta remains strongly low-rank in each of W1/W2/W3, while the Base 997 Hz
+null remains within its inherited envelope. The source-locked instantaneous
+model `ΔRB_w[n] = a_w s_companion[n]` does not meet its predeclared fit and
+holdout gates. The only authorized two-tap fallback also fails those gates.
+
+The resulting classification is
+`J5R11_EXISTING_CORPUS_INSUFFICIENT_TO_IDENTIFY_OPERATOR_TEMPORAL_CLASS`.
+This does not mean that the companion has no codec-basis effect; it means the
+existing corpus does not identify whether that effect is an instantaneous
+source-locked column or the permitted two-tap temporal class. No coefficient
+is an object identifier, no RB row is an authored object, and no inverse
+`T(t)` or renderer scene is admitted.
+
 ## Boundaries retained
 
 - `SemanticBindingState` remains `Unresolved`.

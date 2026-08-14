@@ -9,6 +9,14 @@
   operator state, strict dimension/finite validation, and a hard gate against
   automatic JOC-to-scene conversion. Added the reconstruction readiness census.
 
+### Research boundary
+
+- J5R11 tested a source-locked companion-induced codec-basis column on the
+  existing frozen corpus. The instantaneous and permitted two-tap temporal
+  models both failed their predeclared fit/holdout gates, so the operator
+  temporal class remains unresolved; no RB-row/object or renderer semantic
+  claim was added.
+
 - Added `openjoc render-scene` with the versioned `openjoc.render-scene.v1`
   explicit-source contract, strict SOFA-backed static binaural rendering,
   transactional float32 WAV output, and `openjoc sofa inspect`.
