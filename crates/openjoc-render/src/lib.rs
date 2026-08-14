@@ -8,9 +8,10 @@
 //!
 //! J5R1 implements a front-horizontal, equal-power FL/FR panner. J5R2 adds a
 //! separate explicit-scene two-dimensional speaker-layout renderer using
-//! checked public VBAP-style pair mathematics. Elevation, distance, room
-//! acoustics, occlusion, HRTF, and JOC semantic binding remain explicit
-//! non-features of this foundation.
+//! checked public VBAP-style pair mathematics. J5R3 adds sample-accurate,
+//! absolute-timeline azimuth and gain trajectories on top of both renderers.
+//! Elevation, distance, room acoustics, occlusion, HRTF, and JOC semantic
+//! binding remain explicit non-features of this foundation.
 
 use std::fmt;
 
@@ -159,6 +160,296 @@ impl<'a> ExplicitSpatialScene<'a> {
 pub struct StereoGains {
     pub left: f64,
     pub right: f64,
+}
+
+/// A validated spatial state used by a sample-accurate two-dimensional
+/// trajectory.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpatialState2d {
+    position: CartesianPosition,
+    gain: f64,
+}
+
+impl SpatialState2d {
+    /// Creates a finite directional state with a finite linear gain.
+    pub fn new(position: CartesianPosition, gain: f64) -> Result<Self, RenderError> {
+        validate_position(position)?;
+        validate_gain(gain)?;
+        if horizontal_magnitude_squared(position) <= 0.0 {
+            return Err(RenderError::UndefinedHorizontalDirection);
+        }
+        Ok(Self { position, gain })
+    }
+
+    /// Returns the Cartesian state position.
+    #[must_use]
+    pub const fn position(self) -> CartesianPosition {
+        self.position
+    }
+
+    /// Returns the finite linear source gain.
+    #[must_use]
+    pub const fn gain(self) -> f64 {
+        self.gain
+    }
+}
+
+/// Explicit horizontal azimuth path selection between trajectory keyframes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AzimuthPath2d {
+    /// Select the shortest signed angular path; exact antipodes are rejected.
+    Shortest,
+    /// Select the non-negative wrapped path.
+    Increasing,
+    /// Select the non-positive wrapped path.
+    Decreasing,
+}
+
+/// One inclusive, linearly interpolated sample-timeline trajectory segment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrajectorySegment2d {
+    start_sample: u64,
+    end_sample: u64,
+    start_state: SpatialState2d,
+    end_state: SpatialState2d,
+    azimuth_path: AzimuthPath2d,
+}
+
+impl TrajectorySegment2d {
+    /// Creates a segment whose endpoint samples are both included.
+    pub fn new(
+        start_sample: u64,
+        end_sample: u64,
+        start_state: SpatialState2d,
+        end_state: SpatialState2d,
+        azimuth_path: AzimuthPath2d,
+    ) -> Result<Self, RenderError> {
+        if end_sample <= start_sample {
+            return Err(RenderError::InvalidTrajectorySegment {
+                start_sample,
+                end_sample,
+            });
+        }
+        let span = end_sample - start_sample;
+        if span > MAX_EXACT_INTERPOLATION_SPAN {
+            return Err(RenderError::TrajectorySpanTooLarge { span });
+        }
+        let start_angle = azimuth(start_state.position)?;
+        let end_angle = azimuth(end_state.position)?;
+        let delta = azimuth_delta(start_angle, end_angle, azimuth_path)?;
+        if !delta.is_finite() {
+            return Err(RenderError::InvalidAzimuthPath);
+        }
+        Ok(Self {
+            start_sample,
+            end_sample,
+            start_state,
+            end_state,
+            azimuth_path,
+        })
+    }
+
+    /// Returns the inclusive first sample index.
+    #[must_use]
+    pub const fn start_sample(self) -> u64 {
+        self.start_sample
+    }
+
+    /// Returns the inclusive final sample index.
+    #[must_use]
+    pub const fn end_sample(self) -> u64 {
+        self.end_sample
+    }
+
+    /// Returns the exact start state.
+    #[must_use]
+    pub const fn start_state(self) -> SpatialState2d {
+        self.start_state
+    }
+
+    /// Returns the exact end state.
+    #[must_use]
+    pub const fn end_state(self) -> SpatialState2d {
+        self.end_state
+    }
+
+    /// Returns the explicit azimuth path policy.
+    #[must_use]
+    pub const fn azimuth_path(self) -> AzimuthPath2d {
+        self.azimuth_path
+    }
+
+    fn evaluate(self, sample: u64) -> Result<SpatialState2d, RenderError> {
+        if sample < self.start_sample || sample > self.end_sample {
+            return Err(RenderError::TrajectorySampleOutOfRange { sample });
+        }
+        if sample == self.start_sample {
+            return Ok(self.start_state);
+        }
+        if sample == self.end_sample {
+            return Ok(self.end_state);
+        }
+        if self.start_state == self.end_state {
+            return Ok(self.start_state);
+        }
+        let span = self.end_sample - self.start_sample;
+        let offset = sample - self.start_sample;
+        let t = offset as f64 / span as f64;
+        let start_angle = azimuth(self.start_state.position)?;
+        let delta = azimuth_delta(
+            start_angle,
+            azimuth(self.end_state.position)?,
+            self.azimuth_path,
+        )?;
+        let angle = normalize_azimuth(start_angle + t * delta);
+        let z = self
+            .start_state
+            .position
+            .z
+            .mul_add(1.0 - t, self.end_state.position.z * t);
+        let gain = self
+            .start_state
+            .gain
+            .mul_add(1.0 - t, self.end_state.gain * t);
+        SpatialState2d::new(CartesianPosition::new(angle.sin(), angle.cos(), z), gain)
+    }
+}
+
+/// A contiguous, validated piecewise-linear source trajectory.
+#[derive(Clone, Debug)]
+pub struct SourceTrajectory2d {
+    segments: Vec<TrajectorySegment2d>,
+}
+
+impl SourceTrajectory2d {
+    /// Creates a non-empty contiguous trajectory.
+    pub fn new(segments: Vec<TrajectorySegment2d>) -> Result<Self, RenderError> {
+        segments
+            .first()
+            .copied()
+            .ok_or(RenderError::EmptyTrajectory)?;
+        for pair in segments.windows(2) {
+            let previous = pair[0];
+            let next = pair[1];
+            if next.start_sample() != previous.end_sample() {
+                return Err(RenderError::NonContiguousTrajectory {
+                    previous_end: previous.end_sample(),
+                    next_start: next.start_sample(),
+                });
+            }
+            if next.start_state() != previous.end_state() {
+                return Err(RenderError::DiscontinuousTrajectory {
+                    boundary: next.start_sample(),
+                });
+            }
+        }
+        Ok(Self { segments })
+    }
+
+    /// Returns the inclusive trajectory domain.
+    #[must_use]
+    pub fn domain(&self) -> (u64, u64) {
+        (
+            self.segments[0].start_sample(),
+            self.segments[self.segments.len() - 1].end_sample(),
+        )
+    }
+
+    /// Returns the validated segments.
+    #[must_use]
+    pub fn segments(&self) -> &[TrajectorySegment2d] {
+        &self.segments
+    }
+
+    /// Evaluates the state at an absolute trajectory sample index.
+    pub fn evaluate(&self, sample: u64) -> Result<SpatialState2d, RenderError> {
+        let (start, end) = self.domain();
+        if sample < start || sample > end {
+            return Err(RenderError::TrajectorySampleOutOfRange { sample });
+        }
+        let index = self
+            .segments
+            .partition_point(|segment| segment.end_sample() < sample);
+        self.segments[index.min(self.segments.len() - 1)].evaluate(sample)
+    }
+
+    fn validate_block(&self, start: u64, length: usize) -> Result<(), RenderError> {
+        let end_exclusive = start
+            .checked_add(length as u64)
+            .ok_or(RenderError::SampleIndexOverflow)?;
+        let (domain_start, domain_end) = self.domain();
+        if length > 0 && (start < domain_start || end_exclusive - 1 > domain_end) {
+            return Err(RenderError::TrajectoryBlockOutOfRange {
+                start,
+                length,
+                domain_start,
+                domain_end,
+            });
+        }
+        if length == 0 && (start < domain_start || start > domain_end.saturating_add(1)) {
+            return Err(RenderError::TrajectoryBlockOutOfRange {
+                start,
+                length,
+                domain_start,
+                domain_end,
+            });
+        }
+        Ok(())
+    }
+}
+
+/// A borrowed mono PCM block bound to an absolute source trajectory range.
+#[derive(Clone, Copy, Debug)]
+pub struct TrajectorySourceBlock<'a> {
+    id: SourceId,
+    samples: &'a [f64],
+    trajectory: &'a SourceTrajectory2d,
+    block_start_sample: u64,
+}
+
+impl<'a> TrajectorySourceBlock<'a> {
+    /// Creates a block after validating samples and its absolute range.
+    pub fn new(
+        id: SourceId,
+        samples: &'a [f64],
+        trajectory: &'a SourceTrajectory2d,
+        block_start_sample: u64,
+    ) -> Result<Self, RenderError> {
+        trajectory.validate_block(block_start_sample, samples.len())?;
+        if let Some(sample_index) = samples.iter().position(|sample| !sample.is_finite()) {
+            return Err(RenderError::NonFiniteSourceSample { id, sample_index });
+        }
+        Ok(Self {
+            id,
+            samples,
+            trajectory,
+            block_start_sample,
+        })
+    }
+
+    /// Returns the opaque source identity.
+    #[must_use]
+    pub const fn id(self) -> SourceId {
+        self.id
+    }
+
+    /// Returns the borrowed source samples.
+    #[must_use]
+    pub const fn samples(self) -> &'a [f64] {
+        self.samples
+    }
+
+    /// Returns the referenced trajectory.
+    #[must_use]
+    pub const fn trajectory(self) -> &'a SourceTrajectory2d {
+        self.trajectory
+    }
+
+    /// Returns the absolute sample index of the first sample in this block.
+    #[must_use]
+    pub const fn block_start_sample(self) -> u64 {
+        self.block_start_sample
+    }
 }
 
 /// An opaque caller-provided identity for one output speaker.
@@ -561,17 +852,134 @@ impl LayoutRenderer2d {
         }
         Ok(())
     }
+
+    /// Renders absolute-sample trajectory blocks into caller-owned outputs.
+    ///
+    /// The trajectory is evaluated for every source sample. All source IDs,
+    /// ranges, states, and panner directions are preflighted before outputs
+    /// are cleared, so structural failures leave caller buffers unchanged.
+    /// Numerical overflow during accumulation clears outputs and returns an
+    /// error; no partially valid result is presented.
+    pub fn render_trajectory_block(
+        &self,
+        sources: &[TrajectorySourceBlock<'_>],
+        outputs: &mut [&mut [f64]],
+    ) -> Result<(), RenderError> {
+        validate_speaker_outputs(self.layout.speakers.len(), outputs)?;
+        let block_length = outputs.first().map_or(0, |output| output.len());
+        validate_trajectory_sources(sources, block_length)?;
+        for source in sources {
+            for offset in 0..block_length {
+                let sample = source
+                    .block_start_sample
+                    .checked_add(offset as u64)
+                    .ok_or(RenderError::SampleIndexOverflow)?;
+                let state = source.trajectory.evaluate(sample)?;
+                self.layout.pair_gains(state.position)?;
+                validate_gain(state.gain)?;
+            }
+        }
+        for output in outputs.iter_mut() {
+            output.fill(0.0);
+        }
+        for source in sources {
+            for (offset, &sample_value) in source.samples.iter().enumerate() {
+                let sample = source.block_start_sample + offset as u64;
+                let state = source.trajectory.evaluate(sample)?;
+                let gains = self.layout.pair_gains(state.position)?;
+                let first = gains.pair.first_index;
+                let second = gains.pair.second_index;
+                let first_gain = gains.first * state.gain;
+                let second_gain = gains.second * state.gain;
+                outputs[first][offset] += sample_value * first_gain;
+                if first != second {
+                    outputs[second][offset] += sample_value * second_gain;
+                }
+                check_speaker_outputs_finite(outputs, offset, first, second)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 const ANGLE_TOLERANCE: f64 = 1.0e-12;
 const DETERMINANT_TOLERANCE: f64 = 1.0e-12;
 const GAIN_TOLERANCE: f64 = 1.0e-12;
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
+const MAX_EXACT_INTERPOLATION_SPAN: u64 = 1_u64 << 53;
 
 fn clear_outputs(outputs: &mut [&mut [f64]]) {
     for output in outputs.iter_mut() {
         output.fill(0.0);
     }
+}
+
+fn validate_speaker_outputs(expected: usize, outputs: &[&mut [f64]]) -> Result<(), RenderError> {
+    if outputs.len() != expected {
+        return Err(RenderError::SpeakerOutputCountMismatch {
+            expected,
+            actual: outputs.len(),
+        });
+    }
+    let block_length = outputs.first().map_or(0, |output| output.len());
+    for (speaker_index, output) in outputs.iter().enumerate() {
+        if output.len() != block_length {
+            return Err(RenderError::SpeakerOutputLengthMismatch {
+                speaker_index,
+                expected: block_length,
+                actual: output.len(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_trajectory_sources(
+    sources: &[TrajectorySourceBlock<'_>],
+    block_length: usize,
+) -> Result<(), RenderError> {
+    for (index, source) in sources.iter().enumerate() {
+        if sources[index + 1..]
+            .iter()
+            .any(|other| other.id == source.id)
+        {
+            return Err(RenderError::DuplicateSourceId { id: source.id });
+        }
+        if source.samples.len() != block_length {
+            return Err(RenderError::SourceBlockLengthMismatch {
+                id: source.id,
+                expected: block_length,
+                actual: source.samples.len(),
+            });
+        }
+        source
+            .trajectory
+            .validate_block(source.block_start_sample, block_length)?;
+    }
+    Ok(())
+}
+
+fn check_speaker_outputs_finite(
+    outputs: &mut [&mut [f64]],
+    sample_index: usize,
+    first: usize,
+    second: usize,
+) -> Result<(), RenderError> {
+    if !outputs[first][sample_index].is_finite() {
+        clear_outputs(outputs);
+        return Err(RenderError::NonFiniteOutput {
+            channel: OutputChannel::Speaker(first),
+            sample_index,
+        });
+    }
+    if first != second && !outputs[second][sample_index].is_finite() {
+        clear_outputs(outputs);
+        return Err(RenderError::NonFiniteOutput {
+            channel: OutputChannel::Speaker(second),
+            sample_index,
+        });
+    }
+    Ok(())
 }
 
 fn horizontal_magnitude_squared(position: CartesianPosition) -> f64 {
@@ -602,6 +1010,43 @@ fn normalized_horizontal(position: CartesianPosition) -> Result<(f64, f64, f64),
 
 fn angular_distance(first: f64, second: f64) -> f64 {
     normalize_azimuth(first - second).abs()
+}
+
+fn azimuth(position: CartesianPosition) -> Result<f64, RenderError> {
+    let (_, _, angle) = normalized_horizontal(position)?;
+    Ok(angle)
+}
+
+fn azimuth_delta(start: f64, end: f64, path: AzimuthPath2d) -> Result<f64, RenderError> {
+    let shortest = normalize_azimuth(end - start);
+    match path {
+        AzimuthPath2d::Shortest => {
+            if (shortest.abs() - std::f64::consts::PI).abs() <= ANGLE_TOLERANCE {
+                return Err(RenderError::AmbiguousAntipodalPath);
+            }
+            Ok(shortest)
+        }
+        AzimuthPath2d::Increasing => {
+            let mut delta = end - start;
+            while delta < 0.0 {
+                delta += TWO_PI;
+            }
+            while delta >= TWO_PI {
+                delta -= TWO_PI;
+            }
+            Ok(delta)
+        }
+        AzimuthPath2d::Decreasing => {
+            let mut delta = end - start;
+            while delta > 0.0 {
+                delta -= TWO_PI;
+            }
+            while delta <= -TWO_PI {
+                delta += TWO_PI;
+            }
+            Ok(delta)
+        }
+    }
 }
 
 impl StereoGains {
@@ -699,6 +1144,33 @@ pub enum RenderError {
         expected: usize,
         actual: usize,
     },
+    EmptyTrajectory,
+    InvalidTrajectorySegment {
+        start_sample: u64,
+        end_sample: u64,
+    },
+    TrajectorySpanTooLarge {
+        span: u64,
+    },
+    InvalidAzimuthPath,
+    AmbiguousAntipodalPath,
+    NonContiguousTrajectory {
+        previous_end: u64,
+        next_start: u64,
+    },
+    DiscontinuousTrajectory {
+        boundary: u64,
+    },
+    TrajectorySampleOutOfRange {
+        sample: u64,
+    },
+    TrajectoryBlockOutOfRange {
+        start: u64,
+        length: usize,
+        domain_start: u64,
+        domain_end: u64,
+    },
+    SampleIndexOverflow,
 }
 
 impl fmt::Display for RenderError {
@@ -795,6 +1267,50 @@ impl fmt::Display for RenderError {
                 formatter,
                 "speaker output {speaker_index} has {actual} samples; expected {expected}"
             ),
+            Self::EmptyTrajectory => formatter.write_str("trajectory must contain a segment"),
+            Self::InvalidTrajectorySegment {
+                start_sample,
+                end_sample,
+            } => write!(
+                formatter,
+                "trajectory segment must have end > start: {start_sample}..={end_sample}"
+            ),
+            Self::TrajectorySpanTooLarge { span } => write!(
+                formatter,
+                "trajectory span {span} exceeds exact f64 interpolation bound"
+            ),
+            Self::InvalidAzimuthPath => formatter.write_str("azimuth path is invalid"),
+            Self::AmbiguousAntipodalPath => {
+                formatter.write_str("shortest azimuth path is ambiguous for antipodal endpoints")
+            }
+            Self::NonContiguousTrajectory {
+                previous_end,
+                next_start,
+            } => write!(
+                formatter,
+                "trajectory segments are not contiguous: previous end {previous_end}, next start {next_start}"
+            ),
+            Self::DiscontinuousTrajectory { boundary } => write!(
+                formatter,
+                "trajectory keyframe state is discontinuous at sample {boundary}"
+            ),
+            Self::TrajectorySampleOutOfRange { sample } => {
+                write!(
+                    formatter,
+                    "trajectory sample {sample} is outside its domain"
+                )
+            }
+            Self::TrajectoryBlockOutOfRange {
+                start,
+                length,
+                domain_start,
+                domain_end,
+            } => write!(
+                formatter,
+                "trajectory block [{start}, {}) is outside inclusive domain [{domain_start}, {domain_end}]",
+                start.saturating_add(*length as u64)
+            ),
+            Self::SampleIndexOverflow => formatter.write_str("sample-index arithmetic overflowed"),
         }
     }
 }
@@ -886,6 +1402,67 @@ impl StereoRenderer {
         right: &mut [f64],
     ) -> Result<(), RenderError> {
         self.render_block(scene.sources, left, right)
+    }
+
+    /// Renders trajectory-bound sources using absolute sample indices.
+    ///
+    /// Every trajectory sample is preflighted through the front-horizontal
+    /// stereo domain before output buffers are cleared. This prevents an
+    /// unsupported rear-path sample from exposing a partially rendered block.
+    pub fn render_trajectory_block(
+        &self,
+        sources: &[TrajectorySourceBlock<'_>],
+        left: &mut [f64],
+        right: &mut [f64],
+    ) -> Result<(), RenderError> {
+        if left.len() != right.len() {
+            return Err(RenderError::StereoOutputLengthMismatch {
+                left: left.len(),
+                right: right.len(),
+            });
+        }
+        validate_trajectory_sources(sources, left.len())?;
+        for source in sources {
+            for offset in 0..left.len() {
+                let sample = source
+                    .block_start_sample
+                    .checked_add(offset as u64)
+                    .ok_or(RenderError::SampleIndexOverflow)?;
+                let state = source.trajectory.evaluate(sample)?;
+                StereoGains::for_position(state.position)?;
+                validate_gain(state.gain)?;
+            }
+        }
+        left.fill(0.0);
+        right.fill(0.0);
+        for source in sources {
+            for (offset, &sample_value) in source.samples.iter().enumerate() {
+                let sample = source.block_start_sample + offset as u64;
+                let state = source.trajectory.evaluate(sample)?;
+                let gains = StereoGains::for_position(state.position)?;
+                let left_gain = gains.left * state.gain;
+                let right_gain = gains.right * state.gain;
+                left[offset] += sample_value * left_gain;
+                right[offset] += sample_value * right_gain;
+                if !left[offset].is_finite() {
+                    left.fill(0.0);
+                    right.fill(0.0);
+                    return Err(RenderError::NonFiniteOutput {
+                        channel: OutputChannel::Left,
+                        sample_index: offset,
+                    });
+                }
+                if !right[offset].is_finite() {
+                    left.fill(0.0);
+                    right.fill(0.0);
+                    return Err(RenderError::NonFiniteOutput {
+                        channel: OutputChannel::Right,
+                        sample_index: offset,
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1398,5 +1975,315 @@ mod tests {
         assert!(!manifest.contains("openjoc-eac3"));
         assert!(!manifest.contains("DecodedJocComponents"));
         assert!(Speaker2d::new(SpeakerId::new(93), CartesianPosition::new(0.0, 1.0, 9.0)).is_ok());
+    }
+
+    fn state(x: f64, y: f64, z: f64, gain: f64) -> SpatialState2d {
+        SpatialState2d::new(CartesianPosition::new(x, y, z), gain).unwrap()
+    }
+
+    fn segment(
+        start: u64,
+        end: u64,
+        start_state: SpatialState2d,
+        end_state: SpatialState2d,
+        path: AzimuthPath2d,
+    ) -> TrajectorySegment2d {
+        TrajectorySegment2d::new(start, end, start_state, end_state, path).unwrap()
+    }
+
+    fn render_stereo_trajectory(
+        renderer: StereoRenderer,
+        trajectory: &SourceTrajectory2d,
+        samples: &[f64],
+        start: u64,
+    ) -> (Vec<f64>, Vec<f64>) {
+        let mut left = vec![0.0; samples.len()];
+        let mut right = vec![0.0; samples.len()];
+        let source =
+            TrajectorySourceBlock::new(SourceId::new(100), samples, trajectory, start).unwrap();
+        renderer
+            .render_trajectory_block(&[source], &mut left, &mut right)
+            .unwrap();
+        (left, right)
+    }
+
+    #[test]
+    fn trajectory_evaluates_exact_endpoints_and_linear_gain_on_absolute_timeline() {
+        let trajectory = SourceTrajectory2d::new(vec![segment(
+            10,
+            20,
+            state(-1.0, 1.0, 2.0, 0.25),
+            state(1.0, 1.0, 4.0, 0.75),
+            AzimuthPath2d::Shortest,
+        )])
+        .unwrap();
+        assert_eq!(
+            trajectory.evaluate(10).unwrap(),
+            state(-1.0, 1.0, 2.0, 0.25)
+        );
+        assert_eq!(trajectory.evaluate(20).unwrap(), state(1.0, 1.0, 4.0, 0.75));
+        let middle = trajectory.evaluate(15).unwrap();
+        assert!((middle.position().x - 0.0).abs() < EPSILON);
+        assert!((middle.position().y - 1.0).abs() < EPSILON);
+        assert!((middle.position().z - 3.0).abs() < EPSILON);
+        assert!((middle.gain() - 0.5).abs() < EPSILON);
+    }
+
+    #[test]
+    fn trajectory_render_matches_independent_absolute_sample_oracle() {
+        let trajectory = SourceTrajectory2d::new(vec![segment(
+            10,
+            14,
+            state(-1.0, 1.0, 0.0, 0.5),
+            state(1.0, 1.0, 0.0, 1.0),
+            AzimuthPath2d::Shortest,
+        )])
+        .unwrap();
+        let samples = [1.0; 5];
+        let (left, right) =
+            render_stereo_trajectory(StereoRenderer::new(), &trajectory, &samples, 10);
+        let start_theta = (-1.0_f64).atan2(1.0);
+        let end_theta = 1.0_f64.atan2(1.0);
+        let delta = end_theta - start_theta;
+        for (offset, (&actual_left, &actual_right)) in left.iter().zip(&right).enumerate() {
+            let t = offset as f64 / 4.0;
+            let theta = start_theta + t * delta;
+            let position_u = (theta + std::f64::consts::FRAC_PI_2) / std::f64::consts::PI;
+            let expected_left = (position_u * std::f64::consts::FRAC_PI_2).cos();
+            let expected_right = (position_u * std::f64::consts::FRAC_PI_2).sin();
+            let expected_gain = 0.5 + t * 0.5;
+            assert!((actual_left - expected_left * expected_gain).abs() < EPSILON);
+            assert!((actual_right - expected_right * expected_gain).abs() < EPSILON);
+        }
+    }
+
+    #[test]
+    fn trajectory_validation_rejects_gaps_overlaps_discontinuities_and_bad_spans() {
+        let first = segment(
+            0,
+            3,
+            state(0.0, 1.0, 0.0, 1.0),
+            state(1.0, 0.0, 0.0, 1.0),
+            AzimuthPath2d::Increasing,
+        );
+        let mismatched = segment(
+            3,
+            5,
+            state(-1.0, 0.0, 0.0, 1.0),
+            state(0.0, -1.0, 0.0, 1.0),
+            AzimuthPath2d::Increasing,
+        );
+        assert!(matches!(
+            SourceTrajectory2d::new(vec![first, mismatched]),
+            Err(RenderError::DiscontinuousTrajectory { boundary: 3 })
+        ));
+        let gap = segment(
+            4,
+            5,
+            state(1.0, 0.0, 0.0, 1.0),
+            state(0.0, -1.0, 0.0, 1.0),
+            AzimuthPath2d::Increasing,
+        );
+        assert!(matches!(
+            SourceTrajectory2d::new(vec![first, gap]),
+            Err(RenderError::NonContiguousTrajectory { .. })
+        ));
+        assert!(matches!(
+            TrajectorySegment2d::new(
+                0,
+                MAX_EXACT_INTERPOLATION_SPAN + 1,
+                state(0.0, 1.0, 0.0, 1.0),
+                state(1.0, 0.0, 0.0, 1.0),
+                AzimuthPath2d::Increasing,
+            ),
+            Err(RenderError::TrajectorySpanTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn shortest_antipodal_is_rejected_and_explicit_stereo_paths_are_deterministic() {
+        let left = state(-1.0, 0.0, 0.0, 1.0);
+        let right = state(1.0, 0.0, 0.0, 1.0);
+        assert!(matches!(
+            TrajectorySegment2d::new(0, 4, left, right, AzimuthPath2d::Shortest),
+            Err(RenderError::AmbiguousAntipodalPath)
+        ));
+        let front_path =
+            SourceTrajectory2d::new(vec![segment(0, 4, left, right, AzimuthPath2d::Increasing)])
+                .unwrap();
+        let rear_path =
+            SourceTrajectory2d::new(vec![segment(0, 4, left, right, AzimuthPath2d::Decreasing)])
+                .unwrap();
+        let samples = [1.0; 5];
+        let (front_left, front_right) =
+            render_stereo_trajectory(StereoRenderer::new(), &front_path, &samples, 0);
+        assert!((front_left[2] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPSILON);
+        assert!((front_right[2] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPSILON);
+        let source =
+            TrajectorySourceBlock::new(SourceId::new(101), &samples, &rear_path, 0).unwrap();
+        let mut left_out = [9.0; 5];
+        let mut right_out = [8.0; 5];
+        assert!(matches!(
+            StereoRenderer::new().render_trajectory_block(&[source], &mut left_out, &mut right_out),
+            Err(RenderError::RearHemisphereUnsupported { .. })
+        ));
+        assert_eq!(left_out, [9.0; 5]);
+        assert_eq!(right_out, [8.0; 5]);
+    }
+
+    #[test]
+    fn stereo_trajectory_is_byte_identical_across_absolute_block_partitions() {
+        let trajectory = SourceTrajectory2d::new(vec![segment(
+            0,
+            15,
+            state(-1.0, 1.0, 0.0, 0.25),
+            state(1.0, 1.0, 0.0, 0.75),
+            AzimuthPath2d::Shortest,
+        )])
+        .unwrap();
+        let samples: Vec<f64> = (0..16).map(|i| (i as f64 - 4.0) / 7.0).collect();
+        let whole = render_stereo_trajectory(StereoRenderer::new(), &trajectory, &samples, 0);
+        let mut left = vec![0.0; samples.len()];
+        let mut right = vec![0.0; samples.len()];
+        for (start, end) in [(0_usize, 1_usize), (1, 5), (5, 6), (6, 11), (11, 16)] {
+            let source = TrajectorySourceBlock::new(
+                SourceId::new(100),
+                &samples[start..end],
+                &trajectory,
+                start as u64,
+            )
+            .unwrap();
+            StereoRenderer::new()
+                .render_trajectory_block(&[source], &mut left[start..end], &mut right[start..end])
+                .unwrap();
+        }
+        assert_eq!(left, whole.0);
+        assert_eq!(right, whole.1);
+    }
+
+    #[test]
+    fn layout_trajectory_supports_multiple_sources_and_partition_invariance() {
+        let renderer = LayoutRenderer2d::new(cardinal_layout());
+        let first_trajectory = SourceTrajectory2d::new(vec![segment(
+            0,
+            7,
+            state(0.0, 1.0, 0.0, 0.5),
+            state(1.0, 0.0, 0.0, 1.0),
+            AzimuthPath2d::Increasing,
+        )])
+        .unwrap();
+        let second_trajectory = SourceTrajectory2d::new(vec![segment(
+            0,
+            7,
+            state(-1.0, 0.0, 0.0, 0.75),
+            state(0.0, -1.0, 0.0, 0.25),
+            AzimuthPath2d::Decreasing,
+        )])
+        .unwrap();
+        let first_samples = [1.0, -0.5, 0.25, 0.75, -0.25, 0.5, 1.0, -1.0];
+        let second_samples = [0.5; 8];
+        let mut whole = vec![vec![0.0; 8]; 4];
+        let first =
+            TrajectorySourceBlock::new(SourceId::new(110), &first_samples, &first_trajectory, 0)
+                .unwrap();
+        let second =
+            TrajectorySourceBlock::new(SourceId::new(111), &second_samples, &second_trajectory, 0)
+                .unwrap();
+        let mut whole_refs: Vec<&mut [f64]> = whole.iter_mut().map(Vec::as_mut_slice).collect();
+        renderer
+            .render_trajectory_block(&[first, second], &mut whole_refs)
+            .unwrap();
+        let mut partitioned = vec![vec![0.0; 8]; 4];
+        for (start, end) in [(0_usize, 2_usize), (2, 3), (3, 8)] {
+            let first = TrajectorySourceBlock::new(
+                SourceId::new(110),
+                &first_samples[start..end],
+                &first_trajectory,
+                start as u64,
+            )
+            .unwrap();
+            let second = TrajectorySourceBlock::new(
+                SourceId::new(111),
+                &second_samples[start..end],
+                &second_trajectory,
+                start as u64,
+            )
+            .unwrap();
+            let mut outputs: Vec<&mut [f64]> = partitioned
+                .iter_mut()
+                .map(|plane| &mut plane[start..end])
+                .collect();
+            renderer
+                .render_trajectory_block(&[first, second], &mut outputs)
+                .unwrap();
+        }
+        assert_eq!(partitioned, whole);
+    }
+
+    #[test]
+    fn static_trajectory_is_identical_to_static_renderers() {
+        let samples = [0.25, -0.5, 0.75];
+        let static_source = source(120, &samples, 0.5, 1.0, 0.0, 0.8);
+        let trajectory = SourceTrajectory2d::new(vec![segment(
+            0,
+            2,
+            state(0.5, 1.0, 0.0, 0.8),
+            state(0.5, 1.0, 0.0, 0.8),
+            AzimuthPath2d::Shortest,
+        )])
+        .unwrap();
+        let dynamic_source =
+            TrajectorySourceBlock::new(SourceId::new(120), &samples, &trajectory, 0).unwrap();
+        let mut static_left = [0.0; 3];
+        let mut static_right = [0.0; 3];
+        StereoRenderer::new()
+            .render_block(&[static_source], &mut static_left, &mut static_right)
+            .unwrap();
+        let mut dynamic_left = [0.0; 3];
+        let mut dynamic_right = [0.0; 3];
+        StereoRenderer::new()
+            .render_trajectory_block(&[dynamic_source], &mut dynamic_left, &mut dynamic_right)
+            .unwrap();
+        assert_eq!(static_left, dynamic_left);
+        assert_eq!(static_right, dynamic_right);
+
+        let layout = LayoutRenderer2d::new(cardinal_layout());
+        let static_planes = render_planes(&layout, &[static_source], 3);
+        let mut dynamic_planes = vec![vec![0.0; 3]; 4];
+        let mut outputs: Vec<&mut [f64]> =
+            dynamic_planes.iter_mut().map(Vec::as_mut_slice).collect();
+        layout
+            .render_trajectory_block(&[dynamic_source], &mut outputs)
+            .unwrap();
+        assert_eq!(static_planes, dynamic_planes);
+    }
+
+    #[test]
+    fn trajectory_blocks_reject_duplicate_ids_and_out_of_range_without_mutation() {
+        let trajectory = SourceTrajectory2d::new(vec![segment(
+            5,
+            7,
+            state(0.0, 1.0, 0.0, 1.0),
+            state(0.0, 1.0, 0.0, 1.0),
+            AzimuthPath2d::Shortest,
+        )])
+        .unwrap();
+        assert!(matches!(
+            TrajectorySourceBlock::new(SourceId::new(122), &[1.0], &trajectory, 4),
+            Err(RenderError::TrajectoryBlockOutOfRange { .. })
+        ));
+        let samples = [1.0, 1.0];
+        let first =
+            TrajectorySourceBlock::new(SourceId::new(123), &samples, &trajectory, 5).unwrap();
+        let second =
+            TrajectorySourceBlock::new(SourceId::new(123), &samples, &trajectory, 5).unwrap();
+        let mut left = [7.0; 2];
+        let mut right = [8.0; 2];
+        assert!(matches!(
+            StereoRenderer::new().render_trajectory_block(&[first, second], &mut left, &mut right),
+            Err(RenderError::DuplicateSourceId { .. })
+        ));
+        assert_eq!(left, [7.0; 2]);
+        assert_eq!(right, [8.0; 2]);
     }
 }

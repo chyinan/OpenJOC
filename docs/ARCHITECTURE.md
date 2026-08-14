@@ -92,6 +92,18 @@ public planar output order; unsupported angular gaps fail explicitly. The 2D
 renderer ignores elevation and has no LFE/bass-management path. HRTF/binaural
 rendering and any JOC semantic bridge remain later capabilities.
 
+`SpatialState2d`, `TrajectorySegment2d`, and `SourceTrajectory2d` add an
+explicit, piecewise-linear automation contract. Segment endpoints are inclusive
+absolute sample indices; azimuth follows an explicit shortest/increasing/
+decreasing path policy and source gain is interpolated linearly in the linear
+domain. `StereoRenderer::render_trajectory_block` and
+`LayoutRenderer2d::render_trajectory_block` evaluate that state per sample, so
+one block, irregular blocks, and one-sample blocks have the same result for the
+same absolute timeline. Trajectory blocks borrow PCM and caller-owned output
+planes, perform bounded preflight validation, and allocate neither per sample
+nor for the full timeline. The trajectory is directional only: radius, z,
+distance, Doppler, room effects, elevation, and HRTF are not rendered.
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

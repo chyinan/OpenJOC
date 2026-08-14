@@ -7,6 +7,8 @@
 - Initial explicit spatial-scene and streaming stereo renderer foundation.
 - General validated horizontal speaker layouts with deterministic adjacent-pair
   public VBAP-style panning and caller-owned planar block outputs.
+- Sample-accurate, absolute-timeline position/gain trajectories for stereo and
+  general 2D layouts, with explicit azimuth paths and block-partition invariance.
 
 ### Scope
 

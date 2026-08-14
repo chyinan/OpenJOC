@@ -5,9 +5,6 @@ current capability matrix or a historical milestone log.
 
 ## Near-term engineering priorities
 
-- Add sample-accurate position/gain trajectories on top of the J5R2 explicit
-  horizontal speaker-layout renderer without introducing an implicit JOC
-  binding.
 - Add 3D/elevation layout support only as a separately bounded public renderer
   milestone; do not infer it from the unresolved JOC semantic bridge.
 - Add a pluggable public/user-supplied HRTF path only after the speaker-scene

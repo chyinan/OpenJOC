@@ -17,7 +17,9 @@ claiming capabilities that the current evidence does not support.
   speaker-layout renderer with public 2D VBAP-style pair gains. It rejects
   uncovered angular gaps, ignores elevation, and has no LFE/bass-management,
   JOC semantic bridge, binaural renderer, room model, or Dolby renderer
-  fidelity implementation.
+  fidelity implementation. Its optional trajectories are sample-accurate
+  piecewise-linear azimuth/gain paths on an absolute sample timeline; they do
+  not model radius, distance, Doppler, elevation, or acceleration smoothing.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
   window-dependent RB redistribution is admitted, but common gauge,
   row-transfer and rank-1 models are rejected. No implementation-ready
