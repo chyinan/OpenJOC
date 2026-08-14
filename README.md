@@ -13,7 +13,7 @@ OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby
 Laboratories. Dolby, Dolby Atmos, and related marks are trademarks of their
 respective owners.
 
-The current v0.2.0 contract is deliberately narrow:
+The immutable v0.2.0 release contract is deliberately narrow:
 
 - `scene.json` is metadata-only;
 - `diagnostics/reconstruction_rows/row_NNN.wav` contains diagnostic
@@ -23,9 +23,14 @@ The current v0.2.0 contract is deliberately narrow:
 - `DOLBY_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
+The current development line is `0.3.0-dev`. It adds an explicit-scene,
+front-horizontal FL/FR stereo renderer for caller-supplied mono sources. This
+renderer is independent of unresolved JOC authored-object binding and does not
+claim binaural, room-acoustic, or renderer-fidelity parity with Dolby.
+
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — what v0.2.0 supports today.
+- [Capabilities](docs/CAPABILITIES.md) — what the current development line supports.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Requirements matrix](docs/REQUIREMENTS_MATRIX.md) — engineering truth table.

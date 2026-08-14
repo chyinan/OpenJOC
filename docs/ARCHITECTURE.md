@@ -72,6 +72,22 @@ without retaining another PCM copy. Operations requiring authored-object audio
 identity fail explicitly while binding is unresolved; component-domain decode
 and streaming remain available.
 
+### Explicit spatial renderer
+
+The `openjoc-render` crate is a separate Layer-A/Layer-B foundation. It accepts
+only caller-supplied `ExplicitSpatialSource` blocks with an opaque source ID,
+mono PCM, explicit Cartesian position, and explicit linear gain. Its initial
+renderer maps the front horizontal hemisphere to `FL, FR` with a public
+equal-power law and mixes borrowed blocks into caller-owned floating-point
+buffers. It has no dependency on `openjoc-scene`, `DecodedJocComponents`, or
+`ReconstructionBasis`, so unresolved decoder rows cannot become authored
+spatial sources through an implicit conversion.
+
+The initial renderer rejects rear-hemisphere and undefined horizontal
+directions, ignores elevation for stereo, performs no distance/room/occlusion
+processing, and does not clip by default. HRTF/binaural rendering, general
+speaker layouts, and any JOC semantic bridge are later capabilities.
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

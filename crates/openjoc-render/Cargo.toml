@@ -1,15 +1,12 @@
 [package]
-name = "openjoc-emdf"
+name = "openjoc-render"
 version.workspace = true
-description = "Bounded EMDF parsing and explicit JOC profile validation"
+description = "Explicit spatial-scene and streaming speaker renderer foundation"
 edition.workspace = true
 license.workspace = true
 license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-
-[dependencies]
-openjoc-bitio = { version = "0.3.0-dev", path = "../openjoc-bitio" }
 
 [lints]
 workspace = true

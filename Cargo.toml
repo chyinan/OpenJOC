@@ -8,6 +8,7 @@ members = [
     "crates/openjoc-joc",
     "crates/openjoc-oamd",
     "crates/openjoc-qmf",
+    "crates/openjoc-render",
     "crates/openjoc-scene",
     "crates/openjoc-wave",
     "tools/import-etsi-tables",
@@ -15,7 +16,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0-dev"
 edition = "2024"
 license = "Apache-2.0"
 license-file = "LICENSE"

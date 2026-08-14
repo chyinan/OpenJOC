@@ -1,9 +1,11 @@
-# OpenJOC v0.2.0 capabilities
+# OpenJOC 0.3.0-dev capabilities
 
-This is the canonical current capability status for OpenJOC v0.2.0. It is a
-release-facing snapshot, not a research journal. Engineering requirement
-details belong in [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md); historical
-evidence belongs in [research history](research/README.md).
+This is the canonical current capability status for the OpenJOC 0.3.0-dev
+development line. The immutable v0.2.0 release remains separately documented
+by its acceptance record. This is a release-facing snapshot, not a research
+journal. Engineering requirement details belong in
+[REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md); historical evidence belongs
+in [research history](research/README.md).
 
 ## Status vocabulary
 
@@ -31,7 +33,8 @@ evidence belongs in [research history](research/README.md).
 | Reconstruction | `ReconstructionBasis` rows | `DIAGNOSTIC_ONLY` | Deterministic numerical, continuity and WAV-export tests | Rows are not authored-object PCM or object stems |
 | Components | Typed decoded-component manifest | `ADMITTED` | `diagnostics/components.json` separates Base, Base LFE, indexed RB coordinates, RcLfe boundary and unresolved binding | PCM-free layout; no authored-object identity |
 | Semantics | Authored-object binding and verified object PCM | `NOT_ADMITTED` | One-row-per-authored-object model rejected | `SemanticBindingState::Unresolved` remains the production state |
-| Rendering | Audio-bound `ObjectScene` or renderer fidelity | `NOT_ADMITTED` | Insufficient semantic evidence | No speaker/binaural renderer or fidelity claim |
+| Rendering | Explicit-scene FL/FR stereo renderer | `ADMITTED_WITH_SCOPE` | `openjoc-render` independent numerical and block-streaming tests | Caller-supplied mono sources only; front-horizontal equal-power panning; no JOC bridge, HRTF, room model, or Dolby renderer-fidelity claim |
+| Rendering | Audio-bound `ObjectScene` or renderer fidelity | `NOT_ADMITTED` | Semantic binding remains unresolved and no proprietary renderer evidence is admitted | No authored-object/JOC audio binding, binaural parity, or Dolby renderer-fidelity claim |
 | Release | OpenJOC 0.2.0 platform binaries | `ADMITTED_WITH_SCOPE` | Published Apple silicon macOS, Windows x86_64, and GNU/Linux x86_64 assets; native Windows validation and Ubuntu WSL2 validation | Linux evidence is limited to Ubuntu 20.04.6 LTS under WSL2; the macOS asset is not Developer-ID signed or notarized |
 
 The matrix deliberately separates production status from evidence class. A

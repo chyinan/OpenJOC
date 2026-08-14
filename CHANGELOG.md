@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0-dev] — unreleased
+
+### Added
+
+- Initial explicit spatial-scene and streaming stereo renderer foundation.
+
+### Scope
+
+- Renderer inputs are caller-supplied explicit mono sources; unresolved JOC
+  ReconstructionBasis rows are not converted into authored-object sources.
+
 ## [0.2.0] — 2026-08-13
 
 Prepared as a local release freeze. Tagging and publication remain separate

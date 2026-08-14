@@ -1,4 +1,4 @@
-# OpenJOC v0.2.0 known limitations
+# OpenJOC 0.3.0-dev known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and requirement status belong in the linked documents under `docs/`.
@@ -12,6 +12,10 @@ claiming capabilities that the current evidence does not support.
 - Diagnostic `ReconstructionBasis` rows are available, but they are not
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
+- The explicit `openjoc-render` foundation accepts caller-supplied mono sources
+  and provides front-horizontal FL/FR equal-power stereo only. It is not a JOC
+  semantic bridge, a binaural renderer, a room model, or a Dolby renderer
+  fidelity implementation.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
   window-dependent RB redistribution is admitted, but common gauge,
   row-transfer and rank-1 models are rejected. No implementation-ready
