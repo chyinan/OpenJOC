@@ -6,15 +6,22 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+static UNIQUE_ROOT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn unique_root(prefix: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
+    let sequence = UNIQUE_ROOT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "{prefix}-{}-{nanos}-{sequence}",
+        std::process::id()
+    ))
 }
 
 fn external_fixture() -> Option<(PathBuf, Vec<u8>)> {
@@ -119,7 +126,7 @@ fn inspect_and_decode_use_iso_bmff_container_path() {
         .expect("run decode");
     assert!(!decode_result.status.success());
     let stderr = String::from_utf8_lossy(&decode_result.stderr);
-    assert!(stderr.contains("JOC metadata") || stderr.contains("missing"));
+    assert!(stderr.contains("JOC"), "unexpected decode error: {stderr}");
     assert!(!stderr.contains("invalid E-AC-3 syncword"));
     fs::remove_dir_all(root).expect("remove fixture");
 }

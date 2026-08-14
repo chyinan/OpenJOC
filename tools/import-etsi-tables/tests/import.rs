@@ -92,7 +92,9 @@ fn committed_runtime_tables_match_the_verified_generator() {
         "crates/openjoc-joc/src/generated_etsi_tables.rs",
         "crates/openjoc-qmf/src/generated_etsi_tables.rs",
     ] {
-        let actual = fs::read_to_string(workspace.join(path)).expect("committed runtime tables");
+        let actual = fs::read_to_string(workspace.join(path))
+            .expect("committed runtime tables")
+            .replace("\r\n", "\n");
         assert_eq!(actual, expected, "stale generated runtime table: {path}");
     }
 }
@@ -106,8 +108,12 @@ fn committed_runtime_tables_match_each_other_and_record_normative_provenance() {
         eprintln!("skipping workspace runtime-table comparison outside the OpenJOC source tree");
         return;
     }
-    let joc = fs::read_to_string(joc_path).expect("committed JOC tables");
-    let qmf = fs::read_to_string(qmf_path).expect("committed QMF tables");
+    let joc = fs::read_to_string(joc_path)
+        .expect("committed JOC tables")
+        .replace("\r\n", "\n");
+    let qmf = fs::read_to_string(qmf_path)
+        .expect("committed QMF tables")
+        .replace("\r\n", "\n");
 
     assert_eq!(joc, qmf);
     assert!(joc.contains("source: ts_103420_tables.c"));
