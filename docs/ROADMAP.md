@@ -16,9 +16,12 @@ current capability matrix or a historical milestone log.
   exact caller-supplied HRIR lookup, static source registration, bounded
   history, and complete tail draining remain the reference contract. Any
   future optimization must preserve byte-identical direct-path regressions.
-- A separately authorized future stage may add uniform partitioned convolution
-  for long HRIRs; it must not silently add SOFA parsing, interpolation, moving
-  sources, or listener pose semantics.
+- Uniform partitioned binaural convolution is now an explicit opt-in backend
+  alongside the J5R6 Direct FIR oracle. It uses one fixed power-of-two input
+  partition and a `2P` FFT, exposes one-partition scheduling latency, and
+  preserves exact final partial-input and `M-1` tail semantics. It must not
+  silently add SOFA parsing, interpolation, moving sources, or listener pose
+  semantics; backend selection remains caller-owned.
 - Add a pluggable public/user-supplied HRTF path only after the speaker-scene
   contract is stable.
 - Extend public-syntax and malformed-input hardening, including fuzz coverage.

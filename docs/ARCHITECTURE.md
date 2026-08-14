@@ -139,7 +139,15 @@ delay, keeps bounded per-source history across caller-owned input blocks, and
 exposes explicit tail draining and reset semantics. Exact direction and
 sample-rate matching are mandatory; there is no nearest-neighbor lookup,
 interpolation, SOFA parser, moving source, listener pose, room, distance,
-Doppler, FFT/partitioned convolution, or JOC semantic bridge.
+Doppler, or JOC semantic bridge. `PartitionedBinauralRenderer` is an additive,
+caller-selected uniform overlap-add backend: its fixed power-of-two partition
+`P` uses a `2P` FFT, reports one-partition scheduling latency, accepts exactly
+`P`-sample input partitions plus one explicit final partial operation, and
+drains exactly the largest registered `M-1` causal tail. It precomputes HRIR
+spectra and keeps only bounded filter-length frequency/time state; no
+duration-proportional PCM history or adaptive backend selection is used.
+Direct FIR remains the numerical oracle, so cross-backend validation is
+numerical rather than a promise of bit identity.
 
 ### Capture and streaming
 

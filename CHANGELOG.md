@@ -17,8 +17,13 @@
   byte-identical block-partition-invariant triplet rendering.
 - Caller-supplied exact-direction HRIR banks, static explicit binaural source
   registration, direct causal f64 FIR streaming, bounded history, and complete
-  block-partition-invariant tail draining. No SOFA, interpolation, or
-  partitioned convolution is included.
+  block-partition-invariant tail draining. Direct FIR remains the compact
+  numerical oracle.
+- Fixed uniform FFT partitioned binaural convolution with caller-selected
+  power-of-two `P`, `2P` transforms, explicit one-partition scheduling latency,
+  final partial input, bounded exact tail draining, and reset/lifecycle
+  semantics. No SOFA, interpolation, moving source, or adaptive backend
+  selection is included.
 
 ### Scope
 

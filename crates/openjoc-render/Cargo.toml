@@ -8,5 +8,8 @@ license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[dependencies]
+rustfft = "6.4.1"
+
 [lints]
 workspace = true

@@ -14,11 +14,20 @@
 //! checked 3x3 VBAP triplet gains. J5R5 adds sample-accurate three-dimensional
 //! great-circle trajectories over that immutable topology. J5R6 adds a static,
 //! caller-supplied exact-direction HRIR provider and direct causal binaural
-//! FIR stream with explicit history and tail draining. SOFA, interpolation,
-//! moving binaural sources, partitioned convolution, distance, room acoustics,
-//! occlusion, and JOC semantic binding remain explicit non-features.
+//! FIR stream with explicit history and tail draining. J5R7 adds an additive
+//! fixed-uniform FFT partitioned backend with explicit input-partition,
+//! latency, final-partial-input, and tail contracts; Direct FIR remains the
+//! reference implementation. SOFA, interpolation, moving binaural sources,
+//! distance, room acoustics, occlusion, and JOC semantic binding remain
+//! explicit non-features.
 
 use std::fmt;
+
+mod partitioned;
+
+pub use partitioned::{
+    PartitionedBinauralRenderer, UniformPartitionedConfig, UniformPartitionedConvolver,
+};
 
 /// The fixed output channel order for the J5R1 speaker renderer.
 pub const STEREO_CHANNEL_ORDER: [&str; 2] = ["FL", "FR"];
@@ -2717,6 +2726,22 @@ pub enum RenderError {
         entry: HrirEntryId,
     },
     HrirStateSizeOverflow,
+    InvalidPartitionSize {
+        size: usize,
+    },
+    PartitionFftSizeOverflow,
+    PartitionStateSizeOverflow,
+    PartitionedInputAfterFinish,
+    PartitionedRequiresReset,
+    PartitionedAlreadyFinished,
+    PartitionedInputLengthMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    PartitionedTailOutputLengthMismatch {
+        requested: usize,
+        remaining: usize,
+    },
     EmptyBinauralSourceSet,
     BinauralSourceCountMismatch {
         expected: usize,
@@ -2906,6 +2931,35 @@ impl fmt::Display for RenderError {
                 source.0, entry.0
             ),
             Self::HrirStateSizeOverflow => formatter.write_str("HRIR state size overflow"),
+            Self::InvalidPartitionSize { size } => {
+                write!(
+                    formatter,
+                    "partition size must be a non-zero power of two: {size}"
+                )
+            }
+            Self::PartitionFftSizeOverflow => formatter.write_str("partition FFT size overflow"),
+            Self::PartitionStateSizeOverflow => {
+                formatter.write_str("partitioned convolution state size overflow")
+            }
+            Self::PartitionedInputAfterFinish => formatter
+                .write_str("partitioned convolution input is unavailable after finalization"),
+            Self::PartitionedRequiresReset => {
+                formatter.write_str("partitioned convolution requires reset after numeric failure")
+            }
+            Self::PartitionedAlreadyFinished => {
+                formatter.write_str("partitioned convolution tail is already finished")
+            }
+            Self::PartitionedInputLengthMismatch { expected, actual } => write!(
+                formatter,
+                "partitioned input length mismatch: expected {expected}, actual {actual}"
+            ),
+            Self::PartitionedTailOutputLengthMismatch {
+                requested,
+                remaining,
+            } => write!(
+                formatter,
+                "partitioned tail output length mismatch: requested {requested}, remaining {remaining}"
+            ),
             Self::EmptyBinauralSourceSet => {
                 formatter.write_str("binaural renderer requires at least one source")
             }
