@@ -6,6 +6,7 @@ mod eac3_decode;
 mod fixture_census;
 mod oamd_forensics;
 mod oamd_oracle;
+mod render_scene;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
@@ -38,7 +39,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -109,6 +110,8 @@ fn run() -> Result<(), Box<dyn Error>> {
             let (input, trim_configuration_count) = parse_inspect(&arguments[1..])?;
             inspect(&input, trim_configuration_count)
         }
+        Some("sofa") => render_scene::run_sofa(&arguments[1..]),
+        Some("render-scene") => render_scene::run_render_scene(&arguments[1..]),
         Some("decode-payload") => decode_payload(&arguments[1..]),
         Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
         Some("diagnose-tools") => diagnose_tools(&arguments[1..]),
@@ -156,6 +159,8 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
         "  openjoc decode-payload [OPTIONS]\n",
+        "  openjoc sofa inspect <FILE> [--json]\n",
+        "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -191,6 +196,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  census          Census bounded metadata carriers from external fixtures\n",
         "  diagnose-oamd   Emit bit-exact EMDF/OAMD entry evidence\n",
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
+        "  sofa            Inspect strict SimpleFreeFieldHRIR/CDF-1 SOFA files\n",
+        "  render-scene    Render caller-bound static sources to transactional binaural WAV\n",
         "\n",
     ));
     append_heading(output, "OPTIONS", color)?;
@@ -214,6 +221,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  ETSI strict is never auto-downgraded; reserved syntax is an expected non-zero profile rejection\n",
         "  Dolby vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
+        "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
     ));
     Ok(())
 }
@@ -241,6 +249,15 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--trim-config-count N] [reference-screen options]\n\n",
             "Diagnostic/API-level payload path. Output is a metadata-only scene and separately\n",
             "named ReconstructionBasis rows, never verified authored-object PCM.\n",
+        ),
+        "sofa" => concat!(
+            "usage: openjoc sofa inspect <FILE> [--json]\n\n",
+            "Inspects the strict SimpleFreeFieldHRIR / NetCDF classic CDF-1 subset.\n",
+        ),
+        "render-scene" => concat!(
+            "usage: openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR>\n",
+            "       --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n\n",
+            "Renders explicit static sources transactionally to stereo float32 WAV.\n",
         ),
         "diagnose-tools" => concat!(
             "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",

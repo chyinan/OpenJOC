@@ -9,6 +9,10 @@ claiming capabilities that the current evidence does not support.
 
 - `scene.json` is metadata-only. It does not bind decoded audio to authored
   objects.
+- `render-scene` supports only static explicit sources, mono PCM16/24/32 or
+  float32 WAV, and the strict SimpleFreeFieldHRIR NetCDF classic CDF-1 SOFA
+  subset. HDF5/NetCDF-4, other conventions, interpolation, moving sources,
+  and resampling are not supported.
 - Diagnostic `ReconstructionBasis` rows are available, but they are not
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.

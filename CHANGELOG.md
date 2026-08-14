@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added `openjoc render-scene` with the versioned `openjoc.render-scene.v1`
+  explicit-source contract, strict SOFA-backed static binaural rendering,
+  transactional float32 WAV output, and `openjoc sofa inspect`.
+
 - Initial explicit spatial-scene and streaming stereo renderer foundation.
 - General validated horizontal speaker layouts with deterministic adjacent-pair
   public VBAP-style panning and caller-owned planar block outputs.

@@ -9,6 +9,11 @@ in [research history](research/README.md).
 
 ## Status vocabulary
 
+The explicit `render-scene` workflow is admitted for static caller-bound mono
+sources, direct or uniform-partitioned binaural convolution, and the strict
+J5R8 SimpleFreeFieldHRIR/CDF-1 SOFA subset. It is not a JOC or authored-object
+renderer.
+
 - `ADMITTED` — supported within the stated contract.
 - `ADMITTED_WITH_SCOPE` — supported only within an explicit bounded scope.
 - `DIAGNOSTIC_ONLY` — emitted for analysis, not a semantic product claim.

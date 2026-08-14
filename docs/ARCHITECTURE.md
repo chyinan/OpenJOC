@@ -6,6 +6,11 @@ goal is complete.
 
 ## Data flow
 
+The explicit render-scene workflow is implemented in `openjoc-render-scene`.
+It depends on `openjoc-render`, `openjoc-sofa`, and `openjoc-wave`; it is
+deliberately separate from `openjoc-scene`, so decoder metadata and
+ReconstructionBasis rows cannot enter the caller-bound source contract.
+
 ```text
 raw EC-3 / seekable ISO BMFF
           │
