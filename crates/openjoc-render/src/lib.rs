@@ -6,9 +6,11 @@
 //! source while [`SemanticBindingState`](https://docs.rs/openjoc-scene) remains
 //! unresolved.
 //!
-//! J5R1 implements a front-horizontal, equal-power FL/FR panner. Elevation,
-//! distance, room acoustics, occlusion, HRTF, and JOC semantic binding are
-//! explicit non-features of this initial foundation.
+//! J5R1 implements a front-horizontal, equal-power FL/FR panner. J5R2 adds a
+//! separate explicit-scene two-dimensional speaker-layout renderer using
+//! checked public VBAP-style pair mathematics. Elevation, distance, room
+//! acoustics, occlusion, HRTF, and JOC semantic binding remain explicit
+//! non-features of this foundation.
 
 use std::fmt;
 
@@ -159,6 +161,449 @@ pub struct StereoGains {
     pub right: f64,
 }
 
+/// An opaque caller-provided identity for one output speaker.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SpeakerId(u64);
+
+impl SpeakerId {
+    /// Creates an opaque speaker identity from a caller-owned value.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the caller-owned identity value.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// One full-range horizontal speaker direction in the caller's output order.
+///
+/// The horizontal projection of `position` defines the speaker direction. The
+/// `z` component is retained for coordinate completeness but is ignored by
+/// the two-dimensional renderer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Speaker2d {
+    id: SpeakerId,
+    position: CartesianPosition,
+}
+
+impl Speaker2d {
+    /// Creates a speaker after validating its finite, nonzero horizontal
+    /// direction.
+    pub fn new(id: SpeakerId, position: CartesianPosition) -> Result<Self, RenderError> {
+        validate_position(position)?;
+        if horizontal_magnitude_squared(position) <= 0.0 {
+            return Err(RenderError::UndefinedSpeakerDirection { id });
+        }
+        Ok(Self { id, position })
+    }
+
+    /// Returns the opaque speaker identity.
+    #[must_use]
+    pub const fn id(self) -> SpeakerId {
+        self.id
+    }
+
+    /// Returns the speaker's Cartesian direction.
+    #[must_use]
+    pub const fn position(self) -> CartesianPosition {
+        self.position
+    }
+}
+
+/// A deterministic adjacent-speaker pair selected by a two-dimensional layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpeakerPair2d {
+    first_index: usize,
+    second_index: usize,
+}
+
+impl SpeakerPair2d {
+    /// Returns the first public output index in angular order.
+    #[must_use]
+    pub const fn first_index(self) -> usize {
+        self.first_index
+    }
+
+    /// Returns the second public output index in angular order.
+    #[must_use]
+    pub const fn second_index(self) -> usize {
+        self.second_index
+    }
+}
+
+/// Energy-normalized gains for one selected two-dimensional speaker pair.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PairGains2d {
+    pair: SpeakerPair2d,
+    first: f64,
+    second: f64,
+}
+
+impl PairGains2d {
+    /// Returns the selected public output pair.
+    #[must_use]
+    pub const fn pair(self) -> SpeakerPair2d {
+        self.pair
+    }
+
+    /// Returns the first pair gain.
+    #[must_use]
+    pub const fn first(self) -> f64 {
+        self.first
+    }
+
+    /// Returns the second pair gain.
+    #[must_use]
+    pub const fn second(self) -> f64 {
+        self.second
+    }
+}
+
+/// A caller-declared horizontal speaker layout.
+///
+/// The input slice order is the public output-channel order. Internal azimuth
+/// sorting is used only to construct adjacent panning sectors; it never
+/// changes the caller-visible output-plane order. Layout construction may
+/// allocate bounded speaker/pair metadata, while rendering uses no
+/// per-sample allocation.
+#[derive(Clone, Debug)]
+pub struct SpeakerLayout2d {
+    speakers: Vec<Speaker2d>,
+    directions: Vec<(f64, f64, f64)>,
+    sorted_indices: Vec<usize>,
+    pairs: Vec<LayoutPair>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LayoutPair {
+    pair: SpeakerPair2d,
+    start_angle: f64,
+    end_angle: f64,
+}
+
+impl SpeakerLayout2d {
+    /// Builds a layout from the caller-declared public output order.
+    pub fn new(speakers: Vec<Speaker2d>) -> Result<Self, RenderError> {
+        if speakers.len() < 2 {
+            return Err(RenderError::TooFewSpeakers {
+                actual: speakers.len(),
+            });
+        }
+
+        for (index, speaker) in speakers.iter().enumerate() {
+            if speakers[index + 1..]
+                .iter()
+                .any(|other| other.id == speaker.id)
+            {
+                return Err(RenderError::DuplicateSpeakerId { id: speaker.id });
+            }
+        }
+
+        let directions: Vec<_> = speakers
+            .iter()
+            .map(|speaker| normalized_horizontal(speaker.position))
+            .collect::<Result<_, _>>()?;
+        let mut sorted_indices: Vec<_> = (0..speakers.len()).collect();
+        sorted_indices.sort_by(|&left, &right| {
+            directions[left]
+                .2
+                .total_cmp(&directions[right].2)
+                .then_with(|| left.cmp(&right))
+        });
+
+        for window in sorted_indices.windows(2) {
+            let first = directions[window[0]].2;
+            let second = directions[window[1]].2;
+            if second - first <= ANGLE_TOLERANCE {
+                return Err(RenderError::DuplicateSpeakerAzimuth {
+                    first: window[0],
+                    second: window[1],
+                });
+            }
+        }
+
+        let mut pairs = Vec::new();
+        for (sorted_position, &first_index) in sorted_indices.iter().enumerate() {
+            let second_index = sorted_indices[(sorted_position + 1) % sorted_indices.len()];
+            let start_angle = directions[first_index].2;
+            let mut end_angle = directions[second_index].2;
+            if sorted_position + 1 == sorted_indices.len() {
+                end_angle += TWO_PI;
+            }
+            let separation = end_angle - start_angle;
+            if separation > ANGLE_TOLERANCE && separation < std::f64::consts::PI {
+                pairs.push(LayoutPair {
+                    pair: SpeakerPair2d {
+                        first_index,
+                        second_index,
+                    },
+                    start_angle,
+                    end_angle,
+                });
+            }
+        }
+        if pairs.is_empty() {
+            return Err(RenderError::NoUsableSpeakerPair);
+        }
+
+        Ok(Self {
+            speakers,
+            directions,
+            sorted_indices,
+            pairs,
+        })
+    }
+
+    /// Returns the caller-declared speaker/output order.
+    #[must_use]
+    pub fn speakers(&self) -> &[Speaker2d] {
+        &self.speakers
+    }
+
+    /// Returns the number of public output planes.
+    #[must_use]
+    pub fn speaker_count(&self) -> usize {
+        self.speakers.len()
+    }
+
+    /// Returns the deterministic pair and gains for one explicit position.
+    pub fn pair_gains(&self, position: CartesianPosition) -> Result<PairGains2d, RenderError> {
+        validate_position(position)?;
+        let (x, y, theta) = normalized_horizontal(position)?;
+
+        for (index, &(_, _, speaker_angle)) in self.directions.iter().enumerate() {
+            if angular_distance(theta, speaker_angle) <= ANGLE_TOLERANCE {
+                return Ok(PairGains2d {
+                    pair: SpeakerPair2d {
+                        first_index: index,
+                        second_index: index,
+                    },
+                    first: 1.0,
+                    second: 0.0,
+                });
+            }
+        }
+
+        let mut selected = None;
+        let mut normalized_theta = theta;
+        if normalized_theta < self.pairs[0].start_angle {
+            normalized_theta += TWO_PI;
+        }
+        for candidate in &self.pairs {
+            let mut candidate_theta = normalized_theta;
+            let start = candidate.start_angle;
+            let mut end = candidate.end_angle;
+            if end < start {
+                end += TWO_PI;
+            }
+            if candidate_theta < start {
+                candidate_theta += TWO_PI;
+            }
+            if candidate_theta >= start - ANGLE_TOLERANCE
+                && candidate_theta <= end + ANGLE_TOLERANCE
+                && selected.replace(*candidate).is_some()
+            {
+                return Err(RenderError::AmbiguousSpeakerPair);
+            }
+        }
+        let candidate = selected.ok_or(RenderError::UnsupportedDirection { angle: theta })?;
+        let first = self.directions[candidate.pair.first_index];
+        let second = self.directions[candidate.pair.second_index];
+        let determinant = first.0.mul_add(second.1, -(second.0 * first.1));
+        if determinant.abs() <= DETERMINANT_TOLERANCE || !determinant.is_finite() {
+            return Err(RenderError::SingularSpeakerPair {
+                first: candidate.pair.first_index,
+                second: candidate.pair.second_index,
+            });
+        }
+        let mut first_gain = (x.mul_add(second.1, -(second.0 * y))) / determinant;
+        let mut second_gain = (first.0.mul_add(y, -(x * first.1))) / determinant;
+        if !first_gain.is_finite() || !second_gain.is_finite() {
+            return Err(RenderError::InvalidPairGains);
+        }
+        if first_gain < -GAIN_TOLERANCE || second_gain < -GAIN_TOLERANCE {
+            return Err(RenderError::NegativePairGain);
+        }
+        if first_gain < 0.0 {
+            first_gain = 0.0;
+        }
+        if second_gain < 0.0 {
+            second_gain = 0.0;
+        }
+        let norm = first_gain
+            .mul_add(first_gain, second_gain * second_gain)
+            .sqrt();
+        if !norm.is_finite() || norm <= DETERMINANT_TOLERANCE {
+            return Err(RenderError::InvalidPairGains);
+        }
+        Ok(PairGains2d {
+            pair: candidate.pair,
+            first: first_gain / norm,
+            second: second_gain / norm,
+        })
+    }
+
+    /// Returns the deterministic internally sorted public speaker indices.
+    #[must_use]
+    pub fn sorted_indices(&self) -> &[usize] {
+        &self.sorted_indices
+    }
+}
+
+/// Stateless block renderer for explicit sources and an arbitrary 2D layout.
+#[derive(Clone, Debug)]
+pub struct LayoutRenderer2d {
+    layout: SpeakerLayout2d,
+}
+
+impl LayoutRenderer2d {
+    /// Creates a renderer for a validated speaker layout.
+    #[must_use]
+    pub fn new(layout: SpeakerLayout2d) -> Self {
+        Self { layout }
+    }
+
+    /// Returns the immutable speaker layout and public output order.
+    #[must_use]
+    pub const fn layout(&self) -> &SpeakerLayout2d {
+        &self.layout
+    }
+
+    /// Renders one static-position block into caller-owned planar outputs.
+    ///
+    /// `outputs` must have one reusable plane per declared speaker, in the
+    /// exact order supplied to [`SpeakerLayout2d::new`]. The renderer clears
+    /// all planes on success, performs no truncation/padding, and does not
+    /// allocate per sample. Output is unclipped `f64`; no LFE routing,
+    /// distance model, or bass management is applied.
+    pub fn render_block(
+        &self,
+        sources: &[ExplicitSpatialSource<'_>],
+        outputs: &mut [&mut [f64]],
+    ) -> Result<(), RenderError> {
+        if outputs.len() != self.layout.speakers.len() {
+            return Err(RenderError::SpeakerOutputCountMismatch {
+                expected: self.layout.speakers.len(),
+                actual: outputs.len(),
+            });
+        }
+        let block_length = outputs.first().map_or(0, |output| output.len());
+        for (index, output) in outputs.iter().enumerate() {
+            if output.len() != block_length {
+                return Err(RenderError::SpeakerOutputLengthMismatch {
+                    speaker_index: index,
+                    expected: block_length,
+                    actual: output.len(),
+                });
+            }
+        }
+        for source in sources {
+            if source.samples.len() != block_length {
+                return Err(RenderError::SourceBlockLengthMismatch {
+                    id: source.id,
+                    expected: block_length,
+                    actual: source.samples.len(),
+                });
+            }
+            validate_position(source.position)?;
+            validate_gain(source.gain)?;
+            if let Some(sample_index) = source.samples.iter().position(|sample| !sample.is_finite())
+            {
+                return Err(RenderError::NonFiniteSourceSample {
+                    id: source.id,
+                    sample_index,
+                });
+            }
+            self.layout.pair_gains(source.position)?;
+        }
+
+        for output in outputs.iter_mut() {
+            output.fill(0.0);
+        }
+        for source in sources {
+            let gains = self.layout.pair_gains(source.position)?;
+            let first_index = gains.pair.first_index;
+            let second_index = gains.pair.second_index;
+            let first_gain = gains.first * source.gain;
+            let second_gain = gains.second * source.gain;
+            for (sample_index, &sample) in source.samples.iter().enumerate() {
+                outputs[first_index][sample_index] += sample * first_gain;
+                if first_index == second_index {
+                    if !outputs[first_index][sample_index].is_finite() {
+                        clear_outputs(outputs);
+                        return Err(RenderError::NonFiniteOutput {
+                            channel: OutputChannel::Speaker(first_index),
+                            sample_index,
+                        });
+                    }
+                } else {
+                    outputs[second_index][sample_index] += sample * second_gain;
+                    if !outputs[first_index][sample_index].is_finite() {
+                        clear_outputs(outputs);
+                        return Err(RenderError::NonFiniteOutput {
+                            channel: OutputChannel::Speaker(first_index),
+                            sample_index,
+                        });
+                    }
+                    if !outputs[second_index][sample_index].is_finite() {
+                        clear_outputs(outputs);
+                        return Err(RenderError::NonFiniteOutput {
+                            channel: OutputChannel::Speaker(second_index),
+                            sample_index,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+const ANGLE_TOLERANCE: f64 = 1.0e-12;
+const DETERMINANT_TOLERANCE: f64 = 1.0e-12;
+const GAIN_TOLERANCE: f64 = 1.0e-12;
+const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
+
+fn clear_outputs(outputs: &mut [&mut [f64]]) {
+    for output in outputs.iter_mut() {
+        output.fill(0.0);
+    }
+}
+
+fn horizontal_magnitude_squared(position: CartesianPosition) -> f64 {
+    position.x.mul_add(position.x, position.y * position.y)
+}
+
+fn normalize_azimuth(mut angle: f64) -> f64 {
+    while angle >= std::f64::consts::PI {
+        angle -= TWO_PI;
+    }
+    while angle < -std::f64::consts::PI {
+        angle += TWO_PI;
+    }
+    angle
+}
+
+fn normalized_horizontal(position: CartesianPosition) -> Result<(f64, f64, f64), RenderError> {
+    validate_position(position)?;
+    let magnitude = horizontal_magnitude_squared(position).sqrt();
+    if !magnitude.is_finite() || magnitude <= 0.0 {
+        return Err(RenderError::UndefinedHorizontalDirection);
+    }
+    let x = position.x / magnitude;
+    let y = position.y / magnitude;
+    let theta = normalize_azimuth(position.x.atan2(position.y));
+    Ok((x, y, theta))
+}
+
+fn angular_distance(first: f64, second: f64) -> f64 {
+    normalize_azimuth(first - second).abs()
+}
+
 impl StereoGains {
     /// Computes front-horizontal equal-power gains for a position.
     pub fn for_position(position: CartesianPosition) -> Result<Self, RenderError> {
@@ -183,6 +628,7 @@ impl StereoGains {
 pub enum OutputChannel {
     Left,
     Right,
+    Speaker(usize),
 }
 
 /// Explicit-scene renderer failures.
@@ -219,6 +665,39 @@ pub enum RenderError {
     NonFiniteOutput {
         channel: OutputChannel,
         sample_index: usize,
+    },
+    TooFewSpeakers {
+        actual: usize,
+    },
+    UndefinedSpeakerDirection {
+        id: SpeakerId,
+    },
+    DuplicateSpeakerId {
+        id: SpeakerId,
+    },
+    DuplicateSpeakerAzimuth {
+        first: usize,
+        second: usize,
+    },
+    NoUsableSpeakerPair,
+    SingularSpeakerPair {
+        first: usize,
+        second: usize,
+    },
+    InvalidPairGains,
+    NegativePairGain,
+    AmbiguousSpeakerPair,
+    UnsupportedDirection {
+        angle: f64,
+    },
+    SpeakerOutputCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    SpeakerOutputLengthMismatch {
+        speaker_index: usize,
+        expected: usize,
+        actual: usize,
     },
 }
 
@@ -268,6 +747,53 @@ impl fmt::Display for RenderError {
             } => write!(
                 formatter,
                 "rendered {channel:?} output is non-finite at sample {sample_index}"
+            ),
+            Self::TooFewSpeakers { actual } => {
+                write!(
+                    formatter,
+                    "a 2D layout needs at least two speakers; got {actual}"
+                )
+            }
+            Self::UndefinedSpeakerDirection { id } => {
+                write!(
+                    formatter,
+                    "speaker {} has an undefined horizontal direction",
+                    id.0
+                )
+            }
+            Self::DuplicateSpeakerId { id } => {
+                write!(formatter, "duplicate speaker ID {}", id.0)
+            }
+            Self::DuplicateSpeakerAzimuth { first, second } => write!(
+                formatter,
+                "speakers {first} and {second} have duplicate azimuths"
+            ),
+            Self::NoUsableSpeakerPair => {
+                formatter.write_str("layout has no usable non-singular adjacent speaker pair")
+            }
+            Self::SingularSpeakerPair { first, second } => write!(
+                formatter,
+                "speaker pair {first}/{second} is singular or opposed"
+            ),
+            Self::InvalidPairGains => formatter.write_str("pair gains are invalid or degenerate"),
+            Self::NegativePairGain => formatter.write_str("source lies outside the selected pair"),
+            Self::AmbiguousSpeakerPair => {
+                formatter.write_str("source direction matches multiple speaker sectors")
+            }
+            Self::UnsupportedDirection { angle } => {
+                write!(formatter, "speaker layout does not cover azimuth {angle}")
+            }
+            Self::SpeakerOutputCountMismatch { expected, actual } => write!(
+                formatter,
+                "speaker output plane count differs: expected {expected}, got {actual}"
+            ),
+            Self::SpeakerOutputLengthMismatch {
+                speaker_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "speaker output {speaker_index} has {actual} samples; expected {expected}"
             ),
         }
     }
@@ -641,5 +1167,236 @@ mod tests {
         ));
         assert_eq!(left, [0.0]);
         assert_eq!(right, [0.0]);
+    }
+
+    fn speaker(id: u64, x: f64, y: f64) -> Speaker2d {
+        Speaker2d::new(SpeakerId::new(id), CartesianPosition::new(x, y, 0.0)).unwrap()
+    }
+
+    fn cardinal_layout() -> SpeakerLayout2d {
+        SpeakerLayout2d::new(vec![
+            speaker(10, 0.0, 1.0),
+            speaker(20, 1.0, 0.0),
+            speaker(30, 0.0, -1.0),
+            speaker(40, -1.0, 0.0),
+        ])
+        .unwrap()
+    }
+
+    fn render_planes(
+        renderer: &LayoutRenderer2d,
+        sources: &[ExplicitSpatialSource<'_>],
+        length: usize,
+    ) -> Vec<Vec<f64>> {
+        let mut planes = vec![vec![0.0; length]; renderer.layout().speaker_count()];
+        {
+            let mut outputs: Vec<&mut [f64]> = planes.iter_mut().map(Vec::as_mut_slice).collect();
+            renderer.render_block(sources, &mut outputs).unwrap();
+        }
+        planes
+    }
+
+    fn expected_vbap(first: (f64, f64), second: (f64, f64), source: (f64, f64)) -> (f64, f64) {
+        let determinant = first.0 * second.1 - second.0 * first.1;
+        let raw_first = (source.0 * second.1 - second.0 * source.1) / determinant;
+        let raw_second = (first.0 * source.1 - source.0 * first.1) / determinant;
+        let norm = (raw_first * raw_first + raw_second * raw_second).sqrt();
+        (raw_first / norm, raw_second / norm)
+    }
+
+    #[test]
+    fn two_speaker_front_sector_matches_independent_vbap_oracle() {
+        let layout =
+            SpeakerLayout2d::new(vec![speaker(1, -1.0, 1.0), speaker(2, 1.0, 1.0)]).unwrap();
+        let gains = layout
+            .pair_gains(CartesianPosition::new(0.0, 1.0, 3.0))
+            .unwrap();
+        let expected = expected_vbap(
+            (-1.0 / 2.0_f64.sqrt(), 1.0 / 2.0_f64.sqrt()),
+            (1.0 / 2.0_f64.sqrt(), 1.0 / 2.0_f64.sqrt()),
+            (0.0, 1.0),
+        );
+        assert_eq!(gains.pair().first_index(), 0);
+        assert_eq!(gains.pair().second_index(), 1);
+        assert!((gains.first() - expected.0).abs() <= EPSILON);
+        assert!((gains.second() - expected.1).abs() <= EPSILON);
+        assert!(
+            (gains.first() * gains.first() + gains.second() * gains.second() - 1.0).abs()
+                <= EPSILON
+        );
+    }
+
+    #[test]
+    fn public_output_order_survives_internal_azimuth_sort() {
+        let layout = SpeakerLayout2d::new(vec![
+            speaker(20, 1.0, 0.0),
+            speaker(10, 0.0, 1.0),
+            speaker(40, -1.0, 0.0),
+            speaker(30, 0.0, -1.0),
+        ])
+        .unwrap();
+        assert_eq!(layout.speakers()[0].id(), SpeakerId::new(20));
+        assert_eq!(layout.speakers()[1].id(), SpeakerId::new(10));
+        assert_eq!(layout.sorted_indices(), &[3, 2, 1, 0]);
+        let source = source(50, &[1.0], 0.0, 1.0, 0.0, 1.0);
+        let planes = render_planes(&LayoutRenderer2d::new(layout), &[source], 1);
+        assert_eq!(planes, vec![vec![0.0], vec![1.0], vec![0.0], vec![0.0]]);
+    }
+
+    #[test]
+    fn full_circle_layout_renders_side_rear_and_wrap_pair() {
+        let renderer = LayoutRenderer2d::new(cardinal_layout());
+        let side = source(51, &[1.0], 1.0, 0.0, 0.0, 1.0);
+        let rear = source(52, &[1.0], 0.0, -1.0, 0.0, 1.0);
+        let wrap = source(53, &[1.0], 1.0, -1.0, 0.0, 1.0);
+        let side_planes = render_planes(&renderer, &[side], 1);
+        assert_eq!(
+            side_planes,
+            vec![vec![0.0], vec![1.0], vec![0.0], vec![0.0]]
+        );
+        let rear_planes = render_planes(&renderer, &[rear], 1);
+        assert_eq!(
+            rear_planes,
+            vec![vec![0.0], vec![0.0], vec![1.0], vec![0.0]]
+        );
+        let wrap_planes = render_planes(&renderer, &[wrap], 1);
+        let half = 1.0 / 2.0_f64.sqrt();
+        assert_eq!(wrap_planes[0], vec![0.0]);
+        assert!((wrap_planes[1][0] - half).abs() <= EPSILON);
+        assert!((wrap_planes[2][0] - half).abs() <= EPSILON);
+        assert_eq!(wrap_planes[3], vec![0.0]);
+    }
+
+    #[test]
+    fn partial_layout_rejects_uncovered_rear_direction() {
+        let layout = SpeakerLayout2d::new(vec![
+            speaker(60, -1.0, 1.0),
+            speaker(61, 0.0, 1.0),
+            speaker(62, 1.0, 1.0),
+        ])
+        .unwrap();
+        assert!(matches!(
+            layout.pair_gains(CartesianPosition::new(0.0, -1.0, 0.0)),
+            Err(RenderError::UnsupportedDirection { .. })
+        ));
+    }
+
+    #[test]
+    fn irregular_five_speaker_layout_has_deterministic_angular_sweep() {
+        let layout = SpeakerLayout2d::new(vec![
+            speaker(70, 0.0, 1.0),
+            speaker(71, 0.95, 0.31),
+            speaker(72, 0.59, -0.81),
+            speaker(73, -0.81, -0.59),
+            speaker(74, -0.95, 0.31),
+        ])
+        .unwrap();
+        for step in 0..720 {
+            let theta = -std::f64::consts::PI + TWO_PI * step as f64 / 720.0;
+            let position = CartesianPosition::new(theta.sin(), theta.cos(), 10.0);
+            let first = layout.pair_gains(position).unwrap();
+            let second = layout.pair_gains(position).unwrap();
+            assert_eq!(first, second);
+            assert!(first.first().is_finite() && first.second().is_finite());
+            assert!(first.first() >= -EPSILON && first.second() >= -EPSILON);
+            assert!(
+                (first.first() * first.first() + first.second() * first.second() - 1.0).abs()
+                    <= EPSILON
+            );
+        }
+    }
+
+    #[test]
+    fn pair_boundary_is_continuous_at_shared_speaker() {
+        let layout = cardinal_layout();
+        let epsilon = 1.0e-8;
+        for theta in [
+            -std::f64::consts::FRAC_PI_2,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ] {
+            let before = layout
+                .pair_gains(CartesianPosition::new(
+                    (theta - epsilon).sin(),
+                    (theta - epsilon).cos(),
+                    0.0,
+                ))
+                .unwrap();
+            let after = layout
+                .pair_gains(CartesianPosition::new(
+                    (theta + epsilon).sin(),
+                    (theta + epsilon).cos(),
+                    0.0,
+                ))
+                .unwrap();
+            assert!(before.first().abs() < 1.0 || before.second().abs() < 1.0);
+            assert!((before.first() - after.first()).abs() < 1.0);
+        }
+    }
+
+    #[test]
+    fn layout_validation_rejects_duplicate_ids_azimuths_and_opposed_only_layouts() {
+        assert!(matches!(
+            SpeakerLayout2d::new(vec![speaker(80, 0.0, 1.0), speaker(80, 1.0, 0.0)]),
+            Err(RenderError::DuplicateSpeakerId { .. })
+        ));
+        assert!(matches!(
+            SpeakerLayout2d::new(vec![speaker(81, 0.0, 1.0), speaker(82, 0.0, 2.0)]),
+            Err(RenderError::DuplicateSpeakerAzimuth { .. })
+        ));
+        assert!(matches!(
+            SpeakerLayout2d::new(vec![speaker(83, 0.0, 1.0), speaker(84, 0.0, -1.0)]),
+            Err(RenderError::NoUsableSpeakerPair)
+        ));
+    }
+
+    #[test]
+    fn layout_block_mixes_multiple_pairs_and_is_partition_invariant() {
+        let renderer = LayoutRenderer2d::new(cardinal_layout());
+        let first_samples = [0.25, -0.5, 0.75, -1.0];
+        let second_samples = [0.5, 0.25, -0.125, 0.25];
+        let first = source(90, &first_samples, 0.0, 1.0, 0.0, 0.5);
+        let second = source(91, &second_samples, 1.0, -1.0, 0.0, 0.75);
+        let whole = render_planes(&renderer, &[first, second], 4);
+        let mut partitioned = vec![vec![0.0; 4]; 4];
+        for (start, end) in [(0, 1), (1, 3), (3, 4)] {
+            let one = source(90, &first_samples[start..end], 0.0, 1.0, 0.0, 0.5);
+            let two = source(91, &second_samples[start..end], 1.0, -1.0, 0.0, 0.75);
+            let mut outputs: Vec<&mut [f64]> = partitioned
+                .iter_mut()
+                .map(|plane| &mut plane[start..end])
+                .collect();
+            renderer.render_block(&[one, two], &mut outputs).unwrap();
+        }
+        assert_eq!(whole, partitioned);
+    }
+
+    #[test]
+    fn layout_output_contract_rejects_wrong_planes_without_mutation() {
+        let renderer = LayoutRenderer2d::new(cardinal_layout());
+        let source = source(92, &[1.0, 2.0], 0.0, 1.0, 0.0, 1.0);
+        let mut too_few = vec![vec![7.0; 2]; 3];
+        let mut refs: Vec<&mut [f64]> = too_few.iter_mut().map(Vec::as_mut_slice).collect();
+        assert!(matches!(
+            renderer.render_block(&[source], &mut refs),
+            Err(RenderError::SpeakerOutputCountMismatch { .. })
+        ));
+        assert_eq!(too_few, vec![vec![7.0; 2]; 3]);
+
+        let mut wrong_lengths = [vec![7.0; 2], vec![8.0; 1], vec![9.0; 2], vec![10.0; 2]];
+        let mut refs: Vec<&mut [f64]> = wrong_lengths.iter_mut().map(Vec::as_mut_slice).collect();
+        assert!(matches!(
+            renderer.render_block(&[source], &mut refs),
+            Err(RenderError::SpeakerOutputLengthMismatch { .. })
+        ));
+        assert_eq!(wrong_lengths[1], vec![8.0]);
+    }
+
+    #[test]
+    fn two_dimensional_renderer_has_no_decoder_or_object_bridge() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(!manifest.contains("openjoc-eac3"));
+        assert!(!manifest.contains("DecodedJocComponents"));
+        assert!(Speaker2d::new(SpeakerId::new(93), CartesianPosition::new(0.0, 1.0, 9.0)).is_ok());
     }
 }

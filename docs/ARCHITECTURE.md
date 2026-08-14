@@ -83,10 +83,14 @@ buffers. It has no dependency on `openjoc-scene`, `DecodedJocComponents`, or
 `ReconstructionBasis`, so unresolved decoder rows cannot become authored
 spatial sources through an implicit conversion.
 
-The initial renderer rejects rear-hemisphere and undefined horizontal
+The initial `StereoRenderer` rejects rear-hemisphere and undefined horizontal
 directions, ignores elevation for stereo, performs no distance/room/occlusion
-processing, and does not clip by default. HRTF/binaural rendering, general
-speaker layouts, and any JOC semantic bridge are later capabilities.
+processing, and does not clip by default. `SpeakerLayout2d` and
+`LayoutRenderer2d` add arbitrary validated horizontal layouts with deterministic
+adjacent-pair, checked 2x2 VBAP-style gains. The caller's speaker order is the
+public planar output order; unsupported angular gaps fail explicitly. The 2D
+renderer ignores elevation and has no LFE/bass-management path. HRTF/binaural
+rendering and any JOC semantic bridge remain later capabilities.
 
 ### Capture and streaming
 

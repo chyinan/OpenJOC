@@ -13,8 +13,10 @@ claiming capabilities that the current evidence does not support.
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
-  and provides front-horizontal FL/FR equal-power stereo only. It is not a JOC
-  semantic bridge, a binaural renderer, a room model, or a Dolby renderer
+  and provides FL/FR equal-power stereo plus a general validated horizontal
+  speaker-layout renderer with public 2D VBAP-style pair gains. It rejects
+  uncovered angular gaps, ignores elevation, and has no LFE/bass-management,
+  JOC semantic bridge, binaural renderer, room model, or Dolby renderer
   fidelity implementation.
 - `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
   window-dependent RB redistribution is admitted, but common gauge,

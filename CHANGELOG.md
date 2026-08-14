@@ -5,11 +5,15 @@
 ### Added
 
 - Initial explicit spatial-scene and streaming stereo renderer foundation.
+- General validated horizontal speaker layouts with deterministic adjacent-pair
+  public VBAP-style panning and caller-owned planar block outputs.
 
 ### Scope
 
 - Renderer inputs are caller-supplied explicit mono sources; unresolved JOC
   ReconstructionBasis rows are not converted into authored-object sources.
+- The 2D renderer ignores elevation, excludes LFE/bass management, rejects
+  uncovered angular gaps, and does not provide a JOC semantic bridge.
 
 ## [0.2.0] — 2026-08-13
 
