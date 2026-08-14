@@ -106,18 +106,19 @@ changes. It is local-only, not Developer-ID signed, and not notarized.
 Pull requests and pushes to `master` run the public GitHub Actions CI matrix.
 It checks the documented Rust 1.85 MSRV, Linux quality gates, and
 platform-neutral builds/tests on Windows x64 and macOS arm64. CI results are
-build/test evidence; Linux or Windows CI success does not by itself admit a
-published binary release for those platforms.
+build/test evidence; a CI result alone does not admit a published binary
+release for a platform.
 
 Only a human-created stable tag can start release automation (the historical
 `v0.1.0` tag is preserved). The workflow requires the tag to match the Cargo
 package version exactly, then
-reuses `scripts/build-local-release.py` to build and verify the currently
-admitted macOS arm64 candidate. It uploads the generated binary bundle, clean
-source archive, manifest, and `SHA256SUMS` before publishing the GitHub Release.
-The workflow never creates or pushes tags, and refuses to overwrite an existing
-GitHub Release. Artifact attestation is not currently enabled; SHA-256 and
-`verify.sh` remain the release verification surfaces.
+builds and verifies macOS arm64, Windows x86_64, and GNU/Linux x86_64 release
+archives. Per-platform manifests remain internal workflow artifacts. The
+aggregation job recomputes archive hashes and publishes only the three binary
+archives plus one unified `SHA256SUMS` file. The workflow never creates or
+pushes tags, and refuses to overwrite an existing GitHub Release. Artifact
+attestation is not currently enabled; aggregate SHA-256, per-platform manifest
+checks, and the macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 

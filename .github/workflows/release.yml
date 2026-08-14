@@ -132,6 +132,7 @@ jobs:
       - name: Re-run the release quality contract
         run: |
           cargo fmt --all -- --check
+          cargo check --workspace --all-targets --all-features --locked
           cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
           cargo test --workspace --all-features --locked
           cargo build --workspace --release --locked
@@ -166,16 +167,105 @@ jobs:
       - name: Upload the verified release artifact set
         uses: actions/upload-artifact@v4
         with:
-          name: openjoc-release-${{ github.ref_name }}
+          name: openjoc-release-${{ github.ref_name }}-aarch64-apple-darwin
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/openjoc-release/*.tar.gz
-            ${{ runner.temp }}/openjoc-release/*.manifest.json
-            ${{ runner.temp }}/openjoc-release/*.SHA256SUMS
+            ${{ runner.temp }}/openjoc-release/openjoc-*-aarch64-apple-darwin.tar.gz
+            ${{ runner.temp }}/openjoc-release/openjoc-*-aarch64-apple-darwin.manifest.json
+
+  build-release-windows:
+    name: build-verify-windows-x86_64-release
+    needs: validate-tag
+    runs-on: windows-2025
+    steps:
+      - name: Check out the exact pushed tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Select the current stable Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+          cargo -Vv
+
+      - name: Re-run the Windows release quality contract
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --all-features --locked
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --workspace --all-features --locked
+          cargo build --workspace --release --locked
+          git diff --check
+
+      - name: Package the canonical Windows archive
+        shell: pwsh
+        run: |
+          python scripts/package-platform-release.py `
+            --target x86_64-pc-windows-msvc `
+            --output "$env:RUNNER_TEMP/openjoc-release"
+
+      - name: Upload the internal Windows artifact set
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-release-${{ github.ref_name }}-x86_64-pc-windows-msvc
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-release/openjoc-*-x86_64-pc-windows-msvc.zip
+            ${{ runner.temp }}/openjoc-release/openjoc-*-x86_64-pc-windows-msvc.manifest.json
+
+  build-release-linux:
+    name: build-verify-linux-x86_64-release
+    needs: validate-tag
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the exact pushed tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+          cargo -Vv
+
+      - name: Re-run the Linux release quality contract
+        run: |
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --all-features --locked
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --workspace --all-features --locked
+          cargo build --workspace --release --locked
+          git diff --check
+
+      - name: Package the canonical Linux archive
+        run: |
+          python3 scripts/package-platform-release.py \
+            --target x86_64-unknown-linux-gnu \
+            --output "${RUNNER_TEMP}/openjoc-release"
+
+      - name: Upload the internal Linux artifact set
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-release-${{ github.ref_name }}-x86_64-unknown-linux-gnu
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-release/openjoc-*-x86_64-unknown-linux-gnu.tar.gz
+            ${{ runner.temp }}/openjoc-release/openjoc-*-x86_64-unknown-linux-gnu.manifest.json
 
   publish-release:
     name: publish-github-release
-    needs: build-release
+    needs:
+      - build-release
+      - build-release-windows
+      - build-release-linux
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -189,8 +279,20 @@ jobs:
       - name: Download the verified artifact set
         uses: actions/download-artifact@v4
         with:
-          name: openjoc-release-${{ github.ref_name }}
+          pattern: openjoc-release-${{ github.ref_name }}-*
           path: ${{ runner.temp }}/release-assets
+          merge-multiple: false
+
+      - name: Aggregate and verify the public release assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          python3 scripts/aggregate-release-assets.py \
+            --input "${RUNNER_TEMP}/release-assets" \
+            --output "${RUNNER_TEMP}/public-release" \
+            --version "$version"
 
       - name: Verify the remote tag and required assets
         env:
@@ -198,10 +300,19 @@ jobs:
         run: |
           set -euo pipefail
           git ls-remote --exit-code --refs origin "refs/tags/${RELEASE_TAG}" >/dev/null
-          asset_dir="${RUNNER_TEMP}/release-assets"
-          shopt -s nullglob
-          assets=("$asset_dir"/*.tar.gz "$asset_dir"/*.manifest.json "$asset_dir"/*.SHA256SUMS)
+          version="${RELEASE_TAG#v}"
+          asset_dir="${RUNNER_TEMP}/public-release"
+          assets=(
+            "$asset_dir/openjoc-${version}-aarch64-apple-darwin.tar.gz"
+            "$asset_dir/openjoc-${version}-x86_64-pc-windows-msvc.zip"
+            "$asset_dir/openjoc-${version}-x86_64-unknown-linux-gnu.tar.gz"
+            "$asset_dir/SHA256SUMS"
+          )
           test "${#assets[@]}" -eq 4
+          for asset in "${assets[@]}"; do
+            test -f "$asset"
+          done
+          test "$(find "$asset_dir" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 4
           printf '%s\n' "${assets[@]}"
 
       - name: Refuse to overwrite an existing GitHub Release
@@ -259,17 +370,23 @@ jobs:
               "\n".join(section).rstrip()
               + "\n\n## Verification\n\n"
               + "- GitHub Actions verified the exact version tag, source tree, and release artifact checksums.\n"
-              + "- The published binary target is the currently admitted macOS arm64 workflow.\n"
-              + "- CI success on Linux or Windows is verification evidence, not release admission for those platforms.\n",
+              + "- The published binary targets are macOS arm64, Windows x86_64, and GNU/Linux x86_64.\n"
+              + "- Per-platform manifests remain internal verification artifacts; the public asset set contains one unified SHA256SUMS file.\n",
               encoding="utf-8",
           )
           PY
-          asset_dir="${RUNNER_TEMP}/release-assets"
+          version="${RELEASE_TAG#v}"
+          asset_dir="${RUNNER_TEMP}/public-release"
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
             --title "OpenJOC $RELEASE_TAG" \
             --notes-file "$notes"
-          gh release upload "$RELEASE_TAG" "$asset_dir"/* --repo "$GITHUB_REPOSITORY"
+          gh release upload "$RELEASE_TAG" \
+            "$asset_dir/openjoc-${version}-aarch64-apple-darwin.tar.gz" \
+            "$asset_dir/openjoc-${version}-x86_64-pc-windows-msvc.zip" \
+            "$asset_dir/openjoc-${version}-x86_64-unknown-linux-gnu.tar.gz" \
+            "$asset_dir/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
