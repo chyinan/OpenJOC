@@ -119,9 +119,11 @@ GitHub Release. Artifact attestation is not currently enabled; SHA-256 and
 
 ## Platform scope
 
-Release packaging is currently exercised on Apple silicon macOS. Windows,
-Linux, and Intel macOS release readiness are not claimed without corresponding
-CI or host evidence. The local candidate is not Developer-ID signed and is not
+Release packaging is currently exercised on Apple silicon macOS. Source,
+build, and CLI runtime validation has also been completed on Windows 11 x86_64
+and Ubuntu 20.04.6 LTS under WSL2 for the current OpenJOC 0.2.0 revision. This
+does not claim native Linux hardware support or published Windows/Linux binary
+release readiness. The local candidate is not Developer-ID signed and is not
 notarized.
 
 ## Contributing and provenance

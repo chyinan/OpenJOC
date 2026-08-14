@@ -32,9 +32,13 @@ claiming capabilities that the current evidence does not support.
   internal-base manifests carry explicit `openjoc.*.v1` schema identifiers.
   Decode commands refuse to reuse an existing output directory; callers must
   choose a fresh destination and consume artifact paths relative to it.
-- This local binary release-candidate workflow is admitted only for
-  `aarch64-apple-darwin`. Linux, Windows, and Intel macOS release readiness are
-  not claimed.
+- This local binary release-candidate workflow remains admitted only for
+  `aarch64-apple-darwin`. Source, build, and CLI runtime validation is recorded
+  for Windows 11 x86_64 and Ubuntu 20.04.6 LTS under WSL2 at the current
+  OpenJOC 0.2.0 revision, but native Linux hardware support and published
+  Windows/Linux binary release readiness are not claimed. The validation used
+  the repository's available fixtures; private frozen JOC media were not
+  present in this checkout.
 - The local candidate is not signed with a Developer ID or other user identity
   and is not notarized. Its Mach-O executable has the automatic linker-generated
   ad-hoc signature required by the measured Apple-silicon toolchain. It is not
