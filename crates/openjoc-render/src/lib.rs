@@ -2873,6 +2873,43 @@ mod tests {
         planes
     }
 
+    fn unit_direction(x: f64, y: f64, z: f64) -> CartesianPosition {
+        let norm = (x * x + y * y + z * z).sqrt();
+        CartesianPosition::new(x / norm, y / norm, z / norm)
+    }
+
+    fn sum_positions(
+        first: CartesianPosition,
+        second: CartesianPosition,
+        third: CartesianPosition,
+    ) -> CartesianPosition {
+        CartesianPosition::new(
+            first.x + second.x + third.x,
+            first.y + second.y + third.y,
+            first.z + second.z + third.z,
+        )
+    }
+
+    fn full_gains(layout: &SpeakerLayout3d, position: CartesianPosition) -> Vec<f64> {
+        let mut result = vec![0.0; layout.speaker_count()];
+        layout
+            .gains(position)
+            .unwrap()
+            .write_full_gains(&mut result)
+            .unwrap();
+        result
+    }
+
+    #[test]
+    fn direct_3d_matrix_oracle_solves_identity_without_renderer() {
+        let result = solve_3x3_for(
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            [0.25, -0.5, 0.75],
+        )
+        .unwrap();
+        assert_eq!(result, [0.25, -0.5, 0.75]);
+    }
+
     #[test]
     fn vbap_3d_matches_independent_axis_oracle_and_normalizes_energy() {
         let layout = SpeakerLayout3d::new(
@@ -2975,6 +3012,80 @@ mod tests {
         assert!((edge.first() - 2.0_f64.sqrt().recip()).abs() <= EPSILON);
         assert!((edge.second() - 2.0_f64.sqrt().recip()).abs() <= EPSILON);
         assert!(edge.third().abs() <= EPSILON);
+    }
+
+    #[test]
+    fn irregular_closed_topology_and_dense_face_sweep_are_deterministic() {
+        let a = unit_direction(1.0, 0.2, 0.3);
+        let b = unit_direction(-0.4, 1.0, 0.1);
+        let c = unit_direction(0.2, -0.3, 1.0);
+        let d = unit_direction(-0.8, -0.6, -0.7);
+        let layout = SpeakerLayout3d::new(
+            vec![
+                speaker3(224, a.x, a.y, a.z),
+                speaker3(225, b.x, b.y, b.z),
+                speaker3(226, c.x, c.y, c.z),
+                speaker3(227, d.x, d.y, d.z),
+            ],
+            vec![
+                triplet(224, 225, 226),
+                triplet(224, 227, 225),
+                triplet(224, 226, 227),
+                triplet(225, 227, 226),
+            ],
+        )
+        .unwrap();
+        for (first, second, third) in [(a, b, c), (a, d, b), (a, c, d), (b, d, c)] {
+            let gains = layout.gains(sum_positions(first, second, third)).unwrap();
+            assert!(
+                gains
+                    .gains()
+                    .iter()
+                    .all(|gain| (*gain - 1.0 / 3.0_f64.sqrt()).abs() <= EPSILON)
+            );
+        }
+        let faces = [(a, b, c), (a, d, b), (a, c, d), (b, d, c)];
+        let mut samples = 0;
+        for (first, second, third) in faces {
+            for i in 1..=8 {
+                for j in 1..=8 - i {
+                    let k = 9 - i - j;
+                    let position = CartesianPosition::new(
+                        first.x * i as f64 + second.x * j as f64 + third.x * k as f64,
+                        first.y * i as f64 + second.y * j as f64 + third.y * k as f64,
+                        first.z * i as f64 + second.z * j as f64 + third.z * k as f64,
+                    );
+                    let gains = layout.gains(position).unwrap();
+                    assert!(
+                        gains
+                            .gains()
+                            .iter()
+                            .all(|gain| gain.is_finite() && *gain >= 0.0)
+                    );
+                    assert!(
+                        (gains.gains().iter().map(|gain| gain * gain).sum::<f64>() - 1.0).abs()
+                            <= EPSILON
+                    );
+                    samples += 1;
+                }
+            }
+        }
+        assert_eq!(samples, 112);
+    }
+
+    #[test]
+    fn vertex_approaches_converge_to_one_hot_exact_speaker() {
+        let layout = octahedron_layout();
+        for position in [
+            CartesianPosition::new(1.0, 1.0e-6, 1.0e-6),
+            CartesianPosition::new(1.0, 1.0e-6, -1.0e-6),
+            CartesianPosition::new(1.0, -1.0e-6, 1.0e-6),
+            CartesianPosition::new(1.0, -1.0e-6, -1.0e-6),
+        ] {
+            let gains = full_gains(&layout, position);
+            assert!(gains[0] > 0.999999);
+            assert!(gains[1..].iter().all(|gain| *gain < 0.001));
+        }
     }
 
     #[test]
