@@ -30,6 +30,9 @@ release foundation and adds an experimental JOC-to-speaker workflow through
 JOC/OAMD state; `--topology` remains an optional complete override/test input.
 The selectable 5.1/5.1.2/7.1/7.1.4 workflows are documented in
 [Experimental JOC speaker rendering](docs/JOC_RENDER.md).
+The same workflow can virtualize one of those layouts to stereo through a
+user-supplied supported SOFA HRIR bank; the binaural mode and its explicit LFE
+policy are documented there as well.
 The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
 generic N-channel library interface for caller-defined layouts; the CLI names
 are convenience presets, not the renderer's fundamental maximum.
@@ -106,6 +109,8 @@ openjoc decode input.ec3 -o output/ --internal-base
 openjoc decode input.mp4 -o output/ --internal-base --streaming
 openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
+openjoc render-joc input.m4a --layout 7.1.4 --binaural-sofa HRTF.sofa \
+  --lfe-policy equal-power-dual-mono --output render-binaural.wav
 # Optional complete explicit override/test input:
 openjoc render-joc input.m4a --topology bridge-control.json --layout 7.1.4 --output render.wav
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json

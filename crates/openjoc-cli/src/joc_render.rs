@@ -6,12 +6,17 @@
 
 use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, JocMetadataFrame};
 use openjoc_emdf::JocValidationProfile;
+use openjoc_render::{
+    BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntryId,
+    PartitionedBinauralRenderer, SourceId, StaticBinauralSource, UniformPartitionedConfig,
+};
 use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlFrame,
     BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge, SpatialBridgeError,
     SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
     SpatialTopologySnapshot,
 };
+use openjoc_sofa::SofaError;
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
 use serde::Deserialize;
 use std::{
@@ -33,17 +38,45 @@ pub enum JocRenderError {
     BridgeControl(BridgeControlAssemblyError),
     UnsupportedLayout(String),
     EmptyTopology,
-    TopologyCoordinateCount { expected: usize, actual: usize },
+    TopologyCoordinateCount {
+        expected: usize,
+        actual: usize,
+    },
     BaseTopologyChanged,
     BaseCoordinate(ChannelLocation),
-    FrameIndex { expected: u64, actual: u64 },
-    SampleTimeline { expected: u64, actual: u64 },
-    SampleRateMismatch { base: u32, frame: u32 },
+    FrameIndex {
+        expected: u64,
+        actual: u64,
+    },
+    SampleTimeline {
+        expected: u64,
+        actual: u64,
+    },
+    SampleRateMismatch {
+        base: u32,
+        frame: u32,
+    },
     FrameSampleCount,
     ProfileChanged,
-    UnusedUpdate { frame_index: u64 },
+    UnusedUpdate {
+        frame_index: u64,
+    },
     Bridge(BridgeError),
     Spatial(SpatialBridgeError),
+    Sofa(SofaError),
+    Binaural(openjoc_render::RenderError),
+    BinauralHrirCoverage {
+        layout: String,
+        missing: Vec<String>,
+    },
+    BinauralSampleRateMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    BinauralLfePolicyRequired {
+        layout: String,
+    },
+    BinauralOutput(String),
     Wave(WaveError),
     OutputExists(PathBuf),
     NoRenderedFrames,
@@ -106,6 +139,24 @@ impl fmt::Display for JocRenderError {
             ),
             Self::Bridge(error) => write!(formatter, "JOC bridge frame error: {error}"),
             Self::Spatial(error) => write!(formatter, "JOC spatial bridge error: {error}"),
+            Self::Sofa(error) => write!(formatter, "JOC binaural SOFA error: {error}"),
+            Self::Binaural(error) => write!(formatter, "JOC binaural render error: {error}"),
+            Self::BinauralHrirCoverage { layout, missing } => write!(
+                formatter,
+                "SOFA does not provide exact HRIR directions for virtual layout {layout}: {}",
+                missing.join(", ")
+            ),
+            Self::BinauralSampleRateMismatch { expected, actual } => write!(
+                formatter,
+                "binaural SOFA sample rate mismatch: decoded JOC is {expected} Hz, SOFA is {actual} Hz"
+            ),
+            Self::BinauralLfePolicyRequired { layout } => write!(
+                formatter,
+                "binaural layout {layout} contains LFE; select --lfe-policy exclude or equal-power-dual-mono"
+            ),
+            Self::BinauralOutput(reason) => {
+                write!(formatter, "JOC binaural output error: {reason}")
+            }
             Self::Wave(error) => write!(formatter, "JOC render WAV error: {error}"),
             Self::OutputExists(path) => {
                 write!(formatter, "refusing to overwrite output {}", path.display())
@@ -144,6 +195,18 @@ impl From<BridgeControlAssemblyError> for JocRenderError {
 impl From<SpatialBridgeError> for JocRenderError {
     fn from(value: SpatialBridgeError) -> Self {
         Self::Spatial(value)
+    }
+}
+
+impl From<SofaError> for JocRenderError {
+    fn from(value: SofaError) -> Self {
+        Self::Sofa(value)
+    }
+}
+
+impl From<openjoc_render::RenderError> for JocRenderError {
+    fn from(value: openjoc_render::RenderError) -> Self {
+        Self::Binaural(value)
     }
 }
 
@@ -224,6 +287,11 @@ impl RenderControl {
             });
         }
         Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn reset(&mut self) {
+        self.consumed_updates.fill(false);
     }
 }
 
@@ -565,6 +633,23 @@ impl JocSpeakerRenderer {
         }
     }
 
+    /// Resets bridge, automatic assembly, timeline, and explicit-update state.
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        self.bridge.reset();
+        if let Some(assembler) = self.assembler.as_mut() {
+            assembler.reset();
+        }
+        if let Some(control) = self.control.as_mut() {
+            control.reset();
+        }
+        self.expected_frame = 0;
+        self.expected_sample = 0;
+        self.base_coordinates = None;
+        self.selected_profile = None;
+        self.deviations.clear();
+    }
+
     pub fn diagnostics(
         &self,
         requested_layout: &str,
@@ -598,6 +683,571 @@ impl JocSpeakerRenderer {
             self.preset.channel_labels().join(", "),
         )
     }
+}
+
+/// Selects the existing static binaural convolution implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinauralBackend {
+    Direct,
+    Partitioned { partition_size: usize },
+}
+
+impl BinauralBackend {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Partitioned { .. } => "partitioned",
+        }
+    }
+}
+
+/// Explicit renderer policy for the virtual speaker layout's LFE channel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinauralLfePolicy {
+    /// Do not include the layout LFE in the binaural signal.
+    Exclude,
+    /// Add the layout LFE equally to both ears with -3.0103 dB gain.
+    EqualPowerDualMono,
+}
+
+impl BinauralLfePolicy {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Exclude => "exclude",
+            Self::EqualPowerDualMono => "equal-power-dual-mono",
+        }
+    }
+}
+
+/// Deterministic public-speaker to static-HRIR binding used by JOC binaural.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BinauralSpeakerMapping {
+    pub label: &'static str,
+    pub channel_index: usize,
+    pub direction: CartesianPosition,
+    pub source_id: SourceId,
+    pub hrir_entry: HrirEntryId,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BinauralRenderedBlock {
+    pub sample_rate: u32,
+    pub left: Vec<f64>,
+    pub right: Vec<f64>,
+}
+
+enum BinauralEngine {
+    Direct(BinauralRenderer),
+    Partitioned(Box<PartitionedBinauralRenderer>),
+}
+
+/// Real-JOC speaker virtualization followed by static exact-direction HRIR
+/// binaural rendering. This is an OpenJOC renderer path, not a vendor-fidelity
+/// or direct-object binaural implementation.
+pub struct JocBinauralRenderer {
+    speaker: JocSpeakerRenderer,
+    layout: String,
+    bank: HrirBank,
+    sofa_sample_rate: u32,
+    backend: BinauralBackend,
+    lfe_policy: Option<BinauralLfePolicy>,
+    lfe_index: Option<usize>,
+    mappings: Vec<BinauralSpeakerMapping>,
+    max_taps: usize,
+    engine: Option<BinauralEngine>,
+    sample_rate: Option<u32>,
+    pending_sources: Vec<Vec<f64>>,
+    pending_lfe: Vec<f64>,
+    pending_len: usize,
+    finished: bool,
+}
+
+impl JocBinauralRenderer {
+    /// Creates a preflighted JOC binaural renderer from a strict SOFA bank.
+    ///
+    /// Every non-LFE public speaker channel is resolved before any input PCM
+    /// is rendered. Exact-direction lookup and the bank's sample-rate contract
+    /// are otherwise delegated unchanged to the existing renderer APIs.
+    pub fn new(
+        layout: &str,
+        bank: HrirBank,
+        backend: BinauralBackend,
+        lfe_policy: Option<BinauralLfePolicy>,
+        control: Option<RenderControl>,
+    ) -> Result<Self, JocRenderError> {
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        if preset.lfe_index().is_some() && lfe_policy.is_none() {
+            return Err(JocRenderError::BinauralLfePolicyRequired {
+                layout: layout.to_owned(),
+            });
+        }
+        if let BinauralBackend::Partitioned { partition_size } = backend {
+            UniformPartitionedConfig::new(partition_size)?;
+        }
+        let mut mappings = Vec::with_capacity(preset.channel_count().saturating_sub(1));
+        let mut missing = Vec::new();
+        let mut max_taps = 0;
+        for (channel_index, label) in preset.labels.iter().enumerate() {
+            if preset.lfe_index() == Some(channel_index) {
+                continue;
+            }
+            let Some(direction) = virtual_speaker_direction(label) else {
+                return Err(JocRenderError::InvalidControl(format!(
+                    "no binaural direction is defined for public speaker {label}"
+                )));
+            };
+            let Ok(entry) = bank.resolve_exact(direction) else {
+                missing.push(format!("{label}={direction:?}"));
+                continue;
+            };
+            max_taps = max_taps.max(entry.pair().tap_count());
+            let source_id = SourceId::new(
+                u64::try_from(channel_index)
+                    .map_err(|_| JocRenderError::FrameSampleCount)?
+                    .checked_add(1)
+                    .ok_or(JocRenderError::FrameSampleCount)?,
+            );
+            mappings.push(BinauralSpeakerMapping {
+                label,
+                channel_index,
+                direction,
+                source_id,
+                hrir_entry: entry.id(),
+            });
+        }
+        if !missing.is_empty() {
+            return Err(JocRenderError::BinauralHrirCoverage {
+                layout: layout.to_owned(),
+                missing,
+            });
+        }
+        let speaker = match control {
+            Some(control) => JocSpeakerRenderer::new(layout, control)?,
+            None => JocSpeakerRenderer::new_automatic(layout)?,
+        };
+        Ok(Self {
+            speaker,
+            layout: layout.to_owned(),
+            sofa_sample_rate: bank.sample_rate_hz(),
+            bank,
+            backend,
+            lfe_policy,
+            lfe_index: preset.lfe_index(),
+            mappings,
+            max_taps,
+            engine: None,
+            sample_rate: None,
+            pending_sources: Vec::new(),
+            pending_lfe: Vec::new(),
+            pending_len: 0,
+            finished: false,
+        })
+    }
+
+    /// Returns the maximum causal HRIR tail in samples.
+    #[must_use]
+    pub const fn tail_samples(&self) -> usize {
+        self.max_taps.saturating_sub(1)
+    }
+
+    /// Renders one decoded JOC frame and returns zero or more stereo blocks.
+    /// Partitioned rendering may return several fixed-size blocks because the
+    /// decoder frame size need not equal the selected convolution partition.
+    pub fn render_frame(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        base: &DecodedAccessUnitPcm,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        if self.finished {
+            return Err(JocRenderError::BinauralOutput(
+                "renderer has already been finalized".to_owned(),
+            ));
+        }
+        self.ensure_engine(frame.sample_rate)?;
+        let rendered = self.speaker.render_frame(frame_index, frame, base)?;
+        match self.backend {
+            BinauralBackend::Direct => self.render_direct_block(&rendered),
+            BinauralBackend::Partitioned { .. } => self.render_partitioned_block(&rendered),
+        }
+    }
+
+    /// Records the selected validation profile without changing JOC policy.
+    pub fn record_profile(&mut self, metadata: &JocMetadataFrame) -> Result<(), JocRenderError> {
+        self.speaker.record_profile(metadata)
+    }
+
+    /// Resets the persistent JOC and binaural states for stream reuse.
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        self.speaker.reset();
+        if let Some(engine) = self.engine.as_mut() {
+            match engine {
+                BinauralEngine::Direct(renderer) => renderer.reset(),
+                BinauralEngine::Partitioned(renderer) => renderer.reset(),
+            }
+        }
+        for source in &mut self.pending_sources {
+            source.fill(0.0);
+        }
+        self.pending_lfe.fill(0.0);
+        self.pending_len = 0;
+        self.finished = false;
+    }
+
+    /// Finishes bridge validation and drains the complete binaural FIR tail.
+    pub fn finish(&mut self) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        if self.finished {
+            return Err(JocRenderError::BinauralOutput(
+                "renderer has already been finalized".to_owned(),
+            ));
+        }
+        self.speaker.finish()?;
+        let sample_rate = self.sample_rate.ok_or(JocRenderError::NoRenderedFrames)?;
+        let mut output = Vec::new();
+        match self
+            .engine
+            .as_mut()
+            .ok_or(JocRenderError::NoRenderedFrames)?
+        {
+            BinauralEngine::Direct(renderer) => {
+                drain_direct_tail(renderer, sample_rate, self.max_taps, &mut output)?;
+            }
+            BinauralEngine::Partitioned(renderer) => {
+                let partition_size = renderer.partition_size();
+                if self.pending_len > 0 {
+                    let blocks = self
+                        .pending_sources
+                        .iter()
+                        .zip(&self.mappings)
+                        .map(|(source, mapping)| {
+                            BinauralSourceBlock::new(mapping.source_id, &source[..self.pending_len])
+                        })
+                        .collect::<Vec<_>>();
+                    let mut left = vec![0.0; self.pending_len];
+                    let mut right = vec![0.0; self.pending_len];
+                    renderer.finish_input(&blocks, self.pending_len, &mut left, &mut right)?;
+                    add_lfe(
+                        self.lfe_policy,
+                        &self.pending_lfe[..self.pending_len],
+                        &mut left,
+                        &mut right,
+                    )?;
+                    output.push(BinauralRenderedBlock {
+                        sample_rate,
+                        left,
+                        right,
+                    });
+                    self.pending_len = 0;
+                } else {
+                    let blocks = self
+                        .mappings
+                        .iter()
+                        .map(|mapping| BinauralSourceBlock::new(mapping.source_id, &[]))
+                        .collect::<Vec<_>>();
+                    let mut left = Vec::new();
+                    let mut right = Vec::new();
+                    renderer.finish_input(&blocks, 0, &mut left, &mut right)?;
+                }
+                drain_partitioned_tail(renderer, sample_rate, partition_size, &mut output)?;
+            }
+        }
+        self.finished = true;
+        Ok(output)
+    }
+
+    /// Returns the user-facing diagnostic summary for this mode.
+    pub fn diagnostics(
+        &self,
+        sofa_file: &Path,
+        requested_profile: crate::eac3_decode::ValidationProfileRequest,
+        selected_profile: JocValidationProfile,
+        summary: &openjoc_scene::StreamingSceneSummary,
+        output: &Path,
+        output_format: SampleFormat,
+    ) -> String {
+        format!(
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: complete (exact-direction lookup)\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed",
+            requested_profile.as_str(),
+            selected_profile.as_str(),
+            self.layout,
+            self.mappings.len(),
+            sofa_file
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("<unnamed>"),
+            self.backend.name(),
+            match self.backend {
+                BinauralBackend::Direct => 0,
+                BinauralBackend::Partitioned { partition_size } => partition_size,
+            },
+            self.lfe_policy
+                .map_or("not-applicable", BinauralLfePolicy::name),
+            summary.sample_rate,
+            summary.duration_samples,
+            self.tail_samples(),
+            summary
+                .duration_samples
+                .saturating_add(self.tail_samples() as u64),
+            match output_format {
+                SampleFormat::F32 => "IEEE float32 stereo WAV",
+                SampleFormat::F64 => "IEEE float64 stereo WAV",
+                SampleFormat::S24 => "signed PCM24 stereo WAV",
+                SampleFormat::S16 => "signed PCM16 stereo WAV",
+            },
+            output.display(),
+        )
+    }
+
+    fn ensure_engine(&mut self, sample_rate: u32) -> Result<(), JocRenderError> {
+        if sample_rate != self.sofa_sample_rate {
+            return Err(JocRenderError::BinauralSampleRateMismatch {
+                expected: sample_rate,
+                actual: self.sofa_sample_rate,
+            });
+        }
+        if let Some(previous) = self.sample_rate {
+            if previous != sample_rate {
+                return Err(JocRenderError::BinauralSampleRateMismatch {
+                    expected: previous,
+                    actual: sample_rate,
+                });
+            }
+            return Ok(());
+        }
+        let definitions = self
+            .mappings
+            .iter()
+            .map(|mapping| {
+                StaticBinauralSource::new(
+                    mapping.source_id,
+                    mapping.direction,
+                    1.0,
+                    mapping.hrir_entry,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.engine = Some(match self.backend {
+            BinauralBackend::Direct => BinauralEngine::Direct(BinauralRenderer::new(
+                sample_rate,
+                self.bank.clone(),
+                definitions,
+            )?),
+            BinauralBackend::Partitioned { partition_size } => {
+                let config = UniformPartitionedConfig::new(partition_size)?;
+                BinauralEngine::Partitioned(Box::new(PartitionedBinauralRenderer::new(
+                    sample_rate,
+                    config,
+                    self.bank.clone(),
+                    definitions,
+                )?))
+            }
+        });
+        if let BinauralBackend::Partitioned { partition_size } = self.backend {
+            self.pending_sources = self
+                .mappings
+                .iter()
+                .map(|_| vec![0.0; partition_size])
+                .collect();
+            self.pending_lfe = vec![0.0; partition_size];
+        }
+        self.sample_rate = Some(sample_rate);
+        Ok(())
+    }
+
+    fn render_direct_block(
+        &mut self,
+        rendered: &RenderedBlock,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        let blocks = self
+            .mappings
+            .iter()
+            .map(|mapping| {
+                BinauralSourceBlock::new(
+                    mapping.source_id,
+                    &rendered.channels[mapping.channel_index],
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut left = vec![0.0; rendered.channels[0].len()];
+        let mut right = vec![0.0; rendered.channels[0].len()];
+        let BinauralEngine::Direct(binaural) = self
+            .engine
+            .as_mut()
+            .ok_or(JocRenderError::NoRenderedFrames)?
+        else {
+            return Err(JocRenderError::BinauralOutput(
+                "direct engine is unavailable".to_owned(),
+            ));
+        };
+        binaural.render_block(&blocks, &mut left, &mut right)?;
+        if let Some(lfe_index) = self.lfe_index {
+            add_lfe(
+                self.lfe_policy,
+                &rendered.channels[lfe_index],
+                &mut left,
+                &mut right,
+            )?;
+        }
+        Ok(vec![BinauralRenderedBlock {
+            sample_rate: rendered.sample_rate,
+            left,
+            right,
+        }])
+    }
+
+    fn render_partitioned_block(
+        &mut self,
+        rendered: &RenderedBlock,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        let partition_size = match self.backend {
+            BinauralBackend::Partitioned { partition_size } => partition_size,
+            BinauralBackend::Direct => unreachable!(),
+        };
+        let lfe = self
+            .lfe_index
+            .map(|index| rendered.channels[index].as_slice());
+        let mut output = Vec::new();
+        let mut offset = 0;
+        while offset < rendered.channels[0].len() {
+            let count =
+                (partition_size - self.pending_len).min(rendered.channels[0].len() - offset);
+            for (source, mapping) in self.pending_sources.iter_mut().zip(&self.mappings) {
+                source[self.pending_len..self.pending_len + count].copy_from_slice(
+                    &rendered.channels[mapping.channel_index][offset..offset + count],
+                );
+            }
+            if let Some(lfe) = lfe {
+                self.pending_lfe[self.pending_len..self.pending_len + count]
+                    .copy_from_slice(&lfe[offset..offset + count]);
+            }
+            self.pending_len += count;
+            offset += count;
+            if self.pending_len == partition_size {
+                output.push(self.flush_partition(rendered.sample_rate)?);
+                self.pending_len = 0;
+            }
+        }
+        Ok(output)
+    }
+
+    fn flush_partition(
+        &mut self,
+        sample_rate: u32,
+    ) -> Result<BinauralRenderedBlock, JocRenderError> {
+        let valid = self.pending_sources[0].len();
+        let blocks = self
+            .pending_sources
+            .iter()
+            .zip(&self.mappings)
+            .map(|(source, mapping)| BinauralSourceBlock::new(mapping.source_id, source))
+            .collect::<Vec<_>>();
+        let mut left = vec![0.0; valid];
+        let mut right = vec![0.0; valid];
+        let BinauralEngine::Partitioned(renderer) = self
+            .engine
+            .as_mut()
+            .ok_or(JocRenderError::NoRenderedFrames)?
+        else {
+            return Err(JocRenderError::BinauralOutput(
+                "partitioned engine is unavailable".to_owned(),
+            ));
+        };
+        renderer.render_partition(&blocks, &mut left, &mut right)?;
+        add_lfe(self.lfe_policy, &self.pending_lfe, &mut left, &mut right)?;
+        Ok(BinauralRenderedBlock {
+            sample_rate,
+            left,
+            right,
+        })
+    }
+}
+
+fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
+    Some(match label {
+        "FL" => CartesianPosition::new(-1.0, 1.0, 0.0),
+        "FR" => CartesianPosition::new(1.0, 1.0, 0.0),
+        "FC" => CartesianPosition::new(0.0, 1.0, 0.0),
+        "Ls" => CartesianPosition::new(-1.0, 0.0, 0.0),
+        "Rs" => CartesianPosition::new(1.0, 0.0, 0.0),
+        "Lb" => CartesianPosition::new(-1.0, -1.0, 0.0),
+        "Rb" => CartesianPosition::new(1.0, -1.0, 0.0),
+        "TFL" => CartesianPosition::new(-1.0, 1.0, 1.0),
+        "TFR" => CartesianPosition::new(1.0, 1.0, 1.0),
+        "TBL" => CartesianPosition::new(-1.0, -1.0, 1.0),
+        "TBR" => CartesianPosition::new(1.0, -1.0, 1.0),
+        _ => return None,
+    })
+}
+
+fn add_lfe(
+    policy: Option<BinauralLfePolicy>,
+    lfe: &[f64],
+    left: &mut [f64],
+    right: &mut [f64],
+) -> Result<(), JocRenderError> {
+    if lfe.len() != left.len() || lfe.len() != right.len() {
+        return Err(JocRenderError::BinauralOutput(
+            "LFE and binaural block lengths differ".to_owned(),
+        ));
+    }
+    if matches!(policy, Some(BinauralLfePolicy::EqualPowerDualMono)) {
+        let gain = std::f64::consts::FRAC_1_SQRT_2;
+        for index in 0..lfe.len() {
+            left[index] += lfe[index] * gain;
+            right[index] += lfe[index] * gain;
+            if !left[index].is_finite() || !right[index].is_finite() {
+                return Err(JocRenderError::BinauralOutput(
+                    "non-finite LFE accumulation".to_owned(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn drain_direct_tail(
+    renderer: &mut BinauralRenderer,
+    sample_rate: u32,
+    max_taps: usize,
+    output: &mut Vec<BinauralRenderedBlock>,
+) -> Result<(), JocRenderError> {
+    let mut remaining = renderer.remaining_tail_samples();
+    while remaining > 0 {
+        let count = remaining.min(max_taps.max(1));
+        let mut left = vec![0.0; count];
+        let mut right = vec![0.0; count];
+        renderer.drain_tail_block(&mut left, &mut right)?;
+        output.push(BinauralRenderedBlock {
+            sample_rate,
+            left,
+            right,
+        });
+        remaining -= count;
+    }
+    Ok(())
+}
+
+fn drain_partitioned_tail(
+    renderer: &mut PartitionedBinauralRenderer,
+    sample_rate: u32,
+    partition_size: usize,
+    output: &mut Vec<BinauralRenderedBlock>,
+) -> Result<(), JocRenderError> {
+    let mut remaining = renderer.remaining_tail_samples();
+    while remaining > 0 {
+        let count = remaining.min(partition_size);
+        let mut left = vec![0.0; count];
+        let mut right = vec![0.0; count];
+        renderer.drain_tail_block(&mut left, &mut right)?;
+        output.push(BinauralRenderedBlock {
+            sample_rate,
+            left,
+            right,
+        });
+        remaining -= count;
+    }
+    Ok(())
 }
 
 fn base_coordinate(location: ChannelLocation) -> Result<BaseFullBandCoordinate, JocRenderError> {
@@ -926,13 +1576,18 @@ impl JocWavOutput {
 #[cfg(test)]
 mod tests {
     use super::{
-        FrameUpdates, JOC_RENDER_CHANNEL_ORDER, JOC_RENDER_SUPPORTED_LAYOUTS, JocRenderError,
-        JocSpeakerRenderer, JocWavOutput, RenderControl, RenderedBlock, SpeakerLayoutPreset,
-        five_point_one_layout,
+        BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
+        JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocRenderError, JocSpeakerRenderer,
+        JocWavOutput, RenderControl, RenderedBlock, SpeakerLayoutPreset, five_point_one_layout,
+        virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
     use openjoc_oamd::{ContentDescription, OamdContentPrefix, OamdPayload, ObjectClass};
+    use openjoc_render::{
+        BinauralRenderer, BinauralSourceBlock, HrirBank, HrirEntry, HrirEntryId, HrirPair,
+        StaticBinauralSource,
+    };
     use openjoc_scene::{
         DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout, SampleRange, SpatialBindingRecord,
         SpatialDescriptor, SpatialSourceClass, SpatialTopologySnapshot,
@@ -1054,6 +1709,48 @@ mod tests {
         }
     }
 
+    fn binaural_bank(layout: &str, sample_rate: u32) -> HrirBank {
+        let preset = SpeakerLayoutPreset::for_name(layout).unwrap();
+        let entries = preset
+            .labels
+            .iter()
+            .enumerate()
+            .filter_map(|(index, label)| {
+                if preset.lfe_index() == Some(index) {
+                    return None;
+                }
+                Some(
+                    HrirEntry::new(
+                        HrirEntryId::new(index as u64 + 100),
+                        virtual_speaker_direction(label).unwrap(),
+                        HrirPair::new(
+                            sample_rate,
+                            vec![1.0, 0.25, 0.125],
+                            vec![0.5, 0.125, 0.0625],
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap(),
+                )
+            })
+            .collect();
+        HrirBank::new(sample_rate, entries).unwrap()
+    }
+
+    fn collect_binaural(
+        renderer: &mut JocBinauralRenderer,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        pcm: &DecodedAccessUnitPcm,
+    ) -> Vec<(f64, f64)> {
+        let mut output = renderer.render_frame(frame_index, frame, pcm).unwrap();
+        output.extend(renderer.finish().unwrap());
+        output
+            .into_iter()
+            .flat_map(|block| block.left.into_iter().zip(block.right))
+            .collect()
+    }
+
     #[test]
     fn standard_layout_has_deterministic_wav_order() {
         let layout = five_point_one_layout().unwrap();
@@ -1105,6 +1802,301 @@ mod tests {
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
         assert!(error.to_string().contains("7.1.4"));
         assert!(!error.to_string().contains("fallback"));
+    }
+
+    #[test]
+    fn binaural_mapping_uses_public_channel_order_for_every_preset() {
+        for layout in JOC_RENDER_SUPPORTED_LAYOUTS {
+            let renderer = JocBinauralRenderer::new(
+                layout,
+                binaural_bank(layout, 48_000),
+                BinauralBackend::Direct,
+                Some(BinauralLfePolicy::Exclude),
+                Some(control(false, 6)),
+            )
+            .unwrap();
+            let preset = SpeakerLayoutPreset::for_name(layout).unwrap();
+            let expected = preset
+                .labels
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| preset.lfe_index() != Some(*index))
+                .map(|(index, label)| (*label, index))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                renderer
+                    .mappings
+                    .iter()
+                    .map(|mapping| (mapping.label, mapping.channel_index))
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            for mapping in &renderer.mappings {
+                assert_eq!(
+                    mapping.direction,
+                    virtual_speaker_direction(mapping.label).unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn binaural_preflight_rejects_missing_exact_hrir_direction() {
+        let preset = SpeakerLayoutPreset::for_name("5.1").unwrap();
+        let bank = HrirBank::new(
+            48_000,
+            vec![
+                HrirEntry::new(
+                    HrirEntryId::new(1),
+                    virtual_speaker_direction("FL").unwrap(),
+                    HrirPair::new(48_000, vec![1.0], vec![1.0]).unwrap(),
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+        let Err(error) = JocBinauralRenderer::new(
+            "5.1",
+            bank,
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        ) else {
+            panic!("missing HRIR coverage was accepted");
+        };
+        assert!(matches!(error, JocRenderError::BinauralHrirCoverage { .. }));
+        assert!(error.to_string().contains("FR"));
+        assert_eq!(preset.channel_count(), 6);
+    }
+
+    #[test]
+    fn binaural_sample_rate_is_checked_before_rendering() {
+        let mut renderer = JocBinauralRenderer::new(
+            "5.1",
+            binaural_bank("5.1", 44_100),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let error = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            JocRenderError::BinauralSampleRateMismatch {
+                expected: 48_000,
+                actual: 44_100
+            }
+        ));
+    }
+
+    #[test]
+    fn integrated_direct_matches_existing_direct_reference_and_drains_tail() {
+        let bank = binaural_bank("5.1", 48_000);
+        let frame = decoded_frame(0, 0, 5);
+        let pcm = base(5, 1.0);
+        let mut speaker = JocSpeakerRenderer::new("5.1", control(false, 6)).unwrap();
+        let rendered = speaker.render_frame(0, &frame, &pcm).unwrap();
+        let mut integrated = JocBinauralRenderer::new(
+            "5.1",
+            bank.clone(),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let actual = collect_binaural(&mut integrated, 0, &frame, &pcm);
+        let definitions = integrated
+            .mappings
+            .iter()
+            .map(|mapping| {
+                StaticBinauralSource::new(
+                    mapping.source_id,
+                    mapping.direction,
+                    1.0,
+                    mapping.hrir_entry,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let mut reference = BinauralRenderer::new(48_000, bank, definitions.clone()).unwrap();
+        let blocks = integrated
+            .mappings
+            .iter()
+            .map(|mapping| {
+                BinauralSourceBlock::new(
+                    mapping.source_id,
+                    &rendered.channels[mapping.channel_index],
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut left = vec![0.0; 5];
+        let mut right = vec![0.0; 5];
+        reference
+            .render_block(&blocks, &mut left, &mut right)
+            .unwrap();
+        let mut expected = left.into_iter().zip(right).collect::<Vec<_>>();
+        let mut tail_left = vec![0.0; 2];
+        let mut tail_right = vec![0.0; 2];
+        reference
+            .drain_tail_block(&mut tail_left, &mut tail_right)
+            .unwrap();
+        expected.extend(tail_left.into_iter().zip(tail_right));
+        assert_eq!(actual, expected);
+        assert_eq!(actual.len(), 7);
+    }
+
+    #[test]
+    fn integrated_partitioned_matches_direct_across_frame_partition_boundary() {
+        let frame = decoded_frame(0, 0, 5);
+        let pcm = base(5, 1.0);
+        let bank = binaural_bank("5.1", 48_000);
+        let mut direct = JocBinauralRenderer::new(
+            "5.1",
+            bank.clone(),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let mut partitioned = JocBinauralRenderer::new(
+            "5.1",
+            bank,
+            BinauralBackend::Partitioned { partition_size: 4 },
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let direct_output = collect_binaural(&mut direct, 0, &frame, &pcm);
+        let partitioned_output = collect_binaural(&mut partitioned, 0, &frame, &pcm);
+        assert_eq!(direct_output.len(), partitioned_output.len());
+        for ((left, right), (other_left, other_right)) in
+            direct_output.into_iter().zip(partitioned_output)
+        {
+            assert!((left - other_left).abs() < 1.0e-10);
+            assert!((right - other_right).abs() < 1.0e-10);
+        }
+    }
+
+    #[test]
+    fn integrated_binaural_reset_reuses_bridge_and_convolution_state() {
+        let frame = decoded_frame(0, 0, 3);
+        let pcm = base(3, 1.0);
+        let mut renderer = JocBinauralRenderer::new(
+            "5.1",
+            binaural_bank("5.1", 48_000),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let first = collect_binaural(&mut renderer, 0, &frame, &pcm);
+        renderer.reset();
+        let second = collect_binaural(&mut renderer, 0, &frame, &pcm);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn integrated_partitioned_output_is_invariant_to_upstream_joc_frame_boundaries() {
+        let bank = binaural_bank("5.1", 48_000);
+        let mut whole = JocBinauralRenderer::new(
+            "5.1",
+            bank.clone(),
+            BinauralBackend::Partitioned { partition_size: 4 },
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let whole_frame = decoded_frame(0, 0, 5);
+        let whole_pcm = base(5, 1.0);
+        let whole_output = collect_binaural(&mut whole, 0, &whole_frame, &whole_pcm);
+
+        let mut split = JocBinauralRenderer::new(
+            "5.1",
+            bank,
+            BinauralBackend::Partitioned { partition_size: 4 },
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let first_frame = decoded_frame(0, 0, 2);
+        let second_frame = decoded_frame(1, 2, 3);
+        let first_pcm = base(2, 1.0);
+        let second_pcm = base(3, 1.0);
+        let mut split_output = split.render_frame(0, &first_frame, &first_pcm).unwrap();
+        split_output.extend(split.render_frame(1, &second_frame, &second_pcm).unwrap());
+        split_output.extend(split.finish().unwrap());
+        let split_output = split_output
+            .into_iter()
+            .flat_map(|block| block.left.into_iter().zip(block.right))
+            .collect::<Vec<_>>();
+        assert_eq!(whole_output.len(), split_output.len());
+        for ((left, right), (other_left, other_right)) in whole_output.into_iter().zip(split_output)
+        {
+            assert!((left - other_left).abs() < 1.0e-10);
+            assert!((right - other_right).abs() < 1.0e-10);
+        }
+    }
+
+    #[test]
+    fn binaural_lfe_requires_policy_and_dual_mono_is_explicit() {
+        let Err(missing) = JocBinauralRenderer::new(
+            "5.1",
+            binaural_bank("5.1", 48_000),
+            BinauralBackend::Direct,
+            None,
+            Some(control(false, 6)),
+        ) else {
+            panic!("missing LFE policy was accepted");
+        };
+        assert!(matches!(
+            missing,
+            JocRenderError::BinauralLfePolicyRequired { .. }
+        ));
+        let frame = decoded_frame(0, 0, 2);
+        let pcm = base(2, 0.0);
+        let mut exclude = JocBinauralRenderer::new(
+            "5.1",
+            binaural_bank("5.1", 48_000),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let mut dual = JocBinauralRenderer::new(
+            "5.1",
+            binaural_bank("5.1", 48_000),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::EqualPowerDualMono),
+            Some(control(false, 6)),
+        )
+        .unwrap();
+        let excluded = collect_binaural(&mut exclude, 0, &frame, &pcm);
+        let dual_mono = collect_binaural(&mut dual, 0, &frame, &pcm);
+        assert!((dual_mono[0].0 - excluded[0].0 - 99.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
+        assert!((dual_mono[0].1 - excluded[0].1 - 99.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn binaural_output_abort_leaves_no_final_wav() {
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-binaural-transaction-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("transactional-binaural.wav");
+        let staging = root.join(".transactional-binaural.wav.openjoc-partial");
+        let mut writer = JocWavOutput::new(&output, SampleFormat::F32).unwrap();
+        writer
+            .write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![0.0, 1.0], vec![0.0, 1.0]],
+            })
+            .unwrap();
+        writer.abort();
+        assert!(!output.exists());
+        assert!(!staging.exists());
     }
 
     #[test]

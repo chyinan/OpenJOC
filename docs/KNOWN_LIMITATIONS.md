@@ -25,7 +25,7 @@ claiming capabilities that the current evidence does not support.
   optional explicit override/test input. It
   supports only the 5.1, 5.1.2, 7.1, and 7.1.4 presets, does not infer
   authored-object identity, and does not resolve `T(t)` or provide a
-  binaural/vendor renderer. 2.0 remains blocked by unspecified bass/LFE
+  vendor renderer. 2.0 remains blocked by unspecified bass/LFE
   fold-down policy; 5.1.4, 7.1.2, 9.1.4, and 9.1.6 remain blocked by missing
   admitted clean preset geometry; 22.2 has generic 24-channel renderer
   capacity but remains blocked by missing admitted clean 22.2 geometry. The
@@ -34,6 +34,17 @@ claiming capabilities that the current evidence does not support.
   Ordinary WAV output is RIFF-only and carries no speaker-label/channel-mask
   metadata, so large-channel renderer capacity is not a third-party DAW
   interoperability guarantee.
+- The real-JOC binaural mode is a separate speaker-virtualization stage:
+  `render-joc` first renders the selected 5.1, 5.1.2, 7.1, or 7.1.4 virtual
+  layout, then sends each non-LFE public speaker channel through its fixed
+  exact-direction HRIR from the caller's supported SOFA file. Every required
+  direction is preflighted; nearest-neighbor lookup, interpolation, and HRIR
+  resampling are not used. The decoded JOC rate must equal the SOFA rate.
+  Because the admitted layouts contain LFE, the command requires an explicit
+  renderer policy: `exclude` or `equal-power-dual-mono`. This is OpenJOC output
+  policy, not JOC semantics or vendor bass management. The output is stereo
+  Left then Right WAV with the complete causal HRIR tail and remains
+  experimental with `SemanticBindingState::Unresolved`.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
   speaker-layout renderer with public 2D VBAP-style pair gains, plus an

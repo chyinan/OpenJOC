@@ -41,7 +41,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -81,6 +81,10 @@ struct RenderJocArgs {
     topology: Option<PathBuf>,
     layout: String,
     output: PathBuf,
+    binaural_sofa: Option<PathBuf>,
+    binaural_backend: joc_render::BinauralBackend,
+    binaural_backend_requested: bool,
+    lfe_policy: Option<joc_render::BinauralLfePolicy>,
     validation_profile: ValidationProfileRequest,
     trim_configuration_count: Option<NonZeroU8>,
     internal_base_policy: InternalBasePolicy,
@@ -175,7 +179,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono]\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -198,7 +202,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--reference-f64]\n",
@@ -217,7 +221,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
         "  sofa            Inspect strict SimpleFreeFieldHRIR/CDF-1 SOFA files\n",
         "  render-scene    Render caller-bound static sources to transactional binaural WAV\n",
-        "  render-joc      Render decoded JOC through the experimental speaker bridge\n",
+        "  render-joc      Render decoded JOC through the experimental speaker bridge or SOFA binaural virtualization\n",
         "\n",
     ));
     append_heading(output, "OPTIONS", color)?;
@@ -283,6 +287,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         ),
         "render-joc" => concat!(
             "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
+            "       [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N]\n",
+            "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
             "       [--reference-f64]\n\n",
@@ -291,6 +297,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
+            "With --binaural-sofa, the selected layout is virtualized to stereo through exact SOFA HRIR directions.\n",
+            "Binaural layouts require an explicit LFE policy; direct is the default backend and no vendor-fidelity claim is made.\n",
         ),
         "diagnose-tools" => concat!(
             "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",
@@ -831,6 +839,10 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut topology = None;
     let mut layout = None;
     let mut output = None;
+    let mut binaural_sofa = None;
+    let mut binaural_backend = joc_render::BinauralBackend::Direct;
+    let mut binaural_backend_requested = false;
+    let mut lfe_policy = None;
     let mut reference_f64 = false;
     let mut validation_profile = ValidationProfileRequest::Auto;
     let mut trim_configuration_count = None;
@@ -848,6 +860,41 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
             "--topology" => topology = Some(PathBuf::from(value)),
             "--layout" => layout = Some(value.clone()),
             "-o" | "--output" => output = Some(PathBuf::from(value)),
+            "--binaural-sofa" => binaural_sofa = Some(PathBuf::from(value)),
+            "--backend" => {
+                binaural_backend_requested = true;
+                binaural_backend = match value.as_str() {
+                    "direct" => joc_render::BinauralBackend::Direct,
+                    "partitioned" => joc_render::BinauralBackend::Partitioned {
+                        partition_size: 256,
+                    },
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "binaural backend must be direct or partitioned",
+                        )
+                        .into());
+                    }
+                };
+            }
+            "--partition-size" => {
+                binaural_backend_requested = true;
+                let partition_size = value.parse::<usize>()?;
+                binaural_backend = joc_render::BinauralBackend::Partitioned { partition_size };
+            }
+            "--lfe-policy" => {
+                lfe_policy = Some(match value.as_str() {
+                    "exclude" => joc_render::BinauralLfePolicy::Exclude,
+                    "equal-power-dual-mono" => joc_render::BinauralLfePolicy::EqualPowerDualMono,
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "LFE policy must be exclude or equal-power-dual-mono",
+                        )
+                        .into());
+                    }
+                });
+            }
             "--validation-profile" => validation_profile = parse_validation_profile(value)?,
             "--trim-config-count" => {
                 trim_configuration_count = Some(parse_trim_configuration_count(value)?);
@@ -862,6 +909,10 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         topology,
         layout: layout.ok_or_else(usage_error)?,
         output: output.ok_or_else(usage_error)?,
+        binaural_sofa,
+        binaural_backend,
+        binaural_backend_requested,
+        lfe_policy,
         validation_profile,
         trim_configuration_count,
         internal_base_policy,
@@ -1018,61 +1069,152 @@ fn render_joc(arguments: &RenderJocArgs) -> Result<(), Box<dyn Error>> {
         config,
         arguments.validation_profile,
     )?;
-    let mut renderer = if let Some(topology) = &arguments.topology {
-        let control = joc_render::RenderControl::from_path(topology)?;
-        joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
-    } else {
-        joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
-    };
-    let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
-    let dither = deterministic_dither_values();
-    let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
-        &media.bytes,
-        config,
-        selected_profile,
-        &dither,
-        arguments.internal_base_policy,
-        |frame_index, metadata, frame, base| {
-            let block = renderer
-                .render_frame(frame_index, frame, base)
-                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-            output
-                .write_block(&block)
-                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-            renderer
-                .record_profile(metadata)
-                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
-        },
-        |_access_unit, _pcm| Ok(()),
-    );
-    match result {
-        Ok(summary) => {
-            if let Err(error) = renderer.finish() {
-                output.abort();
-                return Err(error.into());
-            }
-            output.finish()?;
-            println!(
-                "{}\noutput format: {}",
-                renderer.diagnostics(
-                    &arguments.layout,
-                    arguments.validation_profile,
-                    selected_profile,
-                    &summary,
-                    &arguments.output,
-                ),
-                match arguments.output_format {
-                    SampleFormat::F32 => "IEEE float32",
-                    SampleFormat::F64 => "IEEE float64",
-                    SampleFormat::S24 => "signed PCM24",
-                    SampleFormat::S16 => "signed PCM16",
+    if let Some(sofa_path) = &arguments.binaural_sofa {
+        let sofa = openjoc_sofa::load_simple_free_field_hrir(
+            sofa_path,
+            openjoc_sofa::SofaLoadLimits::default(),
+        )
+        .map_err(joc_render::JocRenderError::from)?;
+        let control = arguments
+            .topology
+            .as_ref()
+            .map(|path| joc_render::RenderControl::from_path(path))
+            .transpose()?;
+        let mut renderer = joc_render::JocBinauralRenderer::new(
+            &arguments.layout,
+            sofa.bank,
+            arguments.binaural_backend,
+            arguments.lfe_policy,
+            control,
+        )?;
+        let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
+        let dither = deterministic_dither_values();
+        let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
+            &media.bytes,
+            config,
+            selected_profile,
+            &dither,
+            arguments.internal_base_policy,
+            |frame_index, metadata, frame, base| {
+                let blocks = renderer
+                    .render_frame(frame_index, frame, base)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                for block in blocks {
+                    output
+                        .write_block(&joc_render::RenderedBlock {
+                            sample_rate: block.sample_rate,
+                            channels: vec![block.left, block.right],
+                        })
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                 }
-            );
-            Ok(())
+                renderer
+                    .record_profile(metadata)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+            },
+            |_access_unit, _pcm| Ok(()),
+        );
+        match result {
+            Ok(summary) => {
+                let tail = match renderer.finish() {
+                    Ok(tail) => tail,
+                    Err(error) => {
+                        output.abort();
+                        return Err(error.into());
+                    }
+                };
+                for block in tail {
+                    if let Err(error) = output.write_block(&joc_render::RenderedBlock {
+                        sample_rate: block.sample_rate,
+                        channels: vec![block.left, block.right],
+                    }) {
+                        output.abort();
+                        return Err(error.into());
+                    }
+                }
+                if let Err(error) = output.finish() {
+                    return Err(error.into());
+                }
+                println!(
+                    "{}",
+                    renderer.diagnostics(
+                        sofa_path,
+                        arguments.validation_profile,
+                        selected_profile,
+                        &summary,
+                        &arguments.output,
+                        arguments.output_format,
+                    )
+                );
+                Ok(())
+            }
+            Err(error) => {
+                output.abort();
+                Err(error.into())
+            }
         }
-        Err(error) => {
-            output.abort();
-            Err(error.into())
+    } else if arguments.lfe_policy.is_some() || arguments.binaural_backend_requested {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--backend, --partition-size, and --lfe-policy require --binaural-sofa",
+        )
+        .into())
+    } else {
+        let mut renderer = if let Some(topology) = &arguments.topology {
+            let control = joc_render::RenderControl::from_path(topology)?;
+            joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
+        } else {
+            joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
+        };
+        let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
+        let dither = deterministic_dither_values();
+        let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
+            &media.bytes,
+            config,
+            selected_profile,
+            &dither,
+            arguments.internal_base_policy,
+            |frame_index, metadata, frame, base| {
+                let block = renderer
+                    .render_frame(frame_index, frame, base)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                output
+                    .write_block(&block)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                renderer
+                    .record_profile(metadata)
+                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+            },
+            |_access_unit, _pcm| Ok(()),
+        );
+        match result {
+            Ok(summary) => {
+                if let Err(error) = renderer.finish() {
+                    output.abort();
+                    return Err(error.into());
+                }
+                output.finish()?;
+                println!(
+                    "{}\noutput format: {}",
+                    renderer.diagnostics(
+                        &arguments.layout,
+                        arguments.validation_profile,
+                        selected_profile,
+                        &summary,
+                        &arguments.output,
+                    ),
+                    match arguments.output_format {
+                        SampleFormat::F32 => "IEEE float32",
+                        SampleFormat::F64 => "IEEE float64",
+                        SampleFormat::S24 => "signed PCM24",
+                        SampleFormat::S16 => "signed PCM16",
+                    }
+                );
+                Ok(())
+            }
+            Err(error) => {
+                output.abort();
+                Err(error.into())
+            }
         }
     }
 }
@@ -2677,7 +2819,8 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         joc_render::JocRenderError::Json(_) => CliErrorCategory::MalformedInput,
         joc_render::JocRenderError::OutputExists(_)
         | joc_render::JocRenderError::Wave(_)
-        | joc_render::JocRenderError::NoRenderedFrames => CliErrorCategory::OutputFailure,
+        | joc_render::JocRenderError::NoRenderedFrames
+        | joc_render::JocRenderError::BinauralOutput(_) => CliErrorCategory::OutputFailure,
         joc_render::JocRenderError::InvalidControl(_)
         | joc_render::JocRenderError::UnsupportedLayout(_)
         | joc_render::JocRenderError::EmptyTopology
@@ -2685,14 +2828,23 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         | joc_render::JocRenderError::BaseTopologyChanged
         | joc_render::JocRenderError::BaseCoordinate(_)
         | joc_render::JocRenderError::BridgeControl(_)
-        | joc_render::JocRenderError::UnusedUpdate { .. } => CliErrorCategory::UnsupportedFeature,
+        | joc_render::JocRenderError::UnusedUpdate { .. }
+        | joc_render::JocRenderError::Sofa(_)
+        | joc_render::JocRenderError::BinauralHrirCoverage { .. }
+        | joc_render::JocRenderError::BinauralLfePolicyRequired { .. } => {
+            CliErrorCategory::UnsupportedFeature
+        }
         joc_render::JocRenderError::FrameIndex { .. }
         | joc_render::JocRenderError::SampleTimeline { .. }
         | joc_render::JocRenderError::SampleRateMismatch { .. }
         | joc_render::JocRenderError::FrameSampleCount
         | joc_render::JocRenderError::ProfileChanged
         | joc_render::JocRenderError::Bridge(_)
-        | joc_render::JocRenderError::Spatial(_) => CliErrorCategory::DecodeFailure,
+        | joc_render::JocRenderError::Spatial(_)
+        | joc_render::JocRenderError::Binaural(_)
+        | joc_render::JocRenderError::BinauralSampleRateMismatch { .. } => {
+            CliErrorCategory::DecodeFailure
+        }
     }
 }
 
@@ -2788,6 +2940,8 @@ fn usage_error() -> io::Error {
 #[cfg(test)]
 mod profile_name_tests {
     use super::{ValidationProfileRequest, parse_render_joc, parse_validation_profile};
+    use crate::joc_render;
+    use std::path::PathBuf;
 
     #[test]
     fn render_joc_omitted_profile_matches_explicit_auto() {
@@ -2826,6 +2980,43 @@ mod profile_name_tests {
         assert_eq!(
             parse_validation_profile("observed-vendor-compat").expect("canonical name"),
             ValidationProfileRequest::ObservedVendorCompat
+        );
+    }
+
+    #[test]
+    fn render_joc_binaural_options_are_explicit_and_direct_is_the_default() {
+        let base = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+        ];
+        let parsed = parse_render_joc(&base).expect("base render-joc options");
+        assert_eq!(parsed.binaural_backend, joc_render::BinauralBackend::Direct);
+        assert!(parsed.binaural_sofa.is_none());
+        let mut binaural = base.to_vec();
+        binaural.extend([
+            "--binaural-sofa".to_owned(),
+            "HRTF.sofa".to_owned(),
+            "--backend".to_owned(),
+            "partitioned".to_owned(),
+            "--partition-size".to_owned(),
+            "128".to_owned(),
+            "--lfe-policy".to_owned(),
+            "equal-power-dual-mono".to_owned(),
+        ]);
+        let parsed = parse_render_joc(&binaural).expect("binaural render-joc options");
+        assert_eq!(parsed.binaural_sofa, Some(PathBuf::from("HRTF.sofa")));
+        assert_eq!(
+            parsed.binaural_backend,
+            joc_render::BinauralBackend::Partitioned {
+                partition_size: 128
+            }
+        );
+        assert_eq!(
+            parsed.lfe_policy,
+            Some(joc_render::BinauralLfePolicy::EqualPowerDualMono)
         );
     }
 }

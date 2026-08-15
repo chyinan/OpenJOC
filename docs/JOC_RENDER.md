@@ -117,9 +117,63 @@ whitelist admits all deviations. Explicit `ETSI_STRICT` never falls back.
 
 `raw3` remains preserved and excluded from projection arithmetic. The stable
 feature name is `JocSpatialBridge`; `SemanticBindingState` remains
-`Unresolved`. This workflow makes no official Dolby, vendor-equivalence,
-bit-exact, or fidelity claim. Binaural rendering and layouts outside the
-supported preset set remain follow-up work.
+`Unresolved`. This workflow makes no official vendor-equivalence, bit-exact,
+or fidelity claim.
+
+## SOFA-backed binaural rendering
+
+The same real-JOC command can virtualize one supported speaker preset to stereo
+through a caller-supplied admitted SOFA file:
+
+```sh
+openjoc render-joc INPUT.m4a \
+  --layout 7.1.4 \
+  --binaural-sofa HRTF.sofa \
+  --lfe-policy equal-power-dual-mono \
+  --output OUTPUT-binaural.wav
+```
+
+This is speaker-virtualized binaural rendering:
+
+```text
+real JOC -> JocSpatialBridge -> selected virtual speaker layout
+          -> one fixed exact-direction HRIR per non-LFE speaker -> Left/Right
+```
+
+It is not a direct moving-object HRIR renderer and makes no vendor or
+reference-product headphone-rendering claim. `--layout` names the virtual
+speaker layout, not the two-channel output. The four existing presets remain
+available: `5.1`, `5.1.2`, `7.1`, and `7.1.4`; `9.1.6` is not added here.
+
+The SOFA path is local and user-supplied. It is parsed only within the existing
+strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
+explicitly shared with the renderer contract: local `+X` is right, `+Y` is
+front, and `+Z` is up. The virtual directions cover front, side/rear, and
+front/rear height positions. Lookup is exact; all required directions are
+preflighted before output starts, with no nearest-direction fallback or
+interpolation. The decoded JOC sample rate must equal the SOFA HRIR rate;
+OpenJOC does not silently resample either stream.
+
+The admitted presets contain LFE, so binaural rendering requires one explicit
+renderer-level policy:
+
+- `--lfe-policy exclude` omits the virtual LFE channel.
+- `--lfe-policy equal-power-dual-mono` adds the virtual LFE to both ears at
+  equal-power gain.
+
+Neither policy is a JOC semantic interpretation or vendor bass-management
+claim. The binaural backend defaults to `direct`, the existing causal FIR
+reference. `--backend partitioned --partition-size 256` selects the existing
+fixed uniform partitioned backend; the partition size must be a power of two.
+Both backends preserve streaming state, emit the complete causal HRIR tail,
+and write stereo Left-then-Right PCM/WAV without a temporary multichannel
+speaker WAV. The default format is IEEE float32; `--reference-f64` selects
+IEEE float64.
+
+Diagnostics identify `JocSpatialBridge` as enabled, maturity as experimental,
+`SemanticBindingState` as `Unresolved`, the selected validation profile, output
+mode, virtual layout, SOFA filename, backend, HRIR coverage, LFE policy, and
+tail contract. Private SOFA paths are not embedded in public metadata.
 
 The automatic assembly currently supports explicit-channel beds, fixed-layout
 members when the selected library layout supplies matching routes, dynamic

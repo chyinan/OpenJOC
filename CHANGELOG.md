@@ -11,6 +11,9 @@
 - Automatic real-JOC bridge-control assembly from decoded metadata and
   codec-coordinate state; `CONTROL.json` is now an optional complete explicit
   override/test input rather than a normal rendering requirement.
+- Real-JOC SOFA-backed binaural rendering through static virtual-speaker
+  directions, exact HRIR preflight, direct or partitioned convolution, complete
+  causal tail draining, and an explicit renderer-level LFE policy.
 
 ### Scope
 
@@ -23,8 +26,9 @@
   multi-axis and high-channel-count layouts; the CLI exposes only the four
   admitted convenience presets. 5.1.4, 7.1.2, 9.1.4, 9.1.6, and 22.2 remain
   blocked by missing admitted clean geometry. Ordinary WAV output remains
-  RIFF-only without speaker-label metadata, and binaural rendering remains
-  out of scope.
+  RIFF-only without speaker-label metadata. JOC binaural output is stereo
+  speaker virtualization through a user-supplied exact-direction SOFA bank;
+  it makes no vendor-fidelity claim and does not resolve semantic binding.
 
 ## [0.3.0] — 2026-08-15
 
