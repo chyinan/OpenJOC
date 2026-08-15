@@ -1,9 +1,9 @@
-# OpenJOC 0.4.0-dev known limitations
+# OpenJOC 0.4.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and requirement status belong in the linked documents under `docs/`.
 
-This snapshot is part of the current development contract. It states the same
+This snapshot is part of the current release contract. It states the same
 user-visible boundary as the canonical repository documentation without
 claiming capabilities that the current evidence does not support.
 
@@ -18,7 +18,7 @@ claiming capabilities that the current evidence does not support.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
 - The codec-domain `JocSpatialFrameBridge` exposes aligned Base/RB/RcLfe/OAMD
   inputs and an explicit unresolved-operator gate; the time-varying
-  reconstruction operator `T(t)` is not established. The 0.4.0-dev
+  reconstruction operator `T(t)` is not established. The 0.4.0
   `render-joc` command is a separate experimental ordinary-domain speaker
   projection that assembles bridge control automatically from decoded
   JOC/OAMD state. A complete bridge-control topology sidecar remains an

@@ -29,7 +29,7 @@ input/container ownership and access-unit delivery
                                        ▼
                               metadata-only ObjectScene
 
-The 0.4.0-dev `render-joc` workflow adds an explicit experimental speaker
+The 0.4.0 `render-joc` workflow adds an explicit experimental speaker
 branch after the decoded component boundary:
 
 ```text
@@ -250,6 +250,5 @@ complete successful decode, so failure cannot publish a canonical partial.
 
 Malformed input, unsupported container shapes, strict profile violations and
 output failures are classified separately. A diagnostic or empirical result
-cannot upgrade semantic binding. See [PROVENANCE.md](PROVENANCE.md) for claim
-admission and [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md) for the
-engineering truth table.
+cannot upgrade semantic binding. Current claim boundaries are summarized in
+`CAPABILITIES.md` and `KNOWN_LIMITATIONS.md`.

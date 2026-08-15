@@ -1,6 +1,10 @@
 # Changelog
 
-## [0.4.0-dev] — Unreleased
+## [0.4.0] — 2026-08-15
+
+OpenJOC 0.4.0 is a feature release that makes the experimental JOC spatial
+rendering path usable from decoded real-JOC input while preserving explicit
+semantic and fidelity boundaries.
 
 ### Added
 
@@ -15,20 +19,53 @@
   directions, exact HRIR preflight, direct or partitioned convolution, complete
   causal tail draining, and an explicit renderer-level LFE policy.
 
-### Scope
+### Changed
+
+- `AUTO` remains the normal user-facing validation default. It evaluates
+  `ETSI_STRICT` first and selects `OBSERVED_VENDOR_COMPAT` only for the existing
+  fully admitted compatibility set; explicit `ETSI_STRICT` never falls back.
+- `CONTROL.json` remains an optional complete explicit override/test input.
+  Ordinary supported real-JOC rendering assembles bridge control automatically
+  from decoded JOC/OAMD/reconstruction state.
+
+### Rendering
+
+- `render-joc` exposes deterministic `5.1`, `5.1.2`, `7.1`, and `7.1.4`
+  speaker presets with stable public WAV channel order and separate LFE
+  handling.
+- The generic library layout engine remains broader than the admitted CLI
+  preset list. Unadmitted 2.0, 5.1.4, 7.1.2, 9.1.4, 9.1.6, and 22.2 CLI
+  outputs are not introduced by this release.
+
+### Binaural
+
+- Real JOC binaural output first renders a selected virtual speaker layout and
+  then applies user-supplied exact-direction SOFA HRIR data. `direct` is the
+  reference backend; `partitioned` is the efficient fixed-partition backend.
+- The renderer requires an explicit LFE policy: `exclude` or
+  `equal-power-dual-mono`. These are OpenJOC renderer policies, not JOC
+  semantics or vendor bass-management behavior.
+
+### Experimental
 
 - The workflow uses the existing `AUTO`, `ETSI_STRICT`, and
   `OBSERVED_VENDOR_COMPAT` profile policy. `SemanticBindingState` remains
   `Unresolved`; no authored-object mapping or vendor-fidelity claim is added.
+
+### Known Limitations
+
 - The preset geometry is data consumed by the generic bridge; 2.0 remains
   blocked by unspecified LFE/bass fold-down policy. The generic library
   accepts arbitrary validated N-channel `SpatialLayout` data, including
   multi-axis and high-channel-count layouts; the CLI exposes only the four
   admitted convenience presets. 5.1.4, 7.1.2, 9.1.4, 9.1.6, and 22.2 remain
   blocked by missing admitted clean geometry. Ordinary WAV output remains
-  RIFF-only without speaker-label metadata. JOC binaural output is stereo
-  speaker virtualization through a user-supplied exact-direction SOFA bank;
-  it makes no vendor-fidelity claim and does not resolve semantic binding.
+  RIFF-only without speaker-label metadata.
+- JOC binaural output is stereo speaker virtualization through a user-supplied
+  exact-direction SOFA bank; it makes no official vendor-fidelity or bit-exact
+  reference-renderer claim, does not resolve semantic binding, and requires
+  matching SOFA/input sample rates. Public real-media smoke fixtures may
+  remain unavailable.
 
 ## [0.3.0] — 2026-08-15
 

@@ -1,6 +1,6 @@
 # Experimental JOC speaker rendering
 
-OpenJOC 0.4.0-dev exposes one executable JOC-to-speaker workflow with an
+OpenJOC 0.4.0 exposes one executable JOC-to-speaker workflow with an
 explicit selectable speaker preset:
 
 ```sh
@@ -20,7 +20,7 @@ openjoc render-joc INPUT.m4a \
 
 Supported presets are `5.1`, `5.1.2`, `7.1`, and `7.1.4`. The `--layout`
 argument is required; there is no implicit output-layout default. `5.1` is the
-regression anchor for the original 0.4.0-dev integration.
+regression anchor for the original 0.4.0 integration.
 
 The command performs container extraction, E-AC-3 Base/LFE decoding, JOC and
 OAMD validation/decoding, persistent `JocSpatialBridge` accumulation, and

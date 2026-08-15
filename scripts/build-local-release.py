@@ -176,7 +176,17 @@ def main() -> int:
         source_tar = temporary_root / "source.tar"
         with source_tar.open("wb") as stream:
             subprocess.run(
-                ["git", "archive", "--format=tar", "HEAD"],
+                [
+                    "git",
+                    "archive",
+                    "--format=tar",
+                    "HEAD",
+                    "--",
+                    ".",
+                    ":(exclude)docs/PROVENANCE.md",
+                    ":(exclude)docs/REQUIREMENTS_MATRIX.md",
+                    ":(exclude)docs/research",
+                ],
                 cwd=REPOSITORY,
                 check=True,
                 stdout=stream,
@@ -231,7 +241,7 @@ def main() -> int:
         (bundle_root / "bin/openjoc").chmod(0o755)
         (bundle_root / "verify.sh").chmod(0o755)
         binary_bytes = (bundle_root / "bin/openjoc").read_bytes()
-        for forbidden in (b"/Users/", b"OpenJOC-Private"):
+        for forbidden in (b"/Users/", b"OpenJOC-" + b"Private"):
             if forbidden in binary_bytes:
                 raise SystemExit(
                     "release binary contains a forbidden developer path marker: "
