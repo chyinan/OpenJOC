@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0-dev] — Unreleased
+
+### Added
+
+- End-to-end experimental JOC speaker rendering through the existing
+  `JocSpatialBridge`, with explicit bridge-control topology, persistent AU
+  state, deterministic 5.1 WAV output, and truthful render diagnostics.
+
+### Scope
+
+- The workflow uses the existing `AUTO`, `ETSI_STRICT`, and
+  `OBSERVED_VENDOR_COMPAT` profile policy. `SemanticBindingState` remains
+  `Unresolved`; no authored-object mapping or vendor-fidelity claim is added.
+- Only the documented 5.1 speaker layout is exposed. Binaural rendering and
+  additional layouts remain follow-up work.
+
 ## [0.3.0] — 2026-08-15
 
 OpenJOC 0.3.0 is a feature release focused on a spatial-rendering foundation,

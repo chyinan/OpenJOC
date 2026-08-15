@@ -14,21 +14,21 @@ name = "openjoc"
 path = "src/main.rs"
 
 [dependencies]
-openjoc-eac3 = { version = "0.3.0", path = "../openjoc-eac3" }
-openjoc-emdf = { version = "0.3.0", path = "../openjoc-emdf" }
-openjoc-container = { version = "0.3.0", path = "../openjoc-container" }
-openjoc-joc = { version = "0.3.0", path = "../openjoc-joc" }
-openjoc-oamd = { version = "0.3.0", path = "../openjoc-oamd" }
-openjoc-scene = { version = "0.3.0", path = "../openjoc-scene" }
-openjoc-wave = { version = "0.3.0", path = "../openjoc-wave" }
-openjoc-render-scene = { version = "0.3.0", path = "../openjoc-render-scene" }
+openjoc-eac3 = { version = "0.4.0-dev", path = "../openjoc-eac3" }
+openjoc-emdf = { version = "0.4.0-dev", path = "../openjoc-emdf" }
+openjoc-container = { version = "0.4.0-dev", path = "../openjoc-container" }
+openjoc-joc = { version = "0.4.0-dev", path = "../openjoc-joc" }
+openjoc-oamd = { version = "0.4.0-dev", path = "../openjoc-oamd" }
+openjoc-scene = { version = "0.4.0-dev", path = "../openjoc-scene" }
+openjoc-wave = { version = "0.4.0-dev", path = "../openjoc-wave" }
+openjoc-render-scene = { version = "0.4.0-dev", path = "../openjoc-render-scene" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 terminal_size = "0.4"
 
 [dev-dependencies]
-openjoc-wave = { version = "0.3.0", path = "../openjoc-wave" }
+openjoc-wave = { version = "0.4.0-dev", path = "../openjoc-wave" }
 
 [lints]
 workspace = true

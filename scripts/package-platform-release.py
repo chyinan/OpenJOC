@@ -26,6 +26,7 @@ PUBLIC_PATHS = (
     "README.md",
     "docs/CAPABILITIES.md",
     "docs/KNOWN_LIMITATIONS.md",
+    "docs/JOC_RENDER.md",
     "docs/REQUIREMENTS_MATRIX.md",
 )
 

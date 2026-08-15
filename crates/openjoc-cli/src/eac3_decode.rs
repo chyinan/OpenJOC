@@ -503,6 +503,7 @@ where
         false,
         sink,
         base_sink,
+        |_, _, _, _| Ok(()),
         PayloadDecoder::finish,
     )
 }
@@ -532,6 +533,46 @@ where
         true,
         sink,
         base_sink,
+        |_, _, _, _| Ok(()),
+        PayloadDecoder::finish_streaming,
+    )
+}
+
+/// Streaming internal-base decode with one combined frame sink.
+///
+/// The combined sink receives the decoded JOC frame and its matching Base/LFE
+/// access unit while both are still bounded to the current access unit. This
+/// is the integration boundary used by the speaker render command; it does
+/// not change the decoder or bridge mathematics.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_internal_eac3_streaming_with_render_sink_and_policy<S, B>(
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    sink: S,
+    base_sink: B,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    S: FnMut(
+        usize,
+        &JocMetadataFrame,
+        &DecodedPayloadFrame,
+        &DecodedAccessUnitPcm,
+    ) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
+    decode_internal_eac3_core(
+        stream,
+        config,
+        validation_profile,
+        dither_values,
+        base_policy,
+        true,
+        |_frame_index, _metadata, _frame| Ok(()),
+        base_sink,
+        sink,
         PayloadDecoder::finish_streaming,
     )
 }
@@ -671,7 +712,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn decode_internal_eac3_core<S, B, R, F>(
+fn decode_internal_eac3_core<S, B, C, R, F>(
     stream: &[u8],
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
@@ -680,11 +721,18 @@ fn decode_internal_eac3_core<S, B, R, F>(
     streaming: bool,
     mut sink: S,
     mut base_sink: B,
+    mut combined_sink: C,
     finish: F,
 ) -> Result<R, DecodeEac3Error>
 where
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+    C: FnMut(
+        usize,
+        &JocMetadataFrame,
+        &DecodedPayloadFrame,
+        &DecodedAccessUnitPcm,
+    ) -> Result<(), DecodeEac3Error>,
     F: FnOnce(PayloadDecoder) -> Result<R, PayloadDecodeError>,
 {
     let frame_index = index_syncframes(stream)?;
@@ -740,7 +788,8 @@ where
             },
             |frame| {
                 sink(unit_index, &metadata, frame)?;
-                base_sink(unit_index, &pcm)
+                base_sink(unit_index, &pcm)?;
+                combined_sink(unit_index, &metadata, frame, &pcm)
             },
         )?;
     }

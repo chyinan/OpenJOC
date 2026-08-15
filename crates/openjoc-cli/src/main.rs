@@ -4,6 +4,7 @@ mod banner;
 mod comparison;
 mod eac3_decode;
 mod fixture_census;
+mod joc_render;
 mod oamd_forensics;
 mod oamd_oracle;
 mod render_scene;
@@ -40,7 +41,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE --topology TOPOLOGY.json --layout 5.1 --output OUTPUT.wav [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -73,6 +74,17 @@ struct DecodeEac3Args {
     trim_configuration_count: Option<NonZeroU8>,
     internal_base_policy: InternalBasePolicy,
     streaming: bool,
+}
+
+struct RenderJocArgs {
+    input: PathBuf,
+    topology: PathBuf,
+    layout: String,
+    output: PathBuf,
+    validation_profile: ValidationProfileRequest,
+    trim_configuration_count: Option<NonZeroU8>,
+    internal_base_policy: InternalBasePolicy,
+    output_format: SampleFormat,
 }
 
 fn main() -> ExitCode {
@@ -113,6 +125,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         Some("sofa") => render_scene::run_sofa(&arguments[1..]),
         Some("render-scene") => render_scene::run_render_scene(&arguments[1..]),
+        Some("render-joc") => render_joc(&parse_render_joc(&arguments[1..])?),
         Some("decode-payload") => decode_payload(&arguments[1..]),
         Some("decode") => decode_eac3(&parse_decode_eac3(&arguments[1..])?),
         Some("diagnose-tools") => diagnose_tools(&arguments[1..]),
@@ -162,6 +175,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
+        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout 5.1 --output <OUTPUT.wav>\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -184,6 +198,10 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
+        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout 5.1 --output <OUTPUT.wav>\n",
+        "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
+        "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
+        "                         [--reference-f64]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [OPTIONS]\n",
@@ -199,6 +217,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
         "  sofa            Inspect strict SimpleFreeFieldHRIR/CDF-1 SOFA files\n",
         "  render-scene    Render caller-bound static sources to transactional binaural WAV\n",
+        "  render-joc      Render decoded JOC through the experimental speaker bridge\n",
         "\n",
     ));
     append_heading(output, "OPTIONS", color)?;
@@ -223,6 +242,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
+        "  render-joc requires explicit bridge-control topology JSON and currently supports the standard 5.1 speaker layout\n",
     ));
     Ok(())
 }
@@ -259,6 +279,14 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "usage: openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR>\n",
             "       --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n\n",
             "Renders explicit static sources transactionally to stereo float32 WAV.\n",
+        ),
+        "render-joc" => concat!(
+            "usage: openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout 5.1 --output <OUTPUT.wav>\n",
+            "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
+            "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
+            "       [--reference-f64]\n\n",
+            "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
+            "The topology sidecar is explicit bridge-control input; no row/object mapping is inferred.\n",
         ),
         "diagnose-tools" => concat!(
             "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",
@@ -794,6 +822,53 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     })
 }
 
+fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> {
+    let input = values.first().filter(|value| !value.starts_with('-'));
+    let mut topology = None;
+    let mut layout = None;
+    let mut output = None;
+    let mut reference_f64 = false;
+    let mut validation_profile = ValidationProfileRequest::Auto;
+    let mut trim_configuration_count = None;
+    let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
+    let mut index = 1;
+    while index < values.len() {
+        let flag = &values[index];
+        if flag == "--reference-f64" {
+            reference_f64 = true;
+            index += 1;
+            continue;
+        }
+        let value = values.get(index + 1).ok_or_else(usage_error)?;
+        match flag.as_str() {
+            "--topology" => topology = Some(PathBuf::from(value)),
+            "--layout" => layout = Some(value.clone()),
+            "-o" | "--output" => output = Some(PathBuf::from(value)),
+            "--validation-profile" => validation_profile = parse_validation_profile(value)?,
+            "--trim-config-count" => {
+                trim_configuration_count = Some(parse_trim_configuration_count(value)?);
+            }
+            "--internal-base-policy" => internal_base_policy = parse_internal_base_policy(value)?,
+            _ => return Err(usage_error().into()),
+        }
+        index += 2;
+    }
+    Ok(RenderJocArgs {
+        input: PathBuf::from(input.ok_or_else(usage_error)?),
+        topology: topology.ok_or_else(usage_error)?,
+        layout: layout.ok_or_else(usage_error)?,
+        output: output.ok_or_else(usage_error)?,
+        validation_profile,
+        trim_configuration_count,
+        internal_base_policy,
+        output_format: if reference_f64 {
+            SampleFormat::F64
+        } else {
+            SampleFormat::F32
+        },
+    })
+}
+
 fn parse_internal_base_policy(value: &str) -> Result<InternalBasePolicy, io::Error> {
     match value {
         "current-default" | "CURRENT_DEFAULT" => Ok(InternalBasePolicy::CurrentDefault),
@@ -924,6 +999,73 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
         )?
     };
     write_scene(&arguments.output, &scene, arguments.output_format)
+}
+
+fn render_joc(arguments: &RenderJocArgs) -> Result<(), Box<dyn Error>> {
+    let media = load_eac3(&arguments.input)?;
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig {
+            trim_configuration_count: arguments.trim_configuration_count,
+        },
+    };
+    let selected_profile = eac3_decode::resolve_profile_for_stream(
+        &media.bytes,
+        config,
+        arguments.validation_profile,
+    )?;
+    let control = joc_render::RenderControl::from_path(&arguments.topology)?;
+    let mut renderer = joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?;
+    let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
+    let dither = deterministic_dither_values();
+    let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
+        &media.bytes,
+        config,
+        selected_profile,
+        &dither,
+        arguments.internal_base_policy,
+        |frame_index, metadata, frame, base| {
+            let block = renderer
+                .render_frame(frame_index, frame, base)
+                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+            output
+                .write_block(&block)
+                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+            renderer
+                .record_profile(metadata)
+                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+        },
+        |_access_unit, _pcm| Ok(()),
+    );
+    match result {
+        Ok(summary) => {
+            if let Err(error) = renderer.finish() {
+                output.abort();
+                return Err(error.into());
+            }
+            output.finish()?;
+            println!(
+                "{}\noutput format: {}",
+                renderer.diagnostics(
+                    arguments.validation_profile,
+                    selected_profile,
+                    &summary,
+                    &arguments.output,
+                ),
+                match arguments.output_format {
+                    SampleFormat::F32 => "IEEE float32",
+                    SampleFormat::F64 => "IEEE float64",
+                    SampleFormat::S24 => "signed PCM24",
+                    SampleFormat::S16 => "signed PCM16",
+                }
+            );
+            Ok(())
+        }
+        Err(error) => {
+            output.abort();
+            Err(error.into())
+        }
+    }
 }
 
 fn ensure_output_directory_available(output: &Path) -> Result<(), Box<dyn Error>> {
@@ -2499,6 +2641,9 @@ fn classify_cli_error(error: &(dyn Error + 'static)) -> CliErrorCategory {
     if let Some(error) = error.downcast_ref::<OamdError>() {
         return classify_oamd_error(error);
     }
+    if let Some(error) = error.downcast_ref::<joc_render::JocRenderError>() {
+        return classify_joc_render_error(error);
+    }
     if error.downcast_ref::<WaveError>().is_some() {
         return CliErrorCategory::OutputFailure;
     }
@@ -2515,6 +2660,30 @@ fn classify_cli_error(error: &(dyn Error + 'static)) -> CliErrorCategory {
         };
     }
     CliErrorCategory::DecodeFailure
+}
+
+const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErrorCategory {
+    match error {
+        joc_render::JocRenderError::Io(_) => CliErrorCategory::IoFailure,
+        joc_render::JocRenderError::Json(_) => CliErrorCategory::MalformedInput,
+        joc_render::JocRenderError::OutputExists(_)
+        | joc_render::JocRenderError::Wave(_)
+        | joc_render::JocRenderError::NoRenderedFrames => CliErrorCategory::OutputFailure,
+        joc_render::JocRenderError::InvalidControl(_)
+        | joc_render::JocRenderError::UnsupportedLayout(_)
+        | joc_render::JocRenderError::EmptyTopology
+        | joc_render::JocRenderError::TopologyCoordinateCount { .. }
+        | joc_render::JocRenderError::BaseTopologyChanged
+        | joc_render::JocRenderError::BaseCoordinate(_)
+        | joc_render::JocRenderError::UnusedUpdate { .. } => CliErrorCategory::UnsupportedFeature,
+        joc_render::JocRenderError::FrameIndex { .. }
+        | joc_render::JocRenderError::SampleTimeline { .. }
+        | joc_render::JocRenderError::SampleRateMismatch { .. }
+        | joc_render::JocRenderError::FrameSampleCount
+        | joc_render::JocRenderError::ProfileChanged
+        | joc_render::JocRenderError::Bridge(_)
+        | joc_render::JocRenderError::Spatial(_) => CliErrorCategory::DecodeFailure,
+    }
 }
 
 const fn classify_input_error(error: &InputMediaError) -> CliErrorCategory {

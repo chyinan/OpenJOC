@@ -100,7 +100,7 @@ case "$help_output" in
         ;;
 esac
 
-for command in inspect decode decode-payload diagnose-tools census diagnose-oamd; do
+for command in inspect decode decode-payload diagnose-tools census diagnose-oamd render-joc; do
     "$bundle_root/bin/openjoc" "$command" --help >/dev/null
 done
 

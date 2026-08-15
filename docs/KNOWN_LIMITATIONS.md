@@ -1,10 +1,10 @@
-# OpenJOC 0.3.0 known limitations
+# OpenJOC 0.4.0-dev known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and requirement status belong in the linked documents under `docs/`.
 
-This snapshot is part of the local release-candidate contract. It states the
-same user-visible boundary as the canonical repository documentation without
+This snapshot is part of the current development contract. It states the same
+user-visible boundary as the canonical repository documentation without
 claiming capabilities that the current evidence does not support.
 
 - `scene.json` is metadata-only. It does not bind decoded audio to authored
@@ -17,11 +17,12 @@ claiming capabilities that the current evidence does not support.
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
 - The codec-domain `JocSpatialFrameBridge` exposes aligned Base/RB/RcLfe/OAMD
-  inputs and an explicit unresolved-operator gate, but the time-varying
-  reconstruction operator `T(t)` is not established. It cannot produce an
-  `ExplicitSpatialScene` or real-JOC speaker/binaural output. The separate
-  `JocSpatialBridge` is an experimental ordinary-domain spatial projection;
-  it does not resolve the codec operator or semantic binding.
+  inputs and an explicit unresolved-operator gate; the time-varying
+  reconstruction operator `T(t)` is not established. The 0.4.0-dev
+  `render-joc` command is a separate experimental ordinary-domain speaker
+  projection that requires an explicit bridge-control topology sidecar. It
+  supports only 5.1 output, does not infer authored-object identity, and does
+  not resolve `T(t)` or provide a binaural/vendor renderer.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
   speaker-layout renderer with public 2D VBAP-style pair gains, plus an

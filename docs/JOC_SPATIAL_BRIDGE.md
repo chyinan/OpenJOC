@@ -30,8 +30,9 @@ The bridge implements only the supported ordinary domain:
 The descriptor's raw warp-3 field is preserved as opaque data and is never
 used as a projection input. Its public semantic meaning remains unresolved.
 The bridge does not make `SemanticBindingState` production-resolved, does not
-claim an official spatial oracle, and does not admit a real-JOC speaker or
-binaural fidelity result. Q40, unsupported/default branches, unadmitted
+claim an official spatial oracle, and does not admit a vendor-fidelity result.
+The 0.4.0-dev `render-joc` command composes this function with an explicit
+topology sidecar for experimental 5.1 speaker output. Q40, unsupported/default branches, unadmitted
 preprocessing, and malformed-recovery semantics are outside this implementation.
 
 The machine-readable implementation input is not part of the public runtime
@@ -54,7 +55,8 @@ speaker or binaural PCM
 
 The `render-scene` command and the `openjoc-render` crate remain useful
 caller-bound WAV/reference workflows. They are independent renderer oracles;
-they do not claim to convert decoded JOC rows into authored objects.
+the `render-joc` composition also does not convert decoded JOC rows into
+authored objects.
 
 ## Codec-domain bridge
 
@@ -168,4 +170,6 @@ RB-row/object or renderer semantic result.
 - `ETSI_STRICT` still treats observed OAMD `warp=3` as
   `ReservedWarpMode { raw: 3 }`.
 - No proprietary decoder, renderer, or vendor semantic source is used.
-- No real-JOC speaker/binaural rendering is admitted by this bridge.
+- No automatic authored-object mapping or binaural rendering is admitted by
+  this bridge. The explicit `render-joc` composition is experimental and
+  limited to the documented 5.1 speaker workflow.

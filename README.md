@@ -24,7 +24,13 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.3.0 is the current local release candidate. It adds an explicit
+OpenJOC 0.4.0-dev is the current development line. It retains the 0.3.0
+release foundation and adds an explicit experimental JOC-to-speaker workflow
+through `JocSpatialBridge`. The bridge-control topology is explicit because
+the public decoder does not admit an automatic authored-object-to-row mapping.
+The 5.1 workflow is documented in [Experimental JOC speaker rendering](docs/JOC_RENDER.md).
+
+OpenJOC 0.3.0 was the local release candidate. It added an explicit
 spatial-rendering foundation for caller-supplied mono sources: validated 2D and
 3D speaker layouts, sample-accurate trajectories, direct-FIR and uniform
 partitioned binaural rendering, and a strict supported SOFA import path. These
@@ -43,7 +49,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — what the 0.3.0 release candidate supports.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.4.0-dev capability status.
+- [Experimental JOC speaker rendering](docs/JOC_RENDER.md) — the 0.4.0-dev real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Requirements matrix](docs/REQUIREMENTS_MATRIX.md) — engineering truth table.
@@ -94,6 +101,7 @@ openjoc inspect input.ec3
 openjoc decode input.ec3 -o output/ --internal-base
 openjoc decode input.mp4 -o output/ --internal-base --streaming
 openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
+openjoc render-joc input.ec3 --topology bridge-control.json --layout 5.1 --output render.wav
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
 

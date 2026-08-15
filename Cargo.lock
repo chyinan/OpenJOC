@@ -193,7 +193,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "import-etsi-tables"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "sha2",
  "zip",
@@ -284,14 +284,14 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openjoc-bitio"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "openjoc-cli"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-container",
  "openjoc-eac3",
@@ -309,14 +309,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-container"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-eac3",
 ]
 
 [[package]]
 name = "openjoc-eac3"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-bitio",
  "openjoc-emdf",
@@ -327,14 +327,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-emdf"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-bitio",
 ]
 
 [[package]]
 name = "openjoc-joc"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "num-complex",
  "openjoc-bitio",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "openjoc-oamd"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-bitio",
  "serde",
@@ -353,21 +353,21 @@ dependencies = [
 
 [[package]]
 name = "openjoc-qmf"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "num-complex",
 ]
 
 [[package]]
 name = "openjoc-render"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "rustfft",
 ]
 
 [[package]]
 name = "openjoc-render-scene"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-render",
  "openjoc-sofa",
@@ -379,7 +379,7 @@ dependencies = [
 
 [[package]]
 name = "openjoc-scene"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-joc",
  "openjoc-oamd",
@@ -389,14 +389,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-sofa"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "openjoc-render",
 ]
 
 [[package]]
 name = "openjoc-wave"
-version = "0.3.0"
+version = "0.4.0-dev"
 
 [[package]]
 name = "ppv-lite86"

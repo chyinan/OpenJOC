@@ -28,6 +28,27 @@ input/container ownership and access-unit delivery
                                        │
                                        ▼
                               metadata-only ObjectScene
+
+The 0.4.0-dev `render-joc` workflow adds an explicit experimental speaker
+branch after the decoded component boundary:
+
+```text
+raw EC-3 / seekable ISO BMFF
+          ↓
+bounded AU delivery → E-AC-3 Base + RcLfe + JOC/OAMD decode
+          ↓
+decoded Base/RB codec-coordinate bundle + explicit bridge-control topology
+          ↓
+persistent JocSpatialBridge → active 5.1 speaker planes
+          ├── Base LFE/RcLfe → LFE plane only
+          └── active planes + LFE → incremental float WAV
+```
+
+The sidecar is required because the current public decoder has no admitted
+automatic authored-object-to-ReconstructionBasis mapping. Topology/count,
+coordinate dimensions, metadata updates, and Base topology changes are
+validated at the integration boundary; no guessed row/object renderer is
+constructed. The public WAV order is `FL, FR, FC, LFE, Ls, Rs`.
 ```
 
 The parser reads what is present in the carrier. Validation then applies an
