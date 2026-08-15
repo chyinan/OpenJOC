@@ -24,10 +24,11 @@ TARGETS = {
 PUBLIC_PATHS = (
     "LICENSE",
     "README.md",
+    "docs/ARCHITECTURE.md",
     "docs/CAPABILITIES.md",
     "docs/KNOWN_LIMITATIONS.md",
     "docs/JOC_RENDER.md",
-    "docs/REQUIREMENTS_MATRIX.md",
+    "docs/README.md",
 )
 
 
