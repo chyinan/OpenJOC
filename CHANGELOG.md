@@ -6,15 +6,22 @@
 
 - End-to-end experimental JOC speaker rendering through the existing
   `JocSpatialBridge`, with explicit bridge-control topology, persistent AU
-  state, deterministic 5.1 WAV output, and truthful render diagnostics.
+  state, selectable 5.1/5.1.2/7.1/7.1.4 WAV output, and truthful render
+  diagnostics.
 
 ### Scope
 
 - The workflow uses the existing `AUTO`, `ETSI_STRICT`, and
   `OBSERVED_VENDOR_COMPAT` profile policy. `SemanticBindingState` remains
   `Unresolved`; no authored-object mapping or vendor-fidelity claim is added.
-- Only the documented 5.1 speaker layout is exposed. Binaural rendering and
-  additional layouts remain follow-up work.
+- The preset geometry is data consumed by the generic bridge; 2.0 remains
+  blocked by unspecified LFE/bass fold-down policy. The generic library
+  accepts arbitrary validated N-channel `SpatialLayout` data, including
+  multi-axis and high-channel-count layouts; the CLI exposes only the four
+  admitted convenience presets. 5.1.4, 7.1.2, 9.1.4, 9.1.6, and 22.2 remain
+  blocked by missing admitted clean geometry. Ordinary WAV output remains
+  RIFF-only without speaker-label metadata, and binaural rendering remains
+  out of scope.
 
 ## [0.3.0] — 2026-08-15
 

@@ -41,7 +41,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE --topology TOPOLOGY.json --layout 5.1 --output OUTPUT.wav [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE --topology TOPOLOGY.json --layout LAYOUT --output OUTPUT.wav [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -175,7 +175,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout 5.1 --output <OUTPUT.wav>\n",
+        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout <LAYOUT> --output <OUTPUT.wav>\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -198,7 +198,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout 5.1 --output <OUTPUT.wav>\n",
+        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout <LAYOUT> --output <OUTPUT.wav>\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--reference-f64]\n",
@@ -242,7 +242,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
-        "  render-joc requires explicit bridge-control topology JSON and currently supports the standard 5.1 speaker layout\n",
+        "  render-joc SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, and 7.1.4; topology JSON remains explicit\n",
+        "  GENERIC/CUSTOM LIBRARY CAPABILITY: use openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format\n",
     ));
     Ok(())
 }
@@ -281,11 +282,13 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders explicit static sources transactionally to stereo float32 WAV.\n",
         ),
         "render-joc" => concat!(
-            "usage: openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout 5.1 --output <OUTPUT.wav>\n",
+            "usage: openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout <LAYOUT> --output <OUTPUT.wav>\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
             "       [--reference-f64]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
+            "SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, 7.1.4.\n",
+            "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "The topology sidecar is explicit bridge-control input; no row/object mapping is inferred.\n",
         ),
         "diagnose-tools" => concat!(
@@ -1047,6 +1050,7 @@ fn render_joc(arguments: &RenderJocArgs) -> Result<(), Box<dyn Error>> {
             println!(
                 "{}\noutput format: {}",
                 renderer.diagnostics(
+                    &arguments.layout,
                     arguments.validation_profile,
                     selected_profile,
                     &summary,

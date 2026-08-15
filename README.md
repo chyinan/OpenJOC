@@ -28,7 +28,11 @@ OpenJOC 0.4.0-dev is the current development line. It retains the 0.3.0
 release foundation and adds an explicit experimental JOC-to-speaker workflow
 through `JocSpatialBridge`. The bridge-control topology is explicit because
 the public decoder does not admit an automatic authored-object-to-row mapping.
-The 5.1 workflow is documented in [Experimental JOC speaker rendering](docs/JOC_RENDER.md).
+The selectable 5.1/5.1.2/7.1/7.1.4 workflows are documented in
+[Experimental JOC speaker rendering](docs/JOC_RENDER.md).
+The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
+generic N-channel library interface for caller-defined layouts; the CLI names
+are convenience presets, not the renderer's fundamental maximum.
 
 OpenJOC 0.3.0 was the local release candidate. It added an explicit
 spatial-rendering foundation for caller-supplied mono sources: validated 2D and
@@ -101,7 +105,7 @@ openjoc inspect input.ec3
 openjoc decode input.ec3 -o output/ --internal-base
 openjoc decode input.mp4 -o output/ --internal-base --streaming
 openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
-openjoc render-joc input.ec3 --topology bridge-control.json --layout 5.1 --output render.wav
+openjoc render-joc input.ec3 --topology bridge-control.json --layout 7.1.4 --output render.wav
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
 

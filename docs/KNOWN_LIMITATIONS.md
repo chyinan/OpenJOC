@@ -21,8 +21,17 @@ claiming capabilities that the current evidence does not support.
   reconstruction operator `T(t)` is not established. The 0.4.0-dev
   `render-joc` command is a separate experimental ordinary-domain speaker
   projection that requires an explicit bridge-control topology sidecar. It
-  supports only 5.1 output, does not infer authored-object identity, and does
-  not resolve `T(t)` or provide a binaural/vendor renderer.
+  supports only the 5.1, 5.1.2, 7.1, and 7.1.4 presets, does not infer
+  authored-object identity, and does not resolve `T(t)` or provide a
+  binaural/vendor renderer. 2.0 remains blocked by unspecified bass/LFE
+  fold-down policy; 5.1.4, 7.1.2, 9.1.4, and 9.1.6 remain blocked by missing
+  admitted clean preset geometry; 22.2 has generic 24-channel renderer
+  capacity but remains blocked by missing admitted clean 22.2 geometry. The
+  public `SpatialLayout` plus `JocSpatialBridge` API accepts arbitrary
+  caller-defined layouts, but the CLI has no custom-layout file format.
+  Ordinary WAV output is RIFF-only and carries no speaker-label/channel-mask
+  metadata, so large-channel renderer capacity is not a third-party DAW
+  interoperability guarantee.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
   speaker-layout renderer with public 2D VBAP-style pair gains, plus an

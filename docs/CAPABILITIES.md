@@ -39,7 +39,8 @@ renderer.
 | Components | Typed decoded-component manifest | `ADMITTED` | `diagnostics/components.json` separates Base, Base LFE, indexed RB coordinates, RcLfe boundary and unresolved binding | PCM-free layout; no authored-object identity |
 | JOC bridge | Codec-domain streaming reconstruction input and readiness gate | `ADMITTED_WITH_SCOPE` | `JocSpatialFrameBridge`, absolute `SampleRange`, finite/dimension checks, synthetic linearity/partition tests, readiness census | `T(t)` remains unresolved; no automatic scene conversion or real-JOC render |
 | JOC bridge | Opt-in codec-coordinate spatial projection and accumulation | `ADMITTED_WITH_SCOPE` | `JocSpatialBridge`, topology binding, spatial projection, Q32 gain scheduling, linear accumulation, raw3 preservation, and partition tests | Experimental maturity; `SemanticBindingState::Unresolved`; official runtime oracle not independently confirmed |
-| JOC rendering | Real supported E-AC-3 JOC to speaker WAV workflow | `ADMITTED_WITH_SCOPE` | `render-joc` decoder/bridge/output integration tests, explicit topology/count/LFE/order checks | Experimental 5.1 speaker path only; explicit bridge-control sidecar required; no automatic row/object binding, binaural path, or vendor-fidelity claim |
+| JOC rendering | Real supported E-AC-3 JOC to preset speaker WAV workflow | `ADMITTED_WITH_SCOPE` | `render-joc` decoder/bridge/output integration tests, preset geometry, topology/count/LFE/order checks, synthetic arbitrary-layout and 24-channel bridge tests | Experimental 5.1, 5.1.2, 7.1, and 7.1.4 paths; explicit bridge-control sidecar required; 2.0, 5.1.4, 7.1.2, 9.1.4, 9.1.6, and 22.2 are blocked by documented policy/geometry gaps; generic library layouts remain supported; no automatic row/object binding, binaural path, or vendor-fidelity claim |
+| JOC layout engine | Generic N-channel codec-coordinate projection and accumulation | `ADMITTED_WITH_SCOPE` | Public `SpatialLayout` plus `JocSpatialBridge`, multi-axis projection, arbitrary-order and 24-channel tests | Preset names are convenience data; caller-defined library layouts are accepted without a custom CLI file format; WAV is RIFF-only and carries no speaker-label metadata |
 | Semantics | Authored-object binding and verified object PCM | `NOT_ADMITTED` | One-row-per-authored-object model rejected | `SemanticBindingState::Unresolved` remains the production state |
 | Rendering | Explicit-scene stereo and general 2D speaker renderer | `ADMITTED_WITH_SCOPE` | `openjoc-render` independent stereo/VBAP oracle, layout, trajectory, continuity and block-partition tests | Caller-supplied mono sources only; arbitrary validated horizontal layouts, adjacent-pair panning, and absolute-sample position/gain trajectories; no JOC bridge, HRTF, room model, or Dolby renderer-fidelity claim |
 | Rendering | Explicit-scene 3D speaker topology, VBAP triplet renderer, and sample-accurate trajectories | `ADMITTED_WITH_SCOPE` | `openjoc-render` checked 3×3 public-math and independent great-circle oracle, tetrahedron/octahedron/partial/ambiguity, continuity, and partition tests | Caller supplies speaker order and triplets explicitly; shortest great-circle segments and linear gain only; no automatic triangulation, Delaunay/hull inference, distance, Doppler, listener orientation, LFE, HRTF, JOC bridge, or authored-object identity |
@@ -63,7 +64,7 @@ openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR
 openjoc diagnose-tools FILE --vector-id ID --json OUTPUT
 openjoc census [MANIFEST] -o DIR
 openjoc diagnose-oamd FILE [OPTIONS]
-openjoc render-joc FILE --topology TOPOLOGY.json --layout 5.1 --output OUTPUT.wav
+openjoc render-joc FILE --topology TOPOLOGY.json --layout LAYOUT --output OUTPUT.wav
 openjoc --version
 ```
 

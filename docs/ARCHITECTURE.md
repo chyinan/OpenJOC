@@ -39,16 +39,23 @@ bounded AU delivery → E-AC-3 Base + RcLfe + JOC/OAMD decode
           ↓
 decoded Base/RB codec-coordinate bundle + explicit bridge-control topology
           ↓
-persistent JocSpatialBridge → active 5.1 speaker planes
+persistent JocSpatialBridge → active N-channel speaker planes
           ├── Base LFE/RcLfe → LFE plane only
           └── active planes + LFE → incremental float WAV
 ```
+
+The CLI presets are data-only registrations over the generic `SpatialLayout`
+and `JocSpatialBridge` projection path. The public library can consume a
+caller-defined channel registry, geometry, and output order without a
+preset-specific projection algorithm; the CLI does not currently serialize
+that custom layout as a file format.
 
 The sidecar is required because the current public decoder has no admitted
 automatic authored-object-to-ReconstructionBasis mapping. Topology/count,
 coordinate dimensions, metadata updates, and Base topology changes are
 validated at the integration boundary; no guessed row/object renderer is
-constructed. The public WAV order is `FL, FR, FC, LFE, Ls, Rs`.
+constructed. The public WAV order is selected by the explicit preset; `5.1`
+remains `FL, FR, FC, LFE, Ls, Rs`.
 ```
 
 The parser reads what is present in the carrier. Validation then applies an

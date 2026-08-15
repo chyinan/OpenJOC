@@ -109,6 +109,66 @@ fn layout() -> SpatialLayout {
     .expect("valid spatial layout")
 }
 
+fn irregular_public_order_layout() -> SpatialLayout {
+    SpatialLayout::new(
+        vec![
+            SpatialLayoutChannel {
+                identity: "RIGHT".to_owned(),
+                enabled: true,
+                lfe: false,
+            },
+            SpatialLayoutChannel {
+                identity: "LEFT".to_owned(),
+                enabled: true,
+                lfe: false,
+            },
+            SpatialLayoutChannel {
+                identity: "LFE".to_owned(),
+                enabled: true,
+                lfe: true,
+            },
+        ],
+        vec![vec![0.0, 1.0]],
+        vec![
+            SpatialLayoutNode {
+                knot_indices: vec![0],
+                vector: vec![0.0, 1.0],
+            },
+            SpatialLayoutNode {
+                knot_indices: vec![1],
+                vector: vec![1.0, 0.0],
+            },
+        ],
+        Vec::new(),
+    )
+    .expect("valid irregular public-order layout")
+}
+
+fn high_channel_layout(channel_count: usize) -> SpatialLayout {
+    let channels = (0..channel_count)
+        .map(|index| SpatialLayoutChannel {
+            identity: format!("C{index}"),
+            enabled: true,
+            lfe: false,
+        })
+        .collect::<Vec<_>>();
+    let knots = (0..channel_count)
+        .map(|index| index as f64)
+        .collect::<Vec<_>>();
+    let nodes = (0..channel_count)
+        .map(|index| {
+            let mut vector = vec![0.0; channel_count];
+            vector[index] = 1.0;
+            SpatialLayoutNode {
+                knot_indices: vec![index],
+                vector,
+            }
+        })
+        .collect::<Vec<_>>();
+    SpatialLayout::new(channels, vec![knots], nodes, Vec::new())
+        .expect("valid high-channel-count layout")
+}
+
 #[test]
 fn binding_flattens_reuses_inherits_overrides_rebuilds_and_resets() {
     let mut state = SpatialBindingState::new();
@@ -307,6 +367,93 @@ fn accumulation_is_linear_multi_coordinate_and_keeps_semantic_state_unresolved()
     assert_eq!(right, vec![5.0, 6.0, 7.0]);
     assert_eq!(bridge.semantic_binding(), SemanticBindingState::Unresolved);
     assert!(!bridge.is_production_resolved());
+}
+
+#[test]
+fn arbitrary_layout_preserves_public_order_independently_of_geometry_order() {
+    let layout = irregular_public_order_layout();
+    assert_eq!(
+        layout
+            .channels()
+            .iter()
+            .map(|channel| channel.identity.as_str())
+            .collect::<Vec<_>>(),
+        ["RIGHT", "LEFT", "LFE"]
+    );
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: SpatialDescriptor::new(
+                SpatialSourceClass::DynamicPoint,
+                "irregular",
+                vec![0.0],
+            ),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = [vec![2.0, 3.0]];
+    let coordinates = input.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let mut outputs = vec![vec![0.0; 2]; layout.active_channel_count()];
+    let mut output_refs = outputs
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    JocSpatialBridge::new()
+        .render_coordinates(
+            &coordinates,
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut output_refs,
+        )
+        .expect("generic irregular layout render");
+    assert_eq!(outputs, [vec![0.0, 0.0], vec![2.0, 3.0]]);
+}
+
+#[test]
+fn generic_spatial_layout_supports_twenty_four_output_channels() {
+    let layout = high_channel_layout(24);
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: SpatialDescriptor::new(
+                SpatialSourceClass::DynamicPoint,
+                "high-channel",
+                vec![12.0],
+            ),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = [vec![0.75]];
+    let coordinates = input.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let mut outputs = vec![vec![0.0; 1]; layout.active_channel_count()];
+    let mut output_refs = outputs
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    JocSpatialBridge::new()
+        .render_coordinates(
+            &coordinates,
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut output_refs,
+        )
+        .expect("generic 24-channel layout render");
+    assert_eq!(outputs.len(), 24);
+    assert_eq!(outputs[12], vec![0.75]);
+    assert!(
+        outputs
+            .iter()
+            .enumerate()
+            .all(|(index, output)| index == 12 || output[0].abs() < 1e-12)
+    );
 }
 
 #[test]

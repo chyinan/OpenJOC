@@ -22,6 +22,7 @@ use std::{
 pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
 pub const JOC_RENDER_LAYOUT: &str = "5.1";
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
+pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 4] = ["5.1", "5.1.2", "7.1", "7.1.4"];
 
 #[derive(Debug)]
 pub enum JocRenderError {
@@ -57,7 +58,8 @@ impl fmt::Display for JocRenderError {
             Self::UnsupportedLayout(layout) => {
                 write!(
                     formatter,
-                    "unsupported JOC render layout {layout}; supported layout is 5.1"
+                    "unsupported JOC render layout {layout}; supported layouts are {}",
+                    JOC_RENDER_SUPPORTED_LAYOUTS.join(", ")
                 )
             }
             Self::EmptyTopology => formatter.write_str("JOC render topology is empty"),
@@ -220,11 +222,63 @@ pub struct RenderedBlock {
     pub channels: Vec<Vec<f64>>,
 }
 
+/// Data-only speaker preset consumed by the generic spatial bridge.
+///
+/// The preset owns public output order and the non-LFE projection geometry;
+/// it does not implement a layout-specific renderer. Height presets use the
+/// same normalized horizontal/height axes and tensor interpolation already
+/// implemented by `SpatialLayout`.
+#[derive(Clone, Debug)]
+struct SpeakerLayoutPreset {
+    name: &'static str,
+    labels: Vec<&'static str>,
+    lfe_index: Option<usize>,
+    layout: SpatialLayout,
+}
+
+impl SpeakerLayoutPreset {
+    fn for_name(name: &str) -> Result<Self, JocRenderError> {
+        match name {
+            JOC_RENDER_LAYOUT => five_point_one_preset(),
+            "5.1.2" => five_point_one_two_preset(),
+            "7.1" => seven_point_one_preset(),
+            "7.1.4" => seven_point_one_four_preset(),
+            other => Err(JocRenderError::UnsupportedLayout(other.to_owned())),
+        }
+    }
+
+    fn new(
+        name: &'static str,
+        labels: Vec<&'static str>,
+        lfe_index: Option<usize>,
+        layout: SpatialLayout,
+    ) -> Self {
+        Self {
+            name,
+            labels,
+            lfe_index,
+            layout,
+        }
+    }
+
+    fn channel_labels(&self) -> Vec<&'static str> {
+        self.labels.clone()
+    }
+
+    fn channel_count(&self) -> usize {
+        self.labels.len()
+    }
+
+    const fn lfe_index(&self) -> Option<usize> {
+        self.lfe_index
+    }
+}
+
 #[derive(Debug)]
 pub struct JocSpeakerRenderer {
     frame_bridge: JocSpatialFrameBridge,
     bridge: JocSpatialBridge,
-    layout: SpatialLayout,
+    preset: SpeakerLayoutPreset,
     control: RenderControl,
     expected_coordinates: usize,
     expected_frame: u64,
@@ -236,10 +290,7 @@ pub struct JocSpeakerRenderer {
 
 impl JocSpeakerRenderer {
     pub fn new(layout: &str, control: RenderControl) -> Result<Self, JocRenderError> {
-        let layout = match layout {
-            JOC_RENDER_LAYOUT => five_point_one_layout()?,
-            other => return Err(JocRenderError::UnsupportedLayout(other.to_owned())),
-        };
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
         let expected_coordinates = control.topology.flatten().len();
         if expected_coordinates == 0 {
             return Err(JocRenderError::EmptyTopology);
@@ -247,7 +298,7 @@ impl JocSpeakerRenderer {
         Ok(Self {
             frame_bridge: JocSpatialFrameBridge,
             bridge: JocSpatialBridge::new(),
-            layout,
+            preset,
             control,
             expected_coordinates,
             expected_frame: 0,
@@ -321,7 +372,7 @@ impl JocSpeakerRenderer {
         if usize::from(base.samples) != sample_count {
             return Err(JocRenderError::FrameSampleCount);
         }
-        let mut active = vec![vec![0.0; sample_count]; self.layout.active_channel_count()];
+        let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
         let mut output_planes = active.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
         let update_index = self.control.mark_update_for(frame_index);
         let topology = (self.expected_frame == 0).then_some(&self.control.topology);
@@ -330,14 +381,14 @@ impl JocSpeakerRenderer {
             &bridge_frame,
             topology,
             updates,
-            &self.layout,
+            &self.preset.layout,
             u64::try_from(sample_count).map_err(|_| JocRenderError::FrameSampleCount)?,
             &mut output_planes,
         )?;
 
-        let mut channels = vec![vec![0.0; sample_count]; self.layout.channels().len()];
+        let mut channels = vec![vec![0.0; sample_count]; self.preset.channel_count()];
         let mut active_index = 0;
-        for (output_index, channel) in self.layout.channels().iter().enumerate() {
+        for (output_index, channel) in self.preset.layout.channels().iter().enumerate() {
             if channel.lfe {
                 if let Some(lfe) = base.lfe.as_deref() {
                     channels[output_index].copy_from_slice(lfe);
@@ -384,6 +435,7 @@ impl JocSpeakerRenderer {
 
     pub fn diagnostics(
         &self,
+        requested_layout: &str,
         requested_profile: crate::eac3_decode::ValidationProfileRequest,
         selected_profile: JocValidationProfile,
         summary: &openjoc_scene::StreamingSceneSummary,
@@ -400,16 +452,18 @@ impl JocSpeakerRenderer {
                 .join("; ")
         };
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nrender layout: {}\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic",
+            self.preset.name,
+            self.preset.channel_count(),
+            self.preset.lfe_index(),
             requested_profile.as_str(),
             selected.as_str(),
             deviations,
-            JOC_RENDER_LAYOUT,
             output.display(),
             summary.sample_rate,
             summary.frames,
             summary.duration_samples,
-            JOC_RENDER_CHANNEL_ORDER.join(", "),
+            self.preset.channel_labels().join(", "),
         )
     }
 }
@@ -480,6 +534,168 @@ fn five_point_one_layout() -> Result<SpatialLayout, JocRenderError> {
         Vec::new(),
     )
     .map_err(|error| JocRenderError::InvalidControl(error.to_string()))
+}
+
+fn five_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
+    Ok(SpeakerLayoutPreset::new(
+        JOC_RENDER_LAYOUT,
+        JOC_RENDER_CHANNEL_ORDER.to_vec(),
+        Some(3),
+        five_point_one_layout()?,
+    ))
+}
+
+fn five_point_one_two_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
+    let active_count = 7;
+    let horizontal_knots = vec![0.0, 0.25, 0.5, 0.75, 1.0];
+    let lower = [3, 0, 2, 1, 4]
+        .into_iter()
+        .map(|index| one_hot(active_count, index))
+        .collect();
+    let upper = vec![
+        one_hot(active_count, 5),
+        one_hot(active_count, 5),
+        mixed(active_count, 5, 6),
+        one_hot(active_count, 6),
+        one_hot(active_count, 6),
+    ];
+    two_layer_preset(
+        "5.1.2",
+        vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
+        Some(3),
+        horizontal_knots,
+        lower,
+        upper,
+    )
+}
+
+fn seven_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
+    let active_count = 7;
+    one_layer_preset(
+        "7.1",
+        vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb"],
+        Some(3),
+        vec![0.0, 1.0 / 6.0, 1.0 / 3.0, 0.5, 2.0 / 3.0, 5.0 / 6.0, 1.0],
+        vec![5, 3, 0, 2, 1, 4, 6]
+            .into_iter()
+            .map(|index| one_hot(active_count, index))
+            .collect(),
+    )
+}
+
+fn seven_point_one_four_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
+    let active_count = 11;
+    let horizontal_knots = vec![0.0, 1.0 / 6.0, 1.0 / 3.0, 0.5, 2.0 / 3.0, 5.0 / 6.0, 1.0];
+    let lower = [5, 3, 0, 2, 1, 4, 6]
+        .into_iter()
+        .map(|index| one_hot(active_count, index))
+        .collect();
+    let upper = vec![
+        one_hot(active_count, 9),
+        one_hot(active_count, 9),
+        one_hot(active_count, 7),
+        mixed(active_count, 7, 8),
+        one_hot(active_count, 8),
+        one_hot(active_count, 10),
+        one_hot(active_count, 10),
+    ];
+    two_layer_preset(
+        "7.1.4",
+        vec![
+            "FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR",
+        ],
+        Some(3),
+        horizontal_knots,
+        lower,
+        upper,
+    )
+}
+
+fn one_layer_preset(
+    name: &'static str,
+    labels: Vec<&'static str>,
+    lfe_index: Option<usize>,
+    horizontal_knots: Vec<f64>,
+    vectors: Vec<Vec<f64>>,
+) -> Result<SpeakerLayoutPreset, JocRenderError> {
+    if horizontal_knots.len() != vectors.len() {
+        return Err(JocRenderError::InvalidControl(
+            "speaker preset knot/vector count mismatch".to_owned(),
+        ));
+    }
+    let nodes = vectors
+        .into_iter()
+        .enumerate()
+        .map(|(index, vector)| SpatialLayoutNode {
+            knot_indices: vec![index],
+            vector,
+        })
+        .collect();
+    let layout = SpatialLayout::new(
+        layout_channels(&labels, lfe_index),
+        vec![horizontal_knots],
+        nodes,
+        Vec::new(),
+    )
+    .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?;
+    Ok(SpeakerLayoutPreset::new(name, labels, lfe_index, layout))
+}
+
+fn two_layer_preset(
+    name: &'static str,
+    labels: Vec<&'static str>,
+    lfe_index: Option<usize>,
+    horizontal_knots: Vec<f64>,
+    lower: Vec<Vec<f64>>,
+    upper: Vec<Vec<f64>>,
+) -> Result<SpeakerLayoutPreset, JocRenderError> {
+    if lower.len() != horizontal_knots.len() || upper.len() != horizontal_knots.len() {
+        return Err(JocRenderError::InvalidControl(
+            "height speaker preset knot/vector count mismatch".to_owned(),
+        ));
+    }
+    let mut nodes = Vec::with_capacity(horizontal_knots.len() * 2);
+    for (height, layer) in [lower, upper].into_iter().enumerate() {
+        for (horizontal, vector) in layer.into_iter().enumerate() {
+            nodes.push(SpatialLayoutNode {
+                knot_indices: vec![horizontal, height],
+                vector,
+            });
+        }
+    }
+    let layout = SpatialLayout::new(
+        layout_channels(&labels, lfe_index),
+        vec![horizontal_knots, vec![0.0, 1.0]],
+        nodes,
+        Vec::new(),
+    )
+    .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?;
+    Ok(SpeakerLayoutPreset::new(name, labels, lfe_index, layout))
+}
+
+fn layout_channels(labels: &[&'static str], lfe_index: Option<usize>) -> Vec<SpatialLayoutChannel> {
+    labels
+        .iter()
+        .enumerate()
+        .map(|(index, identity)| SpatialLayoutChannel {
+            identity: (*identity).to_owned(),
+            enabled: true,
+            lfe: lfe_index == Some(index),
+        })
+        .collect()
+}
+
+fn one_hot(length: usize, index: usize) -> Vec<f64> {
+    let mut vector = vec![0.0; length];
+    vector[index] = 1.0;
+    vector
+}
+
+fn mixed(length: usize, first: usize, second: usize) -> Vec<f64> {
+    let mut vector = vec![0.0; length];
+    vector[first] = 0.5;
+    vector[second] = 0.5;
+    vector
 }
 
 pub struct JocWavOutput {
@@ -578,15 +794,16 @@ impl JocWavOutput {
 #[cfg(test)]
 mod tests {
     use super::{
-        FrameUpdates, JOC_RENDER_CHANNEL_ORDER, JocRenderError, JocSpeakerRenderer, JocWavOutput,
-        RenderControl, RenderedBlock, five_point_one_layout,
+        FrameUpdates, JOC_RENDER_CHANNEL_ORDER, JOC_RENDER_SUPPORTED_LAYOUTS, JocRenderError,
+        JocSpeakerRenderer, JocWavOutput, RenderControl, RenderedBlock, SpeakerLayoutPreset,
+        five_point_one_layout,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
     use openjoc_oamd::{ContentDescription, OamdContentPrefix, OamdPayload, ObjectClass};
     use openjoc_scene::{
-        DecodedPayloadFrame, ProgrammeLayout, SampleRange, SpatialBindingRecord, SpatialDescriptor,
-        SpatialSourceClass, SpatialTopologySnapshot,
+        DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout, SampleRange, SpatialBindingRecord,
+        SpatialDescriptor, SpatialSourceClass, SpatialTopologySnapshot,
     };
     use openjoc_wave::{SampleFormat, decode};
     use std::{
@@ -611,11 +828,11 @@ mod tests {
 
     fn control(with_updates: bool, record_count: usize) -> RenderControl {
         let identities = ["FL", "FR", "FC", "Ls", "Rs", "FC"];
-        let records = identities
-            .iter()
-            .take(record_count)
-            .map(|identity| record(identity))
-            .collect();
+        control_with_identities(with_updates, &identities[..record_count])
+    }
+
+    fn control_with_identities(with_updates: bool, identities: &[&str]) -> RenderControl {
+        let records = identities.iter().map(|identity| record(identity)).collect();
         RenderControl {
             topology: SpatialTopologySnapshot {
                 explicit_groups: Vec::new(),
@@ -721,6 +938,143 @@ mod tests {
     }
 
     #[test]
+    fn canonical_layout_presets_have_explicit_public_contracts() {
+        assert_eq!(
+            JOC_RENDER_SUPPORTED_LAYOUTS,
+            ["5.1", "5.1.2", "7.1", "7.1.4"]
+        );
+        let expected = [
+            ("5.1", vec!["FL", "FR", "FC", "LFE", "Ls", "Rs"]),
+            (
+                "5.1.2",
+                vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
+            ),
+            ("7.1", vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb"]),
+            (
+                "7.1.4",
+                vec![
+                    "FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR",
+                ],
+            ),
+        ];
+        for (name, labels) in expected {
+            let preset = SpeakerLayoutPreset::for_name(name).unwrap();
+            assert_eq!(preset.channel_labels(), labels);
+            assert_eq!(preset.lfe_index(), Some(3));
+            assert_eq!(preset.channel_count(), labels.len());
+        }
+    }
+
+    #[test]
+    fn unknown_layout_reports_supported_values_without_fallback() {
+        let error = JocSpeakerRenderer::new("9.1.6", control(false, 6)).unwrap_err();
+        assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
+        assert!(error.to_string().contains("7.1.4"));
+        assert!(!error.to_string().contains("fallback"));
+    }
+
+    #[test]
+    fn generic_presets_set_output_dimension_and_lfe_index() {
+        for name in JOC_RENDER_SUPPORTED_LAYOUTS {
+            let mut renderer = JocSpeakerRenderer::new(name, control(false, 6)).unwrap();
+            let block = renderer
+                .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+                .unwrap();
+            let preset = SpeakerLayoutPreset::for_name(name).unwrap();
+            assert_eq!(block.channels.len(), preset.channel_count());
+            assert_eq!(block.channels[preset.lfe_index().unwrap()], vec![99.0; 2]);
+        }
+    }
+
+    #[test]
+    fn height_layout_routes_a_basis_row_to_a_height_channel() {
+        let mut renderer = JocSpeakerRenderer::new(
+            "7.1.4",
+            control_with_identities(false, &["FL", "FR", "FC", "Ls", "Rs", "TFL"]),
+        )
+        .unwrap();
+        let block = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+            .unwrap();
+        assert_eq!(block.channels.len(), 12);
+        assert_eq!(block.channels[8], vec![6.0; 2]);
+        assert_eq!(block.channels[3], vec![99.0; 2]);
+    }
+
+    #[test]
+    fn non_five_one_layout_is_partition_invariant() {
+        let preset = SpeakerLayoutPreset::for_name("7.1.4").unwrap();
+        let topology = SpatialTopologySnapshot {
+            dynamic_records: vec![SpatialBindingRecord {
+                descriptor: SpatialDescriptor::new(
+                    SpatialSourceClass::DynamicPoint,
+                    "height-point",
+                    vec![1.0 / 3.0, 1.0],
+                ),
+                scalar: 1.0,
+                active: true,
+            }],
+            ..SpatialTopologySnapshot::default()
+        };
+        let input = vec![0.25, 0.5, 0.75, 1.0, 0.5, 0.25, 0.0, 0.125];
+        let coordinates = [input.as_slice()];
+        let active_count = preset.layout.active_channel_count();
+        let mut whole = vec![vec![0.0; input.len()]; active_count];
+        let mut whole_refs = whole.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
+        JocSpatialBridge::new()
+            .render_coordinates(
+                &coordinates,
+                Some(&topology),
+                None,
+                &preset.layout,
+                0,
+                48_000,
+                &mut whole_refs,
+            )
+            .unwrap();
+
+        let mut split = vec![vec![0.0; input.len()]; active_count];
+        let mut bridge = JocSpatialBridge::new();
+        {
+            let first_coordinates = [&input[..3]];
+            let mut first_refs = split
+                .iter_mut()
+                .map(|channel| &mut channel[..3])
+                .collect::<Vec<_>>();
+            bridge
+                .render_coordinates(
+                    &first_coordinates,
+                    Some(&topology),
+                    None,
+                    &preset.layout,
+                    0,
+                    48_000,
+                    &mut first_refs,
+                )
+                .unwrap();
+        }
+        {
+            let second_coordinates = [&input[3..]];
+            let mut second_refs = split
+                .iter_mut()
+                .map(|channel| &mut channel[3..])
+                .collect::<Vec<_>>();
+            bridge
+                .render_coordinates(
+                    &second_coordinates,
+                    None,
+                    None,
+                    &preset.layout,
+                    0,
+                    48_000,
+                    &mut second_refs,
+                )
+                .unwrap();
+        }
+        assert_eq!(whole, split);
+    }
+
+    #[test]
     fn decoded_base_and_basis_reach_bridge_and_lfe_stays_separate() {
         let mut renderer = JocSpeakerRenderer::new("5.1", control(false, 6)).unwrap();
         let block = renderer
@@ -766,7 +1120,7 @@ mod tests {
 
     #[test]
     fn unsupported_layout_is_explicit() {
-        let error = JocSpeakerRenderer::new("7.1.4", control(false, 6)).unwrap_err();
+        let error = JocSpeakerRenderer::new("9.1.6", control(false, 6)).unwrap_err();
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
     }
 
@@ -856,6 +1210,68 @@ mod tests {
         );
         assert!((pcm.channels[0][0] - 0.1).abs() < 1e-6);
         assert!((pcm.channels[5][1] + 0.2).abs() < 1e-6);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn wav_output_supports_twelve_channel_preset_dimension() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "openjoc-joc-render-12ch-{}-{nonce}.wav",
+            std::process::id()
+        ));
+        let channels = (0..12)
+            .map(|index| vec![index as f64 / 20.0, -(index as f64) / 20.0])
+            .collect::<Vec<_>>();
+        let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+        output
+            .write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels,
+            })
+            .unwrap();
+        output.finish().unwrap();
+
+        let pcm = decode(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(pcm.sample_rate, 48_000);
+        assert_eq!(pcm.channels.len(), 12);
+        assert_eq!(
+            pcm.channels.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![2; 12]
+        );
+        assert!((pcm.channels[0][0] - 0.0).abs() < 1e-6);
+        assert!((pcm.channels[11][1] + 0.55).abs() < 1e-6);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn wav_output_supports_twenty_four_channel_pcm_capacity() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "openjoc-joc-render-24ch-{}-{nonce}.wav",
+            std::process::id()
+        ));
+        let channels = (0..24)
+            .map(|index| vec![index as f64 / 32.0])
+            .collect::<Vec<_>>();
+        let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+        output
+            .write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels,
+            })
+            .unwrap();
+        output.finish().unwrap();
+
+        let pcm = decode(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(pcm.channels.len(), 24);
+        assert!((pcm.channels[23][0] - 23.0 / 32.0).abs() < 1e-6);
         fs::remove_file(path).unwrap();
     }
 }
