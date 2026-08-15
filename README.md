@@ -19,7 +19,8 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `diagnostics/reconstruction_rows/row_NNN.wav` contains diagnostic
   `ReconstructionBasis` rows, not verified authored-object PCM;
 - `SemanticBindingState` remains `Unresolved`;
-- `ETSI_STRICT` is the default and is never silently downgraded;
+- `ETSI_STRICT` was the historical no-profile default and is never silently
+  downgraded;
 - `DOLBY_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
@@ -27,6 +28,11 @@ The current development line is `0.3.0-dev`. It adds an explicit-scene,
 front-horizontal FL/FR stereo renderer for caller-supplied mono sources. This
 renderer is independent of unresolved JOC authored-object binding and does not
 claim binaural, room-acoustic, or renderer-fidelity parity with Dolby.
+
+On this development line, user-facing `decode` and `decode-payload` commands
+default to observable `AUTO` profile selection. `ETSI_STRICT` remains the
+normative policy, and AUTO can choose only the existing whitelisted
+`DOLBY_VENDOR_COMPAT` policy.
 
 Read the canonical documentation:
 
@@ -80,8 +86,15 @@ source installation path remains the workspace source tree.
 openjoc inspect input.ec3
 openjoc decode input.ec3 -o output/ --internal-base
 openjoc decode input.mp4 -o output/ --internal-base --streaming
+openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
+
+`decode` and `decode-payload` use `AUTO` when no profile is supplied: they
+evaluate `ETSI_STRICT` first and select `DOLBY_VENDOR_COMPAT` only when the
+existing compatibility validator admits the complete deviation set. An
+explicit `--validation-profile etsi-strict` never falls back. The selected
+profile and reason are written to the bounded validation diagnostics.
 
 Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the

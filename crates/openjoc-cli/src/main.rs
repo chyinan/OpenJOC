@@ -10,6 +10,7 @@ mod render_scene;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
+use eac3_decode::ValidationProfileRequest;
 use openjoc_container::{
     DEFAULT_MAX_EAC3_BYTES, InputMediaError, InputMediaKind, detect_media, load_eac3,
     open_seekable_iso_bmff,
@@ -18,7 +19,7 @@ use openjoc_eac3::{
     ChannelLocation, DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy,
     emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
 };
-use openjoc_emdf::JocValidationProfile;
+use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
 use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig};
 use openjoc_wave::{
@@ -39,7 +40,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -57,7 +58,7 @@ struct DecodePayloadArgs {
     oamd: PathBuf,
     output: PathBuf,
     trim_count: Option<NonZeroU8>,
-    validation_profile: JocValidationProfile,
+    validation_profile: ValidationProfileRequest,
     reference_screen: Option<ReferenceScreen>,
     output_format: SampleFormat,
 }
@@ -68,7 +69,7 @@ struct DecodeEac3Args {
     internal_base: bool,
     output: PathBuf,
     output_format: SampleFormat,
-    validation_profile: JocValidationProfile,
+    validation_profile: ValidationProfileRequest,
     trim_configuration_count: Option<NonZeroU8>,
     internal_base_policy: InternalBasePolicy,
     streaming: bool,
@@ -174,7 +175,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
-        "                         [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+        "                         [--validation-profile auto|etsi-strict|dolby-vendor-compat]\n",
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
@@ -184,7 +185,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
-        "                         -o <DIR> [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+        "                         -o <DIR> [--validation-profile auto|etsi-strict|dolby-vendor-compat]\n",
         "                         [OPTIONS]\n",
         "\n",
     ));
@@ -206,7 +207,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  -h, --help       Print root command help\n",
         "  -V, --version    Print the package version and exit\n",
         "      --no-banner Disable the interactive startup banner\n",
-        "      --validation-profile Select ETSI strict (default) or explicit Dolby vendor compatibility\n",
+        "      --validation-profile Select AUTO (default for decode), ETSI strict, or explicit Dolby vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
         "      --streaming      Bounded AU decode from raw EC3 or seekable ordinary ISO BMFF; requires --internal-base\n",
         "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
@@ -218,7 +219,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  ReconstructionBasis rows are not authored-object PCM; semantic binding remains unresolved\n",
         "\n",
         "PROFILE / CONTAINER BOUNDARIES\n",
-        "  ETSI strict is never auto-downgraded; reserved syntax is an expected non-zero profile rejection\n",
+        "  ETSI strict is never auto-downgraded; explicit ETSI_STRICT is never downgraded; reserved syntax is an expected non-zero profile rejection\n",
         "  Dolby vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
@@ -235,17 +236,17 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         ),
         "decode" => concat!(
             "usage: openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
-            "       [--streaming] [--validation-profile etsi-strict|dolby-vendor-compat]\n",
+            "       [--streaming] [--validation-profile auto|etsi-strict|dolby-vendor-compat]\n",
             "       [--internal-base-policy current-default|codec-core]\n",
             "       [--trim-config-count N] [--reference-f64]\n\n",
             "Capture mode writes a metadata-only scene plus diagnostic ReconstructionBasis rows.\n",
             "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
             "and writes bounded component WAVs, internal-base diagnostics, and a summary without ObjectScene capture.\n",
-            "Rows are not authored-object PCM. Profile selection is explicit and never downgraded.\n",
+            "Rows are not authored-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
         ),
         "decode-payload" => concat!(
             "usage: openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>\n",
-            "       [--validation-profile etsi-strict|dolby-vendor-compat] [--reference-f64]\n",
+            "       [--validation-profile auto|etsi-strict|dolby-vendor-compat] [--reference-f64]\n",
             "       [--trim-config-count N] [reference-screen options]\n\n",
             "Diagnostic/API-level payload path. Output is a metadata-only scene and separately\n",
             "named ReconstructionBasis rows, never verified authored-object PCM.\n",
@@ -684,10 +685,13 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
     let downmix = read_input_wave(&arguments.downmix)?;
     let joc_payload = fs::read(&arguments.joc)?;
     let oamd_payload = fs::read(&arguments.oamd)?;
-    let oamd_profile = match arguments.validation_profile {
-        JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
-        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
-    };
+    let oamd_profile = eac3_decode::resolve_profile_for_oamd(
+        &oamd_payload,
+        OamdDecoderConfig {
+            trim_configuration_count: arguments.trim_count,
+        },
+        arguments.validation_profile,
+    )?;
     let mut decoder = PayloadDecoder::with_oamd_profile(
         PayloadDecoderConfig {
             reference_screen: arguments.reference_screen,
@@ -706,7 +710,19 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
             oamd_payload: &oamd_payload,
             frame_index: 0,
         },
-        |frame| write_debug(&arguments.output, 0, frame, arguments.validation_profile),
+        |frame| {
+            let selected_profile = match oamd_profile {
+                OamdParseProfile::EtsiStrict => JocValidationProfile::EtsiStrict,
+                OamdParseProfile::DolbyVendorCompat => JocValidationProfile::DolbyVendorCompat,
+            };
+            write_debug(
+                &arguments.output,
+                0,
+                frame,
+                arguments.validation_profile,
+                selected_profile,
+            )
+        },
     )?;
     let scene = decoder.finish()?;
     write_scene(&arguments.output, &scene, arguments.output_format)?;
@@ -718,7 +734,7 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let mut downmix = None;
     let mut internal_base = false;
     let mut reference_f64 = false;
-    let mut validation_profile = JocValidationProfile::EtsiStrict;
+    let mut validation_profile = ValidationProfileRequest::Auto;
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
     let mut streaming = false;
@@ -800,16 +816,17 @@ fn parse_trim_configuration_count(value: &str) -> Result<NonZeroU8, io::Error> {
     })
 }
 
-fn parse_validation_profile(value: &str) -> Result<JocValidationProfile, io::Error> {
+fn parse_validation_profile(value: &str) -> Result<ValidationProfileRequest, io::Error> {
     match value {
-        "etsi-strict" | "ETSI_STRICT" => Ok(JocValidationProfile::EtsiStrict),
+        "auto" | "AUTO" => Ok(ValidationProfileRequest::Auto),
+        "etsi-strict" | "ETSI_STRICT" => Ok(ValidationProfileRequest::EtsiStrict),
         "dolby-vendor-compat" | "DOLBY_VENDOR_COMPAT" => {
-            Ok(JocValidationProfile::DolbyVendorCompat)
+            Ok(ValidationProfileRequest::DolbyVendorCompat)
         }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "unknown validation profile {value}; expected etsi-strict or dolby-vendor-compat"
+                "unknown validation profile {value}; expected auto, etsi-strict, or dolby-vendor-compat"
             ),
         )),
     }
@@ -828,6 +845,8 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             trim_configuration_count: arguments.trim_configuration_count,
         },
     };
+    let selected_profile =
+        eac3_decode::resolve_profile_for_stream(stream, config, arguments.validation_profile)?;
     let sink_output = arguments.output.clone();
     let scene = if arguments.internal_base {
         let dither = deterministic_dither_values();
@@ -838,12 +857,18 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
         let scene = eac3_decode::decode_internal_eac3_with_base_sink_and_policy(
             stream,
             config,
-            arguments.validation_profile,
+            selected_profile,
             &dither,
             arguments.internal_base_policy,
             |frame_index, metadata, frame| {
-                write_frame_debug(&sink_output, frame_index, metadata, frame)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+                write_frame_debug(
+                    &sink_output,
+                    frame_index,
+                    metadata,
+                    frame,
+                    arguments.validation_profile,
+                )
+                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
             |access_unit, pcm| {
                 base_capture
@@ -878,10 +903,16 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
             &downmix,
             lfe.as_ref(),
             config,
-            arguments.validation_profile,
+            selected_profile,
             |frame_index, metadata, frame| {
-                write_frame_debug(&sink_output, frame_index, metadata, frame)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+                write_frame_debug(
+                    &sink_output,
+                    frame_index,
+                    metadata,
+                    frame,
+                    arguments.validation_profile,
+                )
+                .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
         )?
     };
@@ -943,7 +974,7 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
             arguments.output_format,
         )?);
         let dither = deterministic_dither_values();
-        let summary = eac3_decode::decode_internal_eac3_reader_with_base_sink_and_policy(
+        let summary = eac3_decode::decode_internal_eac3_reader_with_base_sink_and_policy_request(
             reader,
             DEFAULT_MAX_EAC3_BYTES,
             config,
@@ -953,7 +984,7 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
             |frame_index, metadata, frame| {
                 component_export
                     .borrow_mut()
-                    .write_frame(frame_index, metadata, frame)
+                    .write_frame(frame_index, metadata, frame, arguments.validation_profile)
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
             },
             |access_unit, pcm| {
@@ -1108,6 +1139,7 @@ impl StreamingComponentExport {
         frame_index: usize,
         metadata: &openjoc_eac3::JocMetadataFrame,
         frame: &openjoc_scene::DecodedPayloadFrame,
+        requested_profile: ValidationProfileRequest,
     ) -> Result<(), Box<dyn Error>> {
         if frame_index != self.frame_count {
             return Err(io::Error::other(format!(
@@ -1150,7 +1182,13 @@ impl StreamingComponentExport {
             writer.write_channels(&[row])?;
         }
         if frame_index < MAX_RETAINED_DEBUG_FRAMES {
-            write_frame_debug(&self.output, frame_index, metadata, frame)?;
+            write_frame_debug(
+                &self.output,
+                frame_index,
+                metadata,
+                frame,
+                requested_profile,
+            )?;
         } else if frame_index == MAX_RETAINED_DEBUG_FRAMES {
             fs::write(
                 self.output.join("debug/retention.json"),
@@ -1835,7 +1873,7 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
     let mut oamd = None;
     let mut output = None;
     let mut trim_count = None;
-    let mut validation_profile = JocValidationProfile::EtsiStrict;
+    let mut validation_profile = ValidationProfileRequest::Auto;
     let mut reference_f64 = false;
     let mut screen = [None; 5];
     let mut index = 0;
@@ -2044,7 +2082,8 @@ fn write_debug(
     output: &Path,
     frame_index: usize,
     decoded: &openjoc_scene::DecodedPayloadFrame,
-    validation_profile: JocValidationProfile,
+    requested_profile: ValidationProfileRequest,
+    selected_profile: JocValidationProfile,
 ) -> Result<(), Box<dyn Error>> {
     let frame = output.join(format!("debug/frame_{frame_index:03}"));
     fs::create_dir_all(&frame)?;
@@ -2081,8 +2120,21 @@ fn write_debug(
             _ => None,
         })
         .collect::<Vec<_>>();
+    let profile_selection = profile_selection_artifact(
+        requested_profile,
+        selected_profile,
+        opaque_elements
+            .iter()
+            .map(|opaque| opaque.deviation_code.to_owned())
+            .collect(),
+    );
     let status = OamdPartialStatusArtifact {
-        profile: validation_profile.as_str(),
+        profile: selected_profile.as_str(),
+        requested_profile: profile_selection.requested_profile,
+        selected_profile: profile_selection.selected_profile,
+        strict_status: profile_selection.strict_status,
+        compatibility_deviations: profile_selection.compatibility_deviations.clone(),
+        selection_reason: profile_selection.selection_reason,
         accepted_with_deviation: !opaque_elements.is_empty(),
         oamd_payload_structurally_accepted: true,
         oamd_semantically_complete: opaque_elements.is_empty(),
@@ -2145,8 +2197,13 @@ fn write_debug(
         serde_json::to_vec_pretty(&status)?,
     )?;
     let mut status_text = format!(
-        "profile: {}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nsemantic_object_audio_binding: {}\nsemantic_binding_state: {}\nmetadata_scene_available: {}\nreconstruction_rows_available: {}\nreconstruction_audio_status: {}\naudio_bound_objectscene_admissible: {}\nverified_authored_object_pcm_admissible: {}\nrenderer_fidelity_eligible: {}\n",
+        "profile: {}\nrequested_profile: {}\nselected_profile: {}\nstrict_status: {}\nselection_reason: {}\ncompatibility_deviations: {:?}\naccepted_with_deviation: {}\noamd_payload_structurally_accepted: {}\noamd_semantically_complete: {}\nobject_metadata_status: {}\ntrim_metadata_status: {}\ntrim_timeline_available: {}\nsemantic_object_audio_binding: {}\nsemantic_binding_state: {}\nmetadata_scene_available: {}\nreconstruction_rows_available: {}\nreconstruction_audio_status: {}\naudio_bound_objectscene_admissible: {}\nverified_authored_object_pcm_admissible: {}\nrenderer_fidelity_eligible: {}\n",
         status.profile,
+        status.requested_profile,
+        status.selected_profile,
+        status.strict_status,
+        status.selection_reason,
+        status.compatibility_deviations,
         status.accepted_with_deviation,
         status.oamd_payload_structurally_accepted,
         status.oamd_semantically_complete,
@@ -2184,10 +2241,20 @@ fn write_frame_debug(
     frame_index: usize,
     metadata: &openjoc_eac3::JocMetadataFrame,
     decoded: &openjoc_scene::DecodedPayloadFrame,
+    requested_profile: ValidationProfileRequest,
 ) -> Result<(), Box<dyn Error>> {
     if frame_index < MAX_RETAINED_DEBUG_FRAMES {
-        return write_validation_debug(output, frame_index, metadata)
-            .and_then(|()| write_debug(output, frame_index, decoded, metadata.validation_profile));
+        return write_validation_debug(output, frame_index, metadata, requested_profile).and_then(
+            |()| {
+                write_debug(
+                    output,
+                    frame_index,
+                    decoded,
+                    requested_profile,
+                    metadata.validation_profile,
+                )
+            },
+        );
     }
     if frame_index == MAX_RETAINED_DEBUG_FRAMES {
         fs::create_dir_all(output.join("debug"))?;
@@ -2222,6 +2289,11 @@ fn write_bounded_debug_text(path: &Path, value: String) -> io::Result<()> {
 #[derive(serde::Serialize)]
 struct OamdPartialStatusArtifact {
     profile: &'static str,
+    requested_profile: &'static str,
+    selected_profile: &'static str,
+    strict_status: &'static str,
+    compatibility_deviations: Vec<String>,
+    selection_reason: &'static str,
     accepted_with_deviation: bool,
     oamd_payload_structurally_accepted: bool,
     oamd_semantically_complete: bool,
@@ -2272,12 +2344,65 @@ struct ValidationArtifact {
     profile: &'static str,
     result: &'static str,
     deviations: Vec<ValidationDeviationArtifact>,
+    profile_selection: ProfileSelectionArtifact,
+}
+
+#[derive(serde::Serialize)]
+struct ProfileSelectionArtifact {
+    requested_profile: &'static str,
+    selected_profile: &'static str,
+    strict_status: &'static str,
+    compatibility_deviations: Vec<String>,
+    selection_reason: &'static str,
+}
+
+fn profile_deviation_text(deviation: &JocProfileDeviation) -> String {
+    format!(
+        "payload {} {}={} expected_by_etsi={}",
+        deviation.payload_id, deviation.field, deviation.actual, deviation.expected_by_etsi
+    )
+}
+
+fn profile_selection_artifact(
+    requested_profile: ValidationProfileRequest,
+    selected_profile: JocValidationProfile,
+    compatibility_deviations: Vec<String>,
+) -> ProfileSelectionArtifact {
+    let strict_status = match requested_profile {
+        ValidationProfileRequest::Auto => {
+            if selected_profile == JocValidationProfile::EtsiStrict {
+                "passed"
+            } else {
+                "failed"
+            }
+        }
+        ValidationProfileRequest::EtsiStrict => "passed",
+        ValidationProfileRequest::DolbyVendorCompat => "not_evaluated",
+    };
+    let selection_reason = match requested_profile {
+        ValidationProfileRequest::Auto if selected_profile == JocValidationProfile::EtsiStrict => {
+            "AUTO selected ETSI_STRICT because strict validation passed"
+        }
+        ValidationProfileRequest::Auto => {
+            "AUTO selected DOLBY_VENDOR_COMPAT because strict failed and the existing compatibility whitelist accepted every deviation"
+        }
+        ValidationProfileRequest::EtsiStrict => "explicit ETSI_STRICT request",
+        ValidationProfileRequest::DolbyVendorCompat => "explicit DOLBY_VENDOR_COMPAT request",
+    };
+    ProfileSelectionArtifact {
+        requested_profile: requested_profile.as_str(),
+        selected_profile: selected_profile.as_str(),
+        strict_status,
+        compatibility_deviations,
+        selection_reason,
+    }
 }
 
 fn write_validation_debug(
     output: &Path,
     frame_index: usize,
     metadata: &openjoc_eac3::JocMetadataFrame,
+    requested_profile: ValidationProfileRequest,
 ) -> Result<(), Box<dyn Error>> {
     let frame = output.join(format!("debug/frame_{frame_index:03}"));
     fs::create_dir_all(&frame)?;
@@ -2295,6 +2420,15 @@ fn write_validation_debug(
         profile: metadata.validation_profile.as_str(),
         result: metadata.validation_status.as_str(),
         deviations,
+        profile_selection: profile_selection_artifact(
+            requested_profile,
+            metadata.validation_profile,
+            metadata
+                .deviations
+                .iter()
+                .map(profile_deviation_text)
+                .collect(),
+        ),
     };
     fs::write(
         frame.join("profile_validation.json"),

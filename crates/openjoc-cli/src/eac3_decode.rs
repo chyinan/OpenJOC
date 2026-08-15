@@ -4,7 +4,7 @@ use openjoc_container::{InputMediaError, RawEac3AccessUnitReader};
 use openjoc_eac3::{
     DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame,
     extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit, group_access_units,
-    index_syncframes, validate_complexity_index,
+    index_syncframes, parse_joc_access_unit, validate_complexity_index, validate_joc_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_oamd::{
@@ -17,6 +17,111 @@ use openjoc_scene::{
 };
 use openjoc_wave::WavePcm;
 use std::{fmt, io::Read};
+
+/// User-facing profile selection policy. The selected value passed downstream
+/// is always one of the two existing validation profiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ValidationProfileRequest {
+    Auto,
+    EtsiStrict,
+    DolbyVendorCompat,
+}
+
+impl ValidationProfileRequest {
+    #[must_use]
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "AUTO",
+            Self::EtsiStrict => "ETSI_STRICT",
+            Self::DolbyVendorCompat => "DOLBY_VENDOR_COMPAT",
+        }
+    }
+}
+
+/// Resolves a profile before the stateful decoder is created. AUTO evaluates
+/// strict validation first and uses compatibility only when the existing
+/// compatibility validator accepts every deviation.
+pub(crate) fn resolve_profile_for_stream(
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    request: ValidationProfileRequest,
+) -> Result<JocValidationProfile, DecodeEac3Error> {
+    match request {
+        ValidationProfileRequest::EtsiStrict => Ok(JocValidationProfile::EtsiStrict),
+        ValidationProfileRequest::DolbyVendorCompat => Ok(JocValidationProfile::DolbyVendorCompat),
+        ValidationProfileRequest::Auto => {
+            let frames = index_syncframes(stream)?;
+            let units = group_access_units(&frames)?;
+            if units.is_empty() {
+                return Err(DecodeEac3Error::EmptyStream);
+            }
+            let mut selected = JocValidationProfile::EtsiStrict;
+            for (access_unit, unit) in units.into_iter().enumerate() {
+                let Some(parsed) = parse_joc_access_unit(stream, &frames, unit)? else {
+                    match extract_joc_addbsi_access_unit(stream, &frames, unit)? {
+                        Some(extension) => {
+                            return Err(DecodeEac3Error::JocExtensionWithoutMetadata {
+                                access_unit,
+                                complexity_index: extension.complexity_index,
+                            });
+                        }
+                        None => return Err(DecodeEac3Error::MissingMetadata { access_unit }),
+                    }
+                };
+                let metadata =
+                    match validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict) {
+                        Ok(metadata) => metadata,
+                        Err(strict_error) => match validate_joc_access_unit(
+                            &parsed,
+                            JocValidationProfile::DolbyVendorCompat,
+                        ) {
+                            Ok(metadata) => {
+                                selected = JocValidationProfile::DolbyVendorCompat;
+                                metadata
+                            }
+                            Err(_) => return Err(strict_error.into()),
+                        },
+                    };
+                let oamd_strict = parse_oamd_for_profile(
+                    &metadata.oamd,
+                    config.oamd,
+                    JocValidationProfile::EtsiStrict,
+                );
+                if oamd_strict.is_err() {
+                    parse_oamd_for_profile(
+                        &metadata.oamd,
+                        config.oamd,
+                        JocValidationProfile::DolbyVendorCompat,
+                    )?;
+                    selected = JocValidationProfile::DolbyVendorCompat;
+                }
+            }
+            Ok(selected)
+        }
+    }
+}
+
+/// Resolves a single payload profile for `decode-payload`.
+pub(crate) fn resolve_profile_for_oamd(
+    payload: &[u8],
+    config: OamdDecoderConfig,
+    request: ValidationProfileRequest,
+) -> Result<OamdParseProfile, OamdError> {
+    match request {
+        ValidationProfileRequest::EtsiStrict => Ok(OamdParseProfile::EtsiStrict),
+        ValidationProfileRequest::DolbyVendorCompat => Ok(OamdParseProfile::DolbyVendorCompat),
+        ValidationProfileRequest::Auto => {
+            match parse_oamd_for_profile(payload, config, JocValidationProfile::EtsiStrict) {
+                Ok(_) => Ok(OamdParseProfile::EtsiStrict),
+                Err(strict_error) => {
+                    parse_oamd_for_profile(payload, config, JocValidationProfile::DolbyVendorCompat)
+                        .map(|_| OamdParseProfile::DolbyVendorCompat)
+                        .map_err(|_| strict_error)
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum DecodeEac3Error {
@@ -143,6 +248,60 @@ fn required_metadata(
             complexity_index: extension.complexity_index,
         }),
         None => Err(DecodeEac3Error::MissingMetadata { access_unit }),
+    }
+}
+
+fn select_metadata_for_request(
+    stream: &[u8],
+    frames: &[openjoc_eac3::SyncframeIndexEntry],
+    unit: openjoc_eac3::AccessUnitIndex,
+    access_unit: usize,
+    request: ValidationProfileRequest,
+) -> Result<(JocMetadataFrame, JocValidationProfile), DecodeEac3Error> {
+    match request {
+        ValidationProfileRequest::EtsiStrict => Ok((
+            required_metadata(
+                stream,
+                frames,
+                unit,
+                access_unit,
+                JocValidationProfile::EtsiStrict,
+            )?,
+            JocValidationProfile::EtsiStrict,
+        )),
+        ValidationProfileRequest::DolbyVendorCompat => Ok((
+            required_metadata(
+                stream,
+                frames,
+                unit,
+                access_unit,
+                JocValidationProfile::DolbyVendorCompat,
+            )?,
+            JocValidationProfile::DolbyVendorCompat,
+        )),
+        ValidationProfileRequest::Auto => {
+            let Some(parsed) = parse_joc_access_unit(stream, frames, unit)? else {
+                match extract_joc_addbsi_access_unit(stream, frames, unit)? {
+                    Some(extension) => {
+                        return Err(DecodeEac3Error::JocExtensionWithoutMetadata {
+                            access_unit,
+                            complexity_index: extension.complexity_index,
+                        });
+                    }
+                    None => return Err(DecodeEac3Error::MissingMetadata { access_unit }),
+                }
+            };
+            match validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict) {
+                Ok(metadata) => Ok((metadata, JocValidationProfile::EtsiStrict)),
+                Err(strict_error) => {
+                    match validate_joc_access_unit(&parsed, JocValidationProfile::DolbyVendorCompat)
+                    {
+                        Ok(metadata) => Ok((metadata, JocValidationProfile::DolbyVendorCompat)),
+                        Err(_) => Err(strict_error.into()),
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -375,12 +534,48 @@ where
 /// a time. The J1R18 `PayloadDecoder` and `JocAccessUnitPcmDecoder` remain the
 /// sole decoding implementations; this function only supplies their input
 /// from the incremental container consumer.
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn decode_internal_eac3_reader_with_base_sink_and_policy<R, S, B>(
     reader: R,
     max_frame_bytes: usize,
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    sink: S,
+    base_sink: B,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    R: Read,
+    S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
+    let request = match validation_profile {
+        JocValidationProfile::EtsiStrict => ValidationProfileRequest::EtsiStrict,
+        JocValidationProfile::DolbyVendorCompat => ValidationProfileRequest::DolbyVendorCompat,
+    };
+    decode_internal_eac3_reader_with_base_sink_and_policy_request(
+        reader,
+        max_frame_bytes,
+        config,
+        request,
+        dither_values,
+        base_policy,
+        sink,
+        base_sink,
+    )
+}
+
+/// Direct sequential raw-E-AC-3 decode path with user-facing profile
+/// selection. The existing public function above remains an explicit-profile
+/// compatibility entry point.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_internal_eac3_reader_with_base_sink_and_policy_request<R, S, B>(
+    reader: R,
+    max_frame_bytes: usize,
+    config: PayloadDecoderConfig,
+    validation_profile: ValidationProfileRequest,
     dither_values: &[f64],
     base_policy: InternalBasePolicy,
     mut sink: S,
@@ -391,11 +586,8 @@ where
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
 {
-    let oamd_profile = match validation_profile {
-        JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
-        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
-    };
-    let mut decoder = PayloadDecoder::streaming_with_oamd_profile(config, oamd_profile);
+    let mut decoder =
+        PayloadDecoder::streaming_with_oamd_profile(config, OamdParseProfile::EtsiStrict);
     let mut audio_decoder = JocAccessUnitPcmDecoder::new();
     let mut access_units = RawEac3AccessUnitReader::new(reader, max_frame_bytes);
     let mut unit_index = 0_usize;
@@ -421,18 +613,28 @@ where
                 expected: usize::from(access_unit.unit.samples),
             });
         }
-        let metadata = required_metadata(
+        let (mut metadata, joc_profile) = select_metadata_for_request(
             &access_unit.bytes,
             &access_unit.frames,
             access_unit.unit,
             unit_index,
             validation_profile,
         )?;
-        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
+        let oamd_profile =
+            resolve_profile_for_oamd(&metadata.oamd, config.oamd, validation_profile)?;
+        let selected_profile = if joc_profile == JocValidationProfile::DolbyVendorCompat
+            || oamd_profile == OamdParseProfile::DolbyVendorCompat
+        {
+            JocValidationProfile::DolbyVendorCompat
+        } else {
+            JocValidationProfile::EtsiStrict
+        };
+        metadata.validation_profile = selected_profile;
+        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, selected_profile)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
-        decoder.decode_frame_with(
+        decoder.decode_frame_with_profile(
             JocFrameInput {
                 sample_rate: access_unit.unit.sample_rate,
                 downmix_pcm: &pcm.channels,
@@ -441,6 +643,7 @@ where
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,
             },
+            oamd_profile,
             |frame| {
                 sink(unit_index, &metadata, frame)?;
                 base_sink(unit_index, &pcm)
@@ -536,9 +739,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{DecodeEac3Error, decode_internal_eac3_reader_with_base_sink_and_policy};
+    use super::{
+        DecodeEac3Error, ValidationProfileRequest,
+        decode_internal_eac3_reader_with_base_sink_and_policy_request,
+    };
     use openjoc_eac3::InternalBasePolicy;
-    use openjoc_emdf::JocValidationProfile;
     use openjoc_oamd::OamdDecoderConfig;
     use openjoc_scene::PayloadDecoderConfig;
     use std::io::Cursor;
@@ -557,7 +762,7 @@ mod tests {
 
     #[test]
     fn direct_reader_preserves_empty_stream_boundary() {
-        let result = decode_internal_eac3_reader_with_base_sink_and_policy(
+        let result = decode_internal_eac3_reader_with_base_sink_and_policy_request(
             Cursor::new(Vec::<u8>::new()),
             64,
             PayloadDecoderConfig {
@@ -566,7 +771,7 @@ mod tests {
                     trim_configuration_count: None,
                 },
             },
-            JocValidationProfile::EtsiStrict,
+            ValidationProfileRequest::EtsiStrict,
             &[],
             InternalBasePolicy::CurrentDefault,
             |_index, _metadata, _frame| Ok(()),

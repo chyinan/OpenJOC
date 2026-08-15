@@ -13,6 +13,18 @@ use openjoc_oamd::OamdPayload;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
+#[path = "clean_bridge.rs"]
+mod clean_bridge;
+pub use clean_bridge::{
+    CLEAN_SPATIAL_BRIDGE_SCHEMA, CleanBindingError, CleanBindingRecord, CleanBindingResult,
+    CleanBindingSnapshot, CleanBindingState, CleanBindingTransition, CleanCoordinateUpdate,
+    CleanDescriptorPatch, CleanExplicitGroup, CleanExplicitMember, CleanLayoutChannel,
+    CleanLayoutNode, CleanPairedGeometry, CleanProjectionError, CleanRouteScheduler,
+    CleanRouteVector, CleanSchedulerError, CleanSourceClass, CleanSpatialBridgeError,
+    CleanSpatialDescriptor, CleanSpatialLayout, CleanSpreadProfile, CleanSpreadSample,
+    CleanTopologySnapshot, ExperimentalCleanSpatialBridge,
+};
+
 /// Versioned schema name for the borrowed codec-domain bridge contract.
 pub const JOC_SPATIAL_RECONSTRUCTION_SCHEMA: &str = "openjoc.joc-spatial-reconstruction.v1";
 

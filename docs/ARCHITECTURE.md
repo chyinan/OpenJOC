@@ -55,6 +55,15 @@ enforces the published validation rules. `DOLBY_VENDOR_COMPAT` is explicit and
 partial: it preserves original metadata and records deviations, but does not
 assign meaning to unresolved vendor continuation.
 
+User-facing `decode` and `decode-payload` commands expose a separate `AUTO`
+selection policy. It parses once, evaluates strict validation first, and uses
+the existing compatibility policy only when every blocking deviation is
+already whitelisted. Malformed, unsafe, unknown, and non-whitelisted failures
+remain failures. Selection diagnostics include the requested and selected
+profiles, strict status, deviation set, and reason. `AUTO` is not a parser or
+renderer profile; explicit `ETSI_STRICT` never falls back, while normative
+inspection remains strict by purpose.
+
 The observed OAMD `warp_mode` value `raw=3` remains reserved under ETSI strict
 parsing. No production alias, offset, or trim guess is present.
 
@@ -97,6 +106,16 @@ gate. There is no automatic conversion from decoded components to
 `ExplicitSpatialScene`, no fixed RB-row/object mapping, and no implicit matrix
 or permutation. The readiness census is in
 [`joc_reconstruction_readiness.json`](joc_reconstruction_readiness.json).
+
+The explicitly activated `ExperimentalCleanSpatialBridge` is a separate,
+non-normative downstream candidate. It consumes a losslessly retained clean
+topology/coordinate snapshot, projects into a caller-supplied public layout,
+applies the Q32 route scheduler, and accumulates linearly into caller-owned
+buffers. It does not change profile validation, assign authored-object
+identity, or resolve `SemanticBindingState`; its raw warp-3 field is retained
+as opaque data and excluded from projection arithmetic. The supported ordinary
+domain and activation surface are documented in
+[`JOC_SPATIAL_BRIDGE.md`](JOC_SPATIAL_BRIDGE.md).
 
 ### Explicit spatial renderer
 

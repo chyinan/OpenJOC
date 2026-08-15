@@ -11,9 +11,16 @@ mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder, StreamingSceneSummary};
 mod bridge;
 pub use bridge::{
-    BaseFullBandCoordinate, BridgeError, CodecBasisBlock, JOC_SPATIAL_RECONSTRUCTION_SCHEMA,
-    JocSpatialBridge, JocSpatialMetadataFrame, JocSpatialOperatorState,
-    JocSpatialOperatorUnresolvedReason, JocSpatialReconstructionFrame, SampleRange,
+    BaseFullBandCoordinate, BridgeError, CLEAN_SPATIAL_BRIDGE_SCHEMA, CleanBindingError,
+    CleanBindingRecord, CleanBindingResult, CleanBindingSnapshot, CleanBindingState,
+    CleanBindingTransition, CleanCoordinateUpdate, CleanDescriptorPatch, CleanExplicitGroup,
+    CleanExplicitMember, CleanLayoutChannel, CleanLayoutNode, CleanPairedGeometry,
+    CleanProjectionError, CleanRouteScheduler, CleanRouteVector, CleanSchedulerError,
+    CleanSourceClass, CleanSpatialBridgeError, CleanSpatialDescriptor, CleanSpatialLayout,
+    CleanSpreadProfile, CleanSpreadSample, CleanTopologySnapshot, CodecBasisBlock,
+    ExperimentalCleanSpatialBridge, JOC_SPATIAL_RECONSTRUCTION_SCHEMA, JocSpatialBridge,
+    JocSpatialMetadataFrame, JocSpatialOperatorState, JocSpatialOperatorUnresolvedReason,
+    JocSpatialReconstructionFrame, SampleRange,
 };
 mod binding;
 pub use binding::{

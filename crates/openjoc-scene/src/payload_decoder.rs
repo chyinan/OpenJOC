@@ -292,6 +292,32 @@ impl PayloadDecoder {
         sink(&frame)
     }
 
+    /// Decodes one frame under a caller-selected validation profile while
+    /// preserving the decoder's prior profile for the next frame.
+    ///
+    /// This is used by a single-pass AUTO policy: the caller selects strict or
+    /// compatibility after validating the current lossless carrier, without
+    /// turning either profile into a spatial-rendering algorithm.
+    pub fn decode_frame_with_profile<S, E>(
+        &mut self,
+        input: JocFrameInput<'_>,
+        profile: OamdParseProfile,
+        mut sink: S,
+    ) -> Result<(), E>
+    where
+        S: FnMut(&DecodedPayloadFrame) -> Result<(), E>,
+        E: From<PayloadDecodeError>,
+    {
+        let previous = self.oamd_profile;
+        self.oamd_profile = profile;
+        let result = self
+            .decode_frame(input)
+            .map_err(E::from)
+            .and_then(|frame| sink(&frame));
+        self.oamd_profile = previous;
+        result
+    }
+
     /// Finalizes the accumulated renderer-independent object scene.
     ///
     /// # Errors

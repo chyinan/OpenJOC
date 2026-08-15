@@ -1,5 +1,41 @@
 # JOC spatial reconstruction bridge
 
+## Experimental clean bridge
+
+The implementation-bundle candidate is exposed through the explicit
+`openjoc_scene::ExperimentalCleanSpatialBridge` API. It is not selected by
+`ETSI_STRICT`, `DOLBY_VENDOR_COMPAT`, or `AUTO`; those remain validation and
+profile-selection policies upstream of this bridge. A caller must construct
+the bridge, provide a `CleanTopologySnapshot` (or reuse the current binding),
+provide a validated `CleanSpatialLayout`, and call
+`render_coordinates` or `render_codec_basis_frame` into caller-owned output
+planes. It is therefore opt-in and cannot silently alter the existing decode
+path.
+
+The clean path implements only the bundle's supported ordinary domain:
+
+- deterministic explicit-group/fixed-layout/dynamic-record flattening with
+  persistent `(topology_epoch, ordinal)` binding state and selective
+  inheritance;
+- public active non-LFE layout channels, normalized coordinates, equal-power
+  tensor-corner interpolation, fixed/named route vectors, optional weighted
+  spread, and optional equal-power paired geometry;
+- Q32 gain scheduling with persistent phase across blocks, restart on binding
+  rebuild/layout change, and linear `Y = Σ G X` accumulation;
+- finite-value, dimension, duplicate, unsupported-class, and malformed-input
+  rejection.
+
+The descriptor's raw warp-3 field is preserved as opaque data and is never
+used as a projection input. Its public semantic meaning remains unresolved.
+The bridge does not make `SemanticBindingState` production-resolved, does not
+claim an official spatial oracle, and does not admit a real-JOC speaker or
+binaural fidelity result. Q40, unsupported/default branches, unadmitted
+preprocessing, and malformed-recovery semantics are outside this candidate.
+
+The machine-readable bundle used for this candidate is under the local
+implementer input directory supplied for this task; the public repository
+contains only the resulting clean API, tests, and this boundary description.
+
 OpenJOC's primary product path is E-AC-3 JOC input, not WAV scene input:
 
 ```text

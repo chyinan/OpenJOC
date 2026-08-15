@@ -477,7 +477,7 @@ fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
 }
 
 #[test]
-fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
+fn decode_respects_explicit_profiles_and_auto_selects_existing_vendor_compat() {
     let nonce = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("clock")
@@ -490,6 +490,7 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
     let input = root.join("vendor-profile.ec3");
     let downmix = root.join("downmix.wav");
     let strict_output = root.join("strict-output");
+    let auto_output = root.join("auto-output");
     let compat_output = root.join("compat-output");
     let oamd = vendor_reserved_trim_oamd();
     let joc = absent_joc();
@@ -510,6 +511,8 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
             input.to_str().expect("input path"),
             "--downmix",
             downmix.to_str().expect("downmix path"),
+            "--validation-profile",
+            "etsi-strict",
             "--trim-config-count",
             "1",
             "-o",
@@ -523,6 +526,42 @@ fn decode_requires_explicit_vendor_profile_and_writes_deviation_evidence() {
     assert!(strict_stderr.contains("ETSI_STRICT validation failed"));
     assert!(strict_stderr.contains("requested profile was not relaxed"));
     assert!(strict_stderr.contains("partial/opaque scope"));
+
+    let automatic = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "decode",
+            input.to_str().expect("input path"),
+            "--downmix",
+            downmix.to_str().expect("downmix path"),
+            "--trim-config-count",
+            "1",
+            "-o",
+            auto_output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run automatic decode");
+    assert!(
+        automatic.status.success(),
+        "{}",
+        String::from_utf8_lossy(&automatic.stderr)
+    );
+    let auto_selection: serde_json::Value = serde_json::from_slice(
+        &fs::read(auto_output.join("debug/frame_000/profile_validation.json"))
+            .expect("automatic profile report"),
+    )
+    .expect("automatic profile JSON");
+    assert_eq!(
+        auto_selection["profile_selection"]["requested_profile"],
+        "AUTO"
+    );
+    assert_eq!(
+        auto_selection["profile_selection"]["selected_profile"],
+        "DOLBY_VENDOR_COMPAT"
+    );
+    assert_eq!(
+        auto_selection["profile_selection"]["strict_status"],
+        "failed"
+    );
 
     let compatible = Command::new(env!("CARGO_BIN_EXE_openjoc"))
         .args([
