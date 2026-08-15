@@ -9,6 +9,7 @@ use terminal_size::Width;
 #[allow(clippy::struct_excessive_bools)]
 pub struct TerminalCapabilities {
     pub is_tty: bool,
+    pub stderr_is_tty: bool,
     pub width: Option<u16>,
     pub no_color: bool,
     pub no_banner: bool,
@@ -18,6 +19,7 @@ pub struct TerminalCapabilities {
 impl TerminalCapabilities {
     pub fn detect() -> Self {
         let is_tty = std::io::stdout().is_terminal();
+        let stderr_is_tty = std::io::stderr().is_terminal();
         let width = if is_tty {
             terminal_size::terminal_size()
                 .map(|(Width(width), _)| width)
@@ -34,6 +36,7 @@ impl TerminalCapabilities {
         let term = env::var("TERM").ok();
         Self::from_inputs(
             is_tty,
+            stderr_is_tty,
             width,
             env::var_os("NO_COLOR").is_some(),
             no_banner.as_deref(),
@@ -61,8 +64,13 @@ impl TerminalCapabilities {
         self.is_tty && !self.no_color && !self.term_is_dumb
     }
 
+    pub const fn progress_is_tty(self) -> bool {
+        self.stderr_is_tty
+    }
+
     fn from_inputs(
         is_tty: bool,
+        stderr_is_tty: bool,
         width: Option<u16>,
         no_color_present: bool,
         no_banner_value: Option<&str>,
@@ -70,6 +78,7 @@ impl TerminalCapabilities {
     ) -> Self {
         Self {
             is_tty,
+            stderr_is_tty,
             width,
             no_color: no_color_present,
             no_banner: no_banner_value == Some("1"),
@@ -85,21 +94,22 @@ mod tests {
     #[test]
     fn environment_values_are_interpreted_without_overmatching() {
         let capabilities =
-            TerminalCapabilities::from_inputs(true, Some(120), true, Some("1"), Some("DuMb"));
+            TerminalCapabilities::from_inputs(true, true, Some(120), true, Some("1"), Some("DuMb"));
         assert!(capabilities.no_color);
         assert!(capabilities.no_banner);
         assert!(capabilities.term_is_dumb);
         assert!(!capabilities.color_enabled());
 
         let capabilities =
-            TerminalCapabilities::from_inputs(true, Some(80), false, Some("true"), None);
+            TerminalCapabilities::from_inputs(true, false, Some(80), false, Some("true"), None);
         assert!(!capabilities.no_banner);
         assert!(capabilities.color_enabled());
     }
 
     #[test]
     fn terminal_facts_map_directly_into_banner_decision_context() {
-        let capabilities = TerminalCapabilities::from_inputs(true, Some(99), false, None, None);
+        let capabilities =
+            TerminalCapabilities::from_inputs(true, true, Some(99), false, None, None);
         let context = capabilities.banner_context(true, false);
         assert!(context.is_tty);
         assert_eq!(context.terminal_width, Some(99));

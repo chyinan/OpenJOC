@@ -45,6 +45,14 @@ claiming capabilities that the current evidence does not support.
   policy, not JOC semantics or vendor bass management. The output is stereo
   Left then Right WAV with the complete causal HRIR tail and remains
   experimental with `SemanticBindingState::Unresolved`.
+- `render-joc` has TTY-aware stderr progress plus an opt-in versioned
+  `--performance-report FILE.json` containing stage timings, frame timing
+  percentiles, and realtime metrics. The current local evidence is a release
+  synthetic speaker/WAV harness; it excludes real E-AC-3/OAMD/JOC processing.
+  Because no real DEE media is present in this checkout, the current
+  qualification is exactly
+  `OPENJOC_JOC_RENDER_PROFILED_REAL_MEDIA_RETEST_REQUIRED`. A synthetic or
+  public-fixture result must not be presented as real-media qualification.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
   speaker-layout renderer with public 2D VBAP-style pair gains, plus an

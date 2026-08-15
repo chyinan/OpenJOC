@@ -296,6 +296,8 @@ pub struct WaveWriter<W> {
     data_bytes: u64,
     frames: u64,
     sample_index: usize,
+    interleaved_scratch: Vec<f64>,
+    encoded_scratch: Vec<u8>,
 }
 
 impl<W: Write + Seek> WaveWriter<W> {
@@ -316,6 +318,8 @@ impl<W: Write + Seek> WaveWriter<W> {
             data_bytes: 0,
             frames: 0,
             sample_index: 0,
+            interleaved_scratch: Vec::new(),
+            encoded_scratch: Vec::new(),
         })
     }
 
@@ -324,32 +328,9 @@ impl<W: Write + Seek> WaveWriter<W> {
         if samples.len() % self.channels != 0 {
             return Err(WaveError::InvalidFormat);
         }
-        let mut encoded = Vec::with_capacity(
-            samples
-                .len()
-                .checked_mul(self.options.sample_format.bytes_per_sample())
-                .ok_or(WaveError::SizeOverflow)?,
-        );
-        for &sample in samples {
-            encode_sample(&mut encoded, sample, self.options, self.sample_index)?;
-            self.sample_index = self
-                .sample_index
-                .checked_add(1)
-                .ok_or(WaveError::SizeOverflow)?;
-        }
-        self.writer.write_all(&encoded).map_err(io_error)?;
-        self.data_bytes = self
-            .data_bytes
-            .checked_add(u64::try_from(encoded.len()).map_err(|_| WaveError::SizeOverflow)?)
-            .ok_or(WaveError::SizeOverflow)?;
-        self.frames = self
-            .frames
-            .checked_add(
-                u64::try_from(samples.len() / self.channels)
-                    .map_err(|_| WaveError::SizeOverflow)?,
-            )
-            .ok_or(WaveError::SizeOverflow)?;
-        Ok(())
+        self.interleaved_scratch.clear();
+        self.interleaved_scratch.extend_from_slice(samples);
+        self.write_interleaved_scratch()
     }
 
     /// Appends a channel-major chunk without retaining prior chunks.
@@ -361,17 +342,56 @@ impl<W: Write + Seek> WaveWriter<W> {
         if channels.iter().any(|channel| channel.len() != frames) {
             return Err(WaveError::InvalidFormat);
         }
-        let mut interleaved = Vec::with_capacity(
-            frames
-                .checked_mul(self.channels)
-                .ok_or(WaveError::SizeOverflow)?,
-        );
+        let sample_count = frames
+            .checked_mul(self.channels)
+            .ok_or(WaveError::SizeOverflow)?;
+        self.interleaved_scratch.clear();
+        self.interleaved_scratch.reserve(sample_count);
         for frame in 0..frames {
             for channel in channels {
-                interleaved.push(channel[frame]);
+                self.interleaved_scratch.push(channel[frame]);
             }
         }
-        self.write_interleaved(&interleaved)
+        self.write_interleaved_scratch()
+    }
+
+    fn write_interleaved_scratch(&mut self) -> Result<(), WaveError> {
+        let encoded_len = self
+            .interleaved_scratch
+            .len()
+            .checked_mul(self.options.sample_format.bytes_per_sample())
+            .ok_or(WaveError::SizeOverflow)?;
+        self.encoded_scratch.clear();
+        self.encoded_scratch.reserve(encoded_len);
+        for index in 0..self.interleaved_scratch.len() {
+            encode_sample(
+                &mut self.encoded_scratch,
+                self.interleaved_scratch[index],
+                self.options,
+                self.sample_index,
+            )?;
+            self.sample_index = self
+                .sample_index
+                .checked_add(1)
+                .ok_or(WaveError::SizeOverflow)?;
+        }
+        self.writer
+            .write_all(&self.encoded_scratch)
+            .map_err(io_error)?;
+        self.data_bytes = self
+            .data_bytes
+            .checked_add(
+                u64::try_from(self.encoded_scratch.len()).map_err(|_| WaveError::SizeOverflow)?,
+            )
+            .ok_or(WaveError::SizeOverflow)?;
+        self.frames = self
+            .frames
+            .checked_add(
+                u64::try_from(self.interleaved_scratch.len() / self.channels)
+                    .map_err(|_| WaveError::SizeOverflow)?,
+            )
+            .ok_or(WaveError::SizeOverflow)?;
+        Ok(())
     }
 
     /// Finalizes RIFF/data sizes, flushes, and returns the underlying writer.

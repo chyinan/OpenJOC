@@ -1234,27 +1234,50 @@ impl JocSpatialBridge {
         duration_samples: u64,
         outputs: &mut [&mut [f64]],
     ) -> Result<(), SpatialBridgeError> {
-        let mut coordinates = Vec::with_capacity(
-            frame.basis.base_full_band_pcm.len() + frame.basis.reconstruction_basis.rows.len(),
-        );
-        coordinates.extend(frame.basis.base_full_band_pcm.iter().map(Vec::as_slice));
-        coordinates.extend(
-            frame
-                .basis
-                .reconstruction_basis
-                .rows
-                .iter()
-                .map(Vec::as_slice),
-        );
-        self.render_coordinates(
-            &coordinates,
-            topology,
-            updates,
-            layout,
-            duration_samples,
-            frame.sample_rate,
-            outputs,
-        )
+        const STACK_COORDINATE_CAPACITY: usize = 64;
+        let coordinate_count =
+            frame.basis.base_full_band_pcm.len() + frame.basis.reconstruction_basis.rows.len();
+        if coordinate_count <= STACK_COORDINATE_CAPACITY {
+            let mut coordinates = [&[][..]; STACK_COORDINATE_CAPACITY];
+            let mut index = 0;
+            for pcm in frame.basis.base_full_band_pcm {
+                coordinates[index] = pcm;
+                index += 1;
+            }
+            for pcm in &frame.basis.reconstruction_basis.rows {
+                coordinates[index] = pcm;
+                index += 1;
+            }
+            self.render_coordinates(
+                &coordinates[..coordinate_count],
+                topology,
+                updates,
+                layout,
+                duration_samples,
+                frame.sample_rate,
+                outputs,
+            )
+        } else {
+            let mut coordinates = Vec::with_capacity(coordinate_count);
+            coordinates.extend(frame.basis.base_full_band_pcm.iter().map(Vec::as_slice));
+            coordinates.extend(
+                frame
+                    .basis
+                    .reconstruction_basis
+                    .rows
+                    .iter()
+                    .map(Vec::as_slice),
+            );
+            self.render_coordinates(
+                &coordinates,
+                topology,
+                updates,
+                layout,
+                duration_samples,
+                frame.sample_rate,
+                outputs,
+            )
+        }
     }
 }
 

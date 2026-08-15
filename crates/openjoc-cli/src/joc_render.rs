@@ -4,6 +4,7 @@
 //! does not infer authored-object identity from OAMD order or ReconstructionBasis
 //! row order.
 
+use crate::performance::RenderStageTiming;
 use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, JocMetadataFrame};
 use openjoc_emdf::JocValidationProfile;
 use openjoc_render::{
@@ -23,6 +24,7 @@ use std::{
     collections::BTreeSet,
     fmt, fs, io,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
@@ -366,6 +368,8 @@ pub struct JocSpeakerRenderer {
     base_coordinates: Option<Vec<BaseFullBandCoordinate>>,
     selected_profile: Option<JocValidationProfile>,
     deviations: BTreeSet<String>,
+    stage_timings: RenderStageTiming,
+    stage_timing_enabled: bool,
 }
 
 impl JocSpeakerRenderer {
@@ -387,6 +391,8 @@ impl JocSpeakerRenderer {
             base_coordinates: None,
             selected_profile: None,
             deviations: BTreeSet::new(),
+            stage_timings: RenderStageTiming::default(),
+            stage_timing_enabled: false,
         })
     }
 
@@ -408,6 +414,8 @@ impl JocSpeakerRenderer {
             base_coordinates: None,
             selected_profile: None,
             deviations: BTreeSet::new(),
+            stage_timings: RenderStageTiming::default(),
+            stage_timing_enabled: false,
         })
     }
 
@@ -477,17 +485,26 @@ impl JocSpeakerRenderer {
         }
         let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
         let automatic_frame = if let Some(assembler) = self.assembler.as_mut() {
-            Some(assembler.assemble_frame(frame, &base_coordinates, None)?)
+            let start = self.stage_timing_enabled.then(Instant::now);
+            let frame = assembler.assemble_frame(frame, &base_coordinates, None)?;
+            if let Some(start) = start {
+                self.stage_timings.bridge_control_assembly += start.elapsed();
+            }
+            Some(frame)
         } else {
             None
         };
         if let Some(control_frame) = automatic_frame {
+            let start = self.stage_timing_enabled.then(Instant::now);
             self.render_automatic_segments(
                 &bridge_frame,
                 &control_frame,
                 sample_count,
                 &mut active,
             )?;
+            if let Some(start) = start {
+                self.stage_timings.spatial_bridge_render += start.elapsed();
+            }
         } else {
             let mut output_planes = active.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
             let control = self.control.as_mut().ok_or_else(|| {
@@ -496,6 +513,7 @@ impl JocSpeakerRenderer {
             let update_index = control.mark_update_for(frame_index);
             let topology = (self.expected_frame == 0).then_some(&control.topology);
             let updates = update_index.map(|index| control.updates[index].updates.as_slice());
+            let start = self.stage_timing_enabled.then(Instant::now);
             self.bridge.render_codec_basis_frame(
                 &bridge_frame,
                 topology,
@@ -504,6 +522,9 @@ impl JocSpeakerRenderer {
                 u64::try_from(sample_count).map_err(|_| JocRenderError::FrameSampleCount)?,
                 &mut output_planes,
             )?;
+            if let Some(start) = start {
+                self.stage_timings.spatial_bridge_render += start.elapsed();
+            }
         }
 
         let mut channels = vec![vec![0.0; sample_count]; self.preset.channel_count()];
@@ -633,6 +654,14 @@ impl JocSpeakerRenderer {
         }
     }
 
+    pub(crate) fn take_stage_timings(&mut self) -> RenderStageTiming {
+        std::mem::take(&mut self.stage_timings)
+    }
+
+    pub(crate) fn enable_stage_timing(&mut self) {
+        self.stage_timing_enabled = true;
+    }
+
     /// Resets bridge, automatic assembly, timeline, and explicit-update state.
     #[allow(dead_code)]
     pub fn reset(&mut self) {
@@ -648,6 +677,7 @@ impl JocSpeakerRenderer {
         self.base_coordinates = None;
         self.selected_profile = None;
         self.deviations.clear();
+        self.stage_timings = RenderStageTiming::default();
     }
 
     pub fn diagnostics(
@@ -760,6 +790,8 @@ pub struct JocBinauralRenderer {
     pending_lfe: Vec<f64>,
     pending_len: usize,
     finished: bool,
+    stage_timings: RenderStageTiming,
+    stage_timing_enabled: bool,
 }
 
 impl JocBinauralRenderer {
@@ -841,6 +873,8 @@ impl JocBinauralRenderer {
             pending_lfe: Vec::new(),
             pending_len: 0,
             finished: false,
+            stage_timings: RenderStageTiming::default(),
+            stage_timing_enabled: false,
         })
     }
 
@@ -866,10 +900,18 @@ impl JocBinauralRenderer {
         }
         self.ensure_engine(frame.sample_rate)?;
         let rendered = self.speaker.render_frame(frame_index, frame, base)?;
-        match self.backend {
+        let speaker_timings = self.speaker.take_stage_timings();
+        self.stage_timings.bridge_control_assembly += speaker_timings.bridge_control_assembly;
+        self.stage_timings.spatial_bridge_render += speaker_timings.spatial_bridge_render;
+        let start = self.stage_timing_enabled.then(Instant::now);
+        let result = match self.backend {
             BinauralBackend::Direct => self.render_direct_block(&rendered),
             BinauralBackend::Partitioned { .. } => self.render_partitioned_block(&rendered),
+        }?;
+        if let Some(start) = start {
+            self.stage_timings.binaural_render += start.elapsed();
         }
+        Ok(result)
     }
 
     /// Records the selected validation profile without changing JOC policy.
@@ -893,6 +935,16 @@ impl JocBinauralRenderer {
         self.pending_lfe.fill(0.0);
         self.pending_len = 0;
         self.finished = false;
+        self.stage_timings = RenderStageTiming::default();
+    }
+
+    pub(crate) fn take_stage_timings(&mut self) -> RenderStageTiming {
+        std::mem::take(&mut self.stage_timings)
+    }
+
+    pub(crate) fn enable_stage_timing(&mut self) {
+        self.stage_timing_enabled = true;
+        self.speaker.enable_stage_timing();
     }
 
     /// Finishes bridge validation and drains the complete binaural FIR tail.
@@ -1570,6 +1622,10 @@ impl JocWavOutput {
     pub fn abort(&mut self) {
         self.writer.take();
         let _ = fs::remove_file(&self.staging);
+    }
+
+    pub fn frames(&self) -> u64 {
+        self.writer.as_ref().map_or(0, WaveWriter::frames)
     }
 }
 
@@ -2399,5 +2455,79 @@ mod tests {
         assert_eq!(pcm.channels.len(), 24);
         assert!((pcm.channels[23][0] - 23.0 / 32.0).abs() < 1e-6);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    #[ignore = "manual release performance harness"]
+    fn performance_harness_speaker_and_wav() {
+        use std::time::Instant;
+
+        const FRAME_COUNT: usize = 128;
+        const SAMPLES: usize = 1_536;
+        let repetitions = std::env::var("OPENJOC_PERF_REPETITIONS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(5);
+        let frames = (0..FRAME_COUNT)
+            .map(|index| decoded_frame(index as u64, (index * SAMPLES) as u64, SAMPLES))
+            .collect::<Vec<_>>();
+        let bases = (0..FRAME_COUNT)
+            .map(|index| base(SAMPLES, index as f64 * 0.001))
+            .collect::<Vec<_>>();
+
+        for layout in ["5.1", "7.1.4"] {
+            let mut samples = Vec::new();
+            for repetition in 0..=repetitions {
+                let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
+                let start = Instant::now();
+                for (frame, pcm) in frames.iter().zip(&bases) {
+                    let block = renderer
+                        .render_frame(frame.frame_index as usize, frame, pcm)
+                        .unwrap();
+                    std::hint::black_box(block);
+                }
+                renderer.finish().unwrap();
+                if repetition > 0 {
+                    samples.push(start.elapsed().as_secs_f64());
+                }
+            }
+            samples.sort_by(f64::total_cmp);
+            let median = samples[samples.len() / 2];
+            println!(
+                "performance layout={layout} sink=null frames={FRAME_COUNT} samples_per_frame={SAMPLES} median_seconds={:.6} realtime_factor={:.3}",
+                median,
+                FRAME_COUNT as f64 * SAMPLES as f64 / 48_000.0 / median
+            );
+
+            let path = std::env::temp_dir().join(format!(
+                "openjoc-performance-{}-{layout}.wav",
+                std::process::id()
+            ));
+            let mut samples = Vec::new();
+            for repetition in 0..=repetitions {
+                let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
+                let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+                let start = Instant::now();
+                for (frame, pcm) in frames.iter().zip(&bases) {
+                    let block = renderer
+                        .render_frame(frame.frame_index as usize, frame, pcm)
+                        .unwrap();
+                    output.write_block(&block).unwrap();
+                }
+                renderer.finish().unwrap();
+                output.finish().unwrap();
+                if repetition > 0 {
+                    samples.push(start.elapsed().as_secs_f64());
+                }
+                fs::remove_file(&path).unwrap();
+            }
+            samples.sort_by(f64::total_cmp);
+            let median = samples[samples.len() / 2];
+            println!(
+                "performance layout={layout} sink=wav frames={FRAME_COUNT} samples_per_frame={SAMPLES} median_seconds={:.6} realtime_factor={:.3}",
+                median,
+                FRAME_COUNT as f64 * SAMPLES as f64 / 48_000.0 / median
+            );
+        }
     }
 }

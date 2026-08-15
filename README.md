@@ -119,6 +119,13 @@ existing compatibility validator admits the complete deviation set. An
 explicit `--validation-profile etsi-strict` never falls back. The selected
 profile and reason are written to the bounded validation diagnostics.
 
+Interactive `render-joc` progress is written to stderr and is automatically
+disabled for non-TTY output; use `--no-progress` to opt out. Add
+`--performance-report FILE.json` to capture versioned stage timings and
+realtime diagnostics. See [Experimental JOC speaker rendering](docs/JOC_RENDER.md)
+for the report schema, synthetic harness, and real-media qualification
+boundary.
+
 Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.

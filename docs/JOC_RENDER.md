@@ -120,6 +120,80 @@ feature name is `JocSpatialBridge`; `SemanticBindingState` remains
 `Unresolved`. This workflow makes no official vendor-equivalence, bit-exact,
 or fidelity claim.
 
+## Progress and performance diagnostics
+
+When `render-joc` is attached to an interactive terminal, it writes a bounded,
+throttled progress line to stderr. The line includes rendered audio, total
+audio when the input can be indexed, elapsed time, and an estimated realtime
+factor/ETA. Progress is disabled when stderr is not a TTY and can be disabled
+explicitly with `--no-progress`. It uses no ANSI cursor or color assumptions;
+stdout remains reserved for the final diagnostic summary. Progress is not
+part of the render math and its measured write overhead is included in a
+performance report.
+
+For a successful render, `--performance-report FILE.json` writes a new JSON
+file using schema `openjoc.joc-render-performance.v1`; it refuses to overwrite
+an existing report. The report contains the OpenJOC version, selected layout
+and validation profile, sample rate, access-unit/sample/frame counts, audio
+duration, wall duration, realtime factor, output byte count, build mode, and
+timings for container loading, profile/index validation, E-AC-3 decode, JOC
+reconstruction, bridge control assembly, spatial bridge render, optional
+binaural render, and output conversion/WAV writing. It also records p50/p95/
+p99/maximum core-frame timing and progress overhead. The report contains no
+input or output paths, so it can be shared without exposing private fixture
+locations.
+
+The reconstruction timer covers payload-decoder frame reconstruction and its
+render-sink dispatch. Bridge and output timers are reported separately and can
+overlap that interval; they are diagnostic stage measurements, not additive
+wall-time partitions.
+
+The checked-in release harness is a synthetic speaker/WAV measurement only:
+
+```sh
+cargo test -p openjoc-cli --release \
+  joc_render::tests::performance_harness_speaker_and_wav \
+  -- --ignored --nocapture
+```
+
+It runs 128 frames of 1,536 samples at 48 kHz, with a warmup and five measured
+iterations by default. Set `OPENJOC_PERF_REPETITIONS=N` for a longer run. A
+local Apple-silicon release-build run with 100 measured iterations produced:
+
+| Layout | Sink | Median seconds | Realtime factor |
+|---|---:|---:|---:|
+| 5.1 | discard | 0.009262 | 442.229x |
+| 5.1 | WAV | 0.018394 | 222.681x |
+| 7.1.4 | discard | 0.015055 | 272.061x |
+| 7.1.4 | WAV | 0.028092 | 145.808x |
+
+These figures exclude real E-AC-3 decode, OAMD parsing, and JOC
+reconstruction, so they do not qualify real-media realtime performance. The
+local sampling profile found the scalar `JocSpatialBridge::render_coordinates`
+loop dominant, followed by per-frame block construction and WAV encoding. A
+reusable WAV interleave/encoding scratch path and a bounded stack-backed
+coordinate view were retained after measurement; a speculative scheduler
+gain-buffer change was rejected because it regressed the release harness.
+
+The current qualification classification is:
+
+```text
+OPENJOC_JOC_RENDER_PROFILED_REAL_MEDIA_RETEST_REQUIRED
+```
+
+No real DEE E-AC-3/JOC media is present in this public checkout. On Windows,
+run the following exact placeholder command against the private file and
+retain its JSON report for qualification:
+
+```powershell
+openjoc.exe render-joc "D:\path\to\DEE-file.m4a" --layout 7.1.4 --output "D:\path\to\DEE-render.wav" --performance-report "D:\path\to\DEE-render-performance.json"
+```
+
+That retest must use a release build, record the machine/OS/toolchain, and
+evaluate the report's realtime factor plus the core-frame p99 against the
+project's stated realtime budget. Synthetic or public-fixture results alone
+must not be reported as a real DEE qualification.
+
 ## SOFA-backed binaural rendering
 
 The same real-JOC command can virtualize one supported speaker preset to stereo

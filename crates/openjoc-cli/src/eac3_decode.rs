@@ -1,5 +1,6 @@
 // pattern: Functional Core
 
+use crate::performance::DecodeStageTiming;
 use openjoc_container::{InputMediaError, RawEac3AccessUnitReader};
 use openjoc_eac3::{
     DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame,
@@ -16,7 +17,7 @@ use openjoc_scene::{
     PayloadDecoderConfig, StreamingSceneSummary,
 };
 use openjoc_wave::WavePcm;
-use std::{fmt, io::Read};
+use std::{fmt, io::Read, time::Instant};
 
 /// User-facing profile selection policy. The selected value passed downstream
 /// is always one of the two existing validation profiles.
@@ -36,6 +37,30 @@ impl ValidationProfileRequest {
             Self::ObservedVendorCompat => "OBSERVED_VENDOR_COMPAT",
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StreamTiming {
+    pub(crate) access_units: u64,
+    pub(crate) samples: u64,
+    pub(crate) sample_rate: u32,
+}
+
+pub(crate) fn stream_timing(stream: &[u8]) -> Result<StreamTiming, DecodeEac3Error> {
+    let frames = index_syncframes(stream)?;
+    let units = group_access_units(&frames)?;
+    let first = units.first().ok_or(DecodeEac3Error::EmptyStream)?;
+    let samples = units.iter().try_fold(0_u64, |total, unit| {
+        total
+            .checked_add(u64::from(unit.samples))
+            .ok_or(DecodeEac3Error::SampleCountOverflow)
+    })?;
+    Ok(StreamTiming {
+        access_units: u64::try_from(units.len())
+            .map_err(|_| DecodeEac3Error::SampleCountOverflow)?,
+        samples,
+        sample_rate: first.sample_rate,
+    })
 }
 
 /// Resolves a profile before the stateful decoder is created. AUTO evaluates
@@ -505,6 +530,7 @@ where
         base_sink,
         |_, _, _, _| Ok(()),
         PayloadDecoder::finish,
+        None,
     )
 }
 
@@ -535,6 +561,7 @@ where
         base_sink,
         |_, _, _, _| Ok(()),
         PayloadDecoder::finish_streaming,
+        None,
     )
 }
 
@@ -553,6 +580,7 @@ pub(crate) fn decode_internal_eac3_streaming_with_render_sink_and_policy<S, B>(
     base_policy: InternalBasePolicy,
     sink: S,
     base_sink: B,
+    timing: Option<&mut DecodeStageTiming>,
 ) -> Result<StreamingSceneSummary, DecodeEac3Error>
 where
     S: FnMut(
@@ -574,6 +602,7 @@ where
         base_sink,
         sink,
         PayloadDecoder::finish_streaming,
+        timing,
     )
 }
 
@@ -723,6 +752,7 @@ fn decode_internal_eac3_core<S, B, C, R, F>(
     mut base_sink: B,
     mut combined_sink: C,
     finish: F,
+    mut timing: Option<&mut DecodeStageTiming>,
 ) -> Result<R, DecodeEac3Error>
 where
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
@@ -751,6 +781,8 @@ where
         PayloadDecoder::with_oamd_profile(config, oamd_profile)
     };
     for (unit_index, unit) in units.into_iter().enumerate() {
+        let frame_start = Instant::now();
+        let decode_start = Instant::now();
         let pcm = audio_decoder.decode_with_policy(
             stream,
             &frame_index,
@@ -758,6 +790,9 @@ where
             dither_values,
             base_policy,
         )?;
+        if let Some(timing) = timing.as_mut() {
+            timing.eac3_decode += decode_start.elapsed();
+        }
         pcm.validate_joc_topology()?;
         if pcm.sample_rate != unit.sample_rate
             || pcm.samples != unit.samples
@@ -777,6 +812,7 @@ where
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
+        let reconstruction_start = Instant::now();
         decoder.decode_frame_with(
             JocFrameInput {
                 sample_rate: unit.sample_rate,
@@ -792,6 +828,12 @@ where
                 combined_sink(unit_index, &metadata, frame, &pcm)
             },
         )?;
+        if let Some(timing) = timing.as_mut() {
+            timing.joc_reconstruction += reconstruction_start.elapsed();
+            if timing.collect_frame_times {
+                timing.frame_times.push(frame_start.elapsed());
+            }
+        }
     }
     Ok(finish(decoder)?)
 }
