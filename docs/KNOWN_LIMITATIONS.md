@@ -20,7 +20,9 @@ claiming capabilities that the current evidence does not support.
   inputs and an explicit unresolved-operator gate; the time-varying
   reconstruction operator `T(t)` is not established. The 0.4.0-dev
   `render-joc` command is a separate experimental ordinary-domain speaker
-  projection that requires an explicit bridge-control topology sidecar. It
+  projection that assembles bridge control automatically from decoded
+  JOC/OAMD state. A complete bridge-control topology sidecar remains an
+  optional explicit override/test input. It
   supports only the 5.1, 5.1.2, 7.1, and 7.1.4 presets, does not infer
   authored-object identity, and does not resolve `T(t)` or provide a
   binaural/vendor renderer. 2.0 remains blocked by unspecified bass/LFE

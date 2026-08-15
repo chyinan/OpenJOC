@@ -64,7 +64,7 @@ openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR
 openjoc diagnose-tools FILE --vector-id ID --json OUTPUT
 openjoc census [MANIFEST] -o DIR
 openjoc diagnose-oamd FILE [OPTIONS]
-openjoc render-joc FILE --topology TOPOLOGY.json --layout LAYOUT --output OUTPUT.wav
+openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav
 openjoc --version
 ```
 

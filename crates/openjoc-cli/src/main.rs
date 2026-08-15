@@ -175,7 +175,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout <LAYOUT> --output <OUTPUT.wav>\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -198,7 +198,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout <LAYOUT> --output <OUTPUT.wav>\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--reference-f64]\n",
@@ -242,7 +242,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
-        "  render-joc SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, and 7.1.4; topology JSON remains explicit\n",
+        "  render-joc SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, and 7.1.4; bridge control is automatic by default\n",
         "  GENERIC/CUSTOM LIBRARY CAPABILITY: use openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format\n",
     ));
     Ok(())
@@ -2787,7 +2787,35 @@ fn usage_error() -> io::Error {
 
 #[cfg(test)]
 mod profile_name_tests {
-    use super::{ValidationProfileRequest, parse_validation_profile};
+    use super::{ValidationProfileRequest, parse_render_joc, parse_validation_profile};
+
+    #[test]
+    fn render_joc_omitted_profile_matches_explicit_auto() {
+        let omitted = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+        ];
+        let explicit = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+            "--validation-profile".to_owned(),
+            "auto".to_owned(),
+        ];
+        let omitted_profile = parse_render_joc(&omitted)
+            .expect("omitted profile")
+            .validation_profile;
+        let explicit_profile = parse_render_joc(&explicit)
+            .expect("explicit auto profile")
+            .validation_profile;
+        assert_eq!(omitted_profile, ValidationProfileRequest::Auto);
+        assert_eq!(omitted_profile, explicit_profile);
+    }
 
     #[test]
     fn legacy_cli_profile_name_is_input_only_alias() {
