@@ -461,8 +461,9 @@ fn strict_and_vendor_profiles_preserve_the_logic_interoperability_boundary() {
             && deviation.expected_by_etsi == JocProfileValue::Bool(true)
     }));
 
-    let compatible = validate_joc_profile_for(&container, JocValidationProfile::DolbyVendorCompat)
-        .expect("the explicitly documented Logic signaling pattern");
+    let compatible =
+        validate_joc_profile_for(&container, JocValidationProfile::ObservedVendorCompat)
+            .expect("the explicitly documented Logic signaling pattern");
     assert_eq!(
         compatible.status,
         JocValidationStatus::AcceptedWithDeviation
@@ -475,17 +476,27 @@ fn strict_and_vendor_profiles_preserve_the_logic_interoperability_boundary() {
 }
 
 #[test]
+fn validation_profiles_emit_stable_canonical_names() {
+    assert_eq!(JocValidationProfile::EtsiStrict.as_str(), "ETSI_STRICT");
+    assert_eq!(
+        JocValidationProfile::ObservedVendorCompat.as_str(),
+        "OBSERVED_VENDOR_COMPAT"
+    );
+}
+
+#[test]
 fn vendor_profile_accepts_normative_streams_without_deviation_and_rejects_new_hacks() {
     let normative = joc_profile_container();
-    let compatible = validate_joc_profile_for(&normative, JocValidationProfile::DolbyVendorCompat)
-        .expect("normative profiles are a subset of vendor-compatible input");
+    let compatible =
+        validate_joc_profile_for(&normative, JocValidationProfile::ObservedVendorCompat)
+            .expect("normative profiles are a subset of vendor-compatible input");
     assert_eq!(compatible.status, JocValidationStatus::NormativeCompliant);
     assert!(compatible.deviations.is_empty());
 
     let mut unknown_pattern = logic_vendor_profile_container();
     unknown_pattern.payloads[1].config.group_id = Some(8);
     let rejected =
-        validate_joc_profile_for(&unknown_pattern, JocValidationProfile::DolbyVendorCompat)
+        validate_joc_profile_for(&unknown_pattern, JocValidationProfile::ObservedVendorCompat)
             .expect_err("compatibility must not accept an unobserved group mismatch");
     assert!(
         rejected

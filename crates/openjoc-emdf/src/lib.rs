@@ -209,8 +209,8 @@ pub struct JocPayloadPair<'a> {
 pub enum JocValidationProfile {
     /// Published TS 103 420 tables 55 and 56 without interoperability exceptions.
     EtsiStrict,
-    /// Narrow production-encoder signaling patterns with every ETSI deviation retained.
-    DolbyVendorCompat,
+    /// Explicitly observed producer signaling patterns with every ETSI deviation retained.
+    ObservedVendorCompat,
 }
 
 impl JocValidationProfile {
@@ -218,7 +218,7 @@ impl JocValidationProfile {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::EtsiStrict => "ETSI_STRICT",
-            Self::DolbyVendorCompat => "DOLBY_VENDOR_COMPAT",
+            Self::ObservedVendorCompat => "OBSERVED_VENDOR_COMPAT",
         }
     }
 }
@@ -229,8 +229,8 @@ impl fmt::Display for JocValidationProfile {
     }
 }
 
-/// Successful validation outcome. Vendor validation reports normative input
-/// separately from input accepted only through a documented deviation set.
+/// Successful validation outcome. Observed-vendor validation reports normative
+/// input separately from input accepted only through a documented deviation set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum JocValidationStatus {
     NormativeCompliant,
@@ -363,7 +363,7 @@ pub struct ValidatedJocProfile<'a> {
 
 /// Validates a parsed EMDF container under one explicit policy.
 ///
-/// DolbyVendorCompat accepts the strict profile plus only the exact Logic
+/// ObservedVendorCompat accepts the strict profile plus only the exact Logic
 /// Pro/Dolby signaling deviations currently evidenced by controlled and
 /// external fixtures. It never mutates or synthesizes configuration fields.
 ///
@@ -406,7 +406,7 @@ pub fn validate_joc_profile_for(
     }
     let accepted = match profile {
         JocValidationProfile::EtsiStrict => deviations.is_empty(),
-        JocValidationProfile::DolbyVendorCompat => {
+        JocValidationProfile::ObservedVendorCompat => {
             deviations.iter().all(is_allowed_vendor_deviation)
         }
     };

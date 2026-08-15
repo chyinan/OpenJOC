@@ -37,7 +37,7 @@ The JOC interoperability boundary is explicit:
 
 ```text
 parse what exists -> JocPayload/ParsedJocAccessUnit
-                 -> validate(ETSI_STRICT | DOLBY_VENDOR_COMPAT)
+                 -> validate(ETSI_STRICT | OBSERVED_VENDOR_COMPAT)
                  -> decode only an accepted representation
 ```
 
@@ -80,7 +80,7 @@ as real-corpus fidelity.
 | OAMD/JOC | ETSI normative OAMD prefix, X/Y/Z and timed metadata state | ADMITTED_WITH_SCOPE | normative tests + controlled corpus | metadata-only timeline is admissible; complete vendor trim/warp semantics are not |
 | OAMD/JOC | `ETSI_STRICT` profile | ADMITTED | normative Table 55/56 validation | explicit default; never silently downgraded |
 | OAMD/JOC | Observed raw `warp_mode=3` under strict parsing | EXPECTED_STRICT_REJECTION | bit-exact controlled evidence + ETSI reserved table entry | non-zero `profile-rejection`, not corruption or an internal crash |
-| OAMD/JOC | `DOLBY_VENDOR_COMPAT` | PARTIAL | controlled observed signaling only | explicit opt-in; preserves deviations and opaque continuation; does not assign vendor semantics |
+| OAMD/JOC | `OBSERVED_VENDOR_COMPAT` | PARTIAL | controlled observed signaling only | explicit opt-in; preserves deviations and opaque continuation; does not assign vendor semantics |
 | OAMD/JOC | Complete opaque vendor continuation / warp meaning | UNRESOLVED | lossless bounded retention only | no alias, remap, trim inference, or renderer claim |
 | Reconstruction | `ReconstructionBasis` rows | DIAGNOSTIC_ONLY | deterministic numerical/cross-AU acceptance | emitted as `diagnostics/reconstruction_rows/row_NNN.wav` in capture mode |
 | Reconstruction | RcLfe/base LFE separation | ADMITTED | structural + regression evidence | retained separately as base LFE; never a dynamic row or object identity |
@@ -148,7 +148,7 @@ changes the requested profile automatically.
 | Engineering spec 6 / OAMD forensic boundary | Bit-exact OAMD entry evidence | `openjoc-cli`, `openjoc-emdf`, `openjoc-oamd` | `diagnose-oamd` records MP4 sample/AU/substream, exact skip-field and EMDF/payload/config/body spans in named coordinate systems, OAMD warp bit/window/raw value, original-byte dumps, all-AU continuity, and explicit trim-count provenance without changing decode semantics | implemented |
 | Engineering spec 6 / OAMD forensic round 2 | AU timing, payload-11 differential, independent bit oracle, ADM comparison, diagnostic warp hypotheses | `openjoc-cli` | `--au START..END`, `--diff-payload-11`, deterministic timing/diff JSON/TXT, independent cursor-free oracle, explicit raw-vs-MP4 equality, and diagnostic-only hypotheses; strict parser remains reserved-value failure; private A-F corpus evidence is retained outside Git, with B/C canonical automation semantics explicitly unresolved | implemented |
 | Engineering spec 6 / OAMD forensic round 3 | Reproducible raw/MP4/ADM refresh and Logic canonical-copy audit | private controlled run + public docs | New non-overwriting batch `2026-08-05T1042Z_logic-warp-evidence_952b052` covers A-F (12 carrier reports, six ADM reports); all 126 AUs close; four-way warp oracle remains `[526,528) = 3`; B/C remain explicitly non-canonical after a discarded Logic editing experiment; no vendor rule added | evidence refresh; semantics unresolved |
-| Engineering spec 6 / interoperability boundary | Explicit ETSI and vendor-compatibility profiles | `openjoc-emdf`, `openjoc-eac3`, `openjoc-cli` | parser retains original EMDF; `ETSI_STRICT` never relaxes Table 55/56; `DOLBY_VENDOR_COMPAT` accepts only the observed Logic/Dolby pattern, records every deviation, and manifest expectations gate Logic/future DEE regressions | implemented |
+| Engineering spec 6 / interoperability boundary | Explicit ETSI and vendor-compatibility profiles | `openjoc-emdf`, `openjoc-eac3`, `openjoc-cli` | parser retains original EMDF; `ETSI_STRICT` never relaxes Table 55/56; `OBSERVED_VENDOR_COMPAT` accepts only the observed Logic/Dolby pattern, records every deviation, and manifest expectations gate Logic/future DEE regressions | implemented |
 | TS 103 420 5.6.0, 5.6.1, 6.4, 8.3 / controlled vendor programme boundary | Typed OAMD programme layout and reconstruction-row structure | `openjoc-scene`, `openjoc-cli` | OAMD cardinalities derive from anchors; `RcLfe` remains separately retained as base LFE; dynamic-slot↔row cardinality/order is structural only; `addbsi` complexity is checked against total OAMD count; semantic binding is unresolved | implemented |
 | Engineering spec 6 / input-media boundary | File-signature classification and ISO BMFF/M4A/MP4 E-AC-3 stream-copy demux | `openjoc-container`, `openjoc-cli` | raw EC3 and ISO BMFF detection; unique `eac3` track selection; bounded FFmpeg stream-copy output; independent OpenJOC frame validation; inspect/decode integration and actionable container errors | completed |
 | Engineering spec 6 / container diagnostics | Missing, multiple, unsupported, malformed, or failed container tracks | `openjoc-container`, `openjoc-cli` | structured error tests and proof that ISO BMFF never falls through to only an E-AC-3 syncword error | completed |
@@ -209,7 +209,7 @@ unresolved or malformed carrier traversal. Every access unit has one bounded
 Annex H candidate containing payload IDs 11, 14, 2, and 1. IDs 11 and 14 share
 group 0, but both set `codecdatae=0`; ID 11 also sets
 `payload_frame_aligned=0`. `ETSI_STRICT` therefore fails with seven recorded
-normative deviations per access unit. `DOLBY_VENDOR_COMPAT` accepts the exact
+normative deviations per access unit. `OBSERVED_VENDOR_COMPAT` accepts the exact
 observed pattern as `accepted_with_deviation`, preserving the original EMDF
 configuration and all seven evidence records. Two independent release census
 runs produced byte-identical JSON/TXT reports. This establishes the
@@ -280,12 +280,12 @@ complete OAMD, JOC, or renderer requirements to completion.
   fixture evidence is recorded as an open/failed fidelity lane, not as decoder
   completion.
 
-## Dolby vendor partial-metadata boundary (2026-08-05)
+## observed-vendor partial-metadata boundary (2026-08-05)
 
 | requirement | implementation/evidence | status |
 | --- | --- | --- |
 | ETSI strict raw warp 3 rejection | Formal element-2 trim parser still returns `ReservedWarpMode { code: 3 }` at payload-relative `[526,528)`; A/E/D forensic reports remain 126/126 rejected | implemented |
-| Explicit vendor opaque trim retention | `DOLBY_VENDOR_COMPAT` requires payload ID 11, complete element-2 declared window, exact first error raw warp 3, and retains the full body/hash without remap | implemented/verified |
+| Explicit vendor opaque trim retention | `OBSERVED_VENDOR_COMPAT` requires payload ID 11, complete element-2 declared window, exact first error raw warp 3, and retains the full body/hash without remap | implemented/verified |
 | Partial OAMD state | Element 1 is formally parsed; trim is `opaque_unresolved`; trim timeline and renderer fidelity are unavailable | implemented/verified |
 | Inspect profile visibility | `inspect` always shows both carrier profiles; explicit `--trim-config-count N` additionally shows strict/vendor OAMD partial status without inferring a count | implemented |
 | Independent payload-14/JOC chain | A/E/D/F compatible-base runs parse payload 14 across 126/126 AUs; JOC declares 15 reconstruction rows, structurally cardinal with 15 OAMD dynamic slots while the separate OAMD LFE remains base-carried; authored identity is unresolved | evidence |
@@ -334,7 +334,7 @@ recorded as a codec-slot-capacity versus ADM-content distinction; PCM energy
 is never used to infer activity.
 
 This closes the Logic cardinality and first nonzero PCM boundary only under
-`DOLBY_VENDOR_COMPAT`. `ETSI_STRICT` still rejects the unchanged raw warp 3,
+`OBSERVED_VENDOR_COMPAT`. `ETSI_STRICT` still rejects the unchanged raw warp 3,
 the trim body remains opaque, complete OAMD timeline semantics are not
 claimed, and no ADM speaker/render or internal-base fidelity result is
 available.
@@ -573,7 +573,7 @@ The private run and its aggregate evidence freeze are recorded in
 | Metadata-only scene | J1R14 timeline/state regression remains passing; metadata scene remains admissible | passed |
 | ReconstructionBasis | J1R15 finite, shaped, deterministic structural rows remain available | passed; diagnostic only |
 | ETSI strict profile | Raw `warp=3` remains `ReservedWarpMode`; strict rejection is expected, not a decoder defect | expected rejection |
-| Dolby vendor profile | Observed signaling is accepted with deviations; bounded trim continuation remains opaque | partial / unresolved |
+| observed-vendor profile | Observed signaling is accepted with deviations; bounded trim continuation remains opaque | partial / unresolved |
 | Semantic binding | No authored-object PCM or audio-bound ObjectScene admission | unchanged; `SemanticBindingState::Unresolved` |
 | Production defects | Existing corpus found no defect meeting the fix policy | none observed |
 

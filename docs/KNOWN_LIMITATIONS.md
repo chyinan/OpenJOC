@@ -16,7 +16,7 @@ claiming capabilities that the current evidence does not support.
 - Diagnostic `ReconstructionBasis` rows are available, but they are not
   verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
 - Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
-- The codec-domain `JocSpatialBridge` exposes aligned Base/RB/RcLfe/OAMD
+- The codec-domain `JocSpatialFrameBridge` exposes aligned Base/RB/RcLfe/OAMD
   inputs and an explicit unresolved-operator gate, but the time-varying
   reconstruction operator `T(t)` is not established. It cannot produce an
   `ExplicitSpatialScene` or real-JOC speaker/binaural output.
@@ -58,7 +58,7 @@ claiming capabilities that the current evidence does not support.
   universal operator is known; this is deferred until it blocks a required
   decoder or renderer capability or new admissible evidence appears.
 - `ETSI_STRICT` rejects the observed reserved OAMD warp value `raw=3`.
-- `DOLBY_VENDOR_COMPAT` is explicit and partial. Observed continuation remains
+- `OBSERVED_VENDOR_COMPAT` is explicit and partial. Observed continuation remains
   opaque; warp-3 and vendor continuation semantics are unresolved.
 - Public-syntax coupling, SPX, AHT, and dependent-substream paths have bounded
   synthetic/numerical admission, but some coding-tool combinations still lack

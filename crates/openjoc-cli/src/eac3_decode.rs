@@ -24,7 +24,7 @@ use std::{fmt, io::Read};
 pub(crate) enum ValidationProfileRequest {
     Auto,
     EtsiStrict,
-    DolbyVendorCompat,
+    ObservedVendorCompat,
 }
 
 impl ValidationProfileRequest {
@@ -33,7 +33,7 @@ impl ValidationProfileRequest {
         match self {
             Self::Auto => "AUTO",
             Self::EtsiStrict => "ETSI_STRICT",
-            Self::DolbyVendorCompat => "DOLBY_VENDOR_COMPAT",
+            Self::ObservedVendorCompat => "OBSERVED_VENDOR_COMPAT",
         }
     }
 }
@@ -48,7 +48,9 @@ pub(crate) fn resolve_profile_for_stream(
 ) -> Result<JocValidationProfile, DecodeEac3Error> {
     match request {
         ValidationProfileRequest::EtsiStrict => Ok(JocValidationProfile::EtsiStrict),
-        ValidationProfileRequest::DolbyVendorCompat => Ok(JocValidationProfile::DolbyVendorCompat),
+        ValidationProfileRequest::ObservedVendorCompat => {
+            Ok(JocValidationProfile::ObservedVendorCompat)
+        }
         ValidationProfileRequest::Auto => {
             let frames = index_syncframes(stream)?;
             let units = group_access_units(&frames)?;
@@ -73,10 +75,10 @@ pub(crate) fn resolve_profile_for_stream(
                         Ok(metadata) => metadata,
                         Err(strict_error) => match validate_joc_access_unit(
                             &parsed,
-                            JocValidationProfile::DolbyVendorCompat,
+                            JocValidationProfile::ObservedVendorCompat,
                         ) {
                             Ok(metadata) => {
-                                selected = JocValidationProfile::DolbyVendorCompat;
+                                selected = JocValidationProfile::ObservedVendorCompat;
                                 metadata
                             }
                             Err(_) => return Err(strict_error.into()),
@@ -91,9 +93,9 @@ pub(crate) fn resolve_profile_for_stream(
                     parse_oamd_for_profile(
                         &metadata.oamd,
                         config.oamd,
-                        JocValidationProfile::DolbyVendorCompat,
+                        JocValidationProfile::ObservedVendorCompat,
                     )?;
-                    selected = JocValidationProfile::DolbyVendorCompat;
+                    selected = JocValidationProfile::ObservedVendorCompat;
                 }
             }
             Ok(selected)
@@ -109,15 +111,19 @@ pub(crate) fn resolve_profile_for_oamd(
 ) -> Result<OamdParseProfile, OamdError> {
     match request {
         ValidationProfileRequest::EtsiStrict => Ok(OamdParseProfile::EtsiStrict),
-        ValidationProfileRequest::DolbyVendorCompat => Ok(OamdParseProfile::DolbyVendorCompat),
+        ValidationProfileRequest::ObservedVendorCompat => {
+            Ok(OamdParseProfile::ObservedVendorCompat)
+        }
         ValidationProfileRequest::Auto => {
             match parse_oamd_for_profile(payload, config, JocValidationProfile::EtsiStrict) {
                 Ok(_) => Ok(OamdParseProfile::EtsiStrict),
-                Err(strict_error) => {
-                    parse_oamd_for_profile(payload, config, JocValidationProfile::DolbyVendorCompat)
-                        .map(|_| OamdParseProfile::DolbyVendorCompat)
-                        .map_err(|_| strict_error)
-                }
+                Err(strict_error) => parse_oamd_for_profile(
+                    payload,
+                    config,
+                    JocValidationProfile::ObservedVendorCompat,
+                )
+                .map(|_| OamdParseProfile::ObservedVendorCompat)
+                .map_err(|_| strict_error),
             }
         }
     }
@@ -269,15 +275,15 @@ fn select_metadata_for_request(
             )?,
             JocValidationProfile::EtsiStrict,
         )),
-        ValidationProfileRequest::DolbyVendorCompat => Ok((
+        ValidationProfileRequest::ObservedVendorCompat => Ok((
             required_metadata(
                 stream,
                 frames,
                 unit,
                 access_unit,
-                JocValidationProfile::DolbyVendorCompat,
+                JocValidationProfile::ObservedVendorCompat,
             )?,
-            JocValidationProfile::DolbyVendorCompat,
+            JocValidationProfile::ObservedVendorCompat,
         )),
         ValidationProfileRequest::Auto => {
             let Some(parsed) = parse_joc_access_unit(stream, frames, unit)? else {
@@ -294,9 +300,11 @@ fn select_metadata_for_request(
             match validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict) {
                 Ok(metadata) => Ok((metadata, JocValidationProfile::EtsiStrict)),
                 Err(strict_error) => {
-                    match validate_joc_access_unit(&parsed, JocValidationProfile::DolbyVendorCompat)
-                    {
-                        Ok(metadata) => Ok((metadata, JocValidationProfile::DolbyVendorCompat)),
+                    match validate_joc_access_unit(
+                        &parsed,
+                        JocValidationProfile::ObservedVendorCompat,
+                    ) {
+                        Ok(metadata) => Ok((metadata, JocValidationProfile::ObservedVendorCompat)),
                         Err(_) => Err(strict_error.into()),
                     }
                 }
@@ -312,10 +320,10 @@ fn parse_oamd_for_profile(
 ) -> Result<openjoc_oamd::OamdPayload, OamdError> {
     match validation_profile {
         JocValidationProfile::EtsiStrict => parse_oamd_payload_with_config(payload, config),
-        JocValidationProfile::DolbyVendorCompat => parse_oamd_payload_with_profile(
+        JocValidationProfile::ObservedVendorCompat => parse_oamd_payload_with_profile(
             payload,
             config,
-            OamdParseProfile::DolbyVendorCompat,
+            OamdParseProfile::ObservedVendorCompat,
             OAMD_PAYLOAD_ID,
         ),
     }
@@ -424,7 +432,7 @@ where
 
     let oamd_profile = match validation_profile {
         JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
-        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
+        JocValidationProfile::ObservedVendorCompat => OamdParseProfile::ObservedVendorCompat,
     };
     let mut decoder = if streaming {
         PayloadDecoder::streaming_with_oamd_profile(config, oamd_profile)
@@ -553,7 +561,9 @@ where
 {
     let request = match validation_profile {
         JocValidationProfile::EtsiStrict => ValidationProfileRequest::EtsiStrict,
-        JocValidationProfile::DolbyVendorCompat => ValidationProfileRequest::DolbyVendorCompat,
+        JocValidationProfile::ObservedVendorCompat => {
+            ValidationProfileRequest::ObservedVendorCompat
+        }
     };
     decode_internal_eac3_reader_with_base_sink_and_policy_request(
         reader,
@@ -622,10 +632,10 @@ where
         )?;
         let oamd_profile =
             resolve_profile_for_oamd(&metadata.oamd, config.oamd, validation_profile)?;
-        let selected_profile = if joc_profile == JocValidationProfile::DolbyVendorCompat
-            || oamd_profile == OamdParseProfile::DolbyVendorCompat
+        let selected_profile = if joc_profile == JocValidationProfile::ObservedVendorCompat
+            || oamd_profile == OamdParseProfile::ObservedVendorCompat
         {
-            JocValidationProfile::DolbyVendorCompat
+            JocValidationProfile::ObservedVendorCompat
         } else {
             JocValidationProfile::EtsiStrict
         };
@@ -685,7 +695,7 @@ where
     let mut audio_decoder = JocAccessUnitPcmDecoder::new();
     let oamd_profile = match validation_profile {
         JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
-        JocValidationProfile::DolbyVendorCompat => OamdParseProfile::DolbyVendorCompat,
+        JocValidationProfile::ObservedVendorCompat => OamdParseProfile::ObservedVendorCompat,
     };
     let mut decoder = if streaming {
         PayloadDecoder::streaming_with_oamd_profile(config, oamd_profile)

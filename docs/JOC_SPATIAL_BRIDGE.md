@@ -1,18 +1,20 @@
 # JOC spatial reconstruction bridge
 
-## Experimental clean bridge
+## JOC Spatial Bridge
 
-The implementation-bundle candidate is exposed through the explicit
-`openjoc_scene::ExperimentalCleanSpatialBridge` API. It is not selected by
-`ETSI_STRICT`, `DOLBY_VENDOR_COMPAT`, or `AUTO`; those remain validation and
-profile-selection policies upstream of this bridge. A caller must construct
-the bridge, provide a `CleanTopologySnapshot` (or reuse the current binding),
-provide a validated `CleanSpatialLayout`, and call
+The stable functional API is `openjoc_scene::JocSpatialBridge`. Its current
+implementation maturity is **experimental**; its semantic binding state is
+**unresolved**; and its official runtime validation oracle is **not
+independently confirmed**. The bridge is opt-in and is not selected by
+`ETSI_STRICT`, `OBSERVED_VENDOR_COMPAT`, or `AUTO`: those remain validation and
+profile-selection policies upstream of this spatial layer. A caller must
+construct the bridge, provide a `SpatialTopologySnapshot` (or reuse the current
+binding), provide a validated `SpatialLayout`, and call
 `render_coordinates` or `render_codec_basis_frame` into caller-owned output
 planes. It is therefore opt-in and cannot silently alter the existing decode
 path.
 
-The clean path implements only the bundle's supported ordinary domain:
+The bridge implements only the supported ordinary domain:
 
 - deterministic explicit-group/fixed-layout/dynamic-record flattening with
   persistent `(topology_epoch, ordinal)` binding state and selective
@@ -30,11 +32,11 @@ used as a projection input. Its public semantic meaning remains unresolved.
 The bridge does not make `SemanticBindingState` production-resolved, does not
 claim an official spatial oracle, and does not admit a real-JOC speaker or
 binaural fidelity result. Q40, unsupported/default branches, unadmitted
-preprocessing, and malformed-recovery semantics are outside this candidate.
+preprocessing, and malformed-recovery semantics are outside this implementation.
 
-The machine-readable bundle used for this candidate is under the local
-implementer input directory supplied for this task; the public repository
-contains only the resulting clean API, tests, and this boundary description.
+The machine-readable implementation input is not part of the public runtime
+contract; the repository exposes only the resulting spatial API, tests, and
+this boundary description.
 
 OpenJOC's primary product path is E-AC-3 JOC input, not WAV scene input:
 
@@ -66,7 +68,7 @@ they do not claim to convert decoded JOC rows into authored objects.
 - `SampleRange` gives every committed payload frame an absolute half-open
   sample interval. It is not reconstructed later from vector lengths.
 - `JocSpatialOperatorState::Unresolved` is the only production state in this
-  release. `JocSpatialBridge::frame` borrows the current frame and allocates
+  release. `JocSpatialFrameBridge::frame` borrows the current frame and allocates
   no duration-sized copy.
 
 The bridge validates finite values, coordinate cardinality, row/channel

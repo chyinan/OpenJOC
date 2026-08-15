@@ -1,6 +1,6 @@
 use openjoc_oamd::{OamdDecoderConfig, ReferenceScreen};
 use openjoc_scene::{
-    BaseFullBandCoordinate, BridgeError, JocFrameInput, JocSpatialBridge,
+    BaseFullBandCoordinate, BridgeError, JocFrameInput, JocSpatialFrameBridge,
     JocSpatialOperatorUnresolvedReason, PayloadDecoder, PayloadDecoderConfig,
 };
 
@@ -72,6 +72,21 @@ fn decoder() -> PayloadDecoder {
     })
 }
 
+#[test]
+fn unresolved_reason_migrates_legacy_name_to_canonical_name() {
+    let reason: JocSpatialOperatorUnresolvedReason =
+        serde_json::from_str("\"experimental_semantic_ambiguity\"")
+            .expect("legacy unresolved reason");
+    assert_eq!(
+        reason,
+        JocSpatialOperatorUnresolvedReason::SemanticAmbiguity
+    );
+    assert_eq!(
+        serde_json::to_string(&reason).expect("canonical unresolved reason"),
+        "\"semantic_ambiguity\""
+    );
+}
+
 fn coordinates() -> [BaseFullBandCoordinate; 5] {
     [
         BaseFullBandCoordinate::Left,
@@ -115,7 +130,7 @@ fn bridge_exposes_absolute_timeline_and_hard_unresolved_gate() {
     assert_eq!(next_frame.sample_range.start_sample, 64);
     assert_eq!(next_frame.sample_range.end_sample, 128);
 
-    let bridge = JocSpatialBridge;
+    let bridge = JocSpatialFrameBridge;
     let labels = coordinates();
     let spatial = bridge
         .frame(&frame, &labels, &base, None)
@@ -150,7 +165,7 @@ fn bridge_rejects_dimension_and_nonfinite_failures_before_output() {
             frame_index: 0,
         })
         .expect("synthetic payload is valid");
-    let bridge = JocSpatialBridge;
+    let bridge = JocSpatialFrameBridge;
     let labels = coordinates();
     let too_short = vec![vec![0.0; 63]; 5];
     assert!(matches!(

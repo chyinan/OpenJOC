@@ -51,7 +51,7 @@ base-carried information; `RcLfe` is not a dynamic reconstruction row.
 ### OAMD and profiles
 
 OAMD metadata is parsed into typed state and timed updates. `ETSI_STRICT`
-enforces the published validation rules. `DOLBY_VENDOR_COMPAT` is explicit and
+enforces the published validation rules. `OBSERVED_VENDOR_COMPAT` is explicit and
 partial: it preserves original metadata and records deviations, but does not
 assign meaning to unresolved vendor continuation.
 
@@ -91,7 +91,7 @@ and streaming remain available.
 
 ### JOC spatial reconstruction bridge
 
-`openjoc-scene` exposes `JocSpatialBridge` and the versioned
+`openjoc-scene` exposes `JocSpatialFrameBridge` and the versioned
 `openjoc.joc-spatial-reconstruction.v1` codec-domain contract. A borrowed
 `CodecBasisBlock` carries explicitly labelled Base full-band PCM, indexed
 ReconstructionBasis rows, and separate RcLfe; `JocSpatialMetadataFrame` carries
@@ -107,14 +107,14 @@ gate. There is no automatic conversion from decoded components to
 or permutation. The readiness census is in
 [`joc_reconstruction_readiness.json`](joc_reconstruction_readiness.json).
 
-The explicitly activated `ExperimentalCleanSpatialBridge` is a separate,
-non-normative downstream candidate. It consumes a losslessly retained clean
-topology/coordinate snapshot, projects into a caller-supplied public layout,
-applies the Q32 route scheduler, and accumulates linearly into caller-owned
-buffers. It does not change profile validation, assign authored-object
-identity, or resolve `SemanticBindingState`; its raw warp-3 field is retained
-as opaque data and excluded from projection arithmetic. The supported ordinary
-domain and activation surface are documented in
+The explicitly activated `JocSpatialBridge` is a downstream spatial function
+with experimental maturity. It consumes a losslessly retained topology/
+coordinate snapshot, projects into a caller-supplied public layout, applies the
+Q32 gain scheduler, and accumulates linearly into caller-owned buffers. It does
+not change profile validation, assign authored-object identity, or resolve
+`SemanticBindingState`; its raw warp-3 field is retained as opaque data and
+excluded from projection arithmetic. The supported ordinary domain and
+activation surface are documented in
 [`JOC_SPATIAL_BRIDGE.md`](JOC_SPATIAL_BRIDGE.md).
 
 ### Explicit spatial renderer

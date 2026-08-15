@@ -344,7 +344,7 @@ fn vendor_profile_retains_reserved_trim_body_without_remapping_warp() {
         OamdDecoderConfig {
             trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
         },
-        OamdParseProfile::DolbyVendorCompat,
+        OamdParseProfile::ObservedVendorCompat,
         11,
     )
     .expect("narrow vendor opaque retention");
@@ -398,7 +398,7 @@ fn vendor_profile_preserves_nonzero_non_byte_aligned_continuation_exactly() {
         OamdDecoderConfig {
             trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
         },
-        OamdParseProfile::DolbyVendorCompat,
+        OamdParseProfile::ObservedVendorCompat,
         11,
     )
     .expect("vendor opaque retention");
@@ -437,7 +437,7 @@ fn vendor_profile_does_not_generalize_reserved_trim_errors() {
             OamdDecoderConfig {
                 trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
             },
-            OamdParseProfile::DolbyVendorCompat,
+            OamdParseProfile::ObservedVendorCompat,
             11,
         );
         assert_eq!(result, Err(expected));
@@ -459,7 +459,7 @@ fn vendor_opaque_retention_requires_payload_id_eleven() {
         OamdDecoderConfig {
             trim_configuration_count: Some(NonZeroU8::new(1).expect("nonzero count")),
         },
-        OamdParseProfile::DolbyVendorCompat,
+        OamdParseProfile::ObservedVendorCompat,
         14,
     );
     assert_eq!(

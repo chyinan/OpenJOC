@@ -2612,7 +2612,7 @@ fn parser_validation_and_decoder_metadata_are_explicit_for_vendor_signaling() {
             .any(|deviation| deviation.field == JocProfileField::CodecDataPresent)
     );
 
-    let compatible = validate_joc_access_unit(&parsed, JocValidationProfile::DolbyVendorCompat)
+    let compatible = validate_joc_access_unit(&parsed, JocValidationProfile::ObservedVendorCompat)
         .expect("documented vendor profile");
     assert_eq!(
         compatible.validation_status,
@@ -2620,7 +2620,7 @@ fn parser_validation_and_decoder_metadata_are_explicit_for_vendor_signaling() {
     );
     assert_eq!(
         compatible.validation_profile,
-        JocValidationProfile::DolbyVendorCompat
+        JocValidationProfile::ObservedVendorCompat
     );
     assert_eq!(compatible.deviations, strict.deviations);
     assert_eq!(compatible.emdf, parsed.emdf);

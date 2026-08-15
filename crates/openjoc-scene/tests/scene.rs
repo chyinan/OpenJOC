@@ -95,6 +95,17 @@ fn reconstruction_basis_has_rows_without_authored_object_identity() {
 }
 
 #[test]
+fn binding_provenance_migrates_legacy_name_to_canonical_name() {
+    let provenance: BindingProvenance =
+        serde_json::from_str("\"CONTROLLED_CLEANROOM_EMPIRICAL\"").expect("legacy provenance name");
+    assert_eq!(provenance, BindingProvenance::ControlledEmpirical);
+    assert_eq!(
+        serde_json::to_string(&provenance).expect("canonical provenance name"),
+        "\"CONTROLLED_EMPIRICAL\""
+    );
+}
+
+#[test]
 fn structural_and_empirical_evidence_cannot_admit_binding() {
     for evidence_class in [
         BindingEvidenceClass::Structural,
@@ -104,7 +115,7 @@ fn structural_and_empirical_evidence_cannot_admit_binding() {
             BindingRelationKind::OamdSlotToRow,
             "J1R12 controlled corpus",
             evidence_class,
-            BindingProvenance::ControlledCleanroomEmpirical,
+            BindingProvenance::ControlledEmpirical,
         );
         let error = evidence
             .try_admit(&BindingAdmissionRequirements::default())
@@ -122,7 +133,7 @@ fn synthetic_admission_contract_is_explicit_but_does_not_change_scene_state() {
         BindingRelationKind::AuthoredObjectToRow,
         "synthetic contract test only",
         BindingEvidenceClass::Verified,
-        BindingProvenance::ControlledCleanroomEmpirical,
+        BindingProvenance::ControlledEmpirical,
     );
     evidence
         .supporting_observations

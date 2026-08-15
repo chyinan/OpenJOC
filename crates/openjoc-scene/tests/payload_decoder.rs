@@ -393,7 +393,8 @@ fn explicit_vendor_profile_retains_opaque_trim_and_keeps_joc_chain_separate() {
         PayloadDecodeError::Oamd(OamdError::ReservedWarpMode { code: 3 })
     ));
 
-    let mut vendor = PayloadDecoder::with_oamd_profile(config, OamdParseProfile::DolbyVendorCompat);
+    let mut vendor =
+        PayloadDecoder::with_oamd_profile(config, OamdParseProfile::ObservedVendorCompat);
     let frame = vendor
         .decode_frame(JocFrameInput {
             sample_rate: 48_000,

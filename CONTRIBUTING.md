@@ -15,6 +15,14 @@ Keep each project fact in its canonical documentation owner:
 Do not copy a full current status table into a historical report. Summarize and
 link to the canonical owner instead.
 
+## Public naming
+
+Public names should describe stable function or semantics and must not encode
+temporary evidence maturity, validation status, research provenance, or
+stronger vendor authority than the project has established. Represent mutable
+maturity, evidence, and validation as explicit state or documentation rather
+than baking them into stable public identifiers.
+
 Codec changes must remain explainable from permitted public normative sources,
 public mathematics, or explicitly authorized controlled evidence. Do not use
 proprietary/decompiled decoder sources or private research material as

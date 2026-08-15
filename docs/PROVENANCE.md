@@ -21,7 +21,7 @@ not purport to grant rights owned by unrelated third parties.
 The profile split is an architectural boundary, not a standards judgment.
 The parser records the EMDF fields exactly as carried. `ETSI_STRICT` applies
 the published TS 103 420 Table 55/56 constraints and retains normative failure
-evidence. `DOLBY_VENDOR_COMPAT` is an explicitly named observational profile
+evidence. `OBSERVED_VENDOR_COMPAT` is an explicitly named observational profile
 for stable Logic Pro/Dolby ecosystem signaling; it accepts only the documented
 pattern, preserves the original metadata, and emits one deviation record per
 observed field. The decoder receives a validated representation and contains
@@ -29,7 +29,7 @@ no hidden compatibility normalization.
 
 The controlled Logic Pro vector is a private, SHA-256-pinned regression input.
 Its manifest expects `ETSI_STRICT=failed` and
-`DOLBY_VENDOR_COMPAT=accepted_with_deviation`. Future Dolby Encoding Engine
+`OBSERVED_VENDOR_COMPAT=accepted_with_deviation`. Future Dolby Encoding Engine
 vectors use the same optional manifest fields, so profile outcomes are
 regression assertions without placing proprietary media in the repository.
 
@@ -1610,7 +1610,7 @@ and a test or explicit TODO before implementation proceeds.
   `codecdatae=0`; ID 11 also sets `payload_frame_aligned=0`. ID 14 is frame
   aligned with duplicate flags false, priority zero, and processing allowed
   zero. This fails TS 103 420 Table 56 in every access unit; no ETSI_STRICT
-  profile is accepted. The explicit DOLBY_VENDOR_COMPAT profile accepts the
+  profile is accepted. The explicit OBSERVED_VENDOR_COMPAT profile accepts the
   same observed pattern with seven deviations and preserves the original bytes
   for the decoder layer.
 - Reproducibility: two independent release census runs are byte-identical.
@@ -1787,14 +1787,14 @@ fidelity statement is recorded.
 
 This refresh therefore preserves the existing interoperability boundary:
 `ETSI_STRICT` returns `ReservedWarpMode { code: 3 }`; no remap, vendor exception,
-or `DOLBY_VENDOR_COMPAT` warp interpretation was added. B/C remain a UI-copy
+or `OBSERVED_VENDOR_COMPAT` warp interpretation was added. B/C remain a UI-copy
 limitation record rather than canonical single-variable vectors, and the next
 required evidence is a genuinely canonical Logic jump/ramp export or an
 additional authorized encoder/version.
 
 ### Bounded vendor opaque trim retention (2026-08-05)
 
-The explicit `DOLBY_VENDOR_COMPAT` OAMD path now retains a complete declared
+The explicit `OBSERVED_VENDOR_COMPAT` OAMD path now retains a complete declared
 element-2 trim body as `OpaqueObservedKnownElement` only after payload ID 11,
 element-1/element-2 bounds, and the formal first error
 `ReservedWarpMode { code: 3 }` are verified. It preserves raw bits, declared
@@ -2066,7 +2066,7 @@ access units. The private four-second hashes are:
 For every pre-roll vector, raw EC-3 and MP4 have 126 paired observations,
 zero payload-11 body mismatches, one unique payload-11 body, and warp
 distribution `{raw: 3, count: 126}`. `ETSI_STRICT` fails all 126 observations
-with `reserved OAMD warp mode 3`; `DOLBY_VENDOR_COMPAT` accepts all 126 with
+with `reserved OAMD warp mode 3`; `OBSERVED_VENDOR_COMPAT` accepts all 126 with
 the trim element retained as opaque/unresolved. The independent bit oracle,
 diagnostic parser, production parser trace, and direct byte mask all report
 the same payload-relative warp span `[526,528)` and raw value `3`.
@@ -2290,7 +2290,7 @@ or carrier bytes were changed.
 The first normative ambiguity is trim `warp_mode` at `[526,528)`, raw bits
 `11`, integer `3`. Table 32 marks `0b1X` reserved. Therefore
 `ETSI_STRICT` still returns `ReservedWarpMode { raw: 3 }`, while the existing
-`DOLBY_VENDOR_COMPAT` profile remains unchanged and adds no warp rule. J1R6D's
+`OBSERVED_VENDOR_COMPAT` profile remains unchanged and adds no warp rule. J1R6D's
 H0/H1/H2 branches are diagnostic labels over the same cursor, not semantic
 decoders: all 903 observations closed identically, so no hypothesis was
 selected.
@@ -2333,7 +2333,7 @@ two unchanged-project DD+ exports were deterministic after stream-copy:
 `714060cf8f2a55d5db6464cbde08e3cd342e4392806d6ff30f3ef52098bc3b84`.
 The observed `warp_mode [526,528) = raw 3` remains an ETSI reserved value;
 `ETSI_STRICT` still returns `ReservedWarpMode { raw: 3 }`, and
-`DOLBY_VENDOR_COMPAT` has no new rule. The empirical suffix `[528,536)` was
+`OBSERVED_VENDOR_COMPAT` has no new rule. The empirical suffix `[528,536)` was
 `00000000` in all 129 AUs; this does not establish padding or any other
 semantics.
 
@@ -2464,7 +2464,7 @@ implementation defect or nondeterministic acceptance failure was found.
 
 The evidence-bounded decision is `EXISTING_CORPUS_ACCEPTANCE_PARTIAL`:
 `ETSI_STRICT` continues to reject the observed raw `warp=3` as an expected
-normative boundary, while `DOLBY_VENDOR_COMPAT` accepts observed signaling only
+normative boundary, while `OBSERVED_VENDOR_COMPAT` accepts observed signaling only
 with deviations and leaves the post-warp vendor continuation opaque. This
 does not change warp/profile semantics. `SemanticBindingState::Unresolved`,
 metadata-only ObjectScene admission, diagnostic ReconstructionBasis rows,
@@ -2485,7 +2485,7 @@ unresolved; it is not an ETSI continuation, trim interpretation, padding
 claim, or vendor semantic rule.
 
 ETSI_STRICT remains unchanged and returns ReservedWarpMode { raw: 3 }.
-DOLBY_VENDOR_COMPAT still requires explicit selection and only preserves the
+OBSERVED_VENDOR_COMPAT still requires explicit selection and only preserves the
 observed raw-3 element as opaque_lossless_bounded; it does not feed the
 continuation into OAMD timelines, ObjectScene binding, ReconstructionBasis
 semantics, JOC rows, renderer state, or PCM. Existing qualified carriers were

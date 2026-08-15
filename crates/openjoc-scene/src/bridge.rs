@@ -13,16 +13,16 @@ use openjoc_oamd::OamdPayload;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-#[path = "clean_bridge.rs"]
-mod clean_bridge;
-pub use clean_bridge::{
-    CLEAN_SPATIAL_BRIDGE_SCHEMA, CleanBindingError, CleanBindingRecord, CleanBindingResult,
-    CleanBindingSnapshot, CleanBindingState, CleanBindingTransition, CleanCoordinateUpdate,
-    CleanDescriptorPatch, CleanExplicitGroup, CleanExplicitMember, CleanLayoutChannel,
-    CleanLayoutNode, CleanPairedGeometry, CleanProjectionError, CleanRouteScheduler,
-    CleanRouteVector, CleanSchedulerError, CleanSourceClass, CleanSpatialBridgeError,
-    CleanSpatialDescriptor, CleanSpatialLayout, CleanSpreadProfile, CleanSpreadSample,
-    CleanTopologySnapshot, ExperimentalCleanSpatialBridge,
+#[path = "joc_spatial_bridge.rs"]
+mod joc_spatial_bridge;
+pub use joc_spatial_bridge::{
+    GainScheduler, GainSchedulerError, JOC_SPATIAL_BRIDGE_SCHEMA, JocSpatialBridge,
+    SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
+    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate,
+    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
+    SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode, SpatialPairedGeometry,
+    SpatialProjectionError, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
+    SpatialSpreadSample, SpatialTopologySnapshot,
 };
 
 /// Versioned schema name for the borrowed codec-domain bridge contract.
@@ -90,7 +90,8 @@ pub enum JocSpatialOperatorUnresolvedReason {
     ParserInputNotImplemented,
     ReconstructionEquationNotEstablished,
     ReservedOrUnsupportedSyntax,
-    ExperimentalSemanticAmbiguity,
+    #[serde(alias = "experimental_semantic_ambiguity")]
+    SemanticAmbiguity,
 }
 
 /// Readiness state for the codec-to-spatial reconstruction boundary.
@@ -207,9 +208,9 @@ impl<'a> JocSpatialReconstructionFrame<'a> {
 
 /// Narrow bridge facade used by streaming consumers.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct JocSpatialBridge;
+pub struct JocSpatialFrameBridge;
 
-impl JocSpatialBridge {
+impl JocSpatialFrameBridge {
     /// Creates the codec-domain frame without retaining duration-proportional
     /// PCM. The caller may immediately consume the returned borrowed frame.
     pub fn frame<'a>(

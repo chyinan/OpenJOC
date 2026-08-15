@@ -998,7 +998,7 @@ fn build_vendor_oamd_evidence(
     match parse_oamd_payload_with_profile(
         payload,
         config,
-        OamdParseProfile::DolbyVendorCompat,
+        OamdParseProfile::ObservedVendorCompat,
         openjoc_oamd::OAMD_PAYLOAD_ID,
     ) {
         Ok(parsed) => {
@@ -1013,7 +1013,7 @@ fn build_vendor_oamd_evidence(
                 })
                 .collect::<Vec<_>>();
             VendorOamdEvidence {
-                profile: "DOLBY_VENDOR_COMPAT",
+                profile: "OBSERVED_VENDOR_COMPAT",
                 result: if opaque_elements.is_empty() {
                     "accepted"
                 } else {
@@ -1081,7 +1081,7 @@ fn build_vendor_oamd_evidence(
             }
         }
         Err(error) => VendorOamdEvidence {
-            profile: "DOLBY_VENDOR_COMPAT",
+            profile: "OBSERVED_VENDOR_COMPAT",
             result: "failed",
             error: Some(error.to_string()),
             oamd_payload_structurally_accepted: false,

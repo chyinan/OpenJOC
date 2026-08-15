@@ -202,10 +202,10 @@ impl PayloadDecoder {
             OamdParseProfile::EtsiStrict => {
                 parse_oamd_payload_with_config(input.oamd_payload, self.config.oamd)?
             }
-            OamdParseProfile::DolbyVendorCompat => parse_oamd_payload_with_profile(
+            OamdParseProfile::ObservedVendorCompat => parse_oamd_payload_with_profile(
                 input.oamd_payload,
                 self.config.oamd,
-                OamdParseProfile::DolbyVendorCompat,
+                OamdParseProfile::ObservedVendorCompat,
                 OAMD_PAYLOAD_ID,
             )?,
         };

@@ -369,7 +369,7 @@ fn inspect_distinguishes_normative_failure_from_vendor_compatibility() {
     assert!(output.contains("profile: ETSI_STRICT"));
     assert!(output.contains("result: failed"));
     assert!(output.contains("payload 11 codecdatae=0 where ETSI requires 1"));
-    assert!(output.contains("profile: DOLBY_VENDOR_COMPAT"));
+    assert!(output.contains("profile: OBSERVED_VENDOR_COMPAT"));
     assert!(output.contains("result: accepted_with_deviation"));
     assert!(output.contains("deviation: payload 14 codecdatae=0 expected_by_etsi=1"));
 
@@ -556,7 +556,7 @@ fn decode_respects_explicit_profiles_and_auto_selects_existing_vendor_compat() {
     );
     assert_eq!(
         auto_selection["profile_selection"]["selected_profile"],
-        "DOLBY_VENDOR_COMPAT"
+        "OBSERVED_VENDOR_COMPAT"
     );
     assert_eq!(
         auto_selection["profile_selection"]["strict_status"],
@@ -570,7 +570,7 @@ fn decode_respects_explicit_profiles_and_auto_selects_existing_vendor_compat() {
             "--downmix",
             downmix.to_str().expect("downmix path"),
             "--validation-profile",
-            "dolby-vendor-compat",
+            "observed-vendor-compat",
             "--trim-config-count",
             "1",
             "-o",
@@ -587,7 +587,7 @@ fn decode_respects_explicit_profiles_and_auto_selects_existing_vendor_compat() {
     let validation: serde_json::Value =
         serde_json::from_slice(&fs::read(&validation_path).expect("validation report"))
             .expect("validation JSON");
-    assert_eq!(validation["profile"], "DOLBY_VENDOR_COMPAT");
+    assert_eq!(validation["profile"], "OBSERVED_VENDOR_COMPAT");
     assert_eq!(validation["result"], "accepted_with_deviation");
     assert_eq!(
         validation["deviations"]

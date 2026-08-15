@@ -21,7 +21,7 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `SemanticBindingState` remains `Unresolved`;
 - `ETSI_STRICT` was the historical no-profile default and is never silently
   downgraded;
-- `DOLBY_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
+- `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
 The current development line is `0.3.0-dev`. It adds an explicit-scene,
@@ -32,7 +32,13 @@ claim binaural, room-acoustic, or renderer-fidelity parity with Dolby.
 On this development line, user-facing `decode` and `decode-payload` commands
 default to observable `AUTO` profile selection. `ETSI_STRICT` remains the
 normative policy, and AUTO can choose only the existing whitelisted
-`DOLBY_VENDOR_COMPAT` policy.
+`OBSERVED_VENDOR_COMPAT` policy.
+
+The opt-in `JocSpatialBridge` provides the codec-coordinate spatial projection
+function. Its current maturity is experimental, its semantic binding remains
+unresolved, and its official runtime validation oracle is not independently
+confirmed. These states are documented separately from the stable function
+name.
 
 Read the canonical documentation:
 
@@ -91,7 +97,7 @@ openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
 
 `decode` and `decode-payload` use `AUTO` when no profile is supplied: they
-evaluate `ETSI_STRICT` first and select `DOLBY_VENDOR_COMPAT` only when the
+evaluate `ETSI_STRICT` first and select `OBSERVED_VENDOR_COMPAT` only when the
 existing compatibility validator admits the complete deviation set. An
 explicit `--validation-profile etsi-strict` never falls back. The selected
 profile and reason are written to the bounded validation diagnostics.

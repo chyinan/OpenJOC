@@ -196,7 +196,7 @@ impl fmt::Display for OamdError {
             Self::NonzeroPadding => formatter.write_str("nonzero OAMD padding"),
             Self::VendorProfilePayloadId { payload_id } => write!(
                 formatter,
-                "Dolby vendor OAMD profile requires payload ID 11, got {payload_id}"
+                "observed-vendor OAMD profile requires payload ID 11, got {payload_id}"
             ),
         }
     }

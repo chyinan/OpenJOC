@@ -307,7 +307,7 @@ fn user_supplied_dee_fixture_uses_container_boundary_when_enabled() {
     let inspect_stdout = String::from_utf8_lossy(&inspect.stdout);
     assert!(inspect_stdout.contains("frames: 7773"));
     assert!(inspect_stdout.contains("profile: ETSI_STRICT"));
-    assert!(inspect_stdout.contains("profile: DOLBY_VENDOR_COMPAT"));
+    assert!(inspect_stdout.contains("profile: OBSERVED_VENDOR_COMPAT"));
     assert!(inspect_stdout.contains("result: failed"));
 
     let decode = Command::new(env!("CARGO_BIN_EXE_openjoc"))

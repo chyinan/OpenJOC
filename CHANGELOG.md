@@ -62,6 +62,28 @@
   resource limits. HDF5/NetCDF-4, interpolation, and nearest-direction lookup
   remain explicit non-features.
 
+### Changed
+
+- Renamed the full spatial projection surface to `JocSpatialBridge` and the
+  borrowed frame facade to `JocSpatialFrameBridge`; the module is now
+  `joc_spatial_bridge.rs`, and its schema label is now
+  `openjoc.joc-spatial-bridge.v1`. The bridge function remains experimental
+  and semantically unresolved, while those states are documented separately
+  from the stable names. No schema version bump was required because the
+  payload shape is unchanged and no committed artifact parser accepts the old
+  label.
+- Renamed the canonical compatibility policy from `DOLBY_VENDOR_COMPAT` to
+  `OBSERVED_VENDOR_COMPAT` because the former implied stronger vendor-specific
+  semantics than OpenJOC establishes. New CLI help, diagnostics, manifests,
+  and documentation use the canonical name. The former CLI and fixture-manifest
+  spellings remain accepted only as input aliases during this 0.x migration.
+- Renamed the binding provenance value `ControlledCleanroomEmpirical` to
+  `ControlledEmpirical`; the former serialized value remains accepted as an
+  input alias and new serialization emits `CONTROLLED_EMPIRICAL`.
+- Renamed the unresolved bridge reason `ExperimentalSemanticAmbiguity` to
+  `SemanticAmbiguity`; the former serialized value remains accepted as an
+  input alias.
+
 ### Scope
 
 - Renderer inputs are caller-supplied explicit mono sources; unresolved JOC

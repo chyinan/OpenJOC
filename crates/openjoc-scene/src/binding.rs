@@ -34,7 +34,8 @@ pub enum BindingEvidenceClass {
 pub enum BindingProvenance {
     NormativePublic,
     PublicReference,
-    ControlledCleanroomEmpirical,
+    #[serde(alias = "CONTROLLED_CLEANROOM_EMPIRICAL")]
+    ControlledEmpirical,
     StructuralImplementation,
     OtherAllowed,
 }

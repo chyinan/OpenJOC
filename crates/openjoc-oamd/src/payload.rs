@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::num::NonZeroU8;
 
-/// EMDF payload identifier required for the observed Dolby compatibility path.
+/// EMDF payload identifier required for the observed-vendor compatibility path.
 pub const OAMD_PAYLOAD_ID: u64 = 11;
 
 /// Explicit OAMD parser profile. The strict profile is the default and never
@@ -21,7 +21,7 @@ pub const OAMD_PAYLOAD_ID: u64 = 11;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OamdParseProfile {
     EtsiStrict,
-    DolbyVendorCompat,
+    ObservedVendorCompat,
 }
 
 /// Configuration for standard constants left undefined by TS 103 420 V1.2.1.
@@ -265,7 +265,7 @@ pub fn parse_oamd_payload_with_config(
 
 /// Parses OAMD using an explicit profile and EMDF payload identifier.
 ///
-/// The vendor profile is deliberately narrow: it only retains a complete
+/// The observed-vendor profile is deliberately narrow: it only retains a complete
 /// element-2 trim body opaquely when the bounded, formal trim parser's first
 /// error is reserved warp value 3. It does not remap or otherwise interpret
 /// that value. The payload identifier is required so callers cannot enable the
@@ -276,7 +276,7 @@ pub fn parse_oamd_payload_with_profile(
     profile: OamdParseProfile,
     payload_id: u64,
 ) -> Result<OamdPayload, OamdError> {
-    if profile == OamdParseProfile::DolbyVendorCompat && payload_id != OAMD_PAYLOAD_ID {
+    if profile == OamdParseProfile::ObservedVendorCompat && payload_id != OAMD_PAYLOAD_ID {
         return Err(OamdError::VendorProfilePayloadId { payload_id });
     }
     parse_oamd_payload_inner(payload, config, profile, Some(payload_id))
@@ -338,7 +338,7 @@ fn parse_oamd_payload_inner(
                         OamdElement::Trim(trim)
                     }
                     Err(error @ OamdError::ReservedWarpMode { code: 3 })
-                        if profile == OamdParseProfile::DolbyVendorCompat
+                        if profile == OamdParseProfile::ObservedVendorCompat
                             && payload_id == Some(OAMD_PAYLOAD_ID)
                             && alternate_data_id.is_none_or(|alternate| alternate == 0) =>
                     {

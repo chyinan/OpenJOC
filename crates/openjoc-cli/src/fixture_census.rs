@@ -56,7 +56,8 @@ impl ProfileExpectation {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ExpectedProfileResults {
     pub etsi_strict: ProfileExpectation,
-    pub dolby_vendor_compat: ProfileExpectation,
+    #[serde(rename = "observed_vendor_compat", alias = "dolby_vendor_compat")]
+    pub observed_vendor_compat: ProfileExpectation,
 }
 
 #[derive(Debug)]
@@ -294,14 +295,14 @@ pub struct FixtureReport {
     pub invalid_or_incomplete_profile_count: usize,
     pub etsi_strict_accepted_count: usize,
     pub etsi_strict_failed_count: usize,
-    pub dolby_vendor_compat_accepted_count: usize,
-    pub dolby_vendor_compat_accepted_with_deviation_count: usize,
-    pub dolby_vendor_compat_failed_count: usize,
-    pub complete_dolby_vendor_compat_profile_count: usize,
+    pub observed_vendor_compat_accepted_count: usize,
+    pub observed_vendor_compat_accepted_with_deviation_count: usize,
+    pub observed_vendor_compat_failed_count: usize,
+    pub complete_observed_vendor_compat_profile_count: usize,
     pub malformed_or_truncated_carrier_count: usize,
     pub first_malformed_candidate: Option<CarrierAttempt>,
     pub first_complete_profile: Option<CarrierAttempt>,
-    pub first_dolby_vendor_compat_profile: Option<CarrierAttempt>,
+    pub first_observed_vendor_compat_profile: Option<CarrierAttempt>,
     pub first_failure: Option<FirstFailure>,
     pub decoder_first_failure: Option<FirstFailure>,
     pub carrier_state: CarrierState,
@@ -622,14 +623,14 @@ fn census_fixture(
         invalid_or_incomplete_profile_count: 0,
         etsi_strict_accepted_count: 0,
         etsi_strict_failed_count: 0,
-        dolby_vendor_compat_accepted_count: 0,
-        dolby_vendor_compat_accepted_with_deviation_count: 0,
-        dolby_vendor_compat_failed_count: 0,
-        complete_dolby_vendor_compat_profile_count: 0,
+        observed_vendor_compat_accepted_count: 0,
+        observed_vendor_compat_accepted_with_deviation_count: 0,
+        observed_vendor_compat_failed_count: 0,
+        complete_observed_vendor_compat_profile_count: 0,
         malformed_or_truncated_carrier_count: 0,
         first_malformed_candidate: None,
         first_complete_profile: None,
-        first_dolby_vendor_compat_profile: None,
+        first_observed_vendor_compat_profile: None,
         first_failure: None,
         decoder_first_failure: None,
         carrier_state: CarrierState::JocExtensionNotSignaled,
@@ -682,17 +683,17 @@ fn census_fixture(
             frame_bytes(&media.bytes, *first).map_err(|error| census_error(entry, &error))?;
         diagnose_first_complete_audio_block(&mut report, *first, frame);
     }
-    if report.etsi_strict_accepted_count != 0 || report.dolby_vendor_compat_accepted_count != 0 {
+    if report.etsi_strict_accepted_count != 0 || report.observed_vendor_compat_accepted_count != 0 {
         for (unit_index, unit) in units.iter().enumerate() {
             match parse_joc_access_unit(&media.bytes, &frames, *unit) {
                 Ok(Some(parsed)) => {
                     if validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict).is_ok() {
                         report.complete_joc_profile_count += 1;
                     }
-                    if validate_joc_access_unit(&parsed, JocValidationProfile::DolbyVendorCompat)
+                    if validate_joc_access_unit(&parsed, JocValidationProfile::ObservedVendorCompat)
                         .is_ok()
                     {
-                        report.complete_dolby_vendor_compat_profile_count += 1;
+                        report.complete_observed_vendor_compat_profile_count += 1;
                     }
                 }
                 Ok(None) => {}
@@ -752,15 +753,15 @@ fn validate_profile_expectations(
         });
     }
     let vendor_actual = profile_outcome(
-        report.dolby_vendor_compat_accepted_count,
-        report.dolby_vendor_compat_accepted_with_deviation_count,
-        report.dolby_vendor_compat_failed_count,
+        report.observed_vendor_compat_accepted_count,
+        report.observed_vendor_compat_accepted_with_deviation_count,
+        report.observed_vendor_compat_failed_count,
     );
-    if vendor_actual != expected.dolby_vendor_compat.as_str() {
+    if vendor_actual != expected.observed_vendor_compat.as_str() {
         return Err(FixtureManifestError::ProfileExpectationMismatch {
             label: descriptor.label.clone(),
-            profile: "DOLBY_VENDOR_COMPAT",
-            expected: expected.dolby_vendor_compat.as_str(),
+            profile: "OBSERVED_VENDOR_COMPAT",
+            expected: expected.observed_vendor_compat.as_str(),
             actual: vendor_actual,
         });
     }
@@ -962,7 +963,7 @@ fn inspect_frame_end_carrier(
                         record_profile_counts(report, &profile_validations);
                     }
                     let strict = validation_result(&profile_validations, "ETSI_STRICT");
-                    let vendor = validation_result(&profile_validations, "DOLBY_VENDOR_COMPAT");
+                    let vendor = validation_result(&profile_validations, "OBSERVED_VENDOR_COMPAT");
                     let result =
                         if strict.is_some_and(|value| value.result == "normative_compliant") {
                             "parsed_normative_profile"
@@ -1001,9 +1002,9 @@ fn inspect_frame_end_carrier(
                     }
                     if (result == "parsed_normative_profile"
                         || result == "parsed_vendor_compatible_profile")
-                        && report.first_dolby_vendor_compat_profile.is_none()
+                        && report.first_observed_vendor_compat_profile.is_none()
                     {
-                        report.first_dolby_vendor_compat_profile = Some(attempt.clone());
+                        report.first_observed_vendor_compat_profile = Some(attempt.clone());
                     }
                     report.emdf_attempts.push(attempt);
                 }
@@ -1271,22 +1272,22 @@ fn inspect_skip_field_carrier(
                 record_profile_counts(report, &attempt.profile_validations);
             }
             let strict = validation_result(&attempt.profile_validations, "ETSI_STRICT");
-            let vendor = validation_result(&attempt.profile_validations, "DOLBY_VENDOR_COMPAT");
+            let vendor = validation_result(&attempt.profile_validations, "OBSERVED_VENDOR_COMPAT");
             if strict.is_some_and(|value| value.result == "normative_compliant") {
                 "parsed_normative_profile".clone_into(&mut attempt.result);
                 if report.first_complete_profile.is_none() {
                     report.first_complete_profile = Some(attempt.clone());
                 }
-                if report.first_dolby_vendor_compat_profile.is_none() {
-                    report.first_dolby_vendor_compat_profile = Some(attempt.clone());
+                if report.first_observed_vendor_compat_profile.is_none() {
+                    report.first_observed_vendor_compat_profile = Some(attempt.clone());
                 }
             } else if vendor.is_some_and(|value| {
                 value.result == "accepted_with_deviation" || value.result == "normative_compliant"
             }) {
                 "parsed_vendor_compatible_profile".clone_into(&mut attempt.result);
                 attempt.error = strict.and_then(|value| value.reason.clone());
-                if report.first_dolby_vendor_compat_profile.is_none() {
-                    report.first_dolby_vendor_compat_profile = Some(attempt.clone());
+                if report.first_observed_vendor_compat_profile.is_none() {
+                    report.first_observed_vendor_compat_profile = Some(attempt.clone());
                 }
             } else if has_oamd || has_joc {
                 "parsed_incomplete_profile".clone_into(&mut attempt.result);
@@ -1375,7 +1376,7 @@ fn payload_config_inventory(parsed: &openjoc_emdf::ParsedEmdf) -> Vec<PayloadCon
 fn profile_validation_reports(parsed: &openjoc_emdf::ParsedEmdf) -> Vec<ProfileValidationReport> {
     [
         JocValidationProfile::EtsiStrict,
-        JocValidationProfile::DolbyVendorCompat,
+        JocValidationProfile::ObservedVendorCompat,
     ]
     .into_iter()
     .map(
@@ -1420,15 +1421,15 @@ fn record_profile_counts(report: &mut FixtureReport, validations: &[ProfileValid
                 report.etsi_strict_failed_count += 1;
                 report.invalid_or_incomplete_profile_count += 1;
             }
-            ("DOLBY_VENDOR_COMPAT", "normative_compliant") => {
-                report.dolby_vendor_compat_accepted_count += 1;
+            ("OBSERVED_VENDOR_COMPAT", "normative_compliant") => {
+                report.observed_vendor_compat_accepted_count += 1;
             }
-            ("DOLBY_VENDOR_COMPAT", "accepted_with_deviation") => {
-                report.dolby_vendor_compat_accepted_count += 1;
-                report.dolby_vendor_compat_accepted_with_deviation_count += 1;
+            ("OBSERVED_VENDOR_COMPAT", "accepted_with_deviation") => {
+                report.observed_vendor_compat_accepted_count += 1;
+                report.observed_vendor_compat_accepted_with_deviation_count += 1;
             }
-            ("DOLBY_VENDOR_COMPAT", "failed") => {
-                report.dolby_vendor_compat_failed_count += 1;
+            ("OBSERVED_VENDOR_COMPAT", "failed") => {
+                report.observed_vendor_compat_failed_count += 1;
             }
             _ => {}
         }
@@ -1694,9 +1695,9 @@ fn render_text_report(report: &CensusReport) -> String {
             fixture.payload_id_14_located,
             fixture.etsi_strict_accepted_count,
             fixture.etsi_strict_failed_count,
-            fixture.dolby_vendor_compat_accepted_count,
-            fixture.dolby_vendor_compat_accepted_with_deviation_count,
-            fixture.dolby_vendor_compat_failed_count,
+            fixture.observed_vendor_compat_accepted_count,
+            fixture.observed_vendor_compat_accepted_with_deviation_count,
+            fixture.observed_vendor_compat_failed_count,
             fixture.carrier_state.status_name(),
         );
     }
@@ -1777,18 +1778,18 @@ fn render_text_report(report: &CensusReport) -> String {
         );
         let _ = writeln!(
             text,
-            "  DOLBY_VENDOR_COMPAT accepted/accepted-with-deviation/failed/complete-access-units: {}/{}/{}/{}",
-            fixture.dolby_vendor_compat_accepted_count,
-            fixture.dolby_vendor_compat_accepted_with_deviation_count,
-            fixture.dolby_vendor_compat_failed_count,
-            fixture.complete_dolby_vendor_compat_profile_count,
+            "  OBSERVED_VENDOR_COMPAT accepted/accepted-with-deviation/failed/complete-access-units: {}/{}/{}/{}",
+            fixture.observed_vendor_compat_accepted_count,
+            fixture.observed_vendor_compat_accepted_with_deviation_count,
+            fixture.observed_vendor_compat_failed_count,
+            fixture.complete_observed_vendor_compat_profile_count,
         );
         if let Some(expected) = fixture.expected_profiles {
             let _ = writeln!(
                 text,
-                "  expected profile results: ETSI_STRICT={} DOLBY_VENDOR_COMPAT={}",
+                "  expected profile results: ETSI_STRICT={} OBSERVED_VENDOR_COMPAT={}",
                 expected.etsi_strict.as_str(),
-                expected.dolby_vendor_compat.as_str(),
+                expected.observed_vendor_compat.as_str(),
             );
         }
         if let Some(attempt) = fixture
@@ -1964,7 +1965,7 @@ mod tests {
                 "path":"logic.ec3",
                 "expected_profiles":{
                     "etsi_strict":"failed",
-                    "dolby_vendor_compat":"accepted_with_deviation"
+                    "observed_vendor_compat":"accepted_with_deviation"
                 }
             }]"#,
         )
@@ -1972,9 +1973,31 @@ mod tests {
         let expected = manifest[0].expected_profiles.expect("profile expectations");
         assert_eq!(expected.etsi_strict, ProfileExpectation::Failed);
         assert_eq!(
-            expected.dolby_vendor_compat,
+            expected.observed_vendor_compat,
             ProfileExpectation::AcceptedWithDeviation
         );
+    }
+
+    #[test]
+    fn accepts_legacy_profile_manifest_name_but_serializes_canonical_name() {
+        let manifest = parse_manifest(
+            br#"[{
+                "label":"logic",
+                "path":"logic.ec3",
+                "expected_profiles":{
+                    "etsi_strict":"failed",
+                    "dolby_vendor_compat":"accepted_with_deviation"
+                }
+            }]"#,
+        )
+        .expect("legacy profile expectation should parse");
+        let expected = manifest[0].expected_profiles.expect("profile expectations");
+        let serialized = serde_json::to_value(expected).expect("serialize profile expectations");
+        assert_eq!(
+            serialized["observed_vendor_compat"],
+            "accepted_with_deviation"
+        );
+        assert!(serialized.get("dolby_vendor_compat").is_none());
     }
 
     #[test]
@@ -2116,7 +2139,7 @@ mod tests {
         assert_eq!(reports[0].result, "failed");
         assert_eq!(reports[0].deviations.len(), 7);
         assert!(reports[0].reason.is_some());
-        assert_eq!(reports[1].profile, "DOLBY_VENDOR_COMPAT");
+        assert_eq!(reports[1].profile, "OBSERVED_VENDOR_COMPAT");
         assert_eq!(reports[1].result, "accepted_with_deviation");
         assert_eq!(reports[1].deviations, reports[0].deviations);
         assert!(reports[1].reason.is_none());
@@ -2244,7 +2267,7 @@ mod tests {
                 "path":"input.ec3",
                 "expected_profiles":{
                     "etsi_strict":"failed",
-                    "dolby_vendor_compat":"failed"
+                    "observed_vendor_compat":"failed"
                 }
             }]"#,
         )

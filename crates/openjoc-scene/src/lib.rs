@@ -11,16 +11,16 @@ mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder, StreamingSceneSummary};
 mod bridge;
 pub use bridge::{
-    BaseFullBandCoordinate, BridgeError, CLEAN_SPATIAL_BRIDGE_SCHEMA, CleanBindingError,
-    CleanBindingRecord, CleanBindingResult, CleanBindingSnapshot, CleanBindingState,
-    CleanBindingTransition, CleanCoordinateUpdate, CleanDescriptorPatch, CleanExplicitGroup,
-    CleanExplicitMember, CleanLayoutChannel, CleanLayoutNode, CleanPairedGeometry,
-    CleanProjectionError, CleanRouteScheduler, CleanRouteVector, CleanSchedulerError,
-    CleanSourceClass, CleanSpatialBridgeError, CleanSpatialDescriptor, CleanSpatialLayout,
-    CleanSpreadProfile, CleanSpreadSample, CleanTopologySnapshot, CodecBasisBlock,
-    ExperimentalCleanSpatialBridge, JOC_SPATIAL_RECONSTRUCTION_SCHEMA, JocSpatialBridge,
-    JocSpatialMetadataFrame, JocSpatialOperatorState, JocSpatialOperatorUnresolvedReason,
-    JocSpatialReconstructionFrame, SampleRange,
+    BaseFullBandCoordinate, BridgeError, CodecBasisBlock, GainScheduler, GainSchedulerError,
+    JOC_SPATIAL_BRIDGE_SCHEMA, JOC_SPATIAL_RECONSTRUCTION_SCHEMA, JocSpatialBridge,
+    JocSpatialFrameBridge, JocSpatialMetadataFrame, JocSpatialOperatorState,
+    JocSpatialOperatorUnresolvedReason, JocSpatialReconstructionFrame, SampleRange,
+    SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
+    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate,
+    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
+    SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode, SpatialPairedGeometry,
+    SpatialProjectionError, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
+    SpatialSpreadSample, SpatialTopologySnapshot,
 };
 mod binding;
 pub use binding::{

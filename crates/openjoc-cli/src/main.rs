@@ -40,7 +40,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|dolby-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|dolby-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -83,7 +83,7 @@ fn main() -> ExitCode {
             eprintln!("openjoc[{}]: {error}", category.as_str());
             if category == CliErrorCategory::ProfileRejection {
                 eprintln!(
-                    "hint: the requested profile was not relaxed; inspect reports both profiles, and dolby-vendor-compat preserves only its documented partial/opaque scope"
+                    "hint: the requested profile was not relaxed; inspect reports both profiles, and observed-vendor-compat preserves only its documented partial/opaque scope"
                 );
             }
             ExitCode::FAILURE
@@ -175,7 +175,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
-        "                         [--validation-profile auto|etsi-strict|dolby-vendor-compat]\n",
+        "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
@@ -185,7 +185,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
-        "                         -o <DIR> [--validation-profile auto|etsi-strict|dolby-vendor-compat]\n",
+        "                         -o <DIR> [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [OPTIONS]\n",
         "\n",
     ));
@@ -207,7 +207,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  -h, --help       Print root command help\n",
         "  -V, --version    Print the package version and exit\n",
         "      --no-banner Disable the interactive startup banner\n",
-        "      --validation-profile Select AUTO (default for decode), ETSI strict, or explicit Dolby vendor compatibility\n",
+        "      --validation-profile Select AUTO (default for decode), ETSI strict, or explicit observed-vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
         "      --streaming      Bounded AU decode from raw EC3 or seekable ordinary ISO BMFF; requires --internal-base\n",
         "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
@@ -220,7 +220,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "\n",
         "PROFILE / CONTAINER BOUNDARIES\n",
         "  ETSI strict is never auto-downgraded; explicit ETSI_STRICT is never downgraded; reserved syntax is an expected non-zero profile rejection\n",
-        "  Dolby vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
+        "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
     ));
@@ -232,11 +232,11 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         "inspect" => concat!(
             "usage: openjoc inspect <FILE> [--trim-config-count N]\n\n",
             "Inspects raw EC3 or a seekable ordinary MP4/M4A E-AC-3 track. Reports both\n",
-            "ETSI_STRICT and DOLBY_VENDOR_COMPAT validation outcomes without fallback.\n",
+            "ETSI_STRICT and OBSERVED_VENDOR_COMPAT validation outcomes without fallback.\n",
         ),
         "decode" => concat!(
             "usage: openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
-            "       [--streaming] [--validation-profile auto|etsi-strict|dolby-vendor-compat]\n",
+            "       [--streaming] [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--internal-base-policy current-default|codec-core]\n",
             "       [--trim-config-count N] [--reference-f64]\n\n",
             "Capture mode writes a metadata-only scene plus diagnostic ReconstructionBasis rows.\n",
@@ -246,7 +246,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         ),
         "decode-payload" => concat!(
             "usage: openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>\n",
-            "       [--validation-profile auto|etsi-strict|dolby-vendor-compat] [--reference-f64]\n",
+            "       [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64]\n",
             "       [--trim-config-count N] [reference-screen options]\n\n",
             "Diagnostic/API-level payload path. Output is a metadata-only scene and separately\n",
             "named ReconstructionBasis rows, never verified authored-object PCM.\n",
@@ -408,7 +408,7 @@ fn inspect(
                 println!("  complexity index: {}", parsed.complexity_index);
                 for profile in [
                     JocValidationProfile::EtsiStrict,
-                    JocValidationProfile::DolbyVendorCompat,
+                    JocValidationProfile::ObservedVendorCompat,
                 ] {
                     print_profile_validation(&parsed, profile, trim_configuration_count);
                 }
@@ -570,12 +570,14 @@ fn print_oamd_profile_status(
         JocValidationProfile::EtsiStrict => {
             openjoc_oamd::parse_oamd_payload_with_config(payload, config)
         }
-        JocValidationProfile::DolbyVendorCompat => openjoc_oamd::parse_oamd_payload_with_profile(
-            payload,
-            config,
-            OamdParseProfile::DolbyVendorCompat,
-            openjoc_oamd::OAMD_PAYLOAD_ID,
-        ),
+        JocValidationProfile::ObservedVendorCompat => {
+            openjoc_oamd::parse_oamd_payload_with_profile(
+                payload,
+                config,
+                OamdParseProfile::ObservedVendorCompat,
+                openjoc_oamd::OAMD_PAYLOAD_ID,
+            )
+        }
     };
     match parsed {
         Ok(parsed) => {
@@ -713,7 +715,9 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
         |frame| {
             let selected_profile = match oamd_profile {
                 OamdParseProfile::EtsiStrict => JocValidationProfile::EtsiStrict,
-                OamdParseProfile::DolbyVendorCompat => JocValidationProfile::DolbyVendorCompat,
+                OamdParseProfile::ObservedVendorCompat => {
+                    JocValidationProfile::ObservedVendorCompat
+                }
             };
             write_debug(
                 &arguments.output,
@@ -820,13 +824,16 @@ fn parse_validation_profile(value: &str) -> Result<ValidationProfileRequest, io:
     match value {
         "auto" | "AUTO" => Ok(ValidationProfileRequest::Auto),
         "etsi-strict" | "ETSI_STRICT" => Ok(ValidationProfileRequest::EtsiStrict),
-        "dolby-vendor-compat" | "DOLBY_VENDOR_COMPAT" => {
-            Ok(ValidationProfileRequest::DolbyVendorCompat)
-        }
+        // Keep the former spelling as a cheap input-only migration alias. It
+        // is never shown in help or emitted in diagnostics.
+        "observed-vendor-compat"
+        | "OBSERVED_VENDOR_COMPAT"
+        | "dolby-vendor-compat"
+        | "DOLBY_VENDOR_COMPAT" => Ok(ValidationProfileRequest::ObservedVendorCompat),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "unknown validation profile {value}; expected auto, etsi-strict, or dolby-vendor-compat"
+                "unknown validation profile {value}; expected auto, etsi-strict, or observed-vendor-compat"
             ),
         )),
     }
@@ -2377,17 +2384,17 @@ fn profile_selection_artifact(
             }
         }
         ValidationProfileRequest::EtsiStrict => "passed",
-        ValidationProfileRequest::DolbyVendorCompat => "not_evaluated",
+        ValidationProfileRequest::ObservedVendorCompat => "not_evaluated",
     };
     let selection_reason = match requested_profile {
         ValidationProfileRequest::Auto if selected_profile == JocValidationProfile::EtsiStrict => {
             "AUTO selected ETSI_STRICT because strict validation passed"
         }
         ValidationProfileRequest::Auto => {
-            "AUTO selected DOLBY_VENDOR_COMPAT because strict failed and the existing compatibility whitelist accepted every deviation"
+            "AUTO selected OBSERVED_VENDOR_COMPAT because strict failed and the existing compatibility whitelist accepted every deviation"
         }
         ValidationProfileRequest::EtsiStrict => "explicit ETSI_STRICT request",
-        ValidationProfileRequest::DolbyVendorCompat => "explicit DOLBY_VENDOR_COMPAT request",
+        ValidationProfileRequest::ObservedVendorCompat => "explicit OBSERVED_VENDOR_COMPAT request",
     };
     ProfileSelectionArtifact {
         requested_profile: requested_profile.as_str(),
@@ -2597,6 +2604,23 @@ const fn classify_decode_error(error: &eac3_decode::DecodeEac3Error) -> CliError
 
 fn usage_error() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, USAGE)
+}
+
+#[cfg(test)]
+mod profile_name_tests {
+    use super::{ValidationProfileRequest, parse_validation_profile};
+
+    #[test]
+    fn legacy_cli_profile_name_is_input_only_alias() {
+        assert_eq!(
+            parse_validation_profile("dolby-vendor-compat").expect("legacy alias"),
+            ValidationProfileRequest::ObservedVendorCompat
+        );
+        assert_eq!(
+            parse_validation_profile("observed-vendor-compat").expect("canonical name"),
+            ValidationProfileRequest::ObservedVendorCompat
+        );
+    }
 }
 
 #[cfg(test)]

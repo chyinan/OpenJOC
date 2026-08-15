@@ -1,4 +1,4 @@
-//! Clean, experimental JOC spatial bridge.
+//! JOC spatial bridge implementation.
 //!
 //! The types in this module are deliberately separate from the metadata-only
 //! scene model. They describe codec-coordinate records and public layout
@@ -10,8 +10,8 @@ use crate::SemanticBindingState;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
-/// Public schema label for the clean experimental bridge.
-pub const CLEAN_SPATIAL_BRIDGE_SCHEMA: &str = "openjoc.clean.experimental-joc-spatial-bridge.v1";
+/// Public schema label for the JOC spatial bridge.
+pub const JOC_SPATIAL_BRIDGE_SCHEMA: &str = "openjoc.joc-spatial-bridge.v1";
 
 const Q32: usize = 32;
 const Q32_HALF_MINUS_ONE: u64 = 15;
@@ -19,10 +19,10 @@ const EPS_ACTIVITY: f64 = 0.000_001;
 const EPS_DELTA: f64 = 0.000_1;
 const SUM_TOLERANCE: f64 = 1.0e-9;
 
-/// Clean descriptor dispatch classes from the implementation bundle.
+/// Spatial descriptor dispatch classes from the implementation bundle.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CleanSourceClass {
+pub enum SpatialSourceClass {
     Inactive,
     ExplicitChannel,
     DynamicPoint,
@@ -35,42 +35,42 @@ pub enum CleanSourceClass {
 
 /// One finite public spread sample and its normalized weight.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanSpreadSample {
+pub struct SpatialSpreadSample {
     pub position: Vec<f64>,
     pub weight: f64,
 }
 
 /// Public finite spread profile for a region descriptor.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct CleanSpreadProfile {
-    pub samples: Vec<CleanSpreadSample>,
+pub struct SpatialSpreadProfile {
+    pub samples: Vec<SpatialSpreadSample>,
 }
 
 /// Public paired geometry used by the equal-power pair operator.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanPairedGeometry {
+pub struct SpatialPairedGeometry {
     pub first: Vec<f64>,
     pub second: Vec<f64>,
     pub blend: f64,
 }
 
-/// One effective clean descriptor. `raw3` is retained but never used in
+/// One effective spatial descriptor. `raw3` is retained but never used in
 /// projection arithmetic.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanSpatialDescriptor {
-    pub source_class: CleanSourceClass,
+pub struct SpatialDescriptor {
+    pub source_class: SpatialSourceClass,
     pub identity: String,
     pub coordinates: Vec<f64>,
-    pub spread: Option<CleanSpreadProfile>,
-    pub paired: Option<CleanPairedGeometry>,
+    pub spread: Option<SpatialSpreadProfile>,
+    pub paired: Option<SpatialPairedGeometry>,
     pub raw3: Option<Vec<u8>>,
 }
 
-impl CleanSpatialDescriptor {
+impl SpatialDescriptor {
     /// Creates a descriptor without optional spread, pair, or opaque data.
     #[must_use]
     pub fn new(
-        source_class: CleanSourceClass,
+        source_class: SpatialSourceClass,
         identity: impl Into<String>,
         coordinates: Vec<f64>,
     ) -> Self {
@@ -88,38 +88,38 @@ impl CleanSpatialDescriptor {
 /// One codec-coordinate record. The ordinal is assigned only after topology
 /// flattening; it is never authored-object identity.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanBindingRecord {
-    pub descriptor: CleanSpatialDescriptor,
+pub struct SpatialBindingRecord {
+    pub descriptor: SpatialDescriptor,
     pub scalar: f64,
     pub active: bool,
 }
 
 /// A labeled member of an explicit topology group.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanExplicitMember {
+pub struct SpatialExplicitMember {
     pub canonical_label: String,
-    pub record: CleanBindingRecord,
+    pub record: SpatialBindingRecord,
 }
 
 /// An explicit group with deterministic group and label ordering.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanExplicitGroup {
+pub struct SpatialExplicitGroup {
     pub group_order: u32,
-    pub members: Vec<CleanExplicitMember>,
+    pub members: Vec<SpatialExplicitMember>,
 }
 
-/// A valid topology snapshot in the clean ordinary-path domain.
+/// A valid topology snapshot in the ordinary spatial domain.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct CleanTopologySnapshot {
-    pub explicit_groups: Vec<CleanExplicitGroup>,
-    pub fixed_layout: Vec<CleanBindingRecord>,
-    pub dynamic_records: Vec<CleanBindingRecord>,
+pub struct SpatialTopologySnapshot {
+    pub explicit_groups: Vec<SpatialExplicitGroup>,
+    pub fixed_layout: Vec<SpatialBindingRecord>,
+    pub dynamic_records: Vec<SpatialBindingRecord>,
 }
 
-impl CleanTopologySnapshot {
-    /// Flattens the declared domain using the clean ordering rule.
+impl SpatialTopologySnapshot {
+    /// Flattens the declared domain using the spatial ordering rule.
     #[must_use]
-    pub fn flatten(&self) -> Vec<CleanBindingRecord> {
+    pub fn flatten(&self) -> Vec<SpatialBindingRecord> {
         let mut groups = self.explicit_groups.clone();
         groups.sort_by_key(|group| group.group_order);
         let mut records = Vec::new();
@@ -137,27 +137,27 @@ impl CleanTopologySnapshot {
 
 /// Present-field patch for one same-coordinate block update.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct CleanDescriptorPatch {
-    pub source_class: Option<CleanSourceClass>,
+pub struct SpatialDescriptorPatch {
+    pub source_class: Option<SpatialSourceClass>,
     pub identity: Option<String>,
     pub coordinates: Option<Vec<f64>>,
-    pub spread: Option<Option<CleanSpreadProfile>>,
-    pub paired: Option<Option<CleanPairedGeometry>>,
+    pub spread: Option<Option<SpatialSpreadProfile>>,
+    pub paired: Option<Option<SpatialPairedGeometry>>,
     pub raw3: Option<Option<Vec<u8>>>,
 }
 
 /// Selective block update. Absent fields inherit from the current coordinate.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanCoordinateUpdate {
+pub struct SpatialCoordinateUpdate {
     pub ordinal: usize,
-    pub descriptor: Option<CleanDescriptorPatch>,
+    pub descriptor: Option<SpatialDescriptorPatch>,
     pub scalar: Option<f64>,
     pub active: Option<bool>,
 }
 
-/// Binding state machine transitions from the clean specification.
+/// Binding state machine transitions for the spatial topology.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CleanBindingTransition {
+pub enum SpatialBindingTransition {
     Init,
     Stable,
     Reuse,
@@ -166,22 +166,22 @@ pub enum CleanBindingTransition {
 
 /// Effective binding snapshot keyed by `(topology_epoch, ordinal)`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CleanBindingSnapshot {
+pub struct SpatialBindingSnapshot {
     pub topology_epoch: u64,
-    pub records: Vec<CleanBindingRecord>,
+    pub records: Vec<SpatialBindingRecord>,
     pub active_count: usize,
 }
 
 /// Result of applying a topology/payload event to the binding state machine.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CleanBindingResult {
-    pub transition: CleanBindingTransition,
+pub struct SpatialBindingResult {
+    pub transition: SpatialBindingTransition,
     pub event: bool,
 }
 
 /// Binding-state failures.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CleanBindingError {
+pub enum SpatialBindingError {
     NoTopologyForInitialization,
     EmptyTopology,
     UnsupportedSourceClass(String),
@@ -190,37 +190,40 @@ pub enum CleanBindingError {
     TopologyEpochOverflow,
 }
 
-impl fmt::Display for CleanBindingError {
+impl fmt::Display for SpatialBindingError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NoTopologyForInitialization => {
-                formatter.write_str("clean binding requires an initial valid topology")
+                formatter.write_str("spatial binding requires an initial valid topology")
             }
-            Self::EmptyTopology => formatter.write_str("clean topology must contain a record"),
+            Self::EmptyTopology => formatter.write_str("spatial topology must contain a record"),
             Self::UnsupportedSourceClass(class) => {
-                write!(formatter, "unsupported clean source class: {class}")
+                write!(formatter, "unsupported spatial source class: {class}")
             }
             Self::NonFiniteScalar { ordinal } => {
-                write!(formatter, "non-finite scalar at clean coordinate {ordinal}")
+                write!(
+                    formatter,
+                    "non-finite scalar at spatial coordinate {ordinal}"
+                )
             }
             Self::UpdateOrdinalOutOfRange { ordinal, count } => write!(
                 formatter,
-                "clean update ordinal {ordinal} is outside record count {count}"
+                "spatial update ordinal {ordinal} is outside record count {count}"
             ),
-            Self::TopologyEpochOverflow => formatter.write_str("clean topology epoch overflow"),
+            Self::TopologyEpochOverflow => formatter.write_str("spatial topology epoch overflow"),
         }
     }
 }
 
-impl std::error::Error for CleanBindingError {}
+impl std::error::Error for SpatialBindingError {}
 
-/// Stateful clean codec-coordinate binding.
+/// Stateful spatial codec-coordinate binding.
 #[derive(Clone, Debug, Default)]
-pub struct CleanBindingState {
-    snapshot: Option<CleanBindingSnapshot>,
+pub struct SpatialBindingState {
+    snapshot: Option<SpatialBindingSnapshot>,
 }
 
-impl CleanBindingState {
+impl SpatialBindingState {
     /// Creates an empty binding state.
     #[must_use]
     pub const fn new() -> Self {
@@ -228,73 +231,73 @@ impl CleanBindingState {
     }
 
     /// Applies a full topology snapshot and/or same-coordinate block updates.
-    /// `None, None` is the clean no-new-payload reuse event.
+    /// `None, None` is the spatial no-new-payload reuse event.
     pub fn apply(
         &mut self,
-        topology: Option<&CleanTopologySnapshot>,
-        updates: Option<&[CleanCoordinateUpdate]>,
+        topology: Option<&SpatialTopologySnapshot>,
+        updates: Option<&[SpatialCoordinateUpdate]>,
         pcm_count: usize,
-    ) -> Result<CleanBindingResult, CleanBindingError> {
+    ) -> Result<SpatialBindingResult, SpatialBindingError> {
         let mut result = if let Some(topology) = topology {
             let records = topology.flatten();
             validate_records(&records)?;
             if records.is_empty() {
-                return Err(CleanBindingError::EmptyTopology);
+                return Err(SpatialBindingError::EmptyTopology);
             }
             match self.snapshot.as_ref() {
                 None => {
-                    self.snapshot = Some(CleanBindingSnapshot {
+                    self.snapshot = Some(SpatialBindingSnapshot {
                         topology_epoch: 1,
                         records,
                         active_count: 0,
                     });
-                    CleanBindingResult {
-                        transition: CleanBindingTransition::Init,
+                    SpatialBindingResult {
+                        transition: SpatialBindingTransition::Init,
                         event: true,
                     }
                 }
                 Some(previous) => {
                     let transition =
                         if binding_signature(&previous.records) == binding_signature(&records) {
-                            CleanBindingTransition::Stable
+                            SpatialBindingTransition::Stable
                         } else {
-                            CleanBindingTransition::Rebuild
+                            SpatialBindingTransition::Rebuild
                         };
-                    let epoch = if transition == CleanBindingTransition::Rebuild {
+                    let epoch = if transition == SpatialBindingTransition::Rebuild {
                         previous
                             .topology_epoch
                             .checked_add(1)
-                            .ok_or(CleanBindingError::TopologyEpochOverflow)?
+                            .ok_or(SpatialBindingError::TopologyEpochOverflow)?
                     } else {
                         previous.topology_epoch
                     };
-                    self.snapshot = Some(CleanBindingSnapshot {
+                    self.snapshot = Some(SpatialBindingSnapshot {
                         topology_epoch: epoch,
                         records,
                         active_count: 0,
                     });
-                    CleanBindingResult {
+                    SpatialBindingResult {
                         transition,
                         event: true,
                     }
                 }
             }
         } else if self.snapshot.is_some() {
-            CleanBindingResult {
+            SpatialBindingResult {
                 transition: if updates.is_some() {
-                    CleanBindingTransition::Stable
+                    SpatialBindingTransition::Stable
                 } else {
-                    CleanBindingTransition::Reuse
+                    SpatialBindingTransition::Reuse
                 },
                 event: updates.is_some(),
             }
         } else {
-            return Err(CleanBindingError::NoTopologyForInitialization);
+            return Err(SpatialBindingError::NoTopologyForInitialization);
         };
 
         if let Some(updates) = updates {
             let Some(snapshot) = self.snapshot.as_mut() else {
-                return Err(CleanBindingError::NoTopologyForInitialization);
+                return Err(SpatialBindingError::NoTopologyForInitialization);
             };
             let prior_signature = binding_signature(&snapshot.records);
             for update in updates {
@@ -302,13 +305,13 @@ impl CleanBindingState {
             }
             let next_signature = binding_signature(&snapshot.records);
             if prior_signature != next_signature {
-                if result.transition != CleanBindingTransition::Init {
+                if result.transition != SpatialBindingTransition::Init {
                     snapshot.topology_epoch = snapshot
                         .topology_epoch
                         .checked_add(1)
-                        .ok_or(CleanBindingError::TopologyEpochOverflow)?;
+                        .ok_or(SpatialBindingError::TopologyEpochOverflow)?;
                 }
-                result.transition = CleanBindingTransition::Rebuild;
+                result.transition = SpatialBindingTransition::Rebuild;
             }
             result.event = true;
         }
@@ -326,38 +329,38 @@ impl CleanBindingState {
 
     /// Returns the current effective snapshot.
     #[must_use]
-    pub const fn snapshot(&self) -> Option<&CleanBindingSnapshot> {
+    pub const fn snapshot(&self) -> Option<&SpatialBindingSnapshot> {
         self.snapshot.as_ref()
     }
 }
 
-fn validate_records(records: &[CleanBindingRecord]) -> Result<(), CleanBindingError> {
+fn validate_records(records: &[SpatialBindingRecord]) -> Result<(), SpatialBindingError> {
     for (ordinal, record) in records.iter().enumerate() {
         if !record.scalar.is_finite() {
-            return Err(CleanBindingError::NonFiniteScalar { ordinal });
+            return Err(SpatialBindingError::NonFiniteScalar { ordinal });
         }
-        if let CleanSourceClass::Unsupported(class) = &record.descriptor.source_class {
-            return Err(CleanBindingError::UnsupportedSourceClass(class.clone()));
+        if let SpatialSourceClass::Unsupported(class) = &record.descriptor.source_class {
+            return Err(SpatialBindingError::UnsupportedSourceClass(class.clone()));
         }
     }
     Ok(())
 }
 
 fn apply_update(
-    snapshot: &mut CleanBindingSnapshot,
-    update: &CleanCoordinateUpdate,
-) -> Result<(), CleanBindingError> {
+    snapshot: &mut SpatialBindingSnapshot,
+    update: &SpatialCoordinateUpdate,
+) -> Result<(), SpatialBindingError> {
     let count = snapshot.records.len();
     let record = snapshot.records.get_mut(update.ordinal).ok_or(
-        CleanBindingError::UpdateOrdinalOutOfRange {
+        SpatialBindingError::UpdateOrdinalOutOfRange {
             ordinal: update.ordinal,
             count,
         },
     )?;
     if let Some(patch) = &update.descriptor {
         if let Some(source_class) = &patch.source_class {
-            if let CleanSourceClass::Unsupported(class) = source_class {
-                return Err(CleanBindingError::UnsupportedSourceClass(class.clone()));
+            if let SpatialSourceClass::Unsupported(class) = source_class {
+                return Err(SpatialBindingError::UnsupportedSourceClass(class.clone()));
             }
             record.descriptor.source_class = source_class.clone();
         }
@@ -379,7 +382,7 @@ fn apply_update(
     }
     if let Some(scalar) = update.scalar {
         if !scalar.is_finite() {
-            return Err(CleanBindingError::NonFiniteScalar {
+            return Err(SpatialBindingError::NonFiniteScalar {
                 ordinal: update.ordinal,
             });
         }
@@ -391,7 +394,7 @@ fn apply_update(
     Ok(())
 }
 
-fn binding_signature(records: &[CleanBindingRecord]) -> Vec<(CleanSourceClass, String)> {
+fn binding_signature(records: &[SpatialBindingRecord]) -> Vec<(SpatialSourceClass, String)> {
     records
         .iter()
         .map(|record| {
@@ -403,9 +406,9 @@ fn binding_signature(records: &[CleanBindingRecord]) -> Vec<(CleanSourceClass, S
         .collect()
 }
 
-/// One public output channel in a clean layout registry.
+/// One public output channel in a spatial layout registry.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CleanLayoutChannel {
+pub struct SpatialLayoutChannel {
     pub identity: String,
     pub enabled: bool,
     pub lfe: bool,
@@ -413,21 +416,21 @@ pub struct CleanLayoutChannel {
 
 /// One public knot/node vector in active non-LFE layout order.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanLayoutNode {
+pub struct SpatialLayoutNode {
     pub knot_indices: Vec<usize>,
     pub vector: Vec<f64>,
 }
 
 /// One public fixed/named route vector in active non-LFE layout order.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct CleanRouteVector {
+pub struct SpatialRouteVector {
     pub identity: String,
     pub vector: Vec<f64>,
 }
 
-/// Projection failures for malformed or unsupported clean layout input.
+/// Projection failures for malformed or unsupported spatial layout input.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CleanProjectionError {
+pub enum SpatialProjectionError {
     InvalidLayout(&'static str),
     DuplicateChannel(String),
     InvalidKnotAxis { axis: usize },
@@ -446,81 +449,81 @@ pub enum CleanProjectionError {
     InvalidPair,
 }
 
-impl fmt::Display for CleanProjectionError {
+impl fmt::Display for SpatialProjectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidLayout(reason) => write!(formatter, "invalid clean layout: {reason}"),
+            Self::InvalidLayout(reason) => write!(formatter, "invalid spatial layout: {reason}"),
             Self::DuplicateChannel(identity) => {
                 write!(formatter, "duplicate layout channel: {identity}")
             }
             Self::InvalidKnotAxis { axis } => write!(formatter, "invalid knot axis {axis}"),
-            Self::NonFiniteLayoutValue => formatter.write_str("non-finite clean layout value"),
+            Self::NonFiniteLayoutValue => formatter.write_str("non-finite spatial layout value"),
             Self::VectorDimension { expected, actual } => write!(
                 formatter,
-                "clean vector has {actual} components; expected {expected}"
+                "spatial vector has {actual} components; expected {expected}"
             ),
             Self::NodeDimension { expected, actual } => write!(
                 formatter,
-                "clean node has {actual} axes; expected {expected}"
+                "spatial node has {actual} axes; expected {expected}"
             ),
             Self::NodeIndexOutOfRange { axis, index } => {
                 write!(
                     formatter,
-                    "clean node index {index} is out of range on axis {axis}"
+                    "spatial node index {index} is out of range on axis {axis}"
                 )
             }
-            Self::DuplicateNode(indices) => write!(formatter, "duplicate clean node {indices:?}"),
+            Self::DuplicateNode(indices) => write!(formatter, "duplicate spatial node {indices:?}"),
             Self::DuplicateRoute(identity) => {
-                write!(formatter, "duplicate clean route: {identity}")
+                write!(formatter, "duplicate spatial route: {identity}")
             }
-            Self::MissingRoute(identity) => write!(formatter, "missing clean route: {identity}"),
+            Self::MissingRoute(identity) => write!(formatter, "missing spatial route: {identity}"),
             Self::UnsupportedSourceClass(class) => {
-                write!(formatter, "unsupported clean projection class: {class}")
+                write!(formatter, "unsupported spatial projection class: {class}")
             }
             Self::CoordinateDimension { expected, actual } => write!(
                 formatter,
-                "clean descriptor has {actual} coordinates; expected {expected}"
+                "spatial descriptor has {actual} coordinates; expected {expected}"
             ),
             Self::NonFiniteCoordinate { axis } => {
                 write!(
                     formatter,
-                    "non-finite clean descriptor coordinate on axis {axis}"
+                    "non-finite spatial descriptor coordinate on axis {axis}"
                 )
             }
-            Self::MissingNode(indices) => write!(formatter, "missing clean node {indices:?}"),
-            Self::InvalidSpread => formatter.write_str("invalid clean spread profile"),
-            Self::InvalidPair => formatter.write_str("invalid clean paired geometry"),
+            Self::MissingNode(indices) => write!(formatter, "missing spatial node {indices:?}"),
+            Self::InvalidSpread => formatter.write_str("invalid spatial spread profile"),
+            Self::InvalidPair => formatter.write_str("invalid spatial paired geometry"),
         }
     }
 }
 
-impl std::error::Error for CleanProjectionError {}
+impl std::error::Error for SpatialProjectionError {}
 
-/// Public layout registry used by the clean projection equations.
+/// Public layout registry used by the spatial projection equations.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CleanSpatialLayout {
-    channels: Vec<CleanLayoutChannel>,
+pub struct SpatialLayout {
+    channels: Vec<SpatialLayoutChannel>,
     active_indices: Vec<usize>,
     knot_axes: Vec<Vec<f64>>,
-    node_vectors: Vec<CleanLayoutNode>,
-    route_vectors: Vec<CleanRouteVector>,
+    node_vectors: Vec<SpatialLayoutNode>,
+    route_vectors: Vec<SpatialRouteVector>,
 }
 
-impl CleanSpatialLayout {
+impl SpatialLayout {
     /// Validates and constructs an ordered public layout registry.
     pub fn new(
-        channels: Vec<CleanLayoutChannel>,
+        channels: Vec<SpatialLayoutChannel>,
         knot_axes: Vec<Vec<f64>>,
-        node_vectors: Vec<CleanLayoutNode>,
-        route_vectors: Vec<CleanRouteVector>,
-    ) -> Result<Self, CleanProjectionError> {
+        node_vectors: Vec<SpatialLayoutNode>,
+        route_vectors: Vec<SpatialRouteVector>,
+    ) -> Result<Self, SpatialProjectionError> {
         if channels.is_empty() {
-            return Err(CleanProjectionError::InvalidLayout("no channels"));
+            return Err(SpatialProjectionError::InvalidLayout("no channels"));
         }
         let mut identities = HashSet::with_capacity(channels.len());
         for channel in &channels {
             if !identities.insert(channel.identity.as_str()) {
-                return Err(CleanProjectionError::DuplicateChannel(
+                return Err(SpatialProjectionError::DuplicateChannel(
                     channel.identity.clone(),
                 ));
             }
@@ -531,7 +534,7 @@ impl CleanSpatialLayout {
             .filter_map(|(index, channel)| (channel.enabled && !channel.lfe).then_some(index))
             .collect();
         if active_indices.is_empty() {
-            return Err(CleanProjectionError::InvalidLayout(
+            return Err(SpatialProjectionError::InvalidLayout(
                 "no active non-LFE channels",
             ));
         }
@@ -540,28 +543,28 @@ impl CleanSpatialLayout {
                 || knots.iter().any(|value| !value.is_finite())
                 || knots.windows(2).any(|window| window[0] >= window[1])
             {
-                return Err(CleanProjectionError::InvalidKnotAxis { axis });
+                return Err(SpatialProjectionError::InvalidKnotAxis { axis });
             }
         }
         let component_count = active_indices.len();
         let mut seen_nodes = Vec::with_capacity(node_vectors.len());
         for node in &node_vectors {
             if node.knot_indices.len() != knot_axes.len() {
-                return Err(CleanProjectionError::NodeDimension {
+                return Err(SpatialProjectionError::NodeDimension {
                     expected: knot_axes.len(),
                     actual: node.knot_indices.len(),
                 });
             }
             for (axis, &index) in node.knot_indices.iter().enumerate() {
                 if index >= knot_axes[axis].len() {
-                    return Err(CleanProjectionError::NodeIndexOutOfRange { axis, index });
+                    return Err(SpatialProjectionError::NodeIndexOutOfRange { axis, index });
                 }
             }
             if seen_nodes
                 .iter()
                 .any(|indices: &Vec<usize>| indices == &node.knot_indices)
             {
-                return Err(CleanProjectionError::DuplicateNode(
+                return Err(SpatialProjectionError::DuplicateNode(
                     node.knot_indices.clone(),
                 ));
             }
@@ -571,7 +574,9 @@ impl CleanSpatialLayout {
         let mut routes = HashSet::with_capacity(route_vectors.len());
         for route in &route_vectors {
             if !routes.insert(route.identity.as_str()) {
-                return Err(CleanProjectionError::DuplicateRoute(route.identity.clone()));
+                return Err(SpatialProjectionError::DuplicateRoute(
+                    route.identity.clone(),
+                ));
             }
             validate_vector(&route.vector, component_count)?;
         }
@@ -592,15 +597,15 @@ impl CleanSpatialLayout {
 
     /// Returns the original configured channel order, including excluded channels.
     #[must_use]
-    pub fn channels(&self) -> &[CleanLayoutChannel] {
+    pub fn channels(&self) -> &[SpatialLayoutChannel] {
         &self.channels
     }
 
     /// Computes normalized `P(d,L)` in active non-LFE channel order.
     pub fn project(
         &self,
-        descriptor: &CleanSpatialDescriptor,
-    ) -> Result<Vec<f64>, CleanProjectionError> {
+        descriptor: &SpatialDescriptor,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
         let mut vector = if let Some(spread) = &descriptor.spread {
             self.project_spread(descriptor, spread)?
         } else {
@@ -612,17 +617,17 @@ impl CleanSpatialLayout {
 
     fn project_spread(
         &self,
-        descriptor: &CleanSpatialDescriptor,
-        spread: &CleanSpreadProfile,
-    ) -> Result<Vec<f64>, CleanProjectionError> {
+        descriptor: &SpatialDescriptor,
+        spread: &SpatialSpreadProfile,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
         if spread.samples.is_empty() {
-            return Err(CleanProjectionError::InvalidSpread);
+            return Err(SpatialProjectionError::InvalidSpread);
         }
         let mut total_weight = 0.0;
         let mut vector = vec![0.0; self.active_channel_count()];
         for sample in &spread.samples {
             if !sample.weight.is_finite() || sample.weight < 0.0 {
-                return Err(CleanProjectionError::InvalidSpread);
+                return Err(SpatialProjectionError::InvalidSpread);
             }
             total_weight += sample.weight;
             let mut point_descriptor = descriptor.clone();
@@ -634,19 +639,19 @@ impl CleanSpatialLayout {
             }
         }
         if !total_weight.is_finite() || (total_weight - 1.0).abs() > SUM_TOLERANCE {
-            return Err(CleanProjectionError::InvalidSpread);
+            return Err(SpatialProjectionError::InvalidSpread);
         }
         Ok(vector)
     }
 
     fn project_without_spread(
         &self,
-        descriptor: &CleanSpatialDescriptor,
-    ) -> Result<Vec<f64>, CleanProjectionError> {
-        let is_inactive = matches!(descriptor.source_class, CleanSourceClass::Inactive);
+        descriptor: &SpatialDescriptor,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        let is_inactive = matches!(descriptor.source_class, SpatialSourceClass::Inactive);
         let mut vector = match &descriptor.source_class {
-            CleanSourceClass::Inactive => vec![0.0; self.active_channel_count()],
-            CleanSourceClass::ExplicitChannel => self
+            SpatialSourceClass::Inactive => vec![0.0; self.active_channel_count()],
+            SpatialSourceClass::ExplicitChannel => self
                 .active_channel_index(&descriptor.identity)
                 .map_or_else(
                     || self.point_vector(&descriptor.coordinates),
@@ -656,17 +661,19 @@ impl CleanSpatialLayout {
                         Ok(vector)
                     },
                 )?,
-            CleanSourceClass::DynamicPoint | CleanSourceClass::DynamicRegion => {
+            SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion => {
                 self.point_vector(&descriptor.coordinates)?
             }
-            CleanSourceClass::FixedLayout | CleanSourceClass::NamedLayout => self
+            SpatialSourceClass::FixedLayout | SpatialSourceClass::NamedLayout => self
                 .route_vectors
                 .iter()
                 .find(|route| route.identity == descriptor.identity)
                 .map(|route| route.vector.clone())
-                .ok_or_else(|| CleanProjectionError::MissingRoute(descriptor.identity.clone()))?,
-            CleanSourceClass::Unsupported(class) => {
-                return Err(CleanProjectionError::UnsupportedSourceClass(class.clone()));
+                .ok_or_else(|| SpatialProjectionError::MissingRoute(descriptor.identity.clone()))?,
+            SpatialSourceClass::Unsupported(class) => {
+                return Err(SpatialProjectionError::UnsupportedSourceClass(
+                    class.clone(),
+                ));
             }
         };
         if !is_inactive {
@@ -683,9 +690,9 @@ impl CleanSpatialLayout {
             .position(|&index| self.channels[index].identity == identity)
     }
 
-    fn point_vector(&self, coordinates: &[f64]) -> Result<Vec<f64>, CleanProjectionError> {
+    fn point_vector(&self, coordinates: &[f64]) -> Result<Vec<f64>, SpatialProjectionError> {
         if coordinates.len() != self.knot_axes.len() {
-            return Err(CleanProjectionError::CoordinateDimension {
+            return Err(SpatialProjectionError::CoordinateDimension {
                 expected: self.knot_axes.len(),
                 actual: coordinates.len(),
             });
@@ -693,7 +700,7 @@ impl CleanSpatialLayout {
         let mut choices = Vec::with_capacity(coordinates.len());
         for (axis, (&coordinate, knots)) in coordinates.iter().zip(&self.knot_axes).enumerate() {
             if !coordinate.is_finite() {
-                return Err(CleanProjectionError::NonFiniteCoordinate { axis });
+                return Err(SpatialProjectionError::NonFiniteCoordinate { axis });
             }
             if knots.len() == 1 || coordinate <= knots[0] {
                 choices.push((0, 0, 1.0, 0.0));
@@ -724,13 +731,13 @@ impl CleanSpatialLayout {
         choices: &[(usize, usize, f64, f64)],
         indices: &mut Vec<usize>,
         vector: &mut [f64],
-    ) -> Result<(), CleanProjectionError> {
+    ) -> Result<(), SpatialProjectionError> {
         if axis == choices.len() {
             let node = self
                 .node_vectors
                 .iter()
                 .find(|node| node.knot_indices.as_slice() == indices.as_slice())
-                .ok_or_else(|| CleanProjectionError::MissingNode(indices.clone()))?;
+                .ok_or_else(|| SpatialProjectionError::MissingNode(indices.clone()))?;
             for (out, value) in vector.iter_mut().zip(&node.vector) {
                 *out += coefficient * value;
             }
@@ -760,7 +767,10 @@ impl CleanSpatialLayout {
         Ok(())
     }
 
-    fn paired_vector(&self, pair: &CleanPairedGeometry) -> Result<Vec<f64>, CleanProjectionError> {
+    fn paired_vector(
+        &self,
+        pair: &SpatialPairedGeometry,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
         if !pair.blend.is_finite()
             || !(0.0..=1.0).contains(&pair.blend)
             || pair.first.len() != self.active_channel_count()
@@ -768,7 +778,7 @@ impl CleanSpatialLayout {
             || pair.first.iter().any(|value| !value.is_finite())
             || pair.second.iter().any(|value| !value.is_finite())
         {
-            return Err(CleanProjectionError::InvalidPair);
+            return Err(SpatialProjectionError::InvalidPair);
         }
         let lower = (std::f64::consts::PI * pair.blend / 2.0).cos();
         let upper = (std::f64::consts::PI * pair.blend / 2.0).sin();
@@ -781,15 +791,15 @@ impl CleanSpatialLayout {
     }
 }
 
-fn validate_vector(vector: &[f64], expected: usize) -> Result<(), CleanProjectionError> {
+fn validate_vector(vector: &[f64], expected: usize) -> Result<(), SpatialProjectionError> {
     if vector.len() != expected {
-        return Err(CleanProjectionError::VectorDimension {
+        return Err(SpatialProjectionError::VectorDimension {
             expected,
             actual: vector.len(),
         });
     }
     if vector.iter().any(|value| !value.is_finite()) {
-        return Err(CleanProjectionError::NonFiniteLayoutValue);
+        return Err(SpatialProjectionError::NonFiniteLayoutValue);
     }
     Ok(())
 }
@@ -810,27 +820,27 @@ fn normalize(vector: &mut [f64]) {
 
 /// Q32 scheduler failures.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CleanSchedulerError {
+pub enum GainSchedulerError {
     InvalidSampleRate,
     NonFiniteTarget,
     DurationOverflow,
 }
 
-impl fmt::Display for CleanSchedulerError {
+impl fmt::Display for GainSchedulerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidSampleRate => formatter.write_str("clean scheduler sample rate is zero"),
-            Self::NonFiniteTarget => formatter.write_str("clean scheduler target is non-finite"),
-            Self::DurationOverflow => formatter.write_str("clean scheduler duration overflow"),
+            Self::InvalidSampleRate => formatter.write_str("gain scheduler sample rate is zero"),
+            Self::NonFiniteTarget => formatter.write_str("gain scheduler target is non-finite"),
+            Self::DurationOverflow => formatter.write_str("gain scheduler duration overflow"),
         }
     }
 }
 
-impl std::error::Error for CleanSchedulerError {}
+impl std::error::Error for GainSchedulerError {}
 
-/// Stateful Q32 experimental route scheduler.
+/// Stateful Q32 gain scheduler.
 #[derive(Clone, Debug, Default)]
-pub struct CleanRouteScheduler {
+pub struct GainScheduler {
     current: f64,
     target: f64,
     delta: f64,
@@ -838,7 +848,7 @@ pub struct CleanRouteScheduler {
     phase: usize,
 }
 
-impl CleanRouteScheduler {
+impl GainScheduler {
     /// Creates the zeroed scheduler state.
     #[must_use]
     pub const fn new() -> Self {
@@ -851,19 +861,19 @@ impl CleanRouteScheduler {
         }
     }
 
-    /// Applies a target event under the explicitly experimental Q32 profile.
+    /// Applies a target event under the Q32 scheduling contract.
     pub fn set_target(
         &mut self,
         target: f64,
         event: bool,
         duration_samples: u64,
         sample_rate: u32,
-    ) -> Result<(), CleanSchedulerError> {
+    ) -> Result<(), GainSchedulerError> {
         if sample_rate == 0 {
-            return Err(CleanSchedulerError::InvalidSampleRate);
+            return Err(GainSchedulerError::InvalidSampleRate);
         }
         if !target.is_finite() {
-            return Err(CleanSchedulerError::NonFiniteTarget);
+            return Err(GainSchedulerError::NonFiniteTarget);
         }
         self.target = target;
         if !event {
@@ -873,7 +883,7 @@ impl CleanRouteScheduler {
         let scaled = duration_samples
             .checked_mul(rho)
             .and_then(|value| value.checked_add(Q32_HALF_MINUS_ONE))
-            .ok_or(CleanSchedulerError::DurationOverflow)?;
+            .ok_or(GainSchedulerError::DurationOverflow)?;
         let quanta = scaled / Q32 as u64;
         if (target - self.current).abs() >= EPS_DELTA && quanta > 0 {
             self.remaining_quanta = quanta;
@@ -921,7 +931,7 @@ impl CleanRouteScheduler {
         self.phase = 0;
     }
 
-    /// Returns whether this route is above the clean activity floor.
+    /// Returns whether this route is above the spatial activity floor.
     #[must_use]
     pub fn active(&self) -> bool {
         self.target.abs() >= EPS_ACTIVITY || self.current.abs() >= EPS_ACTIVITY
@@ -940,12 +950,12 @@ impl CleanRouteScheduler {
     }
 }
 
-/// Top-level errors from the experimental clean accumulation bridge.
+/// Top-level errors from the spatial accumulation bridge.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CleanSpatialBridgeError {
-    Binding(CleanBindingError),
-    Projection(CleanProjectionError),
-    Scheduler(CleanSchedulerError),
+pub enum SpatialBridgeError {
+    Binding(SpatialBindingError),
+    Projection(SpatialProjectionError),
+    Scheduler(GainSchedulerError),
     OutputChannelCount {
         expected: usize,
         actual: usize,
@@ -970,12 +980,12 @@ pub enum CleanSpatialBridgeError {
     },
 }
 
-impl fmt::Display for CleanSpatialBridgeError {
+impl fmt::Display for SpatialBridgeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Binding(error) => write!(formatter, "clean binding error: {error}"),
-            Self::Projection(error) => write!(formatter, "clean projection error: {error}"),
-            Self::Scheduler(error) => write!(formatter, "clean scheduler error: {error}"),
+            Self::Binding(error) => write!(formatter, "spatial binding error: {error}"),
+            Self::Projection(error) => write!(formatter, "spatial projection error: {error}"),
+            Self::Scheduler(error) => write!(formatter, "gain scheduler error: {error}"),
             Self::OutputChannelCount { expected, actual } => {
                 write!(
                     formatter,
@@ -1014,50 +1024,50 @@ impl fmt::Display for CleanSpatialBridgeError {
     }
 }
 
-impl std::error::Error for CleanSpatialBridgeError {}
+impl std::error::Error for SpatialBridgeError {}
 
-impl From<CleanBindingError> for CleanSpatialBridgeError {
-    fn from(value: CleanBindingError) -> Self {
+impl From<SpatialBindingError> for SpatialBridgeError {
+    fn from(value: SpatialBindingError) -> Self {
         Self::Binding(value)
     }
 }
 
-impl From<CleanProjectionError> for CleanSpatialBridgeError {
-    fn from(value: CleanProjectionError) -> Self {
+impl From<SpatialProjectionError> for SpatialBridgeError {
+    fn from(value: SpatialProjectionError) -> Self {
         Self::Projection(value)
     }
 }
 
-impl From<CleanSchedulerError> for CleanSpatialBridgeError {
-    fn from(value: CleanSchedulerError) -> Self {
+impl From<GainSchedulerError> for SpatialBridgeError {
+    fn from(value: GainSchedulerError) -> Self {
         Self::Scheduler(value)
     }
 }
 
-/// Explicitly activated clean experimental bridge with persistent streaming state.
+/// JOC spatial bridge with persistent streaming state.
 #[derive(Clone, Debug, Default)]
-pub struct ExperimentalCleanSpatialBridge {
-    binding: CleanBindingState,
-    schedulers: Vec<CleanRouteScheduler>,
+pub struct JocSpatialBridge {
+    binding: SpatialBindingState,
+    schedulers: Vec<GainScheduler>,
     targets: Vec<Vec<f64>>,
-    last_layout: Option<CleanSpatialLayout>,
+    last_layout: Option<SpatialLayout>,
 }
 
-impl ExperimentalCleanSpatialBridge {
-    /// Creates an empty experimental bridge. It has no production-resolved state.
+impl JocSpatialBridge {
+    /// Creates an empty bridge. Its semantic operator state remains unresolved.
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            binding: CleanBindingState::new(),
+            binding: SpatialBindingState::new(),
             schedulers: Vec::new(),
             targets: Vec::new(),
             last_layout: None,
         }
     }
 
-    /// Returns the current clean binding state.
+    /// Returns the current spatial binding state.
     #[must_use]
-    pub const fn binding_state(&self) -> &CleanBindingState {
+    pub const fn binding_state(&self) -> &SpatialBindingState {
         &self.binding
     }
 
@@ -1067,7 +1077,7 @@ impl ExperimentalCleanSpatialBridge {
         SemanticBindingState::Unresolved
     }
 
-    /// This candidate is executable only through its explicit experimental type.
+    /// The current implementation is executable only through this explicit bridge.
     #[must_use]
     pub const fn is_production_resolved(&self) -> bool {
         false
@@ -1090,13 +1100,13 @@ impl ExperimentalCleanSpatialBridge {
     pub fn render_coordinates(
         &mut self,
         coordinates: &[&[f64]],
-        topology: Option<&CleanTopologySnapshot>,
-        updates: Option<&[CleanCoordinateUpdate]>,
-        layout: &CleanSpatialLayout,
+        topology: Option<&SpatialTopologySnapshot>,
+        updates: Option<&[SpatialCoordinateUpdate]>,
+        layout: &SpatialLayout,
         duration_samples: u64,
         sample_rate: u32,
         outputs: &mut [&mut [f64]],
-    ) -> Result<(), CleanSpatialBridgeError> {
+    ) -> Result<(), SpatialBridgeError> {
         validate_block_shapes(coordinates, layout, outputs)?;
         let block_length = outputs.first().map_or(0, |output| output.len());
         let layout_changed = self
@@ -1105,8 +1115,8 @@ impl ExperimentalCleanSpatialBridge {
             .is_none_or(|previous| previous != layout);
         let result = self.binding.apply(topology, updates, coordinates.len())?;
         let Some(snapshot) = self.binding.snapshot() else {
-            return Err(CleanSpatialBridgeError::Binding(
-                CleanBindingError::NoTopologyForInitialization,
+            return Err(SpatialBridgeError::Binding(
+                SpatialBindingError::NoTopologyForInitialization,
             ));
         };
         let active_count = snapshot.active_count;
@@ -1116,11 +1126,11 @@ impl ExperimentalCleanSpatialBridge {
         let reset_routes = route_shape_changed
             || matches!(
                 result.transition,
-                CleanBindingTransition::Init | CleanBindingTransition::Rebuild
+                SpatialBindingTransition::Init | SpatialBindingTransition::Rebuild
             );
         if reset_routes {
             self.schedulers = (0..active_count * layout.active_channel_count())
-                .map(|_| CleanRouteScheduler::new())
+                .map(|_| GainScheduler::new())
                 .collect();
             self.targets = vec![vec![0.0; layout.active_channel_count()]; active_count];
             self.last_layout = Some(layout.clone());
@@ -1169,10 +1179,7 @@ impl ExperimentalCleanSpatialBridge {
                         output[sample] = value;
                         if !value.is_finite() {
                             output.fill(0.0);
-                            return Err(CleanSpatialBridgeError::NonFiniteOutput {
-                                channel,
-                                sample,
-                            });
+                            return Err(SpatialBridgeError::NonFiniteOutput { channel, sample });
                         }
                     }
                 }
@@ -1181,18 +1188,18 @@ impl ExperimentalCleanSpatialBridge {
         Ok(())
     }
 
-    /// Renders the existing decoded Base/RB frame boundary through the clean
+    /// Renders the existing decoded Base/RB frame boundary through the spatial
     /// bridge. Base full-band coordinates precede ReconstructionBasis rows;
     /// `RcLfe` remains separate and is not accumulated here.
     pub fn render_codec_basis_frame(
         &mut self,
         frame: &JocSpatialReconstructionFrame<'_>,
-        topology: Option<&CleanTopologySnapshot>,
-        updates: Option<&[CleanCoordinateUpdate]>,
-        layout: &CleanSpatialLayout,
+        topology: Option<&SpatialTopologySnapshot>,
+        updates: Option<&[SpatialCoordinateUpdate]>,
+        layout: &SpatialLayout,
         duration_samples: u64,
         outputs: &mut [&mut [f64]],
-    ) -> Result<(), CleanSpatialBridgeError> {
+    ) -> Result<(), SpatialBridgeError> {
         let mut coordinates = Vec::with_capacity(
             frame.basis.base_full_band_pcm.len() + frame.basis.reconstruction_basis.rows.len(),
         );
@@ -1219,12 +1226,12 @@ impl ExperimentalCleanSpatialBridge {
 
 fn validate_block_shapes(
     coordinates: &[&[f64]],
-    layout: &CleanSpatialLayout,
+    layout: &SpatialLayout,
     outputs: &[&mut [f64]],
-) -> Result<(), CleanSpatialBridgeError> {
+) -> Result<(), SpatialBridgeError> {
     let expected_channels = layout.active_channel_count();
     if outputs.len() != expected_channels {
-        return Err(CleanSpatialBridgeError::OutputChannelCount {
+        return Err(SpatialBridgeError::OutputChannelCount {
             expected: expected_channels,
             actual: outputs.len(),
         });
@@ -1232,7 +1239,7 @@ fn validate_block_shapes(
     let block_length = outputs.first().map_or(0, |output| output.len());
     for (channel, output) in outputs.iter().enumerate() {
         if output.len() != block_length {
-            return Err(CleanSpatialBridgeError::OutputLengthMismatch {
+            return Err(SpatialBridgeError::OutputLengthMismatch {
                 channel,
                 expected: block_length,
                 actual: output.len(),
@@ -1241,14 +1248,14 @@ fn validate_block_shapes(
     }
     for (coordinate, input) in coordinates.iter().enumerate() {
         if input.len() != block_length {
-            return Err(CleanSpatialBridgeError::InputLengthMismatch {
+            return Err(SpatialBridgeError::InputLengthMismatch {
                 coordinate,
                 expected: block_length,
                 actual: input.len(),
             });
         }
         if let Some(sample) = input.iter().position(|value| !value.is_finite()) {
-            return Err(CleanSpatialBridgeError::NonFiniteInput { coordinate, sample });
+            return Err(SpatialBridgeError::NonFiniteInput { coordinate, sample });
         }
     }
     Ok(())
