@@ -53,7 +53,7 @@ current capability matrix or a historical milestone log.
 - Evaluate real-producer coding-tool combinations where public-syntax admission
   currently exceeds controlled real-corpus activation.
 
-## Explicit non-goals for the current v0.2.0 line
+## Explicit non-goals for the OpenJOC 0.3.0 release
 
 - No implicit authored-object PCM claim.
 - No audio-bound ObjectScene or proprietary renderer-fidelity claim. The

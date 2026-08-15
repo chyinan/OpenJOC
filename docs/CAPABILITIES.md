@@ -1,7 +1,7 @@
-# OpenJOC 0.3.0-dev capabilities
+# OpenJOC 0.3.0 capabilities
 
-This is the canonical current capability status for the OpenJOC 0.3.0-dev
-development line. The immutable v0.2.0 release remains separately documented
+This is the canonical current capability status for the OpenJOC 0.3.0
+release candidate. The immutable v0.2.0 release remains separately documented
 by its acceptance record. This is a release-facing snapshot, not a research
 journal. Engineering requirement details belong in
 [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md); historical evidence belongs
@@ -46,7 +46,7 @@ renderer.
 | Rendering | Static explicit-source uniform partitioned binaural convolution | `ADMITTED_WITH_SCOPE` | `openjoc-render` fixed-FFT backend, Direct FIR equivalence, multiple partition sizes/sources, partial-input, exact-tail and lifecycle regressions | Caller selects one fixed power-of-two `P`; FFT size is `2P`, input is exact `P`-sample partitions plus one final partial, scheduling latency is explicitly `P` samples; no adaptive selection, nonuniform partitions, SOFA, interpolation, moving sources, or JOC bridge |
 | Rendering | Strict `SimpleFreeFieldHRIR` SOFA ingestion into `HrirBank` | `ADMITTED_WITH_SCOPE` | `openjoc-sofa` synthetic CDF-1 fixture, coordinate/ear/delay/malformed-file tests, direct and partitioned construction integration | Local read-only NetCDF classic CDF-1 subset; SOFA convention versions 1.0–1.2, exactly two receivers, spherical degree/degree/metre sources, integer sample delays; no HDF5/NetCDF-4, interpolation, nearest lookup, downloads, writing, or JOC bridge |
 | Rendering | Audio-bound `ObjectScene` or renderer fidelity | `NOT_ADMITTED` | Semantic binding remains unresolved and no proprietary renderer evidence is admitted | No authored-object/JOC audio binding, binaural parity, or Dolby renderer-fidelity claim |
-| Release | OpenJOC 0.2.0 platform binaries | `ADMITTED_WITH_SCOPE` | Published Apple silicon macOS, Windows x86_64, and GNU/Linux x86_64 assets; native Windows validation and Ubuntu WSL2 validation | Linux evidence is limited to Ubuntu 20.04.6 LTS under WSL2; the macOS asset is not Developer-ID signed or notarized |
+| Release | OpenJOC 0.3.0 local release candidate | `ADMITTED_WITH_SCOPE` | Local source/release build, bundle verification, and CLI smoke checks on Apple-silicon macOS | No 0.3.0 tag or published platform asset exists; Windows/Linux evidence remains historical 0.2.0 scope |
 
 The matrix deliberately separates production status from evidence class. A
 numerically valid reconstruction row is not an authored object, and a real

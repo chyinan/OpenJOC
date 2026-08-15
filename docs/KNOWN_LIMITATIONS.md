@@ -1,4 +1,4 @@
-# OpenJOC 0.3.0-dev known limitations
+# OpenJOC 0.3.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and requirement status belong in the linked documents under `docs/`.
@@ -19,7 +19,9 @@ claiming capabilities that the current evidence does not support.
 - The codec-domain `JocSpatialFrameBridge` exposes aligned Base/RB/RcLfe/OAMD
   inputs and an explicit unresolved-operator gate, but the time-varying
   reconstruction operator `T(t)` is not established. It cannot produce an
-  `ExplicitSpatialScene` or real-JOC speaker/binaural output.
+  `ExplicitSpatialScene` or real-JOC speaker/binaural output. The separate
+  `JocSpatialBridge` is an experimental ordinary-domain spatial projection;
+  it does not resolve the codec operator or semantic binding.
 - The explicit `openjoc-render` foundation accepts caller-supplied mono sources
   and provides FL/FR equal-power stereo plus a general validated horizontal
   speaker-layout renderer with public 2D VBAP-style pair gains, plus an
@@ -65,20 +67,21 @@ claiming capabilities that the current evidence does not support.
   activation in the qualified real corpus. Full real-world fidelity is not
   claimed.
 - Raw E-AC-3 streaming is supported internally. Seekable ISO BMFF uses
-  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the 0.2.0
+  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the 0.3.0
   contract. Capture/demux and compatible-base workflows may also require
   `ffmpeg`.
 - Machine-readable scene, component, streaming-summary, retention, and
   internal-base manifests carry explicit `openjoc.*.v1` schema identifiers.
   Decode commands refuse to reuse an existing output directory; callers must
   choose a fresh destination and consume artifact paths relative to it.
-- The OpenJOC 0.2.0 release provides prebuilt assets for `aarch64-apple-darwin`,
+- The prior OpenJOC 0.2.0 release provides prebuilt assets for `aarch64-apple-darwin`,
   `x86_64-pc-windows-msvc`, and `x86_64-unknown-linux-gnu`. Windows was
   validated natively on Windows 11 x86_64. The GNU/Linux binary was built and
   validated under Ubuntu 20.04.6 LTS on WSL2. This does not claim native Linux
-  hardware support or validation across all Linux distributions. The
-  validation used the repository's available fixtures; private frozen JOC
-  media were not present in this checkout.
+  hardware support or validation across all Linux distributions. These
+  Windows/Linux statements are inherited historical 0.2.0 evidence, not a
+  0.3.0 platform-asset claim. The validation used the repository's available
+  fixtures; private frozen JOC media were not present in this checkout.
 - The macOS local candidate is not signed with a Developer ID or other user identity
   and is not notarized. Its Mach-O executable has the automatic linker-generated
   ad-hoc signature required by the measured Apple-silicon toolchain. It is not

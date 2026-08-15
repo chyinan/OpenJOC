@@ -23,6 +23,12 @@ stronger vendor authority than the project has established. Represent mutable
 maturity, evidence, and validation as explicit state or documentation rather
 than baking them into stable public identifiers.
 
+The canonical user-facing profile names are `AUTO`, `ETSI_STRICT`, and
+`OBSERVED_VENDOR_COMPAT`. Legacy compatibility spellings are input-only aliases
+where intentionally retained; they must not be emitted as canonical output.
+The stable JOC spatial function name is `JocSpatialBridge`; its experimental
+maturity and unresolved semantic state remain separate from that name.
+
 Codec changes must remain explainable from permitted public normative sources,
 public mathematics, or explicitly authorized controlled evidence. Do not use
 proprietary/decompiled decoder sources or private research material as

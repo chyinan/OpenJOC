@@ -524,7 +524,7 @@ fn render_to_staging(
         .collect();
     let result = RenderResult {
         schema: RESULT_SCHEMA,
-        product_version: "0.3.0-dev",
+        product_version: "0.3.0",
         scene_schema: SCENE_SCHEMA,
         source_semantics: "explicit_caller_bound",
         joc_semantic_binding: "unresolved_not_used",

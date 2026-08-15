@@ -24,15 +24,16 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-The current development line is `0.3.0-dev`. It adds an explicit-scene,
-front-horizontal FL/FR stereo renderer for caller-supplied mono sources. This
-renderer is independent of unresolved JOC authored-object binding and does not
-claim binaural, room-acoustic, or renderer-fidelity parity with Dolby.
+OpenJOC 0.3.0 is the current local release candidate. It adds an explicit
+spatial-rendering foundation for caller-supplied mono sources: validated 2D and
+3D speaker layouts, sample-accurate trajectories, direct-FIR and uniform
+partitioned binaural rendering, and a strict supported SOFA import path. These
+renderer workflows are independent of unresolved JOC authored-object binding.
 
-On this development line, user-facing `decode` and `decode-payload` commands
-default to observable `AUTO` profile selection. `ETSI_STRICT` remains the
-normative policy, and AUTO can choose only the existing whitelisted
-`OBSERVED_VENDOR_COMPAT` policy.
+User-facing `decode` and `decode-payload` commands default to observable `AUTO`
+profile selection. `AUTO` tries `ETSI_STRICT` first and can select only the
+existing whitelisted `OBSERVED_VENDOR_COMPAT` policy when every blocking
+deviation is admitted. Explicit `ETSI_STRICT` never falls back.
 
 The opt-in `JocSpatialBridge` provides the codec-coordinate spatial projection
 function. Its current maturity is experimental, its semantic binding remains
@@ -42,7 +43,7 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — what the current development line supports.
+- [Capabilities](docs/CAPABILITIES.md) — what the 0.3.0 release candidate supports.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Requirements matrix](docs/REQUIREMENTS_MATRIX.md) — engineering truth table.
@@ -106,7 +107,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble a local release candidate
+## Assemble the 0.3.0 local release candidate
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the admitted
@@ -115,9 +116,9 @@ local candidate without publishing anything:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.2.0-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.2.0-aarch64-apple-darwin.tar.gz
-cd openjoc-0.2.0-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.3.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.3.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.3.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
@@ -146,13 +147,17 @@ checks, and the macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 
-OpenJOC 0.2.0 provides prebuilt release assets for Apple silicon macOS,
-Windows 11 x86_64, and GNU/Linux x86_64.
+The 0.3.0 release candidate has been locally assembled and validated on the
+documented Apple-silicon macOS workflow. It has not been tagged, published, or
+validated as a 0.3.0 platform-asset matrix. The prior OpenJOC 0.2.0 release
+provides the historical prebuilt assets for Apple silicon macOS, Windows 11
+x86_64, and GNU/Linux x86_64.
 
 Windows was validated natively on Windows 11 Pro x86_64. The GNU/Linux binary
 was built and validated under Ubuntu 20.04.6 LTS on WSL2. This Linux validation
 does not claim native Linux hardware support or validation across all Linux
-distributions.
+distributions. These Windows/Linux statements describe the historical 0.2.0
+assets, not a 0.3.0 platform-asset validation claim.
 
 The macOS local candidate is not Developer-ID signed and is not notarized.
 

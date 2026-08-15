@@ -40,7 +40,7 @@ not hide vendor compatibility decisions.
 
 Raw E-AC-3 uses the in-process incremental reader. Ordinary seekable ISO BMFF
 uses a sample cursor with container ownership kept separate from the AU
-consumer. Non-seekable and fragmented MP4 are outside the v0.2.0 contract.
+consumer. Non-seekable and fragmented MP4 are outside the v0.3.0 contract.
 
 ### E-AC-3 base
 
@@ -134,8 +134,9 @@ processing, and does not clip by default. `SpeakerLayout2d` and
 `LayoutRenderer2d` add arbitrary validated horizontal layouts with deterministic
 adjacent-pair, checked 2x2 VBAP-style gains. The caller's speaker order is the
 public planar output order; unsupported angular gaps fail explicitly. The 2D
-renderer ignores elevation and has no LFE/bass-management path. HRTF/binaural
-rendering and any JOC semantic bridge remain later capabilities.
+renderer ignores elevation and has no LFE/bass-management path. The separate
+binaural renderer and experimental JOC spatial bridge do not change this 2D
+contract or provide automatic JOC semantic binding.
 
 `SpatialState2d`, `TrajectorySegment2d`, and `SourceTrajectory2d` add an
 explicit, piecewise-linear automation contract. Segment endpoints are inclusive

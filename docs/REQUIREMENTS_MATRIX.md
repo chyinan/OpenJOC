@@ -44,7 +44,7 @@ parse what exists -> JocPayload/ParsedJocAccessUnit
 The parser never normalizes vendor metadata, the strict validator retains all
 normative failures, and the decoder has no profile-specific signaling hacks.
 
-## OpenJOC v0.2.0 platform validation
+## OpenJOC v0.2.0 platform validation (historical)
 
 The v0.2.0 GitHub Release provides prebuilt assets for Apple silicon macOS,
 Windows 11 x86_64, and GNU/Linux x86_64. Windows source, build, and CLI
@@ -53,6 +53,15 @@ GNU/Linux binary was built and validated under Ubuntu 20.04.6 LTS on WSL2.
 This Linux evidence does not claim native Linux hardware support or validation
 across all Linux distributions. The macOS local candidate is not Developer-ID
 signed and is not notarized.
+
+## OpenJOC v0.3.0 release-candidate boundary
+
+The 0.3.0 source candidate is locally buildable and its release bundle is
+validated on the documented Apple-silicon macOS workflow. No 0.3.0 tag,
+published archive, or cross-platform 0.3.0 artifact claim is made by this
+source closure. The release candidate retains `JocSpatialBridge` as
+experimental, keeps `SemanticBindingState::Unresolved`, and leaves official
+runtime-reference validation and raw3 semantics unresolved.
 
 ## OpenJOC v0.1.0 capability contract (J1R31)
 
@@ -78,7 +87,7 @@ as real-corpus fidelity.
 | Base E-AC-3 | Rematrix | ADMITTED_WITH_SCOPE | scoped public normative sum/difference oracle | admitted only for the implemented/tested band formula and state path |
 | Base E-AC-3 | One I0 plus optional D0 dependent-substream channel assembly | ADMITTED_WITH_SCOPE | exhaustive chanmap oracle + synthetic public-syntax PCM assembly | Table 47 5.X/7.X/5.X+2 only; multiple dependent substreams and real controlled D0 fidelity are not admitted |
 | OAMD/JOC | ETSI normative OAMD prefix, X/Y/Z and timed metadata state | ADMITTED_WITH_SCOPE | normative tests + controlled corpus | metadata-only timeline is admissible; complete vendor trim/warp semantics are not |
-| OAMD/JOC | `ETSI_STRICT` profile | ADMITTED | normative Table 55/56 validation | explicit default; never silently downgraded |
+| OAMD/JOC | `ETSI_STRICT` profile | ADMITTED | normative Table 55/56 validation | explicit strict policy; never silently downgraded; `AUTO` is the user-facing selection default |
 | OAMD/JOC | Observed raw `warp_mode=3` under strict parsing | EXPECTED_STRICT_REJECTION | bit-exact controlled evidence + ETSI reserved table entry | non-zero `profile-rejection`, not corruption or an internal crash |
 | OAMD/JOC | `OBSERVED_VENDOR_COMPAT` | PARTIAL | controlled observed signaling only | explicit opt-in; preserves deviations and opaque continuation; does not assign vendor semantics |
 | OAMD/JOC | Complete opaque vendor continuation / warp meaning | UNRESOLVED | lossless bounded retention only | no alias, remap, trim inference, or renderer claim |
