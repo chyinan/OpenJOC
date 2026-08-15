@@ -22,6 +22,11 @@ pub use bridge::{
     SpatialProjectionError, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
     SpatialSpreadSample, SpatialTopologySnapshot,
 };
+mod bridge_control;
+pub use bridge_control::{
+    BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlEvent, BridgeControlFrame,
+    bridge_gain_scalar, bridge_position, bridge_quantize, bridge_quantize_extent,
+};
 mod binding;
 pub use binding::{
     BindingAdmissionError, BindingAdmissionRequirements, BindingAdmissionStatus,

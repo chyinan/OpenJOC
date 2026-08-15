@@ -7,9 +7,10 @@
 use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, JocMetadataFrame};
 use openjoc_emdf::JocValidationProfile;
 use openjoc_scene::{
-    BaseFullBandCoordinate, BridgeError, DecodedPayloadFrame, JocSpatialBridge,
-    JocSpatialFrameBridge, SpatialBridgeError, SpatialCoordinateUpdate, SpatialLayout,
-    SpatialLayoutChannel, SpatialLayoutNode, SpatialTopologySnapshot,
+    BaseFullBandCoordinate, BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlFrame,
+    BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge, SpatialBridgeError,
+    SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
+    SpatialTopologySnapshot,
 };
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
 use serde::Deserialize;
@@ -29,6 +30,7 @@ pub enum JocRenderError {
     Io(io::Error),
     Json(serde_json::Error),
     InvalidControl(String),
+    BridgeControl(BridgeControlAssemblyError),
     UnsupportedLayout(String),
     EmptyTopology,
     TopologyCoordinateCount { expected: usize, actual: usize },
@@ -54,6 +56,9 @@ impl fmt::Display for JocRenderError {
             Self::Json(error) => write!(formatter, "invalid JOC render topology JSON: {error}"),
             Self::InvalidControl(reason) => {
                 write!(formatter, "invalid JOC render control: {reason}")
+            }
+            Self::BridgeControl(error) => {
+                write!(formatter, "automatic JOC bridge-control error: {error}")
             }
             Self::UnsupportedLayout(layout) => {
                 write!(
@@ -127,6 +132,12 @@ impl From<serde_json::Error> for JocRenderError {
 impl From<BridgeError> for JocRenderError {
     fn from(value: BridgeError) -> Self {
         Self::Bridge(value)
+    }
+}
+
+impl From<BridgeControlAssemblyError> for JocRenderError {
+    fn from(value: BridgeControlAssemblyError) -> Self {
+        Self::BridgeControl(value)
     }
 }
 
@@ -279,8 +290,9 @@ pub struct JocSpeakerRenderer {
     frame_bridge: JocSpatialFrameBridge,
     bridge: JocSpatialBridge,
     preset: SpeakerLayoutPreset,
-    control: RenderControl,
-    expected_coordinates: usize,
+    control: Option<RenderControl>,
+    assembler: Option<BridgeControlAssembler>,
+    expected_coordinates: Option<usize>,
     expected_frame: u64,
     expected_sample: u64,
     base_coordinates: Option<Vec<BaseFullBandCoordinate>>,
@@ -299,8 +311,30 @@ impl JocSpeakerRenderer {
             frame_bridge: JocSpatialFrameBridge,
             bridge: JocSpatialBridge::new(),
             preset,
-            control,
-            expected_coordinates,
+            control: Some(control),
+            assembler: None,
+            expected_coordinates: Some(expected_coordinates),
+            expected_frame: 0,
+            expected_sample: 0,
+            base_coordinates: None,
+            selected_profile: None,
+            deviations: BTreeSet::new(),
+        })
+    }
+
+    /// Creates a renderer whose bridge control is assembled from each decoded
+    /// real JOC/OAMD frame. The explicit topology sidecar remains available
+    /// through [`Self::new`] for overrides and synthetic fixtures.
+    pub fn new_automatic(layout: &str) -> Result<Self, JocRenderError> {
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        let dimensions = preset.layout.coordinate_dimension_count();
+        Ok(Self {
+            frame_bridge: JocSpatialFrameBridge,
+            bridge: JocSpatialBridge::new(),
+            preset,
+            control: None,
+            assembler: Some(BridgeControlAssembler::new(64, dimensions)),
+            expected_coordinates: None,
             expected_frame: 0,
             expected_sample: 0,
             base_coordinates: None,
@@ -352,11 +386,12 @@ impl JocSpeakerRenderer {
             .len()
             .checked_add(frame.decoded.reconstruction_basis.rows.len())
             .ok_or(JocRenderError::FrameSampleCount)?;
-        if expected != self.expected_coordinates {
-            return Err(JocRenderError::TopologyCoordinateCount {
-                expected,
-                actual: self.expected_coordinates,
-            });
+        if let Some(actual) = self.expected_coordinates {
+            if expected != actual {
+                return Err(JocRenderError::TopologyCoordinateCount { expected, actual });
+            }
+        } else {
+            self.expected_coordinates = Some(expected);
         }
         let bridge_frame = self.frame_bridge.frame(
             frame,
@@ -373,18 +408,35 @@ impl JocSpeakerRenderer {
             return Err(JocRenderError::FrameSampleCount);
         }
         let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
-        let mut output_planes = active.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
-        let update_index = self.control.mark_update_for(frame_index);
-        let topology = (self.expected_frame == 0).then_some(&self.control.topology);
-        let updates = update_index.map(|index| self.control.updates[index].updates.as_slice());
-        self.bridge.render_codec_basis_frame(
-            &bridge_frame,
-            topology,
-            updates,
-            &self.preset.layout,
-            u64::try_from(sample_count).map_err(|_| JocRenderError::FrameSampleCount)?,
-            &mut output_planes,
-        )?;
+        let automatic_frame = if let Some(assembler) = self.assembler.as_mut() {
+            Some(assembler.assemble_frame(frame, &base_coordinates, None)?)
+        } else {
+            None
+        };
+        if let Some(control_frame) = automatic_frame {
+            self.render_automatic_segments(
+                &bridge_frame,
+                &control_frame,
+                sample_count,
+                &mut active,
+            )?;
+        } else {
+            let mut output_planes = active.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
+            let control = self.control.as_mut().ok_or_else(|| {
+                JocRenderError::InvalidControl("missing explicit control source".to_owned())
+            })?;
+            let update_index = control.mark_update_for(frame_index);
+            let topology = (self.expected_frame == 0).then_some(&control.topology);
+            let updates = update_index.map(|index| control.updates[index].updates.as_slice());
+            self.bridge.render_codec_basis_frame(
+                &bridge_frame,
+                topology,
+                updates,
+                &self.preset.layout,
+                u64::try_from(sample_count).map_err(|_| JocRenderError::FrameSampleCount)?,
+                &mut output_planes,
+            )?;
+        }
 
         let mut channels = vec![vec![0.0; sample_count]; self.preset.channel_count()];
         let mut active_index = 0;
@@ -412,6 +464,82 @@ impl JocSpeakerRenderer {
         })
     }
 
+    fn render_automatic_segments(
+        &mut self,
+        bridge_frame: &openjoc_scene::JocSpatialReconstructionFrame<'_>,
+        control_frame: &BridgeControlFrame,
+        sample_count: usize,
+        active: &mut [Vec<f64>],
+    ) -> Result<(), JocRenderError> {
+        let mut boundaries = vec![0_usize, sample_count];
+        for event in &control_frame.events {
+            let start = usize::try_from(
+                event
+                    .quantum
+                    .checked_mul(32)
+                    .ok_or(JocRenderError::FrameSampleCount)?,
+            )
+            .map_err(|_| JocRenderError::FrameSampleCount)?;
+            if start < sample_count {
+                boundaries.push(start);
+            }
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        let mut coordinates = Vec::with_capacity(
+            bridge_frame.basis.base_full_band_pcm.len()
+                + bridge_frame.basis.reconstruction_basis.rows.len(),
+        );
+        coordinates.extend(
+            bridge_frame
+                .basis
+                .base_full_band_pcm
+                .iter()
+                .map(Vec::as_slice),
+        );
+        coordinates.extend(
+            bridge_frame
+                .basis
+                .reconstruction_basis
+                .rows
+                .iter()
+                .map(Vec::as_slice),
+        );
+        for window in boundaries.windows(2) {
+            let start = window[0];
+            let end = window[1];
+            if start == end {
+                continue;
+            }
+            let event = control_frame.events.iter().find(|event| {
+                usize::try_from(event.quantum.saturating_mul(32)).ok() == Some(start)
+            });
+            let updates = event.map(|event| event.updates.as_slice());
+            let ramp_duration = event.map_or(0, |event| u64::from(event.ramp_duration));
+            let sliced_coordinates = coordinates
+                .iter()
+                .map(|coordinate| &coordinate[start..end])
+                .collect::<Vec<_>>();
+            let mut output_planes = active
+                .iter_mut()
+                .map(|channel| &mut channel[start..end])
+                .collect::<Vec<_>>();
+            let topology = (start == 0)
+                .then_some(control_frame.initial_topology.as_ref())
+                .flatten();
+            self.bridge.render_coordinates(
+                &sliced_coordinates,
+                topology,
+                updates,
+                &self.preset.layout,
+                ramp_duration,
+                bridge_frame.sample_rate,
+                &mut output_planes,
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn record_profile(&mut self, metadata: &JocMetadataFrame) -> Result<(), JocRenderError> {
         if let Some(selected) = self.selected_profile {
             if selected != metadata.validation_profile {
@@ -430,7 +558,11 @@ impl JocSpeakerRenderer {
     }
 
     pub fn finish(&self) -> Result<(), JocRenderError> {
-        self.control.finish()
+        if let Some(control) = &self.control {
+            control.finish()
+        } else {
+            Ok(())
+        }
     }
 
     pub fn diagnostics(
@@ -820,6 +952,8 @@ mod tests {
                 spread: None,
                 paired: None,
                 raw3: Some(vec![3]),
+                extent: None,
+                zones: None,
             },
             scalar: 1.0,
             active: true,

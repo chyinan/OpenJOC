@@ -41,7 +41,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE --topology TOPOLOGY.json --layout LAYOUT --output OUTPUT.wav [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -78,7 +78,7 @@ struct DecodeEac3Args {
 
 struct RenderJocArgs {
     input: PathBuf,
-    topology: PathBuf,
+    topology: Option<PathBuf>,
     layout: String,
     output: PathBuf,
     validation_profile: ValidationProfileRequest,
@@ -282,14 +282,15 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders explicit static sources transactionally to stereo float32 WAV.\n",
         ),
         "render-joc" => concat!(
-            "usage: openjoc render-joc <FILE> --topology <TOPOLOGY.json> --layout <LAYOUT> --output <OUTPUT.wav>\n",
+            "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
             "       [--reference-f64]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, 7.1.4.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
-            "The topology sidecar is explicit bridge-control input; no row/object mapping is inferred.\n",
+            "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
+            "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
         ),
         "diagnose-tools" => concat!(
             "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",
@@ -858,7 +859,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     }
     Ok(RenderJocArgs {
         input: PathBuf::from(input.ok_or_else(usage_error)?),
-        topology: topology.ok_or_else(usage_error)?,
+        topology,
         layout: layout.ok_or_else(usage_error)?,
         output: output.ok_or_else(usage_error)?,
         validation_profile,
@@ -1017,8 +1018,12 @@ fn render_joc(arguments: &RenderJocArgs) -> Result<(), Box<dyn Error>> {
         config,
         arguments.validation_profile,
     )?;
-    let control = joc_render::RenderControl::from_path(&arguments.topology)?;
-    let mut renderer = joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?;
+    let mut renderer = if let Some(topology) = &arguments.topology {
+        let control = joc_render::RenderControl::from_path(topology)?;
+        joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
+    } else {
+        joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
+    };
     let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
     let dither = deterministic_dither_values();
     let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
@@ -2679,6 +2684,7 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         | joc_render::JocRenderError::TopologyCoordinateCount { .. }
         | joc_render::JocRenderError::BaseTopologyChanged
         | joc_render::JocRenderError::BaseCoordinate(_)
+        | joc_render::JocRenderError::BridgeControl(_)
         | joc_render::JocRenderError::UnusedUpdate { .. } => CliErrorCategory::UnsupportedFeature,
         joc_render::JocRenderError::FrameIndex { .. }
         | joc_render::JocRenderError::SampleTimeline { .. }

@@ -8,6 +8,9 @@
   `JocSpatialBridge`, with explicit bridge-control topology, persistent AU
   state, selectable 5.1/5.1.2/7.1/7.1.4 WAV output, and truthful render
   diagnostics.
+- Automatic real-JOC bridge-control assembly from decoded metadata and
+  codec-coordinate state; `CONTROL.json` is now an optional complete explicit
+  override/test input rather than a normal rendering requirement.
 
 ### Scope
 

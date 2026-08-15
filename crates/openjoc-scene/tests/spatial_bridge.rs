@@ -18,6 +18,8 @@ fn descriptor(
         spread: None,
         paired: None,
         raw3: Some(vec![3, 7]),
+        extent: None,
+        zones: None,
     }
 }
 

@@ -5,7 +5,6 @@ explicit selectable speaker preset:
 
 ```sh
 openjoc render-joc INPUT.ec3 \
-  --topology bridge-control.json \
   --layout 7.1.4 \
   --output openjoc-render.wav
 ```
@@ -15,7 +14,6 @@ E-AC-3 commands:
 
 ```sh
 openjoc render-joc INPUT.m4a \
-  --topology bridge-control.json \
   --layout 7.1.4 \
   --output openjoc-render.wav
 ```
@@ -43,12 +41,17 @@ pass it to the public `JocSpatialBridge::render_coordinates` API. The CLI
 does not introduce a custom-layout file format; its stable user-facing names
 are convenience presets over that generic layout engine.
 
-## Explicit bridge control
+## Automatic bridge control and optional override
 
-The current public decoder does not admit an automatic mapping from OAMD
-authored-object order to ReconstructionBasis row order. The command therefore
-requires a bridge-control sidecar. This is an explicit codec-coordinate input,
-not an authored-object binding and not a guessed `row == object` renderer.
+The ordinary path assembles bridge control from decoded Base/RB codec
+coordinates, parsed OAMD metadata, metadata timing, and the clean
+codec-coordinate ordering contract. It does not infer authored-object
+identity, use PCM statistics, or repair ordinals with a row/object guess.
+
+`CONTROL.json` is optional. Supply `--topology bridge-control.json` only when a
+complete explicit override, synthetic fixture, or expert debug control is
+desired. The explicit source is used instead of automatic state; the two
+sources are never implicitly merged.
 
 The sidecar schema is `openjoc.joc-render-control.v1`. Its topology records
 must be in the bridge's explicit codec-coordinate order: decoded Base full-band
@@ -78,9 +81,9 @@ A minimal 5-channel Base plus one ReconstructionBasis row control file is:
 }
 ```
 
-The sidecar must be authored for the input stream's decoded coordinate count;
-the example is not a universal JOC mapping. Unsupported or withheld bridge
-semantics fail explicitly.
+The optional sidecar must be authored for the input stream's decoded
+coordinate count; the example is not a universal JOC mapping. Unsupported or
+withheld bridge semantics fail explicitly.
 
 ## Output contract
 
@@ -117,6 +120,13 @@ feature name is `JocSpatialBridge`; `SemanticBindingState` remains
 `Unresolved`. This workflow makes no official Dolby, vendor-equivalence,
 bit-exact, or fidelity claim. Binaural rendering and layouts outside the
 supported preset set remain follow-up work.
+
+The automatic assembly currently supports explicit-channel beds, fixed-layout
+members when the selected library layout supplies matching routes, dynamic
+point-like records, and dynamic region records. `raw3` remains opaque with no
+assigned semantic name. `AUTO` behavior is unchanged: strict validation is
+selected first and the existing compatibility policy is used only where its
+current whitelist admits it.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE

@@ -37,7 +37,7 @@ raw EC-3 / seekable ISO BMFF
           ↓
 bounded AU delivery → E-AC-3 Base + RcLfe + JOC/OAMD decode
           ↓
-decoded Base/RB codec-coordinate bundle + explicit bridge-control topology
+decoded Base/RB codec-coordinate bundle + automatic bridge-control assembly
           ↓
 persistent JocSpatialBridge → active N-channel speaker planes
           ├── Base LFE/RcLfe → LFE plane only
@@ -50,12 +50,13 @@ caller-defined channel registry, geometry, and output order without a
 preset-specific projection algorithm; the CLI does not currently serialize
 that custom layout as a file format.
 
-The sidecar is required because the current public decoder has no admitted
-automatic authored-object-to-ReconstructionBasis mapping. Topology/count,
-coordinate dimensions, metadata updates, and Base topology changes are
-validated at the integration boundary; no guessed row/object renderer is
-constructed. The public WAV order is selected by the explicit preset; `5.1`
-remains `FL, FR, FC, LFE, Ls, Rs`.
+Automatic assembly derives codec-coordinate control from validated OAMD and
+decoded Base/RB state. A complete sidecar is optional and takes precedence as
+an explicit override/test source; automatic and explicit sources are not
+implicitly merged. Topology/count, coordinate dimensions, metadata updates,
+and Base topology changes are validated at the integration boundary; no
+guessed row/object renderer is constructed. The public WAV order is selected
+by the explicit preset; `5.1` remains `FL, FR, FC, LFE, Ls, Rs`.
 ```
 
 The parser reads what is present in the carrier. Validation then applies an

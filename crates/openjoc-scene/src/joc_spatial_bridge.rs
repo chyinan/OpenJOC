@@ -64,6 +64,14 @@ pub struct SpatialDescriptor {
     pub spread: Option<SpatialSpreadProfile>,
     pub paired: Option<SpatialPairedGeometry>,
     pub raw3: Option<Vec<u8>>,
+    /// Quantized decoded extent retained at the bridge boundary. The current
+    /// projection contract does not use this field for P(d,L).
+    #[serde(default)]
+    pub extent: Option<[f64; 3]>,
+    /// Decoded horizontal/elevation zone enables. The current projection
+    /// contract retains these values but does not apply them to P(d,L).
+    #[serde(default)]
+    pub zones: Option<[bool; 6]>,
 }
 
 impl SpatialDescriptor {
@@ -81,6 +89,8 @@ impl SpatialDescriptor {
             spread: None,
             paired: None,
             raw3: None,
+            extent: None,
+            zones: None,
         }
     }
 }
@@ -144,6 +154,8 @@ pub struct SpatialDescriptorPatch {
     pub spread: Option<Option<SpatialSpreadProfile>>,
     pub paired: Option<Option<SpatialPairedGeometry>>,
     pub raw3: Option<Option<Vec<u8>>>,
+    pub extent: Option<Option<[f64; 3]>>,
+    pub zones: Option<Option<[bool; 6]>>,
 }
 
 /// Selective block update. Absent fields inherit from the current coordinate.
@@ -379,6 +391,12 @@ fn apply_update(
         if let Some(raw3) = &patch.raw3 {
             record.descriptor.raw3.clone_from(raw3);
         }
+        if let Some(extent) = &patch.extent {
+            record.descriptor.extent = *extent;
+        }
+        if let Some(zones) = &patch.zones {
+            record.descriptor.zones = *zones;
+        }
     }
     if let Some(scalar) = update.scalar {
         if !scalar.is_finite() {
@@ -394,16 +412,26 @@ fn apply_update(
     Ok(())
 }
 
-fn binding_signature(records: &[SpatialBindingRecord]) -> Vec<(SpatialSourceClass, String)> {
+fn binding_signature(records: &[SpatialBindingRecord]) -> Vec<(&'static str, String)> {
     records
         .iter()
         .map(|record| {
             (
-                record.descriptor.source_class.clone(),
+                source_family(&record.descriptor.source_class),
                 record.descriptor.identity.clone(),
             )
         })
         .collect()
+}
+
+fn source_family(class: &SpatialSourceClass) -> &'static str {
+    match class {
+        SpatialSourceClass::ExplicitChannel => "explicit_channel",
+        SpatialSourceClass::FixedLayout | SpatialSourceClass::NamedLayout => "fixed_layout",
+        SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion => "dynamic",
+        SpatialSourceClass::Inactive => "inactive",
+        SpatialSourceClass::Unsupported(_) => "unsupported",
+    }
 }
 
 /// One public output channel in a spatial layout registry.
@@ -599,6 +627,12 @@ impl SpatialLayout {
     #[must_use]
     pub fn channels(&self) -> &[SpatialLayoutChannel] {
         &self.channels
+    }
+
+    /// Returns the number of normalized coordinate axes consumed by P(d,L).
+    #[must_use]
+    pub fn coordinate_dimension_count(&self) -> usize {
+        self.knot_axes.len()
     }
 
     /// Computes normalized `P(d,L)` in active non-LFE channel order.
