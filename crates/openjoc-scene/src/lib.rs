@@ -16,11 +16,11 @@ pub use bridge::{
     JocSpatialFrameBridge, JocSpatialMetadataFrame, JocSpatialOperatorState,
     JocSpatialOperatorUnresolvedReason, JocSpatialReconstructionFrame, SampleRange,
     SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
-    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate,
-    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
-    SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode, SpatialPairedGeometry,
-    SpatialProjectionError, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
-    SpatialSpreadSample, SpatialTopologySnapshot,
+    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialContributionMode,
+    SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
+    SpatialExplicitMember, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
+    SpatialPairedGeometry, SpatialProjectionError, SpatialRouteVector, SpatialSourceClass,
+    SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
 };
 mod bridge_control;
 pub use bridge_control::{

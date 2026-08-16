@@ -92,6 +92,62 @@ The optional sidecar must be authored for the input stream's decoded
 coordinate count; the example is not a universal JOC mapping. Unsupported or
 withheld bridge semantics fail explicitly.
 
+## Expert contribution-isolation diagnostic
+
+`--diagnostic-contribution` is an experimental, expert-only fidelity
+diagnostic. It is not a normal rendering feature. Its three values are:
+
+- `full` (default): render Base full-band coordinates plus
+  ReconstructionBasis coordinates, and copy Base-carried LFE through the
+  current LFE path. Omitting the option is identical to selecting `full`.
+- `base-only`: preserve every Base full-band coordinate and LFE, but replace
+  every ReconstructionBasis PCM plane with exact zero PCM.
+- `reconstruction-only`: preserve every ReconstructionBasis PCM plane, replace
+  every Base full-band PCM plane with exact zero PCM, and emit zero LFE.
+
+For example, create the three speaker renders from the same decoded stream and
+layout:
+
+```sh
+openjoc render-joc INPUT.m4a --layout 7.1.4 \
+  --diagnostic-contribution full --output MyMix-7.1.4-full.wav
+openjoc render-joc INPUT.m4a --layout 7.1.4 \
+  --diagnostic-contribution base-only --output MyMix-7.1.4-base-only.wav
+openjoc render-joc INPUT.m4a --layout 7.1.4 \
+  --diagnostic-contribution reconstruction-only --output MyMix-7.1.4-rb-only.wav
+```
+
+The masking occurs only where the canonical codec-basis partition is still
+explicit: Base coordinates first, then ReconstructionBasis rows. A masked
+coordinate remains present with zero PCM. Its canonical ordinal, topology,
+descriptor, metadata inheritance, binding record, projection target, and Q32
+scheduler are unchanged. All modes retain the same access-unit timing, bridge
+control, layout, WAV writer, channel order, and sample timeline. For the
+current linear, non-postprocessed speaker path, the expected numerical check
+is `FULL ≈ BASE_ONLY + RECONSTRUCTION_ONLY`, with LFE owned by `BASE_ONLY`.
+
+ReconstructionBasis rows are diagnostic reconstruction coordinates, not
+authored-object stems. Reconstruction-only audio may therefore sound
+residual-like or unusual without implying a decoder defect. Its purpose is to
+expose spectral or temporal artifacts, contribution magnitude, and the effect
+of adding the reconstruction coordinates to Base.
+
+Use this listening decision tree without treating subjective listening as
+proof:
+
+- Clean `BASE_ONLY` plus plastic `FULL` means the defect requires
+  ReconstructionBasis participation; bad ReconstructionBasis PCM and bad
+  ReconstructionBasis weighting remain distinct possibilities.
+- Plastic `BASE_ONLY` means projection/mixing of the Base coordinates is
+  sufficient to produce the defect, making current renderer semantics the
+  primary suspect.
+- Severe aliasing, discontinuities, or unstable metallic artifacts in
+  `RECONSTRUCTION_ONLY`, beyond an expected residual-like character, make JOC
+  reconstruction a stronger suspect but do not prove it is faulty.
+- Clean `BASE_ONLY`, internally plausible `RECONSTRUCTION_ONLY`, and plastic
+  `FULL` make interference, gain combination, or projection weighting the
+  strongest suspect.
+
 ## Output contract
 
 Every exposed preset has a deterministic public WAV order. The orders are:

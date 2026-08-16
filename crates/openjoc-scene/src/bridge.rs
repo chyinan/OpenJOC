@@ -82,6 +82,44 @@ pub enum BaseFullBandCoordinate {
     Other(u8),
 }
 
+/// Expert-only PCM contribution selection for spatial-fidelity diagnostics.
+///
+/// This mode never changes codec-coordinate topology, binding, metadata, or
+/// scheduler state. It only replaces the selected coordinate family's PCM
+/// planes with exact zeroes at the spatial accumulation boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SpatialContributionMode {
+    /// Preserve Base and ReconstructionBasis coordinate PCM.
+    #[default]
+    Full,
+    /// Preserve Base PCM and zero ReconstructionBasis PCM.
+    BaseOnly,
+    /// Zero Base PCM and preserve ReconstructionBasis PCM.
+    ReconstructionOnly,
+}
+
+impl SpatialContributionMode {
+    /// Stable diagnostic CLI/report spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::BaseOnly => "base-only",
+            Self::ReconstructionOnly => "reconstruction-only",
+        }
+    }
+
+    #[must_use]
+    pub const fn includes_base(self) -> bool {
+        !matches!(self, Self::ReconstructionOnly)
+    }
+
+    #[must_use]
+    pub const fn includes_reconstruction(self) -> bool {
+        !matches!(self, Self::BaseOnly)
+    }
+}
+
 /// Typed reasons why a JOC spatial operator is not ready for rendering.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

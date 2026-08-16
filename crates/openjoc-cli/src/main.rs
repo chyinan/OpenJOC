@@ -24,7 +24,10 @@ use openjoc_eac3::{
 };
 use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
 use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
-use openjoc_scene::{JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig};
+use openjoc_scene::{
+    JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
+    SpatialContributionMode,
+};
 use openjoc_wave::{
     Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WavePcm, WaveWriter, decode,
     encode_channels,
@@ -43,7 +46,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -93,6 +96,7 @@ struct RenderJocArgs {
     output_format: SampleFormat,
     no_progress: bool,
     performance_report: Option<PathBuf>,
+    diagnostic_contribution: SpatialContributionMode,
     overwrite: bool,
 }
 
@@ -184,7 +188,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -210,7 +214,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
-        "                         [--reference-f64] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
+        "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
+        "                         [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [OPTIONS]\n",
@@ -296,8 +301,10 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
-            "       [--reference-f64] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n\n",
+            "       [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
+            "       [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
+            "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
             "SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, 7.1.4.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
@@ -847,6 +854,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
     let mut no_progress = false;
     let mut performance_report = None;
+    let mut diagnostic_contribution = SpatialContributionMode::Full;
     let mut overwrite = false;
     let mut index = 1;
     while index < values.len() {
@@ -912,6 +920,20 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
             }
             "--internal-base-policy" => internal_base_policy = parse_internal_base_policy(value)?,
             "--performance-report" => performance_report = Some(PathBuf::from(value)),
+            "--diagnostic-contribution" => {
+                diagnostic_contribution = match value.as_str() {
+                    "full" => SpatialContributionMode::Full,
+                    "base-only" => SpatialContributionMode::BaseOnly,
+                    "reconstruction-only" => SpatialContributionMode::ReconstructionOnly,
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "diagnostic contribution must be full, base-only, or reconstruction-only",
+                        )
+                        .into());
+                    }
+                };
+            }
             _ => return Err(usage_error().into()),
         }
         index += 2;
@@ -935,6 +957,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         },
         no_progress,
         performance_report,
+        diagnostic_contribution,
         overwrite,
     })
 }
@@ -1309,13 +1332,24 @@ fn render_joc(
             .as_ref()
             .map(|path| joc_render::RenderControl::from_path(path))
             .transpose()?;
-        let mut renderer = joc_render::JocBinauralRenderer::new(
-            &arguments.layout,
-            sofa.bank,
-            arguments.binaural_backend,
-            arguments.lfe_policy,
-            control,
-        )?;
+        let mut renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            joc_render::JocBinauralRenderer::new(
+                &arguments.layout,
+                sofa.bank,
+                arguments.binaural_backend,
+                arguments.lfe_policy,
+                control,
+            )?
+        } else {
+            joc_render::JocBinauralRenderer::new_with_contribution(
+                &arguments.layout,
+                sofa.bank,
+                arguments.binaural_backend,
+                arguments.lfe_policy,
+                control,
+                arguments.diagnostic_contribution,
+            )?
+        };
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
@@ -1441,9 +1475,22 @@ fn render_joc(
     } else {
         let mut renderer = if let Some(topology) = &arguments.topology {
             let control = joc_render::RenderControl::from_path(topology)?;
-            joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
-        } else {
+            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
+            } else {
+                joc_render::JocSpeakerRenderer::new_with_contribution(
+                    &arguments.layout,
+                    control,
+                    arguments.diagnostic_contribution,
+                )?
+            }
+        } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
             joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
+        } else {
+            joc_render::JocSpeakerRenderer::new_automatic_with_contribution(
+                &arguments.layout,
+                arguments.diagnostic_contribution,
+            )?
         };
         if performance.is_some() {
             renderer.enable_stage_timing();
@@ -3269,9 +3316,9 @@ fn usage_error() -> io::Error {
 #[cfg(test)]
 mod profile_name_tests {
     use super::{
-        OverwriteDecision, TerminalCapabilities, ValidationProfileRequest, decide_overwrite,
-        overwrite_answer_is_affirmative, parse_render_joc, parse_validation_profile,
-        planned_render_outputs, render_joc_preflight,
+        OverwriteDecision, SpatialContributionMode, TerminalCapabilities, ValidationProfileRequest,
+        decide_overwrite, overwrite_answer_is_affirmative, parse_render_joc,
+        parse_validation_profile, planned_render_outputs, render_joc_preflight,
     };
     use crate::joc_render;
     use std::path::PathBuf;
@@ -3370,6 +3417,50 @@ mod profile_name_tests {
         assert_eq!(
             parsed.performance_report,
             Some(PathBuf::from("report.json"))
+        );
+    }
+
+    #[test]
+    fn render_joc_contribution_diagnostic_is_typed_and_full_by_default() {
+        let base = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+        ];
+        assert_eq!(
+            parse_render_joc(&base)
+                .expect("default contribution")
+                .diagnostic_contribution,
+            SpatialContributionMode::Full
+        );
+        for (value, expected) in [
+            ("full", SpatialContributionMode::Full),
+            ("base-only", SpatialContributionMode::BaseOnly),
+            (
+                "reconstruction-only",
+                SpatialContributionMode::ReconstructionOnly,
+            ),
+        ] {
+            let mut values = base.to_vec();
+            values.extend(["--diagnostic-contribution".to_owned(), value.to_owned()]);
+            assert_eq!(
+                parse_render_joc(&values)
+                    .expect("valid contribution")
+                    .diagnostic_contribution,
+                expected
+            );
+        }
+        let mut invalid = base.to_vec();
+        invalid.extend(["--diagnostic-contribution".to_owned(), "rb-only".to_owned()]);
+        let error = parse_render_joc(&invalid)
+            .err()
+            .expect("invalid contribution");
+        assert!(
+            error
+                .to_string()
+                .contains("full, base-only, or reconstruction-only")
         );
     }
 

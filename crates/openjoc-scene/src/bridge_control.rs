@@ -1308,6 +1308,76 @@ mod tests {
     }
 
     #[test]
+    fn contribution_masking_is_downstream_of_automatic_control_and_scheduler_state() {
+        use crate::{
+            BaseFullBandCoordinate, JocSpatialBridge, JocSpatialFrameBridge,
+            SpatialContributionMode, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
+        };
+        let mut frame = equivalence_frame();
+        frame.decoded.reconstruction_basis.rows[0].fill(2.0);
+        let base_coordinates = [BaseFullBandCoordinate::Left];
+        let base_pcm = [vec![1.0; 64]];
+        let bridge_frame = JocSpatialFrameBridge
+            .frame(&frame, &base_coordinates, &base_pcm, None)
+            .unwrap();
+        let layout = SpatialLayout::new(
+            vec![SpatialLayoutChannel {
+                identity: "FL".to_owned(),
+                enabled: true,
+                lfe: false,
+            }],
+            vec![vec![0.0, 1.0]],
+            vec![
+                SpatialLayoutNode {
+                    knot_indices: vec![0],
+                    vector: vec![1.0],
+                },
+                SpatialLayoutNode {
+                    knot_indices: vec![1],
+                    vector: vec![1.0],
+                },
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+        let run = |mode| {
+            let mut assembler = super::BridgeControlAssembler::new(8, 1);
+            let control = assembler
+                .assemble_frame(&frame, &base_coordinates, None)
+                .unwrap();
+            let mut bridge = JocSpatialBridge::new();
+            let mut output = vec![vec![0.0; 64]];
+            let mut output_refs = output.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
+            bridge
+                .render_codec_basis_frame_with_contribution(
+                    &bridge_frame,
+                    mode,
+                    control.initial_topology.as_ref(),
+                    Some(&control.events[0].updates),
+                    &layout,
+                    u64::from(control.events[0].ramp_duration),
+                    &mut output_refs,
+                )
+                .unwrap();
+            (control, assembler.topology_epoch(), bridge, output)
+        };
+        let (full_control, full_epoch, full_bridge, full) = run(SpatialContributionMode::Full);
+        let (base_control, base_epoch, base_bridge, base) = run(SpatialContributionMode::BaseOnly);
+        let (rb_control, rb_epoch, rb_bridge, rb) =
+            run(SpatialContributionMode::ReconstructionOnly);
+
+        assert_eq!(base_control, full_control);
+        assert_eq!(rb_control, full_control);
+        assert_eq!(base_epoch, full_epoch);
+        assert_eq!(rb_epoch, full_epoch);
+        assert_eq!(base_bridge, full_bridge);
+        assert_eq!(rb_bridge, full_bridge);
+        assert_eq!(full[0], vec![3.0; 64]);
+        assert_eq!(base[0], vec![1.0; 64]);
+        assert_eq!(rb[0], vec![2.0; 64]);
+    }
+
+    #[test]
     fn bc16_end_to_end_control_assembly_contract() {
         use crate::{BaseFullBandCoordinate, DecodedPayloadFrame, ProgrammeLayout, SampleRange};
         use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};

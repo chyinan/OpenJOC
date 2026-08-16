@@ -14,8 +14,8 @@ use openjoc_render::{
 use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlFrame,
     BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge, SpatialBridgeError,
-    SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
-    SpatialRouteVector, SpatialTopologySnapshot,
+    SpatialContributionMode, SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutChannel,
+    SpatialLayoutNode, SpatialRouteVector, SpatialTopologySnapshot,
 };
 use openjoc_sofa::SofaError;
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
@@ -372,12 +372,22 @@ pub struct JocSpeakerRenderer {
     base_coordinates: Option<Vec<BaseFullBandCoordinate>>,
     selected_profile: Option<JocValidationProfile>,
     deviations: BTreeSet<String>,
+    contribution_mode: SpatialContributionMode,
     stage_timings: RenderStageTiming,
     stage_timing_enabled: bool,
 }
 
 impl JocSpeakerRenderer {
     pub fn new(layout: &str, control: RenderControl) -> Result<Self, JocRenderError> {
+        Self::new_with_contribution(layout, control, SpatialContributionMode::Full)
+    }
+
+    /// Creates a renderer with an expert-only PCM contribution diagnostic.
+    pub fn new_with_contribution(
+        layout: &str,
+        control: RenderControl,
+        contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
         let mut preset = SpeakerLayoutPreset::for_name(layout)?;
         preset.layout = preset
             .layout
@@ -399,6 +409,7 @@ impl JocSpeakerRenderer {
             base_coordinates: None,
             selected_profile: None,
             deviations: BTreeSet::new(),
+            contribution_mode,
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
         })
@@ -408,6 +419,14 @@ impl JocSpeakerRenderer {
     /// real JOC/OAMD frame. The explicit topology sidecar remains available
     /// through [`Self::new`] for overrides and synthetic fixtures.
     pub fn new_automatic(layout: &str) -> Result<Self, JocRenderError> {
+        Self::new_automatic_with_contribution(layout, SpatialContributionMode::Full)
+    }
+
+    /// Creates an automatic-control renderer with diagnostic PCM selection.
+    pub fn new_automatic_with_contribution(
+        layout: &str,
+        contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
         let preset = SpeakerLayoutPreset::for_name(layout)?;
         let dimensions = preset.layout.coordinate_dimension_count();
         Ok(Self {
@@ -422,6 +441,7 @@ impl JocSpeakerRenderer {
             base_coordinates: None,
             selected_profile: None,
             deviations: BTreeSet::new(),
+            contribution_mode,
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
         })
@@ -522,8 +542,9 @@ impl JocSpeakerRenderer {
             let topology = (self.expected_frame == 0).then_some(&control.topology);
             let updates = update_index.map(|index| control.updates[index].updates.as_slice());
             let start = self.stage_timing_enabled.then(Instant::now);
-            self.bridge.render_codec_basis_frame(
+            self.bridge.render_codec_basis_frame_with_contribution(
                 &bridge_frame,
+                self.contribution_mode,
                 topology,
                 updates,
                 &self.preset.layout,
@@ -539,8 +560,10 @@ impl JocSpeakerRenderer {
         let mut active_index = 0;
         for (output_index, channel) in self.preset.layout.channels().iter().enumerate() {
             if channel.lfe {
-                if let Some(lfe) = base.lfe.as_deref() {
-                    channels[output_index].copy_from_slice(lfe);
+                if self.contribution_mode.includes_base() {
+                    if let Some(lfe) = base.lfe.as_deref() {
+                        channels[output_index].copy_from_slice(lfe);
+                    }
                 }
             } else {
                 channels[output_index].copy_from_slice(&active[active_index]);
@@ -583,24 +606,33 @@ impl JocSpeakerRenderer {
         }
         boundaries.sort_unstable();
         boundaries.dedup();
+        let zero_pcm = (!matches!(self.contribution_mode, SpatialContributionMode::Full))
+            .then(|| vec![0.0; sample_count]);
+        let zero_pcm = zero_pcm.as_deref().unwrap_or(&[]);
         let mut coordinates = Vec::with_capacity(
             bridge_frame.basis.base_full_band_pcm.len()
                 + bridge_frame.basis.reconstruction_basis.rows.len(),
         );
-        coordinates.extend(
-            bridge_frame
-                .basis
-                .base_full_band_pcm
-                .iter()
-                .map(Vec::as_slice),
-        );
+        coordinates.extend(bridge_frame.basis.base_full_band_pcm.iter().map(|pcm| {
+            if self.contribution_mode.includes_base() {
+                pcm.as_slice()
+            } else {
+                zero_pcm
+            }
+        }));
         coordinates.extend(
             bridge_frame
                 .basis
                 .reconstruction_basis
                 .rows
                 .iter()
-                .map(Vec::as_slice),
+                .map(|pcm| {
+                    if self.contribution_mode.includes_reconstruction() {
+                        pcm.as_slice()
+                    } else {
+                        zero_pcm
+                    }
+                }),
         );
         for window in boundaries.windows(2) {
             let start = window[0];
@@ -706,8 +738,16 @@ impl JocSpeakerRenderer {
                 .collect::<Vec<_>>()
                 .join("; ")
         };
+        let contribution_diagnostic = if self.contribution_mode == SpatialContributionMode::Full {
+            String::new()
+        } else {
+            format!(
+                "\ndiagnostic contribution: {} (experimental fidelity isolation)",
+                self.contribution_mode.as_str()
+            )
+        };
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic{}",
             self.preset.name,
             self.preset.channel_count(),
             self.preset.lfe_index(),
@@ -719,6 +759,7 @@ impl JocSpeakerRenderer {
             summary.frames,
             summary.duration_samples,
             self.preset.channel_labels().join(", "),
+            contribution_diagnostic,
         )
     }
 }
@@ -815,6 +856,25 @@ impl JocBinauralRenderer {
         lfe_policy: Option<BinauralLfePolicy>,
         control: Option<RenderControl>,
     ) -> Result<Self, JocRenderError> {
+        Self::new_with_contribution(
+            layout,
+            bank,
+            backend,
+            lfe_policy,
+            control,
+            SpatialContributionMode::Full,
+        )
+    }
+
+    /// Creates the same virtualized-speaker path with diagnostic PCM selection.
+    pub fn new_with_contribution(
+        layout: &str,
+        bank: HrirBank,
+        backend: BinauralBackend,
+        lfe_policy: Option<BinauralLfePolicy>,
+        control: Option<RenderControl>,
+        contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
         let preset = SpeakerLayoutPreset::for_name(layout)?;
         if preset.lfe_index().is_some() && lfe_policy.is_none() {
             return Err(JocRenderError::BinauralLfePolicyRequired {
@@ -862,8 +922,10 @@ impl JocBinauralRenderer {
             });
         }
         let speaker = match control {
-            Some(control) => JocSpeakerRenderer::new(layout, control)?,
-            None => JocSpeakerRenderer::new_automatic(layout)?,
+            Some(control) => {
+                JocSpeakerRenderer::new_with_contribution(layout, control, contribution_mode)?
+            }
+            None => JocSpeakerRenderer::new_automatic_with_contribution(layout, contribution_mode)?,
         };
         Ok(Self {
             speaker,
@@ -1026,8 +1088,17 @@ impl JocBinauralRenderer {
         output: &Path,
         output_format: SampleFormat,
     ) -> String {
+        let contribution_diagnostic =
+            if self.speaker.contribution_mode == SpatialContributionMode::Full {
+                String::new()
+            } else {
+                format!(
+                    "\ndiagnostic contribution: {} (experimental fidelity isolation)",
+                    self.speaker.contribution_mode.as_str()
+                )
+            };
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: complete (exact-direction lookup)\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: complete (exact-direction lookup)\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
             requested_profile.as_str(),
             selected_profile.as_str(),
             self.layout,
@@ -1056,6 +1127,7 @@ impl JocBinauralRenderer {
                 SampleFormat::S16 => "signed PCM16 stereo WAV",
             },
             output.display(),
+            contribution_diagnostic,
         )
     }
 
@@ -1771,6 +1843,7 @@ mod tests {
         speaker_mask_for_labels, virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
+    use openjoc_emdf::JocValidationProfile;
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
     use openjoc_oamd::{ContentDescription, OamdContentPrefix, OamdPayload, ObjectClass};
     use openjoc_render::{
@@ -1779,8 +1852,8 @@ mod tests {
     };
     use openjoc_scene::{
         DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout, SampleRange, SpatialBindingRecord,
-        SpatialDescriptor, SpatialExplicitGroup, SpatialExplicitMember, SpatialRouteVector,
-        SpatialSourceClass, SpatialTopologySnapshot,
+        SpatialContributionMode, SpatialDescriptor, SpatialExplicitGroup, SpatialExplicitMember,
+        SpatialRouteVector, SpatialSourceClass, SpatialTopologySnapshot,
     };
     use openjoc_wave::{SampleFormat, decode};
     use std::{
@@ -2531,6 +2604,145 @@ mod tests {
         assert_eq!(block.channels[3], vec![99.0; 2]);
         assert_eq!(block.channels[4], vec![4.0; 2]);
         assert_eq!(block.channels[5], vec![5.0; 2]);
+    }
+
+    #[test]
+    fn contribution_modes_decompose_every_output_and_assign_lfe_to_base() {
+        let frame = decoded_frame(0, 0, 3);
+        let pcm = base(3, 1.0);
+        let render = |mode| {
+            JocSpeakerRenderer::new_with_contribution("7.1.4", control(false, 6), mode)
+                .unwrap()
+                .render_frame(0, &frame, &pcm)
+                .unwrap()
+        };
+        let full = render(SpatialContributionMode::Full);
+        let base_only = render(SpatialContributionMode::BaseOnly);
+        let reconstruction_only = render(SpatialContributionMode::ReconstructionOnly);
+
+        assert_eq!(full.channels.len(), 12);
+        for channel in 0..full.channels.len() {
+            for sample in 0..full.channels[channel].len() {
+                assert!(
+                    (full.channels[channel][sample]
+                        - base_only.channels[channel][sample]
+                        - reconstruction_only.channels[channel][sample])
+                        .abs()
+                        < 1.0e-12
+                );
+            }
+        }
+        assert_eq!(full.channels[3], base_only.channels[3]);
+        assert_eq!(full.channels[3], vec![99.0; 3]);
+        assert_eq!(reconstruction_only.channels[3], vec![0.0; 3]);
+        assert_eq!(base_only.channels[2], vec![3.0; 3]);
+        assert_eq!(reconstruction_only.channels[2], vec![6.0; 3]);
+        assert_eq!(full.channels[2], vec![9.0; 3]);
+    }
+
+    #[test]
+    fn default_full_is_identical_to_explicit_full() {
+        let first_frame = decoded_frame(0, 0, 2);
+        let second_frame = decoded_frame(1, 2, 2);
+        let pcm = base(2, 0.25);
+        let mut default_renderer = JocSpeakerRenderer::new("7.1.4", control(true, 6)).unwrap();
+        let mut explicit_full = JocSpeakerRenderer::new_with_contribution(
+            "7.1.4",
+            control(true, 6),
+            SpatialContributionMode::Full,
+        )
+        .unwrap();
+
+        for (index, frame) in [first_frame, second_frame].iter().enumerate() {
+            assert_eq!(
+                default_renderer.render_frame(index, frame, &pcm).unwrap(),
+                explicit_full.render_frame(index, frame, &pcm).unwrap()
+            );
+        }
+        default_renderer.finish().unwrap();
+        explicit_full.finish().unwrap();
+    }
+
+    #[test]
+    fn default_full_wav_matches_start_head_checksum() {
+        const START_HEAD_FNV1A64: u64 = 0x78c8_61a1_e818_8c45;
+        let path = std::env::temp_dir().join(format!(
+            "openjoc-full-checksum-{}-{}.wav",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut renderer = JocSpeakerRenderer::new("7.1.4", control(true, 6)).unwrap();
+        let mut output =
+            JocWavOutput::new_for_speaker_layout(&path, SampleFormat::F32, false, "7.1.4").unwrap();
+        for (index, frame) in [decoded_frame(0, 0, 2), decoded_frame(1, 2, 2)]
+            .iter()
+            .enumerate()
+        {
+            output
+                .write_block(&renderer.render_frame(index, frame, &base(2, 0.25)).unwrap())
+                .unwrap();
+        }
+        renderer.finish().unwrap();
+        output.finish().unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let checksum = bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+        assert_eq!(bytes.len(), 260);
+        assert_eq!(checksum, START_HEAD_FNV1A64);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn contribution_selection_preserves_control_scheduler_and_timeline_state() {
+        let renderer = |mode| {
+            let mut renderer =
+                JocSpeakerRenderer::new_with_contribution("5.1", control(true, 6), mode).unwrap();
+            renderer.selected_profile = Some(JocValidationProfile::EtsiStrict);
+            renderer
+        };
+        let mut full = renderer(SpatialContributionMode::Full);
+        let mut base_only = renderer(SpatialContributionMode::BaseOnly);
+        let mut reconstruction_only = renderer(SpatialContributionMode::ReconstructionOnly);
+
+        for (index, frame) in [decoded_frame(0, 0, 33), decoded_frame(1, 33, 31)]
+            .iter()
+            .enumerate()
+        {
+            let pcm = base(frame.sample_range.len() as usize, 0.5);
+            full.render_frame(index, frame, &pcm).unwrap();
+            base_only.render_frame(index, frame, &pcm).unwrap();
+            reconstruction_only
+                .render_frame(index, frame, &pcm)
+                .unwrap();
+        }
+
+        for renderer in [&base_only, &reconstruction_only] {
+            assert_eq!(renderer.expected_coordinates, full.expected_coordinates);
+            assert_eq!(renderer.expected_frame, full.expected_frame);
+            assert_eq!(renderer.expected_sample, full.expected_sample);
+            assert_eq!(renderer.base_coordinates, full.base_coordinates);
+            assert_eq!(renderer.selected_profile, full.selected_profile);
+            assert_eq!(renderer.deviations, full.deviations);
+            assert_eq!(renderer.bridge, full.bridge);
+            assert_eq!(
+                renderer.control.as_ref().unwrap().consumed_updates,
+                full.control.as_ref().unwrap().consumed_updates
+            );
+            assert_eq!(
+                renderer.bridge.semantic_binding(),
+                full.bridge.semantic_binding()
+            );
+        }
+        assert_eq!(full.expected_frame, 2);
+        assert_eq!(full.expected_sample, 64);
+        assert_eq!(full.control.as_ref().unwrap().consumed_updates, [true]);
+        full.finish().unwrap();
+        base_only.finish().unwrap();
+        reconstruction_only.finish().unwrap();
     }
 
     #[test]

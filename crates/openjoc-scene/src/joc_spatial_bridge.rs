@@ -5,7 +5,7 @@
 //! registries, not authored objects. The module is downstream of the existing
 //! ETSI/vendor validation profiles; it does not alter parser policy.
 
-use super::JocSpatialReconstructionFrame;
+use super::{JocSpatialReconstructionFrame, SpatialContributionMode};
 use crate::SemanticBindingState;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
@@ -230,7 +230,7 @@ impl fmt::Display for SpatialBindingError {
 impl std::error::Error for SpatialBindingError {}
 
 /// Stateful spatial codec-coordinate binding.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SpatialBindingState {
     snapshot: Option<SpatialBindingSnapshot>,
 }
@@ -888,7 +888,7 @@ impl fmt::Display for GainSchedulerError {
 impl std::error::Error for GainSchedulerError {}
 
 /// Stateful Q32 gain scheduler.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GainScheduler {
     current: f64,
     target: f64,
@@ -1094,7 +1094,7 @@ impl From<GainSchedulerError> for SpatialBridgeError {
 }
 
 /// JOC spatial bridge with persistent streaming state.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct JocSpatialBridge {
     binding: SpatialBindingState,
     schedulers: Vec<GainScheduler>,
@@ -1249,18 +1249,53 @@ impl JocSpatialBridge {
         duration_samples: u64,
         outputs: &mut [&mut [f64]],
     ) -> Result<(), SpatialBridgeError> {
+        self.render_codec_basis_frame_with_contribution(
+            frame,
+            SpatialContributionMode::Full,
+            topology,
+            updates,
+            layout,
+            duration_samples,
+            outputs,
+        )
+    }
+
+    /// Renders the same codec-basis topology while zeroing only the selected
+    /// diagnostic PCM contribution. Coordinate count and order are unchanged.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_codec_basis_frame_with_contribution(
+        &mut self,
+        frame: &JocSpatialReconstructionFrame<'_>,
+        contribution_mode: SpatialContributionMode,
+        topology: Option<&SpatialTopologySnapshot>,
+        updates: Option<&[SpatialCoordinateUpdate]>,
+        layout: &SpatialLayout,
+        duration_samples: u64,
+        outputs: &mut [&mut [f64]],
+    ) -> Result<(), SpatialBridgeError> {
         const STACK_COORDINATE_CAPACITY: usize = 64;
         let coordinate_count =
             frame.basis.base_full_band_pcm.len() + frame.basis.reconstruction_basis.rows.len();
+        let zero_pcm = (!matches!(contribution_mode, SpatialContributionMode::Full))
+            .then(|| vec![0.0; outputs.first().map_or(0, |output| output.len())]);
+        let zero_pcm = zero_pcm.as_deref().unwrap_or(&[]);
         if coordinate_count <= STACK_COORDINATE_CAPACITY {
             let mut coordinates = [&[][..]; STACK_COORDINATE_CAPACITY];
             let mut index = 0;
             for pcm in frame.basis.base_full_band_pcm {
-                coordinates[index] = pcm;
+                coordinates[index] = if contribution_mode.includes_base() {
+                    pcm
+                } else {
+                    zero_pcm
+                };
                 index += 1;
             }
             for pcm in &frame.basis.reconstruction_basis.rows {
-                coordinates[index] = pcm;
+                coordinates[index] = if contribution_mode.includes_reconstruction() {
+                    pcm
+                } else {
+                    zero_pcm
+                };
                 index += 1;
             }
             self.render_coordinates(
@@ -1274,15 +1309,20 @@ impl JocSpatialBridge {
             )
         } else {
             let mut coordinates = Vec::with_capacity(coordinate_count);
-            coordinates.extend(frame.basis.base_full_band_pcm.iter().map(Vec::as_slice));
-            coordinates.extend(
-                frame
-                    .basis
-                    .reconstruction_basis
-                    .rows
-                    .iter()
-                    .map(Vec::as_slice),
-            );
+            coordinates.extend(frame.basis.base_full_band_pcm.iter().map(|pcm| {
+                if contribution_mode.includes_base() {
+                    pcm.as_slice()
+                } else {
+                    zero_pcm
+                }
+            }));
+            coordinates.extend(frame.basis.reconstruction_basis.rows.iter().map(|pcm| {
+                if contribution_mode.includes_reconstruction() {
+                    pcm.as_slice()
+                } else {
+                    zero_pcm
+                }
+            }));
             self.render_coordinates(
                 &coordinates,
                 topology,
