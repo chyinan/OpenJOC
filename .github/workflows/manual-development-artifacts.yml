@@ -1,0 +1,237 @@
+name: Manual development artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or commit to build
+        required: false
+        default: master
+        type: string
+      artifact_label:
+        description: Optional artifact suffix, for example 73180b3
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-development-artifacts-${{ github.run_id }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 1
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Validate the artifact label
+        env:
+          ARTIFACT_LABEL: ${{ inputs.artifact_label }}
+        run: |
+          if [[ -n "$ARTIFACT_LABEL" ]]; then
+            if [[ ! "$ARTIFACT_LABEL" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "artifact_label must contain only letters, numbers, dots, underscores, or hyphens" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+          cargo -Vv
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Workspace check
+        run: cargo check --workspace --all-targets --all-features --locked
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Workspace tests
+        run: cargo test --workspace --all-features --locked -- --test-threads=1
+
+      - name: Release build
+        run: cargo build --workspace --release --locked
+
+      - name: Diff check
+        run: git diff --check
+
+  build-windows:
+    name: build-windows-x86_64-development-artifact
+    needs: quality
+    runs-on: windows-2025
+    steps:
+      - name: Check out the requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Select the current stable Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+          cargo -Vv
+
+      - name: Build the release workspace
+        shell: pwsh
+        run: |
+          cargo build --workspace --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run the Windows CLI smoke checks
+        shell: pwsh
+        run: |
+          $binary = Join-Path $PWD 'target/release/openjoc.exe'
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "release executable is missing: $binary"
+          }
+
+          & $binary --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $help = & $binary render-joc --help | Out-String
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($flag in @('--performance-report', '--no-progress', '--overwrite')) {
+            if (-not $help.Contains($flag)) {
+              throw "render-joc --help does not contain $flag"
+            }
+          }
+
+      - name: Package the Windows development artifact
+        shell: pwsh
+        run: |
+          python scripts/package-platform-release.py `
+            --target x86_64-pc-windows-msvc `
+            --output "$env:RUNNER_TEMP/openjoc-dev-windows"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Audit the Windows artifact inventory
+        shell: pwsh
+        run: |
+          $artifactDir = Join-Path $env:RUNNER_TEMP 'openjoc-dev-windows'
+          $archives = @(Get-ChildItem -LiteralPath $artifactDir -Filter '*.zip' -File)
+          if ($archives.Count -ne 1) { throw "expected exactly one Windows archive" }
+          $archive = $archives[0]
+          $extractDir = Join-Path $env:RUNNER_TEMP 'openjoc-dev-windows-audit'
+          if (Test-Path -LiteralPath $extractDir) {
+            Remove-Item -LiteralPath $extractDir -Recurse -Force
+          }
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $extractDir
+          $relativePaths = @(
+            Get-ChildItem -LiteralPath $extractDir -Recurse -File |
+              ForEach-Object {
+                (($_.FullName.Substring($extractDir.Length) -replace '\\', '/').TrimStart('/'))
+              }
+          )
+          if (-not ($relativePaths | Where-Object { $_ -match '(^|/)bin/openjoc\.exe$' })) {
+            throw 'Windows artifact does not contain bin/openjoc.exe'
+          }
+          foreach ($path in $relativePaths) {
+            if ($path -match '(?i)(^|/)(references|OpenJOC-Private|target/debug|\.DS_Store)(/|$)') {
+              throw "forbidden path in Windows artifact: $path"
+            }
+          }
+
+      # The upload contains only the packaged archive and its generated manifest;
+      # target/debug, caches, source trees, and private workspace paths stay out.
+      - name: Upload the Windows CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-dev-windows-x86_64-${{ inputs.artifact_label || 'build' }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-dev-windows/*.zip
+            ${{ runner.temp }}/openjoc-dev-windows/*.manifest.json
+
+  build-macos:
+    name: build-macos-arm64-development-artifact
+    needs: quality
+    runs-on: macos-14
+    steps:
+      - name: Check out the requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up the required Python version
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sw_vers
+          uname -m
+          rustc -vV
+          cargo -Vv
+
+      - name: Build the release workspace
+        run: cargo build --workspace --release --locked
+
+      - name: Package the existing macOS development bundle
+        run: |
+          python3 scripts/build-local-release.py \
+            --output "${RUNNER_TEMP}/openjoc-dev-macos"
+
+      - name: Verify the macOS bundle and checksums
+        run: |
+          set -euo pipefail
+          release_dir="${RUNNER_TEMP}/openjoc-dev-macos"
+          checksum_file=$(find "$release_dir" -maxdepth 1 -name '*.SHA256SUMS' -type f -print)
+          test -n "$checksum_file"
+          (
+            cd "$release_dir"
+            shasum -a 256 -c "$(basename "$checksum_file")"
+          )
+          bundle=$(find "$release_dir" -maxdepth 1 -name 'openjoc-*-aarch64-apple-darwin.tar.gz' -type f -print)
+          test -n "$bundle"
+          extracted="${RUNNER_TEMP}/openjoc-dev-macos-extracted"
+          mkdir -p "$extracted"
+          tar -xzf "$bundle" -C "$extracted"
+          bundle_root=$(tar -tzf "$bundle" | awk -F/ 'NF > 1 { print $1; exit }')
+          test -n "$bundle_root"
+          "$extracted/$bundle_root/verify.sh"
+
+      - name: Write the uploaded macOS checksum file
+        run: |
+          set -euo pipefail
+          release_dir="${RUNNER_TEMP}/openjoc-dev-macos"
+          bundle=$(find "$release_dir" -maxdepth 1 -name 'openjoc-*-aarch64-apple-darwin.tar.gz' -type f -print)
+          manifest=$(find "$release_dir" -maxdepth 1 -name 'openjoc-*-aarch64-apple-darwin.manifest.json' -type f -print)
+          test -n "$bundle"
+          test -n "$manifest"
+          (
+            cd "$release_dir"
+            shasum -a 256 "$(basename "$bundle")" "$(basename "$manifest")" > openjoc-dev-macos-arm64.SHA256SUMS
+          )
+
+      # The uploaded bundle contains the executable, manifest, checksum, verify
+      # script, and public support files; the clean source archive is not uploaded.
+      - name: Upload the macOS CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-dev-macos-arm64-${{ inputs.artifact_label || 'build' }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-dev-macos/openjoc-*-aarch64-apple-darwin.tar.gz
+            ${{ runner.temp }}/openjoc-dev-macos/openjoc-*-aarch64-apple-darwin.manifest.json
+            ${{ runner.temp }}/openjoc-dev-macos/openjoc-dev-macos-arm64.SHA256SUMS
