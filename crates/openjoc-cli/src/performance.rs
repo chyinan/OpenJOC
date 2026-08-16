@@ -60,7 +60,7 @@ impl DecodeStageTiming {
             stages,
         });
         self.slowest_eac3_frames
-            .sort_by(|left, right| right.duration.cmp(&left.duration));
+            .sort_by_key(|frame| std::cmp::Reverse(frame.duration));
         self.slowest_eac3_frames.truncate(16);
     }
 }
