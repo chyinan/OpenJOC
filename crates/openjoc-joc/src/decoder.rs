@@ -6,7 +6,7 @@ use crate::{
     reconstruct_sparse,
 };
 use num_complex::Complex64;
-use openjoc_qmf::ReferenceQmf64F64;
+use openjoc_qmf::{QMF_ROUNDTRIP_LATENCY_SAMPLES, ReferenceQmf64F64};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt,
@@ -180,6 +180,7 @@ pub struct JocDecoderState {
     previous_matrices: Vec<Vec<[f64; QMF_SUBBANDS]>>,
     synthesis_states: Vec<ReferenceQmf64F64>,
     analysis_states: Vec<ReferenceQmf64F64>,
+    reconstruction_tail_flushed: bool,
     reconstruction_timing_enabled: bool,
     last_reconstruction_timing: ReconstructionStageTiming,
 }
@@ -194,6 +195,50 @@ impl JocDecoderState {
     /// Clears sequence and matrix history for an external discontinuity.
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    /// Flushes the complete causal QMF reconstruction tail after the final
+    /// decoded frame. The returned rows contain exactly the declared latency
+    /// samples and are owned by reconstruction output assembly.
+    #[must_use]
+    pub fn flush_reconstruction(&mut self) -> ReconstructionBasis {
+        if self.reconstruction_tail_flushed {
+            return ReconstructionBasis::default();
+        }
+        let blocks = QMF_ROUNDTRIP_LATENCY_SAMPLES.div_ceil(QMF_SUBBANDS);
+        let mut rows = vec![Vec::with_capacity(blocks * QMF_SUBBANDS); self.synthesis_states.len()];
+        let zero_pcm = [0.0; QMF_SUBBANDS];
+        for _ in 0..blocks {
+            let input_subbands =
+                if self.analysis_states.len() == self.channel_count.map_or(0, usize::from) {
+                    self.analysis_states
+                        .iter_mut()
+                        .map(|analysis| analysis.analyze(&zero_pcm))
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![[Complex64::ZERO; QMF_SUBBANDS]; self.channel_count.map_or(0, usize::from)]
+                };
+            for (object_index, (row, synthesis)) in
+                rows.iter_mut().zip(&mut self.synthesis_states).enumerate()
+            {
+                let mut subbands = [Complex64::ZERO; QMF_SUBBANDS];
+                if let Some(object) = self.previous_matrices.get(object_index) {
+                    for (channel_index, input) in input_subbands.iter().enumerate() {
+                        if let Some(coefficients) = object.get(channel_index) {
+                            for (subband, value) in input.iter().enumerate() {
+                                subbands[subband] += *value * coefficients[subband];
+                            }
+                        }
+                    }
+                }
+                row.extend_from_slice(&synthesis.synthesize(&subbands));
+            }
+        }
+        for row in &mut rows {
+            row.truncate(QMF_ROUNDTRIP_LATENCY_SAMPLES);
+        }
+        self.reconstruction_tail_flushed = true;
+        ReconstructionBasis { rows }
     }
 
     /// Enables collection of one reconstruction-stage timing record per

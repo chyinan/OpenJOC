@@ -8,6 +8,8 @@ use std::sync::OnceLock;
 
 /// Number of complex QMF subbands mandated by clause 7.4.
 pub const QMF_BANDS: usize = 64;
+/// Fixed causal latency of the normative analysis/synthesis identity path.
+pub const QMF_ROUNDTRIP_LATENCY_SAMPLES: usize = 577;
 /// Length of the normative prototype and analysis state.
 pub const QMF_LENGTH: usize = 640;
 const SYNTHESIS_LENGTH: usize = 2 * QMF_LENGTH;

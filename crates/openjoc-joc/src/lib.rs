@@ -8,6 +8,7 @@ use std::fmt;
 mod decoder;
 mod parser;
 mod reconstruction;
+mod timeline;
 pub use parser::{
     JocDataPoint, JocFrame, JocHeader, JocObjectFrame, JocParseError, JocPayloadData, QuantMode,
     Slope, parse_joc_payload,
@@ -178,4 +179,8 @@ pub fn qmf_prototype_64() -> &'static [f32; 640] {
 pub use decoder::{
     DecodedJocFrame, JocDecodeError, JocDecoderState, ReconstructionBasis, ReconstructionBasisRow,
     ReconstructionBasisRowIndex, ReconstructionRowStages, ReconstructionStageTiming,
+};
+pub use timeline::{
+    AlignedReconstructionOutput, ReconstructionOutputTimeline, ReconstructionTimelineError,
+    ReconstructionTimelineMetadata,
 };

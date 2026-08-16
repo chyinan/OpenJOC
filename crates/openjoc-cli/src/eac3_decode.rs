@@ -8,6 +8,7 @@ use openjoc_eac3::{
     index_syncframes, parse_joc_access_unit, validate_complexity_index, validate_joc_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
+use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{
     OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile,
     parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
@@ -581,7 +582,7 @@ pub(crate) fn decode_internal_eac3_streaming_with_render_sink_and_policy<S, B>(
     sink: S,
     base_sink: B,
     timing: Option<&mut DecodeStageTiming>,
-) -> Result<StreamingSceneSummary, DecodeEac3Error>
+) -> Result<(StreamingSceneSummary, ReconstructionBasis), DecodeEac3Error>
 where
     S: FnMut(
         usize,
@@ -601,7 +602,7 @@ where
         |_frame_index, _metadata, _frame| Ok(()),
         base_sink,
         sink,
-        PayloadDecoder::finish_streaming,
+        PayloadDecoder::finish_streaming_with_reconstruction_tail,
         timing,
     )
 }

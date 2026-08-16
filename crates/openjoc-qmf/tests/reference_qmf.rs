@@ -1,7 +1,7 @@
-use openjoc_qmf::{QMF_BANDS, ReferenceQmf64F64};
+use openjoc_qmf::{QMF_BANDS, QMF_ROUNDTRIP_LATENCY_SAMPLES, ReferenceQmf64F64};
 
 const SAMPLE_RATE_HZ: f64 = 48_000.0;
-const CLEAN_QMF_DELAY: usize = 577;
+const CLEAN_QMF_DELAY: usize = QMF_ROUNDTRIP_LATENCY_SAMPLES;
 const GUARD_BLOCKS: usize = 20;
 const TOLERANCE: f64 = 5.0e-4;
 

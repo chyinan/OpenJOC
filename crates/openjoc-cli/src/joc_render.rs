@@ -7,6 +7,10 @@
 use crate::performance::RenderStageTiming;
 use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, JocMetadataFrame};
 use openjoc_emdf::JocValidationProfile;
+use openjoc_joc::{
+    AlignedReconstructionOutput, ReconstructionBasis, ReconstructionOutputTimeline,
+    ReconstructionTimelineError,
+};
 use openjoc_render::{
     BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntryId,
     PartitionedBinauralRenderer, SourceId, StaticBinauralSource, UniformPartitionedConfig,
@@ -21,7 +25,7 @@ use openjoc_sofa::SofaError;
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
 use serde::Deserialize;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, VecDeque},
     fmt, fs, io,
     path::{Path, PathBuf},
     time::Instant,
@@ -38,6 +42,7 @@ pub enum JocRenderError {
     Json(serde_json::Error),
     InvalidControl(String),
     BridgeControl(BridgeControlAssemblyError),
+    Timeline(ReconstructionTimelineError),
     UnsupportedLayout(String),
     EmptyTopology,
     TopologyCoordinateCount {
@@ -94,6 +99,9 @@ impl fmt::Display for JocRenderError {
             }
             Self::BridgeControl(error) => {
                 write!(formatter, "automatic JOC bridge-control error: {error}")
+            }
+            Self::Timeline(error) => {
+                write!(formatter, "JOC reconstruction timeline error: {error}")
             }
             Self::UnsupportedLayout(layout) => {
                 write!(
@@ -191,6 +199,12 @@ impl From<BridgeError> for JocRenderError {
 impl From<BridgeControlAssemblyError> for JocRenderError {
     fn from(value: BridgeControlAssemblyError) -> Self {
         Self::BridgeControl(value)
+    }
+}
+
+impl From<ReconstructionTimelineError> for JocRenderError {
+    fn from(value: ReconstructionTimelineError) -> Self {
+        Self::Timeline(value)
     }
 }
 
@@ -360,6 +374,13 @@ impl SpeakerLayoutPreset {
 }
 
 #[derive(Debug)]
+struct PendingRenderFrame {
+    frame: DecodedPayloadFrame,
+    channel_locations: Vec<ChannelLocation>,
+    lfe_location: Option<ChannelLocation>,
+}
+
+#[derive(Debug)]
 pub struct JocSpeakerRenderer {
     frame_bridge: JocSpatialFrameBridge,
     bridge: JocSpatialBridge,
@@ -367,8 +388,11 @@ pub struct JocSpeakerRenderer {
     control: Option<RenderControl>,
     assembler: Option<BridgeControlAssembler>,
     expected_coordinates: Option<usize>,
+    next_input_frame: u64,
     expected_frame: u64,
     expected_sample: u64,
+    timeline: ReconstructionOutputTimeline,
+    pending_frames: VecDeque<PendingRenderFrame>,
     base_coordinates: Option<Vec<BaseFullBandCoordinate>>,
     selected_profile: Option<JocValidationProfile>,
     deviations: BTreeSet<String>,
@@ -404,8 +428,11 @@ impl JocSpeakerRenderer {
             control: Some(control),
             assembler: None,
             expected_coordinates: Some(expected_coordinates),
+            next_input_frame: 0,
             expected_frame: 0,
             expected_sample: 0,
+            timeline: ReconstructionOutputTimeline::new(),
+            pending_frames: VecDeque::new(),
             base_coordinates: None,
             selected_profile: None,
             deviations: BTreeSet::new(),
@@ -436,8 +463,11 @@ impl JocSpeakerRenderer {
             control: None,
             assembler: Some(BridgeControlAssembler::new(64, dimensions)),
             expected_coordinates: None,
+            next_input_frame: 0,
             expected_frame: 0,
             expected_sample: 0,
+            timeline: ReconstructionOutputTimeline::new(),
+            pending_frames: VecDeque::new(),
             base_coordinates: None,
             selected_profile: None,
             deviations: BTreeSet::new(),
@@ -447,7 +477,73 @@ impl JocSpeakerRenderer {
         })
     }
 
+    /// Compatibility entry point for already aligned/synthetic bridge frames.
+    /// The normal `render-joc` path uses [`Self::render_frame_aligned`] so raw
+    /// causal QMF output cannot bypass reconstruction timeline ownership.
+    #[allow(dead_code)]
     pub fn render_frame(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        base: &DecodedAccessUnitPcm,
+    ) -> Result<RenderedBlock, JocRenderError> {
+        self.render_aligned_frame(frame_index, frame, base)
+    }
+
+    /// Queues raw reconstruction output and returns all complete logical
+    /// intervals available after the declared QMF delay.
+    pub fn render_frame_aligned(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        base: &DecodedAccessUnitPcm,
+    ) -> Result<Vec<RenderedBlock>, JocRenderError> {
+        let frame_index =
+            u64::try_from(frame_index).map_err(|_| JocRenderError::FrameSampleCount)?;
+        if frame_index != self.next_input_frame || frame.frame_index != frame_index {
+            return Err(JocRenderError::FrameIndex {
+                expected: self.next_input_frame,
+                actual: frame_index,
+            });
+        }
+        let state_reset = frame.decoded.state_reset;
+        if state_reset {
+            self.timeline.reset();
+            self.pending_frames.clear();
+            if let Some(assembler) = self.assembler.as_mut() {
+                assembler.reset();
+            }
+            if let Some(control) = self.control.as_mut() {
+                control.reset();
+            }
+            self.base_coordinates = None;
+            self.expected_coordinates = None;
+            self.expected_frame = frame_index;
+            self.expected_sample = frame.sample_range.start_sample;
+        }
+        let aligned = self.timeline.push_frame(
+            frame.frame_index,
+            frame.sample_rate,
+            frame.sample_range.start_sample,
+            frame.sample_range.end_sample,
+            &base.channels,
+            &frame.decoded.reconstruction_basis,
+            base.lfe.as_deref(),
+            false,
+        )?;
+        self.pending_frames.push_back(PendingRenderFrame {
+            frame: frame.clone(),
+            channel_locations: base.channel_locations.clone(),
+            lfe_location: base.lfe_location,
+        });
+        self.next_input_frame = self
+            .next_input_frame
+            .checked_add(1)
+            .ok_or(JocRenderError::FrameSampleCount)?;
+        self.render_aligned_outputs(aligned)
+    }
+
+    fn render_aligned_frame(
         &mut self,
         frame_index: usize,
         frame: &DecodedPayloadFrame,
@@ -539,7 +635,8 @@ impl JocSpeakerRenderer {
                 JocRenderError::InvalidControl("missing explicit control source".to_owned())
             })?;
             let update_index = control.mark_update_for(frame_index);
-            let topology = (self.expected_frame == 0).then_some(&control.topology);
+            let topology = (self.expected_frame == 0 || frame.decoded.state_reset)
+                .then_some(&control.topology);
             let updates = update_index.map(|index| control.updates[index].updates.as_slice());
             let start = self.stage_timing_enabled.then(Instant::now);
             self.bridge.render_codec_basis_frame_with_contribution(
@@ -582,6 +679,36 @@ impl JocSpeakerRenderer {
             sample_rate: frame.sample_rate,
             channels,
         })
+    }
+
+    fn render_aligned_outputs(
+        &mut self,
+        aligned: Vec<AlignedReconstructionOutput>,
+    ) -> Result<Vec<RenderedBlock>, JocRenderError> {
+        let mut rendered = Vec::with_capacity(aligned.len());
+        for aligned in aligned {
+            let pending = self.pending_frames.pop_front().ok_or_else(|| {
+                JocRenderError::InvalidControl("aligned frame queue underflow".to_owned())
+            })?;
+            if pending.frame.frame_index != aligned.frame_index {
+                return Err(JocRenderError::FrameIndex {
+                    expected: pending.frame.frame_index,
+                    actual: aligned.frame_index,
+                });
+            }
+            let aligned_base = aligned_base_pcm(&pending, &aligned);
+            let mut aligned_frame = pending.frame;
+            aligned_frame.decoded.reconstruction_basis = aligned.reconstruction_basis;
+            rendered.push(
+                self.render_aligned_frame(
+                    usize::try_from(aligned_frame.frame_index)
+                        .map_err(|_| JocRenderError::FrameSampleCount)?,
+                    &aligned_frame,
+                    &aligned_base,
+                )?,
+            );
+        }
+        Ok(rendered)
     }
 
     fn render_automatic_segments(
@@ -694,6 +821,23 @@ impl JocSpeakerRenderer {
         }
     }
 
+    /// Flushes reconstruction-owned QMF tail state and renders all pending
+    /// logical frames on the common Base/ReconstructionBasis timeline.
+    pub fn finish_with_reconstruction_tail(
+        &mut self,
+        reconstruction_tail: &ReconstructionBasis,
+    ) -> Result<Vec<RenderedBlock>, JocRenderError> {
+        let aligned = self.timeline.finish(reconstruction_tail)?;
+        let rendered = self.render_aligned_outputs(aligned)?;
+        if !self.pending_frames.is_empty() {
+            return Err(JocRenderError::InvalidControl(
+                "reconstruction timeline left pending frames".to_owned(),
+            ));
+        }
+        self.finish()?;
+        Ok(rendered)
+    }
+
     pub(crate) fn take_stage_timings(&mut self) -> RenderStageTiming {
         std::mem::take(&mut self.stage_timings)
     }
@@ -712,6 +856,9 @@ impl JocSpeakerRenderer {
         if let Some(control) = self.control.as_mut() {
             control.reset();
         }
+        self.timeline.reset();
+        self.pending_frames.clear();
+        self.next_input_frame = 0;
         self.expected_frame = 0;
         self.expected_sample = 0;
         self.base_coordinates = None;
@@ -747,13 +894,14 @@ impl JocSpeakerRenderer {
             )
         };
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic{}",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nQMF round-trip latency: {} samples\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic{}",
             self.preset.name,
             self.preset.channel_count(),
             self.preset.lfe_index(),
             requested_profile.as_str(),
             selected.as_str(),
             deviations,
+            ReconstructionOutputTimeline::qmf_latency_samples(),
             output.display(),
             summary.sample_rate,
             summary.frames,
@@ -957,6 +1105,8 @@ impl JocBinauralRenderer {
     /// Renders one decoded JOC frame and returns zero or more stereo blocks.
     /// Partitioned rendering may return several fixed-size blocks because the
     /// decoder frame size need not equal the selected convolution partition.
+    /// Compatibility entry point for already aligned/synthetic bridge frames.
+    #[allow(dead_code)]
     pub fn render_frame(
         &mut self,
         frame_index: usize,
@@ -970,14 +1120,46 @@ impl JocBinauralRenderer {
         }
         self.ensure_engine(frame.sample_rate)?;
         let rendered = self.speaker.render_frame(frame_index, frame, base)?;
-        let speaker_timings = self.speaker.take_stage_timings();
-        self.stage_timings.bridge_control_assembly += speaker_timings.bridge_control_assembly;
-        self.stage_timings.spatial_bridge_render += speaker_timings.spatial_bridge_render;
         let start = self.stage_timing_enabled.then(Instant::now);
         let result = match self.backend {
             BinauralBackend::Direct => self.render_direct_block(&rendered),
             BinauralBackend::Partitioned { .. } => self.render_partitioned_block(&rendered),
         }?;
+        if let Some(start) = start {
+            self.stage_timings.binaural_render += start.elapsed();
+        }
+        Ok(result)
+    }
+
+    /// Queues raw reconstruction output and renders all complete aligned
+    /// intervals available after the declared QMF delay.
+    pub fn render_frame_aligned(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        base: &DecodedAccessUnitPcm,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        if self.finished {
+            return Err(JocRenderError::BinauralOutput(
+                "renderer has already been finalized".to_owned(),
+            ));
+        }
+        self.ensure_engine(frame.sample_rate)?;
+        let rendered = self
+            .speaker
+            .render_frame_aligned(frame_index, frame, base)?;
+        let speaker_timings = self.speaker.take_stage_timings();
+        self.stage_timings.bridge_control_assembly += speaker_timings.bridge_control_assembly;
+        self.stage_timings.spatial_bridge_render += speaker_timings.spatial_bridge_render;
+        let start = self.stage_timing_enabled.then(Instant::now);
+        let mut result = Vec::new();
+        for block in &rendered {
+            let mut blocks = match self.backend {
+                BinauralBackend::Direct => self.render_direct_block(block)?,
+                BinauralBackend::Partitioned { .. } => self.render_partitioned_block(block)?,
+            };
+            result.append(&mut blocks);
+        }
         if let Some(start) = start {
             self.stage_timings.binaural_render += start.elapsed();
         }
@@ -1018,6 +1200,7 @@ impl JocBinauralRenderer {
     }
 
     /// Finishes bridge validation and drains the complete binaural FIR tail.
+    #[allow(dead_code)]
     pub fn finish(&mut self) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
         if self.finished {
             return Err(JocRenderError::BinauralOutput(
@@ -1025,8 +1208,43 @@ impl JocBinauralRenderer {
             ));
         }
         self.speaker.finish()?;
-        let sample_rate = self.sample_rate.ok_or(JocRenderError::NoRenderedFrames)?;
+        self.finish_after_speaker_blocks(&[])
+    }
+
+    /// Flushes the reconstruction timeline before draining the binaural FIR
+    /// tail, preserving the final aligned ReconstructionBasis samples.
+    pub fn finish_with_reconstruction_tail(
+        &mut self,
+        reconstruction_tail: &ReconstructionBasis,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        if self.finished {
+            return Err(JocRenderError::BinauralOutput(
+                "renderer has already been finalized".to_owned(),
+            ));
+        }
+        let speaker_blocks = self
+            .speaker
+            .finish_with_reconstruction_tail(reconstruction_tail)?;
+        self.finish_after_speaker_blocks(&speaker_blocks)
+    }
+
+    fn finish_after_speaker_blocks(
+        &mut self,
+        speaker_blocks: &[RenderedBlock],
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        let start = self.stage_timing_enabled.then(Instant::now);
         let mut output = Vec::new();
+        for block in speaker_blocks {
+            let mut blocks = match self.backend {
+                BinauralBackend::Direct => self.render_direct_block(block)?,
+                BinauralBackend::Partitioned { .. } => self.render_partitioned_block(block)?,
+            };
+            output.append(&mut blocks);
+        }
+        if let Some(start) = start {
+            self.stage_timings.binaural_render += start.elapsed();
+        }
+        let sample_rate = self.sample_rate.ok_or(JocRenderError::NoRenderedFrames)?;
         match self
             .engine
             .as_mut()
@@ -1396,6 +1614,21 @@ fn base_coordinate(location: ChannelLocation) -> Result<BaseFullBandCoordinate, 
         ChannelLocation::Other(value) => BaseFullBandCoordinate::Other(value),
         ChannelLocation::Lfe(_) => return Err(JocRenderError::BaseCoordinate(location)),
     })
+}
+
+fn aligned_base_pcm(
+    pending: &PendingRenderFrame,
+    aligned: &AlignedReconstructionOutput,
+) -> DecodedAccessUnitPcm {
+    let samples = aligned.base_full_band_pcm.first().map_or(0, Vec::len);
+    DecodedAccessUnitPcm {
+        sample_rate: aligned.timeline.sample_rate,
+        samples: u16::try_from(samples).unwrap_or(u16::MAX),
+        channel_locations: pending.channel_locations.clone(),
+        channels: aligned.base_full_band_pcm.clone(),
+        lfe_location: pending.lfe_location,
+        lfe: aligned.lfe_pcm.clone(),
+    }
 }
 
 fn five_point_one_layout() -> Result<SpatialLayout, JocRenderError> {
@@ -2130,6 +2363,37 @@ mod tests {
             .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
             .expect_err("missing fixed route is explicit");
         assert!(error.to_string().contains("missing spatial route: fixed"));
+    }
+
+    #[test]
+    fn aligned_renderer_holds_frames_until_qmf_tail_and_preserves_sample_count() {
+        let mut renderer = JocSpeakerRenderer::new("5.1", control(false, 6)).unwrap();
+        let first_frame = decoded_frame(0, 0, 640);
+        let second_frame = decoded_frame(1, 640, 640);
+        let first = renderer
+            .render_frame_aligned(0, &first_frame, &base(640, 1.0))
+            .unwrap();
+        assert!(first.is_empty());
+        let second = renderer
+            .render_frame_aligned(1, &second_frame, &base(640, 1.0))
+            .unwrap();
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].channels.len(), 6);
+        assert_eq!(second[0].channels[0].len(), 640);
+        assert_eq!(second[0].channels[3], vec![99.0; 640]);
+
+        let tail = renderer
+            .finish_with_reconstruction_tail(&ReconstructionBasis {
+                rows: vec![vec![
+                    0.0;
+                    openjoc_joc::ReconstructionOutputTimeline::qmf_latency_samples()
+                ]],
+            })
+            .unwrap();
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].channels.len(), 6);
+        assert_eq!(tail[0].channels[0].len(), 640);
+        assert_eq!(tail[0].channels[3], vec![99.0; 640]);
     }
 
     #[test]

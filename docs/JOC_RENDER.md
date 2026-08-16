@@ -27,6 +27,35 @@ OAMD validation/decoding, persistent `JocSpatialBridge` accumulation, and
 incremental WAV writing. It does not materialize a duration-sized
 `ObjectScene` or reconstruction-basis capture.
 
+## Reconstruction timeline alignment
+
+The QMF identity path declares one canonical round-trip latency:
+`openjoc_qmf::QMF_ROUNDTRIP_LATENCY_SAMPLES = 577` samples. The JOC decoder
+keeps its causal ReconstructionBasis output in a bounded
+`ReconstructionOutputTimeline` and hands the bridge only common logical
+Base/ReconstructionBasis intervals. Logical sample ranges and frame indices
+are preserved; Base and ReconstructionBasis are not independently retimed at
+the bridge. The final decoder QMF state is flushed at end of stream, so the
+last pending Base intervals are emitted with their ReconstructionBasis tail.
+The same path validates sample rate, contiguous sample ranges, frame order,
+coordinate counts, topology/reset epochs, finite PCM, and LFE length before
+bridge projection. Startup pre-roll and EOF tail validity are carried in the
+typed timeline metadata. Discontinuities reset the bounded timeline and
+bridge-control state together.
+
+For a Windows PowerShell render comparison, use the same input, layout, and
+control/profile options for all three commands:
+
+```powershell
+openjoc.exe render-joc INPUT.m4a --layout 7.1.4 --validation-profile auto --diagnostic-contribution full --output Full-7.1.4.wav
+openjoc.exe render-joc INPUT.m4a --layout 7.1.4 --validation-profile auto --diagnostic-contribution base-only --output Base-7.1.4.wav
+openjoc.exe render-joc INPUT.m4a --layout 7.1.4 --validation-profile auto --diagnostic-contribution reconstruction-only --output Reconstruction-7.1.4.wav
+```
+
+These are contribution-isolation diagnostics, not separate decoder modes.
+They share the same aligned timeline, bridge-control scheduling, LFE policy,
+WAV sample count, and channel order.
+
 The preset is data, not a separate JOC algorithm. It supplies public channel
 order and clean normalized geometry to the existing generic `SpatialLayout`
 projection. The horizontal coordinate runs from rear-left through the front

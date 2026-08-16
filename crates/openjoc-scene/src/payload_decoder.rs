@@ -5,8 +5,8 @@ use crate::{
     StreamingSceneSummary,
 };
 use openjoc_joc::{
-    DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ReconstructionStageTiming,
-    parse_joc_payload,
+    DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ReconstructionBasis,
+    ReconstructionStageTiming, parse_joc_payload,
 };
 use openjoc_oamd::{
     OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ReferenceScreen,
@@ -364,5 +364,15 @@ impl PayloadDecoder {
             .ok_or(PayloadDecodeError::EmptyStream)?
             .finish_streaming()
             .map_err(Into::into)
+    }
+
+    /// Finishes the streaming scene and returns the reconstruction-owned QMF
+    /// tail needed to close the Base/ReconstructionBasis logical interval.
+    pub fn finish_streaming_with_reconstruction_tail(
+        mut self,
+    ) -> Result<(StreamingSceneSummary, ReconstructionBasis), PayloadDecodeError> {
+        let tail = self.joc.flush_reconstruction();
+        let summary = self.finish_streaming()?;
+        Ok((summary, tail))
     }
 }

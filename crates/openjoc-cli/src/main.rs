@@ -1369,7 +1369,7 @@ fn render_joc(
             arguments.internal_base_policy,
             |frame_index, metadata, frame, base| {
                 let blocks = renderer
-                    .render_frame(frame_index, frame, base)
+                    .render_frame_aligned(frame_index, frame, base)
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                 for block in blocks {
                     let output_start = collect_timing.then(std::time::Instant::now);
@@ -1398,8 +1398,8 @@ fn render_joc(
             performance.as_ref().map(|_| &mut decode_timing),
         );
         match result {
-            Ok(summary) => {
-                let tail = match renderer.finish() {
+            Ok((summary, reconstruction_tail)) => {
+                let tail = match renderer.finish_with_reconstruction_tail(&reconstruction_tail) {
                     Ok(tail) => tail,
                     Err(error) => {
                         progress.finish();
@@ -1511,15 +1511,17 @@ fn render_joc(
             &dither,
             arguments.internal_base_policy,
             |frame_index, metadata, frame, base| {
-                let block = renderer
-                    .render_frame(frame_index, frame, base)
+                let blocks = renderer
+                    .render_frame_aligned(frame_index, frame, base)
                     .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-                let output_start = collect_timing.then(std::time::Instant::now);
-                output
-                    .write_block(&block)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-                if let Some(output_start) = output_start {
-                    render_timing.output_conversion_wav_write += output_start.elapsed();
+                for block in blocks {
+                    let output_start = collect_timing.then(std::time::Instant::now);
+                    output
+                        .write_block(&block)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                    if let Some(output_start) = output_start {
+                        render_timing.output_conversion_wav_write += output_start.elapsed();
+                    }
                 }
                 let stage_timings = renderer.take_stage_timings();
                 render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
@@ -1536,11 +1538,21 @@ fn render_joc(
             performance.as_ref().map(|_| &mut decode_timing),
         );
         match result {
-            Ok(summary) => {
-                if let Err(error) = renderer.finish() {
-                    progress.finish();
-                    output.abort();
-                    return Err(error.into());
+            Ok((summary, reconstruction_tail)) => {
+                let tail = match renderer.finish_with_reconstruction_tail(&reconstruction_tail) {
+                    Ok(tail) => tail,
+                    Err(error) => {
+                        progress.finish();
+                        output.abort();
+                        return Err(error.into());
+                    }
+                };
+                for block in tail {
+                    if let Err(error) = output.write_block(&block) {
+                        progress.finish();
+                        output.abort();
+                        return Err(error.into());
+                    }
                 }
                 let output_frames = output.frames();
                 if let Err(error) = output.finish() {
@@ -3217,6 +3229,7 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         | joc_render::JocRenderError::ProfileChanged
         | joc_render::JocRenderError::Bridge(_)
         | joc_render::JocRenderError::Spatial(_)
+        | joc_render::JocRenderError::Timeline(_)
         | joc_render::JocRenderError::Binaural(_)
         | joc_render::JocRenderError::BinauralSampleRateMismatch { .. } => {
             CliErrorCategory::DecodeFailure
