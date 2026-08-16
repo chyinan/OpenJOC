@@ -28,7 +28,7 @@ OpenJOC 0.4.2 is the current release. It retains the 0.3.0 release foundation
 and adds an experimental JOC-to-speaker workflow through
 `JocSpatialBridge`. Ordinary rendering assembles bridge control from decoded
 JOC/OAMD state; `--topology` remains an optional complete override/test input.
-The selectable 5.1/5.1.2/7.1/7.1.4 workflows are documented in
+The selectable 5.1/5.1.2/5.1.4/7.1/7.1.2/7.1.4 workflows are documented in
 [Experimental JOC speaker rendering](docs/JOC_RENDER.md).
 The same workflow can virtualize one of those layouts to stereo through a
 user-supplied supported SOFA HRIR bank; the binaural mode and its explicit LFE

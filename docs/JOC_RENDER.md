@@ -18,9 +18,34 @@ openjoc render-joc INPUT.m4a \
   --output openjoc-render.wav
 ```
 
-Supported presets are `5.1`, `5.1.2`, `7.1`, and `7.1.4`. The `--layout`
+The newly admitted height presets use the same command surface:
+
+```sh
+openjoc render-joc INPUT.m4a --layout 5.1.4 --output output-5.1.4.wav
+openjoc render-joc INPUT.m4a --layout 7.1.2 --output output-7.1.2.wav
+```
+
+Supported presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and `7.1.4`. The `--layout`
 argument is required; there is no implicit output-layout default. `5.1` is the
 regression anchor for the original 0.4.0 integration.
+
+The speaker output contract is explicit and stable. Interleaved WAV planes use
+the following semantic order; the LFE index is zero-based and LFE is not a
+geometric projection anchor.
+
+| Preset | Channel sequence | Count | LFE index | WAVEFORMATEXTENSIBLE mask |
+| --- | --- | ---: | ---: | ---: |
+| `5.1` | `FL, FR, FC, LFE, Ls, Rs` | 6 | 3 | `0x0000060f` |
+| `5.1.2` | `FL, FR, FC, LFE, Ls, Rs, TFL, TFR` | 8 | 3 | `0x0000560f` |
+| `5.1.4` | `FL, FR, FC, LFE, Ls, Rs, TFL, TFR, TBL, TBR` | 10 | 3 | `0x0002d60f` |
+| `7.1` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs` | 8 | 3 | `0x0000063f` |
+| `7.1.2` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR` | 10 | 3 | `0x0000563f` |
+| `7.1.4` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR, TBL, TBR` | 12 | 3 | `0x0002d63f` |
+
+Multichannel speaker WAV output uses WAVEFORMATEXTENSIBLE with the standard
+speaker mask and IEEE float32 samples by default (`--reference-f64` selects
+float64). The public library exposes the same canonical order and masks through
+`openjoc_scene::SpeakerLayoutPreset`.
 
 The command performs container extraction, E-AC-3 Base/LFE decoding, JOC and
 OAMD validation/decoding, persistent `JocSpatialBridge` accumulation, and
@@ -66,11 +91,12 @@ coordinates, not authored object positions and not a vendor renderer geometry
 claim.
 
 The same generic engine is internally validated with clean executable fixtures
-for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, and 7.1.4. The CLI continues to
-expose only the established 5.1, 5.1.2, 7.1, and 7.1.4 presets; constrained
-topology families do not become public product presets without their separate
-output contracts. Storage capability does not imply arbitrary-layout or 22.2
-semantics.
+for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, and 7.1.4. The six public
+presets share one data-driven full-XYZ projector; their layout differences are
+topology data. LFE remains independently owned and is excluded from geometric
+projection. Additional topology families do not become public product
+presets without their separate output contracts. Storage capability does not
+imply arbitrary-layout or 22.2 semantics.
 
 The public library layer is broader than this CLI preset list. Callers can
 construct a validated `openjoc_scene::SpatialLayout` with arbitrary enabled
@@ -429,8 +455,9 @@ real JOC -> JocSpatialBridge -> selected virtual speaker layout
 
 It is not a direct moving-object HRIR renderer and makes no vendor or
 reference-product headphone-rendering claim. `--layout` names the virtual
-speaker layout, not the two-channel output. The four existing presets remain
-available: `5.1`, `5.1.2`, `7.1`, and `7.1.4`; `9.1.6` is not added here.
+speaker layout, not the two-channel output. The six public presets remain
+available: `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and `7.1.4`; `9.1.6` is
+not added here.
 
 The SOFA path is local and user-supplied. It is parsed only within the existing
 strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
@@ -488,9 +515,9 @@ name alone as evidence of a clean geometry definition.
 | `2.0` | `BLOCKED_BY_BASS_OR_FOLD_POLICY` | Not exposed | The bridge keeps Base LFE separate and the project has no specified consumer stereo bass-management or LFE fold-down policy. |
 | `5.1` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit front/side bed rows and the original public order. |
 | `5.1.2` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with one upper row and public order. |
-| `5.1.4` | `INTERNAL_FIXTURE_ONLY` | Not exposed | Clean point geometry is internally validated; the public output contract remains separate. |
+| `5.1.4` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with two upper rows and explicit public order/mask. |
 | `7.1` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit front/side/rear bed rows and public order. |
-| `7.1.2` | `INTERNAL_FIXTURE_ONLY` | Not exposed | Clean point geometry is internally validated; the public output contract remains separate. |
+| `7.1.2` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with one upper row and explicit public order/mask. |
 | `7.1.4` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit bed/top rows and public order. |
 | `9.1.4` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for front-wide plus four-height mapping. |
 | `9.1.6` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for front-wide plus six-height mapping. |

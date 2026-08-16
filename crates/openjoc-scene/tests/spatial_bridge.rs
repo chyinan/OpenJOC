@@ -1,10 +1,11 @@
 use openjoc_scene::{
-    GainScheduler, JocSpatialBridge, SemanticBindingState, SpatialBindingRecord,
-    SpatialBindingState, SpatialBridgeError, SpatialCoordinateUpdate, SpatialDescriptor,
-    SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember, SpatialLayout,
-    SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutNode,
-    SpatialLayoutRow, SpatialLayoutTopology, SpatialPairedGeometry, SpatialRouteVector,
-    SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
+    GainScheduler, JocSpatialBridge, SPEAKER_LAYOUT_PRESET_NAMES, SemanticBindingState,
+    SpatialBindingRecord, SpatialBindingState, SpatialBridgeError, SpatialCoordinateUpdate,
+    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
+    SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer,
+    SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology, SpatialPairedGeometry,
+    SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample,
+    SpatialTopologySnapshot, SpeakerLayoutPreset,
 };
 
 fn descriptor(
@@ -556,6 +557,11 @@ fn clean_upper(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
 }
 
 fn executable_layout(name: &str) -> SpatialLayout {
+    if SPEAKER_LAYOUT_PRESET_NAMES.contains(&name) {
+        return SpeakerLayoutPreset::for_name(name)
+            .expect("canonical public executable preset")
+            .layout;
+    }
     let (labels, layers) = match name {
         "2.0" => (
             vec!["FL", "FR"],
