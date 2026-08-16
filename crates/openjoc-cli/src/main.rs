@@ -237,7 +237,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --validation-profile Select AUTO (default for decode), ETSI strict, or explicit observed-vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
         "      --streaming      Bounded AU decode from raw EC3 or seekable ordinary ISO BMFF; requires --internal-base\n",
-        "      --trim-config-count Supply the caller-defined OAMD trim configuration count\n",
+        "      --trim-config-count Override the normative OAMD trim configuration count (default: 9)\n",
         "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
         "\n",
         "OUTPUT CONTRACT\n",
@@ -358,6 +358,7 @@ fn inspect(
     input: &Path,
     trim_configuration_count: Option<NonZeroU8>,
 ) -> Result<(), Box<dyn Error>> {
+    let oamd_config = OamdDecoderConfig::with_trim_configuration_count(trim_configuration_count);
     let media = load_eac3(input)?;
     let frames = openjoc_eac3::index_syncframes(&media.bytes)?;
     let units = openjoc_eac3::group_access_units(&frames)?;
@@ -456,7 +457,7 @@ fn inspect(
                     JocValidationProfile::EtsiStrict,
                     JocValidationProfile::ObservedVendorCompat,
                 ] {
-                    print_profile_validation(&parsed, profile, trim_configuration_count);
+                    print_profile_validation(&parsed, profile, oamd_config);
                 }
             }
             Ok(None) => {
@@ -559,7 +560,7 @@ fn diagnose_tools(values: &[String]) -> Result<(), Box<dyn Error>> {
 fn print_profile_validation(
     parsed: &openjoc_eac3::ParsedJocAccessUnit,
     profile: JocValidationProfile,
-    trim_configuration_count: Option<NonZeroU8>,
+    oamd_config: OamdDecoderConfig,
 ) {
     println!("  profile: {}", profile.as_str());
     match openjoc_eac3::validate_joc_access_unit(parsed, profile) {
@@ -576,16 +577,7 @@ fn print_profile_validation(
                     deviation.expected_by_etsi
                 );
             }
-            match trim_configuration_count {
-                Some(count) => print_oamd_profile_status(
-                    &metadata.oamd,
-                    profile,
-                    OamdDecoderConfig {
-                        trim_configuration_count: Some(count),
-                    },
-                ),
-                None => println!("    OAMD partial: not_attempted_without_trim_config_count"),
-            }
+            print_oamd_profile_status(&metadata.oamd, profile, oamd_config);
         }
         Err(openjoc_eac3::Eac3Error::JocProfileValidation(failure)) => {
             println!("    result: failed");
@@ -733,19 +725,16 @@ fn decode_payload(values: &[String]) -> Result<(), Box<dyn Error>> {
     let downmix = read_input_wave(&arguments.downmix)?;
     let joc_payload = fs::read(&arguments.joc)?;
     let oamd_payload = fs::read(&arguments.oamd)?;
+    let oamd_config = OamdDecoderConfig::with_trim_configuration_count(arguments.trim_count);
     let oamd_profile = eac3_decode::resolve_profile_for_oamd(
         &oamd_payload,
-        OamdDecoderConfig {
-            trim_configuration_count: arguments.trim_count,
-        },
+        oamd_config,
         arguments.validation_profile,
     )?;
     let mut decoder = PayloadDecoder::with_oamd_profile(
         PayloadDecoderConfig {
             reference_screen: arguments.reference_screen,
-            oamd: OamdDecoderConfig {
-                trim_configuration_count: arguments.trim_count,
-            },
+            oamd: oamd_config,
         },
         oamd_profile,
     );
@@ -994,9 +983,7 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     let stream = &media.bytes;
     let config = PayloadDecoderConfig {
         reference_screen: None,
-        oamd: OamdDecoderConfig {
-            trim_configuration_count: arguments.trim_configuration_count,
-        },
+        oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
     };
     let selected_profile =
         eac3_decode::resolve_profile_for_stream(stream, config, arguments.validation_profile)?;
@@ -1087,9 +1074,7 @@ fn render_joc(
     }
     let config = PayloadDecoderConfig {
         reference_screen: None,
-        oamd: OamdDecoderConfig {
-            trim_configuration_count: arguments.trim_configuration_count,
-        },
+        oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
     };
     let profile_start = std::time::Instant::now();
     let selected_profile = eac3_decode::resolve_profile_for_stream(
@@ -1405,9 +1390,9 @@ fn decode_eac3_streaming(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error
     let result = (|| -> Result<(), Box<dyn Error>> {
         let config = PayloadDecoderConfig {
             reference_screen: None,
-            oamd: OamdDecoderConfig {
-                trim_configuration_count: arguments.trim_configuration_count,
-            },
+            oamd: OamdDecoderConfig::with_trim_configuration_count(
+                arguments.trim_configuration_count,
+            ),
         };
         let sink_output = staging.clone();
         let component_export = RefCell::new(StreamingComponentExport::new(

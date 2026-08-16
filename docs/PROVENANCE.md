@@ -39,11 +39,16 @@ payload 14 carry `codecdatae=0`; payload 11 carries
 `remove_duplicate`, `priority`, and `proc_allowed` where strict validation
 expects zero. No other deviation is admitted by the vendor profile.
 
-The E-AC-3 CLI exposes the caller-defined OAMD trim cardinality as
-`--trim-config-count N`; it is never inferred from vendor metadata. On the
-controlled raw Logic stream, candidate counts 1, 2, 3, 4, 5, 6, 8, and 10 all
-reach the same first OAMD error (`reserved OAMD warp mode 3`). This downstream
-syntax result is kept separate from the accepted-with-deviation JOC profile.
+The E-AC-3 CLI exposes `--trim-config-count N` as an expert override. The
+normal decoder configuration resolves the shared OAMD helper
+`NUM_TRIM_CONFIGS` to nine, as defined by ETSI TS 103 190-2 V1.2.1 clause
+6.3.9.10.4 for the same trim syntax; TS 103 420 V1.2.1 clause 5.5.12 uses the
+helper without repeating its definition. The count is not signaled in the
+E-AC-3/EMDF/M4A stream and is never inferred from payload length or vendor
+metadata. On the controlled raw Logic stream, candidate counts 1, 2, 3, 4, 5,
+6, 8, and 10 all reach the same first OAMD error (`reserved OAMD warp mode 3`).
+This downstream syntax result is kept separate from the accepted-with-deviation
+JOC profile.
 
 ## Forbidden-source policy
 
@@ -322,9 +327,9 @@ timeline-ordering invariant, not an object/audio binding claim.
 - Design rationale: decode global/default/disabled/custom modes into explicit
   types, retain each custom trim configuration independently, resolve absent
   per-object disable flags to false, and reject every reserved mode, reserved
-  data field, and reserved surround/height code. Because the specification
-  leaves the loop cardinality undefined, the bounded parser accepts it as
-  explicit decoder configuration rather than hard-coding a guessed value.
+  data field, and reserved surround/height code. TS 103 420 omits the helper's
+  definition, so the shared decoder uses the nine-configuration definition in
+  TS 103 190-2 and keeps the CLI option only as an explicit expert override.
 - Validation: exhaustive table 35 coverage; every valid and reserved table
   36/37 code; all 32 sign/amount combinations for each sign; a complete custom
   configuration with every optional control; per-object disable flags;
@@ -1354,14 +1359,15 @@ assignment, and the apparent intended zero-setting branch in the malformed
 pseudocode. A legal conformance vector remains the compatibility gate for this
 absent-property interpretation.
 
-Clause 5.5.12 loops over `NUM_TRIM_CONFIGS`, but TS 103 420 V1.2.1 contains
-no definition of that symbol, TS 102 366 V1.4.1 contains no corresponding trim
-cardinality, and the official companion archive contains only JOC Huffman and
-QMF tables. OpenJOC therefore requires a nonzero trim-configuration count from
-the decoder configuration whenever element ID 2 is present. Parsing without
-that value returns an explicit error. A legal vector or future corrigendum is
-required to establish the intended profile value; a compatibility test should
-be added when authoritative evidence becomes available.
+Clause 5.5.12 loops over `NUM_TRIM_CONFIGS`, but TS 103 420 V1.2.1 does not
+define that helper. The corresponding OAMD trim syntax in ETSI TS 103 190-2
+V1.2.1 clause 6.3.9.10.4 defines it as nine. TS 102 366 V1.4.1 and the
+official TS 103 420 companion archive do not carry a separate trim cardinality;
+the count is a normative decoder constant, not stream metadata. OpenJOC
+therefore resolves nine at the shared OAMD configuration layer, while retaining
+an explicit nonzero override for expert interoperability work. An intentionally
+unresolved low-level configuration still returns `MissingTrimConfigurationCount`;
+the normal CLI path never supplies one.
 
 Clause 5.6.0.5 defines a dynamic-only program as one or more dynamic objects
 plus an optional LFE, while clause 5.6.4.8 lists only bed, ISF, and dynamic

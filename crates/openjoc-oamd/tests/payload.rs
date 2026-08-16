@@ -1,6 +1,6 @@
 use openjoc_oamd::{
-    ContentDescription, Gain, OamdContentPrefix, OamdDecoderConfig, OamdElement, OamdError,
-    OamdParseProfile, ObjectBasicInfo, ObjectClass, ObjectRenderInfo, OpaqueBits,
+    ContentDescription, Gain, NUM_TRIM_CONFIGS, OamdContentPrefix, OamdDecoderConfig, OamdElement,
+    OamdError, OamdParseProfile, ObjectBasicInfo, ObjectClass, ObjectRenderInfo, OpaqueBits,
     parse_oamd_payload, parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
     trace_oamd_payload,
 };
@@ -263,7 +263,7 @@ fn extended_element_dispatches_only_with_preceding_object_state() {
 }
 
 #[test]
-fn trim_element_requires_explicit_cardinality_and_is_then_decoded() {
+fn trim_element_uses_normative_default_and_supports_explicit_override() {
     let mut bits = Vec::new();
     dynamic_prefix(&mut bits, 0, 1);
     let mut content = vec![false]; // discard unknown false
@@ -274,8 +274,18 @@ fn trim_element_requires_explicit_cardinality_and_is_then_decoded() {
     push_element(&mut bits, 2, 1, &content);
     let bytes = pack(bits);
 
+    let default_payload = parse_oamd_payload(&bytes).expect("normative default trim count");
+    assert!(matches!(
+        default_payload.elements[0].element,
+        OamdElement::Trim(_)
+    ));
     assert_eq!(
-        parse_oamd_payload(&bytes),
+        parse_oamd_payload_with_config(
+            &bytes,
+            OamdDecoderConfig {
+                trim_configuration_count: None,
+            },
+        ),
         Err(OamdError::MissingTrimConfigurationCount)
     );
     let payload = parse_oamd_payload_with_config(
@@ -286,6 +296,41 @@ fn trim_element_requires_explicit_cardinality_and_is_then_decoded() {
     )
     .expect("configured trim payload");
     assert!(matches!(payload.elements[0].element, OamdElement::Trim(_)));
+}
+
+#[test]
+fn default_trim_configuration_count_is_the_normative_nine() {
+    assert_eq!(NUM_TRIM_CONFIGS, 9);
+    assert_eq!(
+        OamdDecoderConfig::default().trim_configuration_count,
+        NonZeroU8::new(NUM_TRIM_CONFIGS)
+    );
+    assert_eq!(
+        OamdDecoderConfig::with_trim_configuration_count(NonZeroU8::new(1))
+            .trim_configuration_count,
+        NonZeroU8::new(1)
+    );
+
+    let mut bits = Vec::new();
+    dynamic_prefix(&mut bits, 0, 1);
+    let mut content = vec![false]; // discard unknown false
+    push(&mut content, 0, 2); // no warp
+    push(&mut content, 0, 2); // reserved
+    push(&mut content, 2, 2); // custom global trim
+    for _ in 0..NUM_TRIM_CONFIGS {
+        push(&mut content, 1, 1); // default trim for this configuration
+    }
+    push(&mut content, 0, 1); // no per-object flags
+    push_element(&mut bits, 2, 3, &content);
+
+    let payload = parse_oamd_payload(&pack(bits)).expect("nine custom trim configurations");
+    let OamdElement::Trim(trim) = &payload.elements[0].element else {
+        panic!("expected trim element");
+    };
+    let openjoc_oamd::GlobalTrim::Custom(configurations) = &trim.global_trim else {
+        panic!("expected custom global trim");
+    };
+    assert_eq!(configurations.len(), usize::from(NUM_TRIM_CONFIGS));
 }
 
 #[test]

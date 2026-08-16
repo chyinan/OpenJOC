@@ -30,10 +30,10 @@ pub use object_element::{
     parse_object_element,
 };
 pub use payload::{
-    OAMD_PAYLOAD_ID, OamdBitTrace, OamdDecoderConfig, OamdElement, OamdElementBitTrace,
-    OamdElementMetadata, OamdParseProfile, OamdPayload, OpaqueBits, OpaqueObservedKnownElement,
-    OpaqueVendorContinuation, parse_oamd_payload, parse_oamd_payload_with_config,
-    parse_oamd_payload_with_profile, trace_oamd_payload,
+    NUM_TRIM_CONFIGS, OAMD_PAYLOAD_ID, OamdBitTrace, OamdDecoderConfig, OamdElement,
+    OamdElementBitTrace, OamdElementMetadata, OamdParseProfile, OamdPayload, OpaqueBits,
+    OpaqueObservedKnownElement, OpaqueVendorContinuation, parse_oamd_payload,
+    parse_oamd_payload_with_config, parse_oamd_payload_with_profile, trace_oamd_payload,
 };
 pub use position::{
     Distance, Position3, PositionCoding, ReferenceScreen, RoomPosition, StandardPositionBits,
@@ -87,7 +87,7 @@ pub enum OamdError {
     ReservedAlternateObjectData { id: u8 },
     /// A known normative element has not yet been connected to the payload parser.
     UnsupportedKnownElement { id: u8 },
-    /// TS 103 420 leaves the symbolic trim-configuration count undefined.
+    /// An explicitly unresolved OAMD trim-configuration count was supplied.
     MissingTrimConfigurationCount,
     /// Table 32 reserves warp modes 2 and 3.
     ReservedWarpMode { code: u8 },

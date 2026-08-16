@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.4.1] — 2026-08-16
+
+OpenJOC 0.4.1 is a patch release focused on real-world usability, diagnostics,
+and OAMD configuration correctness.
+
+### Fixed
+
+- Ordinary valid `render-joc` input no longer requires users to provide
+  `--trim-config-count` when it is omitted. The shared normative OAMD default
+  resolves `NUM_TRIM_CONFIGS` to `9`; the explicit option remains available as
+  an expert override.
+- OAMD configuration resolution is consistent across render, decode, and
+  inspect paths without changing `AUTO` profile selection or rendering
+  semantics.
+
+### Improved
+
+- `render-joc` provides TTY-aware terminal progress on stderr and supports
+  `--no-progress` for explicit opt-out without corrupting stdout diagnostics.
+- `--performance-report` writes versioned machine-readable stage timings and
+  frame percentile diagnostics.
+- Low-risk render and WAV allocation improvements reduce avoidable per-frame
+  work while retaining the existing output contract.
+
+### Known limitations
+
+- Synthetic benchmarks improved substantially, but real E-AC-3/JOC performance
+  still requires qualification on representative media. A real-media
+  performance retest is required.
+- `JocSpatialBridge` remains Experimental and `SemanticBindingState` remains
+  `Unresolved`; no renderer-fidelity equivalence with Dolby is claimed.
+
 ## [0.4.0] — 2026-08-15
 
 OpenJOC 0.4.0 is a feature release that makes the experimental JOC spatial

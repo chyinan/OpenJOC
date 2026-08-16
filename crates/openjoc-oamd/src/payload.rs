@@ -24,10 +24,34 @@ pub enum OamdParseProfile {
     ObservedVendorCompat,
 }
 
-/// Configuration for standard constants left undefined by TS 103 420 V1.2.1.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// ETSI's fixed number of trim configurations.
+///
+/// TS 103 420 V1.2.1 uses `NUM_TRIM_CONFIGS` in clause 5.5.12 without
+/// defining it. The same OAMD trim syntax defines the helper as nine in
+/// TS 103 190-2 V1.2.1 clause 6.3.9.10.4.
+pub const NUM_TRIM_CONFIGS: u8 = 9;
+
+/// Configuration for OAMD decoding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OamdDecoderConfig {
     pub trim_configuration_count: Option<NonZeroU8>,
+}
+
+impl OamdDecoderConfig {
+    /// Builds a configuration using the normative count unless an expert
+    /// override is supplied.
+    #[must_use]
+    pub fn with_trim_configuration_count(override_count: Option<NonZeroU8>) -> Self {
+        Self {
+            trim_configuration_count: override_count.or_else(|| NonZeroU8::new(NUM_TRIM_CONFIGS)),
+        }
+    }
+}
+
+impl Default for OamdDecoderConfig {
+    fn default() -> Self {
+        Self::with_trim_configuration_count(None)
+    }
 }
 
 /// Lossless representation of an opaque, MSB-first bit sequence.
@@ -250,12 +274,13 @@ pub fn parse_oamd_payload(payload: &[u8]) -> Result<OamdPayload, OamdError> {
     parse_oamd_payload_with_config(payload, OamdDecoderConfig::default())
 }
 
-/// Parses a top-level OAMD payload with explicit undefined standard constants.
+/// Parses a top-level OAMD payload with an explicit decoder configuration.
 ///
 /// # Errors
 ///
 /// Returns an OAMD error for malformed syntax, bounded-element violations,
-/// or a trim element without an explicitly configured cardinality.
+/// or a trim element when the supplied configuration intentionally has no
+/// cardinality.
 pub fn parse_oamd_payload_with_config(
     payload: &[u8],
     config: OamdDecoderConfig,

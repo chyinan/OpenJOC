@@ -104,8 +104,9 @@ pub fn decode_y_balance(sign_code: u8, amount: u8) -> Result<f64, OamdError> {
 
 /// Parses clause 5.5.12 using an explicit trim-configuration cardinality.
 ///
-/// TS 103 420 V1.2.1 leaves the symbolic trim-configuration count undefined.
-/// The caller supplies that cardinality instead of guessing a constant.
+/// The shared OAMD decoder supplies the normative nine-configuration value;
+/// this lower-level function keeps the cardinality explicit for callers that
+/// need to exercise an expert override.
 ///
 /// # Errors
 ///

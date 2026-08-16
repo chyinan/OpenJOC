@@ -375,6 +375,8 @@ pub fn run(values: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         index += 2;
     }
     let input = PathBuf::from(input.ok_or_else(usage_error)?);
+    let trim_config_count =
+        trim_config_count.or_else(|| NonZeroU8::new(openjoc_oamd::NUM_TRIM_CONFIGS));
     let output = output
         .or_else(|| {
             json_output

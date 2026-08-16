@@ -350,9 +350,10 @@ fn inspect_distinguishes_normative_failure_from_vendor_compatibility() {
     ));
     fs::create_dir_all(&root).expect("test directory");
     let input = root.join("vendor-profile.ec3");
+    let oamd = vendor_reserved_trim_oamd();
     fs::write(
         &input,
-        joc_frame(&joc_emdf_for_profile(&[0xa5], &[0x5a], true), 2),
+        joc_frame(&joc_emdf_for_profile(&oamd, &[0x5a], true), 2),
     )
     .expect("write input");
 
@@ -372,6 +373,8 @@ fn inspect_distinguishes_normative_failure_from_vendor_compatibility() {
     assert!(output.contains("profile: OBSERVED_VENDOR_COMPAT"));
     assert!(output.contains("result: accepted_with_deviation"));
     assert!(output.contains("deviation: payload 14 codecdatae=0 expected_by_etsi=1"));
+    assert!(output.contains("OAMD trim element: opaque unresolved"));
+    assert!(!output.contains("not_attempted_without_trim_config_count"));
 
     fs::remove_dir_all(&root).expect("remove test directory");
 }
@@ -533,8 +536,6 @@ fn decode_respects_explicit_profiles_and_auto_selects_existing_vendor_compat() {
             input.to_str().expect("input path"),
             "--downmix",
             downmix.to_str().expect("downmix path"),
-            "--trim-config-count",
-            "1",
             "-o",
             auto_output.to_str().expect("output path"),
         ])
