@@ -47,8 +47,11 @@ claiming capabilities that the current evidence does not support.
   experimental with `SemanticBindingState::Unresolved`.
 - `render-joc` has TTY-aware stderr progress plus an opt-in versioned
   `--performance-report FILE.json` containing stage timings, frame timing
-  percentiles, and realtime metrics. The current local evidence is a release
-  synthetic speaker/WAV harness; it excludes real E-AC-3/OAMD/JOC processing.
+  percentiles, realtime metrics, and opt-in JOC reconstruction sub-stage
+  timings. The current local evidence is a release synthetic reconstruction
+  and speaker/WAV harness; it excludes real E-AC-3/OAMD/JOC media. The
+  reconstruction harness demonstrates the measured QMF optimization but does
+  not qualify a real DEE stream.
   Because no real DEE media is present in this checkout, the current
   qualification is exactly
   `OPENJOC_JOC_RENDER_PROFILED_REAL_MEDIA_RETEST_REQUIRED`. A synthetic or

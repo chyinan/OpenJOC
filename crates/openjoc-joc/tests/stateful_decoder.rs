@@ -1,7 +1,7 @@
 use num_complex::Complex64;
 use openjoc_joc::{
     HuffmanCodeword, JocDataPoint, JocDecodeError, JocDecoderState, JocFrame, JocHeader,
-    JocObjectFrame, JocPayloadData, QuantMode, Slope,
+    JocObjectFrame, JocPayloadData, QuantMode, ReconstructionStageTiming, Slope,
 };
 use openjoc_qmf::ReferenceQmf64F64;
 
@@ -197,4 +197,24 @@ fn downmix_pcm_rejects_partial_qmf_blocks_without_advancing_state() {
         .decode_pcm_frame(&frame(1, full_object(5)), &valid)
         .expect("state remains usable after rejected PCM");
     assert!(!decoded.state_reset);
+}
+
+#[test]
+fn reconstruction_timing_is_opt_in_and_tracks_qmf_stages() {
+    let mut state = JocDecoderState::new();
+    state.enable_reconstruction_timing();
+    state
+        .decode_frame(&frame(1, full_object(5)), &inputs())
+        .expect("timed frame");
+
+    let timing = state.take_reconstruction_timing();
+    assert!(timing.coefficient_decode > std::time::Duration::ZERO);
+    assert!(timing.dequantization > std::time::Duration::ZERO);
+    assert!(timing.interpolation > std::time::Duration::ZERO);
+    assert!(timing.matrix_reconstruction > std::time::Duration::ZERO);
+    assert!(timing.qmf_synthesis > std::time::Duration::ZERO);
+    assert_eq!(
+        state.take_reconstruction_timing(),
+        ReconstructionStageTiming::default()
+    );
 }

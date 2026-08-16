@@ -8,9 +8,43 @@ use crate::{
 use num_complex::Complex64;
 use openjoc_qmf::ReferenceQmf64F64;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 
 const QMF_SUBBANDS: usize = 64;
+
+/// Opt-in timing for the reconstruction stages that make up one JOC decode.
+///
+/// This is diagnostic state only. It is disabled on the normal render path and
+/// therefore does not add clock reads to ordinary decoding.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ReconstructionStageTiming {
+    pub payload_parsing: Duration,
+    pub coefficient_decode: Duration,
+    pub dequantization: Duration,
+    pub qmf_analysis: Duration,
+    pub interpolation: Duration,
+    pub matrix_reconstruction: Duration,
+    pub qmf_synthesis: Duration,
+    pub output_assembly: Duration,
+    pub buffer_initialization: Duration,
+}
+
+impl ReconstructionStageTiming {
+    pub fn add_assign(&mut self, other: &Self) {
+        self.payload_parsing += other.payload_parsing;
+        self.coefficient_decode += other.coefficient_decode;
+        self.dequantization += other.dequantization;
+        self.qmf_analysis += other.qmf_analysis;
+        self.interpolation += other.interpolation;
+        self.matrix_reconstruction += other.matrix_reconstruction;
+        self.qmf_synthesis += other.qmf_synthesis;
+        self.output_assembly += other.output_assembly;
+        self.buffer_initialization += other.buffer_initialization;
+    }
+}
 
 /// Retained values at each normative matrix reconstruction stage.
 #[derive(Clone, Debug, PartialEq)]
@@ -146,6 +180,8 @@ pub struct JocDecoderState {
     previous_matrices: Vec<Vec<[f64; QMF_SUBBANDS]>>,
     synthesis_states: Vec<ReferenceQmf64F64>,
     analysis_states: Vec<ReferenceQmf64F64>,
+    reconstruction_timing_enabled: bool,
+    last_reconstruction_timing: ReconstructionStageTiming,
 }
 
 impl JocDecoderState {
@@ -160,6 +196,40 @@ impl JocDecoderState {
         *self = Self::default();
     }
 
+    /// Enables collection of one reconstruction-stage timing record per
+    /// successful decode. Disabled by default so ordinary decoding has no
+    /// profiling clock overhead.
+    pub fn enable_reconstruction_timing(&mut self) {
+        self.reconstruction_timing_enabled = true;
+        self.last_reconstruction_timing = ReconstructionStageTiming::default();
+    }
+
+    /// Takes the most recent stage record, or an all-zero record when timing is
+    /// disabled or no frame has completed.
+    pub fn take_reconstruction_timing(&mut self) -> ReconstructionStageTiming {
+        std::mem::take(&mut self.last_reconstruction_timing)
+    }
+
+    fn begin_reconstruction_timing(&mut self) {
+        if self.reconstruction_timing_enabled {
+            self.last_reconstruction_timing = ReconstructionStageTiming::default();
+        }
+    }
+
+    fn record_timing(
+        &mut self,
+        stage: fn(&mut ReconstructionStageTiming) -> &mut Duration,
+        start: Option<Instant>,
+    ) {
+        if let Some(start) = start {
+            *stage(&mut self.last_reconstruction_timing) += start.elapsed();
+        }
+    }
+
+    fn timing_start(&self) -> Option<Instant> {
+        self.reconstruction_timing_enabled.then(Instant::now)
+    }
+
     /// Parses and decodes one complete JOC payload against input channel QMF.
     ///
     /// # Errors
@@ -170,8 +240,11 @@ impl JocDecoderState {
         payload: &[u8],
         inputs: &[Vec<[Complex64; QMF_SUBBANDS]>],
     ) -> Result<(JocFrame, DecodedJocFrame), JocDecodeError> {
+        self.begin_reconstruction_timing();
+        let parse_start = self.timing_start();
         let frame = parse_joc_payload(payload)?;
-        let decoded = self.decode_frame(&frame, inputs)?;
+        self.record_timing(|timing| &mut timing.payload_parsing, parse_start);
+        let decoded = self.decode_frame_inner(&frame, inputs)?;
         Ok((frame, decoded))
     }
 
@@ -188,6 +261,7 @@ impl JocDecoderState {
         frame: &JocFrame,
         downmix_pcm: &[Vec<f64>],
     ) -> Result<DecodedJocFrame, JocDecodeError> {
+        self.begin_reconstruction_timing();
         let expected_channels = usize::from(frame.header.channel_count);
         if downmix_pcm.len() != expected_channels {
             return Err(JocDecodeError::InputChannelCount {
@@ -205,11 +279,14 @@ impl JocDecoderState {
 
         let reset =
             self.requires_state_reset(frame) || self.analysis_states.len() != expected_channels;
+        let buffer_start = self.timing_start();
         let mut analysis_states = if reset {
             vec![ReferenceQmf64F64::new(); expected_channels]
         } else {
             self.analysis_states.clone()
         };
+        self.record_timing(|timing| &mut timing.buffer_initialization, buffer_start);
+        let analysis_start = self.timing_start();
         let inputs = downmix_pcm
             .iter()
             .zip(&mut analysis_states)
@@ -224,7 +301,8 @@ impl JocDecoderState {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let decoded = self.decode_frame(frame, &inputs)?;
+        self.record_timing(|timing| &mut timing.qmf_analysis, analysis_start);
+        let decoded = self.decode_frame_inner(frame, &inputs)?;
         self.analysis_states = analysis_states;
         Ok(decoded)
     }
@@ -236,6 +314,15 @@ impl JocDecoderState {
     /// Returns [`JocDecodeError`] for inconsistent model or QMF dimensions.
     #[allow(clippy::too_many_lines)]
     pub fn decode_frame(
+        &mut self,
+        frame: &JocFrame,
+        inputs: &[Vec<[Complex64; QMF_SUBBANDS]>],
+    ) -> Result<DecodedJocFrame, JocDecodeError> {
+        self.begin_reconstruction_timing();
+        self.decode_frame_inner(frame, inputs)
+    }
+
+    fn decode_frame_inner(
         &mut self,
         frame: &JocFrame,
         inputs: &[Vec<[Complex64; QMF_SUBBANDS]>],
@@ -259,6 +346,7 @@ impl JocDecoderState {
         }
 
         let state_reset = self.requires_state_reset(frame);
+        let buffer_start = self.timing_start();
         let mut previous = if state_reset
             || self.previous_matrices.len() != frame.objects.len()
             || self
@@ -270,6 +358,7 @@ impl JocDecoderState {
         } else {
             self.previous_matrices.clone()
         };
+        self.record_timing(|timing| &mut timing.buffer_initialization, buffer_start);
 
         let mut stages = Vec::with_capacity(frame.objects.len());
         let mut object_matrices = Vec::with_capacity(frame.objects.len());
@@ -289,6 +378,7 @@ impl JocDecoderState {
             let sparse = required(object.sparse, object_index, "sparse flag")?;
             let mut quantized = Vec::with_capacity(object.data_points.len());
             for data_point in &object.data_points {
+                let coefficient_start = self.timing_start();
                 let matrix = match (&data_point.payload, sparse) {
                     (
                         JocPayloadData::Sparse {
@@ -323,8 +413,10 @@ impl JocDecoderState {
                         });
                     }
                 };
+                self.record_timing(|timing| &mut timing.coefficient_decode, coefficient_start);
                 quantized.push(matrix);
             }
+            let dequantization_start = self.timing_start();
             let dequantized = quantized
                 .iter()
                 .map(|point| {
@@ -339,11 +431,13 @@ impl JocDecoderState {
                         .collect::<Result<Vec<_>, _>>()
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            self.record_timing(|timing| &mut timing.dequantization, dequantization_start);
             let offsets = object
                 .data_points
                 .iter()
                 .map(|point| point.offset_timeslot)
                 .collect::<Vec<_>>();
+            let interpolation_start = self.timing_start();
             let interpolation = interpolate_matrix(
                 &dequantized,
                 &previous[object_index],
@@ -352,6 +446,7 @@ impl JocDecoderState {
                 band_count,
                 timeslots,
             )?;
+            self.record_timing(|timing| &mut timing.interpolation, interpolation_start);
             previous[object_index] = interpolation.next_previous;
             object_matrices.push(transpose_interpolated(
                 &interpolation.matrix,
@@ -363,24 +458,29 @@ impl JocDecoderState {
                 interpolated: interpolation.matrix,
             }));
         }
+        let matrix_start = self.timing_start();
         let reconstruction_qmf = reconstruct_objects(inputs, &object_matrices)?;
+        self.record_timing(|timing| &mut timing.matrix_reconstruction, matrix_start);
+        let buffer_start = self.timing_start();
         let mut synthesis_states =
             if state_reset || self.synthesis_states.len() != frame.objects.len() {
                 vec![ReferenceQmf64F64::new(); frame.objects.len()]
             } else {
                 self.synthesis_states.clone()
             };
-        let reconstruction_rows = reconstruction_qmf
-            .iter()
-            .zip(&mut synthesis_states)
-            .map(|(timeslots, synthesis)| {
-                let mut pcm = Vec::with_capacity(timeslots.len() * QMF_SUBBANDS);
-                for timeslot in timeslots {
-                    pcm.extend_from_slice(&synthesis.synthesize(timeslot));
-                }
-                pcm
-            })
-            .collect();
+        self.record_timing(|timing| &mut timing.buffer_initialization, buffer_start);
+        let mut reconstruction_rows = Vec::with_capacity(reconstruction_qmf.len());
+        for (timeslots, synthesis) in reconstruction_qmf.iter().zip(&mut synthesis_states) {
+            let mut pcm = Vec::with_capacity(timeslots.len() * QMF_SUBBANDS);
+            let synthesis_start = self.timing_start();
+            for timeslot in timeslots {
+                pcm.extend_from_slice(&synthesis.synthesize(timeslot));
+            }
+            self.record_timing(|timing| &mut timing.qmf_synthesis, synthesis_start);
+            let output_start = self.timing_start();
+            reconstruction_rows.push(pcm);
+            self.record_timing(|timing| &mut timing.output_assembly, output_start);
+        }
         self.previous_sequence = Some(frame.sequence_count);
         self.channel_count = Some(frame.header.channel_count);
         self.previous_matrices = previous;

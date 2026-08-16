@@ -4,16 +4,52 @@
 
 use num_complex::Complex64;
 use std::f64::consts::PI;
+use std::sync::OnceLock;
 
 /// Number of complex QMF subbands mandated by clause 7.4.
 pub const QMF_BANDS: usize = 64;
 /// Length of the normative prototype and analysis state.
 pub const QMF_LENGTH: usize = 640;
 const SYNTHESIS_LENGTH: usize = 2 * QMF_LENGTH;
+const PHASE_TABLE_LENGTH: usize = QMF_BANDS * (2 * QMF_BANDS);
 
 #[allow(dead_code)]
 mod generated {
     include!("generated_etsi_tables.rs");
+}
+
+fn prototype_f64() -> &'static [f64; QMF_LENGTH] {
+    static PROTOTYPE: OnceLock<[f64; QMF_LENGTH]> = OnceLock::new();
+    PROTOTYPE.get_or_init(|| std::array::from_fn(|index| f64::from(generated::PROT64[index])))
+}
+
+fn analysis_phases() -> &'static [Complex64; PHASE_TABLE_LENGTH] {
+    // These are the exact `from_polar(1.0, angle)` factors from the analysis
+    // equation. Only their construction moves out of the block loop.
+    static PHASES: OnceLock<[Complex64; PHASE_TABLE_LENGTH]> = OnceLock::new();
+    PHASES.get_or_init(|| {
+        std::array::from_fn(|index| {
+            let subband = index / (2 * QMF_BANDS);
+            let folded_index = index % (2 * QMF_BANDS);
+            let angle =
+                PI * (subband as f64 + 0.5) * (folded_index as f64 - 0.5) / QMF_BANDS as f64;
+            Complex64::from_polar(1.0, angle)
+        })
+    })
+}
+
+fn synthesis_phases() -> &'static [Complex64; PHASE_TABLE_LENGTH] {
+    // Store synthesis phases in the loop's [sample][subband] traversal order;
+    // this preserves each equation while keeping the inner loop contiguous.
+    static PHASES: OnceLock<[Complex64; PHASE_TABLE_LENGTH]> = OnceLock::new();
+    PHASES.get_or_init(|| {
+        std::array::from_fn(|index| {
+            let sample_index = index / QMF_BANDS;
+            let subband = index % QMF_BANDS;
+            let angle = PI / 256.0 * (2 * subband + 1) as f64 * (2.0 * sample_index as f64 - 129.0);
+            Complex64::from_polar(1.0, angle)
+        })
+    })
 }
 
 /// Stateful, direct-equation f64 implementation of the clause 7 transform pair.
@@ -52,19 +88,20 @@ impl ReferenceQmf64F64 {
         }
 
         let mut folded = [0.0; 2 * QMF_BANDS];
+        let prototype = prototype_f64();
         for (index, value) in folded.iter_mut().enumerate() {
             for fold in 0..QMF_LENGTH / (2 * QMF_BANDS) {
                 let window_index = index + fold * 2 * QMF_BANDS;
-                *value +=
-                    self.analysis_state[window_index] * f64::from(generated::PROT64[window_index]);
+                *value += self.analysis_state[window_index] * prototype[window_index];
             }
         }
 
         let mut subbands = [Complex64::ZERO; QMF_BANDS];
-        for (subband, output) in (0_u32..).zip(subbands.iter_mut()) {
-            for (index, sample) in (0_u32..).zip(folded.iter().copied()) {
-                let angle = PI * (f64::from(subband) + 0.5) * (f64::from(index) - 0.5) / 64.0;
-                *output += Complex64::from_polar(sample, angle);
+        let phases = analysis_phases();
+        for (subband, output) in subbands.iter_mut().enumerate() {
+            for (index, sample) in folded.iter().copied().enumerate() {
+                let phase = phases[subband * (2 * QMF_BANDS) + index];
+                *output += Complex64::new(sample * phase.re, sample * phase.im);
             }
         }
         subbands
@@ -76,18 +113,17 @@ impl ReferenceQmf64F64 {
         self.synthesis_state
             .copy_within(0..SYNTHESIS_LENGTH - 2 * QMF_BANDS, 2 * QMF_BANDS);
 
-        for (index, state_sample) in (0_u32..).zip(self.synthesis_state[..2 * QMF_BANDS].iter_mut())
-        {
+        let phases = synthesis_phases();
+        for (index, state_sample) in self.synthesis_state[..2 * QMF_BANDS].iter_mut().enumerate() {
             let mut sample = 0.0;
-            for (subband, value) in (0_u32..).zip(subbands.iter()) {
-                let angle =
-                    PI / 256.0 * f64::from(2 * subband + 1) * (2.0 * f64::from(index) - 129.0);
-                sample += (value * Complex64::from_polar(1.0, angle)).re / 64.0;
+            for (subband, value) in subbands.iter().enumerate() {
+                sample += (value * phases[index * QMF_BANDS + subband]).re / 64.0;
             }
             *state_sample = sample;
         }
 
         let mut pcm = [0.0; QMF_BANDS];
+        let prototype = prototype_f64();
         for (timeslot, output) in pcm.iter_mut().enumerate() {
             for fold in 0..QMF_LENGTH / QMF_BANDS {
                 let window_index = fold * QMF_BANDS + timeslot;
@@ -96,8 +132,7 @@ impl ReferenceQmf64F64 {
                 } else {
                     2 * (fold - 1) * QMF_BANDS + 3 * QMF_BANDS + timeslot
                 };
-                *output += self.synthesis_state[synthesis_index]
-                    * f64::from(generated::PROT64[window_index]);
+                *output += self.synthesis_state[synthesis_index] * prototype[window_index];
             }
         }
         pcm

@@ -4,7 +4,10 @@ use crate::{
     ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SampleRange, SceneBuildError, SceneBuilder,
     StreamingSceneSummary,
 };
-use openjoc_joc::{DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, parse_joc_payload};
+use openjoc_joc::{
+    DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ReconstructionStageTiming,
+    parse_joc_payload,
+};
 use openjoc_oamd::{
     OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ReferenceScreen,
     parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
@@ -124,6 +127,8 @@ pub struct PayloadDecoder {
     sample_rate: Option<u32>,
     next_frame_index: u64,
     next_sample: u64,
+    reconstruction_timing_enabled: bool,
+    last_reconstruction_timing: ReconstructionStageTiming,
 }
 
 impl PayloadDecoder {
@@ -139,6 +144,8 @@ impl PayloadDecoder {
             sample_rate: None,
             next_frame_index: 0,
             next_sample: 0,
+            reconstruction_timing_enabled: false,
+            last_reconstruction_timing: ReconstructionStageTiming::default(),
         }
     }
 
@@ -174,6 +181,19 @@ impl PayloadDecoder {
         }
     }
 
+    /// Enables opt-in JOC reconstruction stage timing for performance reports.
+    /// The normal decode path leaves this disabled.
+    pub fn enable_reconstruction_timing(&mut self) {
+        self.reconstruction_timing_enabled = true;
+        self.joc.enable_reconstruction_timing();
+        self.last_reconstruction_timing = ReconstructionStageTiming::default();
+    }
+
+    /// Takes the most recent JOC reconstruction stage timing record.
+    pub fn take_reconstruction_timing(&mut self) -> ReconstructionStageTiming {
+        std::mem::take(&mut self.last_reconstruction_timing)
+    }
+
     /// Parses and decodes one aligned payload frame, committing only on success.
     ///
     /// # Errors
@@ -197,7 +217,12 @@ impl PayloadDecoder {
                 });
             }
         }
+        let parse_start = self
+            .reconstruction_timing_enabled
+            .then(std::time::Instant::now);
         let joc = parse_joc_payload(input.joc_payload).map_err(JocDecodeError::Parse)?;
+        let payload_parsing =
+            parse_start.map_or(std::time::Duration::ZERO, |start| start.elapsed());
         let oamd = match self.oamd_profile {
             OamdParseProfile::EtsiStrict => {
                 parse_oamd_payload_with_config(input.oamd_payload, self.config.oamd)?
@@ -214,6 +239,9 @@ impl PayloadDecoder {
 
         let mut next_joc = self.joc.clone();
         let decoded = next_joc.decode_pcm_frame(&joc, input.downmix_pcm)?;
+        let mut reconstruction_timing = next_joc.take_reconstruction_timing();
+        reconstruction_timing.payload_parsing += payload_parsing;
+        self.last_reconstruction_timing = reconstruction_timing;
         let frame_samples = input.downmix_pcm.first().map_or(0, Vec::len);
         let sample_range_end = self
             .next_sample

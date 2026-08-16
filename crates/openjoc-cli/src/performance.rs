@@ -1,3 +1,4 @@
+use openjoc_joc::ReconstructionStageTiming;
 use serde::Serialize;
 use std::{
     fs, io,
@@ -13,6 +14,7 @@ pub(crate) struct DecodeStageTiming {
     pub(crate) joc_reconstruction: Duration,
     pub(crate) frame_times: Vec<Duration>,
     pub(crate) collect_frame_times: bool,
+    pub(crate) reconstruction_stages: ReconstructionStageTiming,
 }
 
 impl DecodeStageTiming {
@@ -22,6 +24,7 @@ impl DecodeStageTiming {
             joc_reconstruction: Duration::ZERO,
             frame_times: Vec::new(),
             collect_frame_times,
+            reconstruction_stages: ReconstructionStageTiming::default(),
         }
     }
 }
@@ -63,6 +66,7 @@ pub(crate) struct RenderPerformance {
     pub(crate) progress_enabled: bool,
     pub(crate) progress_updates: u64,
     pub(crate) progress_overhead: Duration,
+    pub(crate) reconstruction_stages: ReconstructionStageTiming,
 }
 
 impl RenderPerformance {
@@ -87,6 +91,7 @@ impl RenderPerformance {
             progress_enabled: false,
             progress_updates: 0,
             progress_overhead: Duration::ZERO,
+            reconstruction_stages: ReconstructionStageTiming::default(),
         }
     }
 
@@ -94,6 +99,8 @@ impl RenderPerformance {
         self.eac3_decode += timing.eac3_decode;
         self.joc_reconstruction += timing.joc_reconstruction;
         self.frame_times = timing.frame_times;
+        self.reconstruction_stages
+            .add_assign(&timing.reconstruction_stages);
     }
 
     pub(crate) fn merge_render(&mut self, timing: &RenderStageTiming) {
@@ -122,6 +129,7 @@ struct PerformanceReport<'a> {
     output_bytes: u64,
     build_mode: &'static str,
     stage_timings_ms: StageTimings,
+    joc_reconstruction_stages_ms: JocReconstructionStages,
     core_frame_processing_ms: FrameTimingDistribution,
     progress: ProgressReport,
 }
@@ -136,6 +144,19 @@ struct StageTimings {
     spatial_bridge_render: f64,
     binaural_render: f64,
     output_conversion_wav_write: f64,
+}
+
+#[derive(Serialize)]
+struct JocReconstructionStages {
+    payload_parsing: f64,
+    coefficient_decode: f64,
+    dequantization: f64,
+    qmf_analysis: f64,
+    interpolation: f64,
+    matrix_reconstruction: f64,
+    qmf_synthesis: f64,
+    output_assembly: f64,
+    buffer_initialization: f64,
 }
 
 #[derive(Serialize)]
@@ -215,6 +236,21 @@ pub(crate) fn write_report(
             spatial_bridge_render: milliseconds(performance.spatial_bridge_render),
             binaural_render: milliseconds(performance.binaural_render),
             output_conversion_wav_write: milliseconds(performance.output_conversion_wav_write),
+        },
+        joc_reconstruction_stages_ms: JocReconstructionStages {
+            payload_parsing: milliseconds(performance.reconstruction_stages.payload_parsing),
+            coefficient_decode: milliseconds(performance.reconstruction_stages.coefficient_decode),
+            dequantization: milliseconds(performance.reconstruction_stages.dequantization),
+            qmf_analysis: milliseconds(performance.reconstruction_stages.qmf_analysis),
+            interpolation: milliseconds(performance.reconstruction_stages.interpolation),
+            matrix_reconstruction: milliseconds(
+                performance.reconstruction_stages.matrix_reconstruction,
+            ),
+            qmf_synthesis: milliseconds(performance.reconstruction_stages.qmf_synthesis),
+            output_assembly: milliseconds(performance.reconstruction_stages.output_assembly),
+            buffer_initialization: milliseconds(
+                performance.reconstruction_stages.buffer_initialization,
+            ),
         },
         core_frame_processing_ms: timing_distribution(&performance.frame_times),
         progress: ProgressReport {

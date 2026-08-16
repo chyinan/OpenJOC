@@ -780,6 +780,9 @@ where
     } else {
         PayloadDecoder::with_oamd_profile(config, oamd_profile)
     };
+    if timing.is_some() {
+        decoder.enable_reconstruction_timing();
+    }
     for (unit_index, unit) in units.into_iter().enumerate() {
         let frame_start = Instant::now();
         let decode_start = Instant::now();
@@ -829,6 +832,9 @@ where
             },
         )?;
         if let Some(timing) = timing.as_mut() {
+            timing
+                .reconstruction_stages
+                .add_assign(&decoder.take_reconstruction_timing());
             timing.joc_reconstruction += reconstruction_start.elapsed();
             if timing.collect_frame_times {
                 timing.frame_times.push(frame_start.elapsed());

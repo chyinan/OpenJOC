@@ -177,5 +177,5 @@ pub fn qmf_prototype_64() -> &'static [f32; 640] {
 }
 pub use decoder::{
     DecodedJocFrame, JocDecodeError, JocDecoderState, ReconstructionBasis, ReconstructionBasisRow,
-    ReconstructionBasisRowIndex, ReconstructionRowStages,
+    ReconstructionBasisRowIndex, ReconstructionRowStages, ReconstructionStageTiming,
 };

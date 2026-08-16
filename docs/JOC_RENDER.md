@@ -143,10 +143,51 @@ p99/maximum core-frame timing and progress overhead. The report contains no
 input or output paths, so it can be shared without exposing private fixture
 locations.
 
+The version-1 report also includes the additive object
+`joc_reconstruction_stages_ms`. Its fields are `payload_parsing`,
+`coefficient_decode`, `dequantization`, `qmf_analysis`, `interpolation`,
+`matrix_reconstruction`, `qmf_synthesis`, `output_assembly`, and
+`buffer_initialization`. These scopes are enabled only when a performance
+report is requested and are diagnostic measurements; they are not a new codec
+or rendering mode. Existing readers that ignore unknown JSON members remain
+compatible.
+
 The reconstruction timer covers payload-decoder frame reconstruction and its
 render-sink dispatch. Bridge and output timers are reported separately and can
 overlap that interval; they are diagnostic stage measurements, not additive
 wall-time partitions.
+
+The reconstruction-only release harness is separate from the speaker/WAV
+harness and does not need a real media file:
+
+```sh
+cargo run -p openjoc-joc --release --example reconstruction_benchmark -- 1024 qmf
+cargo run -p openjoc-joc --release --example reconstruction_benchmark -- 1024 pcm
+```
+
+`qmf` measures parsed JOC reconstruction against prebuilt QMF input; `pcm`
+also includes QMF analysis. Both use a deterministic 15-object, 5-channel,
+24-timeslot synthetic frame and report AU wall time, p50/p95/p99/maximum, and
+stage totals. They are repeatable engineering harnesses, not real-media
+qualification fixtures.
+
+The local Apple-silicon release measurements that motivated the retained QMF
+optimization were:
+
+| Harness | Before | After | Dominant post-fix stage |
+|---|---:|---:|---|
+| 128-AU `qmf` | 20.49 ms/AU | 3.57 ms/AU | QMF synthesis |
+| 1024-AU `qmf` | 21.68 ms/AU | 2.65 ms/AU | QMF synthesis |
+
+The pre-fix native sampling profile was dominated by repeated
+`__sincos_stret` calls from QMF synthesis. The retained fix constructs the
+invariant f64 prototype and analysis/synthesis phase tables once, then reuses
+them in the same scalar f64 equations. A post-fix 1024-AU run reported about
+2.17 s in QMF synthesis, 0.14 s in matrix reconstruction, and 0.26 s in
+interpolation; its checksum matched the pre-fix run exactly. No real DEE file
+was available locally, so the supplied Windows evidence remains the
+qualification baseline: 9,496 AUs, 303.872 s of audio, 671.052 s of JOC
+reconstruction, approximately 70.7 ms/AU, and 0.388x overall realtime.
 
 The checked-in release harness is a synthetic speaker/WAV measurement only:
 
@@ -186,7 +227,7 @@ run the following exact placeholder command against the private file and
 retain its JSON report for qualification:
 
 ```powershell
-openjoc.exe render-joc "D:\path\to\DEE-file.m4a" --layout 7.1.4 --output "D:\path\to\DEE-render.wav" --performance-report "D:\path\to\DEE-render-performance.json"
+openjoc.exe render-joc "D:\path\to\DEE-file.mp4" --layout 7.1.4 --output "D:\path\to\DEE-render.wav" --performance-report "D:\path\to\DEE-performance.json"
 ```
 
 That retest must use a release build, record the machine/OS/toolchain, and
