@@ -46,7 +46,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -188,7 +188,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "  render-joc supported presets: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
@@ -212,7 +212,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
@@ -297,7 +297,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders explicit static sources transactionally to stereo float32 WAV.\n",
         ),
         "render-joc" => concat!(
-            "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav>\n",
+            "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav|OUTPUT.caf>\n",
             "       [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N]\n",
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
@@ -312,6 +312,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
             "With --binaural-sofa, the selected layout is virtualized to stereo through exact SOFA HRIR directions.\n",
             "Binaural layouts require an explicit LFE policy; direct is the default backend and no vendor-fidelity claim is made.\n",
+            "The output extension selects the container: .wav for WAVEFORMATEXTENSIBLE or .caf for Core Audio Format.\n",
+            "CAF preserves semantic channel descriptions; no new public speaker preset is introduced here.\n",
             "Progress is enabled on interactive stderr, throttled, and disabled for non-TTY output; --no-progress opts out.\n",
             "--performance-report writes diagnostic JSON with stage timings and realtime metrics.\n",
             "Existing output files prompt once on an interactive terminal ([y/N]); --overwrite skips the prompt.\n",
@@ -1240,6 +1242,7 @@ fn render_joc_preflight(
             .into());
         }
     }
+    joc_render::validate_output_path(&arguments.output)?;
 
     let existing = outputs
         .into_iter()
@@ -1358,7 +1361,7 @@ fn render_joc(
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
-        let mut output = joc_render::JocWavOutput::new_with_overwrite(
+        let mut output = joc_render::JocPcmOutput::new_for_binaural(
             &arguments.output,
             arguments.output_format,
             overwrite_authorized,
@@ -1500,12 +1503,14 @@ fn render_joc(
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
-        let mut output = joc_render::JocWavOutput::new_for_speaker_layout(
+        let semantic_layout = renderer.semantic_channel_layout();
+        let mut output = joc_render::JocPcmOutput::new_for_semantic_layout(
             &arguments.output,
             arguments.output_format,
             overwrite_authorized,
-            &arguments.layout,
+            &semantic_layout,
         )?;
+        let output_container = output.container().name();
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();
         let dither = deterministic_dither_values();
@@ -1586,7 +1591,7 @@ fn render_joc(
                     )?;
                 }
                 println!(
-                    "{}\noutput format: {}",
+                    "{}\noutput container: {}\noutput format: {}",
                     renderer.diagnostics(
                         &arguments.layout,
                         arguments.validation_profile,
@@ -1594,6 +1599,7 @@ fn render_joc(
                         &summary,
                         &arguments.output,
                     ),
+                    output_container,
                     match arguments.output_format {
                         SampleFormat::F32 => "IEEE float32",
                         SampleFormat::F64 => "IEEE float64",
@@ -3212,8 +3218,14 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         joc_render::JocRenderError::Json(_) => CliErrorCategory::MalformedInput,
         joc_render::JocRenderError::OutputExists(_)
         | joc_render::JocRenderError::Wave(_)
+        | joc_render::JocRenderError::Caf(_)
+        | joc_render::JocRenderError::WavLayoutNotExactlyRepresentable { .. }
+        | joc_render::JocRenderError::UnsupportedCafSpeaker { .. }
         | joc_render::JocRenderError::NoRenderedFrames
         | joc_render::JocRenderError::BinauralOutput(_) => CliErrorCategory::OutputFailure,
+        joc_render::JocRenderError::UnsupportedOutputExtension(_) => {
+            CliErrorCategory::InvalidArgument
+        }
         joc_render::JocRenderError::InvalidControl(_)
         | joc_render::JocRenderError::UnsupportedLayout(_)
         | joc_render::JocRenderError::EmptyTopology

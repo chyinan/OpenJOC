@@ -55,6 +55,335 @@ impl fmt::Display for WaveError {
     }
 }
 
+/// CAF Linear PCM serialization failures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CafError {
+    Io { kind: io::ErrorKind },
+    InvalidSampleRate,
+    NonFiniteSample { index: usize },
+    OutOfRangeSample { index: usize },
+    SizeOverflow,
+    InvalidFormat,
+    InvalidChannelDescriptions { expected: usize, actual: usize },
+}
+
+impl fmt::Display for CafError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { kind } => write!(formatter, "CAF I/O error: {kind}"),
+            Self::InvalidSampleRate => formatter.write_str("invalid CAF sample rate"),
+            Self::NonFiniteSample { index } => {
+                write!(formatter, "non-finite CAF sample at index {index}")
+            }
+            Self::OutOfRangeSample { index } => {
+                write!(
+                    formatter,
+                    "CAF integer sample is outside [-1, 1] at index {index}"
+                )
+            }
+            Self::SizeOverflow => formatter.write_str("CAF data exceeds size limits"),
+            Self::InvalidFormat => formatter.write_str("inconsistent CAF format fields"),
+            Self::InvalidChannelDescriptions { expected, actual } => write!(
+                formatter,
+                "CAF channel description count {actual} does not match {expected} audio channels"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CafError {}
+
+impl From<WaveError> for CafError {
+    fn from(error: WaveError) -> Self {
+        match error {
+            WaveError::Io { kind } => Self::Io { kind },
+            WaveError::InvalidSampleRate => Self::InvalidSampleRate,
+            WaveError::NonFiniteSample { index } => Self::NonFiniteSample { index },
+            WaveError::OutOfRangeSample { index } => Self::OutOfRangeSample { index },
+            WaveError::SizeOverflow => Self::SizeOverflow,
+            WaveError::InvalidFormat
+            | WaveError::InvalidRiff
+            | WaveError::Truncated
+            | WaveError::MissingFormat
+            | WaveError::MissingData
+            | WaveError::UnsupportedFormat { .. }
+            | WaveError::InvalidChannelMask { .. } => Self::InvalidFormat,
+        }
+    }
+}
+
+/// One ordered Core Audio channel description.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CafChannelDescription {
+    pub label: u32,
+    pub flags: u32,
+    pub coordinates: [f32; 3],
+}
+
+/// Incremental seekable CAF Linear PCM writer.
+///
+/// This follows Apple’s public CAF specification:
+/// <https://developer.apple.com/library/archive/documentation/MusicAudio/Reference/CAFSpec/CAF_spec/CAF_spec.html>
+/// File and chunk metadata are big-endian; PCM bytes are little-endian as
+/// declared by the Linear PCM format flags. The `chan` chunk uses
+/// `UseChannelDescriptions` and preserves the supplied order exactly.
+pub struct CafWriter<W> {
+    writer: W,
+    sample_rate: u32,
+    channels: usize,
+    options: WaveEncodeOptions,
+    data_bytes: u64,
+    frames: u64,
+    sample_index: usize,
+    interleaved_scratch: Vec<f64>,
+    encoded_scratch: Vec<u8>,
+    data_size_position: u64,
+}
+
+impl<W: Write + Seek> CafWriter<W> {
+    /// Creates a CAF writer with one channel description for every PCM
+    /// channel, in the same order as the interleaved audio frames.
+    pub fn new(
+        mut writer: W,
+        sample_rate: u32,
+        channels: usize,
+        options: WaveEncodeOptions,
+        descriptions: &[CafChannelDescription],
+    ) -> Result<Self, CafError> {
+        validate_writer_format(sample_rate, channels, options).map_err(CafError::from)?;
+        if descriptions.len() != channels {
+            return Err(CafError::InvalidChannelDescriptions {
+                expected: channels,
+                actual: descriptions.len(),
+            });
+        }
+        let bytes_per_packet = channels
+            .checked_mul(options.sample_format.bytes_per_sample())
+            .ok_or(CafError::SizeOverflow)?;
+        let channel_chunk_size = 12_u64
+            .checked_add(
+                u64::try_from(channels)
+                    .map_err(|_| CafError::SizeOverflow)?
+                    .checked_mul(20)
+                    .ok_or(CafError::SizeOverflow)?,
+            )
+            .ok_or(CafError::SizeOverflow)?;
+        let channel_chunk_size =
+            i64::try_from(channel_chunk_size).map_err(|_| CafError::SizeOverflow)?;
+        let channels = u32::try_from(channels).map_err(|_| CafError::SizeOverflow)?;
+        let bytes_per_packet =
+            u32::try_from(bytes_per_packet).map_err(|_| CafError::SizeOverflow)?;
+
+        writer.write_all(b"caff").map_err(caf_io_error)?;
+        writer
+            .write_all(&1_u16.to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&0_u16.to_be_bytes())
+            .map_err(caf_io_error)?;
+
+        write_caf_chunk_header(&mut writer, *b"desc", 32)?;
+        writer
+            .write_all(&f64::from(sample_rate).to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer.write_all(b"lpcm").map_err(caf_io_error)?;
+        writer
+            .write_all(&caf_linear_pcm_flags(options.sample_format).to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&bytes_per_packet.to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&1_u32.to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&channels.to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&u32::from(options.sample_format.bits()).to_be_bytes())
+            .map_err(caf_io_error)?;
+
+        write_caf_chunk_header(&mut writer, *b"chan", channel_chunk_size)?;
+        writer
+            .write_all(&0_u32.to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&0_u32.to_be_bytes())
+            .map_err(caf_io_error)?;
+        writer
+            .write_all(&channels.to_be_bytes())
+            .map_err(caf_io_error)?;
+        for description in descriptions {
+            writer
+                .write_all(&description.label.to_be_bytes())
+                .map_err(caf_io_error)?;
+            writer
+                .write_all(&description.flags.to_be_bytes())
+                .map_err(caf_io_error)?;
+            for coordinate in description.coordinates {
+                writer
+                    .write_all(&coordinate.to_be_bytes())
+                    .map_err(caf_io_error)?;
+            }
+        }
+
+        writer.write_all(b"data").map_err(caf_io_error)?;
+        let data_size_position = writer.stream_position().map_err(caf_io_error)?;
+        writer
+            .write_all(&0_i64.to_be_bytes())
+            .map_err(caf_io_error)?;
+        // CAFData begins with the big-endian edit count mandated by the CAF
+        // specification; the PCM payload follows it.
+        writer
+            .write_all(&0_u32.to_be_bytes())
+            .map_err(caf_io_error)?;
+
+        Ok(Self {
+            writer,
+            sample_rate,
+            channels: usize::try_from(channels).map_err(|_| CafError::SizeOverflow)?,
+            options,
+            data_bytes: 0,
+            frames: 0,
+            sample_index: 0,
+            interleaved_scratch: Vec::new(),
+            encoded_scratch: Vec::new(),
+            data_size_position,
+        })
+    }
+
+    /// Appends interleaved samples for one or more complete frames.
+    pub fn write_interleaved(&mut self, samples: &[f64]) -> Result<(), CafError> {
+        if samples.len() % self.channels != 0 {
+            return Err(CafError::InvalidFormat);
+        }
+        self.interleaved_scratch.clear();
+        self.interleaved_scratch.extend_from_slice(samples);
+        self.write_interleaved_scratch()
+    }
+
+    /// Appends a channel-major chunk without retaining prior chunks.
+    pub fn write_channels(&mut self, channels: &[&[f64]]) -> Result<(), CafError> {
+        if channels.len() != self.channels {
+            return Err(CafError::InvalidFormat);
+        }
+        let frames = channels.first().map_or(0, |channel| channel.len());
+        if channels.iter().any(|channel| channel.len() != frames) {
+            return Err(CafError::InvalidFormat);
+        }
+        let sample_count = frames
+            .checked_mul(self.channels)
+            .ok_or(CafError::SizeOverflow)?;
+        self.interleaved_scratch.clear();
+        self.interleaved_scratch.reserve(sample_count);
+        for frame in 0..frames {
+            for channel in channels {
+                self.interleaved_scratch.push(channel[frame]);
+            }
+        }
+        self.write_interleaved_scratch()
+    }
+
+    fn write_interleaved_scratch(&mut self) -> Result<(), CafError> {
+        let encoded_len = self
+            .interleaved_scratch
+            .len()
+            .checked_mul(self.options.sample_format.bytes_per_sample())
+            .ok_or(CafError::SizeOverflow)?;
+        self.encoded_scratch.clear();
+        self.encoded_scratch.reserve(encoded_len);
+        for index in 0..self.interleaved_scratch.len() {
+            encode_sample(
+                &mut self.encoded_scratch,
+                self.interleaved_scratch[index],
+                self.options,
+                self.sample_index,
+            )
+            .map_err(CafError::from)?;
+            self.sample_index = self
+                .sample_index
+                .checked_add(1)
+                .ok_or(CafError::SizeOverflow)?;
+        }
+        self.writer
+            .write_all(&self.encoded_scratch)
+            .map_err(caf_io_error)?;
+        self.data_bytes = self
+            .data_bytes
+            .checked_add(
+                u64::try_from(self.encoded_scratch.len()).map_err(|_| CafError::SizeOverflow)?,
+            )
+            .ok_or(CafError::SizeOverflow)?;
+        self.frames = self
+            .frames
+            .checked_add(
+                u64::try_from(self.interleaved_scratch.len() / self.channels)
+                    .map_err(|_| CafError::SizeOverflow)?,
+            )
+            .ok_or(CafError::SizeOverflow)?;
+        Ok(())
+    }
+
+    /// Finalizes the data chunk size, flushes, and returns the underlying
+    /// writer.
+    pub fn finish(mut self) -> Result<W, CafError> {
+        let data_size = self
+            .data_bytes
+            .checked_add(4)
+            .ok_or(CafError::SizeOverflow)?;
+        let data_size = i64::try_from(data_size).map_err(|_| CafError::SizeOverflow)?;
+        self.writer
+            .seek(SeekFrom::Start(self.data_size_position))
+            .map_err(caf_io_error)?;
+        self.writer
+            .write_all(&data_size.to_be_bytes())
+            .map_err(caf_io_error)?;
+        self.writer.seek(SeekFrom::End(0)).map_err(caf_io_error)?;
+        self.writer.flush().map_err(caf_io_error)?;
+        Ok(self.writer)
+    }
+
+    /// Number of complete sample frames appended so far.
+    #[must_use]
+    pub const fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    /// Bytes of encoded sample data appended so far.
+    #[must_use]
+    pub const fn data_bytes(&self) -> u64 {
+        self.data_bytes
+    }
+
+    /// Sample rate retained by this writer.
+    #[must_use]
+    pub const fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn caf_io_error(error: io::Error) -> CafError {
+    CafError::Io { kind: error.kind() }
+}
+
+fn write_caf_chunk_header<W: Write>(
+    writer: &mut W,
+    chunk_type: [u8; 4],
+    size: i64,
+) -> Result<(), CafError> {
+    writer.write_all(&chunk_type).map_err(caf_io_error)?;
+    writer.write_all(&size.to_be_bytes()).map_err(caf_io_error)
+}
+
+const fn caf_linear_pcm_flags(format: SampleFormat) -> u32 {
+    let little_endian = 1_u32 << 1;
+    match format {
+        SampleFormat::F32 | SampleFormat::F64 => (1_u32 << 0) | little_endian,
+        SampleFormat::S24 | SampleFormat::S16 => little_endian,
+    }
+}
+
 /// Decoded channel-major WAV PCM.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WavePcm {

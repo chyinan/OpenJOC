@@ -106,12 +106,19 @@ openjoc decode input.ec3 -o output/ --internal-base
 openjoc decode input.mp4 -o output/ --internal-base --streaming
 openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
+openjoc render-joc input.m4a --layout 7.1.4 --output render.caf
 openjoc render-joc input.m4a --layout 7.1.4 --binaural-sofa HRTF.sofa \
   --lfe-policy equal-power-dual-mono --output render-binaural.wav
 # Optional complete explicit override/test input:
 openjoc render-joc input.m4a --topology bridge-control.json --layout 7.1.4 --output render.wav
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
+
+`render-joc` selects the output container from the destination extension:
+`.wav` uses WAVEFORMATEXTENSIBLE where the semantic layout is exactly
+representable, and `.caf` uses Core Audio Format channel-layout metadata. The
+renderer’s semantic channel order is independent of that container choice;
+this change does not add a new public speaker-layout preset.
 
 `decode` and `decode-payload` use `AUTO` when no profile is supplied: they
 evaluate `ETSI_STRICT` first and select `OBSERVED_VENDOR_COMPAT` only when the

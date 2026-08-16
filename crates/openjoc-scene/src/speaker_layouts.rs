@@ -101,6 +101,63 @@ impl From<SpeakerChannelMaskError> for SpeakerLayoutPresetError {
     }
 }
 
+/// Container-independent semantic identity and order for rendered channels.
+///
+/// The labels are owned by the canonical scene/layout registry. Output
+/// containers consume this record and decide independently whether, and how,
+/// each identity can be serialized.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SemanticChannelLayout {
+    pub name: String,
+    pub labels: Vec<String>,
+    pub lfe_index: Option<usize>,
+    wav_channel_mask: Option<u32>,
+}
+
+impl SemanticChannelLayout {
+    /// Creates an internal or caller-defined semantic layout without WAV
+    /// representation metadata.
+    #[must_use]
+    pub fn without_wav_mapping(
+        name: impl Into<String>,
+        labels: impl IntoIterator<Item = impl Into<String>>,
+        lfe_index: Option<usize>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            labels: labels.into_iter().map(Into::into).collect(),
+            lfe_index,
+            wav_channel_mask: None,
+        }
+    }
+
+    fn with_wav_mapping(
+        name: impl Into<String>,
+        labels: impl IntoIterator<Item = impl Into<String>>,
+        lfe_index: Option<usize>,
+        wav_channel_mask: u32,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            labels: labels.into_iter().map(Into::into).collect(),
+            lfe_index,
+            wav_channel_mask: Some(wav_channel_mask),
+        }
+    }
+
+    /// Returns the exact WAVEFORMATEXTENSIBLE mask, if one exists.
+    #[must_use]
+    pub const fn wav_channel_mask(&self) -> Option<u32> {
+        self.wav_channel_mask
+    }
+
+    /// Returns the number of rendered channels, including LFE.
+    #[must_use]
+    pub fn channel_count(&self) -> usize {
+        self.labels.len()
+    }
+}
+
 /// A validated public speaker preset and its output metadata contract.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SpeakerLayoutPreset {
@@ -153,6 +210,17 @@ impl SpeakerLayoutPreset {
     #[must_use]
     pub const fn wav_channel_mask(&self) -> u32 {
         self.wav_channel_mask
+    }
+
+    /// Returns this preset as a container-independent semantic layout.
+    #[must_use]
+    pub fn semantic_channel_layout(&self) -> SemanticChannelLayout {
+        SemanticChannelLayout::with_wav_mapping(
+            self.name,
+            self.labels.iter().copied(),
+            self.lfe_index,
+            self.wav_channel_mask,
+        )
     }
 }
 

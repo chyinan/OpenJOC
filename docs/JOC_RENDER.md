@@ -47,9 +47,19 @@ speaker mask and IEEE float32 samples by default (`--reference-f64` selects
 float64). The public library exposes the same canonical order and masks through
 `openjoc_scene::SpeakerLayoutPreset`.
 
+Output container selection is independent of the renderer’s semantic channel
+layout. A `.wav` destination uses WAVEFORMATEXTENSIBLE and fails closed when a
+semantic identity has no exact standard speaker-mask bit. A `.caf` destination
+uses Core Audio Format with an ordered `chan` chunk of semantic channel
+descriptions, preserving richer identities such as public left/right wide
+labels and coordinate-described top-middle channels. The currently public
+presets remain the six layouts listed above; this output layer does not expose
+a new layout preset. Binaural output may also use `.caf`; its PCM remains
+stereo and its SOFA/DSP path is unchanged.
+
 The command performs container extraction, E-AC-3 Base/LFE decoding, JOC and
 OAMD validation/decoding, persistent `JocSpatialBridge` accumulation, and
-incremental WAV writing. It does not materialize a duration-sized
+incremental container writing. It does not materialize a duration-sized
 `ObjectScene` or reconstruction-basis capture.
 
 ## Reconstruction timeline alignment
@@ -230,8 +240,9 @@ original `5.1` path it remains:
 0 FL, 1 FR, 2 FC, 3 LFE, 4 Ls, 5 Rs
 ```
 
-The default output is IEEE float32 WAV. `--reference-f64` selects IEEE float64
-WAV. The RcLfe/Base LFE plane is copied only to `LFE`; it is not sent through
+The default sample format is IEEE float32. `--reference-f64` selects IEEE
+float64. The `.wav` and `.caf` backends preserve the same PCM channel order.
+The RcLfe/Base LFE plane is copied only to `LFE`; it is not sent through
 ordinary spatial projection and is not double-added. The active bridge planes
 are ordered by the selected preset's explicit channel identities before the
 public WAV interleave.
@@ -276,7 +287,7 @@ and validation profile, sample rate, access-unit/sample/frame counts, audio
 duration, wall duration, realtime factor, output byte count, build mode, and
 timings for container loading, profile/index validation, E-AC-3 decode, JOC
 reconstruction, bridge control assembly, spatial bridge render, optional
-binaural render, and output conversion/WAV writing. It also records p50/p95/
+binaural render, and output conversion/container writing. It also records p50/p95/
 p99/maximum core-frame timing and progress overhead. The report contains no
 input or output paths, so it can be shared without exposing private fixture
 locations.

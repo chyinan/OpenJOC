@@ -18,14 +18,17 @@ use openjoc_render::{
 use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlFrame,
     BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge,
-    SPEAKER_LAYOUT_PRESET_NAMES, SpatialBridgeError, SpatialContributionMode,
-    SpatialCoordinateUpdate, SpatialRouteVector, SpatialTopologySnapshot, SpeakerLayoutPreset,
-    SpeakerLayoutPresetError,
+    SPEAKER_LAYOUT_PRESET_NAMES, SemanticChannelLayout, SpatialBridgeError,
+    SpatialContributionMode, SpatialCoordinateUpdate, SpatialRouteVector, SpatialTopologySnapshot,
+    SpeakerLayoutPreset, SpeakerLayoutPresetError,
 };
 #[cfg(test)]
 use openjoc_scene::{SPEAKER_LAYOUT_5_1_CHANNELS, SpatialLayout};
 use openjoc_sofa::SofaError;
-use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
+use openjoc_wave::{
+    CafChannelDescription, CafError, CafWriter, Clipping, Dither, SampleFormat, WaveEncodeOptions,
+    WaveError, WaveWriter,
+};
 use serde::Deserialize;
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -90,6 +93,15 @@ pub enum JocRenderError {
     },
     BinauralOutput(String),
     Wave(WaveError),
+    Caf(CafError),
+    WavLayoutNotExactlyRepresentable {
+        layout: String,
+    },
+    UnsupportedOutputExtension(PathBuf),
+    UnsupportedCafSpeaker {
+        layout: String,
+        label: String,
+    },
     OutputExists(PathBuf),
     NoRenderedFrames,
 }
@@ -173,6 +185,20 @@ impl fmt::Display for JocRenderError {
                 write!(formatter, "JOC binaural output error: {reason}")
             }
             Self::Wave(error) => write!(formatter, "JOC render WAV error: {error}"),
+            Self::Caf(error) => write!(formatter, "JOC render CAF error: {error}"),
+            Self::WavLayoutNotExactlyRepresentable { layout } => write!(
+                formatter,
+                "semantic layout {layout} is not exactly representable by WAV/WAVEFORMATEXTENSIBLE"
+            ),
+            Self::UnsupportedOutputExtension(path) => write!(
+                formatter,
+                "unsupported output extension for {}; use .wav or .caf",
+                path.display()
+            ),
+            Self::UnsupportedCafSpeaker { layout, label } => write!(
+                formatter,
+                "CAF cannot represent semantic speaker {label} in layout {layout} using public Core Audio descriptions"
+            ),
             Self::OutputExists(path) => {
                 write!(formatter, "refusing to overwrite output {}", path.display())
             }
@@ -244,6 +270,12 @@ impl From<openjoc_render::RenderError> for JocRenderError {
 impl From<WaveError> for JocRenderError {
     fn from(value: WaveError) -> Self {
         Self::Wave(value)
+    }
+}
+
+impl From<CafError> for JocRenderError {
+    fn from(value: CafError) -> Self {
+        Self::Caf(value)
     }
 }
 
@@ -367,6 +399,13 @@ pub struct JocSpeakerRenderer {
 impl JocSpeakerRenderer {
     pub fn new(layout: &str, control: RenderControl) -> Result<Self, JocRenderError> {
         Self::new_with_contribution(layout, control, SpatialContributionMode::Full)
+    }
+
+    /// Returns the renderer-owned semantic channel identity and order for the
+    /// selected canonical layout. Containers consume this record without
+    /// changing renderer behavior.
+    pub(crate) fn semantic_channel_layout(&self) -> SemanticChannelLayout {
+        self.preset.semantic_channel_layout()
     }
 
     /// Creates a renderer with an expert-only PCM contribution diagnostic.
@@ -1278,8 +1317,10 @@ impl JocBinauralRenderer {
                     self.speaker.contribution_mode.as_str()
                 )
             };
+        let output_container =
+            output_container_for_path(output).map_or("unknown", |container| container.name());
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: complete (exact-direction lookup)\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: complete (exact-direction lookup)\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {} {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
             requested_profile.as_str(),
             selected_profile.as_str(),
             self.layout,
@@ -1302,11 +1343,12 @@ impl JocBinauralRenderer {
                 .duration_samples
                 .saturating_add(self.tail_samples() as u64),
             match output_format {
-                SampleFormat::F32 => "IEEE float32 stereo WAV",
-                SampleFormat::F64 => "IEEE float64 stereo WAV",
-                SampleFormat::S24 => "signed PCM24 stereo WAV",
-                SampleFormat::S16 => "signed PCM16 stereo WAV",
+                SampleFormat::F32 => "IEEE float32 stereo",
+                SampleFormat::F64 => "IEEE float64 stereo",
+                SampleFormat::S24 => "signed PCM24 stereo",
+                SampleFormat::S16 => "signed PCM16 stereo",
             },
+            output_container,
             output.display(),
             contribution_diagnostic,
         )
@@ -1651,46 +1693,43 @@ pub(crate) fn replace_existing_file(staging: &Path, output: &Path) -> io::Result
     }
 }
 
-pub struct JocWavOutput {
+/// The output container selected by the destination extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OutputContainer {
+    Wav,
+    Caf,
+}
+
+impl OutputContainer {
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Wav => "WAV",
+            Self::Caf => "CAF",
+        }
+    }
+}
+
+fn output_container_for_path(path: &Path) -> Result<OutputContainer, JocRenderError> {
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some(extension) if extension.eq_ignore_ascii_case("wav") => Ok(OutputContainer::Wav),
+        Some(extension) if extension.eq_ignore_ascii_case("caf") => Ok(OutputContainer::Caf),
+        _ => Err(JocRenderError::UnsupportedOutputExtension(path.to_owned())),
+    }
+}
+
+pub fn validate_output_path(path: &Path) -> Result<OutputContainer, JocRenderError> {
+    output_container_for_path(path)
+}
+
+struct StagedOutput {
     output: PathBuf,
     staging: PathBuf,
     overwrite: bool,
-    format: SampleFormat,
-    writer: Option<WaveWriter<fs::File>>,
-    sample_rate: Option<u32>,
-    channels: Option<usize>,
-    speaker_mask: Option<u32>,
 }
 
-impl JocWavOutput {
-    pub fn new_with_overwrite(
-        output: &Path,
-        format: SampleFormat,
-        overwrite: bool,
-    ) -> Result<Self, JocRenderError> {
-        Self::new_with_mask(output, format, overwrite, None)
-    }
-
-    /// Creates transactional output for one of the admitted speaker layouts.
-    /// The WAV header carries the standard speaker mask matching the preset's
-    /// explicit public channel identities and order.
-    pub fn new_for_speaker_layout(
-        output: &Path,
-        format: SampleFormat,
-        overwrite: bool,
-        layout: &str,
-    ) -> Result<Self, JocRenderError> {
-        let preset = SpeakerLayoutPreset::for_name(layout)?;
-        let speaker_mask = preset.wav_channel_mask();
-        Self::new_with_mask(output, format, overwrite, Some(speaker_mask))
-    }
-
-    fn new_with_mask(
-        output: &Path,
-        format: SampleFormat,
-        overwrite: bool,
-        speaker_mask: Option<u32>,
-    ) -> Result<Self, JocRenderError> {
+impl StagedOutput {
+    fn new(output: &Path, overwrite: bool) -> Result<Self, JocRenderError> {
         if output.exists() && !overwrite {
             return Err(JocRenderError::OutputExists(output.to_owned()));
         }
@@ -1711,6 +1750,89 @@ impl JocWavOutput {
             output: output.to_owned(),
             staging,
             overwrite,
+        })
+    }
+
+    fn create(&self) -> Result<fs::File, JocRenderError> {
+        Ok(fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.staging)?)
+    }
+
+    fn finish(&self) -> Result<(), JocRenderError> {
+        let replacement = if self.overwrite {
+            replace_existing_file(&self.staging, &self.output)
+        } else if self.output.exists() {
+            Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("refusing to overwrite output {}", self.output.display()),
+            ))
+        } else {
+            fs::rename(&self.staging, &self.output)
+        };
+        replacement.map_err(Into::into)
+    }
+
+    fn abort(&self) {
+        let _ = fs::remove_file(&self.staging);
+    }
+}
+
+pub struct JocWavOutput {
+    transaction: StagedOutput,
+    format: SampleFormat,
+    writer: Option<WaveWriter<fs::File>>,
+    sample_rate: Option<u32>,
+    channels: Option<usize>,
+    speaker_mask: Option<u32>,
+}
+
+impl JocWavOutput {
+    pub fn new_with_overwrite(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+    ) -> Result<Self, JocRenderError> {
+        Self::new_with_mask(output, format, overwrite, None)
+    }
+
+    /// Creates transactional output for one of the admitted speaker layouts.
+    /// The WAV header carries the standard speaker mask matching the preset's
+    /// explicit public channel identities and order.
+    #[allow(dead_code)]
+    pub fn new_for_speaker_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &str,
+    ) -> Result<Self, JocRenderError> {
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        Self::new_for_semantic_layout(output, format, overwrite, &preset.semantic_channel_layout())
+    }
+
+    pub fn new_for_semantic_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &SemanticChannelLayout,
+    ) -> Result<Self, JocRenderError> {
+        let speaker_mask = layout.wav_channel_mask().ok_or_else(|| {
+            JocRenderError::WavLayoutNotExactlyRepresentable {
+                layout: layout.name.clone(),
+            }
+        })?;
+        Self::new_with_mask(output, format, overwrite, Some(speaker_mask))
+    }
+
+    fn new_with_mask(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        speaker_mask: Option<u32>,
+    ) -> Result<Self, JocRenderError> {
+        Ok(Self {
+            transaction: StagedOutput::new(output, overwrite)?,
             format,
             writer: None,
             sample_rate: None,
@@ -1731,16 +1853,13 @@ impl JocWavOutput {
                 ));
             }
         } else {
-            let file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&self.staging)?;
+            let file = self.transaction.create()?;
             let options = WaveEncodeOptions {
                 sample_format: self.format,
                 clipping: Clipping::Reject,
                 dither: Dither::None,
             };
-            self.writer = Some(match self.speaker_mask {
+            let writer = match self.speaker_mask {
                 Some(mask) => WaveWriter::new_with_speaker_mask(
                     file,
                     block.sample_rate,
@@ -1749,7 +1868,8 @@ impl JocWavOutput {
                     mask,
                 )?,
                 None => WaveWriter::new(file, block.sample_rate, channels, options)?,
-            });
+            };
+            self.writer = Some(writer);
             self.sample_rate = Some(block.sample_rate);
             self.channels = Some(channels);
         }
@@ -1761,32 +1881,22 @@ impl JocWavOutput {
         Ok(())
     }
 
-    pub fn finish(mut self) -> Result<(), JocRenderError> {
+    pub fn finish(&mut self) -> Result<(), JocRenderError> {
         let writer = self.writer.take().ok_or(JocRenderError::NoRenderedFrames)?;
         if let Err(error) = writer.finish() {
-            let _ = fs::remove_file(&self.staging);
+            self.transaction.abort();
             return Err(error.into());
         }
-        let replacement = if self.overwrite {
-            replace_existing_file(&self.staging, &self.output)
-        } else if self.output.exists() {
-            Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                format!("refusing to overwrite output {}", self.output.display()),
-            ))
-        } else {
-            fs::rename(&self.staging, &self.output)
-        };
-        if let Err(error) = replacement {
-            let _ = fs::remove_file(&self.staging);
-            return Err(error.into());
+        if let Err(error) = self.transaction.finish() {
+            self.transaction.abort();
+            return Err(error);
         }
         Ok(())
     }
 
     pub fn abort(&mut self) {
         self.writer.take();
-        let _ = fs::remove_file(&self.staging);
+        self.transaction.abort();
     }
 
     pub fn frames(&self) -> u64 {
@@ -1794,12 +1904,249 @@ impl JocWavOutput {
     }
 }
 
+pub struct JocCafOutput {
+    transaction: StagedOutput,
+    format: SampleFormat,
+    writer: Option<CafWriter<fs::File>>,
+    sample_rate: Option<u32>,
+    channels: usize,
+    descriptions: Vec<CafChannelDescription>,
+}
+
+impl JocCafOutput {
+    pub fn new_for_semantic_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &SemanticChannelLayout,
+    ) -> Result<Self, JocRenderError> {
+        let descriptions = layout
+            .labels
+            .iter()
+            .map(|label| caf_description(layout, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            transaction: StagedOutput::new(output, overwrite)?,
+            format,
+            writer: None,
+            sample_rate: None,
+            channels: layout.channel_count(),
+            descriptions,
+        })
+    }
+
+    pub fn write_block(&mut self, block: &RenderedBlock) -> Result<(), JocRenderError> {
+        if block.channels.is_empty() {
+            return Err(JocRenderError::NoRenderedFrames);
+        }
+        let channels = block.channels.len();
+        if channels != self.channels {
+            return Err(JocRenderError::InvalidControl(
+                "render output channel semantics changed during stream".to_owned(),
+            ));
+        }
+        if let Some(expected) = self.sample_rate {
+            if expected != block.sample_rate {
+                return Err(JocRenderError::InvalidControl(
+                    "render output sample rate changed during stream".to_owned(),
+                ));
+            }
+        } else {
+            let file = self.transaction.create()?;
+            let options = WaveEncodeOptions {
+                sample_format: self.format,
+                clipping: Clipping::Reject,
+                dither: Dither::None,
+            };
+            self.writer = Some(CafWriter::new(
+                file,
+                block.sample_rate,
+                channels,
+                options,
+                &self.descriptions,
+            )?);
+            self.sample_rate = Some(block.sample_rate);
+        }
+        let references = block.channels.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        self.writer
+            .as_mut()
+            .ok_or(JocRenderError::NoRenderedFrames)?
+            .write_channels(&references)?;
+        Ok(())
+    }
+
+    pub fn finish(&mut self) -> Result<(), JocRenderError> {
+        let writer = self.writer.take().ok_or(JocRenderError::NoRenderedFrames)?;
+        if let Err(error) = writer.finish() {
+            self.transaction.abort();
+            return Err(error.into());
+        }
+        if let Err(error) = self.transaction.finish() {
+            self.transaction.abort();
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub fn abort(&mut self) {
+        self.writer.take();
+        self.transaction.abort();
+    }
+
+    pub fn frames(&self) -> u64 {
+        self.writer.as_ref().map_or(0, CafWriter::frames)
+    }
+}
+
+/// Container-selected output sink. Renderer blocks are independent of this
+/// enum; only the destination extension chooses the serializer.
+pub enum JocPcmOutput {
+    Wav(JocWavOutput),
+    Caf(JocCafOutput),
+}
+
+impl JocPcmOutput {
+    #[allow(dead_code)]
+    pub fn new_for_speaker_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &str,
+    ) -> Result<Self, JocRenderError> {
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        let semantic = preset.semantic_channel_layout();
+        Self::new_for_semantic_layout(output, format, overwrite, &semantic)
+    }
+
+    pub fn new_for_binaural(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+    ) -> Result<Self, JocRenderError> {
+        let semantic =
+            SemanticChannelLayout::without_wav_mapping("binaural", ["Left", "Right"], None);
+        match output_container_for_path(output)? {
+            OutputContainer::Wav => Ok(Self::Wav(JocWavOutput::new_with_overwrite(
+                output, format, overwrite,
+            )?)),
+            OutputContainer::Caf => Ok(Self::Caf(JocCafOutput::new_for_semantic_layout(
+                output, format, overwrite, &semantic,
+            )?)),
+        }
+    }
+
+    pub(crate) fn new_for_semantic_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &SemanticChannelLayout,
+    ) -> Result<Self, JocRenderError> {
+        match output_container_for_path(output)? {
+            OutputContainer::Wav => Ok(Self::Wav(JocWavOutput::new_for_semantic_layout(
+                output, format, overwrite, layout,
+            )?)),
+            OutputContainer::Caf => Ok(Self::Caf(JocCafOutput::new_for_semantic_layout(
+                output, format, overwrite, layout,
+            )?)),
+        }
+    }
+
+    pub fn write_block(&mut self, block: &RenderedBlock) -> Result<(), JocRenderError> {
+        match self {
+            Self::Wav(output) => output.write_block(block),
+            Self::Caf(output) => output.write_block(block),
+        }
+    }
+
+    pub fn finish(&mut self) -> Result<(), JocRenderError> {
+        match self {
+            Self::Wav(output) => output.finish(),
+            Self::Caf(output) => output.finish(),
+        }
+    }
+
+    pub fn abort(&mut self) {
+        match self {
+            Self::Wav(output) => output.abort(),
+            Self::Caf(output) => output.abort(),
+        }
+    }
+
+    pub fn frames(&self) -> u64 {
+        match self {
+            Self::Wav(output) => output.frames(),
+            Self::Caf(output) => output.frames(),
+        }
+    }
+
+    pub const fn container(&self) -> OutputContainer {
+        match self {
+            Self::Wav(_) => OutputContainer::Wav,
+            Self::Caf(_) => OutputContainer::Caf,
+        }
+    }
+}
+
+const CAF_LABEL_USE_COORDINATES: u32 = 100;
+const CAF_FLAG_RECTANGULAR_COORDINATES: u32 = 1;
+const TOP_MIDDLE_X_LEFT: f64 = 7_928.0 / 32_768.0;
+const TOP_MIDDLE_X_RIGHT: f64 = 24_840.0 / 32_768.0;
+const TOP_MIDDLE_Z: f64 = 32_767.0 / 32_768.0;
+
+fn caf_description(
+    layout: &SemanticChannelLayout,
+    label: &str,
+) -> Result<CafChannelDescription, JocRenderError> {
+    let description = match label {
+        "FL" | "front-left" | "Left" => caf_label(1),
+        "FR" | "front-right" | "Right" => caf_label(2),
+        "FC" | "front-center" | "Center" => caf_label(3),
+        "LFE" | "low-frequency" => caf_label(4),
+        "Lb" | "BL" | "back-left" => caf_label(5),
+        "Rb" | "BR" | "back-right" => caf_label(6),
+        "Ls" | "SL" | "side-left" => caf_label(10),
+        "Rs" | "SR" | "side-right" => caf_label(11),
+        "TFL" | "Ltf" | "top-front-left" => caf_label(13),
+        "TFR" | "Rtf" | "top-front-right" => caf_label(15),
+        "TBL" | "Ltr" | "top-back-left" => caf_label(16),
+        "TBR" | "Rtr" | "top-back-right" => caf_label(18),
+        "Lw" | "left-wide" => caf_label(35),
+        "Rw" | "right-wide" => caf_label(36),
+        "Ltm" => caf_coordinate(TOP_MIDDLE_X_LEFT),
+        "Rtm" => caf_coordinate(TOP_MIDDLE_X_RIGHT),
+        _ => {
+            return Err(JocRenderError::UnsupportedCafSpeaker {
+                layout: layout.name.clone(),
+                label: label.to_owned(),
+            });
+        }
+    };
+    Ok(description)
+}
+
+const fn caf_label(label: u32) -> CafChannelDescription {
+    CafChannelDescription {
+        label,
+        flags: 0,
+        coordinates: [0.0; 3],
+    }
+}
+
+fn caf_coordinate(openjoc_x: f64) -> CafChannelDescription {
+    CafChannelDescription {
+        label: CAF_LABEL_USE_COORDINATES,
+        flags: CAF_FLAG_RECTANGULAR_COORDINATES,
+        coordinates: [(2.0 * openjoc_x - 1.0) as f32, 0.0, TOP_MIDDLE_Z as f32],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
-        JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocRenderError, JocSpeakerRenderer,
-        JocWavOutput, RenderControl, RenderedBlock, SpeakerLayoutPreset, five_point_one_layout,
+        JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocCafOutput, JocPcmOutput,
+        JocRenderError, JocSpeakerRenderer, JocWavOutput, OutputContainer, RenderControl,
+        RenderedBlock, SemanticChannelLayout, SpeakerLayoutPreset, five_point_one_layout,
         five_point_one_preset, virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
@@ -1821,6 +2168,86 @@ mod tests {
         fs,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    fn caf_channel_descriptions(bytes: &[u8]) -> Vec<(u32, u32, [f32; 3])> {
+        let mut position = 8;
+        while position < bytes.len() {
+            let chunk_type = &bytes[position..position + 4];
+            let size = i64::from_be_bytes(bytes[position + 4..position + 12].try_into().unwrap());
+            let size = usize::try_from(size).unwrap();
+            let start = position + 12;
+            let end = start + size;
+            if chunk_type == b"chan" {
+                let count = usize::try_from(u32::from_be_bytes(
+                    bytes[start + 8..start + 12].try_into().unwrap(),
+                ))
+                .unwrap();
+                return (0..count)
+                    .map(|index| {
+                        let offset = start + 12 + index * 20;
+                        (
+                            u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()),
+                            u32::from_be_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()),
+                            [
+                                f32::from_be_bytes(
+                                    bytes[offset + 8..offset + 12].try_into().unwrap(),
+                                ),
+                                f32::from_be_bytes(
+                                    bytes[offset + 12..offset + 16].try_into().unwrap(),
+                                ),
+                                f32::from_be_bytes(
+                                    bytes[offset + 16..offset + 20].try_into().unwrap(),
+                                ),
+                            ],
+                        )
+                    })
+                    .collect();
+            }
+            position = end;
+        }
+        panic!("CAF channel layout chunk missing");
+    }
+
+    fn caf_f32_samples(bytes: &[u8]) -> Vec<f64> {
+        let mut position = 8;
+        while position < bytes.len() {
+            let chunk_type = &bytes[position..position + 4];
+            let size = i64::from_be_bytes(bytes[position + 4..position + 12].try_into().unwrap());
+            let size = usize::try_from(size).unwrap();
+            let start = position + 12;
+            let end = start + size;
+            if chunk_type == b"data" {
+                assert_eq!(
+                    u32::from_be_bytes(bytes[start..start + 4].try_into().unwrap()),
+                    0
+                );
+                return bytes[start + 4..end]
+                    .chunks_exact(4)
+                    .map(|sample| f32::from_le_bytes(sample.try_into().unwrap()) as f64)
+                    .collect();
+            }
+            position = end;
+        }
+        panic!("CAF data chunk missing");
+    }
+
+    fn expected_caf_label(label: &str) -> u32 {
+        match label {
+            "FL" => 1,
+            "FR" => 2,
+            "FC" => 3,
+            "LFE" => 4,
+            "Lb" => 5,
+            "Rb" => 6,
+            "Ls" => 10,
+            "Rs" => 11,
+            "TFL" => 13,
+            "TFR" => 15,
+            "TBL" => 16,
+            "TBR" => 18,
+            _ => panic!("unexpected public semantic label {label}"),
+        }
+    }
 
     fn record(identity: &str) -> SpatialBindingRecord {
         record_with_class(SpatialSourceClass::ExplicitChannel, identity)
@@ -3015,8 +3442,255 @@ mod tests {
     }
 
     #[test]
+    fn public_layouts_are_representable_in_both_selected_containers() {
+        for &layout in &JOC_RENDER_SUPPORTED_LAYOUTS {
+            let root = std::env::temp_dir().join(format!(
+                "openjoc-output-matrix-{}-{}",
+                std::process::id(),
+                layout.replace('.', "_")
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let preset = SpeakerLayoutPreset::for_name(layout).unwrap();
+            let channels = (0..preset.channel_count())
+                .map(|index| vec![index as f64 / 32.0])
+                .collect::<Vec<_>>();
+            let wav_path = root.join("render.wav");
+            let mut wav =
+                JocPcmOutput::new_for_speaker_layout(&wav_path, SampleFormat::F32, false, layout)
+                    .unwrap();
+            assert_eq!(wav.container(), OutputContainer::Wav);
+            wav.write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: channels.clone(),
+            })
+            .unwrap();
+            wav.finish().unwrap();
+            let decoded = decode(&fs::read(&wav_path).unwrap()).unwrap();
+            assert_eq!(decoded.channels.len(), preset.channel_count());
+            assert_eq!(decoded.channel_mask, Some(preset.wav_channel_mask()));
+
+            let caf_path = root.join("render.caf");
+            let mut caf =
+                JocPcmOutput::new_for_speaker_layout(&caf_path, SampleFormat::F32, false, layout)
+                    .unwrap();
+            assert_eq!(caf.container(), OutputContainer::Caf);
+            caf.write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels,
+            })
+            .unwrap();
+            caf.finish().unwrap();
+            let descriptions = caf_channel_descriptions(&fs::read(&caf_path).unwrap());
+            assert_eq!(descriptions.len(), preset.channel_count());
+            for (description, label) in descriptions.iter().zip(&preset.labels) {
+                assert_eq!(description.0, expected_caf_label(label));
+                assert_eq!(description.1, 0);
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn internal_716_semantics_reject_wav_and_accept_caf_with_top_middle_coordinates() {
+        let semantic = SemanticChannelLayout::without_wav_mapping(
+            "7.1.6",
+            [
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
+                "Rtr",
+            ],
+            Some(3),
+        );
+        let root = std::env::temp_dir().join(format!("openjoc-716-output-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let Err(wav_error) = JocWavOutput::new_for_semantic_layout(
+            &root.join("future.wav"),
+            SampleFormat::F32,
+            false,
+            &semantic,
+        ) else {
+            panic!("7.1.6 must not be admitted to WAV");
+        };
+        assert!(matches!(
+            wav_error,
+            JocRenderError::WavLayoutNotExactlyRepresentable { .. }
+        ));
+
+        let path = root.join("future.caf");
+        let mut caf =
+            JocCafOutput::new_for_semantic_layout(&path, SampleFormat::F32, false, &semantic)
+                .unwrap();
+        caf.write_block(&RenderedBlock {
+            sample_rate: 48_000,
+            channels: (0..semantic.channel_count())
+                .map(|index| vec![index as f64 / 32.0])
+                .collect(),
+        })
+        .unwrap();
+        caf.finish().unwrap();
+        let descriptions = caf_channel_descriptions(&fs::read(path).unwrap());
+        assert_eq!(
+            descriptions
+                .iter()
+                .map(|description| description.0)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5, 6, 10, 11, 13, 15, 100, 100, 16, 18]
+        );
+        assert_eq!(descriptions[10].1, 1);
+        assert_eq!(descriptions[11].1, 1);
+        assert!(descriptions[10].2[0] < 0.0);
+        assert!(descriptions[11].2[0] > 0.0);
+        assert_eq!(descriptions[10].2[1], 0.0);
+        assert_eq!(descriptions[11].2[1], 0.0);
+        assert!(descriptions[10].2[2] > 0.99);
+        assert!(descriptions[11].2[2] > 0.99);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn caf_transaction_abort_preserves_authorized_existing_output() {
+        let root =
+            std::env::temp_dir().join(format!("openjoc-caf-transaction-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("existing.caf");
+        fs::write(&output, b"previous-valid-output").unwrap();
+        let semantic = SemanticChannelLayout::without_wav_mapping(
+            "5.1",
+            ["FL", "FR", "FC", "LFE", "Ls", "Rs"],
+            Some(3),
+        );
+        let mut caf =
+            JocCafOutput::new_for_semantic_layout(&output, SampleFormat::F32, true, &semantic)
+                .unwrap();
+        caf.write_block(&RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![vec![0.0]; semantic.channel_count()],
+        })
+        .unwrap();
+        caf.abort();
+        assert_eq!(fs::read(&output).unwrap(), b"previous-valid-output");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn future_wide_semantics_use_public_caf_wide_labels_without_geometry_inference() {
+        let semantic = SemanticChannelLayout::without_wav_mapping(
+            "9.1",
+            ["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"],
+            Some(3),
+        );
+        let root = std::env::temp_dir().join(format!("openjoc-wide-output-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("wide.caf");
+        let mut caf =
+            JocCafOutput::new_for_semantic_layout(&path, SampleFormat::F32, false, &semantic)
+                .unwrap();
+        caf.write_block(&RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![vec![0.0]; semantic.channel_count()],
+        })
+        .unwrap();
+        caf.finish().unwrap();
+        let descriptions = caf_channel_descriptions(&fs::read(path).unwrap());
+        assert_eq!(descriptions[8].0, 35);
+        assert_eq!(descriptions[9].0, 36);
+        assert_eq!(descriptions[8].1, 0);
+        assert_eq!(descriptions[9].1, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extension_selection_is_explicit_and_does_not_expose_new_public_layouts() {
+        assert_eq!(
+            JOC_RENDER_SUPPORTED_LAYOUTS,
+            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4"]
+        );
+        assert!(SpeakerLayoutPreset::for_name("7.1.6").is_err());
+        assert_eq!(
+            super::validate_output_path(std::path::Path::new("output.WAV")).unwrap(),
+            OutputContainer::Wav
+        );
+        assert_eq!(
+            super::validate_output_path(std::path::Path::new("output.caf")).unwrap(),
+            OutputContainer::Caf
+        );
+        assert!(matches!(
+            super::validate_output_path(std::path::Path::new("output.raw")),
+            Err(JocRenderError::UnsupportedOutputExtension(_))
+        ));
+    }
+
+    #[test]
+    fn rendered_pcm_is_identical_when_serialized_to_wav_or_caf() {
+        let root =
+            std::env::temp_dir().join(format!("openjoc-pcm-identity-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let wav_path = root.join("render.wav");
+        let caf_path = root.join("render.caf");
+        let mut wav =
+            JocPcmOutput::new_for_speaker_layout(&wav_path, SampleFormat::F32, false, "7.1.4")
+                .unwrap();
+        let mut caf =
+            JocPcmOutput::new_for_speaker_layout(&caf_path, SampleFormat::F32, false, "7.1.4")
+                .unwrap();
+        let mut renderer = JocSpeakerRenderer::new("7.1.4", control(true, 6)).unwrap();
+        let mut expected_frames = 0_u64;
+        for (index, frame) in [decoded_frame(0, 0, 2), decoded_frame(1, 2, 2)]
+            .iter()
+            .enumerate()
+        {
+            let block = renderer.render_frame(index, frame, &base(2, 0.25)).unwrap();
+            expected_frames += block.channels[0].len() as u64;
+            wav.write_block(&block).unwrap();
+            caf.write_block(&block).unwrap();
+        }
+        renderer.finish().unwrap();
+        wav.finish().unwrap();
+        caf.finish().unwrap();
+        let wav_pcm = decode(&fs::read(wav_path).unwrap()).unwrap();
+        let caf_samples = caf_f32_samples(&fs::read(caf_path).unwrap());
+        let wav_samples = (0..wav_pcm.channels[0].len())
+            .flat_map(|frame| wav_pcm.channels.iter().map(move |channel| channel[frame]))
+            .collect::<Vec<_>>();
+        assert_eq!(wav_samples, caf_samples);
+        assert_eq!(wav_pcm.channels.len(), 12);
+        assert_eq!(wav_pcm.channels[0].len() as u64, expected_frames);
+        assert_eq!(caf_samples.len(), 12 * expected_frames as usize);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn wav_sink_reports_unrepresentable_future_semantics_instead_of_losing_identity() {
+        let path = std::env::temp_dir().join(format!(
+            "openjoc-joc-render-716-red-{}-{}.wav",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let semantic = SemanticChannelLayout::without_wav_mapping(
+            "7.1.6",
+            [
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
+                "Rtr",
+            ],
+            Some(3),
+        );
+        let Err(error) =
+            JocWavOutput::new_for_semantic_layout(&path, SampleFormat::F32, false, &semantic)
+        else {
+            panic!("the current WAV-only sink must reject future semantic layouts");
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("not exactly representable by WAV")
+        );
+    }
+
+    #[test]
     #[ignore = "manual release performance harness"]
-    fn performance_harness_speaker_and_wav() {
+    fn performance_harness_speaker_wav_and_caf() {
         use std::time::Instant;
 
         const FRAME_COUNT: usize = 128;
@@ -3083,6 +3757,38 @@ mod tests {
             let median = samples[samples.len() / 2];
             println!(
                 "performance layout={layout} sink=wav frames={FRAME_COUNT} samples_per_frame={SAMPLES} median_seconds={:.6} realtime_factor={:.3}",
+                median,
+                FRAME_COUNT as f64 * SAMPLES as f64 / 48_000.0 / median
+            );
+
+            let path = std::env::temp_dir().join(format!(
+                "openjoc-performance-{}-{layout}.caf",
+                std::process::id()
+            ));
+            let mut samples = Vec::new();
+            for repetition in 0..=repetitions {
+                let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
+                let mut output =
+                    JocPcmOutput::new_for_speaker_layout(&path, SampleFormat::F32, false, layout)
+                        .unwrap();
+                let start = Instant::now();
+                for (frame, pcm) in frames.iter().zip(&bases) {
+                    let block = renderer
+                        .render_frame(frame.frame_index as usize, frame, pcm)
+                        .unwrap();
+                    output.write_block(&block).unwrap();
+                }
+                renderer.finish().unwrap();
+                output.finish().unwrap();
+                if repetition > 0 {
+                    samples.push(start.elapsed().as_secs_f64());
+                }
+                fs::remove_file(&path).unwrap();
+            }
+            samples.sort_by(f64::total_cmp);
+            let median = samples[samples.len() / 2];
+            println!(
+                "performance layout={layout} sink=caf frames={FRAME_COUNT} samples_per_frame={SAMPLES} median_seconds={:.6} realtime_factor={:.3}",
                 median,
                 FRAME_COUNT as f64 * SAMPLES as f64 / 48_000.0 / median
             );
