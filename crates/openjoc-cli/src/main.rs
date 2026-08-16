@@ -1172,6 +1172,10 @@ fn overwrite_answer_is_affirmative(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
+fn should_prompt_for_overwrite(existing: &[PathBuf], promptable: bool) -> bool {
+    promptable && !existing.is_empty()
+}
+
 fn decide_overwrite(
     existing: &[PathBuf],
     overwrite: bool,
@@ -1243,7 +1247,7 @@ fn render_joc_preflight(
     let promptable = terminal.stderr_is_tty && io::stdin().is_terminal();
     let decision = if arguments.overwrite {
         decide_overwrite(&existing, true, false, None)
-    } else if promptable {
+    } else if should_prompt_for_overwrite(&existing, promptable) {
         let confirmed = prompt_for_overwrite(&existing)?;
         decide_overwrite(&existing, false, true, confirmed.then_some("yes"))
     } else {
@@ -3332,6 +3336,7 @@ mod profile_name_tests {
         OverwriteDecision, SpatialContributionMode, TerminalCapabilities, ValidationProfileRequest,
         decide_overwrite, overwrite_answer_is_affirmative, parse_render_joc,
         parse_validation_profile, planned_render_outputs, render_joc_preflight,
+        should_prompt_for_overwrite,
     };
     use crate::joc_render;
     use std::path::PathBuf;
@@ -3505,6 +3510,14 @@ mod profile_name_tests {
         for answer in ["n", "no", "", "maybe", " yes later "] {
             assert!(!overwrite_answer_is_affirmative(answer), "{answer}");
         }
+    }
+
+    #[test]
+    fn overwrite_prompt_requires_existing_output_paths() {
+        let existing = vec![PathBuf::from("output.wav")];
+        assert!(!should_prompt_for_overwrite(&[], true));
+        assert!(should_prompt_for_overwrite(&existing, true));
+        assert!(!should_prompt_for_overwrite(&existing, false));
     }
 
     #[test]

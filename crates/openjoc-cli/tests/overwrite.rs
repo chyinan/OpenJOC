@@ -24,6 +24,63 @@ fn render_joc_help_documents_overwrite() {
 }
 
 #[test]
+fn noninteractive_render_preflight_does_not_prompt_without_existing_outputs() {
+    let root = unique_root("no-existing");
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("missing.ec3");
+    let output = root.join("render.wav");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "render-joc",
+            input.to_str().expect("input path"),
+            "--layout",
+            "7.1.4",
+            "--output",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("render-joc preflight");
+    assert!(!result.status.success());
+    let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
+    assert!(!stderr.contains("Overwrite?"));
+    assert!(stderr.contains("failed to open input file"));
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn noninteractive_render_preflight_lists_only_existing_planned_outputs() {
+    let root = unique_root("one-existing");
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("missing.ec3");
+    let output = root.join("render.wav");
+    let report = root.join("render-performance.json");
+    fs::write(&output, b"previous wav").expect("old WAV");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "render-joc",
+            input.to_str().expect("input path"),
+            "--layout",
+            "7.1.4",
+            "--output",
+            output.to_str().expect("output path"),
+            "--performance-report",
+            report.to_str().expect("report path"),
+        ])
+        .output()
+        .expect("render-joc preflight");
+    assert!(!result.status.success());
+    let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
+    assert!(!stderr.contains("Overwrite?"));
+    assert!(stderr.contains(output.to_str().expect("output path")));
+    assert!(!stderr.contains(report.to_str().expect("report path")));
+    assert!(!stderr.contains("input file does not exist"));
+    assert_eq!(fs::read(&output).expect("old WAV remains"), b"previous wav");
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
 fn noninteractive_render_preflight_refuses_all_existing_outputs_before_loading_input() {
     let root = unique_root("preflight");
     fs::create_dir_all(&root).expect("test directory");
