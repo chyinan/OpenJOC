@@ -60,6 +60,13 @@ count must match on every access unit. `updates` is optional and contains
 frame-indexed `SpatialCoordinateUpdate` arrays; omitted fields inherit the
 persistent bridge state.
 
+An explicit sidecar may also include a top-level `route_vectors` array. Each
+entry supplies a fixed or named route identity and its vector in the current
+layout's enabled non-LFE order. Fixed-layout and named-layout records resolve
+only through this identity registry; an absent entry returns `MissingRoute` and
+does not fall through to dynamic geometry. Automatic control has no fabricated
+route vectors, so unsupported fixed/named content fails explicitly.
+
 A minimal 5-channel Base plus one ReconstructionBasis row control file is:
 
 ```json
@@ -92,8 +99,8 @@ Every exposed preset has a deterministic public WAV order. The orders are:
 ```text
 5.1:   FL, FR, FC, LFE, Ls, Rs
 5.1.2: FL, FR, FC, LFE, Ls, Rs, TFL, TFR
-7.1:   FL, FR, FC, LFE, Ls, Rs, Lb, Rb
-7.1.4: FL, FR, FC, LFE, Ls, Rs, Lb, Rb, TFL, TFR, TBL, TBR
+7.1:   FL, FR, FC, LFE, Lb, Rb, Ls, Rs
+7.1.4: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR, TBL, TBR
 ```
 
 The order is deterministic and is not the internal E-AC-3 order. For the
@@ -106,7 +113,14 @@ original `5.1` path it remains:
 The default output is IEEE float32 WAV. `--reference-f64` selects IEEE float64
 WAV. The RcLfe/Base LFE plane is copied only to `LFE`; it is not sent through
 ordinary spatial projection and is not double-added. The active bridge planes
-are ordered `FL, FR, FC, Ls, Rs` before the public WAV interleave.
+are ordered by the selected preset's explicit channel identities before the
+public WAV interleave.
+
+Multichannel speaker output uses WAVEFORMATEXTENSIBLE. Its channel mask has
+exactly one standard speaker bit per interleaved channel, and the sample planes
+are emitted in ascending mask-bit order. In particular, 7.1 and 7.1.4 keep the
+back pair (`Lb`, `Rb`) before the side pair (`Ls`, `Rs`). Stereo binaural output
+and diagnostic WAVs retain their existing basic WAV behavior.
 
 The command prints the feature, experimental maturity, unresolved semantic
 binding, requested and selected layout, channel count, LFE index, requested
@@ -355,11 +369,13 @@ mode, virtual layout, SOFA filename, backend, HRIR coverage, LFE policy, and
 tail contract. Private SOFA paths are not embedded in public metadata.
 
 The automatic assembly currently supports explicit-channel beds, fixed-layout
-members when the selected library layout supplies matching routes, dynamic
+members only when the selected layout supplies matching route vectors, dynamic
 point-like records, and dynamic region records. `raw3` remains opaque with no
 assigned semantic name. `AUTO` behavior is unchanged: strict validation is
 selected first and the existing compatibility policy is used only where its
-current whitelist admits it.
+current whitelist admits it. Full x/y/z projection, complete region/layer/
+fallback semantics, automatic spread and paired geometry, linked limiting,
+delay, and bass management remain incomplete or withheld.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE
@@ -400,9 +416,10 @@ derived from the validated layout and each channel is accumulated in its own
 `Vec<f64>`. The ordinary WAV writer accepts the same dynamic channel count;
 the current implementation is RIFF-only, so data sizes beyond the 32-bit RIFF
 limit are rejected and no RF64 writer is provided. WAV output also carries no
-speaker-label or channel-mask metadata in this workflow. The documented public
-order is therefore the authoritative OpenJOC interpretation of the PCM
-planes, not metadata that third-party DAWs are guaranteed to discover.
+speaker output carries standard WAVEFORMATEXTENSIBLE speaker-mask metadata;
+generic diagnostic WAV output may remain basic WAV where no speaker identity is
+required. `SemanticBindingState` remains `Unresolved`, and no vendor-fidelity
+claim is made.
 
 This distinguishes renderer support from full container description and from
 third-party DAW interoperability. No 22.2 interoperability claim is made.

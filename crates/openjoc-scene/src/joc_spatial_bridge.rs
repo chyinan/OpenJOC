@@ -617,6 +617,21 @@ impl SpatialLayout {
         })
     }
 
+    /// Returns this validated layout with an explicitly supplied fixed/named
+    /// route registry. Route vectors are data owned by the current layout; no
+    /// vector is derived from a route identity or numeric position.
+    pub fn with_route_vectors(
+        &self,
+        route_vectors: Vec<SpatialRouteVector>,
+    ) -> Result<Self, SpatialProjectionError> {
+        Self::new(
+            self.channels.clone(),
+            self.knot_axes.clone(),
+            self.node_vectors.clone(),
+            route_vectors,
+        )
+    }
+
     /// Returns the number of active non-LFE output components.
     #[must_use]
     pub fn active_channel_count(&self) -> usize {

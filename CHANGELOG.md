@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Corrected 7.1 and 7.1.4 speaker identity/order so back-left/back-right
+  precede side-left/side-right in the public channel sequence.
+- Added standard WAVEFORMATEXTENSIBLE speaker/channel mask metadata for
+  multichannel speaker WAV output while preserving PCM samples and
+  transactional writing.
+- Added explicit fixed/named route-registry lookup for supplied route vectors;
+  missing routes now fail deterministically without geometric substitution.
+
+### Known limitations
+
+- Full 3D projection, complete region/layer/fallback behavior, output-policy
+  formulas, and semantic binding remain unresolved. No vendor-fidelity claim
+  is made.
+
 ## [0.4.2] — 2026-08-16
 
 OpenJOC 0.4.2 is a focused patch release for JOC reconstruction diagnostics

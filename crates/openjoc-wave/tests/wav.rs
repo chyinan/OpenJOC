@@ -89,6 +89,70 @@ fn incremental_writer_matches_capture_encoding_and_patches_sizes() {
 }
 
 #[test]
+fn extensible_speaker_writer_emits_standard_mask_and_preserves_plane_order() {
+    let mask = 0x0002_d63f;
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::F32,
+        clipping: Clipping::Reject,
+        dither: Dither::None,
+    };
+    let samples = (0..12).map(|value| value as f64).collect::<Vec<_>>();
+    let mut writer =
+        WaveWriter::new_with_speaker_mask(Cursor::new(Vec::new()), 48_000, 12, options, mask)
+            .expect("valid 7.1.4 speaker mask");
+    writer
+        .write_interleaved(&samples)
+        .expect("interleaved frame");
+    let bytes = writer.finish().expect("finalize").into_inner();
+
+    assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 40);
+    assert_eq!(
+        u16::from_le_bytes(bytes[20..22].try_into().unwrap()),
+        0xfffe
+    );
+    assert_eq!(u16::from_le_bytes(bytes[36..38].try_into().unwrap()), 22);
+    assert_eq!(u16::from_le_bytes(bytes[38..40].try_into().unwrap()), 32);
+    assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), mask);
+    assert_eq!(
+        &bytes[44..60],
+        &[
+            3, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71
+        ]
+    );
+    assert_eq!(&bytes[60..64], b"data");
+    assert_eq!(u32::from_le_bytes(bytes[64..68].try_into().unwrap()), 48);
+
+    let decoded = decode(&bytes).expect("extensible WAV decodes");
+    assert_eq!(decoded.channel_mask, Some(mask));
+    assert_eq!(decoded.channels[0][0], 0.0);
+    assert_eq!(decoded.channels[11][0], 11.0);
+
+    let basic = encode_channels(48_000, std::slice::from_ref(&samples), options)
+        .expect("basic reference WAV");
+    assert_eq!(&bytes[68..], &basic[44..]);
+}
+
+#[test]
+fn extensible_speaker_writer_rejects_nonstandard_or_mismatched_masks() {
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::F32,
+        clipping: Clipping::Reject,
+        dither: Dither::None,
+    };
+    assert!(matches!(
+        WaveWriter::new_with_speaker_mask(Cursor::new(Vec::new()), 48_000, 2, options, 0),
+        Err(WaveError::InvalidChannelMask {
+            channels: 2,
+            mask: 0
+        })
+    ));
+    assert!(matches!(
+        WaveWriter::new_with_speaker_mask(Cursor::new(Vec::new()), 48_000, 1, options, 1 << 31),
+        Err(WaveError::InvalidChannelMask { channels: 1, mask }) if mask == 1 << 31
+    ));
+}
+
+#[test]
 fn incremental_writer_propagates_finalization_io_error() {
     let options = WaveEncodeOptions {
         sample_format: SampleFormat::F32,

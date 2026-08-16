@@ -1448,10 +1448,11 @@ fn render_joc(
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
-        let mut output = joc_render::JocWavOutput::new_with_overwrite(
+        let mut output = joc_render::JocWavOutput::new_for_speaker_layout(
             &arguments.output,
             arguments.output_format,
             overwrite_authorized,
+            &arguments.layout,
         )?;
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();

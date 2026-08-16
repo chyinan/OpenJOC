@@ -17,6 +17,7 @@ pub enum WaveError {
     MissingFormat,
     MissingData,
     UnsupportedFormat { format: u16, bits: u16 },
+    InvalidChannelMask { channels: usize, mask: u32 },
     InvalidFormat,
 }
 
@@ -45,6 +46,10 @@ impl fmt::Display for WaveError {
                     "unsupported WAV format {format} with {bits} bits"
                 )
             }
+            Self::InvalidChannelMask { channels, mask } => write!(
+                formatter,
+                "WAVEFORMATEXTENSIBLE channel mask 0x{mask:08x} does not describe {channels} standard speaker channels"
+            ),
             Self::InvalidFormat => formatter.write_str("inconsistent WAV format fields"),
         }
     }
@@ -55,6 +60,9 @@ impl fmt::Display for WaveError {
 pub struct WavePcm {
     pub sample_rate: u32,
     pub channels: Vec<Vec<f64>>,
+    /// The standard WAVEFORMATEXTENSIBLE speaker mask, when the input carries
+    /// one. Basic WAVEFORMATEX input has no channel identity metadata.
+    pub channel_mask: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +72,7 @@ struct WaveFormat {
     sample_rate: u32,
     block_align: usize,
     bits: u16,
+    channel_mask: Option<u32>,
 }
 
 /// Decodes checked PCM/IEEE-float RIFF/WAVE data to channel-major f64 PCM.
@@ -128,13 +137,16 @@ fn parse_format(bytes: &[u8]) -> Result<WaveFormat, WaveError> {
     let sample_rate = read_u32(bytes, 4)?;
     let block_align = usize::from(read_u16(bytes, 12)?);
     let bits = read_u16(bytes, 14)?;
-    let encoding = if original_encoding == 0xfffe {
+    let (encoding, channel_mask) = if original_encoding == 0xfffe {
         if bytes.len() < 40 || read_u16(bytes, 16)? < 22 || read_u16(bytes, 18)? != bits {
             return Err(WaveError::InvalidFormat);
         }
-        u16::try_from(read_u32(bytes, 24)?).map_err(|_| WaveError::InvalidFormat)?
+        (
+            u16::try_from(read_u32(bytes, 24)?).map_err(|_| WaveError::InvalidFormat)?,
+            Some(read_u32(bytes, 20)?),
+        )
     } else {
-        original_encoding
+        (original_encoding, None)
     };
     if channels == 0 || sample_rate == 0 || bits == 0 || bits % 8 != 0 {
         return Err(WaveError::InvalidFormat);
@@ -159,6 +171,7 @@ fn parse_format(bytes: &[u8]) -> Result<WaveFormat, WaveError> {
         sample_rate,
         block_align,
         bits,
+        channel_mask,
     })
 }
 
@@ -185,6 +198,7 @@ fn decode_samples(format: WaveFormat, data: &[u8]) -> Result<WavePcm, WaveError>
     Ok(WavePcm {
         sample_rate: format.sample_rate,
         channels,
+        channel_mask: format.channel_mask,
     })
 }
 
@@ -298,18 +312,57 @@ pub struct WaveWriter<W> {
     sample_index: usize,
     interleaved_scratch: Vec<f64>,
     encoded_scratch: Vec<u8>,
+    data_size_position: u64,
+    riff_size_base: u32,
 }
 
 impl<W: Write + Seek> WaveWriter<W> {
     /// Creates a writer and emits a placeholder 44-byte RIFF/WAVE header.
     pub fn new(
-        mut writer: W,
+        writer: W,
         sample_rate: u32,
         channels: usize,
         options: WaveEncodeOptions,
     ) -> Result<Self, WaveError> {
+        Self::new_internal(writer, sample_rate, channels, options, None)
+    }
+
+    /// Creates a seekable writer with standard speaker identity metadata.
+    ///
+    /// The interleaved channel planes must already be ordered by ascending set
+    /// bit in `channel_mask`, as required by WAVEFORMATEXTENSIBLE.
+    pub fn new_with_speaker_mask(
+        writer: W,
+        sample_rate: u32,
+        channels: usize,
+        options: WaveEncodeOptions,
+        channel_mask: u32,
+    ) -> Result<Self, WaveError> {
+        Self::new_internal(writer, sample_rate, channels, options, Some(channel_mask))
+    }
+
+    fn new_internal(
+        mut writer: W,
+        sample_rate: u32,
+        channels: usize,
+        options: WaveEncodeOptions,
+        channel_mask: Option<u32>,
+    ) -> Result<Self, WaveError> {
         let channel_count = validate_writer_format(sample_rate, channels, options)?;
-        write_placeholder_header(&mut writer, sample_rate, channel_count, options)?;
+        let (data_size_position, riff_size_base) = if let Some(channel_mask) = channel_mask {
+            validate_speaker_mask(channels, channel_mask)?;
+            write_placeholder_extensible_header(
+                &mut writer,
+                sample_rate,
+                channel_count,
+                options,
+                channel_mask,
+            )?;
+            (64, 60)
+        } else {
+            write_placeholder_header(&mut writer, sample_rate, channel_count, options)?;
+            (40, 36)
+        };
         Ok(Self {
             writer,
             sample_rate,
@@ -320,6 +373,8 @@ impl<W: Write + Seek> WaveWriter<W> {
             sample_index: 0,
             interleaved_scratch: Vec::new(),
             encoded_scratch: Vec::new(),
+            data_size_position,
+            riff_size_base,
         })
     }
 
@@ -397,12 +452,16 @@ impl<W: Write + Seek> WaveWriter<W> {
     /// Finalizes RIFF/data sizes, flushes, and returns the underlying writer.
     pub fn finish(mut self) -> Result<W, WaveError> {
         let data_size = u32::try_from(self.data_bytes).map_err(|_| WaveError::SizeOverflow)?;
-        let riff_size = data_size.checked_add(36).ok_or(WaveError::SizeOverflow)?;
+        let riff_size = data_size
+            .checked_add(self.riff_size_base)
+            .ok_or(WaveError::SizeOverflow)?;
         self.writer.seek(SeekFrom::Start(4)).map_err(io_error)?;
         self.writer
             .write_all(&riff_size.to_le_bytes())
             .map_err(io_error)?;
-        self.writer.seek(SeekFrom::Start(40)).map_err(io_error)?;
+        self.writer
+            .seek(SeekFrom::Start(self.data_size_position))
+            .map_err(io_error)?;
         self.writer
             .write_all(&data_size.to_le_bytes())
             .map_err(io_error)?;
@@ -492,6 +551,77 @@ fn write_placeholder_header<W: Write>(
         .map_err(io_error)?;
     writer.write_all(b"data").map_err(io_error)?;
     writer.write_all(&0_u32.to_le_bytes()).map_err(io_error)
+}
+
+const STANDARD_SPEAKER_MASK: u32 = (1_u32 << 18) - 1;
+
+fn validate_speaker_mask(channels: usize, mask: u32) -> Result<(), WaveError> {
+    if mask == 0
+        || mask & !STANDARD_SPEAKER_MASK != 0
+        || mask.count_ones() != u32::try_from(channels).unwrap_or(u32::MAX)
+    {
+        return Err(WaveError::InvalidChannelMask { channels, mask });
+    }
+    Ok(())
+}
+
+fn write_placeholder_extensible_header<W: Write>(
+    writer: &mut W,
+    sample_rate: u32,
+    channels: u16,
+    options: WaveEncodeOptions,
+    channel_mask: u32,
+) -> Result<(), WaveError> {
+    let block_align = channels
+        .checked_mul(
+            u16::try_from(options.sample_format.bytes_per_sample())
+                .map_err(|_| WaveError::SizeOverflow)?,
+        )
+        .ok_or(WaveError::SizeOverflow)?;
+    let byte_rate = sample_rate
+        .checked_mul(u32::from(block_align))
+        .ok_or(WaveError::SizeOverflow)?;
+    writer.write_all(b"RIFF").map_err(io_error)?;
+    writer.write_all(&0_u32.to_le_bytes()).map_err(io_error)?;
+    writer.write_all(b"WAVEfmt ").map_err(io_error)?;
+    writer.write_all(&40_u32.to_le_bytes()).map_err(io_error)?;
+    writer
+        .write_all(&0xfffe_u16.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&channels.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&sample_rate.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&byte_rate.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&block_align.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&options.sample_format.bits().to_le_bytes())
+        .map_err(io_error)?;
+    writer.write_all(&22_u16.to_le_bytes()).map_err(io_error)?;
+    writer
+        .write_all(&options.sample_format.bits().to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&channel_mask.to_le_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&subformat_guid(options.sample_format.encoding()))
+        .map_err(io_error)?;
+    writer.write_all(b"data").map_err(io_error)?;
+    writer.write_all(&0_u32.to_le_bytes()).map_err(io_error)
+}
+
+fn subformat_guid(encoding: u16) -> [u8; 16] {
+    let [first, second] = encoding.to_le_bytes();
+    [
+        first, second, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71,
+    ]
 }
 
 /// Encodes channel-major samples with an explicit format and quantization policy.

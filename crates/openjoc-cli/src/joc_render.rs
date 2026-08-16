@@ -15,7 +15,7 @@ use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlFrame,
     BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge, SpatialBridgeError,
     SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
-    SpatialTopologySnapshot,
+    SpatialRouteVector, SpatialTopologySnapshot,
 };
 use openjoc_sofa::SofaError;
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
@@ -223,6 +223,8 @@ struct RenderControlFile {
     schema: String,
     topology: SpatialTopologySnapshot,
     #[serde(default)]
+    route_vectors: Vec<SpatialRouteVector>,
+    #[serde(default)]
     updates: Vec<FrameUpdates>,
 }
 
@@ -235,6 +237,7 @@ struct FrameUpdates {
 #[derive(Debug)]
 pub struct RenderControl {
     topology: SpatialTopologySnapshot,
+    route_vectors: Vec<SpatialRouteVector>,
     updates: Vec<FrameUpdates>,
     consumed_updates: Vec<bool>,
 }
@@ -263,6 +266,7 @@ impl RenderControl {
         let consumed_updates = vec![false; file.updates.len()];
         Ok(Self {
             topology: file.topology,
+            route_vectors: file.route_vectors,
             updates: file.updates,
             consumed_updates,
         })
@@ -374,7 +378,11 @@ pub struct JocSpeakerRenderer {
 
 impl JocSpeakerRenderer {
     pub fn new(layout: &str, control: RenderControl) -> Result<Self, JocRenderError> {
-        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        let mut preset = SpeakerLayoutPreset::for_name(layout)?;
+        preset.layout = preset
+            .layout
+            .with_route_vectors(control.route_vectors.clone())
+            .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?;
         let expected_coordinates = control.topology.flatten().len();
         if expected_coordinates == 0 {
             return Err(JocRenderError::EmptyTopology);
@@ -1407,10 +1415,10 @@ fn seven_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
     let active_count = 7;
     one_layer_preset(
         "7.1",
-        vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb"],
+        vec!["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"],
         Some(3),
         vec![0.0, 1.0 / 6.0, 1.0 / 3.0, 0.5, 2.0 / 3.0, 5.0 / 6.0, 1.0],
-        vec![5, 3, 0, 2, 1, 4, 6]
+        vec![3, 5, 0, 2, 1, 6, 4]
             .into_iter()
             .map(|index| one_hot(active_count, index))
             .collect(),
@@ -1420,7 +1428,7 @@ fn seven_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
 fn seven_point_one_four_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
     let active_count = 11;
     let horizontal_knots = vec![0.0, 1.0 / 6.0, 1.0 / 3.0, 0.5, 2.0 / 3.0, 5.0 / 6.0, 1.0];
-    let lower = [5, 3, 0, 2, 1, 4, 6]
+    let lower = [3, 5, 0, 2, 1, 6, 4]
         .into_iter()
         .map(|index| one_hot(active_count, index))
         .collect();
@@ -1436,7 +1444,7 @@ fn seven_point_one_four_preset() -> Result<SpeakerLayoutPreset, JocRenderError> 
     two_layer_preset(
         "7.1.4",
         vec![
-            "FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR",
+            "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
         ],
         Some(3),
         horizontal_knots,
@@ -1519,6 +1527,38 @@ fn layout_channels(labels: &[&'static str], lfe_index: Option<usize>) -> Vec<Spa
         .collect()
 }
 
+fn speaker_mask_for_labels(labels: &[&str]) -> Result<u32, JocRenderError> {
+    let mut bits = Vec::with_capacity(labels.len());
+    for label in labels {
+        let bit = match *label {
+            "FL" | "front-left" => 0x0000_0001,
+            "FR" | "front-right" => 0x0000_0002,
+            "FC" | "front-center" => 0x0000_0004,
+            "LFE" | "low-frequency" => 0x0000_0008,
+            "Lb" | "BL" | "back-left" => 0x0000_0010,
+            "Rb" | "BR" | "back-right" => 0x0000_0020,
+            "Ls" | "SL" | "side-left" => 0x0000_0200,
+            "Rs" | "SR" | "side-right" => 0x0000_0400,
+            "TFL" | "top-front-left" => 0x0000_1000,
+            "TFR" | "top-front-right" => 0x0000_4000,
+            "TBL" | "top-back-left" => 0x0000_8000,
+            "TBR" | "top-back-right" => 0x0002_0000,
+            other => {
+                return Err(JocRenderError::InvalidControl(format!(
+                    "speaker identity {other} has no standard WAV channel-mask bit"
+                )));
+            }
+        };
+        bits.push(bit);
+    }
+    if bits.windows(2).any(|window| window[0] >= window[1]) {
+        return Err(JocRenderError::InvalidControl(
+            "speaker identities must be ordered by ascending WAV channel-mask bit".to_owned(),
+        ));
+    }
+    Ok(bits.into_iter().fold(0, |mask, bit| mask | bit))
+}
+
 fn one_hot(length: usize, index: usize) -> Vec<f64> {
     let mut vector = vec![0.0; length];
     vector[index] = 1.0;
@@ -1587,6 +1627,7 @@ pub struct JocWavOutput {
     writer: Option<WaveWriter<fs::File>>,
     sample_rate: Option<u32>,
     channels: Option<usize>,
+    speaker_mask: Option<u32>,
 }
 
 impl JocWavOutput {
@@ -1594,6 +1635,29 @@ impl JocWavOutput {
         output: &Path,
         format: SampleFormat,
         overwrite: bool,
+    ) -> Result<Self, JocRenderError> {
+        Self::new_with_mask(output, format, overwrite, None)
+    }
+
+    /// Creates transactional output for one of the admitted speaker layouts.
+    /// The WAV header carries the standard speaker mask matching the preset's
+    /// explicit public channel identities and order.
+    pub fn new_for_speaker_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &str,
+    ) -> Result<Self, JocRenderError> {
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        let speaker_mask = speaker_mask_for_labels(&preset.labels)?;
+        Self::new_with_mask(output, format, overwrite, Some(speaker_mask))
+    }
+
+    fn new_with_mask(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        speaker_mask: Option<u32>,
     ) -> Result<Self, JocRenderError> {
         if output.exists() && !overwrite {
             return Err(JocRenderError::OutputExists(output.to_owned()));
@@ -1619,6 +1683,7 @@ impl JocWavOutput {
             writer: None,
             sample_rate: None,
             channels: None,
+            speaker_mask,
         })
     }
 
@@ -1638,16 +1703,21 @@ impl JocWavOutput {
                 .write(true)
                 .create_new(true)
                 .open(&self.staging)?;
-            self.writer = Some(WaveWriter::new(
-                file,
-                block.sample_rate,
-                channels,
-                WaveEncodeOptions {
-                    sample_format: self.format,
-                    clipping: Clipping::Reject,
-                    dither: Dither::None,
-                },
-            )?);
+            let options = WaveEncodeOptions {
+                sample_format: self.format,
+                clipping: Clipping::Reject,
+                dither: Dither::None,
+            };
+            self.writer = Some(match self.speaker_mask {
+                Some(mask) => WaveWriter::new_with_speaker_mask(
+                    file,
+                    block.sample_rate,
+                    channels,
+                    options,
+                    mask,
+                )?,
+                None => WaveWriter::new(file, block.sample_rate, channels, options)?,
+            });
             self.sample_rate = Some(block.sample_rate);
             self.channels = Some(channels);
         }
@@ -1698,7 +1768,7 @@ mod tests {
         BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
         JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocRenderError, JocSpeakerRenderer,
         JocWavOutput, RenderControl, RenderedBlock, SpeakerLayoutPreset, five_point_one_layout,
-        virtual_speaker_direction,
+        speaker_mask_for_labels, virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
@@ -1709,7 +1779,8 @@ mod tests {
     };
     use openjoc_scene::{
         DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout, SampleRange, SpatialBindingRecord,
-        SpatialDescriptor, SpatialSourceClass, SpatialTopologySnapshot,
+        SpatialDescriptor, SpatialExplicitGroup, SpatialExplicitMember, SpatialRouteVector,
+        SpatialSourceClass, SpatialTopologySnapshot,
     };
     use openjoc_wave::{SampleFormat, decode};
     use std::{
@@ -1718,9 +1789,13 @@ mod tests {
     };
 
     fn record(identity: &str) -> SpatialBindingRecord {
+        record_with_class(SpatialSourceClass::ExplicitChannel, identity)
+    }
+
+    fn record_with_class(class: SpatialSourceClass, identity: &str) -> SpatialBindingRecord {
         SpatialBindingRecord {
             descriptor: SpatialDescriptor {
-                source_class: SpatialSourceClass::ExplicitChannel,
+                source_class: class,
                 identity: identity.to_owned(),
                 coordinates: vec![0.5],
                 spread: None,
@@ -1747,6 +1822,7 @@ mod tests {
                 fixed_layout: Vec::new(),
                 dynamic_records: records,
             },
+            route_vectors: Vec::new(),
             updates: if with_updates {
                 vec![FrameUpdates {
                     frame_index: 1,
@@ -1761,6 +1837,36 @@ mod tests {
                 Vec::new()
             },
             consumed_updates: vec![false; usize::from(with_updates)],
+        }
+    }
+
+    fn fixed_route_control(with_route: bool) -> RenderControl {
+        let base_identities = ["FL", "FR", "FC", "Ls", "Rs"];
+        let explicit_groups = base_identities
+            .iter()
+            .enumerate()
+            .map(|(group_order, identity)| SpatialExplicitGroup {
+                group_order: group_order as u32,
+                members: vec![SpatialExplicitMember {
+                    canonical_label: (*identity).to_owned(),
+                    record: record(identity),
+                }],
+            })
+            .collect();
+        RenderControl {
+            topology: SpatialTopologySnapshot {
+                explicit_groups,
+                fixed_layout: vec![record_with_class(SpatialSourceClass::FixedLayout, "fixed")],
+                dynamic_records: Vec::new(),
+            },
+            route_vectors: with_route
+                .then_some(vec![SpatialRouteVector {
+                    identity: "fixed".to_owned(),
+                    vector: vec![1.0, 0.0, 0.0, 0.0, 0.0],
+                }])
+                .unwrap_or_default(),
+            updates: Vec::new(),
+            consumed_updates: Vec::new(),
         }
     }
 
@@ -1899,11 +2005,11 @@ mod tests {
                 "5.1.2",
                 vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
             ),
-            ("7.1", vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb"]),
+            ("7.1", vec!["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"]),
             (
                 "7.1.4",
                 vec![
-                    "FL", "FR", "FC", "LFE", "Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR",
+                    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
                 ],
             ),
         ];
@@ -1913,6 +2019,44 @@ mod tests {
             assert_eq!(preset.lfe_index(), Some(3));
             assert_eq!(preset.channel_count(), labels.len());
         }
+    }
+
+    #[test]
+    fn speaker_mask_order_distinguishes_back_and_side_pairs() {
+        for (layout, expected_mask) in [("7.1", 0x0000_063f), ("7.1.4", 0x0002_d63f)] {
+            let preset = SpeakerLayoutPreset::for_name(layout).unwrap();
+            let labels = preset.channel_labels();
+            assert_eq!(
+                labels,
+                preset
+                    .layout
+                    .channels()
+                    .iter()
+                    .map(|channel| channel.identity.as_str())
+                    .collect::<Vec<_>>()
+            );
+            assert!(
+                labels
+                    .windows(2)
+                    .all(|window| speaker_mask_for_labels(window).is_ok())
+            );
+            assert_eq!(speaker_mask_for_labels(&labels).unwrap(), expected_mask);
+        }
+    }
+
+    #[test]
+    fn admitted_fixed_route_uses_explicit_sidecar_registry() {
+        let mut renderer = JocSpeakerRenderer::new("5.1", fixed_route_control(true)).unwrap();
+        let block = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+            .expect("fixed route resolves from the explicit registry");
+        assert_eq!(block.channels[0], vec![7.0; 2]);
+
+        let mut renderer = JocSpeakerRenderer::new("5.1", fixed_route_control(false)).unwrap();
+        let error = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+            .expect_err("missing fixed route is explicit");
+        assert!(error.to_string().contains("missing spatial route: fixed"));
     }
 
     #[test]
@@ -2526,7 +2670,8 @@ mod tests {
         let channels = (0..12)
             .map(|index| vec![index as f64 / 20.0, -(index as f64) / 20.0])
             .collect::<Vec<_>>();
-        let mut output = JocWavOutput::new_with_overwrite(&path, SampleFormat::F32, false).unwrap();
+        let mut output =
+            JocWavOutput::new_for_speaker_layout(&path, SampleFormat::F32, false, "7.1.4").unwrap();
         output
             .write_block(&RenderedBlock {
                 sample_rate: 48_000,
@@ -2537,6 +2682,7 @@ mod tests {
 
         let pcm = decode(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(pcm.sample_rate, 48_000);
+        assert_eq!(pcm.channel_mask, Some(0x0002_d63f));
         assert_eq!(pcm.channels.len(), 12);
         assert_eq!(
             pcm.channels.iter().map(Vec::len).collect::<Vec<_>>(),

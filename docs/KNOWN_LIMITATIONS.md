@@ -23,7 +23,8 @@ claiming capabilities that the current evidence does not support.
   projection that assembles bridge control automatically from decoded
   JOC/OAMD state. A complete bridge-control topology sidecar remains an
   optional explicit override/test input. It
-  supports only the 5.1, 5.1.2, 7.1, and 7.1.4 presets, does not infer
+  supports only the 5.1, 5.1.2, 7.1, and 7.1.4 presets, emits standard speaker
+  channel-mask metadata for multichannel speaker WAV output, does not infer
   authored-object identity, and does not resolve `T(t)` or provide a
   vendor renderer. 2.0 remains blocked by unspecified bass/LFE
   fold-down policy; 5.1.4, 7.1.2, 9.1.4, and 9.1.6 remain blocked by missing
@@ -31,9 +32,10 @@ claiming capabilities that the current evidence does not support.
   capacity but remains blocked by missing admitted clean 22.2 geometry. The
   public `SpatialLayout` plus `JocSpatialBridge` API accepts arbitrary
   caller-defined layouts, but the CLI has no custom-layout file format.
-  Ordinary WAV output is RIFF-only and carries no speaker-label/channel-mask
-  metadata, so large-channel renderer capacity is not a third-party DAW
-  interoperability guarantee.
+  Ordinary diagnostic WAV output remains RIFF-only and may not carry speaker
+  identity metadata; large-channel renderer capacity is not a third-party DAW
+  interoperability guarantee. Full x/y/z projection and complete
+  region/layer/fallback semantics remain incomplete.
 - The real-JOC binaural mode is a separate speaker-virtualization stage:
   `render-joc` first renders the selected 5.1, 5.1.2, 7.1, or 7.1.4 virtual
   layout, then sends each non-LFE public speaker channel through its fixed

@@ -302,6 +302,35 @@ fn projection_covers_endpoints_midpoint_tensor_clamp_exclusion_spread_and_pair()
 }
 
 #[test]
+fn fixed_and_named_routes_use_identity_registry_and_missing_routes_fail() {
+    let layout = layout()
+        .with_route_vectors(vec![
+            SpatialRouteVector {
+                identity: "fixed".to_owned(),
+                vector: vec![1.0, 0.0],
+            },
+            SpatialRouteVector {
+                identity: "named".to_owned(),
+                vector: vec![0.0, 1.0],
+            },
+        ])
+        .expect("route registry");
+
+    let fixed = descriptor(SpatialSourceClass::FixedLayout, "fixed", Vec::new());
+    let named = descriptor(SpatialSourceClass::NamedLayout, "named", Vec::new());
+    assert_eq!(layout.project(&fixed).unwrap(), vec![1.0, 0.0]);
+    assert_eq!(layout.project(&named).unwrap(), vec![0.0, 1.0]);
+
+    let missing = descriptor(SpatialSourceClass::FixedLayout, "missing", Vec::new());
+    assert_eq!(
+        layout.project(&missing),
+        Err(openjoc_scene::SpatialProjectionError::MissingRoute(
+            "missing".to_owned()
+        ))
+    );
+}
+
+#[test]
 fn scheduler_has_q32_boundaries_restart_reset_and_partition_invariance() {
     let mut whole = GainScheduler::new();
     whole.set_target(1.0, true, 64, 48_000).expect("Q32 target");
