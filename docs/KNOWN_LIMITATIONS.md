@@ -23,8 +23,10 @@ claiming capabilities that the current evidence does not support.
   projection that assembles bridge control automatically from decoded
   JOC/OAMD state. A complete bridge-control topology sidecar remains an
   optional explicit override/test input. It
-  supports only the 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, and 7.1.4 presets, emits standard speaker
-  channel-mask metadata for multichannel speaker WAV output, does not infer
+  supports the 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6 presets. The
+  7.1.6 preset emits semantic multichannel CAF only; standard speaker
+  channel-mask metadata is emitted for the other multichannel speaker WAV
+  layouts. It does not infer
   authored-object identity, and does not resolve `T(t)` or provide a
   vendor renderer. 2.0 remains blocked by unspecified bass/LFE
   fold-down policy; 9.1.4 and 9.1.6 remain blocked by missing admitted clean
@@ -47,7 +49,10 @@ claiming capabilities that the current evidence does not support.
   renderer policy: `exclude` or `equal-power-dual-mono`. This is OpenJOC output
   policy, not JOC semantics or vendor bass management. The output is stereo
   Left then Right WAV with the complete causal HRIR tail and remains
-  experimental with `SemanticBindingState::Unresolved`.
+  experimental with `SemanticBindingState::Unresolved`. The 7.1.6 speaker
+  preset is not admitted for this binaural path because the exact-direction
+  registry lacks `Ltm` and `Rtm`; no nearest-speaker, alias, interpolation, or
+  omitted-channel fallback is used.
 - `render-joc` has TTY-aware stderr progress plus an opt-in versioned
   `--performance-report FILE.json` containing stage timings, frame timing
   percentiles, realtime metrics, and opt-in JOC reconstruction sub-stage

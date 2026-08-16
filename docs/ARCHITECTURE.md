@@ -41,7 +41,7 @@ decoded Base/RB codec-coordinate bundle + automatic bridge-control assembly
           ↓
 persistent JocSpatialBridge → active N-channel speaker planes
           ├── Base LFE/RcLfe → LFE plane only
-          └── active planes + LFE → incremental float WAV
+          └── active planes + LFE → incremental semantic WAV/CAF output
 ```
 
 The CLI presets are data-only registrations over the generic `SpatialLayout`
@@ -55,8 +55,9 @@ decoded Base/RB state. A complete sidecar is optional and takes precedence as
 an explicit override/test source; automatic and explicit sources are not
 implicitly merged. Topology/count, coordinate dimensions, metadata updates,
 and Base topology changes are validated at the integration boundary; no
-guessed row/object renderer is constructed. The public WAV order is selected
-by the explicit preset; `5.1` remains `FL, FR, FC, LFE, Ls, Rs`.
+guessed row/object renderer is constructed. The public semantic PCM order is
+selected by the explicit preset; exact speaker WAV masks remain backend
+specific. `5.1` remains `FL, FR, FC, LFE, Ls, Rs`.
 ```
 
 The parser reads what is present in the carrier. Validation then applies an

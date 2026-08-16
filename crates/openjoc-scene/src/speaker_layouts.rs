@@ -10,8 +10,8 @@ use crate::{
 use std::fmt;
 
 /// Public speaker presets exposed by the JOC speaker-rendering workflow.
-pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 6] =
-    ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4"];
+pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 7] =
+    ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"];
 
 /// Canonical channel order for the 5.1 family.
 pub const SPEAKER_LAYOUT_5_1_CHANNELS: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
@@ -37,6 +37,11 @@ pub const SPEAKER_LAYOUT_7_1_2_CHANNELS: [&str; 10] = [
 /// Canonical channel order for 7.1.4.
 pub const SPEAKER_LAYOUT_7_1_4_CHANNELS: [&str; 12] = [
     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+];
+
+/// Canonical channel order for 7.1.6.
+pub const SPEAKER_LAYOUT_7_1_6_CHANNELS: [&str; 14] = [
+    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr", "Rtr",
 ];
 
 const QMAX: f64 = 32_767.0 / 32_768.0;
@@ -169,11 +174,11 @@ pub struct SpeakerLayoutPreset {
     pub lfe_index: Option<usize>,
     /// Data-only topology consumed by the generic point projector.
     pub layout: SpatialLayout,
-    wav_channel_mask: u32,
+    wav_channel_mask: Option<u32>,
 }
 
 impl SpeakerLayoutPreset {
-    /// Returns one of the six public speaker presets.
+    /// Returns one of the seven public speaker presets.
     pub fn for_name(name: &str) -> Result<Self, SpeakerLayoutPresetError> {
         match name {
             "5.1" => speaker_layout_5_1_preset(),
@@ -182,6 +187,7 @@ impl SpeakerLayoutPreset {
             "7.1" => speaker_layout_7_1_preset(),
             "7.1.2" => speaker_layout_7_1_2_preset(),
             "7.1.4" => speaker_layout_7_1_4_preset(),
+            "7.1.6" => speaker_layout_7_1_6_preset(),
             other => Err(SpeakerLayoutPresetError::UnsupportedLayout(
                 other.to_owned(),
             )),
@@ -206,21 +212,29 @@ impl SpeakerLayoutPreset {
         self.lfe_index
     }
 
-    /// Returns the standard WAVEFORMATEXTENSIBLE speaker mask.
+    /// Returns the standard WAVEFORMATEXTENSIBLE speaker mask, when the
+    /// semantic layout has an exact standard speaker representation.
     #[must_use]
-    pub const fn wav_channel_mask(&self) -> u32 {
+    pub const fn wav_channel_mask(&self) -> Option<u32> {
         self.wav_channel_mask
     }
 
     /// Returns this preset as a container-independent semantic layout.
     #[must_use]
     pub fn semantic_channel_layout(&self) -> SemanticChannelLayout {
-        SemanticChannelLayout::with_wav_mapping(
-            self.name,
-            self.labels.iter().copied(),
-            self.lfe_index,
-            self.wav_channel_mask,
-        )
+        match self.wav_channel_mask {
+            Some(mask) => SemanticChannelLayout::with_wav_mapping(
+                self.name,
+                self.labels.iter().copied(),
+                self.lfe_index,
+                mask,
+            ),
+            None => SemanticChannelLayout::without_wav_mapping(
+                self.name,
+                self.labels.iter().copied(),
+                self.lfe_index,
+            ),
+        }
     }
 }
 
@@ -267,6 +281,16 @@ pub fn speaker_layout_7_1_2() -> Result<SpatialLayout, SpatialProjectionError> {
         .map_err(|error| match error {
             SpeakerLayoutPresetError::Projection(error) => error,
             other => unreachable!("validated 7.1.2 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
+/// Returns the 7.1.6 [`SpatialLayout`] topology.
+pub fn speaker_layout_7_1_6() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_7_1_6_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 7.1.6 preset failed outside projection: {other}"),
         })?
         .layout)
 }
@@ -397,6 +421,40 @@ fn speaker_layout_7_1_4_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPre
     )
 }
 
+fn speaker_layout_7_1_6_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    generic_preset(
+        "7.1.6",
+        &SPEAKER_LAYOUT_7_1_6_CHANNELS,
+        Some(3),
+        vec![
+            seven_one_bed(),
+            upper_layer(vec![
+                row(
+                    TOP_FRONT_Y,
+                    vec![
+                        anchor("Ltf", TOP_INNER_LEFT, TOP_FRONT_Y, QMAX),
+                        anchor("Rtf", TOP_INNER_RIGHT, TOP_FRONT_Y, QMAX),
+                    ],
+                ),
+                row(
+                    0.5,
+                    vec![
+                        anchor("Ltm", TOP_INNER_LEFT, 0.5, QMAX),
+                        anchor("Rtm", TOP_INNER_RIGHT, 0.5, QMAX),
+                    ],
+                ),
+                row(
+                    TOP_REAR_Y,
+                    vec![
+                        anchor("Ltr", TOP_INNER_LEFT, TOP_REAR_Y, QMAX),
+                        anchor("Rtr", TOP_INNER_RIGHT, TOP_REAR_Y, QMAX),
+                    ],
+                ),
+            ]),
+        ],
+    )
+}
+
 fn generic_preset(
     name: &'static str,
     labels: &[&'static str],
@@ -421,7 +479,10 @@ fn generic_preset(
         },
         Vec::new(),
     )?;
-    let wav_channel_mask = speaker_channel_mask_for_labels(&labels)?;
+    let wav_channel_mask = match name {
+        "7.1.6" => None,
+        _ => Some(speaker_channel_mask_for_labels(&labels)?),
+    };
     Ok(SpeakerLayoutPreset {
         name,
         labels,

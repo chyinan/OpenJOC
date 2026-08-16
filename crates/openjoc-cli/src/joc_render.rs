@@ -42,7 +42,7 @@ pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
 pub const JOC_RENDER_LAYOUT: &str = "5.1";
 #[cfg(test)]
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = SPEAKER_LAYOUT_5_1_CHANNELS;
-pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 6] = SPEAKER_LAYOUT_PRESET_NAMES;
+pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 7] = SPEAKER_LAYOUT_PRESET_NAMES;
 
 #[derive(Debug)]
 pub enum JocRenderError {
@@ -81,6 +81,10 @@ pub enum JocRenderError {
     Sofa(SofaError),
     Binaural(openjoc_render::RenderError),
     BinauralHrirCoverage {
+        layout: String,
+        missing: Vec<String>,
+    },
+    BinauralLayoutNotReady {
         layout: String,
         missing: Vec<String>,
     },
@@ -173,6 +177,11 @@ impl fmt::Display for JocRenderError {
                 "SOFA does not provide exact HRIR directions for virtual layout {layout}: {}",
                 missing.join(", ")
             ),
+            Self::BinauralLayoutNotReady { layout, missing } => write!(
+                formatter,
+                "binaural rendering is not currently admitted for semantic layout {layout}: exact direction identities are missing for {}; no nearest-speaker, alias, interpolation, or omitted-channel fallback is used; CAF speaker output is independent",
+                missing.join(", ")
+            ),
             Self::BinauralSampleRateMismatch { expected, actual } => write!(
                 formatter,
                 "binaural SOFA sample rate mismatch: decoded JOC is {expected} Hz, SOFA is {actual} Hz"
@@ -188,7 +197,7 @@ impl fmt::Display for JocRenderError {
             Self::Caf(error) => write!(formatter, "JOC render CAF error: {error}"),
             Self::WavLayoutNotExactlyRepresentable { layout } => write!(
                 formatter,
-                "semantic layout {layout} is not exactly representable by WAV/WAVEFORMATEXTENSIBLE"
+                "semantic layout {layout} cannot be represented exactly by WAV/WAVEFORMATEXTENSIBLE; no channel identities were substituted; use .caf for semantic multichannel output"
             ),
             Self::UnsupportedOutputExtension(path) => write!(
                 formatter,
@@ -1026,6 +1035,7 @@ impl JocBinauralRenderer {
         contribution_mode: SpatialContributionMode,
     ) -> Result<Self, JocRenderError> {
         let preset = SpeakerLayoutPreset::for_name(layout)?;
+        validate_binaural_layout_preset(layout, &preset)?;
         if preset.lfe_index().is_some() && lfe_policy.is_none() {
             return Err(JocRenderError::BinauralLfePolicyRequired {
                 layout: layout.to_owned(),
@@ -1527,12 +1537,69 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
         "Rs" => CartesianPosition::new(1.0, 0.0, 0.0),
         "Lb" => CartesianPosition::new(-1.0, -1.0, 0.0),
         "Rb" => CartesianPosition::new(1.0, -1.0, 0.0),
-        "TFL" => CartesianPosition::new(-1.0, 1.0, 1.0),
-        "TFR" => CartesianPosition::new(1.0, 1.0, 1.0),
-        "TBL" => CartesianPosition::new(-1.0, -1.0, 1.0),
-        "TBR" => CartesianPosition::new(1.0, -1.0, 1.0),
+        "TFL" | "Ltf" => CartesianPosition::new(-1.0, 1.0, 1.0),
+        "TFR" | "Rtf" => CartesianPosition::new(1.0, 1.0, 1.0),
+        "TBL" | "Ltr" => CartesianPosition::new(-1.0, -1.0, 1.0),
+        "TBR" | "Rtr" => CartesianPosition::new(1.0, -1.0, 1.0),
         _ => return None,
     })
+}
+
+fn validate_binaural_layout_preset(
+    layout: &str,
+    preset: &SpeakerLayoutPreset,
+) -> Result<(), JocRenderError> {
+    let missing = preset
+        .labels
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| preset.lfe_index() != Some(*index))
+        .filter_map(|(_, label)| {
+            virtual_speaker_direction(label)
+                .is_none()
+                .then_some((*label).to_owned())
+        })
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(JocRenderError::BinauralLayoutNotReady {
+            layout: layout.to_owned(),
+            missing,
+        })
+    }
+}
+
+/// Validates a speaker layout and the selected semantic output backend without
+/// creating output files or loading input media.
+pub fn validate_speaker_output(
+    layout: &str,
+    output: &Path,
+) -> Result<OutputContainer, JocRenderError> {
+    let preset = SpeakerLayoutPreset::for_name(layout)?;
+    let semantic = preset.semantic_channel_layout();
+    let container = output_container_for_path(output)?;
+    match container {
+        OutputContainer::Wav if semantic.wav_channel_mask().is_none() => {
+            Err(JocRenderError::WavLayoutNotExactlyRepresentable {
+                layout: layout.to_owned(),
+            })
+        }
+        OutputContainer::Caf => {
+            for label in &semantic.labels {
+                caf_description(&semantic, label)?;
+            }
+            Ok(container)
+        }
+        OutputContainer::Wav => Ok(container),
+    }
+}
+
+/// Validates the current exact-direction binaural admission independently of
+/// the selected speaker output container.
+pub fn validate_binaural_layout(layout: &str) -> Result<(), JocRenderError> {
+    let preset = SpeakerLayoutPreset::for_name(layout)?;
+    validate_binaural_layout_preset(layout, &preset)
 }
 
 fn add_lfe(
@@ -2241,10 +2308,10 @@ mod tests {
             "Rb" => 6,
             "Ls" => 10,
             "Rs" => 11,
-            "TFL" => 13,
-            "TFR" => 15,
-            "TBL" => 16,
-            "TBR" => 18,
+            "TFL" | "Ltf" => 13,
+            "TFR" | "Rtf" => 15,
+            "TBL" | "Ltr" => 16,
+            "TBR" | "Rtr" => 18,
             _ => panic!("unexpected public semantic label {label}"),
         }
     }
@@ -2476,7 +2543,7 @@ mod tests {
     fn canonical_layout_presets_have_explicit_public_contracts() {
         assert_eq!(
             JOC_RENDER_SUPPORTED_LAYOUTS,
-            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4"]
+            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"]
         );
         let expected = [
             ("5.1", vec!["FL", "FR", "FC", "LFE", "Ls", "Rs"]),
@@ -2501,6 +2568,13 @@ mod tests {
                 "7.1.4",
                 vec![
                     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+                ],
+            ),
+            (
+                "7.1.6",
+                vec![
+                    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm",
+                    "Ltr", "Rtr",
                 ],
             ),
         ];
@@ -2601,7 +2675,10 @@ mod tests {
 
     #[test]
     fn binaural_mapping_uses_public_channel_order_for_every_preset() {
-        for layout in JOC_RENDER_SUPPORTED_LAYOUTS {
+        for layout in JOC_RENDER_SUPPORTED_LAYOUTS
+            .into_iter()
+            .filter(|layout| *layout != "7.1.6")
+        {
             let renderer = JocBinauralRenderer::new(
                 layout,
                 binaural_bank(layout, 48_000),
@@ -2633,6 +2710,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn binaural_preflight_rejects_716_without_hrir_aliasing() {
+        let error = super::validate_binaural_layout("7.1.6")
+            .expect_err("7.1.6 binaural is not currently admitted");
+        assert!(matches!(
+            error,
+            JocRenderError::BinauralLayoutNotReady { ref layout, ref missing }
+                if layout == "7.1.6" && missing == &["Ltm".to_owned(), "Rtm".to_owned()]
+        ));
+        assert!(error.to_string().contains("not currently admitted"));
+        assert!(error.to_string().contains("no nearest-speaker"));
     }
 
     #[test]
@@ -3066,10 +3156,23 @@ mod tests {
     }
 
     #[test]
+    fn public_716_renderer_uses_the_normal_decoded_pipeline_and_keeps_lfe_base_owned() {
+        let mut renderer = JocSpeakerRenderer::new("7.1.6", control(false, 6)).unwrap();
+        let block = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+            .unwrap();
+        assert_eq!(block.channels.len(), 14);
+        assert_eq!(block.channels[3], vec![99.0; 2]);
+        assert!(block.channels[10].iter().all(|sample| sample.is_finite()));
+        assert!(block.channels[11].iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
     fn contribution_modes_decompose_every_output_and_assign_lfe_to_base() {
         let frame = decoded_frame(0, 0, 3);
         let pcm = base(3, 1.0);
-        for (layout, channel_count) in [("5.1.4", 10), ("7.1.2", 10), ("7.1.4", 12)] {
+        for (layout, channel_count) in [("5.1.4", 10), ("7.1.2", 10), ("7.1.4", 12), ("7.1.6", 14)]
+        {
             let render = |mode| {
                 JocSpeakerRenderer::new_with_contribution(layout, control(false, 6), mode)
                     .unwrap()
@@ -3443,7 +3546,10 @@ mod tests {
 
     #[test]
     fn public_layouts_are_representable_in_both_selected_containers() {
-        for &layout in &JOC_RENDER_SUPPORTED_LAYOUTS {
+        for &layout in JOC_RENDER_SUPPORTED_LAYOUTS
+            .iter()
+            .filter(|layout| **layout != "7.1.6")
+        {
             let root = std::env::temp_dir().join(format!(
                 "openjoc-output-matrix-{}-{}",
                 std::process::id(),
@@ -3467,7 +3573,7 @@ mod tests {
             wav.finish().unwrap();
             let decoded = decode(&fs::read(&wav_path).unwrap()).unwrap();
             assert_eq!(decoded.channels.len(), preset.channel_count());
-            assert_eq!(decoded.channel_mask, Some(preset.wav_channel_mask()));
+            assert_eq!(decoded.channel_mask, preset.wav_channel_mask());
 
             let caf_path = root.join("render.caf");
             let mut caf =
@@ -3491,15 +3597,9 @@ mod tests {
     }
 
     #[test]
-    fn internal_716_semantics_reject_wav_and_accept_caf_with_top_middle_coordinates() {
-        let semantic = SemanticChannelLayout::without_wav_mapping(
-            "7.1.6",
-            [
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
-                "Rtr",
-            ],
-            Some(3),
-        );
+    fn public_716_semantics_reject_wav_and_accept_caf_with_top_middle_coordinates() {
+        let preset = SpeakerLayoutPreset::for_name("7.1.6").unwrap();
+        let semantic = preset.semantic_channel_layout();
         let root = std::env::temp_dir().join(format!("openjoc-716-output-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let Err(wav_error) = JocWavOutput::new_for_semantic_layout(
@@ -3514,6 +3614,7 @@ mod tests {
             wav_error,
             JocRenderError::WavLayoutNotExactlyRepresentable { .. }
         ));
+        assert!(!root.join("future.wav").exists());
 
         let path = root.join("future.caf");
         let mut caf =
@@ -3527,7 +3628,8 @@ mod tests {
         })
         .unwrap();
         caf.finish().unwrap();
-        let descriptions = caf_channel_descriptions(&fs::read(path).unwrap());
+        let bytes = fs::read(&path).unwrap();
+        let descriptions = caf_channel_descriptions(&bytes);
         assert_eq!(
             descriptions
                 .iter()
@@ -3543,6 +3645,12 @@ mod tests {
         assert_eq!(descriptions[11].2[1], 0.0);
         assert!(descriptions[10].2[2] > 0.99);
         assert!(descriptions[11].2[2] > 0.99);
+        assert_eq!(
+            caf_f32_samples(&bytes),
+            (0..semantic.channel_count())
+                .map(|index| index as f64 / 32.0)
+                .collect::<Vec<_>>()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -3599,12 +3707,12 @@ mod tests {
     }
 
     #[test]
-    fn extension_selection_is_explicit_and_does_not_expose_new_public_layouts() {
+    fn extension_selection_is_explicit_and_withheld_layouts_stay_private() {
         assert_eq!(
             JOC_RENDER_SUPPORTED_LAYOUTS,
-            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4"]
+            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"]
         );
-        assert!(SpeakerLayoutPreset::for_name("7.1.6").is_err());
+        assert!(SpeakerLayoutPreset::for_name("9.1.6").is_err());
         assert_eq!(
             super::validate_output_path(std::path::Path::new("output.WAV")).unwrap(),
             OutputContainer::Wav
@@ -3684,7 +3792,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("not exactly representable by WAV")
+                .contains("no channel identities were substituted")
         );
     }
 
@@ -3706,7 +3814,7 @@ mod tests {
             .map(|index| base(SAMPLES, index as f64 * 0.001))
             .collect::<Vec<_>>();
 
-        for layout in ["5.1", "7.1.4"] {
+        for layout in ["5.1", "7.1.4", "7.1.6"] {
             let mut samples = Vec::new();
             for repetition in 0..=repetitions {
                 let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();

@@ -1,6 +1,7 @@
 use openjoc_scene::{
     SPEAKER_LAYOUT_PRESET_NAMES, SpatialDescriptor, SpatialSourceClass, SpeakerLayoutPreset,
     speaker_channel_mask_for_labels, speaker_layout_5_1_4, speaker_layout_7_1_2,
+    speaker_layout_7_1_6,
 };
 
 const QMAX: f64 = 32_767.0 / 32_768.0;
@@ -34,10 +35,10 @@ fn assert_unit_l2(vector: &[f64]) {
 }
 
 #[test]
-fn public_presets_have_only_the_six_admitted_names_and_explicit_wav_contracts() {
+fn public_presets_have_the_admitted_names_and_backend_contracts() {
     assert_eq!(
         SPEAKER_LAYOUT_PRESET_NAMES,
-        ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4"]
+        ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"]
     );
     let expected = [
         ("5.1", 6, 0x0000_060f),
@@ -52,14 +53,144 @@ fn public_presets_have_only_the_six_admitted_names_and_explicit_wav_contracts() 
         assert_eq!(preset.name, name);
         assert_eq!(preset.channel_count(), count);
         assert_eq!(preset.lfe_index(), Some(3));
-        assert_eq!(preset.wav_channel_mask(), mask);
+        assert_eq!(preset.wav_channel_mask(), Some(mask));
         assert_eq!(
             speaker_channel_mask_for_labels(&preset.labels).expect("standard mask"),
             mask
         );
     }
+    let preset = SpeakerLayoutPreset::for_name("7.1.6").expect("7.1.6 public preset");
+    assert_eq!(preset.channel_count(), 14);
+    assert_eq!(preset.lfe_index(), Some(3));
+    assert_eq!(preset.wav_channel_mask(), None);
+    assert_eq!(
+        preset.channel_labels(),
+        vec![
+            "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
+            "Rtr",
+        ]
+    );
+    assert!(speaker_channel_mask_for_labels(&preset.labels).is_err());
     assert!(SpeakerLayoutPreset::for_name("9.1.6").is_err());
     assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
+}
+
+#[test]
+fn seven_one_six_uses_three_upper_rows_and_preserves_generic_xyz_projection() {
+    let preset = SpeakerLayoutPreset::for_name("7.1.6").expect("7.1.6 preset");
+    let topology = preset.layout.topology();
+    assert_eq!(topology.layers.len(), 2);
+    assert_eq!(topology.layers[0].rows.len(), 3);
+    assert_eq!(topology.layers[1].rows.len(), 3);
+    assert_eq!(
+        topology.layers[0]
+            .rows
+            .iter()
+            .map(|row| row.y)
+            .collect::<Vec<_>>(),
+        [0.0, 0.5, QMAX]
+    );
+    assert_eq!(
+        topology.layers[1]
+            .rows
+            .iter()
+            .map(|row| row.y)
+            .collect::<Vec<_>>(),
+        [TOP_FRONT_Y, 0.5, TOP_REAR_Y]
+    );
+
+    for layer in &topology.layers {
+        for row in &layer.rows {
+            for anchor in &row.anchors {
+                let projected = preset
+                    .layout
+                    .project(&point(anchor.x, anchor.y, anchor.z))
+                    .expect("7.1.6 clean anchor projection");
+                let index = active_index(&preset, &anchor.identity);
+                assert!(
+                    projected.iter().enumerate().all(|(candidate, value)| {
+                        if candidate == index {
+                            (*value - 1.0).abs() < 2.0e-12
+                        } else {
+                            value.abs() < 2.0e-12
+                        }
+                    }),
+                    "{} projected as {projected:?}",
+                    anchor.identity
+                );
+            }
+        }
+    }
+
+    let upper_front_middle = preset
+        .layout
+        .project(&point(
+            TOP_INNER_LEFT,
+            f64::midpoint(TOP_FRONT_Y, 0.5),
+            QMAX,
+        ))
+        .expect("front-to-middle upper transition");
+    assert!(upper_front_middle[active_index(&preset, "Ltf")] > 0.0);
+    assert!(upper_front_middle[active_index(&preset, "Ltm")] > 0.0);
+    assert_eq!(
+        preset
+            .layout
+            .project(&point(TOP_INNER_LEFT, 0.5, QMAX))
+            .unwrap()[active_index(&preset, "Ltm")],
+        1.0
+    );
+    let upper_middle_rear = preset
+        .layout
+        .project(&point(TOP_INNER_LEFT, f64::midpoint(0.5, TOP_REAR_Y), QMAX))
+        .expect("middle-to-rear upper transition");
+    assert!(upper_middle_rear[active_index(&preset, "Ltm")] > 0.0);
+    assert!(upper_middle_rear[active_index(&preset, "Ltr")] > 0.0);
+
+    let z_composed = preset
+        .layout
+        .project(&point(0.5, 0.5, 0.5))
+        .expect("7.1.6 bed/top composition");
+    assert!(z_composed[active_index(&preset, "FC")] > 0.0);
+    assert!(z_composed[active_index(&preset, "Ltm")] > 0.0);
+    assert_unit_l2(&z_composed);
+    assert_eq!(preset.layout.active_channel_count(), 13);
+    assert_eq!(preset.layout.channels()[3].identity, "LFE");
+    assert!(preset.layout.channels()[3].lfe);
+}
+
+#[test]
+fn seven_one_six_inserts_only_the_middle_upper_row_over_seven_one_four_geometry() {
+    let four = SpeakerLayoutPreset::for_name("7.1.4").expect("7.1.4 preset");
+    let six = speaker_layout_7_1_6().expect("7.1.6 helper");
+    assert_eq!(four.layout.topology().layers[0], six.topology().layers[0]);
+    let four_upper = &four.layout.topology().layers[1].rows;
+    let six_upper = &six.topology().layers[1].rows;
+    assert_eq!(four_upper.len(), 2);
+    assert_eq!(six_upper.len(), 3);
+    for (outer, inserted) in [(0, 0), (1, 2)] {
+        assert_eq!(four_upper[outer].y, six_upper[inserted].y);
+        assert_eq!(
+            four_upper[outer]
+                .anchors
+                .iter()
+                .map(|anchor| (anchor.x, anchor.y, anchor.z))
+                .collect::<Vec<_>>(),
+            six_upper[inserted]
+                .anchors
+                .iter()
+                .map(|anchor| (anchor.x, anchor.y, anchor.z))
+                .collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(six_upper[1].y, 0.5);
+    assert_eq!(
+        six_upper[1]
+            .anchors
+            .iter()
+            .map(|anchor| anchor.identity.as_str())
+            .collect::<Vec<_>>(),
+        ["Ltm", "Rtm"]
+    );
 }
 
 #[test]
