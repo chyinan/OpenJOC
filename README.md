@@ -24,7 +24,7 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.4.1 is the current release. It retains the 0.3.0 release foundation
+OpenJOC 0.4.2 is the current release. It retains the 0.3.0 release foundation
 and adds an experimental JOC-to-speaker workflow through
 `JocSpatialBridge`. Ordinary rendering assembles bridge control from decoded
 JOC/OAMD state; `--topology` remains an optional complete override/test input.
@@ -56,8 +56,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.4.1 capability status.
-- [Experimental JOC speaker rendering](docs/JOC_RENDER.md) — the 0.4.1 real-input workflow.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.4.2 capability status.
+- [Experimental JOC speaker rendering](docs/JOC_RENDER.md) — the 0.4.2 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
@@ -122,7 +122,8 @@ profile and reason are written to the bounded validation diagnostics.
 Interactive `render-joc` progress is written to stderr and is automatically
 disabled for non-TTY output; use `--no-progress` to opt out. Add
 `--performance-report FILE.json` to capture versioned stage timings and
-realtime diagnostics. See [Experimental JOC speaker rendering](docs/JOC_RENDER.md)
+realtime diagnostics. Use `--overwrite` for authorized replacement of existing
+render outputs in scripts or other non-interactive runs. See [Experimental JOC speaker rendering](docs/JOC_RENDER.md)
 for the report schema, synthetic harness, and real-media qualification
 boundary.
 
@@ -130,7 +131,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble the 0.4.1 Apple-Silicon release bundle
+## Assemble the 0.4.2 Apple-Silicon release bundle
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the release
@@ -139,9 +140,9 @@ bundle locally before publication:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.4.1-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.4.1-aarch64-apple-darwin.tar.gz
-cd openjoc-0.4.1-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.4.2-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.4.2-aarch64-apple-darwin.tar.gz
+cd openjoc-0.4.2-aarch64-apple-darwin
 ./verify.sh
 ```
 

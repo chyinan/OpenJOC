@@ -1,6 +1,6 @@
 # Experimental JOC speaker rendering
 
-OpenJOC 0.4.1 exposes one executable JOC-to-speaker workflow with an
+OpenJOC 0.4.2 exposes one executable JOC-to-speaker workflow with an
 explicit selectable speaker preset:
 
 ```sh

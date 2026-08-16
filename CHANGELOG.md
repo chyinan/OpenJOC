@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.4.2] — 2026-08-16
+
+OpenJOC 0.4.2 is a focused patch release for JOC reconstruction diagnostics
+and safer `render-joc` output handling. It preserves the 0.4.x feature freeze
+and does not change JOC decoding or rendering semantics.
+
+### Improved
+
+- JOC QMF reconstruction caches invariant phase and prototype tables while
+  retaining identical reconstruction output checksums.
+- Versioned performance reports include opt-in JOC reconstruction-stage timing
+  diagnostics, including QMF analysis/synthesis and matrix reconstruction.
+- `render-joc` preflights WAV/report collisions and input/output aliases,
+  prompts interactively with `[y/N]`, and supports `--overwrite` for scripts
+  and non-interactive use.
+- Authorized output replacement remains transactional: a failed render keeps
+  the previous final output and performance report intact.
+
+### Known limitations
+
+- The QMF and speaker/WAV measurements are synthetic engineering diagnostics;
+  representative real E-AC-3/JOC media still requires a real-media performance
+  retest. These measurements do not establish realtime readiness.
+- `JocSpatialBridge` remains Experimental and `SemanticBindingState` remains
+  `Unresolved`; no renderer-fidelity equivalence with Dolby is claimed.
+
 ## [0.4.1] — 2026-08-16
 
 OpenJOC 0.4.1 is a patch release focused on real-world usability, diagnostics,
