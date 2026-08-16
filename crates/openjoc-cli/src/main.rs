@@ -35,7 +35,7 @@ use std::{
     error::Error,
     fmt::Write as _,
     fs, io,
-    io::Read,
+    io::{BufRead, IsTerminal, Read, Write as _},
     num::NonZeroU8,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
@@ -43,7 +43,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--no-progress] [--performance-report FILE.json]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -93,6 +93,7 @@ struct RenderJocArgs {
     output_format: SampleFormat,
     no_progress: bool,
     performance_report: Option<PathBuf>,
+    overwrite: bool,
 }
 
 fn main() -> ExitCode {
@@ -183,7 +184,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--no-progress] [--performance-report <FILE.json>]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -209,7 +210,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
-        "                         [--reference-f64] [--no-progress] [--performance-report <FILE.json>]\n",
+        "                         [--reference-f64] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [OPTIONS]\n",
@@ -295,7 +296,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
-            "       [--reference-f64] [--no-progress] [--performance-report <FILE.json>]\n\n",
+            "       [--reference-f64] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "SUPPORTED PRESETS: 5.1, 5.1.2, 7.1, 7.1.4.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
@@ -305,6 +306,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Binaural layouts require an explicit LFE policy; direct is the default backend and no vendor-fidelity claim is made.\n",
             "Progress is enabled on interactive stderr, throttled, and disabled for non-TTY output; --no-progress opts out.\n",
             "--performance-report writes diagnostic JSON with stage timings and realtime metrics.\n",
+            "Existing output files prompt once on an interactive terminal ([y/N]); --overwrite skips the prompt.\n",
+            "Non-interactive renders refuse existing outputs unless --overwrite is given; replacements remain transactional.\n",
         ),
         "diagnose-tools" => concat!(
             "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",
@@ -844,6 +847,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
     let mut no_progress = false;
     let mut performance_report = None;
+    let mut overwrite = false;
     let mut index = 1;
     while index < values.len() {
         let flag = &values[index];
@@ -854,6 +858,11 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         }
         if flag == "--no-progress" {
             no_progress = true;
+            index += 1;
+            continue;
+        }
+        if flag == "--overwrite" {
+            overwrite = true;
             index += 1;
             continue;
         }
@@ -926,6 +935,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         },
         no_progress,
         performance_report,
+        overwrite,
     })
 }
 
@@ -1059,10 +1069,192 @@ fn decode_eac3(arguments: &DecodeEac3Args) -> Result<(), Box<dyn Error>> {
     write_scene(&arguments.output, &scene, arguments.output_format)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OverwriteDecision {
+    Proceed,
+    Cancelled,
+    Refused,
+}
+
+fn planned_render_outputs(arguments: &RenderJocArgs) -> Vec<PathBuf> {
+    let mut outputs = vec![arguments.output.clone()];
+    if let Some(report) = &arguments.performance_report {
+        outputs.push(report.clone());
+    }
+    outputs
+}
+
+fn normalize_path(path: &Path) -> io::Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                let _ = normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    Ok(normalized)
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn paths_alias(left: &Path, right: &Path) -> io::Result<bool> {
+    if paths_equal(left, right) {
+        return Ok(true);
+    }
+    if paths_equal(&normalize_path(left)?, &normalize_path(right)?) {
+        return Ok(true);
+    }
+    match (
+        canonicalize_path_or_parent(left),
+        canonicalize_path_or_parent(right),
+    ) {
+        (Ok(left), Ok(right)) => Ok(paths_equal(&left, &right)),
+        _ => Ok(false),
+    }
+}
+
+fn canonicalize_path_or_parent(path: &Path) -> io::Result<PathBuf> {
+    if path.exists() {
+        return fs::canonicalize(path);
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no filename"))?;
+    Ok(fs::canonicalize(parent)?.join(file_name))
+}
+
+fn overwrite_answer_is_affirmative(answer: &str) -> bool {
+    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+}
+
+fn decide_overwrite(
+    existing: &[PathBuf],
+    overwrite: bool,
+    promptable: bool,
+    answer: Option<&str>,
+) -> OverwriteDecision {
+    if existing.is_empty() || overwrite {
+        return OverwriteDecision::Proceed;
+    }
+    if promptable && answer.is_some_and(overwrite_answer_is_affirmative) {
+        OverwriteDecision::Proceed
+    } else if promptable {
+        OverwriteDecision::Cancelled
+    } else {
+        OverwriteDecision::Refused
+    }
+}
+
+fn prompt_for_overwrite(existing: &[PathBuf]) -> io::Result<bool> {
+    let mut stderr = io::stderr().lock();
+    io::Write::write_all(&mut stderr, b"The following output files already exist:\n")?;
+    for path in existing {
+        writeln!(stderr, "  {}", path.display())?;
+    }
+    io::Write::write_all(&mut stderr, b"\nOverwrite? [y/N]: ")?;
+    io::Write::flush(&mut stderr)?;
+    drop(stderr);
+
+    let mut answer = String::new();
+    let bytes_read = io::stdin().lock().read_line(&mut answer)?;
+    Ok(bytes_read > 0 && overwrite_answer_is_affirmative(&answer))
+}
+
+fn render_joc_preflight(
+    arguments: &RenderJocArgs,
+    terminal: TerminalCapabilities,
+) -> Result<bool, Box<dyn Error>> {
+    let outputs = planned_render_outputs(arguments);
+    for (index, output) in outputs.iter().enumerate() {
+        for other in outputs.iter().skip(index + 1) {
+            if paths_alias(output, other)? {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "render-joc output paths alias each other: {} and {}",
+                        output.display(),
+                        other.display()
+                    ),
+                )
+                .into());
+            }
+        }
+        if paths_alias(&arguments.input, output)? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "render-joc input path aliases output path {}; refusing to overwrite input",
+                    output.display()
+                ),
+            )
+            .into());
+        }
+    }
+
+    let existing = outputs
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
+    let promptable = terminal.stderr_is_tty && io::stdin().is_terminal();
+    let decision = if arguments.overwrite {
+        decide_overwrite(&existing, true, false, None)
+    } else if promptable {
+        let confirmed = prompt_for_overwrite(&existing)?;
+        decide_overwrite(&existing, false, true, confirmed.then_some("yes"))
+    } else {
+        decide_overwrite(&existing, false, false, None)
+    };
+    match decision {
+        OverwriteDecision::Proceed => Ok(arguments.overwrite || !existing.is_empty()),
+        OverwriteDecision::Cancelled => Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "render cancelled; existing output files were not overwritten",
+        )
+        .into()),
+        OverwriteDecision::Refused => {
+            let paths = existing
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!(
+                    "refusing to overwrite existing render output(s): {paths}; rerun with --overwrite"
+                ),
+            )
+            .into())
+        }
+    }
+}
+
 fn render_joc(
     arguments: &RenderJocArgs,
     terminal: TerminalCapabilities,
 ) -> Result<(), Box<dyn Error>> {
+    let overwrite_authorized = render_joc_preflight(arguments, terminal)?;
     let mut performance = arguments
         .performance_report
         .as_ref()
@@ -1127,7 +1319,11 @@ fn render_joc(
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
-        let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
+        let mut output = joc_render::JocWavOutput::new_with_overwrite(
+            &arguments.output,
+            arguments.output_format,
+            overwrite_authorized,
+        )?;
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();
         let dither = deterministic_dither_values();
@@ -1214,6 +1410,7 @@ fn render_joc(
                         &arguments.layout,
                         selected_profile,
                         arguments.output_format,
+                        overwrite_authorized,
                     )?;
                 }
                 println!(
@@ -1251,7 +1448,11 @@ fn render_joc(
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
-        let mut output = joc_render::JocWavOutput::new(&arguments.output, arguments.output_format)?;
+        let mut output = joc_render::JocWavOutput::new_with_overwrite(
+            &arguments.output,
+            arguments.output_format,
+            overwrite_authorized,
+        )?;
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();
         let dither = deterministic_dither_values();
@@ -1316,6 +1517,7 @@ fn render_joc(
                         &arguments.layout,
                         selected_profile,
                         arguments.output_format,
+                        overwrite_authorized,
                     )?;
                 }
                 println!(
@@ -3065,7 +3267,11 @@ fn usage_error() -> io::Error {
 
 #[cfg(test)]
 mod profile_name_tests {
-    use super::{ValidationProfileRequest, parse_render_joc, parse_validation_profile};
+    use super::{
+        OverwriteDecision, TerminalCapabilities, ValidationProfileRequest, decide_overwrite,
+        overwrite_answer_is_affirmative, parse_render_joc, parse_validation_profile,
+        planned_render_outputs, render_joc_preflight,
+    };
     use crate::joc_render;
     use std::path::PathBuf;
 
@@ -3164,6 +3370,96 @@ mod profile_name_tests {
             parsed.performance_report,
             Some(PathBuf::from("report.json"))
         );
+    }
+
+    #[test]
+    fn render_joc_overwrite_is_explicit_and_plans_both_files() {
+        let values = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+            "--performance-report".to_owned(),
+            "report.json".to_owned(),
+            "--overwrite".to_owned(),
+        ];
+        let parsed = parse_render_joc(&values).expect("overwrite render options");
+        assert!(parsed.overwrite);
+        assert_eq!(
+            planned_render_outputs(&parsed),
+            vec![PathBuf::from("output.wav"), PathBuf::from("report.json")]
+        );
+    }
+
+    #[test]
+    fn overwrite_prompt_accepts_only_y_or_yes_case_insensitively() {
+        for answer in ["y", "Y", "yes", "YES", "Yes"] {
+            assert!(overwrite_answer_is_affirmative(answer), "{answer}");
+        }
+        for answer in ["n", "no", "", "maybe", " yes later "] {
+            assert!(!overwrite_answer_is_affirmative(answer), "{answer}");
+        }
+    }
+
+    #[test]
+    fn overwrite_decision_is_single_and_safe_by_default() {
+        let existing = vec![PathBuf::from("output.wav"), PathBuf::from("report.json")];
+        assert_eq!(
+            decide_overwrite(&[], false, false, None),
+            OverwriteDecision::Proceed
+        );
+        assert_eq!(
+            decide_overwrite(&existing, false, true, Some("yes")),
+            OverwriteDecision::Proceed
+        );
+        assert_eq!(
+            decide_overwrite(&existing, false, true, Some("n")),
+            OverwriteDecision::Cancelled
+        );
+        assert_eq!(
+            decide_overwrite(&existing, false, true, Some("")),
+            OverwriteDecision::Cancelled
+        );
+        assert_eq!(
+            decide_overwrite(&existing, false, true, None),
+            OverwriteDecision::Cancelled
+        );
+        assert_eq!(
+            decide_overwrite(&existing, false, false, None),
+            OverwriteDecision::Refused
+        );
+        assert_eq!(
+            decide_overwrite(&existing, true, false, None),
+            OverwriteDecision::Proceed
+        );
+    }
+
+    #[test]
+    fn input_output_alias_is_rejected_before_render_even_with_overwrite() {
+        let input = std::env::temp_dir().join(format!(
+            "openjoc-overwrite-alias-{}-{}.ec3",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::write(&input, b"input").expect("input");
+        let values = [
+            input.to_string_lossy().into_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--output".to_owned(),
+            input.to_string_lossy().into_owned(),
+            "--overwrite".to_owned(),
+        ];
+        let parsed = parse_render_joc(&values).expect("alias options");
+        let terminal = TerminalCapabilities::from_inputs(false, false, None, false, None, None);
+        let error = render_joc_preflight(&parsed, terminal).expect_err("input alias");
+        assert!(error.to_string().contains("aliases output path"));
+        assert_eq!(std::fs::read(&input).expect("input remains"), b"input");
+        std::fs::remove_file(input).expect("cleanup");
     }
 }
 

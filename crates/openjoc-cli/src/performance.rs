@@ -1,7 +1,8 @@
 use openjoc_joc::ReconstructionStageTiming;
 use serde::Serialize;
 use std::{
-    fs, io,
+    fs::{self, OpenOptions},
+    io::{self, Write},
     path::Path,
     time::{Duration, Instant},
 };
@@ -181,8 +182,9 @@ pub(crate) fn write_report(
     layout: &str,
     selected_profile: openjoc_emdf::JocValidationProfile,
     _output_format: openjoc_wave::SampleFormat,
+    overwrite: bool,
 ) -> Result<(), io::Error> {
-    if path.exists() {
+    if path.exists() && !overwrite {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             format!(
@@ -259,11 +261,44 @@ pub(crate) fn write_report(
             overhead_ms: milliseconds(performance.progress_overhead),
         },
     };
-    fs::write(
-        path,
-        serde_json::to_vec_pretty(&report)
-            .map_err(|error| io::Error::other(format!("serialize performance report: {error}")))?,
-    )
+    let bytes = serde_json::to_vec_pretty(&report)
+        .map_err(|error| io::Error::other(format!("serialize performance report: {error}")))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "report has no filename"))?
+        .to_string_lossy();
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let staging = parent.join(format!(".{name}.openjoc-report-partial"));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&staging)?;
+    if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
+        let _ = fs::remove_file(&staging);
+        return Err(error);
+    }
+    drop(file);
+    let result = if overwrite {
+        crate::joc_render::replace_existing_file(&staging, path)
+    } else if path.exists() {
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "refusing to overwrite performance report {}",
+                path.display()
+            ),
+        ))
+    } else {
+        fs::rename(&staging, path)
+    };
+    if let Err(error) = result {
+        let _ = fs::remove_file(&staging);
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn milliseconds(duration: Duration) -> f64 {
@@ -299,4 +334,78 @@ fn percentile(values: &[f64], percentile: u32) -> f64 {
     let index = (u128::try_from(maximum).unwrap_or(u128::MAX) * u128::from(percentile) + 50) / 100;
     let index = usize::try_from(index).unwrap_or(maximum).min(maximum);
     values[index]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RenderPerformance, write_report};
+    use openjoc_emdf::JocValidationProfile;
+    use openjoc_wave::SampleFormat;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn report_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "openjoc-performance-report-{label}-{}-{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn authorized_report_overwrite_replaces_only_the_final_file() {
+        let path = report_path("overwrite");
+        fs::write(&path, b"previous report").expect("old report");
+        let mut performance = RenderPerformance::new();
+        performance.sample_rate_hz = Some(48_000);
+        performance.total_audio_samples = 48_000;
+        write_report(
+            &path,
+            &performance,
+            "7.1.4",
+            JocValidationProfile::EtsiStrict,
+            SampleFormat::F32,
+            true,
+        )
+        .expect("overwrite report");
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).expect("new report")).expect("JSON report");
+        assert_eq!(report["schema"], "openjoc.joc-render-performance.v1");
+        assert_eq!(report["selected_layout"], "7.1.4");
+        assert!(
+            !path
+                .with_file_name(format!(
+                    ".{}.openjoc-report-partial",
+                    path.file_name().unwrap().to_string_lossy()
+                ))
+                .exists()
+        );
+        fs::remove_file(path).expect("cleanup");
+    }
+
+    #[test]
+    fn unauthorized_report_collision_preserves_existing_report() {
+        let path = report_path("collision");
+        fs::write(&path, b"previous report").expect("old report");
+        let error = write_report(
+            &path,
+            &RenderPerformance::new(),
+            "7.1.4",
+            JocValidationProfile::EtsiStrict,
+            SampleFormat::F32,
+            false,
+        )
+        .expect_err("collision");
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            fs::read(&path).expect("old report remains"),
+            b"previous report"
+        );
+        fs::remove_file(path).expect("cleanup");
+    }
 }

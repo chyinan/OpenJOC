@@ -1532,9 +1532,57 @@ fn mixed(length: usize, first: usize, second: usize) -> Vec<f64> {
     vector
 }
 
+fn replacement_backup_path(output: &Path) -> Result<PathBuf, io::Error> {
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = output
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "output has no filename"))?
+        .to_string_lossy();
+    Ok(parent.join(format!(".{name}.openjoc-replace-{}", std::process::id())))
+}
+
+pub(crate) fn replace_existing_file(staging: &Path, output: &Path) -> io::Result<()> {
+    match fs::rename(staging, output) {
+        Ok(()) => Ok(()),
+        Err(_rename_error) if output.exists() => {
+            let backup = replacement_backup_path(output)?;
+            if backup.exists() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!(
+                        "temporary replacement path already exists: {}",
+                        backup.display()
+                    ),
+                ));
+            }
+            fs::rename(output, &backup)?;
+            match fs::rename(staging, output) {
+                Ok(()) => {
+                    let _ = fs::remove_file(backup);
+                    Ok(())
+                }
+                Err(replace_error) => {
+                    if let Err(restore_error) = fs::rename(&backup, output) {
+                        return Err(io::Error::other(format!(
+                            "could not replace {} ({replace_error}); restoring the previous output also failed ({restore_error})",
+                            output.display()
+                        )));
+                    }
+                    Err(replace_error)
+                }
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub struct JocWavOutput {
     output: PathBuf,
     staging: PathBuf,
+    overwrite: bool,
     format: SampleFormat,
     writer: Option<WaveWriter<fs::File>>,
     sample_rate: Option<u32>,
@@ -1542,8 +1590,12 @@ pub struct JocWavOutput {
 }
 
 impl JocWavOutput {
-    pub fn new(output: &Path, format: SampleFormat) -> Result<Self, JocRenderError> {
-        if output.exists() {
+    pub fn new_with_overwrite(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+    ) -> Result<Self, JocRenderError> {
+        if output.exists() && !overwrite {
             return Err(JocRenderError::OutputExists(output.to_owned()));
         }
         let parent = output
@@ -1562,6 +1614,7 @@ impl JocWavOutput {
         Ok(Self {
             output: output.to_owned(),
             staging,
+            overwrite,
             format,
             writer: None,
             sample_rate: None,
@@ -1612,7 +1665,17 @@ impl JocWavOutput {
             let _ = fs::remove_file(&self.staging);
             return Err(error.into());
         }
-        if let Err(error) = fs::rename(&self.staging, &self.output) {
+        let replacement = if self.overwrite {
+            replace_existing_file(&self.staging, &self.output)
+        } else if self.output.exists() {
+            Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("refusing to overwrite output {}", self.output.display()),
+            ))
+        } else {
+            fs::rename(&self.staging, &self.output)
+        };
+        if let Err(error) = replacement {
             let _ = fs::remove_file(&self.staging);
             return Err(error.into());
         }
@@ -2143,7 +2206,8 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let output = root.join("transactional-binaural.wav");
         let staging = root.join(".transactional-binaural.wav.openjoc-partial");
-        let mut writer = JocWavOutput::new(&output, SampleFormat::F32).unwrap();
+        let mut writer =
+            JocWavOutput::new_with_overwrite(&output, SampleFormat::F32, false).unwrap();
         writer
             .write_block(&RenderedBlock {
                 sample_rate: 48_000,
@@ -2153,6 +2217,60 @@ mod tests {
         writer.abort();
         assert!(!output.exists());
         assert!(!staging.exists());
+    }
+
+    #[test]
+    fn authorized_overwrite_abort_preserves_existing_final_wav() {
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-overwrite-abort-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("existing.wav");
+        fs::write(&output, b"previous-valid-output").unwrap();
+        let mut writer =
+            JocWavOutput::new_with_overwrite(&output, SampleFormat::F32, true).unwrap();
+        writer
+            .write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![0.0, 1.0], vec![1.0, 0.0]],
+            })
+            .unwrap();
+        writer.abort();
+        assert_eq!(fs::read(&output).unwrap(), b"previous-valid-output");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn authorized_overwrite_replaces_existing_final_wav_only_on_finish() {
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-overwrite-finish-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("existing.wav");
+        fs::write(&output, b"previous-valid-output").unwrap();
+        let mut writer =
+            JocWavOutput::new_with_overwrite(&output, SampleFormat::F32, true).unwrap();
+        writer
+            .write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![0.25, 0.5], vec![-0.25, -0.5]],
+            })
+            .unwrap();
+        writer.finish().unwrap();
+        let pcm = decode(&fs::read(&output).unwrap()).unwrap();
+        assert_eq!(pcm.sample_rate, 48_000);
+        assert_eq!(pcm.channels, vec![vec![0.25, 0.5], vec![-0.25, -0.5]]);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -2367,7 +2485,7 @@ mod tests {
             "openjoc-joc-render-{}-{nonce}.wav",
             std::process::id()
         ));
-        let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+        let mut output = JocWavOutput::new_with_overwrite(&path, SampleFormat::F32, false).unwrap();
         output
             .write_block(&RenderedBlock {
                 sample_rate: 48_000,
@@ -2408,7 +2526,7 @@ mod tests {
         let channels = (0..12)
             .map(|index| vec![index as f64 / 20.0, -(index as f64) / 20.0])
             .collect::<Vec<_>>();
-        let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+        let mut output = JocWavOutput::new_with_overwrite(&path, SampleFormat::F32, false).unwrap();
         output
             .write_block(&RenderedBlock {
                 sample_rate: 48_000,
@@ -2442,7 +2560,7 @@ mod tests {
         let channels = (0..24)
             .map(|index| vec![index as f64 / 32.0])
             .collect::<Vec<_>>();
-        let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+        let mut output = JocWavOutput::new_with_overwrite(&path, SampleFormat::F32, false).unwrap();
         output
             .write_block(&RenderedBlock {
                 sample_rate: 48_000,
@@ -2506,7 +2624,8 @@ mod tests {
             let mut samples = Vec::new();
             for repetition in 0..=repetitions {
                 let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
-                let mut output = JocWavOutput::new(&path, SampleFormat::F32).unwrap();
+                let mut output =
+                    JocWavOutput::new_with_overwrite(&path, SampleFormat::F32, false).unwrap();
                 let start = Instant::now();
                 for (frame, pcm) in frames.iter().zip(&bases) {
                     let block = renderer

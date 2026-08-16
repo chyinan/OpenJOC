@@ -68,7 +68,7 @@ impl TerminalCapabilities {
         self.stderr_is_tty
     }
 
-    fn from_inputs(
+    pub(crate) fn from_inputs(
         is_tty: bool,
         stderr_is_tty: bool,
         width: Option<u16>,

@@ -132,8 +132,12 @@ part of the render math and its measured write overhead is included in a
 performance report.
 
 For a successful render, `--performance-report FILE.json` writes a new JSON
-file using schema `openjoc.joc-render-performance.v1`; it refuses to overwrite
-an existing report. The report contains the OpenJOC version, selected layout
+file using schema `openjoc.joc-render-performance.v1`. If the WAV or report
+already exists, an interactive terminal prompts once with `[y/N]`; Enter, `n`,
+`no`, or EOF declines. `--overwrite` skips that prompt. Non-interactive runs
+refuse existing outputs unless `--overwrite` is present. Authorized
+replacements remain transactional, so a failed render preserves the previous
+final files. The report contains the OpenJOC version, selected layout
 and validation profile, sample rate, access-unit/sample/frame counts, audio
 duration, wall duration, realtime factor, output byte count, build mode, and
 timings for container loading, profile/index validation, E-AC-3 decode, JOC
