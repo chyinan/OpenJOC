@@ -18,37 +18,48 @@ mod generated {
     include!("generated_etsi_tables.rs");
 }
 
-fn prototype_f64() -> &'static [f64; QMF_LENGTH] {
-    static PROTOTYPE: OnceLock<[f64; QMF_LENGTH]> = OnceLock::new();
-    PROTOTYPE.get_or_init(|| std::array::from_fn(|index| f64::from(generated::PROT64[index])))
+fn prototype_f64() -> &'static [f64] {
+    static PROTOTYPE: OnceLock<Box<[f64]>> = OnceLock::new();
+    PROTOTYPE.get_or_init(|| {
+        generated::PROT64
+            .iter()
+            .copied()
+            .map(f64::from)
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    })
 }
 
-fn analysis_phases() -> &'static [Complex64; PHASE_TABLE_LENGTH] {
+fn analysis_phases() -> &'static [Complex64] {
     // These are the exact `from_polar(1.0, angle)` factors from the analysis
     // equation. Only their construction moves out of the block loop.
-    static PHASES: OnceLock<[Complex64; PHASE_TABLE_LENGTH]> = OnceLock::new();
+    static PHASES: OnceLock<Box<[Complex64]>> = OnceLock::new();
     PHASES.get_or_init(|| {
-        std::array::from_fn(|index| {
+        let mut phases = vec![Complex64::ZERO; PHASE_TABLE_LENGTH].into_boxed_slice();
+        for (index, phase) in phases.iter_mut().enumerate() {
             let subband = index / (2 * QMF_BANDS);
             let folded_index = index % (2 * QMF_BANDS);
             let angle =
                 PI * (subband as f64 + 0.5) * (folded_index as f64 - 0.5) / QMF_BANDS as f64;
-            Complex64::from_polar(1.0, angle)
-        })
+            *phase = Complex64::from_polar(1.0, angle);
+        }
+        phases
     })
 }
 
-fn synthesis_phases() -> &'static [Complex64; PHASE_TABLE_LENGTH] {
+fn synthesis_phases() -> &'static [Complex64] {
     // Store synthesis phases in the loop's [sample][subband] traversal order;
     // this preserves each equation while keeping the inner loop contiguous.
-    static PHASES: OnceLock<[Complex64; PHASE_TABLE_LENGTH]> = OnceLock::new();
+    static PHASES: OnceLock<Box<[Complex64]>> = OnceLock::new();
     PHASES.get_or_init(|| {
-        std::array::from_fn(|index| {
+        let mut phases = vec![Complex64::ZERO; PHASE_TABLE_LENGTH].into_boxed_slice();
+        for (index, phase) in phases.iter_mut().enumerate() {
             let sample_index = index / QMF_BANDS;
             let subband = index % QMF_BANDS;
             let angle = PI / 256.0 * (2 * subband + 1) as f64 * (2.0 * sample_index as f64 - 129.0);
-            Complex64::from_polar(1.0, angle)
-        })
+            *phase = Complex64::from_polar(1.0, angle);
+        }
+        phases
     })
 }
 

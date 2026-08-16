@@ -196,11 +196,17 @@ jobs:
         shell: pwsh
         run: |
           cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo check --workspace --all-targets --all-features --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --workspace --all-features --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --workspace --release --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package the canonical Windows archive
         shell: pwsh
@@ -208,6 +214,7 @@ jobs:
           python scripts/package-platform-release.py `
             --target x86_64-pc-windows-msvc `
             --output "$env:RUNNER_TEMP/openjoc-release"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload the internal Windows artifact set
         uses: actions/upload-artifact@v4
