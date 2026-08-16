@@ -359,18 +359,24 @@ timeline-ordering invariant, not an object/audio binding claim.
   ordering, pre-clamp differential extension, exact object/block dimensions,
   required preceding object state, and bounded top-level ID 5 dispatch.
 
-### 64-band complex QMF (in progress)
+### 64-band complex QMF
 
-- Normative source: TS 103 420 clauses 7.2, 7.3, and 7.4, pseudocode 8–17.
+- Normative source: TS 103 420 clauses 7.1–7.4, pseudocode 8–17, and the
+  official `prot64[640]` companion table.
 - Official reference data: `prot64[640]` from the verified companion file.
 - Design rationale: direct f64 equations first: 640-sample analysis state,
   1,280-sample synthesis state, direct complex modulation, and exact state
-  slices/window folds from the normative pseudocode. No FFT, substitute window,
-  phase adjustment, or inferred normalization is used.
-- Validation: direct roundtrip tests measure delay and gain from an impulse and
-  evaluate DC, 1 kHz, boundary-adjacent tones, and deterministic white noise.
-  The deterministic metrics are regression-checked rather than compared to an
-  invented perfect-reconstruction threshold absent from clause 7.
+  slices/window folds from the normative pseudocode. Synthesis uses the clause
+  7.3 matrix equation `N[j,k] = (1/64) exp(i*pi*(2*k+1)*(2*j-255)/256)`;
+  the conflicting printed exponent assignment is not used. No FFT, substitute
+  window, extra phase transform, or inferred normalization is used.
+- Validation: the identity analysis/synthesis path has a fixed 577-sample
+  roundtrip latency, positive near-unity gain, frequency-independent response,
+  bounded aligned error, and deterministic continuous/partitioned/reset
+  behavior under the QMF acceptance suite.
+- R1 scope: this QMF latency is measured and exposed by the filterbank tests;
+  Base and ReconstructionBasis renderer-input timeline alignment remains a
+  separate follow-up boundary.
 
 ### Renderer-independent object scene
 

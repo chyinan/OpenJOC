@@ -56,7 +56,9 @@ fn synthesis_phases() -> &'static [Complex64] {
         for (index, phase) in phases.iter_mut().enumerate() {
             let sample_index = index / QMF_BANDS;
             let subband = index % QMF_BANDS;
-            let angle = PI / 256.0 * (2 * subband + 1) as f64 * (2.0 * sample_index as f64 - 129.0);
+            // Clause 7.3 defines N[j,k] with the synthesis index centered at
+            // j - 128 + 1/2, i.e. the equivalent integer term (2*j - 255).
+            let angle = PI / 256.0 * (2 * subband + 1) as f64 * (2.0 * sample_index as f64 - 255.0);
             *phase = Complex64::from_polar(1.0, angle);
         }
         phases
