@@ -3,6 +3,7 @@
 //! Bounded Enhanced AC-3 audio-block syntax traversal.
 
 use openjoc_bitio::{BitRead, BitReader};
+use std::time::Instant;
 
 use crate::aht::decode_aht_element_mantissas_with_information;
 use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
@@ -14,8 +15,8 @@ use crate::transform::{
     inverse_transform, inverse_transform_with_trace, overlap_add, overlap_add_with_trace,
 };
 use crate::{
-    AudioFrameInformation, AuxiliaryData, Eac3Error, MantissaElement, StreamType,
-    apply_delta_bit_allocation, bit_allocation_band_for_bin, channel_end_mantissa,
+    AudioFrameInformation, AuxiliaryData, Eac3DecodeStageTiming, Eac3Error, MantissaElement,
+    StreamType, apply_delta_bit_allocation, bit_allocation_band_for_bin, channel_end_mantissa,
     channel_exponent_group_count, compute_element_bap, compute_excitation,
     compute_high_efficiency_element_bap, compute_masking_curve, decode_bit_allocation_parameters,
     decode_exponents, exponents_to_psd, integrate_psd, mantissa_quantizer, parse_audio_frame,
@@ -1212,7 +1213,7 @@ pub fn decode_first_audio_block_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<DecodedAudioBlock, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, 1, policy, None, None)?
+    decode_audio_blocks_until(bytes, dither_values, 1, policy, None, None, None)?
         .into_iter()
         .next()
         .ok_or(Eac3Error::FrameSizeOverflow)
@@ -1238,7 +1239,7 @@ pub fn decode_audio_blocks_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, None, None)
+    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, None, None, None)
 }
 
 /// Decodes every audio block and records conventional mantissa stages.
@@ -1252,7 +1253,15 @@ pub fn decode_audio_blocks_with_diagnostic_trace(
     policy: InternalBasePolicy,
     trace: &mut Vec<MantissaElementTrace>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, Some(trace), None)
+    decode_audio_blocks_until(
+        bytes,
+        dither_values,
+        usize::MAX,
+        policy,
+        Some(trace),
+        None,
+        None,
+    )
 }
 
 /// Diagnostic variant that accepts a frame already parsed by the caller.
@@ -1271,6 +1280,7 @@ pub fn decode_audio_blocks_with_parsed_frame(
         policy,
         None,
         Some(frame.clone()),
+        None,
     )
 }
 
@@ -1303,6 +1313,25 @@ pub fn decode_audio_frame_pcm_with_policy(
 ) -> Result<DecodedAudioPcm, Eac3Error> {
     let blocks = decode_audio_blocks_with_policy(bytes, dither_values, policy)?;
     synthesizer.synthesize(&blocks)
+}
+
+pub(crate) fn decode_audio_frame_pcm_with_policy_and_timing(
+    bytes: &[u8],
+    dither_values: &[f64],
+    synthesizer: &mut AudioPcmSynthesizer,
+    policy: InternalBasePolicy,
+    mut timing: Option<&mut Eac3DecodeStageTiming>,
+) -> Result<DecodedAudioPcm, Eac3Error> {
+    let blocks = decode_audio_blocks_until(
+        bytes,
+        dither_values,
+        usize::MAX,
+        policy,
+        None,
+        None,
+        timing.as_deref_mut(),
+    )?;
+    synthesizer.synthesize_internal(&blocks, None, timing)
 }
 
 /// Stateful inverse-transform and overlap/add processor for E-AC-3 blocks.
@@ -1372,7 +1401,7 @@ impl AudioPcmSynthesizer {
         &mut self,
         blocks: &[DecodedAudioBlock],
     ) -> Result<DecodedAudioPcm, Eac3Error> {
-        self.synthesize_internal(blocks, None)
+        self.synthesize_internal(blocks, None, None)
     }
 
     /// Synthesizes blocks while sending a deterministic, read-only TDAC
@@ -1386,13 +1415,14 @@ impl AudioPcmSynthesizer {
         blocks: &[DecodedAudioBlock],
         sink: &mut dyn FnMut(TdacContribution),
     ) -> Result<DecodedAudioPcm, Eac3Error> {
-        self.synthesize_internal(blocks, Some(sink))
+        self.synthesize_internal(blocks, Some(sink), None)
     }
 
     fn synthesize_internal(
         &mut self,
         blocks: &[DecodedAudioBlock],
         mut sink: Option<&mut dyn FnMut(TdacContribution)>,
+        mut timing: Option<&mut Eac3DecodeStageTiming>,
     ) -> Result<DecodedAudioPcm, Eac3Error> {
         let Some(first) = blocks.first() else {
             return Ok(DecodedAudioPcm {
@@ -1420,6 +1450,7 @@ impl AudioPcmSynthesizer {
             }
         }
 
+        let allocation_start = timing.is_some().then(Instant::now);
         let mut channel_delays = if self.channel_delays.is_empty() {
             vec![vec![0.0; 256]; channel_count]
         } else {
@@ -1442,6 +1473,9 @@ impl AudioPcmSynthesizer {
         };
         let mut channels = vec![Vec::with_capacity(blocks.len() * 256); channel_count];
         let mut lfe = lfe_present.then(|| Vec::with_capacity(blocks.len() * 256));
+        if let (Some(timing), Some(start)) = (timing.as_deref_mut(), allocation_start) {
+            timing.allocation_and_copy += start.elapsed();
+        }
 
         for block in blocks {
             if block.channel_mantissas.len() != channel_count {
@@ -1464,16 +1498,41 @@ impl AudioPcmSynthesizer {
             }
 
             for channel in 0..channel_count {
+                if let Some(timing) = timing.as_deref_mut() {
+                    if block.prefix.block_switch[channel] {
+                        timing.short_transforms += 1;
+                    } else {
+                        timing.long_transforms += 1;
+                    }
+                }
                 let coefficients =
                     padded_transform_coefficients(&block.channel_mantissas[channel])?;
                 if let Some(sink) = sink.as_deref_mut() {
-                    let transform = inverse_transform_with_trace(
-                        &coefficients,
-                        block.prefix.block_switch[channel],
+                    let transform = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.inverse_transform,
+                        || {
+                            inverse_transform_with_trace(
+                                &coefficients,
+                                block.prefix.block_switch[channel],
+                            )
+                        },
                     )?;
-                    let overlap =
-                        overlap_add_with_trace(&transform.windowed, &mut channel_delays[channel])?;
+                    let overlap = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.window_and_overlap_add,
+                        || {
+                            overlap_add_with_trace(
+                                &transform.windowed,
+                                &mut channel_delays[channel],
+                            )
+                        },
+                    )?;
+                    let assembly_start = timing.is_some().then(Instant::now);
                     channels[channel].extend_from_slice(&overlap.output);
+                    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), assembly_start) {
+                        timing.pcm_assembly += start.elapsed();
+                    }
                     sink(TdacContribution {
                         block_index: block.block_index,
                         channel_index: channel,
@@ -1493,20 +1552,46 @@ impl AudioPcmSynthesizer {
                         carry_out: overlap.carry_out,
                     });
                 } else {
-                    let windowed =
-                        inverse_transform(&coefficients, block.prefix.block_switch[channel])?;
-                    let pcm = overlap_add(&windowed, &mut channel_delays[channel])?;
+                    let windowed = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.inverse_transform,
+                        || inverse_transform(&coefficients, block.prefix.block_switch[channel]),
+                    )?;
+                    let pcm = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.window_and_overlap_add,
+                        || overlap_add(&windowed, &mut channel_delays[channel]),
+                    )?;
+                    let assembly_start = timing.is_some().then(Instant::now);
                     channels[channel].extend_from_slice(&pcm);
+                    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), assembly_start) {
+                        timing.pcm_assembly += start.elapsed();
+                    }
                 }
                 previous_block_switch[channel] = block.prefix.block_switch[channel];
             }
 
             if let (Some(lfe_output), Some(lfe_coefficients)) = (&mut lfe, &block.lfe_mantissas) {
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.long_transforms += 1;
+                }
                 let coefficients = padded_transform_coefficients(lfe_coefficients)?;
                 if let Some(sink) = sink.as_deref_mut() {
-                    let transform = inverse_transform_with_trace(&coefficients, false)?;
-                    let overlap = overlap_add_with_trace(&transform.windowed, &mut lfe_delay)?;
+                    let transform = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.inverse_transform,
+                        || inverse_transform_with_trace(&coefficients, false),
+                    )?;
+                    let overlap = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.window_and_overlap_add,
+                        || overlap_add_with_trace(&transform.windowed, &mut lfe_delay),
+                    )?;
+                    let assembly_start = timing.is_some().then(Instant::now);
                     lfe_output.extend_from_slice(&overlap.output);
+                    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), assembly_start) {
+                        timing.pcm_assembly += start.elapsed();
+                    }
                     sink(TdacContribution {
                         block_index: block.block_index,
                         channel_index: 0,
@@ -1526,19 +1611,35 @@ impl AudioPcmSynthesizer {
                         carry_out: overlap.carry_out,
                     });
                 } else {
-                    let windowed = inverse_transform(&coefficients, false)?;
-                    let pcm = overlap_add(&windowed, &mut lfe_delay)?;
+                    let windowed = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.inverse_transform,
+                        || inverse_transform(&coefficients, false),
+                    )?;
+                    let pcm = Eac3DecodeStageTiming::measure(
+                        timing.as_deref_mut(),
+                        |timing| &mut timing.window_and_overlap_add,
+                        || overlap_add(&windowed, &mut lfe_delay),
+                    )?;
+                    let assembly_start = timing.is_some().then(Instant::now);
                     lfe_output.extend_from_slice(&pcm);
+                    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), assembly_start) {
+                        timing.pcm_assembly += start.elapsed();
+                    }
                 }
                 previous_lfe_block_switch = false;
             }
         }
 
+        let commit_start = timing.is_some().then(Instant::now);
         self.channel_delays = channel_delays;
         self.lfe_delay = lfe_delay;
         self.lfe_present = Some(lfe_present);
         self.previous_block_switch = previous_block_switch;
         self.previous_lfe_block_switch = previous_lfe_block_switch;
+        if let (Some(timing), Some(start)) = (timing, commit_start) {
+            timing.decoder_state_commit += start.elapsed();
+        }
         Ok(DecodedAudioPcm { channels, lfe })
     }
 }
@@ -1580,8 +1681,16 @@ fn decode_audio_blocks_until(
     policy: InternalBasePolicy,
     mut trace_sink: Option<&mut Vec<MantissaElementTrace>>,
     preparsed_frame: Option<AudioFrameInformation>,
+    mut timing: Option<&mut Eac3DecodeStageTiming>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    let frame = preparsed_frame.unwrap_or(parse_audio_frame(bytes)?);
+    let frame = match preparsed_frame {
+        Some(frame) => frame,
+        None => Eac3DecodeStageTiming::measure(
+            timing.as_deref_mut(),
+            |timing| &mut timing.syncframe_and_header_parsing,
+            || parse_audio_frame(bytes),
+        )?,
+    };
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
     let fscod = match frame.bsi.header.sample_rate {
         48_000 => 0,
@@ -1599,14 +1708,36 @@ fn decode_audio_blocks_until(
         .frame_size
         .checked_mul(8)
         .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let allocation_start = timing.is_some().then(Instant::now);
     let mut state = AudioBlockState::new(usize::from(frame.full_bandwidth_channels));
     let block_count = usize::from(frame.bsi.header.audio_blocks).min(max_blocks);
     let mut blocks = Vec::with_capacity(block_count);
+    if let Some(timing) = timing.as_deref_mut() {
+        timing.syncframes += 1;
+        timing.audio_blocks += u64::try_from(block_count).unwrap_or(u64::MAX);
+        timing.full_bandwidth_channel_blocks += u64::from(frame.full_bandwidth_channels)
+            * u64::try_from(block_count).unwrap_or(u64::MAX);
+        if frame.bsi.lfe_on {
+            timing.lfe_blocks += u64::try_from(block_count).unwrap_or(u64::MAX);
+        }
+    }
+    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), allocation_start) {
+        timing.allocation_and_copy += start.elapsed();
+    }
     for block_index in 0..block_count {
         let block_start_offset_bits = frame_bits
             .checked_sub(bits.bits_remaining())
             .ok_or(Eac3Error::FrameSizeOverflow)?;
-        let prefix = parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state)?;
+        let prefix = Eac3DecodeStageTiming::measure(
+            timing.as_deref_mut(),
+            |timing| &mut timing.audio_block_syntax_and_exponents,
+            || parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state),
+        )?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.coupling_blocks += u64::from(prefix.coupling.is_some());
+            timing.spx_blocks += u64::from(prefix.spectral_extension.is_some());
+        }
+        let allocation_start = timing.is_some().then(Instant::now);
         let parameter_codes = state
             .bit_allocation_parameters
             .ok_or(Eac3Error::FrameSizeOverflow)?;
@@ -1626,6 +1757,9 @@ fn decode_audio_blocks_until(
         if let Some(code) = snr.lfe_fine_code {
             fine_codes.push(code);
         }
+        if let (Some(timing), Some(start)) = (timing.as_deref_mut(), allocation_start) {
+            timing.allocation_and_copy += start.elapsed();
+        }
         let zero_bap = snr_offsets_are_zero(snr.coarse_code, &fine_codes)?;
         let mut grouping = MantissaGroupingState::default();
         let channel_block = decode_channel_mantissas(
@@ -1644,7 +1778,9 @@ fn decode_audio_blocks_until(
             block_start_offset_bits,
             &mut grouping,
             trace_sink.as_deref_mut(),
+            timing.as_deref_mut(),
         )?;
+        let tools_start = timing.is_some().then(Instant::now);
         let channel_mantissas = if frame.bsi.audio_coding_mode == 2 {
             rematrix_channels(
                 &channel_block.channel_mantissas,
@@ -1695,6 +1831,9 @@ fn decode_audio_blocks_until(
             &frame.spx_attenuation_codes,
             &mut state.spx_noise_seed,
         )?;
+        if let (Some(timing), Some(start)) = (timing.as_deref_mut(), tools_start) {
+            timing.coupling_rematrix_and_spx += start.elapsed();
+        }
         let (lfe_bap, lfe_mantissas, lfe_aht) = decode_lfe_mantissas(
             &mut bits,
             &frame,
@@ -1710,16 +1849,22 @@ fn decode_audio_blocks_until(
             block_start_offset_bits,
             &mut grouping,
             trace_sink.as_deref_mut(),
+            timing.as_deref_mut(),
         )?;
+        let tools_start = timing.is_some().then(Instant::now);
         let lfe_mantissas = lfe_mantissas
             .as_deref()
             .map(|mantissas| apply_dynamic_range_gains(&[mantissas.to_vec()], &[primary_gain]))
             .transpose()?
             .map(|mut values| values.pop().ok_or(Eac3Error::FrameSizeOverflow))
             .transpose()?;
+        if let (Some(timing), Some(start)) = (timing.as_deref_mut(), tools_start) {
+            timing.coupling_rematrix_and_spx += start.elapsed();
+        }
         let mantissa_end_offset_bits = frame_bits
             .checked_sub(bits.bits_remaining())
             .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let assembly_start = timing.is_some().then(Instant::now);
         blocks.push(DecodedAudioBlock {
             block_index,
             prefix,
@@ -1735,6 +1880,9 @@ fn decode_audio_blocks_until(
             lfe_aht,
             mantissa_end_offset_bits,
         });
+        if let (Some(timing), Some(start)) = (timing.as_deref_mut(), assembly_start) {
+            timing.pcm_assembly += start.elapsed();
+        }
     }
     Ok(blocks)
 }
@@ -2263,7 +2411,9 @@ fn decode_channel_mantissas(
     block_start_offset_bits: usize,
     grouping: &mut MantissaGroupingState,
     mut trace_sink: Option<&mut Vec<MantissaElementTrace>>,
+    mut timing: Option<&mut Eac3DecodeStageTiming>,
 ) -> Result<ChannelMantissaBlock, Eac3Error> {
+    let allocation_start = timing.is_some().then(Instant::now);
     let fast_gain = state
         .fast_gain_codes
         .clone()
@@ -2275,8 +2425,12 @@ fn decode_channel_mantissas(
     let mut coupling_mantissas = None;
     let mut coupling_aht = None;
     let mut coupling_decoded = false;
+    if let (Some(timing), Some(start)) = (timing.as_deref_mut(), allocation_start) {
+        timing.allocation_and_copy += start.elapsed();
+    }
 
     for channel in 0..usize::from(frame.full_bandwidth_channels) {
+        let allocation_start = timing.is_some().then(Instant::now);
         let information = state.channel_exponents[channel]
             .clone()
             .ok_or(Eac3Error::FrameSizeOverflow)?;
@@ -2288,33 +2442,51 @@ fn decode_channel_mantissas(
             .channel_aht_in_use
             .get(channel)
             .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.aht_elements += u64::from(use_aht);
+        }
+        if let (Some(timing), Some(start)) = (timing.as_deref_mut(), allocation_start) {
+            timing.allocation_and_copy += start.elapsed();
+        }
         let (baps, mantissas, aht_information) = if use_aht {
-            let baps = high_efficiency_element_baps(
-                &information,
-                parameter_codes,
-                *fast_gain
-                    .channels
-                    .get(channel)
-                    .ok_or(Eac3Error::FrameSizeOverflow)?,
-                snr.coarse_code,
-                fine,
-                fscod,
-                state
-                    .delta_bit_allocation
-                    .as_ref()
-                    .and_then(|delta| delta.channels.get(channel)),
-                None,
-                zero_bap,
+            let baps = Eac3DecodeStageTiming::measure(
+                timing.as_deref_mut(),
+                |timing| &mut timing.bit_allocation,
+                || {
+                    high_efficiency_element_baps(
+                        &information,
+                        parameter_codes,
+                        *fast_gain
+                            .channels
+                            .get(channel)
+                            .ok_or(Eac3Error::FrameSizeOverflow)?,
+                        snr.coarse_code,
+                        fine,
+                        fscod,
+                        state
+                            .delta_bit_allocation
+                            .as_ref()
+                            .and_then(|delta| delta.channels.get(channel)),
+                        None,
+                        zero_bap,
+                    )
+                },
             )?;
-            let (mantissas, metadata) = decode_aht_values(
-                bits,
-                state
-                    .channel_aht
-                    .get_mut(channel)
-                    .ok_or(Eac3Error::FrameSizeOverflow)?,
-                &baps,
-                &information.decoded,
-                block_index,
+            let (mantissas, metadata) = Eac3DecodeStageTiming::measure(
+                timing.as_deref_mut(),
+                |timing| &mut timing.mantissa_unpack_and_dequantization,
+                || {
+                    decode_aht_values(
+                        bits,
+                        state
+                            .channel_aht
+                            .get_mut(channel)
+                            .ok_or(Eac3Error::FrameSizeOverflow)?,
+                        &baps,
+                        &information.decoded,
+                        block_index,
+                    )
+                },
             )?;
             (baps, mantissas, metadata)
         } else {
@@ -2326,16 +2498,22 @@ fn decode_channel_mantissas(
                 .channels
                 .get(channel)
                 .ok_or(Eac3Error::FrameSizeOverflow)?;
-            let baps = element_baps(
-                &information,
-                parameter_codes,
-                fast_gain_code,
-                snr.coarse_code,
-                fine,
-                fscod,
-                delta,
-                None,
-                zero_bap,
+            let baps = Eac3DecodeStageTiming::measure(
+                timing.as_deref_mut(),
+                |timing| &mut timing.bit_allocation,
+                || {
+                    element_baps(
+                        &information,
+                        parameter_codes,
+                        fast_gain_code,
+                        snr.coarse_code,
+                        fine,
+                        fscod,
+                        delta,
+                        None,
+                        zero_bap,
+                    )
+                },
             )?;
             let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
             let dither = *prefix
@@ -2368,37 +2546,43 @@ fn decode_channel_mantissas(
                 grouping_state: *grouping,
             };
             let mut element_trace = trace_sink.as_ref().map(|_| MantissaDecodeTrace::default());
-            let mantissas = decode_element_mantissas(
-                bits,
-                &baps,
-                &exponents,
-                dither,
-                dither_values,
-                dither_index,
-                grouping,
-                element_trace.as_mut(),
-            )
-            .map_err(|error| {
-                mantissa_error_context(
-                    error,
-                    bits,
-                    frame_bits,
-                    block_index,
-                    MantissaElement::Channel,
-                    u8::try_from(channel).ok(),
-                    MantissaFeatureState {
-                        spx_active: prefix.spectral_extension.is_some(),
-                        coupling_active: prefix.coupling.is_some(),
-                        enhanced_coupling_active: matches!(
-                            prefix.coupling.as_ref(),
-                            Some(CouplingInformation::Enhanced(_))
-                        ),
-                        rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
-                        aht_active: use_aht,
-                    },
-                    diagnostic_input,
-                )
-            })?;
+            let mantissas = Eac3DecodeStageTiming::measure(
+                timing.as_deref_mut(),
+                |timing| &mut timing.mantissa_unpack_and_dequantization,
+                || {
+                    decode_element_mantissas(
+                        bits,
+                        &baps,
+                        &exponents,
+                        dither,
+                        dither_values,
+                        dither_index,
+                        grouping,
+                        element_trace.as_mut(),
+                    )
+                    .map_err(|error| {
+                        mantissa_error_context(
+                            error,
+                            bits,
+                            frame_bits,
+                            block_index,
+                            MantissaElement::Channel,
+                            u8::try_from(channel).ok(),
+                            MantissaFeatureState {
+                                spx_active: prefix.spectral_extension.is_some(),
+                                coupling_active: prefix.coupling.is_some(),
+                                enhanced_coupling_active: matches!(
+                                    prefix.coupling.as_ref(),
+                                    Some(CouplingInformation::Enhanced(_))
+                                ),
+                                rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
+                                aht_active: use_aht,
+                            },
+                            diagnostic_input,
+                        )
+                    })
+                },
+            )?;
             if let (Some(sink), Some(decode)) = (trace_sink.as_deref_mut(), element_trace) {
                 sink.push(MantissaElementTrace {
                     element: MantissaElement::Channel,
@@ -2425,27 +2609,42 @@ fn decode_channel_mantissas(
                 .coupling_leak
                 .map(|leak| (leak.fast_code, leak.slow_code));
             let use_aht = frame.coupling_aht_in_use;
+            if let Some(timing) = timing.as_deref_mut() {
+                timing.aht_elements += u64::from(use_aht);
+            }
             let (baps, mantissas, metadata) = if use_aht {
-                let baps = high_efficiency_element_baps(
-                    &information,
-                    parameter_codes,
-                    fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
-                    snr.coarse_code,
-                    snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
-                    fscod,
-                    state
-                        .delta_bit_allocation
-                        .as_ref()
-                        .and_then(|delta| delta.coupling.as_ref()),
-                    leaks,
-                    zero_bap,
+                let baps = Eac3DecodeStageTiming::measure(
+                    timing.as_deref_mut(),
+                    |timing| &mut timing.bit_allocation,
+                    || {
+                        high_efficiency_element_baps(
+                            &information,
+                            parameter_codes,
+                            fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?,
+                            snr.coarse_code,
+                            snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                            fscod,
+                            state
+                                .delta_bit_allocation
+                                .as_ref()
+                                .and_then(|delta| delta.coupling.as_ref()),
+                            leaks,
+                            zero_bap,
+                        )
+                    },
                 )?;
-                let (mantissas, metadata) = decode_aht_values(
-                    bits,
-                    &mut state.coupling_aht,
-                    &baps,
-                    &information.decoded,
-                    block_index,
+                let (mantissas, metadata) = Eac3DecodeStageTiming::measure(
+                    timing.as_deref_mut(),
+                    |timing| &mut timing.mantissa_unpack_and_dequantization,
+                    || {
+                        decode_aht_values(
+                            bits,
+                            &mut state.coupling_aht,
+                            &baps,
+                            &information.decoded,
+                            block_index,
+                        )
+                    },
                 )?;
                 (baps, mantissas, metadata)
             } else {
@@ -2454,16 +2653,22 @@ fn decode_channel_mantissas(
                     .as_ref()
                     .and_then(|value| value.coupling.as_ref());
                 let fast_gain_code = fast_gain.coupling.ok_or(Eac3Error::FrameSizeOverflow)?;
-                let baps = element_baps(
-                    &information,
-                    parameter_codes,
-                    fast_gain_code,
-                    snr.coarse_code,
-                    snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
-                    fscod,
-                    delta,
-                    leaks,
-                    zero_bap,
+                let baps = Eac3DecodeStageTiming::measure(
+                    timing.as_deref_mut(),
+                    |timing| &mut timing.bit_allocation,
+                    || {
+                        element_baps(
+                            &information,
+                            parameter_codes,
+                            fast_gain_code,
+                            snr.coarse_code,
+                            snr.coupling_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                            fscod,
+                            delta,
+                            leaks,
+                            zero_bap,
+                        )
+                    },
                 )?;
                 let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
                 let dither_flags = vec![false; baps.len()];
@@ -2489,36 +2694,42 @@ fn decode_channel_mantissas(
                     grouping_state: *grouping,
                 };
                 let mut element_trace = trace_sink.as_ref().map(|_| MantissaDecodeTrace::default());
-                let mantissas = decode_mantissas_with_state_and_trace(
-                    bits,
-                    &baps,
-                    &exponents,
-                    &dither_flags,
-                    &[],
-                    grouping,
-                    element_trace.as_mut(),
-                )
-                .map_err(|error| {
-                    mantissa_error_context(
-                        error,
-                        bits,
-                        frame_bits,
-                        block_index,
-                        MantissaElement::Coupling,
-                        u8::try_from(channel).ok(),
-                        MantissaFeatureState {
-                            spx_active: prefix.spectral_extension.is_some(),
-                            coupling_active: true,
-                            enhanced_coupling_active: matches!(
-                                prefix.coupling.as_ref(),
-                                Some(CouplingInformation::Enhanced(_))
-                            ),
-                            rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
-                            aht_active: use_aht,
-                        },
-                        diagnostic_input,
-                    )
-                })?;
+                let mantissas = Eac3DecodeStageTiming::measure(
+                    timing.as_deref_mut(),
+                    |timing| &mut timing.mantissa_unpack_and_dequantization,
+                    || {
+                        decode_mantissas_with_state_and_trace(
+                            bits,
+                            &baps,
+                            &exponents,
+                            &dither_flags,
+                            &[],
+                            grouping,
+                            element_trace.as_mut(),
+                        )
+                        .map_err(|error| {
+                            mantissa_error_context(
+                                error,
+                                bits,
+                                frame_bits,
+                                block_index,
+                                MantissaElement::Coupling,
+                                u8::try_from(channel).ok(),
+                                MantissaFeatureState {
+                                    spx_active: prefix.spectral_extension.is_some(),
+                                    coupling_active: true,
+                                    enhanced_coupling_active: matches!(
+                                        prefix.coupling.as_ref(),
+                                        Some(CouplingInformation::Enhanced(_))
+                                    ),
+                                    rematrix_active: prefix.rematrix_flags.iter().any(|flag| *flag),
+                                    aht_active: use_aht,
+                                },
+                                diagnostic_input,
+                            )
+                        })
+                    },
+                )?;
                 if let (Some(sink), Some(decode)) = (trace_sink.as_deref_mut(), element_trace) {
                     sink.push(MantissaElementTrace {
                         element: MantissaElement::Coupling,
@@ -2563,6 +2774,7 @@ fn decode_lfe_mantissas(
     block_start_offset_bits: usize,
     grouping: &mut MantissaGroupingState,
     trace_sink: Option<&mut Vec<MantissaElementTrace>>,
+    mut timing: Option<&mut Eac3DecodeStageTiming>,
 ) -> Result<
     (
         Option<Vec<u8>>,
@@ -2575,38 +2787,59 @@ fn decode_lfe_mantissas(
         return Ok((None, None, None));
     };
     let (baps, mantissas, metadata) = if frame.lfe_aht_in_use {
-        let baps = high_efficiency_element_baps(
-            &information,
-            parameter_codes,
-            fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
-            snr.coarse_code,
-            snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
-            fscod,
-            None,
-            None,
-            zero_bap,
+        if let Some(timing) = timing.as_deref_mut() {
+            timing.aht_elements += 1;
+        }
+        let baps = Eac3DecodeStageTiming::measure(
+            timing.as_deref_mut(),
+            |timing| &mut timing.bit_allocation,
+            || {
+                high_efficiency_element_baps(
+                    &information,
+                    parameter_codes,
+                    fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    snr.coarse_code,
+                    snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?,
+                    fscod,
+                    None,
+                    None,
+                    zero_bap,
+                )
+            },
         )?;
-        let (mantissas, metadata) = decode_aht_values(
-            bits,
-            &mut state.lfe_aht,
-            &baps,
-            &information.decoded,
-            block_index,
+        let (mantissas, metadata) = Eac3DecodeStageTiming::measure(
+            timing.as_deref_mut(),
+            |timing| &mut timing.mantissa_unpack_and_dequantization,
+            || {
+                decode_aht_values(
+                    bits,
+                    &mut state.lfe_aht,
+                    &baps,
+                    &information.decoded,
+                    block_index,
+                )
+            },
         )?;
         (baps, mantissas, metadata)
     } else {
         let fine = snr.lfe_fine_code.ok_or(Eac3Error::FrameSizeOverflow)?;
         let fast_gain_code = fast_gain.lfe.ok_or(Eac3Error::FrameSizeOverflow)?;
-        let baps = element_baps(
-            &information,
-            parameter_codes,
-            fast_gain_code,
-            snr.coarse_code,
-            fine,
-            fscod,
-            None,
-            None,
-            zero_bap,
+        let baps = Eac3DecodeStageTiming::measure(
+            timing.as_deref_mut(),
+            |timing| &mut timing.bit_allocation,
+            || {
+                element_baps(
+                    &information,
+                    parameter_codes,
+                    fast_gain_code,
+                    snr.coarse_code,
+                    fine,
+                    fscod,
+                    None,
+                    None,
+                    zero_bap,
+                )
+            },
         )?;
         let (baps, exponents) = active_baps_and_exponents(&information, baps)?;
         let dither_flags = vec![false; baps.len()];
@@ -2631,30 +2864,36 @@ fn decode_lfe_mantissas(
             grouping_state: *grouping,
         };
         let mut element_trace = trace_sink.as_ref().map(|_| MantissaDecodeTrace::default());
-        let mantissas = decode_mantissas_with_state_and_trace(
-            bits,
-            &baps,
-            &exponents,
-            &dither_flags,
-            &[],
-            grouping,
-            element_trace.as_mut(),
-        )
-        .map_err(|error| {
-            mantissa_error_context(
-                error,
-                bits,
-                frame_bits,
-                block_index,
-                MantissaElement::Lfe,
-                None,
-                MantissaFeatureState {
-                    aht_active,
-                    ..MantissaFeatureState::default()
-                },
-                diagnostic_input,
-            )
-        })?;
+        let mantissas = Eac3DecodeStageTiming::measure(
+            timing,
+            |timing| &mut timing.mantissa_unpack_and_dequantization,
+            || {
+                decode_mantissas_with_state_and_trace(
+                    bits,
+                    &baps,
+                    &exponents,
+                    &dither_flags,
+                    &[],
+                    grouping,
+                    element_trace.as_mut(),
+                )
+                .map_err(|error| {
+                    mantissa_error_context(
+                        error,
+                        bits,
+                        frame_bits,
+                        block_index,
+                        MantissaElement::Lfe,
+                        None,
+                        MantissaFeatureState {
+                            aht_active,
+                            ..MantissaFeatureState::default()
+                        },
+                        diagnostic_input,
+                    )
+                })
+            },
+        )?;
         if let (Some(sink), Some(decode)) = (trace_sink, element_trace) {
             sink.push(MantissaElementTrace {
                 element: MantissaElement::Lfe,

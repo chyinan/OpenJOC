@@ -38,6 +38,7 @@ mod dynamic_range;
 mod mantissa;
 mod rematrix;
 mod spx;
+mod timing;
 mod transform;
 
 pub use access_unit::{ChannelLocation, DecodedAccessUnitPcm, JocAccessUnitPcmDecoder};
@@ -78,6 +79,7 @@ pub use mantissa::{
 };
 pub use rematrix::rematrix_channels;
 pub use spx::synthesize_spectral_extension;
+pub use timing::Eac3DecodeStageTiming;
 pub use transform::{
     InverseTransformTrace, OverlapAddTrace, inverse_transform, inverse_transform_with_trace,
     overlap_add, overlap_add_with_trace,

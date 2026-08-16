@@ -1,18 +1,20 @@
 use openjoc_bitio::BitError;
 use openjoc_eac3::{
-    AudioPcmSynthesizer, ChannelLocation, CouplingInformation, Eac3Error, InternalBasePolicy,
-    JocAccessUnitPcmDecoder, JocAddbsi, StreamType, block_start_information_length,
-    channel_end_mantissa, channel_exponent_group_count, classify_aux_emdf,
-    classify_skip_field_emdf, decode_audio_blocks, decode_audio_blocks_with_parsed_frame,
-    decode_audio_blocks_with_policy, decode_audio_frame_pcm, decode_exponents,
-    decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain, extract_aux_emdf,
-    extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
+    AudioPcmSynthesizer, ChannelLocation, CouplingInformation, Eac3DecodeStageTiming, Eac3Error,
+    InternalBasePolicy, JocAccessUnitPcmDecoder, JocAddbsi, StreamType,
+    block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
+    classify_aux_emdf, classify_skip_field_emdf, decode_audio_blocks,
+    decode_audio_blocks_with_parsed_frame, decode_audio_blocks_with_policy, decode_audio_frame_pcm,
+    decode_exponents, decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain,
+    extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
     group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
     parse_bsi, parse_first_audio_block_prefix, parse_joc_access_unit, parse_joc_addbsi,
     parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
     synthesize_audio_blocks, validate_complexity_index, validate_joc_access_unit,
 };
 use openjoc_emdf::{JocProfileField, JocValidationProfile, JocValidationStatus};
+use sha2::{Digest, Sha256};
+use std::{hint::black_box, time::Instant};
 
 #[derive(Clone, Default)]
 struct Bits(Vec<bool>);
@@ -183,6 +185,136 @@ fn six_block_mono_frame_with_aht(
         }
     }
     bits.bytes(4096)
+}
+
+fn benchmark_percentile(sorted: &[f64], percentile: usize) -> f64 {
+    let maximum = sorted.len() - 1;
+    let index = (maximum * percentile + 50) / 100;
+    sorted[index.min(maximum)]
+}
+
+#[cfg(debug_assertions)]
+fn require_release_benchmark() {
+    panic!("run this performance harness with --release");
+}
+
+#[cfg(not(debug_assertions))]
+fn require_release_benchmark() {}
+
+/// Focused release-mode E-AC-3 core harness. This deliberately excludes JOC
+/// reconstruction, spatial rendering, progress reporting, and file output.
+/// The bounded public-syntax I0/D0 pair exercises two stateful six-block
+/// decode and TDAC paths; it is not a substitute for a real-media retest.
+#[test]
+#[ignore = "manual release E-AC-3 core performance harness"]
+fn eac3_core_release_benchmark() {
+    require_release_benchmark();
+    let access_units = std::env::var("OPENJOC_EAC3_BENCH_AUS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(200);
+    let runs = std::env::var("OPENJOC_EAC3_BENCH_RUNS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(7);
+    let collect_stages = std::env::var_os("OPENJOC_EAC3_BENCH_STAGE_TIMING").is_some();
+    assert!(access_units > 0 && runs > 0);
+
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent = six_block_mono_frame(1, Some(0x8000), Some(0xa5));
+    let bytes = [independent, dependent].concat();
+    let frames = index_syncframes(&bytes).expect("benchmark frame index");
+    let unit = group_access_units(&frames).expect("benchmark access unit")[0];
+    let dither = [0.5; 512];
+    let mut measurements = Vec::with_capacity(runs);
+
+    for run in 0..runs {
+        let mut decoder = JocAccessUnitPcmDecoder::new();
+        for _ in 0..8 {
+            black_box(
+                decoder
+                    .decode(&bytes, &frames, unit, &dither)
+                    .expect("benchmark warmup decode"),
+            );
+        }
+        if collect_stages {
+            decoder.enable_stage_timing();
+        }
+        let mut frame_ms = Vec::with_capacity(access_units);
+        let mut checksum = Sha256::new();
+        let mut stages = Eac3DecodeStageTiming::default();
+        let started = Instant::now();
+        for _ in 0..access_units {
+            let frame_started = Instant::now();
+            let pcm = decoder
+                .decode(&bytes, &frames, unit, &dither)
+                .expect("benchmark decode");
+            if collect_stages {
+                stages.add_assign(&decoder.take_stage_timing());
+            }
+            frame_ms.push(frame_started.elapsed().as_secs_f64() * 1_000.0);
+            for channel in &pcm.channels {
+                for sample in channel {
+                    checksum.update(sample.to_bits().to_le_bytes());
+                }
+            }
+            if let Some(lfe) = &pcm.lfe {
+                for sample in lfe {
+                    checksum.update(sample.to_bits().to_le_bytes());
+                }
+            }
+            black_box(pcm);
+        }
+        let elapsed = started.elapsed();
+        frame_ms.sort_by(f64::total_cmp);
+        measurements.push((
+            elapsed.as_secs_f64() * 1_000.0 / access_units as f64,
+            benchmark_percentile(&frame_ms, 50),
+            benchmark_percentile(&frame_ms, 95),
+            benchmark_percentile(&frame_ms, 99),
+            *frame_ms.last().expect("frame timing"),
+            format!("{:x}", checksum.finalize()),
+            stages,
+        ));
+        eprintln!(
+            "eac3-core run={} access_units={} elapsed_ms={:.3} ms_per_au={:.6} realtime_factor={:.3}",
+            run + 1,
+            access_units,
+            elapsed.as_secs_f64() * 1_000.0,
+            measurements[run].0,
+            (access_units as f64 * f64::from(unit.samples) / 48_000.0) / elapsed.as_secs_f64()
+        );
+    }
+    measurements.sort_by(|left, right| left.0.total_cmp(&right.0));
+    let median = &measurements[measurements.len() / 2];
+    assert!(
+        measurements
+            .iter()
+            .all(|measurement| measurement.5 == median.5),
+        "benchmark output changed across identical runs"
+    );
+    eprintln!(
+        "eac3-core median runs={} access_units={} ms_per_au={:.6} p50_ms={:.6} p95_ms={:.6} p99_ms={:.6} max_ms={:.6} checksum={}",
+        runs, access_units, median.0, median.1, median.2, median.3, median.4, median.5
+    );
+    if collect_stages {
+        let milliseconds = |duration: std::time::Duration| duration.as_secs_f64() * 1_000.0;
+        let stages = &median.6;
+        eprintln!(
+            "eac3-core stages_ms total={:.3} syncframe_header={:.3} block_syntax_exponents={:.3} bit_allocation={:.3} mantissa_dequantization={:.3} coupling_rematrix_spx={:.3} inverse_transform={:.3} window_overlap={:.3} pcm_assembly={:.3} allocation_copy={:.3} state_commit={:.3}",
+            milliseconds(stages.total),
+            milliseconds(stages.syncframe_and_header_parsing),
+            milliseconds(stages.audio_block_syntax_and_exponents),
+            milliseconds(stages.bit_allocation),
+            milliseconds(stages.mantissa_unpack_and_dequantization),
+            milliseconds(stages.coupling_rematrix_and_spx),
+            milliseconds(stages.inverse_transform),
+            milliseconds(stages.window_and_overlap_add),
+            milliseconds(stages.pcm_assembly),
+            milliseconds(stages.allocation_and_copy),
+            milliseconds(stages.decoder_state_commit),
+        );
+    }
 }
 
 fn skip_field_joc_frame(emdf: &[u8]) -> Vec<u8> {

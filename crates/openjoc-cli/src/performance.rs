@@ -1,3 +1,4 @@
+use openjoc_eac3::Eac3DecodeStageTiming;
 use openjoc_joc::ReconstructionStageTiming;
 use serde::Serialize;
 use std::{
@@ -16,6 +17,16 @@ pub(crate) struct DecodeStageTiming {
     pub(crate) frame_times: Vec<Duration>,
     pub(crate) collect_frame_times: bool,
     pub(crate) reconstruction_stages: ReconstructionStageTiming,
+    pub(crate) eac3_stages: Eac3DecodeStageTiming,
+    pub(crate) eac3_frame_times: Vec<Duration>,
+    pub(crate) slowest_eac3_frames: Vec<Eac3SlowFrameTiming>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Eac3SlowFrameTiming {
+    frame_index: usize,
+    duration: Duration,
+    stages: Eac3DecodeStageTiming,
 }
 
 impl DecodeStageTiming {
@@ -26,7 +37,31 @@ impl DecodeStageTiming {
             frame_times: Vec::new(),
             collect_frame_times,
             reconstruction_stages: ReconstructionStageTiming::default(),
+            eac3_stages: Eac3DecodeStageTiming::default(),
+            eac3_frame_times: Vec::new(),
+            slowest_eac3_frames: Vec::new(),
         }
+    }
+
+    pub(crate) fn record_eac3_frame(
+        &mut self,
+        frame_index: usize,
+        duration: Duration,
+        stages: Eac3DecodeStageTiming,
+    ) {
+        self.eac3_stages.add_assign(&stages);
+        if !self.collect_frame_times {
+            return;
+        }
+        self.eac3_frame_times.push(duration);
+        self.slowest_eac3_frames.push(Eac3SlowFrameTiming {
+            frame_index,
+            duration,
+            stages,
+        });
+        self.slowest_eac3_frames
+            .sort_by(|left, right| right.duration.cmp(&left.duration));
+        self.slowest_eac3_frames.truncate(16);
     }
 }
 
@@ -68,6 +103,9 @@ pub(crate) struct RenderPerformance {
     pub(crate) progress_updates: u64,
     pub(crate) progress_overhead: Duration,
     pub(crate) reconstruction_stages: ReconstructionStageTiming,
+    pub(crate) eac3_stages: Eac3DecodeStageTiming,
+    pub(crate) eac3_frame_times: Vec<Duration>,
+    pub(crate) slowest_eac3_frames: Vec<Eac3SlowFrameTiming>,
 }
 
 impl RenderPerformance {
@@ -93,6 +131,9 @@ impl RenderPerformance {
             progress_updates: 0,
             progress_overhead: Duration::ZERO,
             reconstruction_stages: ReconstructionStageTiming::default(),
+            eac3_stages: Eac3DecodeStageTiming::default(),
+            eac3_frame_times: Vec::new(),
+            slowest_eac3_frames: Vec::new(),
         }
     }
 
@@ -102,6 +143,9 @@ impl RenderPerformance {
         self.frame_times = timing.frame_times;
         self.reconstruction_stages
             .add_assign(&timing.reconstruction_stages);
+        self.eac3_stages.add_assign(&timing.eac3_stages);
+        self.eac3_frame_times = timing.eac3_frame_times;
+        self.slowest_eac3_frames = timing.slowest_eac3_frames;
     }
 
     pub(crate) fn merge_render(&mut self, timing: &RenderStageTiming) {
@@ -130,6 +174,10 @@ struct PerformanceReport<'a> {
     output_bytes: u64,
     build_mode: &'static str,
     stage_timings_ms: StageTimings,
+    eac3_decode_stages_ms: Eac3DecodeStages,
+    eac3_decode_workload: Eac3DecodeWorkload,
+    eac3_decode_frame_ms: FrameTimingDistribution,
+    eac3_slowest_frames: Vec<Eac3SlowFrameReport>,
     joc_reconstruction_stages_ms: JocReconstructionStages,
     core_frame_processing_ms: FrameTimingDistribution,
     progress: ProgressReport,
@@ -145,6 +193,43 @@ struct StageTimings {
     spatial_bridge_render: f64,
     binaural_render: f64,
     output_conversion_wav_write: f64,
+}
+
+#[derive(Serialize)]
+struct Eac3DecodeStages {
+    total: f64,
+    syncframe_and_header_parsing: f64,
+    audio_block_syntax_and_exponents: f64,
+    bit_allocation: f64,
+    mantissa_unpack_and_dequantization: f64,
+    coupling_rematrix_and_spx: f64,
+    inverse_transform: f64,
+    window_and_overlap_add: f64,
+    pcm_assembly: f64,
+    allocation_and_copy: f64,
+    decoder_state_commit: f64,
+    other: f64,
+}
+
+#[derive(Serialize)]
+struct Eac3DecodeWorkload {
+    syncframes: u64,
+    audio_blocks: u64,
+    full_bandwidth_channel_blocks: u64,
+    lfe_blocks: u64,
+    long_transforms: u64,
+    short_transforms: u64,
+    aht_elements: u64,
+    coupling_blocks: u64,
+    spx_blocks: u64,
+}
+
+#[derive(Serialize)]
+struct Eac3SlowFrameReport {
+    frame_index: usize,
+    duration_ms: f64,
+    stages_ms: Eac3DecodeStages,
+    workload: Eac3DecodeWorkload,
 }
 
 #[derive(Serialize)]
@@ -239,6 +324,19 @@ pub(crate) fn write_report(
             binaural_render: milliseconds(performance.binaural_render),
             output_conversion_wav_write: milliseconds(performance.output_conversion_wav_write),
         },
+        eac3_decode_stages_ms: eac3_decode_stages(&performance.eac3_stages),
+        eac3_decode_workload: eac3_decode_workload(&performance.eac3_stages),
+        eac3_decode_frame_ms: timing_distribution(&performance.eac3_frame_times),
+        eac3_slowest_frames: performance
+            .slowest_eac3_frames
+            .iter()
+            .map(|frame| Eac3SlowFrameReport {
+                frame_index: frame.frame_index,
+                duration_ms: milliseconds(frame.duration),
+                stages_ms: eac3_decode_stages(&frame.stages),
+                workload: eac3_decode_workload(&frame.stages),
+            })
+            .collect(),
         joc_reconstruction_stages_ms: JocReconstructionStages {
             payload_parsing: milliseconds(performance.reconstruction_stages.payload_parsing),
             coefficient_decode: milliseconds(performance.reconstruction_stages.coefficient_decode),
@@ -305,6 +403,47 @@ fn milliseconds(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000.0
 }
 
+fn eac3_decode_stages(timing: &Eac3DecodeStageTiming) -> Eac3DecodeStages {
+    let attributed = timing.syncframe_and_header_parsing
+        + timing.audio_block_syntax_and_exponents
+        + timing.bit_allocation
+        + timing.mantissa_unpack_and_dequantization
+        + timing.coupling_rematrix_and_spx
+        + timing.inverse_transform
+        + timing.window_and_overlap_add
+        + timing.pcm_assembly
+        + timing.allocation_and_copy
+        + timing.decoder_state_commit;
+    Eac3DecodeStages {
+        total: milliseconds(timing.total),
+        syncframe_and_header_parsing: milliseconds(timing.syncframe_and_header_parsing),
+        audio_block_syntax_and_exponents: milliseconds(timing.audio_block_syntax_and_exponents),
+        bit_allocation: milliseconds(timing.bit_allocation),
+        mantissa_unpack_and_dequantization: milliseconds(timing.mantissa_unpack_and_dequantization),
+        coupling_rematrix_and_spx: milliseconds(timing.coupling_rematrix_and_spx),
+        inverse_transform: milliseconds(timing.inverse_transform),
+        window_and_overlap_add: milliseconds(timing.window_and_overlap_add),
+        pcm_assembly: milliseconds(timing.pcm_assembly),
+        allocation_and_copy: milliseconds(timing.allocation_and_copy),
+        decoder_state_commit: milliseconds(timing.decoder_state_commit),
+        other: milliseconds(timing.total.saturating_sub(attributed)),
+    }
+}
+
+fn eac3_decode_workload(timing: &Eac3DecodeStageTiming) -> Eac3DecodeWorkload {
+    Eac3DecodeWorkload {
+        syncframes: timing.syncframes,
+        audio_blocks: timing.audio_blocks,
+        full_bandwidth_channel_blocks: timing.full_bandwidth_channel_blocks,
+        lfe_blocks: timing.lfe_blocks,
+        long_transforms: timing.long_transforms,
+        short_transforms: timing.short_transforms,
+        aht_elements: timing.aht_elements,
+        coupling_blocks: timing.coupling_blocks,
+        spx_blocks: timing.spx_blocks,
+    }
+}
+
 fn timing_distribution(timings: &[Duration]) -> FrameTimingDistribution {
     if timings.is_empty() {
         return FrameTimingDistribution {
@@ -338,12 +477,13 @@ fn percentile(values: &[f64], percentile: u32) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{RenderPerformance, write_report};
+    use super::{DecodeStageTiming, RenderPerformance, write_report};
+    use openjoc_eac3::Eac3DecodeStageTiming;
     use openjoc_emdf::JocValidationProfile;
     use openjoc_wave::SampleFormat;
     use std::{
         fs,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     fn report_path(label: &str) -> std::path::PathBuf {
@@ -364,6 +504,23 @@ mod tests {
         let mut performance = RenderPerformance::new();
         performance.sample_rate_hz = Some(48_000);
         performance.total_audio_samples = 48_000;
+        let mut decode = DecodeStageTiming::new(true);
+        for frame_index in 0..20 {
+            let duration = Duration::from_millis(frame_index as u64 + 1);
+            decode.eac3_decode += duration;
+            decode.record_eac3_frame(
+                frame_index,
+                duration,
+                Eac3DecodeStageTiming {
+                    total: duration,
+                    syncframes: 1,
+                    audio_blocks: 6,
+                    long_transforms: 6,
+                    ..Eac3DecodeStageTiming::default()
+                },
+            );
+        }
+        performance.merge_decode(decode);
         write_report(
             &path,
             &performance,
@@ -377,6 +534,16 @@ mod tests {
             serde_json::from_slice(&fs::read(&path).expect("new report")).expect("JSON report");
         assert_eq!(report["schema"], "openjoc.joc-render-performance.v1");
         assert_eq!(report["selected_layout"], "7.1.4");
+        assert_eq!(report["eac3_decode_workload"]["syncframes"], 20);
+        assert_eq!(report["eac3_decode_workload"]["audio_blocks"], 120);
+        assert_eq!(report["eac3_decode_frame_ms"]["count"], 20);
+        assert_eq!(report["eac3_slowest_frames"].as_array().unwrap().len(), 16);
+        assert_eq!(report["eac3_slowest_frames"][0]["frame_index"], 19);
+        assert_eq!(
+            report["eac3_slowest_frames"][0]["workload"]["syncframes"],
+            1
+        );
+        assert_eq!(report["eac3_slowest_frames"][15]["frame_index"], 4);
         assert!(
             !path
                 .with_file_name(format!(

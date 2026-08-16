@@ -156,10 +156,66 @@ report is requested and are diagnostic measurements; they are not a new codec
 or rendering mode. Existing readers that ignore unknown JSON members remain
 compatible.
 
-The reconstruction timer covers payload-decoder frame reconstruction and its
-render-sink dispatch. Bridge and output timers are reported separately and can
-overlap that interval; they are diagnostic stage measurements, not additive
-wall-time partitions.
+The same schema now includes `eac3_decode_stages_ms`,
+`eac3_decode_workload`, `eac3_decode_frame_ms`, and the bounded 16-entry
+`eac3_slowest_frames` list. The measured core boundaries cover syncframe/header
+parsing, block syntax and exponents, bit allocation, mantissa unpacking and
+dequantization, coupling/rematrix/SPX, inverse transform, window/overlap-add,
+PCM assembly, allocation/copy work, decoder-state commit, and residual
+`other`. Workload counters identify syncframes, blocks, channel/LFE blocks,
+long/short transforms, AHT elements, and coupling/SPX blocks without retaining
+payload bytes, filenames, or paths. Slow-frame records contain only the AU
+index, duration, and those aggregate stage counters/timings.
+
+The top-level `eac3_decode` timer covers only stateful base-audio decode. The
+`joc_reconstruction` timer now stops when `PayloadDecoder::decode_frame`
+returns, before render-sink dispatch. Bridge, renderer, WAV, and progress work
+therefore remain outside both codec timers; `core_frame_processing_ms` remains
+the intentional end-to-end per-AU latency distribution. A deterministic unit
+test locks this timing-scope boundary.
+
+The focused E-AC-3 release harness excludes JOC reconstruction, spatial
+rendering, progress, and file output:
+
+```sh
+OPENJOC_EAC3_BENCH_AUS=200 OPENJOC_EAC3_BENCH_RUNS=7 \
+  cargo test -p openjoc-eac3 --release --test syncframe \
+  eac3_core_release_benchmark -- --ignored --nocapture --test-threads=1
+```
+
+Add `OPENJOC_EAC3_BENCH_STAGE_TIMING=1` to emit the core sub-stage totals. The
+bounded public-syntax I0/D0 input exercises two stateful six-block decode and
+TDAC paths, but it is synthetic and is not real-media qualification. On an
+Apple M2 Mac mini (8 cores, 8 GB), macOS 26.6, Rust/Cargo 1.94.0 release mode,
+the seven-run 200-AU median changed as follows:
+
+| Metric | Before | After |
+|---|---:|---:|
+| ms/AU | 1.547745 | 0.303612 |
+| p50 | 1.376500 ms | 0.219292 ms |
+| p95 | 1.956375 ms | 0.298417 ms |
+| p99 | 2.128291 ms | 0.398208 ms |
+| maximum | 2.285750 ms | 0.484750 ms |
+| PCM checksum | `a0b0a5a0…64d6df29` | `a0b0a5a0…64d6df29` |
+
+This is a 5.10x harness wall-time improvement. Timed core stage total fell
+from 292.348 ms to 47.805 ms per 200 AUs, and inverse-transform time fell from
+279.806 ms to 36.897 ms. The retained scalar implementation initializes the
+finite long/short transform rotations once, reuses them in the unchanged f64
+equations and accumulation order, and uses fixed arrays for transform-local
+intermediates. No SIMD, multithreading, unsafe code, reduced precision, or
+transform approximation is used. Native sampling before the change was
+dominated by `inverse_long` and `__sincos_stret`; afterward no trigonometric
+function remained in the steady-state profile and the scalar inverse transform
+remained the largest residual function. Xcode Instruments allocation tracing
+was unavailable on the Command-Line-Tools-only host; source/call-stack
+inspection found residual short-lived vectors primarily in audio-block
+syntax/exponent/AHT construction, while measured allocation/copy time was
+1.5% of the optimized timed core total.
+
+No real E-AC-3/JOC media is present on this development host, so the E-AC-3
+performance classification is
+`OPENJOC_EAC3_CORE_SUBSTANTIALLY_IMPROVED_REAL_MEDIA_RETEST_REQUIRED`.
 
 The reconstruction-only release harness is separate from the speaker/WAV
 harness and does not need a real media file:
@@ -231,7 +287,11 @@ run the following exact placeholder command against the private file and
 retain its JSON report for qualification:
 
 ```powershell
-openjoc.exe render-joc "D:\path\to\DEE-file.mp4" --layout 7.1.4 --output "D:\path\to\DEE-render.wav" --performance-report "D:\path\to\DEE-performance.json"
+openjoc.exe render-joc "D:\path\to\DEE-file.mp4" `
+  --layout 7.1.4 `
+  --output "D:\path\to\DEE-render.wav" `
+  --performance-report "D:\path\to\DEE-performance.json" `
+  --overwrite
 ```
 
 That retest must use a release build, record the machine/OS/toolchain, and

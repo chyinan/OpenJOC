@@ -3,9 +3,11 @@
 //! TS 103 420 E-AC-3 access-unit audio assembly.
 
 use crate::{
-    AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, Eac3Error,
-    InternalBasePolicy, StreamType, SyncframeIndexEntry, decode_audio_frame_pcm_with_policy,
+    AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm,
+    Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy, StreamType, SyncframeIndexEntry,
+    audio_block::decode_audio_frame_pcm_with_policy_and_timing,
 };
+use std::time::Instant;
 
 /// Channel-major PCM and timing emitted by one JOC elementary-stream access unit.
 ///
@@ -145,6 +147,8 @@ pub struct JocAccessUnitPcmDecoder {
     dependent_present: bool,
     independent_configuration: Option<SubstreamPcmConfiguration>,
     dependent_configuration: Option<SubstreamPcmConfiguration>,
+    stage_timing_enabled: bool,
+    last_stage_timing: Eac3DecodeStageTiming,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -175,7 +179,21 @@ impl JocAccessUnitPcmDecoder {
 
     /// Clears all substream TDAC history.
     pub fn reset(&mut self) {
+        let stage_timing_enabled = self.stage_timing_enabled;
         *self = Self::default();
+        self.stage_timing_enabled = stage_timing_enabled;
+    }
+
+    /// Enables opt-in core stage timing. Normal decoding performs no timing
+    /// clock reads unless this diagnostic mode is selected.
+    pub fn enable_stage_timing(&mut self) {
+        self.stage_timing_enabled = true;
+        self.last_stage_timing = Eac3DecodeStageTiming::default();
+    }
+
+    /// Takes the most recent successful access-unit timing record.
+    pub fn take_stage_timing(&mut self) -> Eac3DecodeStageTiming {
+        std::mem::take(&mut self.last_stage_timing)
     }
 
     /// Decodes and assembles one indexed JOC access unit.
@@ -216,6 +234,13 @@ impl JocAccessUnitPcmDecoder {
         dither_values: &[f64],
         policy: InternalBasePolicy,
     ) -> Result<DecodedAccessUnitPcm, Eac3Error> {
+        let total_start = self.stage_timing_enabled.then(Instant::now);
+        let mut stage_timing = self
+            .stage_timing_enabled
+            .then(Eac3DecodeStageTiming::default);
+        if self.stage_timing_enabled {
+            self.last_stage_timing = Eac3DecodeStageTiming::default();
+        }
         let unit_end = unit
             .first_frame
             .checked_add(unit.frame_count)
@@ -256,8 +281,12 @@ impl JocAccessUnitPcmDecoder {
             });
         }
 
+        let allocation_start = stage_timing.is_some().then(Instant::now);
         let mut independent_synth = self.independent.clone();
         let mut dependent_synth = self.dependent.clone();
+        if let (Some(timing), Some(start)) = (stage_timing.as_mut(), allocation_start) {
+            timing.allocation_and_copy += start.elapsed();
+        }
         if dependent_entry.is_some() != self.dependent_present {
             dependent_synth.reset();
         }
@@ -268,6 +297,7 @@ impl JocAccessUnitPcmDecoder {
             &mut independent_synth,
             self.independent_configuration,
             policy,
+            stage_timing.as_mut(),
         )?;
         let dependent = dependent_entry
             .map(|entry| {
@@ -278,6 +308,7 @@ impl JocAccessUnitPcmDecoder {
                     &mut dependent_synth,
                     self.dependent_configuration,
                     policy,
+                    stage_timing.as_mut(),
                 )
             })
             .transpose()?;
@@ -295,18 +326,32 @@ impl JocAccessUnitPcmDecoder {
                 });
             }
         }
-        let output = merge_substreams(
-            unit,
-            &independent_info,
-            independent,
-            dependent.as_ref().map(|(info, pcm, _)| (info, pcm)),
+        let output = Eac3DecodeStageTiming::measure(
+            stage_timing.as_mut(),
+            |timing| &mut timing.pcm_assembly,
+            || {
+                merge_substreams(
+                    unit,
+                    &independent_info,
+                    independent,
+                    dependent.as_ref().map(|(info, pcm, _)| (info, pcm)),
+                )
+            },
         )?;
 
+        let commit_start = stage_timing.is_some().then(Instant::now);
         self.independent = independent_synth;
         self.dependent = dependent_synth;
         self.dependent_present = dependent_entry.is_some();
         self.independent_configuration = Some(independent_configuration);
         self.dependent_configuration = dependent.map(|(_, _, configuration)| configuration);
+        if let (Some(timing), Some(start)) = (stage_timing.as_mut(), commit_start) {
+            timing.decoder_state_commit += start.elapsed();
+        }
+        if let (Some(mut timing), Some(start)) = (stage_timing, total_start) {
+            timing.total = start.elapsed();
+            self.last_stage_timing = timing;
+        }
         Ok(output)
     }
 }
@@ -318,6 +363,7 @@ fn decode_frame(
     synthesizer: &mut AudioPcmSynthesizer,
     previous_configuration: Option<SubstreamPcmConfiguration>,
     policy: InternalBasePolicy,
+    mut timing: Option<&mut Eac3DecodeStageTiming>,
 ) -> Result<
     (
         BitstreamInformation,
@@ -337,12 +383,23 @@ fn decode_frame(
             declared: entry.header.frame_size,
             available: stream.len().saturating_sub(entry.offset),
         })?;
-    let info = crate::parse_audio_frame(bytes)?.bsi;
+    let info = Eac3DecodeStageTiming::measure(
+        timing.as_deref_mut(),
+        |timing| &mut timing.syncframe_and_header_parsing,
+        || crate::parse_audio_frame(bytes),
+    )?
+    .bsi;
     let configuration = SubstreamPcmConfiguration::from(&info);
     if previous_configuration.is_some_and(|previous| previous != configuration) {
         synthesizer.reset();
     }
-    let pcm = decode_audio_frame_pcm_with_policy(bytes, dither_values, synthesizer, policy)?;
+    let pcm = decode_audio_frame_pcm_with_policy_and_timing(
+        bytes,
+        dither_values,
+        synthesizer,
+        policy,
+        timing,
+    )?;
     Ok((info, pcm, configuration))
 }
 

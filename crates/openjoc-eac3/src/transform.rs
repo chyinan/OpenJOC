@@ -3,6 +3,7 @@
 //! ETSI TS 102 366 clause 6.9 inverse TDAC transforms.
 
 use core::f64::consts::PI;
+use std::sync::LazyLock;
 
 use crate::Eac3Error;
 
@@ -48,6 +49,31 @@ struct Complex {
     real: f64,
     imag: f64,
 }
+
+static LONG_ROTATIONS: LazyLock<[Complex; QUARTER_SAMPLES]> = LazyLock::new(|| {
+    std::array::from_fn(|index| {
+        let angle = 2.0 * PI * (8.0 * index as f64 + 1.0) / (8.0 * TRANSFORM_SAMPLES as f64);
+        Complex {
+            real: -angle.cos(),
+            imag: -angle.sin(),
+        }
+    })
+});
+
+static SHORT_ROTATIONS: LazyLock<[Complex; EIGHTH_SAMPLES]> = LazyLock::new(|| {
+    std::array::from_fn(|index| {
+        let angle = 2.0 * PI * (8.0 * index as f64 + 1.0) / (4.0 * TRANSFORM_SAMPLES as f64);
+        Complex {
+            real: -angle.cos(),
+            imag: -angle.sin(),
+        }
+    })
+});
+
+static LONG_INVERSE_ROTATIONS: LazyLock<Vec<Complex>> =
+    LazyLock::new(|| inverse_rotation_table(QUARTER_SAMPLES, 8.0));
+static SHORT_INVERSE_ROTATIONS: LazyLock<Vec<Complex>> =
+    LazyLock::new(|| inverse_rotation_table(EIGHTH_SAMPLES, 16.0));
 
 /// The bit-exact intermediate values of one inverse transform.
 ///
@@ -168,25 +194,21 @@ pub fn overlap_add_with_trace(
 fn inverse_long(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
     let mut z = [Complex::default(); QUARTER_SAMPLES];
     for k in 0..QUARTER_SAMPLES {
-        let angle = 2.0 * PI * (8.0 * k as f64 + 1.0) / (8.0 * TRANSFORM_SAMPLES as f64);
-        let cosine = -angle.cos();
-        let sine = -angle.sin();
+        let rotation = LONG_ROTATIONS[k];
         let odd = coefficients[TRANSFORM_COEFFICIENTS - 2 * k - 1];
         let even = coefficients[2 * k];
         z[k] = Complex {
-            real: odd * cosine - even * sine,
-            imag: even * cosine + odd * sine,
+            real: odd * rotation.real - even * rotation.imag,
+            imag: even * rotation.real + odd * rotation.imag,
         };
     }
-    let z = inverse_complex(&z, 8.0);
+    let z = inverse_complex(&z, &LONG_INVERSE_ROTATIONS);
     let mut y = [Complex::default(); QUARTER_SAMPLES];
     for n in 0..QUARTER_SAMPLES {
-        let angle = 2.0 * PI * (8.0 * n as f64 + 1.0) / (8.0 * TRANSFORM_SAMPLES as f64);
-        let cosine = -angle.cos();
-        let sine = -angle.sin();
+        let rotation = LONG_ROTATIONS[n];
         y[n] = Complex {
-            real: z[n].real * cosine - z[n].imag * sine,
-            imag: z[n].imag * cosine + z[n].real * sine,
+            real: z[n].real * rotation.real - z[n].imag * rotation.imag,
+            imag: z[n].imag * rotation.real + z[n].real * rotation.imag,
         };
     }
     let mut output = vec![0.0; TRANSFORM_SAMPLES];
@@ -213,14 +235,12 @@ fn inverse_short(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
     }
     let z1 = pre_short(&first);
     let z2 = pre_short(&second);
-    let raw_y1 = inverse_complex(&z1, 16.0);
-    let raw_y2 = inverse_complex(&z2, 16.0);
-    let y1 = (0..EIGHTH_SAMPLES)
-        .map(|index| post_short(raw_y1[index], index))
-        .collect::<Vec<_>>();
-    let y2 = (0..EIGHTH_SAMPLES)
-        .map(|index| post_short(raw_y2[index], index))
-        .collect::<Vec<_>>();
+    let raw_y1 = inverse_complex(&z1, &SHORT_INVERSE_ROTATIONS);
+    let raw_y2 = inverse_complex(&z2, &SHORT_INVERSE_ROTATIONS);
+    let y1: [Complex; EIGHTH_SAMPLES] =
+        std::array::from_fn(|index| post_short(raw_y1[index], index));
+    let y2: [Complex; EIGHTH_SAMPLES] =
+        std::array::from_fn(|index| post_short(raw_y2[index], index));
     let mut output = vec![0.0; TRANSFORM_SAMPLES];
     for n in 0..EIGHTH_SAMPLES {
         let value1 = y1[n];
@@ -240,36 +260,46 @@ fn inverse_short(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
 fn pre_short(coefficients: &[f64; QUARTER_SAMPLES]) -> [Complex; EIGHTH_SAMPLES] {
     let mut z = [Complex::default(); EIGHTH_SAMPLES];
     for k in 0..EIGHTH_SAMPLES {
-        let angle = 2.0 * PI * (8.0 * k as f64 + 1.0) / (4.0 * TRANSFORM_SAMPLES as f64);
-        let cosine = -angle.cos();
-        let sine = -angle.sin();
+        let rotation = SHORT_ROTATIONS[k];
         let odd = coefficients[QUARTER_SAMPLES - 2 * k - 1];
         let even = coefficients[2 * k];
         z[k] = Complex {
-            real: odd * cosine - even * sine,
-            imag: even * cosine + odd * sine,
+            real: odd * rotation.real - even * rotation.imag,
+            imag: even * rotation.real + odd * rotation.imag,
         };
     }
     z
 }
 
 fn post_short(value: Complex, index: usize) -> Complex {
-    let angle = 2.0 * PI * (8.0 * index as f64 + 1.0) / (4.0 * TRANSFORM_SAMPLES as f64);
-    let cosine = -angle.cos();
-    let sine = -angle.sin();
+    let rotation = SHORT_ROTATIONS[index];
     Complex {
-        real: value.real * cosine - value.imag * sine,
-        imag: value.imag * cosine + value.real * sine,
+        real: value.real * rotation.real - value.imag * rotation.imag,
+        imag: value.imag * rotation.real + value.real * rotation.imag,
     }
 }
 
-fn inverse_complex(input: &[Complex], stride: f64) -> Vec<Complex> {
-    let mut output = vec![Complex::default(); input.len()];
-    for (n, value) in output.iter_mut().enumerate() {
-        for (k, input_value) in input.iter().enumerate() {
+fn inverse_rotation_table(length: usize, stride: f64) -> Vec<Complex> {
+    let mut rotations = Vec::with_capacity(length * length);
+    for n in 0..length {
+        for k in 0..length {
             let angle = stride * PI * k as f64 * n as f64 / TRANSFORM_SAMPLES as f64;
-            value.real += input_value.real * angle.cos() - input_value.imag * angle.sin();
-            value.imag += input_value.real * angle.sin() + input_value.imag * angle.cos();
+            rotations.push(Complex {
+                real: angle.cos(),
+                imag: angle.sin(),
+            });
+        }
+    }
+    rotations
+}
+
+fn inverse_complex<const N: usize>(input: &[Complex; N], rotations: &[Complex]) -> [Complex; N] {
+    debug_assert_eq!(rotations.len(), N * N);
+    let mut output = [Complex::default(); N];
+    for (value, row) in output.iter_mut().zip(rotations.chunks_exact(N)) {
+        for (input_value, rotation) in input.iter().zip(row) {
+            value.real += input_value.real * rotation.real - input_value.imag * rotation.imag;
+            value.imag += input_value.real * rotation.imag + input_value.imag * rotation.real;
         }
     }
     output

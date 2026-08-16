@@ -782,6 +782,7 @@ where
     };
     if timing.is_some() {
         decoder.enable_reconstruction_timing();
+        audio_decoder.enable_stage_timing();
     }
     for (unit_index, unit) in units.into_iter().enumerate() {
         let frame_start = Instant::now();
@@ -794,7 +795,9 @@ where
             base_policy,
         )?;
         if let Some(timing) = timing.as_mut() {
-            timing.eac3_decode += decode_start.elapsed();
+            let elapsed = decode_start.elapsed();
+            timing.eac3_decode += elapsed;
+            timing.record_eac3_frame(unit_index, elapsed, audio_decoder.take_stage_timing());
         }
         pcm.validate_joc_topology()?;
         if pcm.sample_rate != unit.sample_rate
@@ -815,27 +818,30 @@ where
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
-        let reconstruction_start = Instant::now();
-        decoder.decode_frame_with(
-            JocFrameInput {
-                sample_rate: unit.sample_rate,
-                downmix_pcm: &pcm.channels,
-                base_lfe_pcm: pcm.lfe.as_deref(),
-                joc_payload: &metadata.joc,
-                oamd_payload: &metadata.oamd,
-                frame_index: frame_number,
-            },
-            |frame| {
-                sink(unit_index, &metadata, frame)?;
-                base_sink(unit_index, &pcm)?;
-                combined_sink(unit_index, &metadata, frame, &pcm)
+        let frame = measure_stage(
+            timing
+                .as_deref_mut()
+                .map(|timing| &mut timing.joc_reconstruction),
+            || {
+                decoder.decode_frame(JocFrameInput {
+                    sample_rate: unit.sample_rate,
+                    downmix_pcm: &pcm.channels,
+                    base_lfe_pcm: pcm.lfe.as_deref(),
+                    joc_payload: &metadata.joc,
+                    oamd_payload: &metadata.oamd,
+                    frame_index: frame_number,
+                })
             },
         )?;
         if let Some(timing) = timing.as_mut() {
             timing
                 .reconstruction_stages
                 .add_assign(&decoder.take_reconstruction_timing());
-            timing.joc_reconstruction += reconstruction_start.elapsed();
+        }
+        sink(unit_index, &metadata, &frame)?;
+        base_sink(unit_index, &pcm)?;
+        combined_sink(unit_index, &metadata, &frame, &pcm)?;
+        if let Some(timing) = timing.as_mut() {
             if timing.collect_frame_times {
                 timing.frame_times.push(frame_start.elapsed());
             }
@@ -844,16 +850,59 @@ where
     Ok(finish(decoder)?)
 }
 
+fn measure_stage<T, E>(
+    target: Option<&mut std::time::Duration>,
+    operation: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    let origin = Instant::now();
+    measure_stage_with_clock(target, || origin.elapsed(), operation)
+}
+
+fn measure_stage_with_clock<T, E>(
+    target: Option<&mut std::time::Duration>,
+    mut now: impl FnMut() -> std::time::Duration,
+    operation: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    let start = if target.is_some() { Some(now()) } else { None };
+    let result = operation();
+    if let (Some(target), Some(start)) = (target, start) {
+        *target += now().saturating_sub(start);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         DecodeEac3Error, ValidationProfileRequest,
-        decode_internal_eac3_reader_with_base_sink_and_policy_request,
+        decode_internal_eac3_reader_with_base_sink_and_policy_request, measure_stage_with_clock,
     };
     use openjoc_eac3::InternalBasePolicy;
     use openjoc_oamd::OamdDecoderConfig;
     use openjoc_scene::PayloadDecoderConfig;
-    use std::io::Cursor;
+    use std::{io::Cursor, time::Duration};
+
+    #[test]
+    fn reconstruction_timing_scope_excludes_the_delivery_callback() {
+        let mut ticks = [Duration::from_millis(10), Duration::from_millis(17)].into_iter();
+        let mut measured = Duration::ZERO;
+        let mut events = Vec::new();
+        let frame = measure_stage_with_clock(
+            Some(&mut measured),
+            || ticks.next().expect("bounded clock read"),
+            || {
+                events.push("decode");
+                Ok::<u8, ()>(7)
+            },
+        )
+        .expect("decode stage");
+        events.push("sink");
+
+        assert_eq!(frame, 7);
+        assert_eq!(measured, Duration::from_millis(7));
+        assert_eq!(events, ["decode", "sink"]);
+        assert_eq!(ticks.next(), None, "sink must not read the stage clock");
+    }
 
     #[test]
     fn reports_signaled_extension_without_emdf_as_actionable_error() {
