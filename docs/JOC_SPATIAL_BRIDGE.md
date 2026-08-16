@@ -19,9 +19,10 @@ The bridge implements only the supported ordinary domain:
 - deterministic explicit-group/fixed-layout/dynamic-record flattening with
   persistent `(topology_epoch, ordinal)` binding state and selective
   inheritance;
-- public active non-LFE layout channels, normalized coordinates, equal-power
-  tensor-corner interpolation, fixed/named route vectors, optional weighted
-  spread, and optional equal-power paired geometry;
+- public active non-LFE layout channels, full normalized `(x, y, signed-z)` point
+  coordinates, data-driven layer/row/anchor topology, row-local equal-power X
+  interpolation, plane-local equal-power Y interpolation, fixed/named route
+  vectors, optional weighted spread, and optional equal-power paired geometry;
 - Q32 gain scheduling with persistent phase across blocks, restart on binding
   rebuild/layout change, and linear `Y = Σ G X` accumulation;
 - finite-value, dimension, duplicate, unsupported-class, and malformed-input
@@ -36,6 +37,15 @@ decoded JOC/OAMD bridge-control assembly for experimental speaker output. A
 complete topology sidecar remains an optional explicit override/test input.
 Q40, unsupported/default branches, unadmitted
 preprocessing, and malformed-recovery semantics are outside this implementation.
+
+Ordinary dynamic point projection is one generic full-XYZ operator. Layout
+names select channel identities and topology data; they do not select separate
+projection mathematics. The validated topology can store multiple layers,
+rows, and unequal X anchor sets, while active layer semantics remain limited to
+the admitted bed/top policy. The current public presets use this engine, and
+internal clean fixtures cover only the explicitly supported topology family.
+The data model does not imply arbitrary-layout product policy or 22.2
+projection fidelity; LFE remains outside geometric point projection.
 
 The machine-readable implementation input is not part of the public runtime
 contract; the repository exposes only the resulting spatial API, tests, and

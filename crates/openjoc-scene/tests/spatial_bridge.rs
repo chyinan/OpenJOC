@@ -2,7 +2,8 @@ use openjoc_scene::{
     GainScheduler, JocSpatialBridge, SemanticBindingState, SpatialBindingRecord,
     SpatialBindingState, SpatialBridgeError, SpatialCoordinateUpdate, SpatialDescriptor,
     SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember, SpatialLayout,
-    SpatialLayoutChannel, SpatialLayoutNode, SpatialPairedGeometry, SpatialRouteVector,
+    SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutNode,
+    SpatialLayoutRow, SpatialLayoutTopology, SpatialPairedGeometry, SpatialRouteVector,
     SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
 };
 
@@ -511,4 +512,460 @@ fn invalid_spatial_inputs_are_rejected_without_profile_reinterpretation() {
         .render_coordinates(&refs, None, None, &layout(), 0, 48_000, &mut outputs)
         .expect_err("missing topology must not guess a semantic state");
     assert!(matches!(error, SpatialBridgeError::Binding(_)));
+}
+
+const QMAX_CLEAN: f64 = 32_767.0 / 32_768.0;
+const TOP_INNER_LEFT_CLEAN: f64 = 0.241_943_359_375;
+const TOP_INNER_RIGHT_CLEAN: f64 = 0.758_056_640_625;
+const TOP_FRONT_Y_CLEAN: f64 = 0.241_943_359_375;
+const TOP_REAR_Y_CLEAN: f64 = 0.758_056_640_625;
+
+fn clean_channels(labels: &[&str], lfe: Option<&str>) -> Vec<SpatialLayoutChannel> {
+    labels
+        .iter()
+        .map(|identity| SpatialLayoutChannel {
+            identity: (*identity).to_owned(),
+            enabled: true,
+            lfe: lfe == Some(*identity),
+        })
+        .collect()
+}
+
+fn clean_anchor(identity: &str, x: f64, y: f64, z: f64) -> SpatialLayoutAnchor {
+    SpatialLayoutAnchor {
+        identity: identity.to_owned(),
+        x,
+        y,
+        z,
+    }
+}
+
+fn clean_row(y: f64, anchors: Vec<SpatialLayoutAnchor>) -> SpatialLayoutRow {
+    SpatialLayoutRow { y, anchors }
+}
+
+fn clean_bed(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
+    SpatialLayoutLayer { z: 0.0, rows }
+}
+
+fn clean_upper(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
+    SpatialLayoutLayer {
+        z: QMAX_CLEAN,
+        rows,
+    }
+}
+
+fn executable_layout(name: &str) -> SpatialLayout {
+    let (labels, layers) = match name {
+        "2.0" => (
+            vec!["FL", "FR"],
+            vec![clean_bed(vec![clean_row(
+                0.0,
+                vec![
+                    clean_anchor("FL", 0.0, 0.0, 0.0),
+                    clean_anchor("FR", QMAX_CLEAN, 0.0, 0.0),
+                ],
+            )])],
+        ),
+        "3.1" => (
+            vec!["FL", "FR", "FC", "LFE"],
+            vec![clean_bed(vec![clean_row(
+                0.0,
+                vec![
+                    clean_anchor("FL", 0.0, 0.0, 0.0),
+                    clean_anchor("FC", 0.5, 0.0, 0.0),
+                    clean_anchor("FR", QMAX_CLEAN, 0.0, 0.0),
+                ],
+            )])],
+        ),
+        "5.1" => (
+            vec!["FL", "FR", "FC", "LFE", "Ls", "Rs"],
+            vec![clean_bed(vec![
+                clean_row(
+                    0.0,
+                    vec![
+                        clean_anchor("FL", 0.0, 0.0, 0.0),
+                        clean_anchor("FC", 0.5, 0.0, 0.0),
+                        clean_anchor("FR", QMAX_CLEAN, 0.0, 0.0),
+                    ],
+                ),
+                clean_row(
+                    0.5,
+                    vec![
+                        clean_anchor("Ls", 0.0, 0.5, 0.0),
+                        clean_anchor("Rs", QMAX_CLEAN, 0.5, 0.0),
+                    ],
+                ),
+            ])],
+        ),
+        "5.1.2" => (
+            vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
+            vec![
+                executable_layout("5.1").topology().layers[0].clone(),
+                clean_upper(vec![clean_row(
+                    0.5,
+                    vec![
+                        clean_anchor("TFL", TOP_INNER_LEFT_CLEAN, 0.5, QMAX_CLEAN),
+                        clean_anchor("TFR", TOP_INNER_RIGHT_CLEAN, 0.5, QMAX_CLEAN),
+                    ],
+                )]),
+            ],
+        ),
+        "5.1.4" => (
+            vec![
+                "FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+            ],
+            vec![
+                executable_layout("5.1").topology().layers[0].clone(),
+                clean_upper(vec![
+                    clean_row(
+                        TOP_FRONT_Y_CLEAN,
+                        vec![
+                            clean_anchor(
+                                "TFL",
+                                TOP_INNER_LEFT_CLEAN,
+                                TOP_FRONT_Y_CLEAN,
+                                QMAX_CLEAN,
+                            ),
+                            clean_anchor(
+                                "TFR",
+                                TOP_INNER_RIGHT_CLEAN,
+                                TOP_FRONT_Y_CLEAN,
+                                QMAX_CLEAN,
+                            ),
+                        ],
+                    ),
+                    clean_row(
+                        TOP_REAR_Y_CLEAN,
+                        vec![
+                            clean_anchor("TBL", TOP_INNER_LEFT_CLEAN, TOP_REAR_Y_CLEAN, QMAX_CLEAN),
+                            clean_anchor(
+                                "TBR",
+                                TOP_INNER_RIGHT_CLEAN,
+                                TOP_REAR_Y_CLEAN,
+                                QMAX_CLEAN,
+                            ),
+                        ],
+                    ),
+                ]),
+            ],
+        ),
+        "7.1" => (
+            vec!["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"],
+            vec![clean_bed(vec![
+                clean_row(
+                    0.0,
+                    vec![
+                        clean_anchor("FL", 0.0, 0.0, 0.0),
+                        clean_anchor("FC", 0.5, 0.0, 0.0),
+                        clean_anchor("FR", QMAX_CLEAN, 0.0, 0.0),
+                    ],
+                ),
+                clean_row(
+                    0.5,
+                    vec![
+                        clean_anchor("Ls", 0.0, 0.5, 0.0),
+                        clean_anchor("Rs", QMAX_CLEAN, 0.5, 0.0),
+                    ],
+                ),
+                clean_row(
+                    QMAX_CLEAN,
+                    vec![
+                        clean_anchor("Lb", 0.0, QMAX_CLEAN, 0.0),
+                        clean_anchor("Rb", QMAX_CLEAN, QMAX_CLEAN, 0.0),
+                    ],
+                ),
+            ])],
+        ),
+        "7.1.2" => (
+            vec![
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR",
+            ],
+            vec![
+                executable_layout("7.1").topology().layers[0].clone(),
+                clean_upper(vec![clean_row(
+                    0.5,
+                    vec![
+                        clean_anchor("TFL", TOP_INNER_LEFT_CLEAN, 0.5, QMAX_CLEAN),
+                        clean_anchor("TFR", TOP_INNER_RIGHT_CLEAN, 0.5, QMAX_CLEAN),
+                    ],
+                )]),
+            ],
+        ),
+        "7.1.4" => (
+            vec![
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+            ],
+            vec![
+                executable_layout("7.1").topology().layers[0].clone(),
+                clean_upper(vec![
+                    clean_row(
+                        TOP_FRONT_Y_CLEAN,
+                        vec![
+                            clean_anchor(
+                                "TFL",
+                                TOP_INNER_LEFT_CLEAN,
+                                TOP_FRONT_Y_CLEAN,
+                                QMAX_CLEAN,
+                            ),
+                            clean_anchor(
+                                "TFR",
+                                TOP_INNER_RIGHT_CLEAN,
+                                TOP_FRONT_Y_CLEAN,
+                                QMAX_CLEAN,
+                            ),
+                        ],
+                    ),
+                    clean_row(
+                        TOP_REAR_Y_CLEAN,
+                        vec![
+                            clean_anchor("TBL", TOP_INNER_LEFT_CLEAN, TOP_REAR_Y_CLEAN, QMAX_CLEAN),
+                            clean_anchor(
+                                "TBR",
+                                TOP_INNER_RIGHT_CLEAN,
+                                TOP_REAR_Y_CLEAN,
+                                QMAX_CLEAN,
+                            ),
+                        ],
+                    ),
+                ]),
+            ],
+        ),
+        other => panic!("unknown executable fixture {other}"),
+    };
+    let lfe = labels.iter().find(|label| **label == "LFE").copied();
+    SpatialLayout::from_topology(
+        clean_channels(&labels, lfe),
+        SpatialLayoutTopology {
+            layers,
+            aliases: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .expect("clean executable topology")
+}
+
+fn dynamic_point(x: f64, y: f64, z: f64) -> SpatialDescriptor {
+    SpatialDescriptor::new(SpatialSourceClass::DynamicPoint, "point", vec![x, y, z])
+}
+
+fn active_index(layout: &SpatialLayout, identity: &str) -> usize {
+    layout
+        .channels()
+        .iter()
+        .filter(|channel| channel.enabled && !channel.lfe)
+        .position(|channel| channel.identity == identity)
+        .expect("active fixture channel")
+}
+
+fn assert_unit_l2(vector: &[f64]) {
+    assert!(
+        vector
+            .iter()
+            .all(|value| value.is_finite() && *value >= 0.0)
+    );
+    let power = vector.iter().map(|value| value * value).sum::<f64>();
+    assert!((power - 1.0).abs() < 2.0e-12, "power={power}");
+}
+
+#[test]
+fn clean_executable_layouts_use_one_projector_and_exact_anchor_identity() {
+    for name in [
+        "2.0", "3.1", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4",
+    ] {
+        let layout = executable_layout(name);
+        assert_eq!(layout.coordinate_dimension_count(), 3, "{name}");
+        for layer in &layout.topology().layers {
+            for row in &layer.rows {
+                for anchor in &row.anchors {
+                    let projected = layout
+                        .project(&dynamic_point(anchor.x, anchor.y, anchor.z))
+                        .expect("exact clean anchor");
+                    let expected = active_index(&layout, &anchor.identity);
+                    assert!(
+                        projected
+                            .iter()
+                            .enumerate()
+                            .all(|(index, value)| if index == expected {
+                                (*value - 1.0).abs() < 2.0e-12
+                            } else {
+                                value.abs() < 2.0e-12
+                            }),
+                        "{name} anchor {} projected as {projected:?}",
+                        anchor.identity
+                    );
+                    assert_unit_l2(&projected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn clean_xyz_sweeps_distinguish_depth_height_and_lfe_ownership() {
+    let layout = executable_layout("7.1.4");
+    let front = layout.project(&dynamic_point(0.5, 0.0, 0.0)).unwrap();
+    assert!((front[active_index(&layout, "FC")] - 1.0).abs() < 2.0e-12);
+    let side = layout
+        .project(&dynamic_point(QMAX_CLEAN / 2.0, 0.5, 0.0))
+        .unwrap();
+    assert!(side[active_index(&layout, "FL")].abs() < 2.0e-12);
+    assert!((side[active_index(&layout, "Ls")] - 0.5_f64.sqrt()).abs() < 2.0e-12);
+    assert!((side[active_index(&layout, "Rs")] - 0.5_f64.sqrt()).abs() < 2.0e-12);
+    let rear = layout
+        .project(&dynamic_point(QMAX_CLEAN / 2.0, QMAX_CLEAN, 0.0))
+        .unwrap();
+    assert!(rear[active_index(&layout, "Lb")] > 0.0);
+    assert!(rear[active_index(&layout, "Rb")] > 0.0);
+    assert!(rear[active_index(&layout, "Ls")].abs() < 2.0e-12);
+    let upper = layout
+        .project(&dynamic_point(QMAX_CLEAN / 2.0, 0.5, 0.5))
+        .unwrap();
+    assert!(upper[active_index(&layout, "FC")] > 0.0);
+    assert!(upper[active_index(&layout, "TFL")] > 0.0);
+    assert_unit_l2(&upper);
+
+    let bed_only = executable_layout("7.1");
+    let no_upper = bed_only
+        .project(&dynamic_point(0.5, 0.5, QMAX_CLEAN))
+        .unwrap();
+    assert_eq!(no_upper.len(), 7);
+    assert_unit_l2(&no_upper);
+}
+
+#[test]
+fn clean_boundaries_and_mirror_symmetry_are_gain_continuous() {
+    let layout = executable_layout("7.1");
+    let left = layout
+        .project(&dynamic_point(QMAX_CLEAN * 0.25, 0.5, 0.0))
+        .unwrap();
+    let right = layout
+        .project(&dynamic_point(QMAX_CLEAN * 0.75, 0.5, 0.0))
+        .unwrap();
+    assert!(
+        (left[active_index(&layout, "Ls")] - right[active_index(&layout, "Rs")]).abs() < 2.0e-12
+    );
+    assert!(
+        (left[active_index(&layout, "Rs")] - right[active_index(&layout, "Ls")]).abs() < 2.0e-12
+    );
+    let at = layout.project(&dynamic_point(0.5, 0.5, 0.0)).unwrap();
+    let before = layout
+        .project(&dynamic_point(0.5, 0.5 - 1.0e-8, 0.0))
+        .unwrap();
+    let after = layout
+        .project(&dynamic_point(0.5, 0.5 + 1.0e-8, 0.0))
+        .unwrap();
+    assert!(before.iter().zip(&at).all(|(a, b)| (a - b).abs() < 2.0e-7));
+    assert!(after.iter().zip(&at).all(|(a, b)| (a - b).abs() < 2.0e-7));
+    for vector in [left, right, at, before, after] {
+        assert_unit_l2(&vector);
+    }
+}
+
+#[test]
+fn clean_one_and_three_upper_rows_and_wide_anchors_use_the_same_data_law() {
+    let one_row = executable_layout("5.1.2");
+    let low_y = one_row
+        .project(&dynamic_point(TOP_INNER_LEFT_CLEAN, 0.0, QMAX_CLEAN))
+        .unwrap();
+    let high_y = one_row
+        .project(&dynamic_point(TOP_INNER_LEFT_CLEAN, QMAX_CLEAN, QMAX_CLEAN))
+        .unwrap();
+    assert_eq!(low_y, high_y);
+
+    let three_rows = SpatialLayout::from_topology(
+        clean_channels(&["B", "UF", "UM", "UR"], None),
+        SpatialLayoutTopology {
+            layers: vec![
+                clean_bed(vec![clean_row(0.0, vec![clean_anchor("B", 0.5, 0.0, 0.0)])]),
+                clean_upper(vec![
+                    clean_row(0.0, vec![clean_anchor("UF", 0.5, 0.0, QMAX_CLEAN)]),
+                    clean_row(0.5, vec![clean_anchor("UM", 0.5, 0.5, QMAX_CLEAN)]),
+                    clean_row(
+                        QMAX_CLEAN,
+                        vec![clean_anchor("UR", 0.5, QMAX_CLEAN, QMAX_CLEAN)],
+                    ),
+                ]),
+            ],
+            aliases: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    let middle = three_rows
+        .project(&dynamic_point(0.5, 0.5, QMAX_CLEAN))
+        .unwrap();
+    assert_eq!(middle[active_index(&three_rows, "UM")], 1.0);
+    let between = three_rows
+        .project(&dynamic_point(0.5, 0.25, QMAX_CLEAN))
+        .unwrap();
+    assert!(between[active_index(&three_rows, "UF")] > 0.0);
+    assert!(between[active_index(&three_rows, "UM")] > 0.0);
+    assert_unit_l2(&between);
+
+    let wide = SpatialLayout::from_topology(
+        clean_channels(&["FL", "Lw", "Rw", "FR"], None),
+        SpatialLayoutTopology {
+            layers: vec![clean_bed(vec![clean_row(
+                0.0,
+                vec![
+                    clean_anchor("FL", 0.0, 0.0, 0.0),
+                    clean_anchor("Lw", 0.25, 0.0, 0.0),
+                    clean_anchor("Rw", 0.75, 0.0, 0.0),
+                    clean_anchor("FR", QMAX_CLEAN, 0.0, 0.0),
+                ],
+            )])],
+            aliases: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    let wide_point = wide.project(&dynamic_point(0.25, 0.0, 0.0)).unwrap();
+    assert_eq!(wide_point[active_index(&wide, "Lw")], 1.0);
+    assert_unit_l2(&wide_point);
+}
+
+#[test]
+fn clean_topology_validation_and_unadmitted_layers_fail_closed() {
+    let duplicate_x = SpatialLayout::from_topology(
+        clean_channels(&["A", "B"], None),
+        SpatialLayoutTopology {
+            layers: vec![clean_bed(vec![clean_row(
+                0.0,
+                vec![
+                    clean_anchor("A", 0.0, 0.0, 0.0),
+                    clean_anchor("B", 0.0, 0.0, 0.0),
+                ],
+            )])],
+            aliases: Vec::new(),
+        },
+        Vec::new(),
+    );
+    assert!(duplicate_x.is_err());
+
+    let four_layers = SpatialLayout::from_topology(
+        clean_channels(&["A", "B", "C", "D"], None),
+        SpatialLayoutTopology {
+            layers: (0..4)
+                .map(|index| {
+                    let z = index as f64 / 3.0;
+                    SpatialLayoutLayer {
+                        z,
+                        rows: vec![clean_row(
+                            0.0,
+                            vec![clean_anchor(["A", "B", "C", "D"][index], 0.5, 0.0, z)],
+                        )],
+                    }
+                })
+                .collect(),
+            aliases: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(four_layers.topology().layers.len(), 4);
+    assert_eq!(
+        four_layers.project(&dynamic_point(0.5, 0.0, 0.5)),
+        Err(openjoc_scene::SpatialProjectionError::UnadmittedLayerPolicy)
+    );
 }

@@ -15,6 +15,9 @@ pub const JOC_SPATIAL_BRIDGE_SCHEMA: &str = "openjoc.joc-spatial-bridge.v1";
 
 const Q32: usize = 32;
 const Q32_HALF_MINUS_ONE: u64 = 15;
+const Q: f64 = 32_768.0;
+const QMAX_Q15: f64 = 32_767.0;
+const QMAX: f64 = QMAX_Q15 / Q;
 const EPS_ACTIVITY: f64 = 0.000_001;
 const EPS_DELTA: f64 = 0.000_1;
 const SUM_TOLERANCE: f64 = 1.0e-9;
@@ -442,11 +445,56 @@ pub struct SpatialLayoutChannel {
     pub lfe: bool,
 }
 
-/// One public knot/node vector in active non-LFE layout order.
+/// Legacy rectangular node data accepted by [`SpatialLayout::new`].
+///
+/// New layout code should use [`SpatialLayoutTopology`] and
+/// [`SpatialLayout::from_topology`]. The compatibility constructor translates
+/// one-hot nodes into the same generic layer/row/anchor representation.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SpatialLayoutNode {
     pub knot_indices: Vec<usize>,
     pub vector: Vec<f64>,
+}
+
+/// One speaker anchor in a topology row.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct SpatialLayoutAnchor {
+    pub identity: String,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+/// One ordered depth row of a layout layer.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct SpatialLayoutRow {
+    pub y: f64,
+    pub anchors: Vec<SpatialLayoutAnchor>,
+}
+
+/// One ordered height layer of a layout topology.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct SpatialLayoutLayer {
+    pub z: f64,
+    pub rows: Vec<SpatialLayoutRow>,
+}
+
+/// An explicitly supplied fallback alias.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct SpatialLayoutAlias {
+    pub identity: String,
+    pub target_identity: String,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+/// Data-only speaker topology consumed by the generic point projector.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct SpatialLayoutTopology {
+    pub layers: Vec<SpatialLayoutLayer>,
+    #[serde(default)]
+    pub aliases: Vec<SpatialLayoutAlias>,
 }
 
 /// One public fixed/named route vector in active non-LFE layout order.
@@ -475,6 +523,9 @@ pub enum SpatialProjectionError {
     MissingNode(Vec<usize>),
     InvalidSpread,
     InvalidPair,
+    DuplicateAnchor(String),
+    MissingAnchor(String),
+    UnadmittedLayerPolicy,
 }
 
 impl fmt::Display for SpatialProjectionError {
@@ -521,6 +572,15 @@ impl fmt::Display for SpatialProjectionError {
             Self::MissingNode(indices) => write!(formatter, "missing spatial node {indices:?}"),
             Self::InvalidSpread => formatter.write_str("invalid spatial spread profile"),
             Self::InvalidPair => formatter.write_str("invalid spatial paired geometry"),
+            Self::DuplicateAnchor(identity) => {
+                write!(formatter, "duplicate spatial anchor: {identity}")
+            }
+            Self::MissingAnchor(identity) => {
+                write!(formatter, "missing spatial anchor: {identity}")
+            }
+            Self::UnadmittedLayerPolicy => {
+                formatter.write_str("spatial topology has no admitted multi-layer policy")
+            }
         }
     }
 }
@@ -532,18 +592,49 @@ impl std::error::Error for SpatialProjectionError {}
 pub struct SpatialLayout {
     channels: Vec<SpatialLayoutChannel>,
     active_indices: Vec<usize>,
-    knot_axes: Vec<Vec<f64>>,
-    node_vectors: Vec<SpatialLayoutNode>,
+    topology: SpatialLayoutTopology,
+    coordinate_dimension: usize,
     route_vectors: Vec<SpatialRouteVector>,
+    allow_legacy_duplicate_anchors: bool,
 }
 
 impl SpatialLayout {
-    /// Validates and constructs an ordered public layout registry.
+    /// Validates the generic data-driven layout topology.
+    pub fn from_topology(
+        channels: Vec<SpatialLayoutChannel>,
+        topology: SpatialLayoutTopology,
+        route_vectors: Vec<SpatialRouteVector>,
+    ) -> Result<Self, SpatialProjectionError> {
+        Self::build(channels, topology, route_vectors, 3, false)
+    }
+
+    /// Validates and translates the pre-topology rectangular layout API.
+    ///
+    /// This compatibility path has no separate projection law: its one-hot
+    /// node vectors are converted to ordinary topology anchors before any
+    /// projection occurs.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         channels: Vec<SpatialLayoutChannel>,
         knot_axes: Vec<Vec<f64>>,
         node_vectors: Vec<SpatialLayoutNode>,
         route_vectors: Vec<SpatialRouteVector>,
+    ) -> Result<Self, SpatialProjectionError> {
+        if !(1..=3).contains(&knot_axes.len()) {
+            return Err(SpatialProjectionError::InvalidLayout(
+                "legacy layout must have one, two, or three axes",
+            ));
+        }
+        let topology = legacy_topology(&channels, &knot_axes, &node_vectors)?;
+        Self::build(channels, topology, route_vectors, knot_axes.len(), true)
+    }
+
+    fn build(
+        channels: Vec<SpatialLayoutChannel>,
+        topology: SpatialLayoutTopology,
+        route_vectors: Vec<SpatialRouteVector>,
+        coordinate_dimension: usize,
+        allow_legacy_duplicate_anchors: bool,
     ) -> Result<Self, SpatialProjectionError> {
         if channels.is_empty() {
             return Err(SpatialProjectionError::InvalidLayout("no channels"));
@@ -566,39 +657,13 @@ impl SpatialLayout {
                 "no active non-LFE channels",
             ));
         }
-        for (axis, knots) in knot_axes.iter().enumerate() {
-            if knots.is_empty()
-                || knots.iter().any(|value| !value.is_finite())
-                || knots.windows(2).any(|window| window[0] >= window[1])
-            {
-                return Err(SpatialProjectionError::InvalidKnotAxis { axis });
-            }
-        }
+        validate_topology(
+            &channels,
+            &active_indices,
+            &topology,
+            allow_legacy_duplicate_anchors,
+        )?;
         let component_count = active_indices.len();
-        let mut seen_nodes = Vec::with_capacity(node_vectors.len());
-        for node in &node_vectors {
-            if node.knot_indices.len() != knot_axes.len() {
-                return Err(SpatialProjectionError::NodeDimension {
-                    expected: knot_axes.len(),
-                    actual: node.knot_indices.len(),
-                });
-            }
-            for (axis, &index) in node.knot_indices.iter().enumerate() {
-                if index >= knot_axes[axis].len() {
-                    return Err(SpatialProjectionError::NodeIndexOutOfRange { axis, index });
-                }
-            }
-            if seen_nodes
-                .iter()
-                .any(|indices: &Vec<usize>| indices == &node.knot_indices)
-            {
-                return Err(SpatialProjectionError::DuplicateNode(
-                    node.knot_indices.clone(),
-                ));
-            }
-            seen_nodes.push(node.knot_indices.clone());
-            validate_vector(&node.vector, component_count)?;
-        }
         let mut routes = HashSet::with_capacity(route_vectors.len());
         for route in &route_vectors {
             if !routes.insert(route.identity.as_str()) {
@@ -611,9 +676,10 @@ impl SpatialLayout {
         Ok(Self {
             channels,
             active_indices,
-            knot_axes,
-            node_vectors,
+            topology,
+            coordinate_dimension,
             route_vectors,
+            allow_legacy_duplicate_anchors,
         })
     }
 
@@ -624,11 +690,12 @@ impl SpatialLayout {
         &self,
         route_vectors: Vec<SpatialRouteVector>,
     ) -> Result<Self, SpatialProjectionError> {
-        Self::new(
+        Self::build(
             self.channels.clone(),
-            self.knot_axes.clone(),
-            self.node_vectors.clone(),
+            self.topology.clone(),
             route_vectors,
+            self.coordinate_dimension,
+            self.allow_legacy_duplicate_anchors,
         )
     }
 
@@ -644,10 +711,16 @@ impl SpatialLayout {
         &self.channels
     }
 
+    /// Returns the validated data-only topology consumed by the projector.
+    #[must_use]
+    pub fn topology(&self) -> &SpatialLayoutTopology {
+        &self.topology
+    }
+
     /// Returns the number of normalized coordinate axes consumed by P(d,L).
     #[must_use]
     pub fn coordinate_dimension_count(&self) -> usize {
-        self.knot_axes.len()
+        self.coordinate_dimension
     }
 
     /// Computes normalized `P(d,L)` in active non-LFE channel order.
@@ -740,80 +813,29 @@ impl SpatialLayout {
     }
 
     fn point_vector(&self, coordinates: &[f64]) -> Result<Vec<f64>, SpatialProjectionError> {
-        if coordinates.len() != self.knot_axes.len() {
+        if coordinates.len() != self.coordinate_dimension {
             return Err(SpatialProjectionError::CoordinateDimension {
-                expected: self.knot_axes.len(),
+                expected: self.coordinate_dimension,
                 actual: coordinates.len(),
             });
         }
-        let mut choices = Vec::with_capacity(coordinates.len());
-        for (axis, (&coordinate, knots)) in coordinates.iter().zip(&self.knot_axes).enumerate() {
+        let position = match self.coordinate_dimension {
+            1 => [coordinates[0], 0.0, 0.0],
+            2 => [coordinates[0], 0.0, coordinates[1] * 2.0 - 1.0],
+            3 => [coordinates[0], coordinates[1], coordinates[2]],
+            _ => unreachable!("validated coordinate dimension"),
+        };
+        for (axis, coordinate) in position.iter().enumerate() {
             if !coordinate.is_finite() {
                 return Err(SpatialProjectionError::NonFiniteCoordinate { axis });
             }
-            if knots.len() == 1 || coordinate <= knots[0] {
-                choices.push((0, 0, 1.0, 0.0));
-                continue;
-            }
-            if coordinate >= knots[knots.len() - 1] {
-                let last = knots.len() - 1;
-                choices.push((last, last, 1.0, 0.0));
-                continue;
-            }
-            let upper = knots.partition_point(|knot| *knot < coordinate);
-            let lower = upper - 1;
-            let t = (coordinate - knots[lower]) / (knots[upper] - knots[lower]);
-            let lower_weight = (std::f64::consts::PI * t / 2.0).cos();
-            let upper_weight = (std::f64::consts::PI * t / 2.0).sin();
-            choices.push((lower, upper, lower_weight, upper_weight));
         }
-        let mut vector = vec![0.0; self.active_channel_count()];
-        let mut indices = Vec::with_capacity(choices.len());
-        self.accumulate_corners(0, 1.0, &choices, &mut indices, &mut vector)?;
-        Ok(vector)
-    }
-
-    fn accumulate_corners(
-        &self,
-        axis: usize,
-        coefficient: f64,
-        choices: &[(usize, usize, f64, f64)],
-        indices: &mut Vec<usize>,
-        vector: &mut [f64],
-    ) -> Result<(), SpatialProjectionError> {
-        if axis == choices.len() {
-            let node = self
-                .node_vectors
-                .iter()
-                .find(|node| node.knot_indices.as_slice() == indices.as_slice())
-                .ok_or_else(|| SpatialProjectionError::MissingNode(indices.clone()))?;
-            for (out, value) in vector.iter_mut().zip(&node.vector) {
-                *out += coefficient * value;
-            }
-            return Ok(());
-        }
-        let (lower, upper, lower_weight, upper_weight) = choices[axis];
-        indices.push(lower);
-        self.accumulate_corners(
-            axis + 1,
-            coefficient * lower_weight,
-            choices,
-            indices,
-            vector,
-        )?;
-        indices.pop();
-        if upper != lower {
-            indices.push(upper);
-            self.accumulate_corners(
-                axis + 1,
-                coefficient * upper_weight,
-                choices,
-                indices,
-                vector,
-            )?;
-            indices.pop();
-        }
-        Ok(())
+        generic_point_projector(
+            &self.topology,
+            &self.channels,
+            &self.active_indices,
+            position,
+        )
     }
 
     fn paired_vector(
@@ -838,6 +860,354 @@ impl SpatialLayout {
             .map(|(first, second)| lower * first + upper * second)
             .collect())
     }
+}
+
+fn legacy_topology(
+    channels: &[SpatialLayoutChannel],
+    knot_axes: &[Vec<f64>],
+    nodes: &[SpatialLayoutNode],
+) -> Result<SpatialLayoutTopology, SpatialProjectionError> {
+    for (axis, knots) in knot_axes.iter().enumerate() {
+        if knots.is_empty()
+            || knots.iter().any(|value| !value.is_finite())
+            || knots.windows(2).any(|window| window[0] >= window[1])
+        {
+            return Err(SpatialProjectionError::InvalidKnotAxis { axis });
+        }
+    }
+    let active_indices: Vec<_> = channels
+        .iter()
+        .enumerate()
+        .filter_map(|(index, channel)| (channel.enabled && !channel.lfe).then_some(index))
+        .collect();
+    if active_indices.is_empty() {
+        return Err(SpatialProjectionError::InvalidLayout(
+            "no active non-LFE channels",
+        ));
+    }
+    let expected_dimension = knot_axes.len();
+    let mut seen_nodes = HashSet::with_capacity(nodes.len());
+    for node in nodes {
+        if node.knot_indices.len() != expected_dimension {
+            return Err(SpatialProjectionError::NodeDimension {
+                expected: expected_dimension,
+                actual: node.knot_indices.len(),
+            });
+        }
+        for (axis, &index) in node.knot_indices.iter().enumerate() {
+            if index >= knot_axes[axis].len() {
+                return Err(SpatialProjectionError::NodeIndexOutOfRange { axis, index });
+            }
+        }
+        if !seen_nodes.insert(node.knot_indices.clone()) {
+            return Err(SpatialProjectionError::DuplicateNode(
+                node.knot_indices.clone(),
+            ));
+        }
+        validate_vector(&node.vector, active_indices.len())?;
+    }
+    let anchor_for = |indices: &[usize]| -> Result<SpatialLayoutAnchor, SpatialProjectionError> {
+        let node = nodes
+            .iter()
+            .find(|node| node.knot_indices == indices)
+            .ok_or_else(|| SpatialProjectionError::MissingNode(indices.to_vec()))?;
+        let Some(active) = node
+            .vector
+            .iter()
+            .enumerate()
+            .find(|(_, value)| **value > 0.0)
+        else {
+            return Err(SpatialProjectionError::InvalidLayout(
+                "legacy nodes must be nonzero one-hot vectors",
+            ));
+        };
+        if node
+            .vector
+            .iter()
+            .enumerate()
+            .any(|(index, value)| index != active.0 && *value != 0.0)
+        {
+            return Err(SpatialProjectionError::InvalidLayout(
+                "legacy nodes must be one-hot vectors",
+            ));
+        }
+        let channel_index = active_indices[active.0];
+        Ok(SpatialLayoutAnchor {
+            identity: channels[channel_index].identity.clone(),
+            x: knot_axes[0][indices[0]],
+            y: if expected_dimension >= 3 {
+                knot_axes[1][indices[1]]
+            } else {
+                0.0
+            },
+            z: if expected_dimension == 2 {
+                knot_axes[1][indices[1]]
+            } else if expected_dimension == 3 {
+                knot_axes[2][indices[2]]
+            } else {
+                0.0
+            },
+        })
+    };
+
+    let layers = match expected_dimension {
+        1 => vec![SpatialLayoutLayer {
+            z: 0.0,
+            rows: vec![SpatialLayoutRow {
+                y: 0.0,
+                anchors: (0..knot_axes[0].len())
+                    .map(|x| anchor_for(&[x]))
+                    .collect::<Result<_, _>>()?,
+            }],
+        }],
+        2 => (0..knot_axes[1].len())
+            .map(|z| {
+                Ok(SpatialLayoutLayer {
+                    z: knot_axes[1][z],
+                    rows: vec![SpatialLayoutRow {
+                        y: 0.0,
+                        anchors: (0..knot_axes[0].len())
+                            .map(|x| anchor_for(&[x, z]))
+                            .collect::<Result<_, _>>()?,
+                    }],
+                })
+            })
+            .collect::<Result<_, SpatialProjectionError>>()?,
+        3 => (0..knot_axes[2].len())
+            .map(|z| {
+                Ok(SpatialLayoutLayer {
+                    z: knot_axes[2][z],
+                    rows: (0..knot_axes[1].len())
+                        .map(|y| {
+                            Ok(SpatialLayoutRow {
+                                y: knot_axes[1][y],
+                                anchors: (0..knot_axes[0].len())
+                                    .map(|x| anchor_for(&[x, y, z]))
+                                    .collect::<Result<_, _>>()?,
+                            })
+                        })
+                        .collect::<Result<_, SpatialProjectionError>>()?,
+                })
+            })
+            .collect::<Result<_, SpatialProjectionError>>()?,
+        _ => unreachable!("validated legacy dimension"),
+    };
+    Ok(SpatialLayoutTopology {
+        layers,
+        aliases: Vec::new(),
+    })
+}
+
+fn validate_topology(
+    channels: &[SpatialLayoutChannel],
+    active_indices: &[usize],
+    topology: &SpatialLayoutTopology,
+    allow_duplicate_anchors: bool,
+) -> Result<(), SpatialProjectionError> {
+    if topology.layers.is_empty() {
+        return Err(SpatialProjectionError::InvalidLayout("no topology layers"));
+    }
+    if topology.layers.iter().any(|layer| !layer.z.is_finite())
+        || topology
+            .layers
+            .windows(2)
+            .any(|window| window[0].z >= window[1].z)
+    {
+        return Err(SpatialProjectionError::InvalidLayout(
+            "layer Z values must be finite and strictly ordered",
+        ));
+    }
+    let active_identities: HashSet<_> = active_indices
+        .iter()
+        .map(|index| channels[*index].identity.as_str())
+        .collect();
+    let mut seen_anchors = HashSet::new();
+    for layer in &topology.layers {
+        if layer.rows.is_empty() {
+            return Err(SpatialProjectionError::InvalidLayout(
+                "empty topology layer",
+            ));
+        }
+        if layer.rows.iter().any(|row| !row.y.is_finite())
+            || layer
+                .rows
+                .windows(2)
+                .any(|window| window[0].y >= window[1].y)
+        {
+            return Err(SpatialProjectionError::InvalidLayout(
+                "row Y values must be finite and strictly ordered",
+            ));
+        }
+        for row in &layer.rows {
+            if row.anchors.is_empty() {
+                return Err(SpatialProjectionError::InvalidLayout("empty topology row"));
+            }
+            if row.anchors.iter().any(|anchor| {
+                !anchor.x.is_finite() || !anchor.y.is_finite() || !anchor.z.is_finite()
+            }) || row
+                .anchors
+                .windows(2)
+                .any(|window| window[0].x >= window[1].x)
+            {
+                return Err(SpatialProjectionError::InvalidLayout(
+                    "anchor X values must be finite and strictly ordered",
+                ));
+            }
+            for anchor in &row.anchors {
+                if !active_identities.contains(anchor.identity.as_str()) {
+                    return Err(SpatialProjectionError::MissingAnchor(
+                        anchor.identity.clone(),
+                    ));
+                }
+                if (anchor.y - row.y).abs() > f64::EPSILON
+                    || (anchor.z - layer.z).abs() > f64::EPSILON
+                {
+                    return Err(SpatialProjectionError::InvalidLayout(
+                        "anchor position does not match its row and layer",
+                    ));
+                }
+                if !allow_duplicate_anchors && !seen_anchors.insert(anchor.identity.as_str()) {
+                    return Err(SpatialProjectionError::DuplicateAnchor(
+                        anchor.identity.clone(),
+                    ));
+                }
+            }
+        }
+    }
+    if !allow_duplicate_anchors {
+        for identity in &active_identities {
+            if !seen_anchors.contains(identity) {
+                return Err(SpatialProjectionError::MissingAnchor(
+                    (*identity).to_owned(),
+                ));
+            }
+        }
+    }
+    let mut aliases = HashSet::new();
+    for alias in &topology.aliases {
+        if !aliases.insert(alias.identity.as_str()) {
+            return Err(SpatialProjectionError::DuplicateAnchor(
+                alias.identity.clone(),
+            ));
+        }
+        if !active_identities.contains(alias.target_identity.as_str())
+            || !alias.x.is_finite()
+            || !alias.y.is_finite()
+            || !alias.z.is_finite()
+        {
+            return Err(SpatialProjectionError::InvalidLayout(
+                "invalid topology alias",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn generic_point_projector(
+    topology: &SpatialLayoutTopology,
+    channels: &[SpatialLayoutChannel],
+    active_indices: &[usize],
+    position: [f64; 3],
+) -> Result<Vec<f64>, SpatialProjectionError> {
+    match topology.layers.as_slice() {
+        [] => Err(SpatialProjectionError::InvalidLayout("no topology layers")),
+        [layer] => plane_vector(layer, channels, active_indices, position[0], position[1]),
+        [lower, upper] => {
+            let bed = plane_vector(lower, channels, active_indices, position[0], position[1])?;
+            let top = plane_vector(upper, channels, active_indices, position[0], position[1])?;
+            let z = position[2].clamp(-QMAX, QMAX);
+            if z <= 0.0 {
+                Ok(bed)
+            } else if (Q * z).floor() >= QMAX_Q15 {
+                Ok(top)
+            } else {
+                let lower_weight = (std::f64::consts::PI * z / 2.0).cos();
+                let upper_weight = (std::f64::consts::PI * z / 2.0).sin();
+                Ok(bed
+                    .iter()
+                    .zip(top)
+                    .map(|(bed, top)| lower_weight * bed + upper_weight * top)
+                    .collect())
+            }
+        }
+        _ => Err(SpatialProjectionError::UnadmittedLayerPolicy),
+    }
+}
+
+fn plane_vector(
+    layer: &SpatialLayoutLayer,
+    channels: &[SpatialLayoutChannel],
+    active_indices: &[usize],
+    x: f64,
+    y: f64,
+) -> Result<Vec<f64>, SpatialProjectionError> {
+    let mut rows = layer.rows.as_slice();
+    let mut weights = [1.0, 0.0];
+    if y <= rows[0].y {
+        rows = &rows[..1];
+    } else if y >= rows[rows.len() - 1].y {
+        rows = &rows[rows.len() - 1..];
+    } else {
+        let upper = rows.partition_point(|row| row.y < y);
+        let lower = upper - 1;
+        let t = (y - rows[lower].y) / (rows[upper].y - rows[lower].y);
+        weights = [
+            (std::f64::consts::PI * t / 2.0).cos(),
+            (std::f64::consts::PI * t / 2.0).sin(),
+        ];
+        rows = &rows[lower..=upper];
+    }
+    let first = row_vector(&rows[0], channels, active_indices, x)?;
+    if rows.len() == 1 {
+        return Ok(first);
+    }
+    let second = row_vector(&rows[1], channels, active_indices, x)?;
+    Ok(first
+        .iter()
+        .zip(second)
+        .map(|(first, second)| weights[0] * first + weights[1] * second)
+        .collect())
+}
+
+fn row_vector(
+    row: &SpatialLayoutRow,
+    channels: &[SpatialLayoutChannel],
+    active_indices: &[usize],
+    x: f64,
+) -> Result<Vec<f64>, SpatialProjectionError> {
+    let anchors = &row.anchors;
+    let mut vector = vec![0.0; active_indices.len()];
+    let (first, second, lower_weight, upper_weight) = if x <= anchors[0].x {
+        (0, 0, 1.0, 0.0)
+    } else if x >= anchors[anchors.len() - 1].x {
+        let last = anchors.len() - 1;
+        (last, last, 1.0, 0.0)
+    } else {
+        let upper = anchors.partition_point(|anchor| anchor.x < x);
+        let lower = upper - 1;
+        let t = (x - anchors[lower].x) / (anchors[upper].x - anchors[lower].x);
+        (
+            lower,
+            upper,
+            (std::f64::consts::PI * t / 2.0).cos(),
+            (std::f64::consts::PI * t / 2.0).sin(),
+        )
+    };
+    let first_output = active_indices
+        .iter()
+        .position(|index| channels[*index].identity == anchors[first].identity)
+        .ok_or_else(|| SpatialProjectionError::MissingAnchor(anchors[first].identity.clone()))?;
+    vector[first_output] += lower_weight;
+    if second != first {
+        let second_output = active_indices
+            .iter()
+            .position(|index| channels[*index].identity == anchors[second].identity)
+            .ok_or_else(|| {
+                SpatialProjectionError::MissingAnchor(anchors[second].identity.clone())
+            })?;
+        vector[second_output] += upper_weight;
+    }
+    Ok(vector)
 }
 
 fn validate_vector(vector: &[f64], expected: usize) -> Result<(), SpatialProjectionError> {

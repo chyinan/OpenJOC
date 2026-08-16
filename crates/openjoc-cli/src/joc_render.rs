@@ -18,8 +18,9 @@ use openjoc_render::{
 use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, BridgeControlAssemblyError, BridgeControlFrame,
     BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge, SpatialBridgeError,
-    SpatialContributionMode, SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutChannel,
-    SpatialLayoutNode, SpatialRouteVector, SpatialTopologySnapshot,
+    SpatialContributionMode, SpatialCoordinateUpdate, SpatialLayout, SpatialLayoutAnchor,
+    SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutRow, SpatialLayoutTopology,
+    SpatialRouteVector, SpatialTopologySnapshot,
 };
 use openjoc_sofa::SofaError;
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
@@ -35,6 +36,11 @@ pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
 pub const JOC_RENDER_LAYOUT: &str = "5.1";
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
 pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 4] = ["5.1", "5.1.2", "7.1", "7.1.4"];
+const QMAX: f64 = 32_767.0 / 32_768.0;
+const TOP_INNER_LEFT: f64 = 0.241_943_359_375;
+const TOP_INNER_RIGHT: f64 = 0.758_056_640_625;
+const TOP_FRONT_Y: f64 = 0.241_943_359_375;
+const TOP_REAR_Y: f64 = 0.758_056_640_625;
 
 #[derive(Debug)]
 pub enum JocRenderError {
@@ -1632,55 +1638,24 @@ fn aligned_base_pcm(
 }
 
 fn five_point_one_layout() -> Result<SpatialLayout, JocRenderError> {
-    let channels = vec![
-        SpatialLayoutChannel {
-            identity: "FL".to_owned(),
-            enabled: true,
-            lfe: false,
-        },
-        SpatialLayoutChannel {
-            identity: "FR".to_owned(),
-            enabled: true,
-            lfe: false,
-        },
-        SpatialLayoutChannel {
-            identity: "FC".to_owned(),
-            enabled: true,
-            lfe: false,
-        },
-        SpatialLayoutChannel {
-            identity: "LFE".to_owned(),
-            enabled: true,
-            lfe: true,
-        },
-        SpatialLayoutChannel {
-            identity: "Ls".to_owned(),
-            enabled: true,
-            lfe: false,
-        },
-        SpatialLayoutChannel {
-            identity: "Rs".to_owned(),
-            enabled: true,
-            lfe: false,
-        },
-    ];
-    let one_hot = |index: usize| {
-        let mut vector = vec![0.0; 5];
-        vector[index] = 1.0;
-        vector
-    };
-    SpatialLayout::new(
-        channels,
-        vec![vec![0.0, 0.25, 0.5, 0.75, 1.0]],
-        (0..5)
-            .map(|index| SpatialLayoutNode {
-                knot_indices: vec![index],
-                vector: one_hot([3, 0, 2, 1, 4][index]),
-            })
-            .collect(),
-        Vec::new(),
+    generic_speaker_layout(
+        &["FL", "FR", "FC", "LFE", "Ls", "Rs"],
+        Some(3),
+        vec![bed_layer(vec![
+            row(
+                0.0,
+                vec![
+                    anchor("FL", 0.0, 0.0, 0.0),
+                    anchor("FC", 0.5, 0.0, 0.0),
+                    anchor("FR", QMAX, 0.0, 0.0),
+                ],
+            ),
+            row(
+                0.5,
+                vec![anchor("Ls", 0.0, 0.5, 0.0), anchor("Rs", QMAX, 0.5, 0.0)],
+            ),
+        ])],
     )
-    .map_err(|error| JocRenderError::InvalidControl(error.to_string()))
 }
 
 fn five_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
@@ -1693,131 +1668,161 @@ fn five_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
 }
 
 fn five_point_one_two_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
-    let active_count = 7;
-    let horizontal_knots = vec![0.0, 0.25, 0.5, 0.75, 1.0];
-    let lower = [3, 0, 2, 1, 4]
-        .into_iter()
-        .map(|index| one_hot(active_count, index))
-        .collect();
-    let upper = vec![
-        one_hot(active_count, 5),
-        one_hot(active_count, 5),
-        mixed(active_count, 5, 6),
-        one_hot(active_count, 6),
-        one_hot(active_count, 6),
-    ];
-    two_layer_preset(
+    generic_speaker_preset(
         "5.1.2",
         vec!["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
         Some(3),
-        horizontal_knots,
-        lower,
-        upper,
+        vec![
+            bed_layer(vec![
+                row(
+                    0.0,
+                    vec![
+                        anchor("FL", 0.0, 0.0, 0.0),
+                        anchor("FC", 0.5, 0.0, 0.0),
+                        anchor("FR", QMAX, 0.0, 0.0),
+                    ],
+                ),
+                row(
+                    0.5,
+                    vec![anchor("Ls", 0.0, 0.5, 0.0), anchor("Rs", QMAX, 0.5, 0.0)],
+                ),
+            ]),
+            upper_layer(vec![row(
+                0.5,
+                vec![
+                    anchor("TFL", TOP_INNER_LEFT, 0.5, QMAX),
+                    anchor("TFR", TOP_INNER_RIGHT, 0.5, QMAX),
+                ],
+            )]),
+        ],
     )
 }
 
 fn seven_point_one_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
-    let active_count = 7;
-    one_layer_preset(
+    generic_speaker_preset(
         "7.1",
         vec!["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"],
         Some(3),
-        vec![0.0, 1.0 / 6.0, 1.0 / 3.0, 0.5, 2.0 / 3.0, 5.0 / 6.0, 1.0],
-        vec![3, 5, 0, 2, 1, 6, 4]
-            .into_iter()
-            .map(|index| one_hot(active_count, index))
-            .collect(),
+        vec![bed_layer(vec![
+            row(
+                0.0,
+                vec![
+                    anchor("FL", 0.0, 0.0, 0.0),
+                    anchor("FC", 0.5, 0.0, 0.0),
+                    anchor("FR", QMAX, 0.0, 0.0),
+                ],
+            ),
+            row(
+                0.5,
+                vec![anchor("Ls", 0.0, 0.5, 0.0), anchor("Rs", QMAX, 0.5, 0.0)],
+            ),
+            row(
+                QMAX,
+                vec![anchor("Lb", 0.0, QMAX, 0.0), anchor("Rb", QMAX, QMAX, 0.0)],
+            ),
+        ])],
     )
 }
 
 fn seven_point_one_four_preset() -> Result<SpeakerLayoutPreset, JocRenderError> {
-    let active_count = 11;
-    let horizontal_knots = vec![0.0, 1.0 / 6.0, 1.0 / 3.0, 0.5, 2.0 / 3.0, 5.0 / 6.0, 1.0];
-    let lower = [3, 5, 0, 2, 1, 6, 4]
-        .into_iter()
-        .map(|index| one_hot(active_count, index))
-        .collect();
-    let upper = vec![
-        one_hot(active_count, 9),
-        one_hot(active_count, 9),
-        one_hot(active_count, 7),
-        mixed(active_count, 7, 8),
-        one_hot(active_count, 8),
-        one_hot(active_count, 10),
-        one_hot(active_count, 10),
-    ];
-    two_layer_preset(
+    generic_speaker_preset(
         "7.1.4",
         vec![
             "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
         ],
         Some(3),
-        horizontal_knots,
-        lower,
-        upper,
+        vec![
+            bed_layer(vec![
+                row(
+                    0.0,
+                    vec![
+                        anchor("FL", 0.0, 0.0, 0.0),
+                        anchor("FC", 0.5, 0.0, 0.0),
+                        anchor("FR", QMAX, 0.0, 0.0),
+                    ],
+                ),
+                row(
+                    0.5,
+                    vec![anchor("Ls", 0.0, 0.5, 0.0), anchor("Rs", QMAX, 0.5, 0.0)],
+                ),
+                row(
+                    QMAX,
+                    vec![anchor("Lb", 0.0, QMAX, 0.0), anchor("Rb", QMAX, QMAX, 0.0)],
+                ),
+            ]),
+            upper_layer(vec![
+                row(
+                    TOP_FRONT_Y,
+                    vec![
+                        anchor("TFL", TOP_INNER_LEFT, TOP_FRONT_Y, QMAX),
+                        anchor("TFR", TOP_INNER_RIGHT, TOP_FRONT_Y, QMAX),
+                    ],
+                ),
+                row(
+                    TOP_REAR_Y,
+                    vec![
+                        anchor("TBL", TOP_INNER_LEFT, TOP_REAR_Y, QMAX),
+                        anchor("TBR", TOP_INNER_RIGHT, TOP_REAR_Y, QMAX),
+                    ],
+                ),
+            ]),
+        ],
     )
 }
 
-fn one_layer_preset(
+fn generic_speaker_preset(
     name: &'static str,
     labels: Vec<&'static str>,
     lfe_index: Option<usize>,
-    horizontal_knots: Vec<f64>,
-    vectors: Vec<Vec<f64>>,
+    layers: Vec<SpatialLayoutLayer>,
 ) -> Result<SpeakerLayoutPreset, JocRenderError> {
-    if horizontal_knots.len() != vectors.len() {
-        return Err(JocRenderError::InvalidControl(
-            "speaker preset knot/vector count mismatch".to_owned(),
-        ));
-    }
-    let nodes = vectors
-        .into_iter()
-        .enumerate()
-        .map(|(index, vector)| SpatialLayoutNode {
-            knot_indices: vec![index],
-            vector,
-        })
-        .collect();
-    let layout = SpatialLayout::new(
+    let layout = SpatialLayout::from_topology(
         layout_channels(&labels, lfe_index),
-        vec![horizontal_knots],
-        nodes,
+        SpatialLayoutTopology {
+            layers,
+            aliases: Vec::new(),
+        },
         Vec::new(),
     )
     .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?;
     Ok(SpeakerLayoutPreset::new(name, labels, lfe_index, layout))
 }
 
-fn two_layer_preset(
-    name: &'static str,
-    labels: Vec<&'static str>,
+fn generic_speaker_layout(
+    labels: &[&'static str],
     lfe_index: Option<usize>,
-    horizontal_knots: Vec<f64>,
-    lower: Vec<Vec<f64>>,
-    upper: Vec<Vec<f64>>,
-) -> Result<SpeakerLayoutPreset, JocRenderError> {
-    if lower.len() != horizontal_knots.len() || upper.len() != horizontal_knots.len() {
-        return Err(JocRenderError::InvalidControl(
-            "height speaker preset knot/vector count mismatch".to_owned(),
-        ));
-    }
-    let mut nodes = Vec::with_capacity(horizontal_knots.len() * 2);
-    for (height, layer) in [lower, upper].into_iter().enumerate() {
-        for (horizontal, vector) in layer.into_iter().enumerate() {
-            nodes.push(SpatialLayoutNode {
-                knot_indices: vec![horizontal, height],
-                vector,
-            });
-        }
-    }
-    let layout = SpatialLayout::new(
-        layout_channels(&labels, lfe_index),
-        vec![horizontal_knots, vec![0.0, 1.0]],
-        nodes,
+    layers: Vec<SpatialLayoutLayer>,
+) -> Result<SpatialLayout, JocRenderError> {
+    SpatialLayout::from_topology(
+        layout_channels(labels, lfe_index),
+        SpatialLayoutTopology {
+            layers,
+            aliases: Vec::new(),
+        },
         Vec::new(),
     )
-    .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?;
-    Ok(SpeakerLayoutPreset::new(name, labels, lfe_index, layout))
+    .map_err(|error| JocRenderError::InvalidControl(error.to_string()))
+}
+
+fn bed_layer(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
+    SpatialLayoutLayer { z: 0.0, rows }
+}
+
+fn upper_layer(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
+    SpatialLayoutLayer { z: QMAX, rows }
+}
+
+fn row(y: f64, anchors: Vec<SpatialLayoutAnchor>) -> SpatialLayoutRow {
+    SpatialLayoutRow { y, anchors }
+}
+
+fn anchor(identity: &str, x: f64, y: f64, z: f64) -> SpatialLayoutAnchor {
+    SpatialLayoutAnchor {
+        identity: identity.to_owned(),
+        x,
+        y,
+        z,
+    }
 }
 
 fn layout_channels(labels: &[&'static str], lfe_index: Option<usize>) -> Vec<SpatialLayoutChannel> {
@@ -1862,19 +1867,6 @@ fn speaker_mask_for_labels(labels: &[&str]) -> Result<u32, JocRenderError> {
         ));
     }
     Ok(bits.into_iter().fold(0, |mask, bit| mask | bit))
-}
-
-fn one_hot(length: usize, index: usize) -> Vec<f64> {
-    let mut vector = vec![0.0; length];
-    vector[index] = 1.0;
-    vector
-}
-
-fn mixed(length: usize, first: usize, second: usize) -> Vec<f64> {
-    let mut vector = vec![0.0; length];
-    vector[first] = 0.5;
-    vector[second] = 0.5;
-    vector
 }
 
 fn replacement_backup_path(output: &Path) -> Result<PathBuf, io::Error> {
@@ -2073,7 +2065,7 @@ mod tests {
         BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
         JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocRenderError, JocSpeakerRenderer,
         JocWavOutput, RenderControl, RenderedBlock, SpeakerLayoutPreset, five_point_one_layout,
-        speaker_mask_for_labels, virtual_speaker_direction,
+        five_point_one_preset, speaker_mask_for_labels, virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
     use openjoc_emdf::JocValidationProfile;
@@ -2103,7 +2095,7 @@ mod tests {
             descriptor: SpatialDescriptor {
                 source_class: class,
                 identity: identity.to_owned(),
-                coordinates: vec![0.5],
+                coordinates: vec![0.5, 0.5, 0.0],
                 spread: None,
                 paired: None,
                 raw3: Some(vec![3]),
@@ -2297,6 +2289,24 @@ mod tests {
                 .collect::<Vec<_>>(),
             JOC_RENDER_CHANNEL_ORDER
         );
+    }
+
+    #[test]
+    fn clean_full_xyz_side_position_uses_the_5_1_side_row() {
+        let preset = five_point_one_preset().expect("5.1 preset");
+        assert_eq!(preset.layout.coordinate_dimension_count(), 3);
+        let descriptor = SpatialDescriptor::new(
+            SpatialSourceClass::DynamicPoint,
+            "side-point",
+            vec![(32_767.0 / 32_768.0) / 2.0, 0.5, 0.0],
+        );
+        let projected = preset.layout.project(&descriptor).expect("3D point");
+        let root = 0.5_f64.sqrt();
+        assert!(projected[0].abs() < 1.0e-12);
+        assert!(projected[1].abs() < 1.0e-12);
+        assert!(projected[2].abs() < 1.0e-12);
+        assert!((projected[3] - root).abs() < 1.0e-12);
+        assert!((projected[4] - root).abs() < 1.0e-12);
     }
 
     #[test]
@@ -2790,7 +2800,7 @@ mod tests {
                 descriptor: SpatialDescriptor::new(
                     SpatialSourceClass::DynamicPoint,
                     "height-point",
-                    vec![1.0 / 3.0, 1.0],
+                    vec![1.0 / 3.0, 0.5, 32_767.0 / 32_768.0],
                 ),
                 scalar: 1.0,
                 active: true,

@@ -57,11 +57,20 @@ They share the same aligned timeline, bridge-control scheduling, LFE policy,
 WAV sample count, and channel order.
 
 The preset is data, not a separate JOC algorithm. It supplies public channel
-order and clean normalized geometry to the existing generic `SpatialLayout`
-projection. The horizontal coordinate runs from rear-left through the front
-to rear-right. Height presets add a normalized height axis from `0` (base) to
-`1` (height). These are explicit OpenJOC preset coordinates, not authored
-object positions and not a vendor renderer geometry claim.
+order and clean normalized layer/row/anchor geometry to the generic full-XYZ
+`SpatialLayout` projection. X runs left-to-right, Y runs front-to-rear, and
+signed Z places points at/below the bed or toward the upper layer. X is solved
+within each row, Y blends adjacent rows, and admitted bed/top layers compose
+through signed-Z equal-power weights. These are explicit OpenJOC preset
+coordinates, not authored object positions and not a vendor renderer geometry
+claim.
+
+The same generic engine is internally validated with clean executable fixtures
+for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, and 7.1.4. The CLI continues to
+expose only the established 5.1, 5.1.2, 7.1, and 7.1.4 presets; constrained
+topology families do not become public product presets without their separate
+output contracts. Storage capability does not imply arbitrary-layout or 22.2
+semantics.
 
 The public library layer is broader than this CLI preset list. Callers can
 construct a validated `openjoc_scene::SpatialLayout` with arbitrary enabled
@@ -105,12 +114,12 @@ A minimal 5-channel Base plus one ReconstructionBasis row control file is:
     "explicit_groups": [],
     "fixed_layout": [],
     "dynamic_records": [
-      {"descriptor":{"source_class":"explicit_channel","identity":"FL","coordinates":[0.5],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
-      {"descriptor":{"source_class":"explicit_channel","identity":"FR","coordinates":[0.5],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
-      {"descriptor":{"source_class":"explicit_channel","identity":"FC","coordinates":[0.5],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
-      {"descriptor":{"source_class":"explicit_channel","identity":"Ls","coordinates":[0.5],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
-      {"descriptor":{"source_class":"explicit_channel","identity":"Rs","coordinates":[0.5],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
-      {"descriptor":{"source_class":"explicit_channel","identity":"FC","coordinates":[0.5],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true}
+      {"descriptor":{"source_class":"explicit_channel","identity":"FL","coordinates":[0.5,0.5,0.0],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
+      {"descriptor":{"source_class":"explicit_channel","identity":"FR","coordinates":[0.5,0.5,0.0],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
+      {"descriptor":{"source_class":"explicit_channel","identity":"FC","coordinates":[0.5,0.5,0.0],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
+      {"descriptor":{"source_class":"explicit_channel","identity":"Ls","coordinates":[0.5,0.5,0.0],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
+      {"descriptor":{"source_class":"explicit_channel","identity":"Rs","coordinates":[0.5,0.5,0.0],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true},
+      {"descriptor":{"source_class":"explicit_channel","identity":"FC","coordinates":[0.5,0.5,0.0],"spread":null,"paired":null,"raw3":null},"scalar":1.0,"active":true}
     ]
   },
   "updates": []
@@ -458,9 +467,9 @@ members only when the selected layout supplies matching route vectors, dynamic
 point-like records, and dynamic region records. `raw3` remains opaque with no
 assigned semantic name. `AUTO` behavior is unchanged: strict validation is
 selected first and the existing compatibility policy is used only where its
-current whitelist admits it. Full x/y/z projection, complete region/layer/
-fallback semantics, automatic spread and paired geometry, linked limiting,
-delay, and bass management remain incomplete or withheld.
+current whitelist admits it. Complete region/layer/fallback semantics,
+automatic spread and paired geometry, linked limiting, delay, and bass
+management remain incomplete or withheld.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE
@@ -477,12 +486,12 @@ name alone as evidence of a clean geometry definition.
 | Preset | Classification | CLI status | Reason / boundary |
 |---|---|---|---|
 | `2.0` | `BLOCKED_BY_BASS_OR_FOLD_POLICY` | Not exposed | The bridge keeps Base LFE separate and the project has no specified consumer stereo bass-management or LFE fold-down policy. |
-| `5.1` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Existing 1D normalized geometry and the original public order remain the regression anchor. |
-| `5.1.2` | `SUPPORTED_AFTER_PRESET_ADDITION` | Exposed | Uses the admitted project-defined normalized horizontal/height data; no external vendor geometry claim is made. |
-| `5.1.4` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for the four height positions. |
-| `7.1` | `SUPPORTED_AFTER_PRESET_ADDITION` | Exposed | Uses the generic 1D layout with explicit rear-bed positions and public order. |
-| `7.1.2` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for the two height positions. |
-| `7.1.4` | `SUPPORTED_AFTER_PRESET_ADDITION` | Exposed | Uses the generic two-axis layout with explicit lower/height node data and public order. |
+| `5.1` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit front/side bed rows and the original public order. |
+| `5.1.2` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with one upper row and public order. |
+| `5.1.4` | `INTERNAL_FIXTURE_ONLY` | Not exposed | Clean point geometry is internally validated; the public output contract remains separate. |
+| `7.1` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit front/side/rear bed rows and public order. |
+| `7.1.2` | `INTERNAL_FIXTURE_ONLY` | Not exposed | Clean point geometry is internally validated; the public output contract remains separate. |
+| `7.1.4` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit bed/top rows and public order. |
 | `9.1.4` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for front-wide plus four-height mapping. |
 | `9.1.6` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for front-wide plus six-height mapping. |
 | `22.2` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | The generic engine can represent a 24-channel 3D layout, but no clean/public 22.2 speaker geometry is admitted in this repository. |

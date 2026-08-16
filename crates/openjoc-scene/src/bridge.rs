@@ -20,9 +20,10 @@ pub use joc_spatial_bridge::{
     SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
     SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate,
     SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
-    SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode, SpatialPairedGeometry,
-    SpatialProjectionError, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
-    SpatialSpreadSample, SpatialTopologySnapshot,
+    SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor, SpatialLayoutChannel,
+    SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
+    SpatialPairedGeometry, SpatialProjectionError, SpatialRouteVector, SpatialSourceClass,
+    SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
 };
 
 /// Versioned schema name for the borrowed codec-domain bridge contract.

@@ -18,9 +18,10 @@ pub use bridge::{
     SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
     SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialContributionMode,
     SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
-    SpatialExplicitMember, SpatialLayout, SpatialLayoutChannel, SpatialLayoutNode,
-    SpatialPairedGeometry, SpatialProjectionError, SpatialRouteVector, SpatialSourceClass,
-    SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
+    SpatialExplicitMember, SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor,
+    SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow,
+    SpatialLayoutTopology, SpatialPairedGeometry, SpatialProjectionError, SpatialRouteVector,
+    SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
 };
 mod bridge_control;
 pub use bridge_control::{
