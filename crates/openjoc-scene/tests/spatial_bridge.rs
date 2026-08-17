@@ -1,11 +1,12 @@
 use openjoc_scene::{
-    GainScheduler, JocSpatialBridge, SPEAKER_LAYOUT_PRESET_NAMES, SemanticBindingState,
-    SpatialBindingRecord, SpatialBindingState, SpatialBridgeError, SpatialCoordinateUpdate,
-    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
-    SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer,
-    SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology, SpatialPairedGeometry,
-    SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample,
-    SpatialTopologySnapshot, SpeakerLayoutPreset,
+    GainScheduler, JocSpatialBridge, RegionHorizontalState, RegionSemanticState,
+    RegionTopBottomState, RegionTopologySelector, SPEAKER_LAYOUT_PRESET_NAMES,
+    SemanticBindingState, SpatialBindingRecord, SpatialBindingState, SpatialBridgeError,
+    SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
+    SpatialExplicitMember, SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel,
+    SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
+    SpatialPairedGeometry, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
+    SpatialSpreadSample, SpatialTopologySnapshot, SpeakerLayoutPreset,
 };
 
 fn descriptor(
@@ -22,6 +23,7 @@ fn descriptor(
         raw3: Some(vec![3, 7]),
         extent: None,
         zones: None,
+        channel_lock: false,
     }
 }
 
@@ -301,6 +303,433 @@ fn projection_covers_endpoints_midpoint_tensor_clamp_exclusion_spread_and_pair()
 
     let inactive = descriptor(SpatialSourceClass::Inactive, "inactive", vec![0.5]);
     assert_eq!(layout.project(&inactive).unwrap(), vec![0.0, 0.0]);
+}
+
+#[test]
+fn red_region_metadata_is_currently_ignored_by_projection() {
+    let layout = executable_layout("7.1.4");
+    let default_descriptor = dynamic_point(0.25, 0.5, 0.0);
+    let mut screen_only = default_descriptor.clone();
+    screen_only.zones = Some([true, false, false, false, false, true]);
+
+    let default_target = layout
+        .project(&default_descriptor)
+        .expect("default point target");
+    let constrained_target = layout.project(&screen_only).expect("screen-only target");
+
+    assert_ne!(
+        default_target, constrained_target,
+        "non-default semantic region must not be ignored"
+    );
+}
+
+#[test]
+fn red_region_projection_must_not_be_a_post_projection_mask() {
+    let layout = executable_layout("7.1.4");
+    let mut screen_only = dynamic_point(0.25, 0.5, 0.0);
+    screen_only.zones = Some([true, false, false, false, false, true]);
+
+    let constrained_target = layout.project(&screen_only).expect("screen-only target");
+    let screen_indices = [
+        active_index(&layout, "FL"),
+        active_index(&layout, "FC"),
+        active_index(&layout, "FR"),
+    ];
+    let mut naive = layout
+        .project(&dynamic_point(0.25, 0.5, 0.0))
+        .expect("full-layout target");
+    for (index, value) in naive.iter_mut().enumerate() {
+        if !screen_indices.contains(&index) {
+            *value = 0.0;
+        }
+    }
+    let norm = naive.iter().map(|value| value * value).sum::<f64>().sqrt();
+    if norm > 0.0 {
+        for value in &mut naive {
+            *value /= norm;
+        }
+    }
+
+    assert_ne!(
+        constrained_target, naive,
+        "constrained-topology projection must differ from a full-vector post-mask"
+    );
+}
+
+#[test]
+fn red_region_outside_support_must_clamp_instead_of_mute() {
+    let layout = executable_layout("7.1.4");
+    let mut screen_only = dynamic_point(0.25, QMAX_CLEAN, 0.0);
+    screen_only.zones = Some([true, false, false, false, false, true]);
+
+    let target = layout
+        .project(&screen_only)
+        .expect("screen-only outside-support target");
+
+    assert!(
+        target.iter().any(|value| *value > 0.0),
+        "a valid selected topology must clamp outside support, not mute"
+    );
+}
+
+fn region_zones(horizontal: RegionHorizontalState, top_bottom: RegionTopBottomState) -> [bool; 6] {
+    RegionSemanticState {
+        horizontal,
+        top_bottom,
+    }
+    .to_decoded_zones()
+}
+
+fn ids(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+#[test]
+fn region_semantic_adapter_accepts_only_the_six_clean_states() {
+    for horizontal in [
+        RegionHorizontalState::NoConstraints,
+        RegionHorizontalState::BackExcluded,
+        RegionHorizontalState::SideExcluded,
+        RegionHorizontalState::CentreAndBack,
+        RegionHorizontalState::ScreenOnly,
+        RegionHorizontalState::SurroundOnly,
+    ] {
+        for top_bottom in [RegionTopBottomState::Include, RegionTopBottomState::Exclude] {
+            let state = RegionSemanticState {
+                horizontal,
+                top_bottom,
+            };
+            assert_eq!(
+                RegionSemanticState::from_decoded_zones(state.to_decoded_zones()),
+                Ok(state)
+            );
+        }
+    }
+    assert!(
+        RegionSemanticState::from_decoded_zones([false, true, false, true, false, true]).is_err()
+    );
+}
+
+#[test]
+fn region_topology_rebuilds_membership_before_projection() {
+    let layout = executable_layout("7.1.4");
+    let mut selector = RegionTopologySelector::new();
+    let mut bed_identities = |state| {
+        let selected = selector
+            .select(
+                &layout,
+                RegionSemanticState {
+                    horizontal: state,
+                    top_bottom: RegionTopBottomState::Include,
+                },
+            )
+            .expect("admitted constrained topology");
+        selected.topology().layers[0]
+            .rows
+            .iter()
+            .flat_map(|row| row.anchors.iter().map(|anchor| anchor.identity.as_str()))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        bed_identities(RegionHorizontalState::NoConstraints),
+        ids(&["FL", "FC", "FR", "Ls", "Rs", "Lb", "Rb"])
+    );
+    assert_eq!(
+        bed_identities(RegionHorizontalState::BackExcluded),
+        ids(&["FL", "FC", "FR", "Ls", "Rs"])
+    );
+    assert_eq!(
+        bed_identities(RegionHorizontalState::SideExcluded),
+        ids(&["FL", "FC", "FR", "Lb", "Rb"])
+    );
+    assert_eq!(
+        bed_identities(RegionHorizontalState::CentreAndBack),
+        ids(&["FC", "Lb", "Rb"])
+    );
+    assert_eq!(
+        bed_identities(RegionHorizontalState::ScreenOnly),
+        ids(&["FL", "FC", "FR"])
+    );
+    assert_eq!(
+        bed_identities(RegionHorizontalState::SurroundOnly),
+        ids(&["Ls", "Rs"])
+    );
+    assert_eq!(selector.cached_topology_count(), 5);
+}
+
+#[test]
+fn region_top_bottom_is_independent_and_keeps_the_canonical_output_vector() {
+    let layout = executable_layout("7.1.4");
+    let mut include = dynamic_point(0.5, 0.25, QMAX_CLEAN);
+    include.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    let mut exclude = include.clone();
+    exclude.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    let included = layout.project(&include).expect("upper-inclusive target");
+    let excluded = layout.project(&exclude).expect("bed-only target");
+
+    assert!(included[active_index(&layout, "TFL")] > 0.0);
+    assert!(included[active_index(&layout, "TFR")] > 0.0);
+    assert_eq!(included[active_index(&layout, "FC")], 0.0);
+    assert!(excluded[active_index(&layout, "FC")] > 0.0);
+    assert_eq!(excluded[active_index(&layout, "TFL")], 0.0);
+    assert_eq!(excluded.len(), layout.active_channel_count());
+}
+
+#[test]
+fn region_default_identity_holds_across_public_layouts() {
+    for name in [
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+    ] {
+        let layout = executable_layout(name);
+        let mut default_region = dynamic_point(0.37, 0.61, 0.23);
+        default_region.zones = Some(region_zones(
+            RegionHorizontalState::NoConstraints,
+            RegionTopBottomState::Include,
+        ));
+        let ordinary = {
+            let mut descriptor = default_region.clone();
+            descriptor.zones = None;
+            layout.project(&descriptor).expect("ordinary target")
+        };
+        let through_region = layout
+            .project(&default_region)
+            .expect("default region target");
+        assert_eq!(ordinary, through_region, "{name}");
+        assert_eq!(ordinary.len(), layout.active_channel_count(), "{name}");
+    }
+}
+
+#[test]
+fn region_outside_support_uses_selected_endpoint_and_not_forbidden_speakers() {
+    let layout = executable_layout("7.1.4");
+    let mut descriptor = dynamic_point(0.25, QMAX_CLEAN, 0.0);
+    descriptor.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    let target = layout
+        .project(&descriptor)
+        .expect("selected endpoint clamp");
+    assert!(target[active_index(&layout, "FL")] > 0.0);
+    assert!(target[active_index(&layout, "FC")] > 0.0);
+    for identity in ["Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR"] {
+        assert_eq!(target[active_index(&layout, identity)], 0.0, "{identity}");
+    }
+    assert_unit_l2(&target);
+}
+
+#[test]
+fn region_selector_cache_is_bounded_and_epoch_resettable() {
+    let layout = executable_layout("7.1.4");
+    let mut selector = RegionTopologySelector::new();
+    let state = RegionSemanticState {
+        horizontal: RegionHorizontalState::ScreenOnly,
+        top_bottom: RegionTopBottomState::Include,
+    };
+    selector.select(&layout, state).expect("first topology");
+    selector.select(&layout, state).expect("cached topology");
+    assert_eq!(selector.cached_topology_count(), 1);
+    selector.clear();
+    assert_eq!(selector.cached_topology_count(), 0);
+}
+
+#[test]
+fn invalid_region_update_is_atomic_and_retains_the_last_valid_snapshot() {
+    let valid = region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    );
+    let mut state = SpatialBindingState::new();
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: {
+                let mut descriptor = dynamic_point(0.25, 0.5, 0.0);
+                descriptor.zones = Some(valid);
+                descriptor
+            },
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    state.apply(Some(&topology), None, 1).expect("valid region");
+    let invalid = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            zones: Some(Some([false, true, false, true, false, true])),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    assert_eq!(
+        state.apply(None, Some(std::slice::from_ref(&invalid)), 1),
+        Err(openjoc_scene::SpatialBindingError::InvalidRegionState([
+            false, true, false, true, false, true
+        ]))
+    );
+    assert_eq!(
+        state.snapshot().unwrap().records[0].descriptor.zones,
+        Some(valid)
+    );
+}
+
+#[test]
+fn region_target_changes_use_the_existing_q32_scheduler() {
+    let layout = executable_layout("7.1.4");
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: dynamic_point(0.25, 0.5, 0.0),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = vec![1.0; 64];
+    let mut bridge = JocSpatialBridge::new();
+    let mut storage = vec![vec![0.0; input.len()]; layout.active_channel_count()];
+    let mut outputs = storage
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut outputs,
+        )
+        .expect("initial target");
+
+    let update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            zones: Some(Some(region_zones(
+                RegionHorizontalState::ScreenOnly,
+                RegionTopBottomState::Include,
+            ))),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            None,
+            Some(std::slice::from_ref(&update)),
+            &layout,
+            64,
+            48_000,
+            &mut outputs,
+        )
+        .expect("region target event");
+    drop(outputs);
+    let left = active_index(&layout, "Ls");
+    assert!(storage[left][0] > storage[left][63]);
+}
+
+#[test]
+fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
+    let layout = executable_layout("7.1.4");
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: dynamic_point(0.5, 0.0, 0.0),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = vec![1.0; 1];
+    let mut bridge = JocSpatialBridge::new();
+    let mut storage = vec![vec![0.0; 1]; layout.active_channel_count()];
+    let mut outputs = storage
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut outputs,
+        )
+        .expect("initial snapshot");
+
+    let update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            coordinates: Some(vec![0.25, 0.5, 0.0]),
+            zones: Some(Some(region_zones(
+                RegionHorizontalState::ScreenOnly,
+                RegionTopBottomState::Exclude,
+            ))),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            None,
+            Some(std::slice::from_ref(&update)),
+            &layout,
+            0,
+            48_000,
+            &mut outputs,
+        )
+        .expect("atomic position and region snapshot");
+    drop(outputs);
+
+    let mut expected = dynamic_point(0.25, 0.5, 0.0);
+    expected.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    let expected = layout.project(&expected).expect("atomic expected target");
+    for (channel, value) in storage.iter().enumerate() {
+        assert!(
+            (value[0] - expected[channel]).abs() < 2.0e-12,
+            "channel {channel}"
+        );
+    }
+}
+
+#[test]
+fn extent_and_channel_lock_remain_fail_closed_for_region_projection() {
+    let layout = executable_layout("7.1.4");
+    let mut extent = dynamic_point(0.5, 0.5, 0.0);
+    extent.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    extent.extent = Some([0.1, 0.0, 0.0]);
+    assert_eq!(
+        layout.project(&extent),
+        Err(openjoc_scene::SpatialProjectionError::UnsupportedExtent)
+    );
+    let mut locked = extent.clone();
+    locked.extent = None;
+    locked.channel_lock = true;
+    assert_eq!(
+        layout.project(&locked),
+        Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
+    );
 }
 
 #[test]
@@ -973,5 +1402,137 @@ fn clean_topology_validation_and_unadmitted_layers_fail_closed() {
     assert_eq!(
         four_layers.project(&dynamic_point(0.5, 0.0, 0.5)),
         Err(openjoc_scene::SpatialProjectionError::UnadmittedLayerPolicy)
+    );
+}
+
+#[test]
+#[ignore = "manual release performance harness"]
+fn region_preparation_and_control_performance_harness() {
+    use std::time::Instant;
+
+    const FRAME_COUNT: usize = 128;
+    const SAMPLES_PER_FRAME: usize = 1_536;
+    let layout = executable_layout("7.1.4");
+    let states = [
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::NoConstraints,
+            top_bottom: RegionTopBottomState::Include,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::BackExcluded,
+            top_bottom: RegionTopBottomState::Include,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::SideExcluded,
+            top_bottom: RegionTopBottomState::Include,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::CentreAndBack,
+            top_bottom: RegionTopBottomState::Include,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::ScreenOnly,
+            top_bottom: RegionTopBottomState::Include,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::SurroundOnly,
+            top_bottom: RegionTopBottomState::Include,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::NoConstraints,
+            top_bottom: RegionTopBottomState::Exclude,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::BackExcluded,
+            top_bottom: RegionTopBottomState::Exclude,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::SideExcluded,
+            top_bottom: RegionTopBottomState::Exclude,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::CentreAndBack,
+            top_bottom: RegionTopBottomState::Exclude,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::ScreenOnly,
+            top_bottom: RegionTopBottomState::Exclude,
+        },
+        RegionSemanticState {
+            horizontal: RegionHorizontalState::SurroundOnly,
+            top_bottom: RegionTopBottomState::Exclude,
+        },
+    ];
+    let mut selector = RegionTopologySelector::new();
+    let start = Instant::now();
+    for _ in 0..1_000 {
+        for state in states {
+            std::hint::black_box(selector.select(&layout, state).expect("region topology"));
+        }
+    }
+    let preparation_seconds = start.elapsed().as_secs_f64();
+
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: dynamic_point(0.25, 0.5, 0.0),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = vec![1.0; SAMPLES_PER_FRAME];
+    let mut bridge = JocSpatialBridge::new();
+    let mut storage = vec![vec![0.0; SAMPLES_PER_FRAME]; layout.active_channel_count()];
+    let mut outputs = storage
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut outputs,
+        )
+        .expect("initial benchmark snapshot");
+    let start = Instant::now();
+    for frame in 0..FRAME_COUNT {
+        let horizontal = if frame % 2 == 0 {
+            RegionHorizontalState::ScreenOnly
+        } else {
+            RegionHorizontalState::SurroundOnly
+        };
+        let update = SpatialCoordinateUpdate {
+            ordinal: 0,
+            descriptor: Some(SpatialDescriptorPatch {
+                zones: Some(Some(region_zones(
+                    horizontal,
+                    RegionTopBottomState::Include,
+                ))),
+                ..SpatialDescriptorPatch::default()
+            }),
+            scalar: None,
+            active: None,
+        };
+        bridge
+            .render_coordinates(
+                &[input.as_slice()],
+                None,
+                Some(std::slice::from_ref(&update)),
+                &layout,
+                SAMPLES_PER_FRAME as u64,
+                48_000,
+                &mut outputs,
+            )
+            .expect("benchmark region event");
+    }
+    let render_seconds = start.elapsed().as_secs_f64();
+    std::hint::black_box(&storage);
+    println!(
+        "region_performance preparation_seconds={preparation_seconds:.6} cached_entries={} render_seconds={render_seconds:.6} frames={FRAME_COUNT} samples_per_frame={SAMPLES_PER_FRAME}",
+        selector.cached_topology_count()
     );
 }

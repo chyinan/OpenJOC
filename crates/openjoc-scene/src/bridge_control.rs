@@ -697,6 +697,7 @@ fn default_records(
             raw3: None,
             extent: None,
             zones: None,
+            channel_lock: false,
         };
         let _ = anchor;
         let _ = binding;
@@ -777,6 +778,7 @@ fn descriptor_for(
                         .zones
                         .map(|zone| zone == ZoneConstraint::Include),
                 ),
+                channel_lock: update.render.channel_lock,
             });
         }
         _ => return Ok(previous.clone()),
@@ -802,6 +804,7 @@ fn descriptor_for(
                 .zones
                 .map(|zone| zone == ZoneConstraint::Include),
         ),
+        channel_lock: update.render.channel_lock,
     })
 }
 
@@ -836,6 +839,7 @@ fn selective_diff(
                     raw3: Some(next.descriptor.raw3.clone()),
                     extent: Some(next.descriptor.extent),
                     zones: Some(next.descriptor.zones),
+                    channel_lock: Some(Some(next.descriptor.channel_lock)),
                 }),
                 scalar: Some(next.scalar),
                 active: Some(next.active),

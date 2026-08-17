@@ -36,8 +36,11 @@ claiming capabilities that the current evidence does not support.
   caller-defined layouts, but the CLI has no custom-layout file format.
   Ordinary diagnostic WAV output remains RIFF-only and may not carry speaker
   identity metadata; large-channel renderer capacity is not a third-party DAW
-  interoperability guarantee. Full x/y/z projection and complete
-  region/layer/fallback semantics remain incomplete.
+  interoperability guarantee. Full x/y/z projection is available for the
+  admitted topology family; Region/Zone support remains limited to the
+  documented six-state point subset and does not include extent, channel lock,
+  special selector-6, arbitrary region algebra, or unadmitted layer/fallback
+  semantics.
 - The real-JOC binaural mode is a separate speaker-virtualization stage:
   `render-joc` first renders the selected 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, or
   7.1.4 virtual

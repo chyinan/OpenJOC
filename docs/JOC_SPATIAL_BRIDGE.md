@@ -23,6 +23,11 @@ The bridge implements only the supported ordinary domain:
   coordinates, data-driven layer/row/anchor topology, row-local equal-power X
   interpolation, plane-local equal-power Y interpolation, fixed/named route
   vectors, optional weighted spread, and optional equal-power paired geometry;
+- ordinary dynamic Region/Zone states are resolved into a constrained
+  layer/row/anchor topology before point projection. The default/no-region
+  state retains the complete canonical topology; points outside selected
+  support use the selected topology's normal endpoint clamp rather than being
+  muted, and region target changes use the existing Q32 scheduler;
 - Q32 gain scheduling with persistent phase across blocks, restart on binding
   rebuild/layout change, and linear `Y = Σ G X` accumulation;
 - finite-value, dimension, duplicate, unsupported-class, and malformed-input
@@ -35,8 +40,13 @@ claim an official spatial oracle, and does not admit a vendor-fidelity result.
 The 0.4.0 `render-joc` command composes this function with automatic
 decoded JOC/OAMD bridge-control assembly for experimental speaker output. A
 complete topology sidecar remains an optional explicit override/test input.
-Q40, unsupported/default branches, unadmitted
-preprocessing, and malformed-recovery semantics are outside this implementation.
+unsupported/default branches, unadmitted preprocessing, and malformed-recovery
+semantics are outside this implementation. The admitted Region/Zone subset is
+limited to the six named horizontal states, ordinary Top-Bottom inclusion or
+exclusion on validated one- or two-plane layouts, zero extent, and disabled
+channel lock. Special selector-6 behavior, extent composition, channel lock,
+arbitrary region algebra, and unadmitted layer/fallback combinations fail
+closed.
 
 Ordinary dynamic point projection is one generic full-XYZ operator. Layout
 names select channel identities and topology data; they do not select separate

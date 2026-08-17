@@ -135,6 +135,17 @@ pass it to the public `JocSpatialBridge::render_coordinates` API. The CLI
 does not introduce a custom-layout file format; its stable user-facing names
 are convenience presets over that generic layout engine.
 
+Dynamic Region/Zone metadata is honored for ordinary point sources in the
+admitted subset. Region selection derives a constrained speaker topology
+before the existing point projector, so the default/no-region state is
+unchanged and points outside selected support clamp to selected topology
+endpoints instead of being muted. Region changes become ordinary target events
+through the existing Q32 gain scheduler. Only the six named horizontal states
+and independent Top-Bottom include/exclude behavior on validated one- or
+two-plane layouts are admitted; special selector-6 behavior, extent, channel
+lock, arbitrary region algebra, and unadmitted fallback/layer combinations
+remain unsupported.
+
 ## Automatic bridge control and optional override
 
 The ordinary path assembles bridge control from decoded Base/RB codec
@@ -535,12 +546,12 @@ tail contract. Private SOFA paths are not embedded in public metadata.
 
 The automatic assembly currently supports explicit-channel beds, fixed-layout
 members only when the selected layout supplies matching route vectors, dynamic
-point-like records, and dynamic region records. `raw3` remains opaque with no
-assigned semantic name. `AUTO` behavior is unchanged: strict validation is
-selected first and the existing compatibility policy is used only where its
-current whitelist admits it. Complete region/layer/fallback semantics,
-automatic spread and paired geometry, linked limiting, delay, and bass
-management remain incomplete or withheld.
+point-like records, and the admitted dynamic region records. `raw3` remains
+opaque with no assigned semantic name. `AUTO` behavior is unchanged: strict
+validation is selected first and the existing compatibility policy is used only
+where its current whitelist admits it. Automatic spread and paired geometry,
+linked limiting, delay, bass management, and region combinations outside the
+admitted subset remain incomplete or withheld.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE

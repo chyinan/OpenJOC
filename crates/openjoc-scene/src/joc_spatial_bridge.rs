@@ -6,7 +6,7 @@
 //! ETSI/vendor validation profiles; it does not alter parser policy.
 
 use super::{JocSpatialReconstructionFrame, SpatialContributionMode};
-use crate::SemanticBindingState;
+use crate::{RegionSemanticState, RegionTopologySelector, SemanticBindingState};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
@@ -72,9 +72,12 @@ pub struct SpatialDescriptor {
     #[serde(default)]
     pub extent: Option<[f64; 3]>,
     /// Decoded horizontal/elevation zone enables. The current projection
-    /// contract retains these values but does not apply them to P(d,L).
+    /// contract validates these values before selecting a region topology.
     #[serde(default)]
     pub zones: Option<[bool; 6]>,
+    /// Channel lock remains outside the ordinary point-region operator.
+    #[serde(default)]
+    pub channel_lock: bool,
 }
 
 impl SpatialDescriptor {
@@ -94,6 +97,7 @@ impl SpatialDescriptor {
             raw3: None,
             extent: None,
             zones: None,
+            channel_lock: false,
         }
     }
 }
@@ -159,6 +163,7 @@ pub struct SpatialDescriptorPatch {
     pub raw3: Option<Option<Vec<u8>>>,
     pub extent: Option<Option<[f64; 3]>>,
     pub zones: Option<Option<[bool; 6]>>,
+    pub channel_lock: Option<Option<bool>>,
 }
 
 /// Selective block update. Absent fields inherit from the current coordinate.
@@ -200,6 +205,7 @@ pub enum SpatialBindingError {
     NoTopologyForInitialization,
     EmptyTopology,
     UnsupportedSourceClass(String),
+    InvalidRegionState([bool; 6]),
     NonFiniteScalar { ordinal: usize },
     UpdateOrdinalOutOfRange { ordinal: usize, count: usize },
     TopologyEpochOverflow,
@@ -214,6 +220,9 @@ impl fmt::Display for SpatialBindingError {
             Self::EmptyTopology => formatter.write_str("spatial topology must contain a record"),
             Self::UnsupportedSourceClass(class) => {
                 write!(formatter, "unsupported spatial source class: {class}")
+            }
+            Self::InvalidRegionState(zones) => {
+                write!(formatter, "invalid semantic region state {zones:?}")
             }
             Self::NonFiniteScalar { ordinal } => {
                 write!(
@@ -248,6 +257,18 @@ impl SpatialBindingState {
     /// Applies a full topology snapshot and/or same-coordinate block updates.
     /// `None, None` is the spatial no-new-payload reuse event.
     pub fn apply(
+        &mut self,
+        topology: Option<&SpatialTopologySnapshot>,
+        updates: Option<&[SpatialCoordinateUpdate]>,
+        pcm_count: usize,
+    ) -> Result<SpatialBindingResult, SpatialBindingError> {
+        let mut candidate = self.clone();
+        let result = candidate.apply_inner(topology, updates, pcm_count)?;
+        *self = candidate;
+        Ok(result)
+    }
+
+    fn apply_inner(
         &mut self,
         topology: Option<&SpatialTopologySnapshot>,
         updates: Option<&[SpatialCoordinateUpdate]>,
@@ -357,6 +378,10 @@ fn validate_records(records: &[SpatialBindingRecord]) -> Result<(), SpatialBindi
         if let SpatialSourceClass::Unsupported(class) = &record.descriptor.source_class {
             return Err(SpatialBindingError::UnsupportedSourceClass(class.clone()));
         }
+        if let Some(zones) = record.descriptor.zones {
+            RegionSemanticState::from_decoded_zones(zones)
+                .map_err(|_| SpatialBindingError::InvalidRegionState(zones))?;
+        }
     }
     Ok(())
 }
@@ -398,7 +423,14 @@ fn apply_update(
             record.descriptor.extent = *extent;
         }
         if let Some(zones) = &patch.zones {
+            if let Some(zones) = zones {
+                RegionSemanticState::from_decoded_zones(*zones)
+                    .map_err(|_| SpatialBindingError::InvalidRegionState(*zones))?;
+            }
             record.descriptor.zones = *zones;
+        }
+        if let Some(channel_lock) = &patch.channel_lock {
+            record.descriptor.channel_lock = channel_lock.unwrap_or(false);
         }
     }
     if let Some(scalar) = update.scalar {
@@ -526,6 +558,10 @@ pub enum SpatialProjectionError {
     DuplicateAnchor(String),
     MissingAnchor(String),
     UnadmittedLayerPolicy,
+    InvalidRegionState([bool; 6]),
+    UnsupportedChannelLock,
+    UnsupportedExtent,
+    UnsupportedRegionLayout(&'static str),
 }
 
 impl fmt::Display for SpatialProjectionError {
@@ -581,6 +617,18 @@ impl fmt::Display for SpatialProjectionError {
             Self::UnadmittedLayerPolicy => {
                 formatter.write_str("spatial topology has no admitted multi-layer policy")
             }
+            Self::InvalidRegionState(zones) => {
+                write!(formatter, "invalid semantic region state {zones:?}")
+            }
+            Self::UnsupportedChannelLock => {
+                formatter.write_str("channel lock is unsupported by the point-region operator")
+            }
+            Self::UnsupportedExtent => {
+                formatter.write_str("nonzero extent is unsupported by the point-region operator")
+            }
+            Self::UnsupportedRegionLayout(reason) => {
+                write!(formatter, "unsupported constrained region layout: {reason}")
+            }
         }
     }
 }
@@ -605,7 +653,7 @@ impl SpatialLayout {
         topology: SpatialLayoutTopology,
         route_vectors: Vec<SpatialRouteVector>,
     ) -> Result<Self, SpatialProjectionError> {
-        Self::build(channels, topology, route_vectors, 3, false)
+        Self::build(channels, topology, route_vectors, 3, false, true)
     }
 
     /// Validates and translates the pre-topology rectangular layout API.
@@ -626,7 +674,14 @@ impl SpatialLayout {
             ));
         }
         let topology = legacy_topology(&channels, &knot_axes, &node_vectors)?;
-        Self::build(channels, topology, route_vectors, knot_axes.len(), true)
+        Self::build(
+            channels,
+            topology,
+            route_vectors,
+            knot_axes.len(),
+            true,
+            true,
+        )
     }
 
     fn build(
@@ -635,6 +690,7 @@ impl SpatialLayout {
         route_vectors: Vec<SpatialRouteVector>,
         coordinate_dimension: usize,
         allow_legacy_duplicate_anchors: bool,
+        require_all_active_anchors: bool,
     ) -> Result<Self, SpatialProjectionError> {
         if channels.is_empty() {
             return Err(SpatialProjectionError::InvalidLayout("no channels"));
@@ -662,6 +718,7 @@ impl SpatialLayout {
             &active_indices,
             &topology,
             allow_legacy_duplicate_anchors,
+            require_all_active_anchors,
         )?;
         let component_count = active_indices.len();
         let mut routes = HashSet::with_capacity(route_vectors.len());
@@ -696,6 +753,23 @@ impl SpatialLayout {
             route_vectors,
             self.coordinate_dimension,
             self.allow_legacy_duplicate_anchors,
+            true,
+        )
+    }
+
+    /// Returns a validated layout view whose topology may omit canonical
+    /// anchors while retaining the canonical output channel vector.
+    pub(crate) fn with_constrained_topology(
+        &self,
+        topology: SpatialLayoutTopology,
+    ) -> Result<Self, SpatialProjectionError> {
+        Self::build(
+            self.channels.clone(),
+            topology,
+            self.route_vectors.clone(),
+            self.coordinate_dimension,
+            self.allow_legacy_duplicate_anchors,
+            false,
         )
     }
 
@@ -725,6 +799,19 @@ impl SpatialLayout {
 
     /// Computes normalized `P(d,L)` in active non-LFE channel order.
     pub fn project(
+        &self,
+        descriptor: &SpatialDescriptor,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        if matches!(
+            descriptor.source_class,
+            SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion
+        ) {
+            return crate::RegionTopologySelector::new().project(self, descriptor);
+        }
+        self.project_unconstrained(descriptor)
+    }
+
+    pub(crate) fn project_unconstrained(
         &self,
         descriptor: &SpatialDescriptor,
     ) -> Result<Vec<f64>, SpatialProjectionError> {
@@ -1003,6 +1090,7 @@ fn validate_topology(
     active_indices: &[usize],
     topology: &SpatialLayoutTopology,
     allow_duplicate_anchors: bool,
+    require_all_active_anchors: bool,
 ) -> Result<(), SpatialProjectionError> {
     if topology.layers.is_empty() {
         return Err(SpatialProjectionError::InvalidLayout("no topology layers"));
@@ -1074,7 +1162,7 @@ fn validate_topology(
             }
         }
     }
-    if !allow_duplicate_anchors {
+    if require_all_active_anchors && !allow_duplicate_anchors {
         for identity in &active_identities {
             if !seen_anchors.contains(identity) {
                 return Err(SpatialProjectionError::MissingAnchor(
@@ -1470,6 +1558,7 @@ pub struct JocSpatialBridge {
     schedulers: Vec<GainScheduler>,
     targets: Vec<Vec<f64>>,
     last_layout: Option<SpatialLayout>,
+    region_selector: RegionTopologySelector,
 }
 
 impl JocSpatialBridge {
@@ -1481,6 +1570,7 @@ impl JocSpatialBridge {
             schedulers: Vec::new(),
             targets: Vec::new(),
             last_layout: None,
+            region_selector: RegionTopologySelector::new(),
         }
     }
 
@@ -1508,6 +1598,7 @@ impl JocSpatialBridge {
         self.schedulers.clear();
         self.targets.clear();
         self.last_layout = None;
+        self.region_selector.clear();
     }
 
     /// Renders borrowed codec-coordinate PCM into active non-LFE output planes.
@@ -1532,6 +1623,9 @@ impl JocSpatialBridge {
             .last_layout
             .as_ref()
             .is_none_or(|previous| previous != layout);
+        if layout_changed {
+            self.region_selector.clear();
+        }
         let result = self.binding.apply(topology, updates, coordinates.len())?;
         let Some(snapshot) = self.binding.snapshot() else {
             return Err(SpatialBridgeError::Binding(
@@ -1559,7 +1653,7 @@ impl JocSpatialBridge {
             for (index, target) in self.targets.iter_mut().enumerate() {
                 let record = &snapshot.records[index];
                 if record.active {
-                    let vector = layout.project(&record.descriptor)?;
+                    let vector = self.region_selector.project(layout, &record.descriptor)?;
                     for (target_value, projection) in target.iter_mut().zip(vector) {
                         *target_value = record.scalar * projection;
                     }

@@ -43,6 +43,11 @@ mod payload_decoder;
 pub use payload_decoder::{
     DecodedPayloadFrame, JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
 };
+mod region;
+pub use region::{
+    RegionHorizontalState, RegionSemanticError, RegionSemanticState, RegionTopBottomState,
+    RegionTopologySelector,
+};
 mod speaker_layouts;
 pub use speaker_layouts::{
     SPEAKER_LAYOUT_5_1_2_CHANNELS, SPEAKER_LAYOUT_5_1_4_CHANNELS, SPEAKER_LAYOUT_5_1_CHANNELS,

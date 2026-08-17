@@ -2334,6 +2334,7 @@ mod tests {
                 raw3: Some(vec![3]),
                 extent: None,
                 zones: None,
+                channel_lock: false,
             },
             scalar: 1.0,
             active: true,
