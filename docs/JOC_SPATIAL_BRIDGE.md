@@ -48,9 +48,12 @@ complete topology sidecar remains an optional explicit override/test input.
 unsupported/default branches, unadmitted preprocessing, and malformed-recovery
 semantics are outside this implementation. The admitted Region/Zone subset is
 limited to the six named horizontal states and ordinary Top-Bottom inclusion or
-exclusion on validated one- or two-plane layouts; non-default Region × nonzero
-Extent and ChannelLock × Extent remain fail-closed, as do special selector-6
-behavior, arbitrary region algebra, and unadmitted layer/fallback combinations.
+exclusion on validated one- or two-plane layouts. On those admitted topologies,
+non-default Region and ordinary nonzero Extent compose through the selected
+effective topology before the existing Extent crossover, normalization, and
+Q32 scheduler. ChannelLock × Extent remains fail-closed, as do special
+selector-6 behavior, arbitrary region algebra, and unadmitted layer/fallback
+combinations.
 
 Ordinary dynamic point projection is one generic full-XYZ operator. Layout
 names select channel identities and topology data; they do not select separate

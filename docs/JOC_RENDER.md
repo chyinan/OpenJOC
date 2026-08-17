@@ -144,9 +144,12 @@ honored for the eleven admitted 5.1/7.1/9.1-family layouts: XYZ metadata is
 reduced to one isotropic scalar, zero extent preserves the point target, and
 extent target changes use the existing Q32 scheduler. Only the six named
 horizontal states and independent Top-Bottom include/exclude behavior on
-validated one- or two-plane layouts are admitted; non-default Region ×
-nonzero Extent, ChannelLock × Extent, special selector-6 behavior, arbitrary
-region algebra, and unadmitted fallback/layer combinations remain unsupported.
+validated one- or two-plane layouts are admitted. On admitted layouts,
+non-default Region and ordinary nonzero Extent compose by selecting the
+effective Region topology before point and Extent target generation; the
+existing crossover, normalization, and Q32 scheduling remain in charge.
+ChannelLock × Extent, special selector-6 behavior, arbitrary region algebra,
+and unadmitted fallback/layer combinations remain unsupported.
 
 ## Automatic bridge control and optional override
 

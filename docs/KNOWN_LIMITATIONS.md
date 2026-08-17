@@ -37,10 +37,10 @@ claiming capabilities that the current evidence does not support.
   Ordinary diagnostic WAV output remains RIFF-only and may not carry speaker
   identity metadata; large-channel renderer capacity is not a third-party DAW
   interoperability guarantee. Full x/y/z projection is available for the
-  admitted topology family; ordinary Dynamic Extent is supported for the
-  documented eleven layouts, while non-default Region × nonzero Extent,
-  ChannelLock × Extent, special selector-6, arbitrary region algebra, and
-  unadmitted layer/fallback semantics remain unsupported.
+  admitted topology family; ordinary Dynamic Extent and admitted non-default
+  Region × nonzero Extent composition are supported for the documented eleven
+  layouts, while ChannelLock × Extent, special selector-6, arbitrary region
+  algebra, and unadmitted layer/fallback semantics remain unsupported.
 - The real-JOC binaural mode is a separate speaker-virtualization stage:
   `render-joc` first renders the selected 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, or
   7.1.4 virtual

@@ -132,7 +132,7 @@ struct RegionTopologyCacheEntry {
 
 #[derive(Clone, Debug, PartialEq)]
 struct ExtentCacheEntry {
-    canonical: SpatialLayout,
+    effective: SpatialLayout,
     topology_epoch: u64,
     field: ExtentFieldCache,
 }
@@ -203,40 +203,39 @@ impl RegionTopologySelector {
                 .map_err(|_| SpatialProjectionError::InvalidRegionState(zones))?,
             None => RegionSemanticState::default(),
         };
-        if extent_active && !state.is_default() {
-            return Err(SpatialProjectionError::UnsupportedExtent);
-        }
         if extent_active && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
             return Err(SpatialProjectionError::UnsupportedExtent);
         }
-        if state.is_default() {
-            if extent_active {
-                return self
-                    .cached_extent(canonical, topology_epoch)?
-                    .project(canonical, descriptor);
-            }
-            return canonical.project_unconstrained(descriptor);
+
+        let effective = if state.is_default() {
+            canonical.clone()
+        } else {
+            self.cached_selected(canonical, state)?.clone()
+        };
+        if extent_active {
+            return self
+                .cached_extent(&effective, topology_epoch)?
+                .project(&effective, descriptor);
         }
-        let selected = self.cached_selected(canonical, state)?;
-        selected.project_unconstrained(descriptor)
+        effective.project_unconstrained(descriptor)
     }
 
     fn cached_extent(
         &mut self,
-        canonical: &SpatialLayout,
+        effective: &SpatialLayout,
         topology_epoch: u64,
     ) -> Result<&ExtentFieldCache, SpatialProjectionError> {
         if let Some(index) = self.extent_cache.iter().position(|entry| {
-            entry.canonical == *canonical && entry.topology_epoch == topology_epoch
+            entry.effective == *effective && entry.topology_epoch == topology_epoch
         }) {
             return Ok(&self.extent_cache[index].field);
         }
-        let field = ExtentFieldCache::build(canonical)?;
+        let field = ExtentFieldCache::build(effective)?;
         if self.extent_cache.len() == EXTENT_CACHE_CAPACITY {
             self.extent_cache.remove(0);
         }
         self.extent_cache.push(ExtentCacheEntry {
-            canonical: canonical.clone(),
+            effective: effective.clone(),
             topology_epoch,
             field,
         });

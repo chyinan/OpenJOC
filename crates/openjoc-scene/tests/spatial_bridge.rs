@@ -585,9 +585,11 @@ fn invalid_region_update_is_atomic_and_retains_the_last_valid_snapshot() {
 #[test]
 fn region_target_changes_use_the_existing_q32_scheduler() {
     let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.25, 0.5, 0.0);
+    initial.extent = Some([0.25; 3]);
     let topology = SpatialTopologySnapshot {
         dynamic_records: vec![SpatialBindingRecord {
-            descriptor: dynamic_point(0.25, 0.5, 0.0),
+            descriptor: initial,
             scalar: 1.0,
             active: true,
         }],
@@ -643,8 +645,12 @@ fn region_target_changes_use_the_existing_q32_scheduler() {
 #[test]
 fn extent_only_changes_use_the_existing_q32_scheduler_without_an_extent_ramp() {
     let layout = executable_layout("7.1.4");
-    let mut initial = dynamic_point(0.5, 0.5, 0.0);
-    initial.extent = Some([5_285.0 / 32_768.0; 3]);
+    let mut initial = dynamic_point(0.25, 0.5, 0.0);
+    initial.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    initial.extent = Some([0.5; 3]);
     let topology = SpatialTopologySnapshot {
         dynamic_records: vec![SpatialBindingRecord {
             descriptor: initial,
@@ -700,12 +706,15 @@ fn extent_only_changes_use_the_existing_q32_scheduler_without_an_extent_ramp() {
         .project(&SpatialDescriptor {
             source_class: SpatialSourceClass::DynamicPoint,
             identity: "point".to_owned(),
-            coordinates: vec![0.5, 0.5, 0.0],
+            coordinates: vec![0.25, 0.5, 0.0],
             spread: None,
             paired: None,
             raw3: None,
             extent: Some([0.0; 3]),
-            zones: None,
+            zones: Some(region_zones(
+                RegionHorizontalState::ScreenOnly,
+                RegionTopBottomState::Exclude,
+            )),
             channel_lock: false,
         })
         .expect("zero extent point target");
@@ -721,9 +730,11 @@ fn extent_only_changes_use_the_existing_q32_scheduler_without_an_extent_ramp() {
 #[test]
 fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
     let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.5, 0.0, 0.0);
+    initial.extent = Some([0.1; 3]);
     let topology = SpatialTopologySnapshot {
         dynamic_records: vec![SpatialBindingRecord {
-            descriptor: dynamic_point(0.5, 0.0, 0.0),
+            descriptor: initial,
             scalar: 1.0,
             active: true,
         }],
@@ -756,6 +767,7 @@ fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
                 RegionHorizontalState::ScreenOnly,
                 RegionTopBottomState::Exclude,
             ))),
+            extent: Some(Some([0.25; 3])),
             ..SpatialDescriptorPatch::default()
         }),
         scalar: None,
@@ -779,6 +791,7 @@ fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
         RegionHorizontalState::ScreenOnly,
         RegionTopBottomState::Exclude,
     ));
+    expected.extent = Some([0.25; 3]);
     let expected = layout.project(&expected).expect("atomic expected target");
     for (channel, value) in storage.iter().enumerate() {
         assert!(
@@ -789,7 +802,7 @@ fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
 }
 
 #[test]
-fn extent_and_channel_lock_remain_fail_closed_for_region_projection() {
+fn admitted_region_extent_composes_while_channel_lock_remains_fail_closed() {
     let layout = executable_layout("7.1.4");
     let mut extent = dynamic_point(0.5, 0.5, 0.0);
     extent.zones = Some(region_zones(
@@ -797,10 +810,13 @@ fn extent_and_channel_lock_remain_fail_closed_for_region_projection() {
         RegionTopBottomState::Include,
     ));
     extent.extent = Some([0.1, 0.0, 0.0]);
-    assert_eq!(
-        layout.project(&extent),
-        Err(openjoc_scene::SpatialProjectionError::UnsupportedExtent)
-    );
+    let target = layout
+        .project(&extent)
+        .expect("admitted Region × Extent composition");
+    assert_unit_l2(&target);
+    for identity in ["Ls", "Rs", "Lb", "Rb"] {
+        assert_eq!(target[active_index(&layout, identity)], 0.0, "{identity}");
+    }
     let mut locked = extent.clone();
     locked.extent = None;
     locked.channel_lock = true;
@@ -808,6 +824,150 @@ fn extent_and_channel_lock_remain_fail_closed_for_region_projection() {
         layout.project(&locked),
         Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
     );
+}
+
+#[test]
+fn region_extent_preserves_default_and_zero_extent_identities() {
+    let layout = executable_layout("7.1.4");
+    let mut extent = dynamic_point(0.37, 0.61, 0.23);
+    extent.extent = Some([0.25; 3]);
+    let mut default_region = extent.clone();
+    default_region.zones = Some(region_zones(
+        RegionHorizontalState::NoConstraints,
+        RegionTopBottomState::Include,
+    ));
+    assert_eq!(
+        layout.project(&default_region),
+        layout.project(&extent),
+        "default Region must preserve standalone Extent"
+    );
+
+    let mut region = dynamic_point(0.25, 0.5, 0.0);
+    region.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    let mut zero = region.clone();
+    zero.extent = Some([0.0; 3]);
+    assert_eq!(layout.project(&zero), layout.project(&region));
+}
+
+#[test]
+fn region_extent_uses_one_constrained_topology_for_point_and_diffuse_branches() {
+    let layout = executable_layout("7.1.4");
+    let mut constrained = dynamic_point(0.25, 0.5, 0.0);
+    constrained.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    constrained.extent = Some([0.25; 3]);
+    let target = layout.project(&constrained).expect("constrained target");
+    assert_unit_l2(&target);
+    for identity in ["Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR"] {
+        assert_eq!(target[active_index(&layout, identity)], 0.0, "{identity}");
+    }
+
+    let mut full_extent = dynamic_point(0.25, 0.5, 0.0);
+    full_extent.extent = Some([0.25; 3]);
+    let mut post_mask = layout.project(&full_extent).expect("full Extent target");
+    for (index, value) in post_mask.iter_mut().enumerate() {
+        let identity = layout
+            .channels()
+            .iter()
+            .filter(|channel| channel.enabled && !channel.lfe)
+            .nth(index)
+            .expect("active channel");
+        if !["FL", "FC", "FR"].contains(&identity.identity.as_str()) {
+            *value = 0.0;
+        }
+    }
+    let norm = post_mask
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    for value in &mut post_mask {
+        *value /= norm;
+    }
+    assert_ne!(target, post_mask);
+}
+
+#[test]
+fn region_extent_retains_authored_outside_center_and_compensates_selected_support() {
+    let layout = executable_layout("7.1.4");
+    let mut outside = dynamic_point(0.25, QMAX_CLEAN, 0.0);
+    outside.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    outside.extent = Some([0.25; 3]);
+    let target = layout.project(&outside).expect("outside-center target");
+    assert_unit_l2(&target);
+    for identity in ["Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR"] {
+        assert_eq!(target[active_index(&layout, identity)], 0.0, "{identity}");
+    }
+
+    let mut clamped = outside.clone();
+    clamped.coordinates[1] = 0.0;
+    let clamped_target = layout.project(&clamped).expect("clamped-center target");
+    assert_ne!(target, clamped_target);
+
+    for extent in [0.05, 0.25, 0.75] {
+        let mut boundary = dynamic_point(0.25, 0.0, 0.0);
+        boundary.zones = outside.zones;
+        boundary.extent = Some([extent; 3]);
+        let boundary_target = layout.project(&boundary).expect("boundary target");
+        assert_unit_l2(&boundary_target);
+        for identity in ["Ls", "Rs", "Lb", "Rb", "TFL", "TFR", "TBL", "TBR"] {
+            assert_eq!(
+                boundary_target[active_index(&layout, identity)],
+                0.0,
+                "{identity} at extent {extent}"
+            );
+        }
+    }
+}
+
+#[test]
+fn region_extent_composition_covers_each_public_layout() {
+    for name in [
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+    ] {
+        let layout = executable_layout(name);
+        let mut descriptor = dynamic_point(0.37, 0.61, 0.0);
+        descriptor.zones = Some(region_zones(
+            RegionHorizontalState::ScreenOnly,
+            RegionTopBottomState::Exclude,
+        ));
+        descriptor.extent = Some([0.25; 3]);
+        let target = layout
+            .project(&descriptor)
+            .expect("admitted layout composition");
+        assert_eq!(target.len(), layout.active_channel_count(), "{name}");
+        assert_unit_l2(&target);
+    }
+}
+
+#[test]
+fn red_admitted_region_extent_cases_are_not_blanket_rejected() {
+    let layout = executable_layout("7.1.4");
+    let cases = [
+        (0.5, 0.5, 0.0, 0.05),
+        (0.25, QMAX_CLEAN, 0.0, 0.25),
+        (0.25, 0.0, 0.0, 0.75),
+    ];
+    for (x, y, z, extent) in cases {
+        let mut descriptor = dynamic_point(x, y, z);
+        descriptor.zones = Some(region_zones(
+            RegionHorizontalState::ScreenOnly,
+            RegionTopBottomState::Exclude,
+        ));
+        descriptor.extent = Some([extent; 3]);
+        let target = layout
+            .project(&descriptor)
+            .expect("admitted Region × Extent case");
+        assert_unit_l2(&target);
+    }
 }
 
 #[test]
@@ -1646,9 +1806,11 @@ fn region_preparation_and_control_performance_harness() {
     }
     let preparation_seconds = start.elapsed().as_secs_f64();
 
+    let mut benchmark_descriptor = dynamic_point(0.25, 0.5, 0.0);
+    benchmark_descriptor.extent = Some([0.25; 3]);
     let topology = SpatialTopologySnapshot {
         dynamic_records: vec![SpatialBindingRecord {
-            descriptor: dynamic_point(0.25, 0.5, 0.0),
+            descriptor: benchmark_descriptor,
             scalar: 1.0,
             active: true,
         }],

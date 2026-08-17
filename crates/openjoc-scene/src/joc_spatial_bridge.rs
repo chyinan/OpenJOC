@@ -1647,6 +1647,9 @@ impl JocSpatialBridge {
             self.region_selector.clear();
         }
         let result = self.binding.apply(topology, updates, coordinates.len())?;
+        if result.transition == SpatialBindingTransition::Rebuild {
+            self.region_selector.clear();
+        }
         let Some(snapshot) = self.binding.snapshot() else {
             return Err(SpatialBridgeError::Binding(
                 SpatialBindingError::NoTopologyForInitialization,
