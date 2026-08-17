@@ -33,12 +33,15 @@ The bridge implements only the supported ordinary domain:
   scalar, uses the clean five-knot radius transfer and cached compact field,
   preserves point identity at zero, and submits changed targets through the
   existing Q32 scheduler;
-- standalone Dynamic point ChannelLock is evaluated after ordinary point
-  projection. The current maximum active non-LFE output is mapped to its
+- Dynamic point ChannelLock is evaluated after ordinary point projection and
+  takes precedence over ordinary Extent target generation. Region selects the
+  effective topology before point projection and ChannelLock candidate
+  selection; the current maximum active non-LFE output is mapped to its
   topology anchor; a strict full-XYZ squared-distance test below `0.04`
   produces an exclusive one-hot target and a local effective-position snap.
-  Each target evaluation is stateless, and ordinary, locked, and switched
-  targets all use the existing Q32 scheduler;
+  Extent semantic state is retained while its current target branch is
+  bypassed, and ordinary, locked, and switched targets all use the existing
+  Q32 scheduler;
 - Q32 gain scheduling with persistent phase across blocks, restart on binding
   rebuild/layout change, and linear `Y = Σ G X` accumulation;
 - finite-value, dimension, duplicate, unsupported-class, and malformed-input
@@ -57,10 +60,11 @@ limited to the six named horizontal states and ordinary Top-Bottom inclusion or
 exclusion on validated one- or two-plane layouts. On those admitted topologies,
 non-default Region and ordinary nonzero Extent compose through the selected
 effective topology before the existing Extent crossover, normalization, and
-Q32 scheduler. ChannelLock with non-default Region, nonzero Extent, or their
-composition remains fail-closed, as do non-point ChannelLock sources, special
-selector-6 behavior, arbitrary region algebra, and unadmitted layer/fallback
-combinations.
+Q32 scheduler when ChannelLock is inactive. With ChannelLock active, the
+target reduces to the Region-first ChannelLock branch; retained Extent state
+resumes through the existing Extent path when ChannelLock is released. Non-
+point ChannelLock sources, special selector-6 behavior, arbitrary region
+algebra, and unadmitted layer/fallback combinations remain fail-closed.
 
 Ordinary dynamic point projection is one generic full-XYZ operator. Layout
 names select channel identities and topology data; they do not select separate

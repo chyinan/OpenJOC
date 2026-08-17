@@ -76,8 +76,9 @@ pub struct SpatialDescriptor {
     /// contract validates these values before selecting a region topology.
     #[serde(default)]
     pub zones: Option<[bool; 6]>,
-    /// Standalone point ChannelLock is applied at the target-generation
-    /// boundary; the ordinary projector itself does not consume this field.
+    /// Dynamic-point ChannelLock is applied at the target-generation boundary
+    /// after effective Region topology selection; the ordinary projector
+    /// itself does not consume this field.
     #[serde(default)]
     pub channel_lock: bool,
 }

@@ -207,12 +207,7 @@ impl RegionTopologySelector {
                 .map_err(|_| SpatialProjectionError::InvalidRegionState(zones))?,
             None => RegionSemanticState::default(),
         };
-        if descriptor.channel_lock
-            && (!state.is_default()
-                || extent_active
-                || descriptor.spread.is_some()
-                || descriptor.paired.is_some())
-        {
+        if descriptor.channel_lock && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
             return Err(SpatialProjectionError::UnsupportedChannelLock);
         }
         if extent_active && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
@@ -224,6 +219,10 @@ impl RegionTopologySelector {
         } else {
             self.cached_selected(canonical, state)?.clone()
         };
+        let ordinary = effective.project_unconstrained(descriptor)?;
+        if descriptor.channel_lock {
+            return effective.channel_lock_outcome(descriptor, ordinary);
+        }
         if extent_active {
             return self
                 .cached_extent(&effective, topology_epoch)?
@@ -233,10 +232,6 @@ impl RegionTopologySelector {
                     effective_position: None,
                     locked_output: None,
                 });
-        }
-        let ordinary = effective.project_unconstrained(descriptor)?;
-        if descriptor.channel_lock {
-            return effective.channel_lock_outcome(descriptor, ordinary);
         }
         let effective_position = if matches!(
             descriptor.source_class,

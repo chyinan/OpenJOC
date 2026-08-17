@@ -148,14 +148,15 @@ validated one- or two-plane layouts are admitted. On admitted layouts,
 non-default Region and ordinary nonzero Extent compose by selecting the
 effective Region topology before point and Extent target generation; the
 existing crossover, normalization, and Q32 scheduling remain in charge.
-Standalone Dynamic point ChannelLock runs after ordinary point projection. It
-selects the current maximum active non-LFE output, resolves that output through
-the current topology anchor map, and locks only when the full XYZ squared
-distance is strictly below `0.04`. A passing evaluation emits an exclusive
-one-hot target and a local effective-position snap; evaluations are stateless
-and all target changes use the existing Q32 scheduler. ChannelLock with a
-non-default Region, nonzero Extent, or their composition remains fail-closed,
-as do non-point and unadmitted cases.
+Dynamic point ChannelLock runs after ordinary point projection and takes
+precedence over ordinary Extent target generation. Region selects the effective
+topology before point and ChannelLock evaluation; ChannelLock selects the
+current maximum active non-LFE output, resolves that output through the current
+topology anchor map, and locks only when the full XYZ squared distance is
+strictly below `0.04`. A passing evaluation emits an exclusive one-hot target
+and a local effective-position snap. Extent state remains retained while its
+target branch is bypassed, and all target changes use the existing Q32
+scheduler. Non-point and unadmitted cases remain fail-closed.
 
 ## Automatic bridge control and optional override
 

@@ -459,7 +459,7 @@ fn channel_lock_threshold_is_strict_and_uses_full_xyz_distance() {
 }
 
 #[test]
-fn channel_lock_excludes_lfe_and_fails_closed_for_region_extent_and_non_point() {
+fn channel_lock_excludes_lfe_and_fails_closed_for_withheld_source_geometry() {
     let layout = executable_layout("5.1");
     let mut locked = dynamic_point(0.5, 0.0, 0.0);
     locked.channel_lock = true;
@@ -476,22 +476,43 @@ fn channel_lock_excludes_lfe_and_fails_closed_for_region_extent_and_non_point() 
         RegionHorizontalState::ScreenOnly,
         RegionTopBottomState::Include,
     ));
-    assert_eq!(
-        layout.project(&region),
-        Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
-    );
+    let region_target = layout.project(&region).expect("ChannelLock × Region");
+    assert_eq!(region_target, target);
 
     let mut extent = locked.clone();
     extent.extent = Some([0.1, 0.0, 0.0]);
+    let extent_target = layout.project(&extent).expect("ChannelLock × Extent");
+    assert_eq!(extent_target, target);
+
+    let mut region_extent = region.clone();
+    region_extent.extent = Some([0.1, 0.0, 0.0]);
     assert_eq!(
-        layout.project(&extent),
+        layout
+            .project(&region_extent)
+            .expect("ChannelLock × Region × Extent"),
+        target
+    );
+
+    let mut spread = locked.clone();
+    spread.spread = Some(SpatialSpreadProfile {
+        samples: vec![SpatialSpreadSample {
+            position: vec![0.5, 0.0, 0.0],
+            weight: 1.0,
+        }],
+    });
+    assert_eq!(
+        layout.project(&spread),
         Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
     );
 
-    let mut region_extent = region;
-    region_extent.extent = Some([0.1, 0.0, 0.0]);
+    let mut paired = locked.clone();
+    paired.paired = Some(SpatialPairedGeometry {
+        first: vec![0.0; layout.active_channel_count()],
+        second: vec![0.0; layout.active_channel_count()],
+        blend: 0.5,
+    });
     assert_eq!(
-        layout.project(&region_extent),
+        layout.project(&paired),
         Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
     );
 
@@ -1081,28 +1102,562 @@ fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
 }
 
 #[test]
-fn admitted_region_extent_composes_while_channel_lock_remains_fail_closed() {
+fn red_channel_lock_region_uses_the_selected_region_topology() {
     let layout = executable_layout("7.1.4");
-    let mut extent = dynamic_point(0.5, 0.5, 0.0);
-    extent.zones = Some(region_zones(
+    let mut descriptor = dynamic_point(0.5, 0.0, 0.0);
+    descriptor.zones = Some(region_zones(
         RegionHorizontalState::ScreenOnly,
         RegionTopBottomState::Include,
     ));
-    extent.extent = Some([0.1, 0.0, 0.0]);
+    descriptor.channel_lock = true;
+
     let target = layout
-        .project(&extent)
-        .expect("admitted Region × Extent composition");
-    assert_unit_l2(&target);
-    for identity in ["Ls", "Rs", "Lb", "Rb"] {
-        assert_eq!(target[active_index(&layout, identity)], 0.0, "{identity}");
-    }
-    let mut locked = extent.clone();
-    locked.extent = None;
-    locked.channel_lock = true;
-    assert_eq!(
-        layout.project(&locked),
-        Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
+        .project(&descriptor)
+        .expect("admitted ChannelLock × Region composition");
+
+    assert_eq!(target[active_index(&layout, "FC")], 1.0);
+    assert!(
+        target
+            .iter()
+            .enumerate()
+            .all(|(index, value)| { index == active_index(&layout, "FC") || *value == 0.0 })
     );
+}
+
+#[test]
+fn red_channel_lock_extent_uses_channel_lock_precedence() {
+    let layout = executable_layout("5.1");
+    let mut descriptor = dynamic_point(0.5, 0.0, 0.0);
+    descriptor.extent = Some([0.75; 3]);
+    descriptor.channel_lock = true;
+
+    let target = layout
+        .project(&descriptor)
+        .expect("admitted ChannelLock × Extent composition");
+
+    let mut standalone = descriptor.clone();
+    standalone.extent = None;
+    assert_eq!(
+        target,
+        layout.project(&standalone).expect("standalone lock")
+    );
+}
+
+#[test]
+fn red_channel_lock_region_extent_uses_the_unified_precedence_graph() {
+    let layout = executable_layout("7.1.4");
+    let mut descriptor = dynamic_point(0.5, 0.0, 0.0);
+    descriptor.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    descriptor.extent = Some([0.75; 3]);
+    descriptor.channel_lock = true;
+
+    let target = layout
+        .project(&descriptor)
+        .expect("admitted ChannelLock × Region × Extent composition");
+
+    let mut region_only = descriptor.clone();
+    region_only.extent = None;
+    assert_eq!(
+        target,
+        layout
+            .project(&region_only)
+            .expect("ChannelLock × Region reduction")
+    );
+}
+
+#[test]
+fn channel_lock_region_does_not_lock_an_excluded_canonical_dominant_output() {
+    let layout = executable_layout("7.1.4");
+    let mut descriptor = dynamic_point(0.0, 0.5, 0.0);
+    descriptor.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    descriptor.channel_lock = true;
+
+    let outcome = layout
+        .project_with_outcome(&descriptor)
+        .expect("Region-first ChannelLock outcome");
+
+    assert_eq!(outcome.locked_output, None);
+    assert_eq!(outcome.target[active_index(&layout, "Ls")], 0.0);
+    assert!(outcome.target[active_index(&layout, "FL")] > 0.0);
+}
+
+#[test]
+fn channel_lock_region_keeps_the_standalone_strict_distance_gate() {
+    let layout = executable_layout("7.1.4");
+    let mut inside = dynamic_point(0.5, 0.0, 0.0);
+    inside.zones = Some(region_zones(
+        RegionHorizontalState::CentreAndBack,
+        RegionTopBottomState::Include,
+    ));
+    inside.coordinates[0] = 0.6999999999999999;
+    inside.channel_lock = true;
+    let inside_outcome = layout
+        .project_with_outcome(&inside)
+        .expect("inside constrained gate");
+    assert_eq!(
+        inside_outcome.locked_output,
+        Some(active_index(&layout, "FC"))
+    );
+
+    let mut above = inside.clone();
+    above.coordinates[0] = 0.7000000000000001;
+    let above_outcome = layout
+        .project_with_outcome(&above)
+        .expect("above constrained gate");
+    assert_eq!(above_outcome.locked_output, None);
+}
+
+#[test]
+fn channel_lock_extent_is_invariant_across_admitted_extent_values() {
+    let layout = executable_layout("7.1.4");
+    let mut descriptor = dynamic_point(0.5, 0.0, 0.0);
+    descriptor.channel_lock = true;
+    let mut standalone = descriptor.clone();
+    standalone.extent = None;
+    let expected = layout
+        .project(&standalone)
+        .expect("standalone ChannelLock target");
+
+    for extent in [[0.1; 3], [0.5; 3], [0.75; 3]] {
+        descriptor.extent = Some(extent);
+        assert_eq!(
+            layout.project(&descriptor).expect("active lock target"),
+            expected,
+            "extent {extent:?} must be latent while ChannelLock is active"
+        );
+    }
+}
+
+#[test]
+fn seven_composition_reductions_match_the_existing_operator_branches() {
+    let layout = executable_layout("7.1.4");
+
+    let mut point = dynamic_point(0.37, 0.61, 0.23);
+    let ordinary_point = layout.project(&point).expect("ordinary Point");
+
+    let mut zero_extent = point.clone();
+    zero_extent.extent = Some([0.0; 3]);
+    assert_eq!(layout.project(&zero_extent).unwrap(), ordinary_point);
+
+    let mut extent = point.clone();
+    extent.extent = Some([0.5; 3]);
+    let extent_target = layout.project(&extent).expect("standalone Extent");
+
+    let mut locked = point.clone();
+    locked.coordinates = vec![0.5, 0.0, 0.0];
+    locked.channel_lock = true;
+    let lock_target = layout.project(&locked).expect("standalone ChannelLock");
+    let mut lock_with_extent = locked.clone();
+    lock_with_extent.extent = Some([0.75; 3]);
+    assert_eq!(layout.project(&lock_with_extent).unwrap(), lock_target);
+
+    let mut region = point.clone();
+    region.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    let region_target = layout.project(&region).expect("standalone Region");
+    let mut region_zero = region.clone();
+    region_zero.extent = Some([0.0; 3]);
+    assert_eq!(layout.project(&region_zero).unwrap(), region_target);
+
+    let mut region_extent = region.clone();
+    region_extent.extent = Some([0.5; 3]);
+    let region_extent_target = layout
+        .project(&region_extent)
+        .expect("existing Region × Extent");
+    assert_unit_l2(&region_extent_target);
+
+    let mut region_lock = region.clone();
+    region_lock.coordinates = vec![0.5, 0.0, 0.0];
+    region_lock.channel_lock = true;
+    let region_lock_target = layout
+        .project(&region_lock)
+        .expect("existing Region × ChannelLock");
+    let mut triple = region_lock.clone();
+    triple.extent = Some([0.5; 3]);
+    assert_eq!(layout.project(&triple).unwrap(), region_lock_target);
+
+    point.extent = None;
+    point.channel_lock = false;
+    assert_eq!(layout.project(&point).unwrap(), ordinary_point);
+    assert_ne!(extent_target, ordinary_point);
+}
+
+#[test]
+fn channel_lock_composition_covers_the_admitted_public_layouts() {
+    for name in [
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+    ] {
+        let layout = executable_layout(name);
+        let mut lock = dynamic_point(0.5, 0.0, 0.0);
+        lock.channel_lock = true;
+        let standalone = layout.project(&lock).expect("standalone ChannelLock");
+        let mut lock_extent = lock.clone();
+        lock_extent.extent = Some([0.75; 3]);
+        assert_eq!(layout.project(&lock_extent).unwrap(), standalone, "{name}");
+
+        lock.zones = Some(region_zones(
+            RegionHorizontalState::ScreenOnly,
+            RegionTopBottomState::Include,
+        ));
+        let region_lock = layout.project(&lock).expect("ChannelLock × Region");
+        lock_extent.zones = lock.zones;
+        assert_eq!(
+            layout.project(&lock_extent).unwrap(),
+            region_lock,
+            "ChannelLock × Region × Extent {name}"
+        );
+    }
+}
+
+#[test]
+fn channel_lock_state_restores_inherited_extent_after_release() {
+    let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.5, 0.0, 0.0);
+    initial.extent = Some([0.75; 3]);
+    let topology = single_record_topology(initial.clone());
+    let mut bridge = JocSpatialBridge::new();
+
+    let extent_target = layout.project(&initial).expect("initial Extent target");
+    let initial_output = render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+    assert_eq!(
+        initial_output
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        extent_target
+    );
+
+    let lock_on = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            channel_lock: Some(Some(true)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let lock_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&lock_on)),
+        0,
+        1,
+    );
+    assert_eq!(
+        lock_output[active_index(&layout, "FC")][0],
+        1.0,
+        "ChannelLock owns the active target"
+    );
+    assert_eq!(
+        bridge.binding_state().snapshot().unwrap().records[0]
+            .descriptor
+            .extent,
+        Some([0.75; 3])
+    );
+
+    let lock_off = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            channel_lock: Some(Some(false)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let restored_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&lock_off)),
+        0,
+        1,
+    );
+    assert_eq!(
+        restored_output
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        extent_target
+    );
+}
+
+#[test]
+fn extent_updates_while_channel_lock_is_active_are_retained_but_bypassed() {
+    let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.5, 0.0, 0.0);
+    initial.extent = Some([0.1; 3]);
+    initial.channel_lock = true;
+    let topology = single_record_topology(initial.clone());
+    let mut bridge = JocSpatialBridge::new();
+
+    let lock_target = layout.project(&initial).expect("initial lock target");
+    let initial_output = render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+    assert_eq!(
+        initial_output
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        lock_target
+    );
+
+    let extent_update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            extent: Some(Some([0.75; 3])),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let active_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&extent_update)),
+        0,
+        1,
+    );
+    assert_eq!(
+        active_output
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        lock_target
+    );
+    assert_eq!(
+        bridge.binding_state().snapshot().unwrap().records[0]
+            .descriptor
+            .extent,
+        Some([0.75; 3])
+    );
+
+    let lock_off = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            channel_lock: Some(Some(false)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let restored_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&lock_off)),
+        0,
+        1,
+    );
+    let mut expected = initial;
+    expected.channel_lock = false;
+    expected.extent = Some([0.75; 3]);
+    assert_eq!(
+        restored_output
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        layout.project(&expected).expect("updated Extent target")
+    );
+}
+
+#[test]
+fn region_changes_while_channel_lock_is_active_use_one_new_topology_snapshot() {
+    let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.5, 0.0, 0.0);
+    initial.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    initial.extent = Some([0.75; 3]);
+    initial.channel_lock = true;
+    let topology = single_record_topology(initial.clone());
+    let mut bridge = JocSpatialBridge::new();
+    let initial_output = render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+    assert_eq!(initial_output[active_index(&layout, "FC")][0], 1.0);
+
+    let update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            coordinates: Some(vec![0.0, 0.5, 0.0]),
+            zones: Some(Some(region_zones(
+                RegionHorizontalState::SurroundOnly,
+                RegionTopBottomState::Include,
+            ))),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let changed_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&update)),
+        0,
+        1,
+    );
+    assert_eq!(changed_output[active_index(&layout, "Ls")][0], 1.0);
+    assert_eq!(changed_output[active_index(&layout, "FC")][0], 0.0);
+}
+
+#[test]
+fn simultaneous_composition_updates_select_one_latest_semantic_snapshot() {
+    let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.5, 0.0, 0.0);
+    initial.extent = Some([0.1; 3]);
+    initial.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    let topology = single_record_topology(initial);
+    let mut bridge = JocSpatialBridge::new();
+    render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+
+    let update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            coordinates: Some(vec![0.0, 0.5, 0.0]),
+            zones: Some(Some(region_zones(
+                RegionHorizontalState::SurroundOnly,
+                RegionTopBottomState::Include,
+            ))),
+            extent: Some(Some([0.75; 3])),
+            channel_lock: Some(Some(true)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&update)),
+        0,
+        1,
+    );
+    let mut expected = dynamic_point(0.0, 0.5, 0.0);
+    expected.zones = Some(region_zones(
+        RegionHorizontalState::SurroundOnly,
+        RegionTopBottomState::Include,
+    ));
+    expected.extent = Some([0.75; 3]);
+    expected.channel_lock = true;
+    assert_eq!(
+        output.iter().map(|channel| channel[0]).collect::<Vec<_>>(),
+        layout.project(&expected).expect("coherent latest snapshot")
+    );
+}
+
+#[test]
+fn effective_channel_lock_position_is_local_when_extent_resumes() {
+    let layout = executable_layout("5.1");
+    let mut initial = dynamic_point(0.1, 0.0, 0.0);
+    initial.extent = Some([0.75; 3]);
+    initial.channel_lock = true;
+    let topology = single_record_topology(initial.clone());
+    let mut bridge = JocSpatialBridge::new();
+    let lock_output = render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+    assert_eq!(lock_output[active_index(&layout, "FL")][0], 1.0);
+    assert_eq!(
+        bridge.binding_state().snapshot().unwrap().records[0]
+            .descriptor
+            .coordinates,
+        vec![0.1, 0.0, 0.0]
+    );
+
+    let lock_off = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            channel_lock: Some(Some(false)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let extent_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&lock_off)),
+        0,
+        1,
+    );
+    let mut expected = initial;
+    expected.channel_lock = false;
+    assert_eq!(
+        extent_output
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        layout
+            .project(&expected)
+            .expect("authored-center Extent target")
+    );
+}
+
+#[test]
+fn channel_lock_extent_transitions_use_q32_without_a_composition_ramp() {
+    let layout = executable_layout("5.1");
+    let mut initial = dynamic_point(0.5, 0.0, 0.0);
+    initial.extent = Some([0.75; 3]);
+    let topology = single_record_topology(initial.clone());
+    let mut bridge = JocSpatialBridge::new();
+    let initial_output = render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+    let old_fc = initial_output[active_index(&layout, "FC")][0];
+
+    let lock_on = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            channel_lock: Some(Some(true)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let locked_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&lock_on)),
+        64,
+        64,
+    );
+    assert!((locked_output[active_index(&layout, "FC")][0] - old_fc).abs() < 1.0e-12);
+    let expected_locked_last = old_fc + (1.0 - old_fc) * 63.0 / 64.0;
+    assert!(
+        (locked_output[active_index(&layout, "FC")][63] - expected_locked_last).abs() < 1.0e-12
+    );
+
+    let lock_off = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            channel_lock: Some(Some(false)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let restored_output = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&lock_off)),
+        64,
+        64,
+    );
+    assert!((restored_output[active_index(&layout, "FC")][0] - 1.0).abs() < 1.0e-12);
+    let expected_last = 1.0 + (old_fc - 1.0) * 63.0 / 64.0;
+    assert!((restored_output[active_index(&layout, "FC")][63] - expected_last).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1885,6 +2440,46 @@ fn executable_layout(name: &str) -> SpatialLayout {
     .expect("clean executable topology")
 }
 
+fn single_record_topology(descriptor: SpatialDescriptor) -> SpatialTopologySnapshot {
+    SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor,
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    }
+}
+
+fn render_block(
+    bridge: &mut JocSpatialBridge,
+    layout: &SpatialLayout,
+    topology: Option<&SpatialTopologySnapshot>,
+    updates: Option<&[SpatialCoordinateUpdate]>,
+    duration_samples: u64,
+    block_length: usize,
+) -> Vec<Vec<f64>> {
+    let input = vec![1.0; block_length];
+    let mut storage = vec![vec![0.0; block_length]; layout.active_channel_count()];
+    let mut outputs = storage
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            topology,
+            updates,
+            layout,
+            duration_samples,
+            48_000,
+            &mut outputs,
+        )
+        .expect("spatial target render");
+    drop(outputs);
+    storage
+}
+
 fn dynamic_point(x: f64, y: f64, z: f64) -> SpatialDescriptor {
     SpatialDescriptor::new(SpatialSourceClass::DynamicPoint, "point", vec![x, y, z])
 }
@@ -2251,21 +2846,38 @@ fn channel_lock_target_update_performance_harness() {
     const ITERATIONS: usize = 100_000;
 
     let layout = executable_layout("7.1.4");
-    let mut descriptor = dynamic_point(0.5, 0.5, 0.0);
-    descriptor.channel_lock = true;
-    let start = Instant::now();
-    let mut checksum = 0.0;
-    for index in 0..ITERATIONS {
-        descriptor.coordinates[0] = (index % 32_768) as f64 / 32_768.0;
-        let outcome = layout
-            .project_with_outcome(&descriptor)
-            .expect("ChannelLock target update");
-        checksum += outcome.target[0];
+    let mut standalone = dynamic_point(0.5, 0.5, 0.0);
+    standalone.channel_lock = true;
+    let mut lock_extent = standalone.clone();
+    lock_extent.extent = Some([0.75; 3]);
+    let mut region_lock = standalone.clone();
+    region_lock.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    let mut triple = region_lock.clone();
+    triple.extent = Some([0.75; 3]);
+
+    for (label, mut descriptor) in [
+        ("channel_lock", standalone),
+        ("channel_lock_extent_state", lock_extent),
+        ("region_channel_lock", region_lock),
+        ("region_extent_channel_lock", triple),
+    ] {
+        let start = Instant::now();
+        let mut checksum = 0.0;
+        for index in 0..ITERATIONS {
+            descriptor.coordinates[0] = (index % 32_768) as f64 / 32_768.0;
+            let outcome = layout
+                .project_with_outcome(&descriptor)
+                .expect("ChannelLock composition target update");
+            checksum += outcome.target[0];
+        }
+        let elapsed = start.elapsed();
+        eprintln!(
+            "channel_lock_performance case={label} iterations={ITERATIONS} elapsed_seconds={:.6} checksum={checksum}",
+            elapsed.as_secs_f64()
+        );
+        assert!(checksum.is_finite());
     }
-    let elapsed = start.elapsed();
-    eprintln!(
-        "channel_lock_performance iterations={ITERATIONS} elapsed_seconds={:.6} checksum={checksum}",
-        elapsed.as_secs_f64()
-    );
-    assert!(checksum.is_finite());
 }
