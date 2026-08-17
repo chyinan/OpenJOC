@@ -2331,6 +2331,7 @@ mod tests {
                 coordinates: vec![0.5, 0.5, 0.0],
                 spread: None,
                 paired: None,
+                pair_span_q15: None,
                 raw3: Some(vec![3]),
                 extent: None,
                 zones: None,

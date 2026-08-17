@@ -207,10 +207,20 @@ impl RegionTopologySelector {
                 .map_err(|_| SpatialProjectionError::InvalidRegionState(zones))?,
             None => RegionSemanticState::default(),
         };
-        if descriptor.channel_lock && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
+        let pair_active = descriptor
+            .pair_span_q15
+            .is_some_and(|pair_span_q15| pair_span_q15 > 0);
+        if pair_active && !state.is_default() {
+            return Err(SpatialProjectionError::InvalidPair);
+        }
+        if descriptor.channel_lock
+            && (descriptor.spread.is_some() || descriptor.paired.is_some() || pair_active)
+        {
             return Err(SpatialProjectionError::UnsupportedChannelLock);
         }
-        if extent_active && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
+        if extent_active
+            && (descriptor.spread.is_some() || descriptor.paired.is_some() || pair_active)
+        {
             return Err(SpatialProjectionError::UnsupportedExtent);
         }
 

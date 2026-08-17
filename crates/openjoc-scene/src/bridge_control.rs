@@ -694,6 +694,7 @@ fn default_records(
             coordinates,
             spread: None,
             paired: None,
+            pair_span_q15: None,
             raw3: None,
             extent: None,
             zones: None,
@@ -766,6 +767,7 @@ fn descriptor_for(
                 coordinates: bridge_position(point, dimensions)?,
                 spread: previous.spread.clone(),
                 paired: previous.paired.clone(),
+                pair_span_q15: previous.pair_span_q15,
                 raw3,
                 extent: Some([
                     bridge_quantize_extent(update.render.size.width),
@@ -789,6 +791,7 @@ fn descriptor_for(
         coordinates,
         spread: previous.spread.clone(),
         paired: previous.paired.clone(),
+        pair_span_q15: previous.pair_span_q15,
         raw3: update
             .additional_table_data
             .clone()
@@ -836,6 +839,7 @@ fn selective_diff(
                     coordinates: Some(next.descriptor.coordinates.clone()),
                     spread: Some(next.descriptor.spread.clone()),
                     paired: Some(next.descriptor.paired.clone()),
+                    pair_span_q15: Some(next.descriptor.pair_span_q15),
                     raw3: Some(next.descriptor.raw3.clone()),
                     extent: Some(next.descriptor.extent),
                     zones: Some(next.descriptor.zones),

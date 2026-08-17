@@ -21,9 +21,16 @@ The bridge implements the supported ordinary release domain:
   inheritance;
 - public active non-LFE layout channels, full normalized `(x, y, signed-z)` point
   coordinates, data-driven layer/row/anchor topology, row-local equal-power X
-  interpolation, and plane-local equal-power Y interpolation. Spread/Pair and
-  Fixed/Named routing are not part of the admitted 0.5.0 dynamic-object
-  contract; withheld or malformed variants fail closed;
+  interpolation, and plane-local equal-power Y interpolation. An admitted
+  semantic Pair state is rendered as two symmetric horizontal point endpoints
+  around the authored center; each endpoint uses the generic point projector,
+  the two targets are added and guarded-L2 normalized, and the result enters
+  the existing Q32 scheduler. Pair is not ordinary Extent or a continuous
+  spread field. Pair with non-default Region, active ChannelLock, simultaneous
+  nonzero Extent, malformed state, or more than two populated layers remains
+  fail-closed. The caller-defined `SpatialPairedGeometry` vector API remains
+  separate and is not reinterpreted as semantic Pair state. Spread and
+  Fixed/Named routing remain separate contracts;
 - ordinary dynamic Region/Zone states are resolved into a constrained
   layer/row/anchor topology before point projection. The default/no-region
   state retains the complete canonical topology; points outside selected
@@ -73,10 +80,17 @@ The admitted target-generation precedence is therefore:
 
 ```text
 Region -> effective topology
+  standalone Pair active -> two Point endpoints -> sum -> Pair L2 -> Q32
   ChannelLock active -> exclusive ChannelLock target; bypass Extent target path
   otherwise Extent active -> Extent target
   otherwise -> ordinary Point target
 ```
+
+For semantic Pair, the Q15 half-span `q` maps to `q / 32768.0` and is capped
+once against the nearest normalized X wall before endpoints are constructed.
+The authored center remains the midpoint; no recentering, reflection, or
+independent endpoint clamping is used. A zero or wall-collapsed span is an
+ordinary Point identity.
 
 Ordinary dynamic point projection is one generic full-XYZ operator. Layout
 names select channel identities and topology data; they do not select separate

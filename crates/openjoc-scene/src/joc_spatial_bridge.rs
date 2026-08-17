@@ -67,6 +67,10 @@ pub struct SpatialDescriptor {
     pub coordinates: Vec<f64>,
     pub spread: Option<SpatialSpreadProfile>,
     pub paired: Option<SpatialPairedGeometry>,
+    /// Effective semantic Q15 half-span for the standalone Dynamic Pair mode.
+    /// This is intentionally separate from the caller-defined vector-pair API.
+    #[serde(default)]
+    pub pair_span_q15: Option<u16>,
     pub raw3: Option<Vec<u8>>,
     /// Quantized decoded extent retained at the bridge boundary. The current
     /// projection contract does not use this field for P(d,L).
@@ -97,6 +101,7 @@ impl SpatialDescriptor {
             coordinates,
             spread: None,
             paired: None,
+            pair_span_q15: None,
             raw3: None,
             extent: None,
             zones: None,
@@ -163,6 +168,8 @@ pub struct SpatialDescriptorPatch {
     pub coordinates: Option<Vec<f64>>,
     pub spread: Option<Option<SpatialSpreadProfile>>,
     pub paired: Option<Option<SpatialPairedGeometry>>,
+    #[serde(default)]
+    pub pair_span_q15: Option<Option<u16>>,
     pub raw3: Option<Option<Vec<u8>>>,
     pub extent: Option<Option<[f64; 3]>>,
     pub zones: Option<Option<[bool; 6]>>,
@@ -429,6 +436,9 @@ fn apply_update(
         }
         if let Some(paired) = &patch.paired {
             record.descriptor.paired.clone_from(paired);
+        }
+        if let Some(pair_span_q15) = patch.pair_span_q15 {
+            record.descriptor.pair_span_q15 = pair_span_q15;
         }
         if let Some(raw3) = &patch.raw3 {
             record.descriptor.raw3.clone_from(raw3);
@@ -868,6 +878,9 @@ impl SpatialLayout {
         &self,
         descriptor: &SpatialDescriptor,
     ) -> Result<Vec<f64>, SpatialProjectionError> {
+        if descriptor.pair_span_q15.is_some() {
+            return self.project_semantic_pair(descriptor);
+        }
         let mut vector = if let Some(spread) = &descriptor.spread {
             self.project_spread(descriptor, spread)?
         } else {
@@ -875,6 +888,64 @@ impl SpatialLayout {
         };
         normalize(&mut vector);
         Ok(vector)
+    }
+
+    fn project_semantic_pair(
+        &self,
+        descriptor: &SpatialDescriptor,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        let Some(pair_span_q15) = descriptor.pair_span_q15 else {
+            unreachable!("semantic Pair projection requires a resolved span")
+        };
+        if pair_span_q15 > 32_767 || descriptor.spread.is_some() || descriptor.paired.is_some() {
+            return Err(SpatialProjectionError::InvalidPair);
+        }
+
+        let center = self.point_position(&descriptor.coordinates)?;
+        if !(0.0..=1.0).contains(&center[0]) {
+            return Err(SpatialProjectionError::InvalidPair);
+        }
+        if pair_span_q15 == 0 {
+            return self.normalized_point_target(center);
+        }
+        if !matches!(descriptor.source_class, SpatialSourceClass::DynamicPoint)
+            || self.topology.layers.is_empty()
+            || self.topology.layers.len() > 2
+        {
+            return Err(SpatialProjectionError::InvalidPair);
+        }
+
+        let requested_span = f64::from(pair_span_q15) / Q;
+        let effective_span = requested_span.min(center[0]).min(1.0 - center[0]);
+        if effective_span == 0.0 {
+            return self.normalized_point_target(center);
+        }
+
+        let endpoint_a = [center[0] - effective_span, center[1], center[2]];
+        let endpoint_b = [center[0] + effective_span, center[1], center[2]];
+        let endpoint_a_target = self.normalized_point_target(endpoint_a)?;
+        let endpoint_b_target = self.normalized_point_target(endpoint_b)?;
+        let mut target = endpoint_a_target
+            .into_iter()
+            .zip(endpoint_b_target)
+            .map(|(a, b)| a + b)
+            .collect::<Vec<_>>();
+        normalize(&mut target);
+        Ok(target)
+    }
+
+    fn normalized_point_target(
+        &self,
+        position: [f64; 3],
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        let mut target = generic_point_projector(
+            &self.topology,
+            &self.channels,
+            &self.active_indices,
+            position,
+        )?;
+        normalize(&mut target);
+        Ok(target)
     }
 
     fn project_spread(

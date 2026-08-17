@@ -20,6 +20,7 @@ fn descriptor(
         coordinates,
         spread: None,
         paired: None,
+        pair_span_q15: None,
         raw3: Some(vec![3, 7]),
         extent: None,
         zones: None,
@@ -303,6 +304,495 @@ fn projection_covers_endpoints_midpoint_tensor_clamp_exclusion_spread_and_pair()
 
     let inactive = descriptor(SpatialSourceClass::Inactive, "inactive", vec![0.5]);
     assert_eq!(layout.project(&inactive).unwrap(), vec![0.0, 0.0]);
+}
+
+fn three_anchor_pair_layout() -> SpatialLayout {
+    SpatialLayout::new(
+        vec![
+            SpatialLayoutChannel {
+                identity: "left".to_owned(),
+                enabled: true,
+                lfe: false,
+            },
+            SpatialLayoutChannel {
+                identity: "centre".to_owned(),
+                enabled: true,
+                lfe: false,
+            },
+            SpatialLayoutChannel {
+                identity: "right".to_owned(),
+                enabled: true,
+                lfe: false,
+            },
+        ],
+        vec![vec![0.0, 0.25, 1.0]],
+        vec![
+            SpatialLayoutNode {
+                knot_indices: vec![0],
+                vector: vec![1.0, 0.0, 0.0],
+            },
+            SpatialLayoutNode {
+                knot_indices: vec![1],
+                vector: vec![0.0, 1.0, 0.0],
+            },
+            SpatialLayoutNode {
+                knot_indices: vec![2],
+                vector: vec![0.0, 0.0, 1.0],
+            },
+        ],
+        Vec::new(),
+    )
+    .expect("valid three-anchor Pair topology")
+}
+
+fn normalize_target(mut target: Vec<f64>) -> Vec<f64> {
+    let norm = target.iter().map(|value| value * value).sum::<f64>().sqrt();
+    for value in &mut target {
+        *value /= norm;
+    }
+    target
+}
+
+fn descriptor_at(layout: &SpatialLayout, identity: &str, center: [f64; 3]) -> SpatialDescriptor {
+    let coordinates = if layout.coordinate_dimension_count() == 1 {
+        vec![center[0]]
+    } else {
+        center.to_vec()
+    };
+    descriptor(SpatialSourceClass::DynamicPoint, identity, coordinates)
+}
+
+#[test]
+fn red_semantic_pair_uses_two_symmetric_endpoint_targets() {
+    let layout = three_anchor_pair_layout();
+    let mut pair = descriptor(SpatialSourceClass::DynamicPoint, "pair", vec![0.5]);
+    pair.pair_span_q15 = Some(32_767);
+
+    let target = layout.project(&pair).expect("semantic Pair target");
+    let expected = normalize_target(vec![1.0, 0.0, 1.0]);
+    for (actual, expected) in target.iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 2.0e-12,
+            "{actual} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn red_semantic_pair_shrinks_one_shared_span_at_the_wall() {
+    let layout = three_anchor_pair_layout();
+    let mut pair = descriptor(SpatialSourceClass::DynamicPoint, "pair", vec![0.2]);
+    pair.pair_span_q15 = Some(16_384);
+
+    let target = layout.project(&pair).expect("boundary Pair target");
+    let left = layout
+        .project(&descriptor(
+            SpatialSourceClass::DynamicPoint,
+            "left",
+            vec![0.0],
+        ))
+        .expect("left endpoint target");
+    let right = layout
+        .project(&descriptor(
+            SpatialSourceClass::DynamicPoint,
+            "right",
+            vec![0.4],
+        ))
+        .expect("right endpoint target");
+    let expected = normalize_target(
+        left.iter()
+            .zip(right)
+            .map(|(left, right)| left + right)
+            .collect(),
+    );
+    for (actual, expected) in target.iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 2.0e-12,
+            "{actual} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn red_semantic_pair_differs_from_the_legacy_trigonometric_vector_blend() {
+    let layout = three_anchor_pair_layout();
+    let mut legacy = descriptor(SpatialSourceClass::DynamicPoint, "legacy", vec![0.5]);
+    legacy.paired = Some(SpatialPairedGeometry {
+        first: vec![1.0, 0.0, 0.0],
+        second: vec![0.0, 0.0, 1.0],
+        blend: 0.25,
+    });
+    let legacy_target = layout.project(&legacy).expect("legacy vector-pair target");
+
+    let mut semantic = descriptor(SpatialSourceClass::DynamicPoint, "semantic", vec![0.5]);
+    semantic.pair_span_q15 = Some(32_767);
+    let clean_target = layout
+        .project(&semantic)
+        .expect("clean semantic Pair target");
+
+    assert!((legacy_target[0] - (std::f64::consts::PI / 8.0).cos()).abs() < 2.0e-12);
+    assert!((legacy_target[2] - (std::f64::consts::PI / 8.0).sin()).abs() < 2.0e-12);
+    assert!((clean_target[0] - 0.5_f64.sqrt()).abs() < 2.0e-12);
+    assert!((clean_target[2] - 0.5_f64.sqrt()).abs() < 2.0e-12);
+}
+
+fn expected_semantic_pair_target(
+    layout: &SpatialLayout,
+    center: [f64; 3],
+    pair_span_q15: u16,
+) -> Vec<f64> {
+    let point = descriptor_at(layout, "expected-point", center);
+    if pair_span_q15 == 0 {
+        return layout.project(&point).expect("expected point target");
+    }
+    let requested_span = f64::from(pair_span_q15) / 32_768.0;
+    let effective_span = requested_span.min(center[0]).min(1.0 - center[0]);
+    if effective_span == 0.0 {
+        return layout.project(&point).expect("expected wall point target");
+    }
+    let mut endpoint_a = point.clone();
+    endpoint_a.coordinates[0] = center[0] - effective_span;
+    let mut endpoint_b = point;
+    endpoint_b.coordinates[0] = center[0] + effective_span;
+    let a = layout.project(&endpoint_a).expect("expected A target");
+    let b = layout.project(&endpoint_b).expect("expected B target");
+    normalize_target(a.into_iter().zip(b).map(|(a, b)| a + b).collect())
+}
+
+#[test]
+fn semantic_pair_q15_mapping_and_shared_boundary_cap_match_clean_equations() {
+    let layout = three_anchor_pair_layout();
+    for (center, pair_span_q15) in [
+        ([0.5, 0.5, 0.0], 0),
+        ([0.5, 0.5, 0.0], 1),
+        ([0.5, 0.5, 0.0], 8_192),
+        ([0.2, 0.5, 0.0], 16_384),
+        ([0.8, 0.5, 0.0], 16_384),
+        ([0.5, 0.5, 0.0], 32_767),
+        ([0.0, 0.5, 0.0], 32_767),
+    ] {
+        let mut pair = descriptor_at(&layout, "pair", center);
+        pair.pair_span_q15 = Some(pair_span_q15);
+        let actual = layout.project(&pair).expect("clean Pair target");
+        let expected = expected_semantic_pair_target(&layout, center, pair_span_q15);
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() < 2.0e-12,
+                "{actual} != {expected}"
+            );
+        }
+    }
+}
+
+#[test]
+fn semantic_pair_zero_and_wall_degeneracies_are_exact_point_identities() {
+    for name in [
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+    ] {
+        let layout = executable_layout(name);
+        for center in [[0.5, 0.5, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 0.5]] {
+            let point = descriptor(SpatialSourceClass::DynamicPoint, "point", center.to_vec());
+            let mut pair = point.clone();
+            pair.pair_span_q15 = Some(if center[0] == 0.5 { 0 } else { 32_767 });
+            assert_eq!(
+                layout.project(&pair),
+                layout.project(&point),
+                "{name} {center:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn semantic_pair_endpoint_targets_are_ordinary_point_targets_and_sum_once() {
+    let layout = three_anchor_pair_layout();
+    let center = [0.2, 0.5, 0.0];
+    let pair_span_q15 = 16_384;
+    let mut pair = descriptor_at(&layout, "pair", center);
+    pair.pair_span_q15 = Some(pair_span_q15);
+    let actual = layout.project(&pair).expect("clean Pair target");
+    let expected = expected_semantic_pair_target(&layout, center, pair_span_q15);
+    assert_eq!(actual.len(), 3);
+    assert!(
+        actual
+            .iter()
+            .all(|value| value.is_finite() && *value >= 0.0)
+    );
+    assert!((actual.iter().map(|value| value * value).sum::<f64>() - 1.0).abs() < 2.0e-12);
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 2.0e-12,
+            "{actual} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn semantic_pair_mirrors_under_symmetric_two_speaker_topology() {
+    let layout = layout();
+    let mut left = descriptor(SpatialSourceClass::DynamicPoint, "left-pair", vec![0.2]);
+    left.pair_span_q15 = Some(8_192);
+    let mut right = descriptor(SpatialSourceClass::DynamicPoint, "right-pair", vec![0.8]);
+    right.pair_span_q15 = Some(8_192);
+    let left_target = layout.project(&left).expect("left Pair target");
+    let right_target = layout.project(&right).expect("right Pair target");
+    assert!((left_target[0] - right_target[1]).abs() < 2.0e-12);
+    assert!((left_target[1] - right_target[0]).abs() < 2.0e-12);
+}
+
+#[test]
+fn semantic_pair_uses_one_operator_across_the_admitted_layout_matrix() {
+    for name in [
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+    ] {
+        let layout = executable_layout(name);
+        let mut pair = dynamic_point(0.5, 0.5, 0.0);
+        pair.pair_span_q15 = Some(8_192);
+        let target = layout.project(&pair).expect("admitted layout Pair target");
+        assert_eq!(target.len(), layout.active_channel_count(), "{name}");
+        assert_unit_l2(&target);
+    }
+}
+
+fn three_layer_pair_layout() -> SpatialLayout {
+    SpatialLayout::from_topology(
+        clean_channels(&["A", "B", "C"], None),
+        SpatialLayoutTopology {
+            layers: vec![
+                SpatialLayoutLayer {
+                    z: 0.0,
+                    rows: vec![clean_row(0.0, vec![clean_anchor("A", 0.5, 0.0, 0.0)])],
+                },
+                SpatialLayoutLayer {
+                    z: 0.5,
+                    rows: vec![clean_row(0.0, vec![clean_anchor("B", 0.5, 0.0, 0.5)])],
+                },
+                SpatialLayoutLayer {
+                    z: 1.0,
+                    rows: vec![clean_row(0.0, vec![clean_anchor("C", 0.5, 0.0, 1.0)])],
+                },
+            ],
+            aliases: Vec::new(),
+        },
+        Vec::new(),
+    )
+    .expect("valid three-layer storage topology")
+}
+
+#[test]
+fn semantic_pair_withheld_combinations_and_malformed_state_fail_closed() {
+    let layout = executable_layout("7.1.4");
+    let mut pair = dynamic_point(0.5, 0.5, 0.0);
+    pair.pair_span_q15 = Some(8_192);
+
+    let mut region_pair = pair.clone();
+    region_pair.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Include,
+    ));
+    assert_eq!(
+        layout.project(&region_pair),
+        Err(openjoc_scene::SpatialProjectionError::InvalidPair)
+    );
+
+    let mut locked_pair = pair.clone();
+    locked_pair.channel_lock = true;
+    assert_eq!(
+        layout.project(&locked_pair),
+        Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
+    );
+
+    let mut extent_pair = pair.clone();
+    extent_pair.extent = Some([0.5; 3]);
+    assert_eq!(
+        layout.project(&extent_pair),
+        Err(openjoc_scene::SpatialProjectionError::UnsupportedExtent)
+    );
+
+    let mut legacy_collision = pair.clone();
+    legacy_collision.paired = Some(SpatialPairedGeometry {
+        first: vec![1.0; layout.active_channel_count()],
+        second: vec![0.0; layout.active_channel_count()],
+        blend: 0.5,
+    });
+    assert_eq!(
+        layout.project(&legacy_collision),
+        Err(openjoc_scene::SpatialProjectionError::InvalidPair)
+    );
+
+    let mut malformed = pair.clone();
+    malformed.pair_span_q15 = Some(32_768);
+    assert_eq!(
+        layout.project(&malformed),
+        Err(openjoc_scene::SpatialProjectionError::InvalidPair)
+    );
+
+    let mut dynamic_region = pair.clone();
+    dynamic_region.source_class = SpatialSourceClass::DynamicRegion;
+    assert_eq!(
+        layout.project(&dynamic_region),
+        Err(openjoc_scene::SpatialProjectionError::InvalidPair)
+    );
+
+    let three_layers = three_layer_pair_layout();
+    assert_eq!(
+        three_layers.project(&pair),
+        Err(openjoc_scene::SpatialProjectionError::InvalidPair)
+    );
+}
+
+#[test]
+fn semantic_pair_state_inherits_atomically_and_resets_without_endpoint_history() {
+    let initial = {
+        let mut descriptor = dynamic_point(0.3, 0.5, 0.0);
+        descriptor.pair_span_q15 = Some(8_192);
+        descriptor
+    };
+    let topology = single_record_topology(initial);
+    let mut state = SpatialBindingState::new();
+    state
+        .apply(Some(&topology), None, 1)
+        .expect("Pair state initialization");
+
+    let same_snapshot = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            coordinates: Some(vec![0.7, 0.5, 0.0]),
+            pair_span_q15: Some(Some(16_384)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    state
+        .apply(None, Some(std::slice::from_ref(&same_snapshot)), 1)
+        .expect("same-snapshot center/span update");
+    let effective = &state.snapshot().expect("effective Pair state").records[0].descriptor;
+    assert_eq!(effective.coordinates, vec![0.7, 0.5, 0.0]);
+    assert_eq!(effective.pair_span_q15, Some(16_384));
+
+    let inherit_center = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            coordinates: Some(vec![0.2, 0.5, 0.0]),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    state
+        .apply(None, Some(std::slice::from_ref(&inherit_center)), 1)
+        .expect("center-only inheritance");
+    assert_eq!(
+        state.snapshot().unwrap().records[0]
+            .descriptor
+            .pair_span_q15,
+        Some(16_384)
+    );
+
+    state.reset();
+    assert!(state.snapshot().is_none());
+}
+
+#[test]
+fn semantic_pair_mode_and_span_changes_use_only_the_existing_q32_scheduler() {
+    let layout = three_anchor_pair_layout();
+    let mut initial = descriptor(SpatialSourceClass::DynamicPoint, "pair", vec![0.5]);
+    initial.pair_span_q15 = Some(0);
+    let topology = single_record_topology(initial);
+    let mut bridge = JocSpatialBridge::new();
+    let _initial_output = render_block(&mut bridge, &layout, Some(&topology), None, 0, 1);
+    let point_target = layout
+        .project(&descriptor(
+            SpatialSourceClass::DynamicPoint,
+            "point",
+            vec![0.5],
+        ))
+        .expect("point target");
+
+    let pair_on = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            pair_span_q15: Some(Some(8_192)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let first_pair = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&pair_on)),
+        0,
+        1,
+    );
+    let pair_target = layout
+        .project(&{
+            let mut descriptor = descriptor(SpatialSourceClass::DynamicPoint, "pair", vec![0.5]);
+            descriptor.pair_span_q15 = Some(8_192);
+            descriptor
+        })
+        .expect("Pair target");
+    let max_pair_target = layout
+        .project(&{
+            let mut descriptor = descriptor(SpatialSourceClass::DynamicPoint, "pair", vec![0.5]);
+            descriptor.pair_span_q15 = Some(32_767);
+            descriptor
+        })
+        .expect("maximum Pair target");
+    assert_eq!(
+        first_pair
+            .iter()
+            .map(|channel| channel[0])
+            .collect::<Vec<_>>(),
+        pair_target
+    );
+
+    let span_update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            pair_span_q15: Some(Some(32_767)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let span_ramp = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&span_update)),
+        64,
+        64,
+    );
+    assert!((span_ramp[0][0] - pair_target[0]).abs() < 2.0e-12);
+    assert!((span_ramp[0][63] - pair_target[0]).abs() > 1.0e-5);
+
+    let pair_off = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            pair_span_q15: Some(Some(0)),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let off_ramp = render_block(
+        &mut bridge,
+        &layout,
+        None,
+        Some(std::slice::from_ref(&pair_off)),
+        64,
+        64,
+    );
+    let max_pair_difference = off_ramp[0]
+        .iter()
+        .zip(&point_target)
+        .map(|(actual, expected)| (actual - expected).abs())
+        .fold(0.0, f64::max);
+    assert!(max_pair_difference > 1.0e-5);
+    assert!((off_ramp[0][0] - max_pair_target[0]).abs() < 2.0e-12);
 }
 
 #[test]
@@ -1009,6 +1499,7 @@ fn extent_only_changes_use_the_existing_q32_scheduler_without_an_extent_ramp() {
             coordinates: vec![0.25, 0.5, 0.0],
             spread: None,
             paired: None,
+            pair_span_q15: None,
             raw3: None,
             extent: Some([0.0; 3]),
             zones: Some(region_zones(
@@ -2836,6 +3327,71 @@ fn region_preparation_and_control_performance_harness() {
     println!(
         "region_performance preparation_seconds={preparation_seconds:.6} cached_entries={} render_seconds={render_seconds:.6} frames={FRAME_COUNT} samples_per_frame={SAMPLES_PER_FRAME}",
         selector.cached_topology_count()
+    );
+}
+
+#[test]
+#[ignore = "manual release performance harness"]
+fn semantic_pair_target_update_performance_harness() {
+    use std::time::Instant;
+
+    const ITERATIONS: usize = 100_000;
+    let layout = three_anchor_pair_layout();
+    let mut point = descriptor(SpatialSourceClass::DynamicPoint, "point", vec![0.25]);
+    let mut pair = point.clone();
+    pair.pair_span_q15 = Some(16_384);
+
+    let point_start = Instant::now();
+    let mut point_checksum = 0.0;
+    for index in 0..ITERATIONS {
+        point.coordinates[0] = (index % 32_768) as f64 / 32_768.0;
+        point_checksum += layout.project(&point).expect("point benchmark target")[0];
+    }
+    let point_elapsed = point_start.elapsed();
+
+    let pair_start = Instant::now();
+    let mut pair_checksum = 0.0;
+    for index in 0..ITERATIONS {
+        pair.coordinates[0] = (index % 32_768) as f64 / 32_768.0;
+        pair_checksum += layout.project(&pair).expect("Pair benchmark target")[0];
+    }
+    let pair_elapsed = pair_start.elapsed();
+
+    let topology = single_record_topology(pair.clone());
+    let mut bridge = JocSpatialBridge::new();
+    let input = [1.0_f64];
+    let mut output = vec![vec![0.0; 1]; layout.active_channel_count()];
+    let mut output_refs = output.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
+    let render_start = Instant::now();
+    for index in 0..ITERATIONS {
+        let update = SpatialCoordinateUpdate {
+            ordinal: 0,
+            descriptor: Some(SpatialDescriptorPatch {
+                coordinates: Some(vec![(index % 32_768) as f64 / 32_768.0]),
+                ..SpatialDescriptorPatch::default()
+            }),
+            scalar: None,
+            active: None,
+        };
+        bridge
+            .render_coordinates(
+                std::slice::from_ref(&input.as_slice()),
+                if index == 0 { Some(&topology) } else { None },
+                (index > 0).then_some(std::slice::from_ref(&update)),
+                &layout,
+                0,
+                48_000,
+                &mut output_refs,
+            )
+            .expect("Pair render benchmark workload");
+    }
+    let render_elapsed = render_start.elapsed();
+    println!(
+        "semantic_pair_performance iterations={ITERATIONS} point_seconds={:.6} pair_seconds={:.6} relative_overhead={:.3} render_control_seconds={:.6} point_checksum={point_checksum} pair_checksum={pair_checksum}",
+        point_elapsed.as_secs_f64(),
+        pair_elapsed.as_secs_f64(),
+        pair_elapsed.as_secs_f64() / point_elapsed.as_secs_f64(),
+        render_elapsed.as_secs_f64(),
     );
 }
 
