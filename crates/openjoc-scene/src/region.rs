@@ -8,7 +8,7 @@
 use crate::extent::ExtentFieldCache;
 use crate::{
     SpatialDescriptor, SpatialLayout, SpatialLayoutLayer, SpatialLayoutRow, SpatialLayoutTopology,
-    SpatialProjectionError, SpatialSourceClass,
+    SpatialProjectionError, SpatialProjectionOutcome, SpatialSourceClass,
 };
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt};
@@ -166,32 +166,36 @@ impl RegionTopologySelector {
         self.cache.len()
     }
 
-    /// Projects one descriptor using a cached selected topology when needed.
-    pub(crate) fn project(
+    /// Projects one descriptor and retains effective-position information only
+    /// as the local outcome of this target-generation evaluation.
+    pub(crate) fn project_outcome(
         &mut self,
         canonical: &SpatialLayout,
         descriptor: &SpatialDescriptor,
-    ) -> Result<Vec<f64>, SpatialProjectionError> {
-        self.project_with_epoch(canonical, descriptor, 0)
+    ) -> Result<SpatialProjectionOutcome, SpatialProjectionError> {
+        self.project_outcome_with_epoch(canonical, descriptor, 0)
     }
 
-    /// Projects one descriptor using the current binding topology epoch. The
-    /// epoch is part of the extent cache key so stale layout-bound responses
-    /// cannot survive a binding/topology rebuild.
-    pub(crate) fn project_with_epoch(
+    pub(crate) fn project_outcome_with_epoch(
         &mut self,
         canonical: &SpatialLayout,
         descriptor: &SpatialDescriptor,
         topology_epoch: u64,
-    ) -> Result<Vec<f64>, SpatialProjectionError> {
+    ) -> Result<SpatialProjectionOutcome, SpatialProjectionError> {
+        if descriptor.channel_lock
+            && !matches!(descriptor.source_class, SpatialSourceClass::DynamicPoint)
+        {
+            return Err(SpatialProjectionError::UnsupportedChannelLock);
+        }
         if !matches!(
             descriptor.source_class,
             SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion
         ) {
-            return canonical.project_unconstrained(descriptor);
-        }
-        if descriptor.channel_lock {
-            return Err(SpatialProjectionError::UnsupportedChannelLock);
+            return Ok(SpatialProjectionOutcome {
+                target: canonical.project_unconstrained(descriptor)?,
+                effective_position: None,
+                locked_output: None,
+            });
         }
         let extent_active = descriptor
             .extent
@@ -203,6 +207,14 @@ impl RegionTopologySelector {
                 .map_err(|_| SpatialProjectionError::InvalidRegionState(zones))?,
             None => RegionSemanticState::default(),
         };
+        if descriptor.channel_lock
+            && (!state.is_default()
+                || extent_active
+                || descriptor.spread.is_some()
+                || descriptor.paired.is_some())
+        {
+            return Err(SpatialProjectionError::UnsupportedChannelLock);
+        }
         if extent_active && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
             return Err(SpatialProjectionError::UnsupportedExtent);
         }
@@ -215,9 +227,30 @@ impl RegionTopologySelector {
         if extent_active {
             return self
                 .cached_extent(&effective, topology_epoch)?
-                .project(&effective, descriptor);
+                .project(&effective, descriptor)
+                .map(|target| SpatialProjectionOutcome {
+                    target,
+                    effective_position: None,
+                    locked_output: None,
+                });
         }
-        effective.project_unconstrained(descriptor)
+        let ordinary = effective.project_unconstrained(descriptor)?;
+        if descriptor.channel_lock {
+            return effective.channel_lock_outcome(descriptor, ordinary);
+        }
+        let effective_position = if matches!(
+            descriptor.source_class,
+            SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion
+        ) {
+            Some(effective.point_position(&descriptor.coordinates)?)
+        } else {
+            None
+        };
+        Ok(SpatialProjectionOutcome {
+            target: ordinary,
+            effective_position,
+            locked_output: None,
+        })
     }
 
     fn cached_extent(

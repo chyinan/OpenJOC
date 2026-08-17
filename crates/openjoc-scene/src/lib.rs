@@ -20,8 +20,9 @@ pub use bridge::{
     SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
     SpatialExplicitMember, SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor,
     SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow,
-    SpatialLayoutTopology, SpatialPairedGeometry, SpatialProjectionError, SpatialRouteVector,
-    SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
+    SpatialLayoutTopology, SpatialPairedGeometry, SpatialProjectionError, SpatialProjectionOutcome,
+    SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample,
+    SpatialTopologySnapshot,
 };
 mod bridge_control;
 pub use bridge_control::{

@@ -33,6 +33,12 @@ The bridge implements only the supported ordinary domain:
   scalar, uses the clean five-knot radius transfer and cached compact field,
   preserves point identity at zero, and submits changed targets through the
   existing Q32 scheduler;
+- standalone Dynamic point ChannelLock is evaluated after ordinary point
+  projection. The current maximum active non-LFE output is mapped to its
+  topology anchor; a strict full-XYZ squared-distance test below `0.04`
+  produces an exclusive one-hot target and a local effective-position snap.
+  Each target evaluation is stateless, and ordinary, locked, and switched
+  targets all use the existing Q32 scheduler;
 - Q32 gain scheduling with persistent phase across blocks, restart on binding
   rebuild/layout change, and linear `Y = Σ G X` accumulation;
 - finite-value, dimension, duplicate, unsupported-class, and malformed-input
@@ -51,7 +57,8 @@ limited to the six named horizontal states and ordinary Top-Bottom inclusion or
 exclusion on validated one- or two-plane layouts. On those admitted topologies,
 non-default Region and ordinary nonzero Extent compose through the selected
 effective topology before the existing Extent crossover, normalization, and
-Q32 scheduler. ChannelLock × Extent remains fail-closed, as do special
+Q32 scheduler. ChannelLock with non-default Region, nonzero Extent, or their
+composition remains fail-closed, as do non-point ChannelLock sources, special
 selector-6 behavior, arbitrary region algebra, and unadmitted layer/fallback
 combinations.
 

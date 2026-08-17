@@ -21,6 +21,7 @@ const QMAX: f64 = QMAX_Q15 / Q;
 const EPS_ACTIVITY: f64 = 0.000_001;
 const EPS_DELTA: f64 = 0.000_1;
 const SUM_TOLERANCE: f64 = 1.0e-9;
+const CHANNEL_LOCK_THRESHOLD_SQUARED: f64 = 0.04;
 
 /// Spatial descriptor dispatch classes from the implementation bundle.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -75,7 +76,8 @@ pub struct SpatialDescriptor {
     /// contract validates these values before selecting a region topology.
     #[serde(default)]
     pub zones: Option<[bool; 6]>,
-    /// Channel lock remains outside the ordinary point-region operator.
+    /// Standalone point ChannelLock is applied at the target-generation
+    /// boundary; the ordinary projector itself does not consume this field.
     #[serde(default)]
     pub channel_lock: bool,
 }
@@ -554,6 +556,18 @@ pub struct SpatialRouteVector {
     pub vector: Vec<f64>,
 }
 
+/// Local result of one spatial target-generation evaluation.
+///
+/// The effective position and locked output are sidecar information for the
+/// same evaluation that produced `target`; they are not retained by metadata,
+/// topology, or the scheduler.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpatialProjectionOutcome {
+    pub target: Vec<f64>,
+    pub effective_position: Option<[f64; 3]>,
+    pub locked_output: Option<usize>,
+}
+
 /// Projection failures for malformed or unsupported spatial layout input.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpatialProjectionError {
@@ -641,7 +655,7 @@ impl fmt::Display for SpatialProjectionError {
             }
             Self::InvalidExtent => formatter.write_str("invalid semantic extent"),
             Self::UnsupportedChannelLock => {
-                formatter.write_str("channel lock is unsupported by the point-region operator")
+                formatter.write_str("channel lock is unsupported for this spatial combination")
             }
             Self::UnsupportedExtent => {
                 formatter.write_str("nonzero extent is unsupported by the point-region operator")
@@ -817,18 +831,36 @@ impl SpatialLayout {
         self.coordinate_dimension
     }
 
-    /// Computes normalized `P(d,L)` in active non-LFE channel order.
+    /// Computes the point target in active non-LFE channel order.
     pub fn project(
         &self,
         descriptor: &SpatialDescriptor,
     ) -> Result<Vec<f64>, SpatialProjectionError> {
+        Ok(self.project_with_outcome(descriptor)?.target)
+    }
+
+    /// Computes a target and the local effective-position outcome for one
+    /// descriptor snapshot.
+    pub fn project_with_outcome(
+        &self,
+        descriptor: &SpatialDescriptor,
+    ) -> Result<SpatialProjectionOutcome, SpatialProjectionError> {
+        if descriptor.channel_lock
+            && !matches!(descriptor.source_class, SpatialSourceClass::DynamicPoint)
+        {
+            return Err(SpatialProjectionError::UnsupportedChannelLock);
+        }
         if matches!(
             descriptor.source_class,
             SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion
         ) {
-            return crate::RegionTopologySelector::new().project(self, descriptor);
+            return crate::RegionTopologySelector::new().project_outcome(self, descriptor);
         }
-        self.project_unconstrained(descriptor)
+        Ok(SpatialProjectionOutcome {
+            target: self.project_unconstrained(descriptor)?,
+            effective_position: None,
+            locked_output: None,
+        })
     }
 
     pub(crate) fn project_unconstrained(
@@ -920,6 +952,19 @@ impl SpatialLayout {
     }
 
     fn point_vector(&self, coordinates: &[f64]) -> Result<Vec<f64>, SpatialProjectionError> {
+        let position = self.point_position(coordinates)?;
+        generic_point_projector(
+            &self.topology,
+            &self.channels,
+            &self.active_indices,
+            position,
+        )
+    }
+
+    pub(crate) fn point_position(
+        &self,
+        coordinates: &[f64],
+    ) -> Result<[f64; 3], SpatialProjectionError> {
         if coordinates.len() != self.coordinate_dimension {
             return Err(SpatialProjectionError::CoordinateDimension {
                 expected: self.coordinate_dimension,
@@ -937,12 +982,80 @@ impl SpatialLayout {
                 return Err(SpatialProjectionError::NonFiniteCoordinate { axis });
             }
         }
-        generic_point_projector(
-            &self.topology,
-            &self.channels,
-            &self.active_indices,
-            position,
-        )
+        Ok(position)
+    }
+
+    pub(crate) fn channel_lock_outcome(
+        &self,
+        descriptor: &SpatialDescriptor,
+        ordinary: Vec<f64>,
+    ) -> Result<SpatialProjectionOutcome, SpatialProjectionError> {
+        let position = self.point_position(&descriptor.coordinates)?;
+        let mut candidate = None;
+        let mut maximum = f64::NEG_INFINITY;
+        for (index, gain) in ordinary.iter().enumerate() {
+            if gain.is_finite() && *gain > maximum {
+                candidate = Some(index);
+                maximum = *gain;
+            }
+        }
+        let candidate = candidate.ok_or(SpatialProjectionError::InvalidLayout(
+            "ordinary point target has no active dominant output",
+        ))?;
+        let identity = self
+            .active_indices
+            .get(candidate)
+            .map(|index| self.channels[*index].identity.as_str())
+            .ok_or(SpatialProjectionError::InvalidLayout(
+                "ordinary point target has an invalid output index",
+            ))?;
+        let anchor = self.anchor_for_identity(identity)?;
+        let dx = position[0] - anchor.x;
+        let dy = position[1] - anchor.y;
+        let dz = position[2] - anchor.z;
+        let distance_squared = dx * dx + dy * dy + dz * dz;
+        if descriptor.channel_lock && distance_squared < CHANNEL_LOCK_THRESHOLD_SQUARED {
+            let mut target = vec![0.0; self.active_channel_count()];
+            target[candidate] = 1.0;
+            Ok(SpatialProjectionOutcome {
+                target,
+                effective_position: Some([anchor.x, anchor.y, anchor.z]),
+                locked_output: Some(candidate),
+            })
+        } else {
+            Ok(SpatialProjectionOutcome {
+                target: ordinary,
+                effective_position: Some(position),
+                locked_output: None,
+            })
+        }
+    }
+
+    fn anchor_for_identity(
+        &self,
+        identity: &str,
+    ) -> Result<SpatialLayoutAnchor, SpatialProjectionError> {
+        if let Some(anchor) = self
+            .topology
+            .layers
+            .iter()
+            .flat_map(|layer| &layer.rows)
+            .flat_map(|row| &row.anchors)
+            .find(|anchor| anchor.identity == identity)
+        {
+            return Ok(anchor.clone());
+        }
+        self.topology
+            .aliases
+            .iter()
+            .find(|alias| alias.target_identity == identity)
+            .map(|alias| SpatialLayoutAnchor {
+                identity: identity.to_owned(),
+                x: alias.x,
+                y: alias.y,
+                z: alias.z,
+            })
+            .ok_or_else(|| SpatialProjectionError::MissingAnchor(identity.to_owned()))
     }
 
     fn paired_vector(
@@ -1676,12 +1789,12 @@ impl JocSpatialBridge {
             for (index, target) in self.targets.iter_mut().enumerate() {
                 let record = &snapshot.records[index];
                 if record.active {
-                    let vector = self.region_selector.project_with_epoch(
+                    let outcome = self.region_selector.project_outcome_with_epoch(
                         layout,
                         &record.descriptor,
                         snapshot.topology_epoch,
                     )?;
-                    for (target_value, projection) in target.iter_mut().zip(vector) {
+                    for (target_value, projection) in target.iter_mut().zip(outcome.target) {
                         *target_value = record.scalar * projection;
                     }
                 } else {

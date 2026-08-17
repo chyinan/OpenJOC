@@ -39,8 +39,10 @@ claiming capabilities that the current evidence does not support.
   interoperability guarantee. Full x/y/z projection is available for the
   admitted topology family; ordinary Dynamic Extent and admitted non-default
   Region × nonzero Extent composition are supported for the documented eleven
-  layouts, while ChannelLock × Extent, special selector-6, arbitrary region
-  algebra, and unadmitted layer/fallback semantics remain unsupported.
+  layouts, while standalone Dynamic point ChannelLock is supported across the
+  current one- and two-layer topology family. ChannelLock × non-default Region,
+  ChannelLock × Extent, special selector-6, arbitrary region algebra, and
+  unadmitted layer/fallback semantics remain unsupported.
 - The real-JOC binaural mode is a separate speaker-virtualization stage:
   `render-joc` first renders the selected 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, or
   7.1.4 virtual
