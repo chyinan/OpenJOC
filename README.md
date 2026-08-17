@@ -28,11 +28,12 @@ OpenJOC 0.4.2 is the current release. It retains the 0.3.0 release foundation
 and adds an experimental JOC-to-speaker workflow through
 `JocSpatialBridge`. Ordinary rendering assembles bridge control from decoded
 JOC/OAMD state; `--topology` remains an optional complete override/test input.
-The selectable 5.1/5.1.2/5.1.4/7.1/7.1.2/7.1.4/7.1.6 workflows are documented in
+The selectable 5.1/5.1.2/5.1.4/7.1/7.1.2/7.1.4/7.1.6/9.1/9.1.2/9.1.4/9.1.6 workflows are documented in
 [Experimental JOC speaker rendering](docs/JOC_RENDER.md).
-The same workflow can virtualize the currently admitted six layouts to stereo
-through a user-supplied supported SOFA HRIR bank; 7.1.6 speaker-to-CAF output
-is admitted independently, while its binaural path remains closed.
+The same workflow can virtualize the currently admitted six existing layouts to
+stereo through a user-supplied supported SOFA HRIR bank. 7.1.6 and the 9.1
+family provide semantic speaker-to-CAF output independently, while their
+binaural paths remain closed.
 The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
 generic N-channel library interface for caller-defined layouts; the CLI names
 are convenience presets, not the renderer's fundamental maximum.
@@ -107,6 +108,7 @@ openjoc decode input.mp4 -o output/ --internal-base --streaming
 openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
 openjoc render-joc input.m4a --layout 7.1.4 --output render.caf
+openjoc render-joc input.m4a --layout 9.1.6 --output render-9.1.6.caf
 openjoc render-joc input.m4a --layout 7.1.4 --binaural-sofa HRTF.sofa \
   --lfe-policy equal-power-dual-mono --output render-binaural.wav
 # Optional complete explicit override/test input:
@@ -117,8 +119,9 @@ openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 `render-joc` selects the output container from the destination extension:
 `.wav` uses WAVEFORMATEXTENSIBLE where the semantic layout is exactly
 representable, and `.caf` uses Core Audio Format channel-layout metadata. The
-renderer’s semantic channel order is independent of that container choice;
-this change does not add a new public speaker-layout preset.
+9.1 family is semantic-CAF-only: its Wide identities are not exactly
+representable by standard WAVEFORMATEXTENSIBLE and WAV requests fail closed.
+The renderer’s semantic channel order is independent of that container choice.
 
 `decode` and `decode-payload` use `AUTO` when no profile is supplied: they
 evaluate `ETSI_STRICT` first and select `OBSERVED_VENDOR_COMPAT` only when the

@@ -10,8 +10,9 @@ use crate::{
 use std::fmt;
 
 /// Public speaker presets exposed by the JOC speaker-rendering workflow.
-pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 7] =
-    ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"];
+pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 11] = [
+    "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+];
 
 /// Canonical channel order for the 5.1 family.
 pub const SPEAKER_LAYOUT_5_1_CHANNELS: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
@@ -44,11 +45,37 @@ pub const SPEAKER_LAYOUT_7_1_6_CHANNELS: [&str; 14] = [
     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr", "Rtr",
 ];
 
+/// Canonical channel order for the 9.1 bed.
+pub const SPEAKER_LAYOUT_9_1_CHANNELS: [&str; 10] =
+    ["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"];
+
+/// Canonical channel order for 9.1.2.
+pub const SPEAKER_LAYOUT_9_1_2_CHANNELS: [&str; 12] = [
+    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltm", "Rtm",
+];
+
+/// Canonical channel order for 9.1.4.
+pub const SPEAKER_LAYOUT_9_1_4_CHANNELS: [&str; 14] = [
+    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltr", "Rtr",
+];
+
+/// Canonical channel order for 9.1.6.
+pub const SPEAKER_LAYOUT_9_1_6_CHANNELS: [&str; 16] = [
+    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
+    "Rtr",
+];
+
 const QMAX: f64 = 32_767.0 / 32_768.0;
 const TOP_INNER_LEFT: f64 = 0.241_943_359_375;
 const TOP_INNER_RIGHT: f64 = 0.758_056_640_625;
 const TOP_FRONT_Y: f64 = 0.241_943_359_375;
 const TOP_REAR_Y: f64 = 0.758_056_640_625;
+const WIDE_ROW_Y_Q15: u32 = 5_285;
+const WIDE_LEFT_X_Q15: u32 = 0;
+const WIDE_RIGHT_X_Q15: u32 = 32_767;
+const WIDE_ROW_Y: f64 = WIDE_ROW_Y_Q15 as f64 / 32_768.0;
+const WIDE_LEFT_X: f64 = WIDE_LEFT_X_Q15 as f64 / 32_768.0;
+const WIDE_RIGHT_X: f64 = WIDE_RIGHT_X_Q15 as f64 / 32_768.0;
 
 /// Failure while deriving public WAVEFORMATEXTENSIBLE speaker-mask metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -178,7 +205,7 @@ pub struct SpeakerLayoutPreset {
 }
 
 impl SpeakerLayoutPreset {
-    /// Returns one of the seven public speaker presets.
+    /// Returns one of the eleven public speaker presets.
     pub fn for_name(name: &str) -> Result<Self, SpeakerLayoutPresetError> {
         match name {
             "5.1" => speaker_layout_5_1_preset(),
@@ -188,6 +215,10 @@ impl SpeakerLayoutPreset {
             "7.1.2" => speaker_layout_7_1_2_preset(),
             "7.1.4" => speaker_layout_7_1_4_preset(),
             "7.1.6" => speaker_layout_7_1_6_preset(),
+            "9.1" => speaker_layout_9_1_preset(),
+            "9.1.2" => speaker_layout_9_1_2_preset(),
+            "9.1.4" => speaker_layout_9_1_4_preset(),
+            "9.1.6" => speaker_layout_9_1_6_preset(),
             other => Err(SpeakerLayoutPresetError::UnsupportedLayout(
                 other.to_owned(),
             )),
@@ -291,6 +322,46 @@ pub fn speaker_layout_7_1_6() -> Result<SpatialLayout, SpatialProjectionError> {
         .map_err(|error| match error {
             SpeakerLayoutPresetError::Projection(error) => error,
             other => unreachable!("validated 7.1.6 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
+/// Returns the canonical 9.1 [`SpatialLayout`] topology.
+pub fn speaker_layout_9_1() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_9_1_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 9.1 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
+/// Returns the canonical 9.1.2 [`SpatialLayout`] topology.
+pub fn speaker_layout_9_1_2() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_9_1_2_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 9.1.2 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
+/// Returns the canonical 9.1.4 [`SpatialLayout`] topology.
+pub fn speaker_layout_9_1_4() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_9_1_4_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 9.1.4 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
+/// Returns the canonical 9.1.6 [`SpatialLayout`] topology.
+pub fn speaker_layout_9_1_6() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_9_1_6_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 9.1.6 preset failed outside projection: {other}"),
         })?
         .layout)
 }
@@ -455,6 +526,94 @@ fn speaker_layout_7_1_6_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPre
     )
 }
 
+fn speaker_layout_9_1_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    generic_preset(
+        "9.1",
+        &SPEAKER_LAYOUT_9_1_CHANNELS,
+        Some(3),
+        vec![wide_bed()],
+    )
+}
+
+fn speaker_layout_9_1_2_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    generic_preset(
+        "9.1.2",
+        &SPEAKER_LAYOUT_9_1_2_CHANNELS,
+        Some(3),
+        vec![
+            wide_bed(),
+            upper_layer(vec![row(
+                0.5,
+                vec![
+                    anchor("Ltm", TOP_INNER_LEFT, 0.5, QMAX),
+                    anchor("Rtm", TOP_INNER_RIGHT, 0.5, QMAX),
+                ],
+            )]),
+        ],
+    )
+}
+
+fn speaker_layout_9_1_4_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    generic_preset(
+        "9.1.4",
+        &SPEAKER_LAYOUT_9_1_4_CHANNELS,
+        Some(3),
+        vec![
+            wide_bed(),
+            upper_layer(vec![
+                row(
+                    TOP_FRONT_Y,
+                    vec![
+                        anchor("Ltf", TOP_INNER_LEFT, TOP_FRONT_Y, QMAX),
+                        anchor("Rtf", TOP_INNER_RIGHT, TOP_FRONT_Y, QMAX),
+                    ],
+                ),
+                row(
+                    TOP_REAR_Y,
+                    vec![
+                        anchor("Ltr", TOP_INNER_LEFT, TOP_REAR_Y, QMAX),
+                        anchor("Rtr", TOP_INNER_RIGHT, TOP_REAR_Y, QMAX),
+                    ],
+                ),
+            ]),
+        ],
+    )
+}
+
+fn speaker_layout_9_1_6_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    generic_preset(
+        "9.1.6",
+        &SPEAKER_LAYOUT_9_1_6_CHANNELS,
+        Some(3),
+        vec![
+            wide_bed(),
+            upper_layer(vec![
+                row(
+                    TOP_FRONT_Y,
+                    vec![
+                        anchor("Ltf", TOP_INNER_LEFT, TOP_FRONT_Y, QMAX),
+                        anchor("Rtf", TOP_INNER_RIGHT, TOP_FRONT_Y, QMAX),
+                    ],
+                ),
+                row(
+                    0.5,
+                    vec![
+                        anchor("Ltm", TOP_INNER_LEFT, 0.5, QMAX),
+                        anchor("Rtm", TOP_INNER_RIGHT, 0.5, QMAX),
+                    ],
+                ),
+                row(
+                    TOP_REAR_Y,
+                    vec![
+                        anchor("Ltr", TOP_INNER_LEFT, TOP_REAR_Y, QMAX),
+                        anchor("Rtr", TOP_INNER_RIGHT, TOP_REAR_Y, QMAX),
+                    ],
+                ),
+            ]),
+        ],
+    )
+}
+
 fn generic_preset(
     name: &'static str,
     labels: &[&'static str],
@@ -480,7 +639,7 @@ fn generic_preset(
         Vec::new(),
     )?;
     let wav_channel_mask = match name {
-        "7.1.6" => None,
+        "7.1.6" | "9.1" | "9.1.2" | "9.1.4" | "9.1.6" => None,
         _ => Some(speaker_channel_mask_for_labels(&labels)?),
     };
     Ok(SpeakerLayoutPreset {
@@ -512,6 +671,24 @@ fn five_one_bed() -> SpatialLayoutLayer {
 fn seven_one_bed() -> SpatialLayoutLayer {
     bed_layer(vec![
         five_one_bed().rows[0].clone(),
+        five_one_bed().rows[1].clone(),
+        row(
+            QMAX,
+            vec![anchor("Lb", 0.0, QMAX, 0.0), anchor("Rb", QMAX, QMAX, 0.0)],
+        ),
+    ])
+}
+
+fn wide_bed() -> SpatialLayoutLayer {
+    bed_layer(vec![
+        five_one_bed().rows[0].clone(),
+        row(
+            WIDE_ROW_Y,
+            vec![
+                anchor("Lw", WIDE_LEFT_X, WIDE_ROW_Y, 0.0),
+                anchor("Rw", WIDE_RIGHT_X, WIDE_ROW_Y, 0.0),
+            ],
+        ),
         five_one_bed().rows[1].clone(),
         row(
             QMAX,

@@ -47,10 +47,12 @@ mod speaker_layouts;
 pub use speaker_layouts::{
     SPEAKER_LAYOUT_5_1_2_CHANNELS, SPEAKER_LAYOUT_5_1_4_CHANNELS, SPEAKER_LAYOUT_5_1_CHANNELS,
     SPEAKER_LAYOUT_7_1_2_CHANNELS, SPEAKER_LAYOUT_7_1_4_CHANNELS, SPEAKER_LAYOUT_7_1_6_CHANNELS,
-    SPEAKER_LAYOUT_7_1_CHANNELS, SPEAKER_LAYOUT_PRESET_NAMES, SemanticChannelLayout,
-    SpeakerChannelMaskError, SpeakerLayoutPreset, SpeakerLayoutPresetError,
+    SPEAKER_LAYOUT_7_1_CHANNELS, SPEAKER_LAYOUT_9_1_2_CHANNELS, SPEAKER_LAYOUT_9_1_4_CHANNELS,
+    SPEAKER_LAYOUT_9_1_6_CHANNELS, SPEAKER_LAYOUT_9_1_CHANNELS, SPEAKER_LAYOUT_PRESET_NAMES,
+    SemanticChannelLayout, SpeakerChannelMaskError, SpeakerLayoutPreset, SpeakerLayoutPresetError,
     speaker_channel_mask_for_labels, speaker_layout_5_1_4, speaker_layout_7_1_2,
-    speaker_layout_7_1_6, speaker_layout_preset,
+    speaker_layout_7_1_6, speaker_layout_9_1, speaker_layout_9_1_2, speaker_layout_9_1_4,
+    speaker_layout_9_1_6, speaker_layout_preset,
 };
 
 /// Cartesian decoder-interface coordinate.

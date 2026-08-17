@@ -16,6 +16,20 @@ claim certification or ownership of third-party marks. The Apache-2.0 license
 covers rights granted by OpenJOC contributors according to its terms and does
 not purport to grant rights owned by unrelated third parties.
 
+### Public/normative and behavioral clean-room specification classes
+
+The 9.1 speaker-layout family uses two explicitly separated specification
+classes. Public/normative specification establishes the semantic channel
+identities, engine order, CAF descriptions, WAVEFORMATEXTENSIBLE rejection,
+generic topology/projector boundary, and inherited upper-layer contracts.
+The Wide-row Q15 values (`Y = 5285/32768`, `Lw X = 0/32768`, and `Rw X =
+32767/32768`) are supplied as a behavioral clean-room specification of
+observable renderer behavior for this implementation phase. The implementation
+receives behavior, numerical contract, and tests—not implementation code,
+decompiler expressions, assembly, private symbols, addresses, or internal
+layout structures. This classification does not claim that every 9.1-family
+behavior is derived solely from ETSI or another public normative standard.
+
 ### JOC interoperability profile provenance
 
 The profile split is an architectural boundary, not a standards judgment.

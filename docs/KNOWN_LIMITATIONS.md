@@ -23,14 +23,14 @@ claiming capabilities that the current evidence does not support.
   projection that assembles bridge control automatically from decoded
   JOC/OAMD state. A complete bridge-control topology sidecar remains an
   optional explicit override/test input. It
-  supports the 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6 presets. The
-  7.1.6 preset emits semantic multichannel CAF only; standard speaker
-  channel-mask metadata is emitted for the other multichannel speaker WAV
+  supports the 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2,
+  9.1.4, and 9.1.6 presets. The 7.1.6 and 9.1.x presets emit semantic
+  multichannel CAF only; standard speaker channel-mask metadata is emitted for
+  the other multichannel speaker WAV
   layouts. It does not infer
   authored-object identity, and does not resolve `T(t)` or provide a
   vendor renderer. 2.0 remains blocked by unspecified bass/LFE
-  fold-down policy; 9.1.4 and 9.1.6 remain blocked by missing admitted clean
-  preset geometry; 22.2 has generic 24-channel renderer
+  fold-down policy; 22.2 has generic 24-channel renderer
   capacity but remains blocked by missing admitted clean 22.2 geometry. The
   public `SpatialLayout` plus `JocSpatialBridge` API accepts arbitrary
   caller-defined layouts, but the CLI has no custom-layout file format.

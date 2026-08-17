@@ -42,7 +42,7 @@ pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
 pub const JOC_RENDER_LAYOUT: &str = "5.1";
 #[cfg(test)]
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = SPEAKER_LAYOUT_5_1_CHANNELS;
-pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 7] = SPEAKER_LAYOUT_PRESET_NAMES;
+pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 11] = SPEAKER_LAYOUT_PRESET_NAMES;
 
 #[derive(Debug)]
 pub enum JocRenderError {
@@ -2312,6 +2312,9 @@ mod tests {
             "TFR" | "Rtf" => 15,
             "TBL" | "Ltr" => 16,
             "TBR" | "Rtr" => 18,
+            "Lw" => 35,
+            "Rw" => 36,
+            "Ltm" | "Rtm" => 100,
             _ => panic!("unexpected public semantic label {label}"),
         }
     }
@@ -2543,7 +2546,10 @@ mod tests {
     fn canonical_layout_presets_have_explicit_public_contracts() {
         assert_eq!(
             JOC_RENDER_SUPPORTED_LAYOUTS,
-            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"]
+            [
+                "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
+                "9.1.6",
+            ]
         );
         let expected = [
             ("5.1", vec!["FL", "FR", "FC", "LFE", "Ls", "Rs"]),
@@ -2575,6 +2581,30 @@ mod tests {
                 vec![
                     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm",
                     "Ltr", "Rtr",
+                ],
+            ),
+            (
+                "9.1",
+                vec!["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"],
+            ),
+            (
+                "9.1.2",
+                vec![
+                    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltm", "Rtm",
+                ],
+            ),
+            (
+                "9.1.4",
+                vec![
+                    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf",
+                    "Ltr", "Rtr",
+                ],
+            ),
+            (
+                "9.1.6",
+                vec![
+                    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf",
+                    "Ltm", "Rtm", "Ltr", "Rtr",
                 ],
             ),
         ];
@@ -2665,7 +2695,7 @@ mod tests {
 
     #[test]
     fn unknown_layout_reports_supported_values_without_fallback() {
-        let error = JocSpeakerRenderer::new("9.1.6", control(false, 6)).unwrap_err();
+        let error = JocSpeakerRenderer::new("22.2", control(false, 6)).unwrap_err();
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
         assert!(error.to_string().contains("5.1.4"));
         assert!(error.to_string().contains("7.1.2"));
@@ -2677,7 +2707,7 @@ mod tests {
     fn binaural_mapping_uses_public_channel_order_for_every_preset() {
         for layout in JOC_RENDER_SUPPORTED_LAYOUTS
             .into_iter()
-            .filter(|layout| *layout != "7.1.6")
+            .filter(|layout| !matches!(*layout, "7.1.6" | "9.1" | "9.1.2" | "9.1.4" | "9.1.6"))
         {
             let renderer = JocBinauralRenderer::new(
                 layout,
@@ -2723,6 +2753,19 @@ mod tests {
         ));
         assert!(error.to_string().contains("not currently admitted"));
         assert!(error.to_string().contains("no nearest-speaker"));
+    }
+
+    #[test]
+    fn binaural_preflight_rejects_the_91_family_without_hrir_aliasing() {
+        for layout in ["9.1", "9.1.2", "9.1.4", "9.1.6"] {
+            let error = super::validate_binaural_layout(layout)
+                .expect_err("9.1-family binaural is not currently admitted");
+            assert!(matches!(
+                error,
+                JocRenderError::BinauralLayoutNotReady { layout: ref selected, ref missing }
+                    if selected == layout && missing.iter().any(|identity| identity == "Lw")
+            ));
+        }
     }
 
     #[test]
@@ -3171,8 +3214,16 @@ mod tests {
     fn contribution_modes_decompose_every_output_and_assign_lfe_to_base() {
         let frame = decoded_frame(0, 0, 3);
         let pcm = base(3, 1.0);
-        for (layout, channel_count) in [("5.1.4", 10), ("7.1.2", 10), ("7.1.4", 12), ("7.1.6", 14)]
-        {
+        for (layout, channel_count) in [
+            ("5.1.4", 10),
+            ("7.1.2", 10),
+            ("7.1.4", 12),
+            ("7.1.6", 14),
+            ("9.1", 10),
+            ("9.1.2", 12),
+            ("9.1.4", 14),
+            ("9.1.6", 16),
+        ] {
             let render = |mode| {
                 JocSpeakerRenderer::new_with_contribution(layout, control(false, 6), mode)
                     .unwrap()
@@ -3340,7 +3391,7 @@ mod tests {
 
     #[test]
     fn unsupported_layout_is_explicit() {
-        let error = JocSpeakerRenderer::new("9.1.6", control(false, 6)).unwrap_err();
+        let error = JocSpeakerRenderer::new("22.2", control(false, 6)).unwrap_err();
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
     }
 
@@ -3546,10 +3597,12 @@ mod tests {
 
     #[test]
     fn public_layouts_are_representable_in_both_selected_containers() {
-        for &layout in JOC_RENDER_SUPPORTED_LAYOUTS
-            .iter()
-            .filter(|layout| **layout != "7.1.6")
-        {
+        for &layout in JOC_RENDER_SUPPORTED_LAYOUTS.iter().filter(|layout| {
+            matches!(
+                **layout,
+                "5.1" | "5.1.2" | "5.1.4" | "7.1" | "7.1.2" | "7.1.4"
+            )
+        }) {
             let root = std::env::temp_dir().join(format!(
                 "openjoc-output-matrix-{}-{}",
                 std::process::id(),
@@ -3592,6 +3645,77 @@ mod tests {
                 assert_eq!(description.0, expected_caf_label(label));
                 assert_eq!(description.1, 0);
             }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn public_91_family_is_caf_capable_and_wav_fails_closed() {
+        for layout in ["9.1", "9.1.2", "9.1.4", "9.1.6"] {
+            let root = std::env::temp_dir().join(format!(
+                "openjoc-output-matrix-{layout}-{}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let preset = SpeakerLayoutPreset::for_name(layout).unwrap();
+            let semantic = preset.semantic_channel_layout();
+            assert_eq!(preset.channel_count(), semantic.labels.len());
+            assert_eq!(preset.lfe_index(), Some(3));
+            assert_eq!(preset.wav_channel_mask(), None);
+
+            let wav_path = root.join("render.wav");
+            let result = JocPcmOutput::new_for_semantic_layout(
+                &wav_path,
+                SampleFormat::F32,
+                false,
+                &semantic,
+            );
+            let Err(error) = result else {
+                panic!("9.1-family WAV must fail before output creation");
+            };
+            assert!(matches!(
+                error,
+                JocRenderError::WavLayoutNotExactlyRepresentable { layout: ref selected }
+                    if selected == layout
+            ));
+            assert!(!wav_path.exists());
+
+            let caf_path = root.join("render.caf");
+            let mut caf = JocPcmOutput::new_for_semantic_layout(
+                &caf_path,
+                SampleFormat::F32,
+                false,
+                &semantic,
+            )
+            .unwrap();
+            let channels = (0..preset.channel_count())
+                .map(|index| vec![index as f64 / 32.0, -(index as f64) / 32.0])
+                .collect::<Vec<_>>();
+            caf.write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: channels.clone(),
+            })
+            .unwrap();
+            caf.finish().unwrap();
+            let descriptions = caf_channel_descriptions(&fs::read(&caf_path).unwrap());
+            assert_eq!(descriptions.len(), preset.channel_count());
+            assert_eq!(descriptions[3].0, expected_caf_label("LFE"));
+            assert_eq!(
+                descriptions
+                    .iter()
+                    .map(|description| description.0)
+                    .collect::<Vec<_>>(),
+                preset
+                    .labels
+                    .iter()
+                    .map(|label| expected_caf_label(label))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(caf_f32_samples(&fs::read(&caf_path).unwrap()), {
+                (0..2)
+                    .flat_map(|frame| channels.iter().map(move |channel| channel[frame]))
+                    .collect::<Vec<_>>()
+            });
             fs::remove_dir_all(root).unwrap();
         }
     }
@@ -3710,9 +3834,12 @@ mod tests {
     fn extension_selection_is_explicit_and_withheld_layouts_stay_private() {
         assert_eq!(
             JOC_RENDER_SUPPORTED_LAYOUTS,
-            ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"]
+            [
+                "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
+                "9.1.6",
+            ]
         );
-        assert!(SpeakerLayoutPreset::for_name("9.1.6").is_err());
+        assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
         assert_eq!(
             super::validate_output_path(std::path::Path::new("output.WAV")).unwrap(),
             OutputContainer::Wav
@@ -3814,7 +3941,7 @@ mod tests {
             .map(|index| base(SAMPLES, index as f64 * 0.001))
             .collect::<Vec<_>>();
 
-        for layout in ["5.1", "7.1.4", "7.1.6"] {
+        for layout in ["5.1", "7.1.4", "7.1.6", "9.1", "9.1.6"] {
             let mut samples = Vec::new();
             for repetition in 0..=repetitions {
                 let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();

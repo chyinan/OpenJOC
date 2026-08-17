@@ -38,7 +38,10 @@ fn assert_unit_l2(vector: &[f64]) {
 fn public_presets_have_the_admitted_names_and_backend_contracts() {
     assert_eq!(
         SPEAKER_LAYOUT_PRESET_NAMES,
-        ["5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6"]
+        [
+            "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
+            "9.1.6",
+        ]
     );
     let expected = [
         ("5.1", 6, 0x0000_060f),
@@ -71,8 +74,154 @@ fn public_presets_have_the_admitted_names_and_backend_contracts() {
         ]
     );
     assert!(speaker_channel_mask_for_labels(&preset.labels).is_err());
-    assert!(SpeakerLayoutPreset::for_name("9.1.6").is_err());
+    for (name, count, labels) in [
+        (
+            "9.1",
+            10,
+            vec!["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"],
+        ),
+        (
+            "9.1.2",
+            12,
+            vec![
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltm", "Rtm",
+            ],
+        ),
+        (
+            "9.1.4",
+            14,
+            vec![
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltr",
+                "Rtr",
+            ],
+        ),
+        (
+            "9.1.6",
+            16,
+            vec![
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm",
+                "Rtm", "Ltr", "Rtr",
+            ],
+        ),
+    ] {
+        let preset = SpeakerLayoutPreset::for_name(name).expect("9.1-family preset");
+        assert_eq!(preset.channel_count(), count);
+        assert_eq!(preset.lfe_index(), Some(3));
+        assert_eq!(preset.wav_channel_mask(), None);
+        assert_eq!(preset.channel_labels(), labels);
+    }
     assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
+}
+
+#[test]
+fn nine_one_wide_row_uses_exact_q15_geometry_and_generic_interpolation() {
+    const WIDE_Y: f64 = 5_285.0 / 32_768.0;
+    const WIDE_RIGHT_X: f64 = 32_767.0 / 32_768.0;
+    let preset = SpeakerLayoutPreset::for_name("9.1").expect("9.1 preset");
+    let bed = &preset.layout.topology().layers[0];
+    assert_eq!(bed.rows.len(), 4);
+    assert_eq!(
+        bed.rows.iter().map(|row| row.y).collect::<Vec<_>>(),
+        [0.0, WIDE_Y, 0.5, QMAX]
+    );
+    assert_eq!(bed.rows[1].anchors[0].identity, "Lw");
+    assert_eq!(bed.rows[1].anchors[1].identity, "Rw");
+    assert_eq!(bed.rows[1].anchors[0].x, 0.0);
+    assert_eq!(bed.rows[1].anchors[1].x, WIDE_RIGHT_X);
+    assert_eq!(bed.rows[1].anchors[0].z, 0.0);
+    assert_eq!(bed.rows[1].anchors[1].z, 0.0);
+    assert_eq!(
+        bed.rows[1].anchors[0].x + bed.rows[1].anchors[1].x,
+        WIDE_RIGHT_X
+    );
+
+    let left = preset
+        .layout
+        .project(&point(0.0, WIDE_Y, 0.0))
+        .expect("Lw anchor");
+    let right = preset
+        .layout
+        .project(&point(WIDE_RIGHT_X, WIDE_Y, 0.0))
+        .expect("Rw anchor");
+    assert_eq!(left[active_index(&preset, "Lw")], 1.0);
+    assert_eq!(right[active_index(&preset, "Rw")], 1.0);
+    assert!(left[active_index(&preset, "Rw")].abs() < 2.0e-12);
+    assert!(right[active_index(&preset, "Lw")].abs() < 2.0e-12);
+
+    let wide_midpoint = preset
+        .layout
+        .project(&point(0.5, WIDE_Y, 0.0))
+        .expect("Wide-row midpoint");
+    assert!(wide_midpoint[active_index(&preset, "Lw")] > 0.0);
+    assert!(wide_midpoint[active_index(&preset, "Rw")] > 0.0);
+    assert_unit_l2(&wide_midpoint);
+
+    for y in [f64::midpoint(0.0, WIDE_Y), f64::midpoint(WIDE_Y, 0.5)] {
+        let transition = preset
+            .layout
+            .project(&point(0.5, y, 0.0))
+            .expect("Wide Y transition");
+        assert!(
+            transition[active_index(&preset, "FC")] > 0.0
+                || transition[active_index(&preset, "Ls")] > 0.0
+        );
+        assert!(
+            transition[active_index(&preset, "Lw")] > 0.0
+                || transition[active_index(&preset, "Rw")] > 0.0
+        );
+        assert_unit_l2(&transition);
+    }
+}
+
+#[test]
+fn nine_one_family_preserves_bed_and_upper_topology_data_relationships() {
+    let seven = SpeakerLayoutPreset::for_name("7.1").expect("7.1 preset");
+    let nine = SpeakerLayoutPreset::for_name("9.1").expect("9.1 preset");
+    let seven_rows = &seven.layout.topology().layers[0].rows;
+    let nine_rows = &nine.layout.topology().layers[0].rows;
+    assert_eq!(nine_rows[0], seven_rows[0]);
+    assert_eq!(nine_rows[2], seven_rows[1]);
+    assert_eq!(nine_rows[3], seven_rows[2]);
+
+    let nine_six = SpeakerLayoutPreset::for_name("9.1.6").expect("9.1.6 preset");
+    let seven_six = SpeakerLayoutPreset::for_name("7.1.6").expect("7.1.6 preset");
+    assert_eq!(
+        nine_six.layout.topology().layers[1]
+            .rows
+            .iter()
+            .map(|row| (
+                row.y,
+                row.anchors
+                    .iter()
+                    .map(|anchor| (anchor.x, anchor.z))
+                    .collect::<Vec<_>>()
+            ))
+            .collect::<Vec<_>>(),
+        seven_six.layout.topology().layers[1]
+            .rows
+            .iter()
+            .map(|row| (
+                row.y,
+                row.anchors
+                    .iter()
+                    .map(|anchor| (anchor.x, anchor.z))
+                    .collect::<Vec<_>>()
+            ))
+            .collect::<Vec<_>>()
+    );
+
+    let left = nine
+        .layout
+        .project(&point(0.125, 5_285.0 / 32_768.0, 0.0))
+        .unwrap();
+    let right = nine
+        .layout
+        .project(&point(32_767.0 / 32_768.0 - 0.125, 5_285.0 / 32_768.0, 0.0))
+        .unwrap();
+    assert!((left[active_index(&nine, "Lw")] - right[active_index(&nine, "Rw")]).abs() < 2.0e-12);
+    assert!((left[active_index(&nine, "Rw")] - right[active_index(&nine, "Lw")]).abs() < 2.0e-12);
+    assert_unit_l2(&left);
+    assert_unit_l2(&right);
 }
 
 #[test]

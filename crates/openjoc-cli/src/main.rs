@@ -188,8 +188,8 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
-        "  render-joc supported presets: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
+        "  render-joc supported presets: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -212,7 +212,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
@@ -257,7 +257,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
-        "  render-joc SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6; bridge control is automatic by default\n",
+        "  render-joc SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6; bridge control is automatic by default\n",
         "  GENERIC/CUSTOM LIBRARY CAPABILITY: use openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format\n",
     ));
     Ok(())
@@ -306,7 +306,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
-            "SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6.\n",
+            "SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
@@ -3585,6 +3585,39 @@ mod profile_name_tests {
         assert!(error.to_string().contains("not currently admitted"));
         assert!(error.to_string().contains("Ltm"));
         assert!(!error.to_string().contains("failed to open input"));
+    }
+
+    #[test]
+    fn nine_one_family_wav_preflight_rejects_before_overwrite_or_decode() {
+        for layout in ["9.1", "9.1.2", "9.1.4", "9.1.6"] {
+            let root = std::env::temp_dir().join(format!(
+                "openjoc-{layout}-preflight-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let input = root.join("missing.m4a");
+            let output = root.join("existing.wav");
+            fs::write(&output, b"previous-valid-output").unwrap();
+            let values = [
+                input.to_string_lossy().into_owned(),
+                "--layout".to_owned(),
+                layout.to_owned(),
+                "--output".to_owned(),
+                output.to_string_lossy().into_owned(),
+            ];
+            let parsed = parse_render_joc(&values).unwrap();
+            let terminal = TerminalCapabilities::from_inputs(false, true, None, false, None, None);
+            let error = render_joc_preflight(&parsed, terminal).expect_err("WAV must be blocked");
+            assert!(error.to_string().contains(layout));
+            assert!(error.to_string().contains("use .caf"));
+            assert!(!error.to_string().contains("overwrite"));
+            assert_eq!(fs::read(&output).unwrap(), b"previous-valid-output");
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

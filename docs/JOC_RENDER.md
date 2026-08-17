@@ -24,9 +24,14 @@ The newly admitted height presets use the same command surface:
 openjoc render-joc INPUT.m4a --layout 5.1.4 --output output-5.1.4.wav
 openjoc render-joc INPUT.m4a --layout 7.1.2 --output output-7.1.2.wav
 openjoc render-joc INPUT.m4a --layout 7.1.6 --output output-7.1.6.caf
+openjoc render-joc INPUT.m4a --layout 9.1 --output output-9.1.caf
+openjoc render-joc INPUT.m4a --layout 9.1.2 --output output-9.1.2.caf
+openjoc render-joc INPUT.m4a --layout 9.1.4 --output output-9.1.4.caf
+openjoc render-joc INPUT.m4a --layout 9.1.6 --output output-9.1.6.caf
 ```
 
-Supported presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, and `7.1.6`. The `--layout`
+Supported presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
+`9.1`, `9.1.2`, `9.1.4`, and `9.1.6`. The `--layout`
 argument is required; there is no implicit output-layout default. `5.1` is the
 regression anchor for the original 0.4.0 integration.
 
@@ -43,14 +48,20 @@ zero-based and LFE is not a geometric projection anchor.
 | `7.1.2` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR` | 10 | 3 | `0x0000563f` |
 | `7.1.4` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR, TBL, TBR` | 12 | 3 | `0x0002d63f` |
 | `7.1.6` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr` | 14 | 3 | `none; CAF only` |
+| `9.1` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw` | 10 | 3 | `none; CAF only` |
+| `9.1.2` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltm, Rtm` | 12 | 3 | `none; CAF only` |
+| `9.1.4` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltr, Rtr` | 14 | 3 | `none; CAF only` |
+| `9.1.6` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr` | 16 | 3 | `none; CAF only` |
 
-The six layouts with a mask use WAVEFORMATEXTENSIBLE with the standard speaker
+The six existing layouts with a mask use WAVEFORMATEXTENSIBLE with the standard speaker
 mask and IEEE float32 samples by default (`--reference-f64` selects float64).
 `7.1.6` is not exactly representable by standard WAVEFORMATEXTENSIBLE because
-`Ltm`/`Rtm` have no equivalent predefined mask bits; a `.wav` request fails
-closed with no substituted identities or fake mask. Use `.caf` for semantic
-7.1.6 multichannel output. The public library exposes the canonical order and
-optional mask through `openjoc_scene::SpeakerLayoutPreset`.
+`Ltm`/`Rtm` have no equivalent predefined mask bits. The 9.1 family is likewise
+not exactly representable because `Lw`/`Rw` and, where present, `Ltm`/`Rtm`
+have no exact standard mask bits. A `.wav` request fails closed with no
+substituted identities or fake mask. Use `.caf` for semantic multichannel
+output. The public library exposes the canonical order and optional mask
+through `openjoc_scene::SpeakerLayoutPreset`.
 
 Output container selection is independent of the renderer’s semantic channel
 layout. A `.wav` destination uses WAVEFORMATEXTENSIBLE and fails closed when a
@@ -58,10 +69,11 @@ semantic identity has no exact standard speaker-mask bit. A `.caf` destination
 uses Core Audio Format with an ordered `chan` chunk of semantic channel
 descriptions, preserving richer identities such as public left/right wide
 labels and coordinate-described top-middle channels. The currently public
-presets include `7.1.6`; its `Ltm`/`Rtm` channels are represented by distinct
-coordinate descriptions in CAF. `7.1.6` is not currently admitted for
-binaural rendering because the exact-HRIR direction registry lacks those
-identities; CAF speaker output and binaural capability are independent.
+presets include `7.1.6` and the 9.1 family; `Lw`/`Rw` use semantic CAF labels
+and `Ltm`/`Rtm` use distinct coordinate descriptions. The 9.1 family is not
+currently admitted for binaural rendering because the exact-HRIR direction
+registry lacks the new identities; CAF speaker output and binaural capability
+are independent.
 Binaural output may also use `.caf`; its PCM remains stereo and its SOFA/DSP
 path is unchanged.
 
@@ -109,7 +121,7 @@ coordinates, not authored object positions and not a vendor renderer geometry
 claim.
 
 The same generic engine is internally validated with clean executable fixtures
-for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6. The seven
+for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6. The eleven
 public presets share one data-driven full-XYZ projector; their layout
 differences are topology data. LFE remains independently owned and is excluded
 from geometric projection. Additional topology families do not become public
@@ -241,6 +253,10 @@ Every exposed preset has a deterministic semantic PCM order. The orders are:
 7.1.2: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR
 7.1.4: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, TFL, TFR, TBL, TBR
 7.1.6: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr
+9.1:   FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw
+9.1.2: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltm, Rtm
+9.1.4: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltr, Rtr
+9.1.6: FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr
 ```
 
 The order is deterministic and is not the internal E-AC-3 order. For the
@@ -261,10 +277,11 @@ Multichannel speaker WAV output uses WAVEFORMATEXTENSIBLE only when every
 semantic channel has an exact standard speaker bit. Its channel mask has
 exactly one standard speaker bit per interleaved channel, and the sample planes
 are emitted in ascending mask-bit order. In particular, 7.1 and 7.1.4 keep the
-back pair (`Lb`, `Rb`) before the side pair (`Ls`, `Rs`). 7.1.6 has no WAV mask;
-its semantic planes are serialized by CAF in the order above, with distinct
-`Ltm`/`Rtm` descriptions. Stereo binaural output and diagnostic WAVs retain
-their existing basic WAV behavior.
+back pair (`Lb`, `Rb`) before the side pair (`Ls`, `Rs`). 7.1.6 and the 9.1
+family have no WAV mask; their semantic planes are serialized by CAF in the
+order above, with distinct Wide labels and, where present, `Ltm`/`Rtm`
+descriptions. Stereo binaural output and diagnostic WAVs retain their existing
+basic WAV behavior.
 
 The command prints the feature, experimental maturity, unresolved semantic
 binding, requested and selected layout, channel count, LFE index, requested
@@ -481,10 +498,10 @@ It is not a direct moving-object HRIR renderer and makes no vendor or
 reference-product headphone-rendering claim. `--layout` names the virtual
 speaker layout, not the two-channel output. The six current binaural-capable
 public presets remain available: `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and
-`7.1.4`. `7.1.6` is a speaker layout preset for semantic CAF output, but its
-binaural path is not admitted until exact HRIR direction entries for `Ltm` and
-`Rtm` are available. It must not fall back to nearest-speaker HRIRs,
-interpolation, aliasing, or omitted channels. `9.1.6` is not added here.
+`7.1.4`. `7.1.6` and the 9.1 family are speaker-layout presets for semantic
+CAF output, but their binaural paths are not admitted until exact HRIR
+direction entries for every new identity are available. They must not fall
+back to nearest-speaker HRIRs, interpolation, aliasing, or omitted channels.
 
 The SOFA path is local and user-supplied. It is parsed only within the existing
 strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
@@ -527,10 +544,10 @@ management remain incomplete or withheld.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE
-fold-down policy. `9.1.6` is not exposed because this repository has no
-admitted clean preset geometry for front-wide and six-height speaker mapping;
-the generic bridge API can still accept caller-defined layouts at library
-level. There is no fallback from either blocked layout to another preset.
+fold-down policy. The 9.1 family is exposed for CAF speaker output using the
+authorized clean-room Wide-row geometry; its binaural path remains blocked.
+The generic bridge API can still accept caller-defined layouts at library
+level. There is no fallback from a blocked output capability to another preset.
 
 ## Professional preset feasibility audit
 
@@ -547,8 +564,10 @@ name alone as evidence of a clean geometry definition.
 | `7.1.2` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with one upper row and explicit public order/mask. |
 | `7.1.4` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit bed/top rows and public order. |
 | `7.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Uses the same generic full-XYZ projector with three upper rows and distinct top-middle identities; standard speaker WAV and current exact-direction binaural output are rejected. |
-| `9.1.4` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for front-wide plus four-height mapping. |
-| `9.1.6` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | No clean project geometry is admitted for front-wide plus six-height mapping. |
+| `9.1` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Adds the authorized Q15 Wide bed row to the existing 7.1 bed; WAV and current exact-direction binaural output are rejected. |
+| `9.1.2` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and one existing upper row; WAV and current exact-direction binaural output are rejected. |
+| `9.1.4` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing two-row upper topology; WAV and current exact-direction binaural output are rejected. |
+| `9.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing three-row upper topology; WAV and current exact-direction binaural output are rejected. |
 | `22.2` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | The generic engine can represent a 24-channel 3D layout, but no clean/public 22.2 speaker geometry is admitted in this repository. |
 
 The 22.2 result is not a renderer-domain limitation. If a clean speaker
