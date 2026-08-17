@@ -1,12 +1,12 @@
 use openjoc_scene::{
-    GainScheduler, JocSpatialBridge, RegionHorizontalState, RegionSemanticState,
-    RegionTopBottomState, RegionTopologySelector, SPEAKER_LAYOUT_PRESET_NAMES,
+    FixedRouteKey, GainScheduler, JocSpatialBridge, NamedTargetId, RegionHorizontalState,
+    RegionSemanticState, RegionTopBottomState, RegionTopologySelector, SPEAKER_LAYOUT_PRESET_NAMES,
     SemanticBindingState, SpatialBindingRecord, SpatialBindingState, SpatialBridgeError,
     SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
     SpatialExplicitMember, SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel,
     SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
-    SpatialPairedGeometry, SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile,
-    SpatialSpreadSample, SpatialTopologySnapshot, SpeakerLayoutPreset,
+    SpatialPairedGeometry, SpatialRouteStatus, SpatialRouteVector, SpatialSourceClass,
+    SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot, SpeakerLayoutPreset,
 };
 
 fn descriptor(
@@ -2418,6 +2418,300 @@ fn fixed_and_named_routes_use_identity_registry_and_missing_routes_fail() {
             "missing".to_owned()
         ))
     );
+}
+
+fn discrete_route_layout() -> SpatialLayout {
+    let channels = ["FL", "FR", "FC", "Ls", "Rs"]
+        .into_iter()
+        .map(|identity| SpatialLayoutChannel {
+            identity: identity.to_owned(),
+            enabled: true,
+            lfe: false,
+        })
+        .collect::<Vec<_>>();
+    let nodes = (0..channels.len())
+        .map(|index| {
+            let mut vector = vec![0.0; channels.len()];
+            vector[index] = 1.0;
+            SpatialLayoutNode {
+                knot_indices: vec![index],
+                vector,
+            }
+        })
+        .collect::<Vec<_>>();
+    SpatialLayout::new(
+        channels,
+        vec![(0..5).map(|index| index as f64).collect()],
+        nodes,
+        Vec::new(),
+    )
+    .expect("valid direct-route layout")
+}
+
+#[test]
+fn fixed_neutral_key_preserves_supplied_non_unit_route_and_ignores_position() {
+    let layout = discrete_route_layout()
+        .with_route_vectors(vec![SpatialRouteVector {
+            identity: "fixed/6/5".to_owned(),
+            vector: vec![0.25, 0.5, 0.0, 0.0, 0.0],
+        }])
+        .expect("route registry");
+    let mut fixed = descriptor(
+        SpatialSourceClass::FixedLayout,
+        "fixed/6/5",
+        vec![0.0, 0.0, 0.0],
+    );
+    let first = layout.project(&fixed).expect("fixed route");
+    fixed.coordinates = vec![1.0, 1.0, 1.0];
+    let second = layout
+        .project(&fixed)
+        .expect("fixed route remains discrete");
+    assert_eq!(first, vec![0.25, 0.5, 0.0, 0.0, 0.0]);
+    assert_eq!(second, first);
+}
+
+#[test]
+fn named_direct_route_is_explicit_and_missing_route_does_not_use_point_fallback() {
+    let layout = discrete_route_layout()
+        .with_route_vectors(vec![SpatialRouteVector {
+            identity: "named/0".to_owned(),
+            vector: vec![0.0, 0.0, 1.0, 0.0, 0.0],
+        }])
+        .expect("route registry");
+    let named = descriptor(
+        SpatialSourceClass::NamedLayout,
+        "named/0",
+        vec![0.0, 0.0, 0.0],
+    );
+    assert_eq!(
+        layout.project(&named).expect("named direct route"),
+        vec![0.0, 0.0, 1.0, 0.0, 0.0]
+    );
+
+    let missing = descriptor(
+        SpatialSourceClass::NamedLayout,
+        "named/1",
+        vec![0.5, 0.5, 0.0],
+    );
+    assert!(layout.project(&missing).is_err());
+}
+
+#[test]
+fn neutral_fixed_and_named_domains_are_closed_and_status_is_explicit() {
+    assert!(FixedRouteKey::new(4, 1).is_none());
+    assert!(FixedRouteKey::new(6, 4).is_none());
+    assert!(FixedRouteKey::new(6, 13).is_none());
+    assert_eq!(FixedRouteKey::new(6, 5).unwrap().identity(), "fixed/6/5");
+    assert_eq!(NamedTargetId::new(15).unwrap().canonical_route_slot(), 12);
+    assert!(NamedTargetId::new(16).is_none());
+
+    let layout = discrete_route_layout()
+        .with_route_vectors(vec![SpatialRouteVector::named(
+            NamedTargetId::new(0).unwrap(),
+            vec![1.0, 0.0, 0.0, 0.0, 0.0],
+        )])
+        .expect("route registry");
+    let direct = SpatialDescriptor::named(NamedTargetId::new(0).unwrap(), vec![0.0; 3]);
+    let withheld = SpatialDescriptor::named(NamedTargetId::new(1).unwrap(), vec![0.0; 3]);
+    assert_eq!(
+        layout.route_status(&direct),
+        SpatialRouteStatus::DirectReady
+    );
+    assert_eq!(
+        layout.route_status(&withheld),
+        SpatialRouteStatus::FallbackWithheld
+    );
+}
+
+#[test]
+fn named_direct_route_does_not_extrapolate_to_unadmitted_layout_shape() {
+    let layout = high_channel_layout(15)
+        .with_route_vectors(vec![SpatialRouteVector::named(
+            NamedTargetId::new(0).unwrap(),
+            vec![1.0; 15],
+        )])
+        .expect("route registry");
+    let named = SpatialDescriptor::named(NamedTargetId::new(0).unwrap(), vec![0.0; 3]);
+    assert_eq!(layout.route_status(&named), SpatialRouteStatus::Unsupported);
+    assert!(layout.project(&named).is_err());
+}
+
+#[test]
+fn discrete_dynamic_controls_fail_closed_without_point_or_route_composition() {
+    let layout = discrete_route_layout()
+        .with_route_vectors(vec![SpatialRouteVector::fixed(
+            FixedRouteKey::new(6, 5).unwrap(),
+            vec![1.0, 0.0, 0.0, 0.0, 0.0],
+        )])
+        .expect("route registry");
+    let mut fixed = SpatialDescriptor::fixed(FixedRouteKey::new(6, 5).unwrap(), vec![0.0; 3]);
+    fixed.extent = Some([1.0, 1.0, 1.0]);
+    assert!(layout.project(&fixed).is_err());
+}
+
+#[test]
+fn withheld_named_route_clears_outputs_and_cannot_reuse_a_prior_vector() {
+    let layout = discrete_route_layout()
+        .with_route_vectors(vec![SpatialRouteVector::named(
+            NamedTargetId::new(0).unwrap(),
+            vec![1.0, 0.0, 0.0, 0.0, 0.0],
+        )])
+        .expect("route registry");
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: SpatialDescriptor::named(NamedTargetId::new(0).unwrap(), vec![0.0; 3]),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = [1.0];
+    let coordinates = vec![input.as_slice()];
+    let mut bridge = JocSpatialBridge::new();
+    let mut initial = vec![vec![0.0; 1]; 5];
+    let mut initial_refs = initial
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &coordinates,
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut initial_refs,
+        )
+        .expect("direct named route");
+    drop(initial_refs);
+    assert_eq!(initial[0], vec![1.0]);
+
+    let invalid = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            identity: Some("named/1".to_owned()),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let mut outputs = vec![vec![99.0; 1]; 5];
+    let mut output_refs = outputs
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    assert!(
+        bridge
+            .render_coordinates(
+                &coordinates,
+                None,
+                Some(std::slice::from_ref(&invalid)),
+                &layout,
+                0,
+                48_000,
+                &mut output_refs,
+            )
+            .is_err()
+    );
+    drop(output_refs);
+    assert!(outputs.iter().all(|output| output == &[0.0]));
+
+    let mut retry = vec![vec![99.0; 1]; 5];
+    let mut retry_refs = retry.iter_mut().map(Vec::as_mut_slice).collect::<Vec<_>>();
+    assert!(
+        bridge
+            .render_coordinates(
+                &coordinates,
+                None,
+                None,
+                &layout,
+                0,
+                48_000,
+                &mut retry_refs,
+            )
+            .is_err()
+    );
+    drop(retry_refs);
+    assert!(retry.iter().all(|output| output == &[0.0]));
+}
+
+#[test]
+fn fixed_named_dynamic_switch_keeps_existing_q32_scheduler() {
+    let layout = layout()
+        .with_route_vectors(vec![
+            SpatialRouteVector {
+                identity: "fixed".to_owned(),
+                vector: vec![0.0, 1.0],
+            },
+            SpatialRouteVector {
+                identity: "named".to_owned(),
+                vector: vec![1.0, 0.0],
+            },
+        ])
+        .expect("route registry");
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: descriptor(SpatialSourceClass::DynamicPoint, "dynamic", vec![0.0]),
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let initial_input = [1.0];
+    let initial_coordinates = vec![initial_input.as_slice()];
+    let mut bridge = JocSpatialBridge::new();
+    let mut initial = vec![vec![0.0; 1]; 2];
+    let mut initial_refs = initial
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &initial_coordinates,
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut initial_refs,
+        )
+        .expect("initial dynamic route");
+    drop(initial_refs);
+    assert_eq!(initial, vec![vec![1.0], vec![0.0]]);
+
+    let switch = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            source_class: Some(SpatialSourceClass::FixedLayout),
+            identity: Some("fixed".to_owned()),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    let switched_input = vec![1.0; 64];
+    let switched_coordinates = vec![switched_input.as_slice()];
+    let mut switched = vec![vec![0.0; 64]; 2];
+    let mut switched_refs = switched
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &switched_coordinates,
+            None,
+            Some(std::slice::from_ref(&switch)),
+            &layout,
+            64,
+            48_000,
+            &mut switched_refs,
+        )
+        .expect("fixed class switch");
+    drop(switched_refs);
+    assert_eq!(switched[0][0], 1.0);
+    assert_eq!(switched[1][0], 0.0);
+    assert!(switched[1].iter().any(|value| *value > 0.0));
 }
 
 #[test]

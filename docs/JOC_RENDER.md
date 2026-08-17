@@ -179,12 +179,13 @@ count must match on every access unit. `updates` is optional and contains
 frame-indexed `SpatialCoordinateUpdate` arrays; omitted fields inherit the
 persistent bridge state.
 
-The sidecar schema retains fields for source classes outside the 0.5.0 release
-contract, but the admitted dynamic path is limited to explicit-channel and
-ordinary dynamic point/Region/Extent/ChannelLock records. Fixed/Named route
-records and Spread/Pair geometry are withheld; they fail explicitly rather
-than falling through to dynamic geometry. Automatic control never fabricates
-such routes.
+The sidecar schema retains fields for source classes outside the ordinary
+dynamic contract. Fixed records may use validated neutral
+`fixed/<family>/<member>` identities with exact supplied route rows; Named
+records may use opaque `named/<id>` identities for the admitted direct subset.
+Missing discrete rows, unresolved Named fallback cases, friendly names, and
+unsupported combinations fail explicitly rather than falling through to
+dynamic geometry. Automatic control never fabricates such routes.
 
 A minimal 5-channel Base plus one ReconstructionBasis row control file is:
 
@@ -559,12 +560,13 @@ mode, virtual layout, SOFA filename, backend, HRIR coverage, LFE policy, and
 tail contract. Private SOFA paths are not embedded in public metadata.
 
 The automatic assembly currently supports explicit-channel beds, dynamic
-point-like records, and the admitted Region/Extent/ChannelLock records.
-`raw3` remains opaque with no assigned semantic name. `AUTO` behavior is
-unchanged: strict validation is selected first and the existing compatibility
-policy is used only where its current whitelist admits it. Fixed/Named routes,
-Spread/Pair geometry, linked limiting, delay, bass management, and Region
-combinations outside the admitted subset remain incomplete or withheld.
+point-like records, the admitted Region/Extent/ChannelLock records, and
+explicitly supplied Fixed/Named route rows. `raw3` remains opaque with no
+assigned semantic name. `AUTO` behavior is unchanged: strict validation is
+selected first and the existing compatibility policy is used only where its
+current whitelist admits it. Friendly Named names, unresolved Named fallback
+rows, linked limiting, delay, bass management, and Region combinations outside
+the admitted subset remain incomplete or withheld.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE

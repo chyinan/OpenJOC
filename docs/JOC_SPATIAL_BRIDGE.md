@@ -52,8 +52,17 @@ The bridge implements the supported ordinary release domain:
   Q32 scheduler. `effective_position` is a `LOCAL_ONLY` outcome of the
   ChannelLock evaluation; it is not propagated into Region, Extent, or Q32
   state;
-- Q32 gain scheduling with persistent phase across blocks, restart on binding
-  rebuild/layout change, and linear `Y = Σ G X` accumulation;
+- Fixed and Named use one mutually exclusive discrete route branch. Fixed
+  accepts neutral validated family/member identities and exact route rows for
+  the current layout. Named accepts opaque IDs `0..=15` for explicit direct
+  rows on the admitted 5.1-, 7.1-, and 7.1.4-shaped layouts. Both branches
+  ignore authored coordinates, preserve supplied route magnitudes, exclude
+  LFE, and use the existing Q32 scheduler. Missing rows, unresolved Named
+  fallback cases, friendly names, and Dynamic-control compositions fail
+  closed; no nearest-speaker or Dynamic fallback is used;
+- Q32 gain scheduling with persistent phase across blocks, reset only for
+  layout/route-shape rebuilds, and linear `Y = Σ G X` accumulation. Source
+  class and discrete identity changes remain ordinary target events;
 - finite-value, dimension, duplicate, unsupported-class, and malformed-input
   rejection.
 

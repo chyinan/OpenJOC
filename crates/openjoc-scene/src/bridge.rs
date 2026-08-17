@@ -16,13 +16,14 @@ use std::{collections::HashSet, fmt};
 #[path = "joc_spatial_bridge.rs"]
 mod joc_spatial_bridge;
 pub use joc_spatial_bridge::{
-    GainScheduler, GainSchedulerError, JOC_SPATIAL_BRIDGE_SCHEMA, JocSpatialBridge,
-    SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
-    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate,
-    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
-    SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor, SpatialLayoutChannel,
-    SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
-    SpatialPairedGeometry, SpatialProjectionError, SpatialProjectionOutcome, SpatialRouteVector,
+    FixedFamilyId, FixedMemberId, FixedRouteKey, GainScheduler, GainSchedulerError,
+    JOC_SPATIAL_BRIDGE_SCHEMA, JocSpatialBridge, NamedTargetId, SpatialBindingError,
+    SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot, SpatialBindingState,
+    SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate, SpatialDescriptor,
+    SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember, SpatialLayout,
+    SpatialLayoutAlias, SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer,
+    SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology, SpatialPairedGeometry,
+    SpatialProjectionError, SpatialProjectionOutcome, SpatialRouteStatus, SpatialRouteVector,
     SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
 };
 

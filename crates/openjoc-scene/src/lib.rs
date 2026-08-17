@@ -11,16 +11,17 @@ mod assembly;
 pub use assembly::{SceneBuildError, SceneBuilder, StreamingSceneSummary};
 mod bridge;
 pub use bridge::{
-    BaseFullBandCoordinate, BridgeError, CodecBasisBlock, GainScheduler, GainSchedulerError,
-    JOC_SPATIAL_BRIDGE_SCHEMA, JOC_SPATIAL_RECONSTRUCTION_SCHEMA, JocSpatialBridge,
-    JocSpatialFrameBridge, JocSpatialMetadataFrame, JocSpatialOperatorState,
-    JocSpatialOperatorUnresolvedReason, JocSpatialReconstructionFrame, SampleRange,
-    SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
-    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialContributionMode,
-    SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
-    SpatialExplicitMember, SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor,
-    SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow,
-    SpatialLayoutTopology, SpatialPairedGeometry, SpatialProjectionError, SpatialProjectionOutcome,
+    BaseFullBandCoordinate, BridgeError, CodecBasisBlock, FixedFamilyId, FixedMemberId,
+    FixedRouteKey, GainScheduler, GainSchedulerError, JOC_SPATIAL_BRIDGE_SCHEMA,
+    JOC_SPATIAL_RECONSTRUCTION_SCHEMA, JocSpatialBridge, JocSpatialFrameBridge,
+    JocSpatialMetadataFrame, JocSpatialOperatorState, JocSpatialOperatorUnresolvedReason,
+    JocSpatialReconstructionFrame, NamedTargetId, SampleRange, SpatialBindingError,
+    SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot, SpatialBindingState,
+    SpatialBindingTransition, SpatialBridgeError, SpatialContributionMode, SpatialCoordinateUpdate,
+    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
+    SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor, SpatialLayoutChannel,
+    SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
+    SpatialPairedGeometry, SpatialProjectionError, SpatialProjectionOutcome, SpatialRouteStatus,
     SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample,
     SpatialTopologySnapshot,
 };

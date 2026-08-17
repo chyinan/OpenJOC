@@ -39,10 +39,15 @@ bit-identical Reference Player output.
   two-layer topology family. Region is applied first; an active ChannelLock
   owns current target generation and bypasses the Extent target branch while
   retaining Extent state. When ChannelLock is released, inherited Extent
-  behavior resumes. Non-point ChannelLock, selector-6 special behavior,
-  Spread/Pair, Fixed/Named routing, rare Region fallback/tie cases, arbitrary
-  region algebra, and unadmitted layer/fallback combinations remain withheld
-  and fail closed.
+  behavior resumes. Non-point ChannelLock, selector-6 special behavior, rare
+  Region fallback/tie cases, arbitrary region algebra, and unadmitted
+  layer/fallback combinations remain withheld and fail closed.
+- Fixed routing is supported when a validated neutral family/member key and an
+  exact current-layout route row are supplied; authored coordinates do not
+  participate and missing rows fail closed. Named routing is limited to the
+  admitted opaque ID direct subset on 5.1-, 7.1-, and 7.1.4-shaped layouts.
+  Friendly names and unresolved Named fallback rows are not exposed and fail
+  closed.
 - Real-JOC binaural output is speaker virtualization through exact-direction
   SOFA HRIR data for `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and `7.1.4` only.
   The selected virtual layout must have every required direction at the input

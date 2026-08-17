@@ -37,6 +37,163 @@ pub enum SpatialSourceClass {
     Unsupported(String),
 }
 
+/// Validated neutral selector for the Fixed source family.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct FixedFamilyId(u8);
+
+impl FixedFamilyId {
+    /// Creates a Fixed family selector in the closed `5..=10` domain.
+    #[must_use]
+    pub const fn new(value: u8) -> Option<Self> {
+        if value >= 5 && value <= 10 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the neutral family selector.
+    #[must_use]
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+
+    const fn member_range(self) -> (u8, u8) {
+        match self.0 {
+            5 => (1, 4),
+            6 => (5, 12),
+            7 => (13, 22),
+            8 => (23, 36),
+            9 => (37, 51),
+            10 => (52, 81),
+            _ => (0, 0),
+        }
+    }
+}
+
+/// Neutral global member selector used by a [`FixedRouteKey`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct FixedMemberId(u8);
+
+impl FixedMemberId {
+    /// Creates a member selector in the closed global `1..=81` domain.
+    #[must_use]
+    pub const fn new(value: u8) -> Option<Self> {
+        if value >= 1 && value <= 81 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the neutral global member selector.
+    #[must_use]
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
+/// Validated Fixed family/member identity.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct FixedRouteKey {
+    family: FixedFamilyId,
+    member: FixedMemberId,
+}
+
+impl FixedRouteKey {
+    /// Creates a key after validating family and global member domains.
+    #[must_use]
+    pub const fn new(family: u8, member: u8) -> Option<Self> {
+        let Some(family) = FixedFamilyId::new(family) else {
+            return None;
+        };
+        let Some(member) = FixedMemberId::new(member) else {
+            return None;
+        };
+        let (first, last) = family.member_range();
+        if member.0 < first || member.0 > last {
+            return None;
+        }
+        Some(Self { family, member })
+    }
+
+    /// Returns the validated family selector.
+    #[must_use]
+    pub const fn family(self) -> FixedFamilyId {
+        self.family
+    }
+
+    /// Returns the validated member selector.
+    #[must_use]
+    pub const fn member(self) -> FixedMemberId {
+        self.member
+    }
+
+    /// Returns the neutral route-table identity for this key.
+    #[must_use]
+    pub fn identity(self) -> String {
+        format!("fixed/{}/{}", self.family.value(), self.member.value())
+    }
+}
+
+/// Validated opaque Named semantic identity.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct NamedTargetId(u8);
+
+impl NamedTargetId {
+    /// Creates an admitted opaque Named identity in the `0..=15` domain.
+    #[must_use]
+    pub const fn new(value: u8) -> Option<Self> {
+        if value < 16 { Some(Self(value)) } else { None }
+    }
+
+    /// Returns the neutral ID value.
+    #[must_use]
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+
+    /// Returns the canonical routing-domain slot for this ID.
+    #[must_use]
+    pub const fn canonical_route_slot(self) -> u8 {
+        const SLOTS: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 13, 14, 17, 18, 21, 22, 11, 12];
+        SLOTS[self.0 as usize]
+    }
+
+    /// Returns the neutral route-table identity for this ID.
+    #[must_use]
+    pub fn identity(self) -> String {
+        format!("named/{}", self.value())
+    }
+}
+
+/// Classification of a discrete route lookup.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SpatialRouteStatus {
+    DirectReady,
+    FallbackReady,
+    FallbackWithheld,
+    Unsupported,
+    Unresolved,
+}
+
+impl SpatialRouteStatus {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectReady => "direct_ready",
+            Self::FallbackReady => "fallback_ready",
+            Self::FallbackWithheld => "fallback_withheld",
+            Self::Unsupported => "unsupported",
+            Self::Unresolved => "unresolved",
+        }
+    }
+}
+
 /// One finite public spread sample and its normalized weight.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SpatialSpreadSample {
@@ -107,6 +264,22 @@ impl SpatialDescriptor {
             zones: None,
             channel_lock: false,
         }
+    }
+
+    /// Creates a Fixed descriptor from a validated neutral route key.
+    #[must_use]
+    pub fn fixed(key: FixedRouteKey, coordinates: Vec<f64>) -> Self {
+        Self::new(SpatialSourceClass::FixedLayout, key.identity(), coordinates)
+    }
+
+    /// Creates a Named descriptor from a validated opaque target ID.
+    #[must_use]
+    pub fn named(target: NamedTargetId, coordinates: Vec<f64>) -> Self {
+        Self::new(
+            SpatialSourceClass::NamedLayout,
+            target.identity(),
+            coordinates,
+        )
     }
 }
 
@@ -493,7 +666,8 @@ fn binding_signature(records: &[SpatialBindingRecord]) -> Vec<(&'static str, Str
 fn source_family(class: &SpatialSourceClass) -> &'static str {
     match class {
         SpatialSourceClass::ExplicitChannel => "explicit_channel",
-        SpatialSourceClass::FixedLayout | SpatialSourceClass::NamedLayout => "fixed_layout",
+        SpatialSourceClass::FixedLayout => "fixed",
+        SpatialSourceClass::NamedLayout => "named",
         SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion => "dynamic",
         SpatialSourceClass::Inactive => "inactive",
         SpatialSourceClass::Unsupported(_) => "unsupported",
@@ -567,6 +741,26 @@ pub struct SpatialRouteVector {
     pub vector: Vec<f64>,
 }
 
+impl SpatialRouteVector {
+    /// Creates a Fixed route row keyed by a validated neutral identity.
+    #[must_use]
+    pub fn fixed(key: FixedRouteKey, vector: Vec<f64>) -> Self {
+        Self {
+            identity: key.identity(),
+            vector,
+        }
+    }
+
+    /// Creates a Named direct route row keyed by an opaque target ID.
+    #[must_use]
+    pub fn named(target: NamedTargetId, vector: Vec<f64>) -> Self {
+        Self {
+            identity: target.identity(),
+            vector,
+        }
+    }
+}
+
 /// Local result of one spatial target-generation evaluation.
 ///
 /// The effective position and locked output are sidecar information for the
@@ -584,17 +778,43 @@ pub struct SpatialProjectionOutcome {
 pub enum SpatialProjectionError {
     InvalidLayout(&'static str),
     DuplicateChannel(String),
-    InvalidKnotAxis { axis: usize },
+    InvalidKnotAxis {
+        axis: usize,
+    },
     NonFiniteLayoutValue,
-    VectorDimension { expected: usize, actual: usize },
-    NodeDimension { expected: usize, actual: usize },
-    NodeIndexOutOfRange { axis: usize, index: usize },
+    VectorDimension {
+        expected: usize,
+        actual: usize,
+    },
+    NodeDimension {
+        expected: usize,
+        actual: usize,
+    },
+    NodeIndexOutOfRange {
+        axis: usize,
+        index: usize,
+    },
     DuplicateNode(Vec<usize>),
     DuplicateRoute(String),
     MissingRoute(String),
+    InvalidFixedIdentity(String),
+    InvalidNamedIdentity(String),
+    UnsupportedRoute {
+        source_class: &'static str,
+        identity: String,
+        status: SpatialRouteStatus,
+    },
+    UnsupportedDiscreteCombination {
+        source_class: &'static str,
+    },
     UnsupportedSourceClass(String),
-    CoordinateDimension { expected: usize, actual: usize },
-    NonFiniteCoordinate { axis: usize },
+    CoordinateDimension {
+        expected: usize,
+        actual: usize,
+    },
+    NonFiniteCoordinate {
+        axis: usize,
+    },
     MissingNode(Vec<usize>),
     InvalidSpread,
     InvalidPair,
@@ -636,6 +856,25 @@ impl fmt::Display for SpatialProjectionError {
                 write!(formatter, "duplicate spatial route: {identity}")
             }
             Self::MissingRoute(identity) => write!(formatter, "missing spatial route: {identity}"),
+            Self::InvalidFixedIdentity(identity) => {
+                write!(formatter, "invalid Fixed route identity: {identity}")
+            }
+            Self::InvalidNamedIdentity(identity) => {
+                write!(formatter, "invalid Named route identity: {identity}")
+            }
+            Self::UnsupportedRoute {
+                source_class,
+                identity,
+                status,
+            } => write!(
+                formatter,
+                "unsupported {source_class} route {identity} ({})",
+                status.as_str()
+            ),
+            Self::UnsupportedDiscreteCombination { source_class } => write!(
+                formatter,
+                "unsupported Dynamic-control combination for {source_class} source"
+            ),
             Self::UnsupportedSourceClass(class) => {
                 write!(formatter, "unsupported spatial projection class: {class}")
             }
@@ -768,6 +1007,25 @@ impl SpatialLayout {
         let component_count = active_indices.len();
         let mut routes = HashSet::with_capacity(route_vectors.len());
         for route in &route_vectors {
+            if route.identity.starts_with("fixed/") {
+                let Some(key) = parse_fixed_identity(&route.identity)? else {
+                    unreachable!("fixed identity parser returns Some for fixed-prefixed input")
+                };
+                if key.identity() != route.identity {
+                    return Err(SpatialProjectionError::InvalidFixedIdentity(
+                        route.identity.clone(),
+                    ));
+                }
+            } else if route.identity.starts_with("named/") {
+                let Some(target) = parse_named_identity(&route.identity)? else {
+                    unreachable!("named identity parser returns Some for named-prefixed input")
+                };
+                if target.identity() != route.identity {
+                    return Err(SpatialProjectionError::InvalidNamedIdentity(
+                        route.identity.clone(),
+                    ));
+                }
+            }
             if !routes.insert(route.identity.as_str()) {
                 return Err(SpatialProjectionError::DuplicateRoute(
                     route.identity.clone(),
@@ -850,6 +1108,60 @@ impl SpatialLayout {
         Ok(self.project_with_outcome(descriptor)?.target)
     }
 
+    /// Classifies the current layout mapping for a neutral Named identity.
+    /// Legacy opaque route strings remain available to existing callers, but
+    /// the admitted neutral ID path reports its explicit direct/fallback
+    /// boundary.
+    #[must_use]
+    pub fn named_route_status(&self, target: NamedTargetId) -> SpatialRouteStatus {
+        if !self.named_direct_layout_admitted() {
+            return SpatialRouteStatus::Unsupported;
+        }
+        if self
+            .route_vectors
+            .iter()
+            .any(|route| route.identity == target.identity())
+        {
+            SpatialRouteStatus::DirectReady
+        } else {
+            SpatialRouteStatus::FallbackWithheld
+        }
+    }
+
+    /// Classifies the discrete mapping represented by a descriptor without
+    /// consuming authored coordinates or invoking the Dynamic projector.
+    #[must_use]
+    pub fn route_status(&self, descriptor: &SpatialDescriptor) -> SpatialRouteStatus {
+        match descriptor.source_class {
+            SpatialSourceClass::FixedLayout => {
+                let Ok(key) = parse_fixed_identity(&descriptor.identity) else {
+                    return SpatialRouteStatus::Unsupported;
+                };
+                let identity =
+                    key.map_or_else(|| descriptor.identity.clone(), FixedRouteKey::identity);
+                if self
+                    .route_vectors
+                    .iter()
+                    .any(|route| route.identity == identity)
+                {
+                    SpatialRouteStatus::DirectReady
+                } else {
+                    SpatialRouteStatus::Unsupported
+                }
+            }
+            SpatialSourceClass::NamedLayout => {
+                let Ok(target) = parse_named_identity(&descriptor.identity) else {
+                    return SpatialRouteStatus::Unsupported;
+                };
+                target.map_or_else(
+                    || SpatialRouteStatus::Unsupported,
+                    |target| self.named_route_status(target),
+                )
+            }
+            _ => SpatialRouteStatus::Unsupported,
+        }
+    }
+
     /// Computes a target and the local effective-position outcome for one
     /// descriptor snapshot.
     pub fn project_with_outcome(
@@ -878,6 +1190,19 @@ impl SpatialLayout {
         &self,
         descriptor: &SpatialDescriptor,
     ) -> Result<Vec<f64>, SpatialProjectionError> {
+        match descriptor.source_class {
+            SpatialSourceClass::FixedLayout => return self.project_fixed(descriptor),
+            SpatialSourceClass::NamedLayout => return self.project_named(descriptor),
+            SpatialSourceClass::Unsupported(ref class) => {
+                return Err(SpatialProjectionError::UnsupportedSourceClass(
+                    class.clone(),
+                ));
+            }
+            SpatialSourceClass::Inactive
+            | SpatialSourceClass::ExplicitChannel
+            | SpatialSourceClass::DynamicPoint
+            | SpatialSourceClass::DynamicRegion => {}
+        }
         if descriptor.pair_span_q15.is_some() {
             return self.project_semantic_pair(descriptor);
         }
@@ -1101,6 +1426,59 @@ impl SpatialLayout {
                 locked_output: None,
             })
         }
+    }
+
+    fn project_fixed(
+        &self,
+        descriptor: &SpatialDescriptor,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        validate_discrete_descriptor(descriptor, "fixed")?;
+        let identity = if let Some(key) = parse_fixed_identity(&descriptor.identity)? {
+            key.identity()
+        } else {
+            descriptor.identity.clone()
+        };
+        self.route_vectors
+            .iter()
+            .find(|route| route.identity == identity)
+            .map(|route| route.vector.clone())
+            .ok_or(SpatialProjectionError::MissingRoute(identity))
+    }
+
+    fn project_named(
+        &self,
+        descriptor: &SpatialDescriptor,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        validate_discrete_descriptor(descriptor, "named")?;
+        let Some(target) = parse_named_identity(&descriptor.identity)? else {
+            return self
+                .route_vectors
+                .iter()
+                .find(|route| route.identity == descriptor.identity)
+                .map(|route| route.vector.clone())
+                .ok_or_else(|| SpatialProjectionError::MissingRoute(descriptor.identity.clone()));
+        };
+        let status = self.named_route_status(target);
+        if status != SpatialRouteStatus::DirectReady {
+            return Err(SpatialProjectionError::UnsupportedRoute {
+                source_class: "named",
+                identity: target.identity(),
+                status,
+            });
+        }
+        self.route_vectors
+            .iter()
+            .find(|route| route.identity == target.identity())
+            .map(|route| route.vector.clone())
+            .ok_or_else(|| SpatialProjectionError::UnsupportedRoute {
+                source_class: "named",
+                identity: target.identity(),
+                status: SpatialRouteStatus::Unresolved,
+            })
+    }
+
+    fn named_direct_layout_admitted(&self) -> bool {
+        matches!(self.active_channel_count(), 5 | 7 | 11)
     }
 
     fn anchor_for_identity(
@@ -1516,6 +1894,85 @@ fn validate_vector(vector: &[f64], expected: usize) -> Result<(), SpatialProject
     Ok(())
 }
 
+fn parse_fixed_identity(identity: &str) -> Result<Option<FixedRouteKey>, SpatialProjectionError> {
+    let Some(rest) = identity.strip_prefix("fixed/") else {
+        return Ok(None);
+    };
+    let mut parts = rest.split('/');
+    let family = parts.next().and_then(|value| value.parse::<u8>().ok());
+    let member = parts.next().and_then(|value| value.parse::<u8>().ok());
+    if parts.next().is_some() {
+        return Err(SpatialProjectionError::InvalidFixedIdentity(
+            identity.to_owned(),
+        ));
+    }
+    let Some(key) = family
+        .zip(member)
+        .and_then(|(family, member)| FixedRouteKey::new(family, member))
+    else {
+        return Err(SpatialProjectionError::InvalidFixedIdentity(
+            identity.to_owned(),
+        ));
+    };
+    if key.identity() != identity {
+        return Err(SpatialProjectionError::InvalidFixedIdentity(
+            identity.to_owned(),
+        ));
+    }
+    Ok(Some(key))
+}
+
+fn parse_named_identity(identity: &str) -> Result<Option<NamedTargetId>, SpatialProjectionError> {
+    let Some(rest) = identity.strip_prefix("named/") else {
+        return Ok(None);
+    };
+    let Ok(value) = rest.parse::<u8>() else {
+        return Err(SpatialProjectionError::InvalidNamedIdentity(
+            identity.to_owned(),
+        ));
+    };
+    let Some(target) = NamedTargetId::new(value) else {
+        return Err(SpatialProjectionError::InvalidNamedIdentity(
+            identity.to_owned(),
+        ));
+    };
+    if target.identity() != identity {
+        return Err(SpatialProjectionError::InvalidNamedIdentity(
+            identity.to_owned(),
+        ));
+    }
+    Ok(Some(target))
+}
+
+fn validate_discrete_descriptor(
+    descriptor: &SpatialDescriptor,
+    source_class: &'static str,
+) -> Result<(), SpatialProjectionError> {
+    let extent_active = descriptor
+        .extent
+        .map(crate::extent::extent_scalar)
+        .transpose()?
+        .is_some_and(|(mean_q, _)| mean_q != 0);
+    let region_active = match descriptor.zones {
+        None => false,
+        Some(zones) => {
+            let state = RegionSemanticState::from_decoded_zones(zones)
+                .map_err(|_| SpatialProjectionError::InvalidRegionState(zones))?;
+            !state.is_default()
+        }
+    };
+    if descriptor.spread.is_some()
+        || descriptor.paired.is_some()
+        || descriptor.pair_span_q15.is_some()
+        || extent_active
+        || region_active
+        || descriptor.channel_lock
+    {
+        return Err(SpatialProjectionError::UnsupportedDiscreteCombination { source_class });
+    }
+    Ok(())
+}
+
 fn normalize(vector: &mut [f64]) {
     let norm = vector
         .iter()
@@ -1823,6 +2280,11 @@ impl JocSpatialBridge {
         outputs: &mut [&mut [f64]],
     ) -> Result<(), SpatialBridgeError> {
         validate_block_shapes(coordinates, layout, outputs)?;
+        // Fail-closed target resolution must not leave caller-owned output
+        // planes carrying a previous successful route.
+        for output in &mut *outputs {
+            output.fill(0.0);
+        }
         let block_length = outputs.first().map_or(0, |output| output.len());
         let layout_changed = self
             .last_layout
@@ -1844,28 +2306,37 @@ impl JocSpatialBridge {
         let route_shape_changed = layout_changed
             || self.targets.len() != active_count
             || self.schedulers.len() != active_count * layout.active_channel_count();
-        let reset_routes = route_shape_changed
-            || matches!(
-                result.transition,
-                SpatialBindingTransition::Init | SpatialBindingTransition::Rebuild
-            );
-        if reset_routes {
-            self.schedulers = (0..active_count * layout.active_channel_count())
+        let reset_routes =
+            route_shape_changed || matches!(result.transition, SpatialBindingTransition::Init);
+        let mut next_schedulers = if reset_routes {
+            (0..active_count * layout.active_channel_count())
                 .map(|_| GainScheduler::new())
-                .collect();
-            self.targets = vec![vec![0.0; layout.active_channel_count()]; active_count];
-            self.last_layout = Some(layout.clone());
-        }
+                .collect::<Vec<_>>()
+        } else {
+            self.schedulers.clone()
+        };
+        let mut next_targets = if reset_routes {
+            vec![vec![0.0; layout.active_channel_count()]; active_count]
+        } else {
+            self.targets.clone()
+        };
         let refresh_targets = reset_routes || result.event;
         if refresh_targets {
-            for (index, target) in self.targets.iter_mut().enumerate() {
+            for (index, target) in next_targets.iter_mut().enumerate() {
                 let record = &snapshot.records[index];
                 if record.active {
-                    let outcome = self.region_selector.project_outcome_with_epoch(
+                    let outcome = match self.region_selector.project_outcome_with_epoch(
                         layout,
                         &record.descriptor,
                         snapshot.topology_epoch,
-                    )?;
+                    ) {
+                        Ok(outcome) => outcome,
+                        Err(error) => {
+                            self.targets.clear();
+                            self.schedulers.clear();
+                            return Err(error.into());
+                        }
+                    };
                     for (target_value, projection) in target.iter_mut().zip(outcome.target) {
                         *target_value = record.scalar * projection;
                     }
@@ -1873,15 +2344,22 @@ impl JocSpatialBridge {
                     target.fill(0.0);
                 }
             }
-            for (index, target) in self.targets.iter().enumerate() {
+            for (index, target) in next_targets.iter().enumerate() {
                 for (channel, &value) in target.iter().enumerate() {
-                    self.schedulers[index * layout.active_channel_count() + channel].set_target(
-                        value,
-                        true,
-                        duration_samples,
-                        sample_rate,
-                    )?;
+                    if let Err(error) = next_schedulers
+                        [index * layout.active_channel_count() + channel]
+                        .set_target(value, true, duration_samples, sample_rate)
+                    {
+                        self.targets.clear();
+                        self.schedulers.clear();
+                        return Err(error.into());
+                    }
                 }
+            }
+            self.targets = next_targets;
+            self.schedulers = next_schedulers;
+            if reset_routes {
+                self.last_layout = Some(layout.clone());
             }
         }
 
