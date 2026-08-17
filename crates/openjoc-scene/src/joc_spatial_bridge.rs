@@ -206,6 +206,7 @@ pub enum SpatialBindingError {
     EmptyTopology,
     UnsupportedSourceClass(String),
     InvalidRegionState([bool; 6]),
+    InvalidExtent { ordinal: usize },
     NonFiniteScalar { ordinal: usize },
     UpdateOrdinalOutOfRange { ordinal: usize, count: usize },
     TopologyEpochOverflow,
@@ -223,6 +224,12 @@ impl fmt::Display for SpatialBindingError {
             }
             Self::InvalidRegionState(zones) => {
                 write!(formatter, "invalid semantic region state {zones:?}")
+            }
+            Self::InvalidExtent { ordinal } => {
+                write!(
+                    formatter,
+                    "invalid semantic extent at spatial coordinate {ordinal}"
+                )
             }
             Self::NonFiniteScalar { ordinal } => {
                 write!(
@@ -382,6 +389,10 @@ fn validate_records(records: &[SpatialBindingRecord]) -> Result<(), SpatialBindi
             RegionSemanticState::from_decoded_zones(zones)
                 .map_err(|_| SpatialBindingError::InvalidRegionState(zones))?;
         }
+        if let Some(extent) = record.descriptor.extent {
+            crate::extent::extent_scalar(extent)
+                .map_err(|_| SpatialBindingError::InvalidExtent { ordinal })?;
+        }
     }
     Ok(())
 }
@@ -420,6 +431,13 @@ fn apply_update(
             record.descriptor.raw3.clone_from(raw3);
         }
         if let Some(extent) = &patch.extent {
+            if let Some(extent) = extent {
+                crate::extent::extent_scalar(*extent).map_err(|_| {
+                    SpatialBindingError::InvalidExtent {
+                        ordinal: update.ordinal,
+                    }
+                })?;
+            }
             record.descriptor.extent = *extent;
         }
         if let Some(zones) = &patch.zones {
@@ -559,6 +577,7 @@ pub enum SpatialProjectionError {
     MissingAnchor(String),
     UnadmittedLayerPolicy,
     InvalidRegionState([bool; 6]),
+    InvalidExtent,
     UnsupportedChannelLock,
     UnsupportedExtent,
     UnsupportedRegionLayout(&'static str),
@@ -620,6 +639,7 @@ impl fmt::Display for SpatialProjectionError {
             Self::InvalidRegionState(zones) => {
                 write!(formatter, "invalid semantic region state {zones:?}")
             }
+            Self::InvalidExtent => formatter.write_str("invalid semantic extent"),
             Self::UnsupportedChannelLock => {
                 formatter.write_str("channel lock is unsupported by the point-region operator")
             }
@@ -1653,7 +1673,11 @@ impl JocSpatialBridge {
             for (index, target) in self.targets.iter_mut().enumerate() {
                 let record = &snapshot.records[index];
                 if record.active {
-                    let vector = self.region_selector.project(layout, &record.descriptor)?;
+                    let vector = self.region_selector.project_with_epoch(
+                        layout,
+                        &record.descriptor,
+                        snapshot.topology_epoch,
+                    )?;
                     for (target_value, projection) in target.iter_mut().zip(vector) {
                         *target_value = record.scalar * projection;
                     }

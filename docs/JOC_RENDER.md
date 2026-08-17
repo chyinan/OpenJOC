@@ -139,12 +139,14 @@ Dynamic Region/Zone metadata is honored for ordinary point sources in the
 admitted subset. Region selection derives a constrained speaker topology
 before the existing point projector, so the default/no-region state is
 unchanged and points outside selected support clamp to selected topology
-endpoints instead of being muted. Region changes become ordinary target events
-through the existing Q32 gain scheduler. Only the six named horizontal states
-and independent Top-Bottom include/exclude behavior on validated one- or
-two-plane layouts are admitted; special selector-6 behavior, extent, channel
-lock, arbitrary region algebra, and unadmitted fallback/layer combinations
-remain unsupported.
+endpoints instead of being muted. Ordinary Dynamic Extent metadata is also
+honored for the eleven admitted 5.1/7.1/9.1-family layouts: XYZ metadata is
+reduced to one isotropic scalar, zero extent preserves the point target, and
+extent target changes use the existing Q32 scheduler. Only the six named
+horizontal states and independent Top-Bottom include/exclude behavior on
+validated one- or two-plane layouts are admitted; non-default Region ×
+nonzero Extent, ChannelLock × Extent, special selector-6 behavior, arbitrary
+region algebra, and unadmitted fallback/layer combinations remain unsupported.
 
 ## Automatic bridge control and optional override
 

@@ -5,6 +5,7 @@
 //! rebuilds the ordinary layer/row/anchor topology consumed by the existing
 //! point projector.
 
+use crate::extent::ExtentFieldCache;
 use crate::{
     SpatialDescriptor, SpatialLayout, SpatialLayoutLayer, SpatialLayoutRow, SpatialLayoutTopology,
     SpatialProjectionError, SpatialSourceClass,
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt};
 
 const REGION_CACHE_CAPACITY: usize = 24;
+const EXTENT_CACHE_CAPACITY: usize = 8;
 
 /// Admitted horizontal semantic region states.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -128,22 +130,34 @@ struct RegionTopologyCacheEntry {
     selected: SpatialLayout,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct ExtentCacheEntry {
+    canonical: SpatialLayout,
+    topology_epoch: u64,
+    field: ExtentFieldCache,
+}
+
 /// Bounded region-topology preparation and cache.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RegionTopologySelector {
     cache: Vec<RegionTopologyCacheEntry>,
+    extent_cache: Vec<ExtentCacheEntry>,
 }
 
 impl RegionTopologySelector {
     /// Creates an empty selector cache.
     #[must_use]
     pub const fn new() -> Self {
-        Self { cache: Vec::new() }
+        Self {
+            cache: Vec::new(),
+            extent_cache: Vec::new(),
+        }
     }
 
     /// Discards all prepared topologies, including those from old layout epochs.
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.extent_cache.clear();
     }
 
     /// Returns the number of prepared constrained topologies.
@@ -158,6 +172,18 @@ impl RegionTopologySelector {
         canonical: &SpatialLayout,
         descriptor: &SpatialDescriptor,
     ) -> Result<Vec<f64>, SpatialProjectionError> {
+        self.project_with_epoch(canonical, descriptor, 0)
+    }
+
+    /// Projects one descriptor using the current binding topology epoch. The
+    /// epoch is part of the extent cache key so stale layout-bound responses
+    /// cannot survive a binding/topology rebuild.
+    pub(crate) fn project_with_epoch(
+        &mut self,
+        canonical: &SpatialLayout,
+        descriptor: &SpatialDescriptor,
+        topology_epoch: u64,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
         if !matches!(
             descriptor.source_class,
             SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion
@@ -167,26 +193,58 @@ impl RegionTopologySelector {
         if descriptor.channel_lock {
             return Err(SpatialProjectionError::UnsupportedChannelLock);
         }
-        if descriptor.extent.is_some_and(|extent| {
-            extent
-                .iter()
-                .any(|value| !value.is_finite() || *value != 0.0)
-        }) {
-            return Err(SpatialProjectionError::UnsupportedExtent);
-        }
+        let extent_active = descriptor
+            .extent
+            .map(crate::extent::extent_scalar)
+            .transpose()?
+            .is_some_and(|(mean_q, _)| mean_q != 0);
         let state = match descriptor.zones {
             Some(zones) => RegionSemanticState::from_decoded_zones(zones)
                 .map_err(|_| SpatialProjectionError::InvalidRegionState(zones))?,
             None => RegionSemanticState::default(),
         };
-        if descriptor.spread.is_some() && !state.is_default() {
+        if extent_active && !state.is_default() {
+            return Err(SpatialProjectionError::UnsupportedExtent);
+        }
+        if extent_active && (descriptor.spread.is_some() || descriptor.paired.is_some()) {
             return Err(SpatialProjectionError::UnsupportedExtent);
         }
         if state.is_default() {
+            if extent_active {
+                return self
+                    .cached_extent(canonical, topology_epoch)?
+                    .project(canonical, descriptor);
+            }
             return canonical.project_unconstrained(descriptor);
         }
         let selected = self.cached_selected(canonical, state)?;
         selected.project_unconstrained(descriptor)
+    }
+
+    fn cached_extent(
+        &mut self,
+        canonical: &SpatialLayout,
+        topology_epoch: u64,
+    ) -> Result<&ExtentFieldCache, SpatialProjectionError> {
+        if let Some(index) = self.extent_cache.iter().position(|entry| {
+            entry.canonical == *canonical && entry.topology_epoch == topology_epoch
+        }) {
+            return Ok(&self.extent_cache[index].field);
+        }
+        let field = ExtentFieldCache::build(canonical)?;
+        if self.extent_cache.len() == EXTENT_CACHE_CAPACITY {
+            self.extent_cache.remove(0);
+        }
+        self.extent_cache.push(ExtentCacheEntry {
+            canonical: canonical.clone(),
+            topology_epoch,
+            field,
+        });
+        Ok(&self
+            .extent_cache
+            .last()
+            .expect("extent cache entry was just inserted")
+            .field)
     }
 
     /// Selects or prepares one derived topology for a canonical layout/state.

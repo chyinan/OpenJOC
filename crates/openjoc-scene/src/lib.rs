@@ -34,6 +34,7 @@ pub use binding::{
     BindingEvidenceClass, BindingEvidenceDimensions, BindingProvenance, BindingRelationKind,
     SemanticBindingEvidence, VerifiedBindingAdmission,
 };
+mod extent;
 mod layout;
 pub use layout::{
     ProgrammeAnchor, ProgrammeAudioSource, ProgrammeLayout, ProgrammeLayoutEntry,

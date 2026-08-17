@@ -641,6 +641,84 @@ fn region_target_changes_use_the_existing_q32_scheduler() {
 }
 
 #[test]
+fn extent_only_changes_use_the_existing_q32_scheduler_without_an_extent_ramp() {
+    let layout = executable_layout("7.1.4");
+    let mut initial = dynamic_point(0.5, 0.5, 0.0);
+    initial.extent = Some([5_285.0 / 32_768.0; 3]);
+    let topology = SpatialTopologySnapshot {
+        dynamic_records: vec![SpatialBindingRecord {
+            descriptor: initial,
+            scalar: 1.0,
+            active: true,
+        }],
+        ..SpatialTopologySnapshot::default()
+    };
+    let input = vec![1.0; 64];
+    let mut bridge = JocSpatialBridge::new();
+    let mut storage = vec![vec![0.0; input.len()]; layout.active_channel_count()];
+    let mut outputs = storage
+        .iter_mut()
+        .map(Vec::as_mut_slice)
+        .collect::<Vec<_>>();
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            Some(&topology),
+            None,
+            &layout,
+            0,
+            48_000,
+            &mut outputs,
+        )
+        .expect("initial extent target");
+    let old_target = outputs
+        .iter()
+        .map(|channel| channel[63])
+        .collect::<Vec<_>>();
+
+    let update = SpatialCoordinateUpdate {
+        ordinal: 0,
+        descriptor: Some(SpatialDescriptorPatch {
+            extent: Some(Some([0.0; 3])),
+            ..SpatialDescriptorPatch::default()
+        }),
+        scalar: None,
+        active: None,
+    };
+    bridge
+        .render_coordinates(
+            &[input.as_slice()],
+            None,
+            Some(std::slice::from_ref(&update)),
+            &layout,
+            32,
+            48_000,
+            &mut outputs,
+        )
+        .expect("extent-only target event");
+    let point = layout
+        .project(&SpatialDescriptor {
+            source_class: SpatialSourceClass::DynamicPoint,
+            identity: "point".to_owned(),
+            coordinates: vec![0.5, 0.5, 0.0],
+            spread: None,
+            paired: None,
+            raw3: None,
+            extent: Some([0.0; 3]),
+            zones: None,
+            channel_lock: false,
+        })
+        .expect("zero extent point target");
+    let changed_channel = old_target
+        .iter()
+        .zip(&point)
+        .position(|(old, target)| (old - target).abs() >= 1.0e-4)
+        .expect("extent target must differ from point target");
+    assert!((outputs[changed_channel][0] - old_target[changed_channel]).abs() < 1.0e-12);
+    assert!((outputs[changed_channel][63] - point[changed_channel]).abs() < 1.0e-12);
+}
+
+#[test]
 fn simultaneous_position_and_region_updates_form_one_projection_snapshot() {
     let layout = executable_layout("7.1.4");
     let topology = SpatialTopologySnapshot {
@@ -730,6 +808,102 @@ fn extent_and_channel_lock_remain_fail_closed_for_region_projection() {
         layout.project(&locked),
         Err(openjoc_scene::SpatialProjectionError::UnsupportedChannelLock)
     );
+}
+
+#[test]
+fn red_nonzero_uniform_extent_generates_a_diffuse_target() {
+    let layout = executable_layout("7.1.4");
+    let mut extent = dynamic_point(0.5, 0.5, 0.0);
+    extent.extent = Some([5_285.0 / 32_768.0; 3]);
+
+    let target = layout
+        .project(&extent)
+        .expect("ordinary default-region extent target");
+    assert_unit_l2(&target);
+    assert!(target.iter().filter(|value| **value > 1.0e-9).count() > 1);
+}
+
+#[test]
+fn red_equivalent_single_axis_extents_have_the_same_target() {
+    let layout = executable_layout("7.1.4");
+    let mut x_only = dynamic_point(0.5, 0.5, 0.0);
+    x_only.extent = Some([15_855.0 / 32_768.0, 0.0, 0.0]);
+    let mut y_only = x_only.clone();
+    y_only.extent = Some([0.0, 15_855.0 / 32_768.0, 0.0]);
+    let mut z_only = x_only.clone();
+    z_only.extent = Some([0.0, 0.0, 15_855.0 / 32_768.0]);
+
+    let x_target = layout.project(&x_only).expect("x-only extent target");
+    let y_target = layout.project(&y_only).expect("y-only extent target");
+    let z_target = layout.project(&z_only).expect("z-only extent target");
+    assert_eq!(x_target, y_target);
+    assert_eq!(x_target, z_target);
+}
+
+#[test]
+fn red_extent_boundary_uses_bounded_compensation() {
+    let layout = executable_layout("7.1.4");
+    let mut boundary = dynamic_point(0.0, 0.5, 0.0);
+    boundary.extent = Some([8_192.0 / 32_768.0; 3]);
+
+    let target = layout
+        .project(&boundary)
+        .expect("ordinary boundary extent target");
+    assert_unit_l2(&target);
+    assert!(target.iter().any(|value| *value > 0.0));
+}
+
+#[test]
+fn extent_zero_is_an_exact_point_identity_across_admitted_layouts() {
+    for name in [
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+    ] {
+        let layout = executable_layout(name);
+        for position in [
+            (0.5, 0.5, 0.0),
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (0.5, 0.5, -0.5),
+            (0.5, 0.5, 0.5),
+        ] {
+            let point = dynamic_point(position.0, position.1, position.2);
+            let mut zero = point.clone();
+            zero.extent = Some([0.0; 3]);
+            assert_eq!(
+                layout.project(&zero),
+                layout.project(&point),
+                "{name} {position:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn maximum_extent_remains_layout_and_center_dependent() {
+    let layout = executable_layout("7.1.4");
+    let mut center = dynamic_point(0.5, 0.5, 0.0);
+    center.extent = Some([32_767.0 / 32_768.0; 3]);
+    let mut side = center.clone();
+    side.coordinates[0] = 0.25;
+    let center_target = layout.project(&center).expect("maximum center target");
+    let side_target = layout.project(&side).expect("maximum side target");
+    assert_unit_l2(&center_target);
+    assert_unit_l2(&side_target);
+    assert_ne!(center_target, side_target);
+    assert!(center_target.iter().any(|value| *value > 0.0));
+    assert!(side_target.iter().any(|value| *value > 0.0));
+}
+
+#[test]
+fn extent_field_excludes_lfe_and_keeps_public_channel_count() {
+    for name in ["5.1", "5.1.4", "7.1.4", "9.1.6"] {
+        let layout = executable_layout(name);
+        let mut descriptor = dynamic_point(0.5, 0.5, 0.0);
+        descriptor.extent = Some([16_384.0 / 32_768.0; 3]);
+        let target = layout.project(&descriptor).expect("extent target");
+        assert_eq!(target.len(), layout.active_channel_count(), "{name}");
+        assert_unit_l2(&target);
+    }
 }
 
 #[test]
