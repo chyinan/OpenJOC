@@ -1,6 +1,6 @@
-# Experimental JOC speaker rendering
+# JOC speaker rendering
 
-OpenJOC 0.4.2 exposes one executable JOC-to-speaker workflow with an
+OpenJOC 0.5.0 exposes one experimental JOC-to-speaker workflow with an
 explicit selectable speaker preset:
 
 ```sh
@@ -18,7 +18,7 @@ openjoc render-joc INPUT.m4a \
   --output openjoc-render.wav
 ```
 
-The newly admitted height presets use the same command surface:
+The admitted height and wide-channel presets use the same command surface:
 
 ```sh
 openjoc render-joc INPUT.m4a --layout 5.1.4 --output output-5.1.4.wav
@@ -33,7 +33,8 @@ openjoc render-joc INPUT.m4a --layout 9.1.6 --output output-9.1.6.caf
 Supported presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
 `9.1`, `9.1.2`, `9.1.4`, and `9.1.6`. The `--layout`
 argument is required; there is no implicit output-layout default. `5.1` is the
-regression anchor for the original 0.4.0 integration.
+regression anchor for the original 0.4.0 integration. The renderer remains
+experimental and does not claim Dolby or Reference Player equivalence.
 
 The semantic speaker output contract is explicit and stable. The following
 channel order is used for PCM planes and CAF descriptions; the LFE index is
@@ -53,8 +54,9 @@ zero-based and LFE is not a geometric projection anchor.
 | `9.1.4` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltr, Rtr` | 14 | 3 | `none; CAF only` |
 | `9.1.6` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr` | 16 | 3 | `none; CAF only` |
 
-The six existing layouts with a mask use WAVEFORMATEXTENSIBLE with the standard speaker
-mask and IEEE float32 samples by default (`--reference-f64` selects float64).
+The six layouts with an exact standard mask use WAVEFORMATEXTENSIBLE with the
+standard speaker mask and IEEE float32 samples by default (`--reference-f64`
+selects float64).
 `7.1.6` is not exactly representable by standard WAVEFORMATEXTENSIBLE because
 `Ltm`/`Rtm` have no equivalent predefined mask bits. The 9.1 family is likewise
 not exactly representable because `Lw`/`Rw` and, where present, `Ltm`/`Rtm`
@@ -177,12 +179,12 @@ count must match on every access unit. `updates` is optional and contains
 frame-indexed `SpatialCoordinateUpdate` arrays; omitted fields inherit the
 persistent bridge state.
 
-An explicit sidecar may also include a top-level `route_vectors` array. Each
-entry supplies a fixed or named route identity and its vector in the current
-layout's enabled non-LFE order. Fixed-layout and named-layout records resolve
-only through this identity registry; an absent entry returns `MissingRoute` and
-does not fall through to dynamic geometry. Automatic control has no fabricated
-route vectors, so unsupported fixed/named content fails explicitly.
+The sidecar schema retains fields for source classes outside the 0.5.0 release
+contract, but the admitted dynamic path is limited to explicit-channel and
+ordinary dynamic point/Region/Extent/ChannelLock records. Fixed/Named route
+records and Spread/Pair geometry are withheld; they fail explicitly rather
+than falling through to dynamic geometry. Automatic control never fabricates
+such routes.
 
 A minimal 5-channel Base plus one ReconstructionBasis row control file is:
 
@@ -252,16 +254,16 @@ of adding the reconstruction coordinates to Base.
 Use this listening decision tree without treating subjective listening as
 proof:
 
-- Clean `BASE_ONLY` plus plastic `FULL` means the defect requires
+- Clean `BASE_ONLY` plus degraded `FULL` means the defect requires
   ReconstructionBasis participation; bad ReconstructionBasis PCM and bad
   ReconstructionBasis weighting remain distinct possibilities.
-- Plastic `BASE_ONLY` means projection/mixing of the Base coordinates is
+- Degraded `BASE_ONLY` means projection/mixing of the Base coordinates is
   sufficient to produce the defect, making current renderer semantics the
   primary suspect.
 - Severe aliasing, discontinuities, or unstable metallic artifacts in
   `RECONSTRUCTION_ONLY`, beyond an expected residual-like character, make JOC
   reconstruction a stronger suspect but do not prove it is faulty.
-- Clean `BASE_ONLY`, internally plausible `RECONSTRUCTION_ONLY`, and plastic
+- Clean `BASE_ONLY`, internally plausible `RECONSTRUCTION_ONLY`, and degraded
   `FULL` make interference, gain combination, or projection weighting the
   strongest suspect.
 
@@ -556,14 +558,13 @@ Diagnostics identify `JocSpatialBridge` as enabled, maturity as experimental,
 mode, virtual layout, SOFA filename, backend, HRIR coverage, LFE policy, and
 tail contract. Private SOFA paths are not embedded in public metadata.
 
-The automatic assembly currently supports explicit-channel beds, fixed-layout
-members only when the selected layout supplies matching route vectors, dynamic
-point-like records, and the admitted dynamic region records. `raw3` remains
-opaque with no assigned semantic name. `AUTO` behavior is unchanged: strict
-validation is selected first and the existing compatibility policy is used only
-where its current whitelist admits it. Automatic spread and paired geometry,
-linked limiting, delay, bass management, and region combinations outside the
-admitted subset remain incomplete or withheld.
+The automatic assembly currently supports explicit-channel beds, dynamic
+point-like records, and the admitted Region/Extent/ChannelLock records.
+`raw3` remains opaque with no assigned semantic name. `AUTO` behavior is
+unchanged: strict validation is selected first and the existing compatibility
+policy is used only where its current whitelist admits it. Fixed/Named routes,
+Spread/Pair geometry, linked limiting, delay, bass management, and Region
+combinations outside the admitted subset remain incomplete or withheld.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE

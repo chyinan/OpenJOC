@@ -53,7 +53,18 @@ current capability matrix or a historical milestone log.
 - Evaluate real-producer coding-tool combinations where public-syntax admission
   currently exceeds controlled real-corpus activation.
 
-## Explicit non-goals for the OpenJOC 0.3.0 release
+## Deferred from 0.5.0: candidates for 0.6.0
+
+- Spread/Pair and Fixed/Named dynamic routing.
+- Selector-6 behavior, rare Region fallback/tie handling, and broader Region
+  algebra.
+- More than two-layer semantics, 22.2, broader exact-HRIR/binaural policies,
+  and additional player/integration validation.
+
+These items remain backlog only; they are not part of the 0.5.0 release
+contract.
+
+## Historical non-goals for the OpenJOC 0.3.0 release
 
 - No implicit authored-object PCM claim.
 - No audio-bound ObjectScene or proprietary renderer-fidelity claim. The

@@ -24,16 +24,19 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.4.2 is the current release. It retains the 0.3.0 release foundation
-and adds an experimental JOC-to-speaker workflow through
-`JocSpatialBridge`. Ordinary rendering assembles bridge control from decoded
-JOC/OAMD state; `--topology` remains an optional complete override/test input.
-The selectable 5.1/5.1.2/5.1.4/7.1/7.1.2/7.1.4/7.1.6/9.1/9.1.2/9.1.4/9.1.6 workflows are documented in
-[Experimental JOC speaker rendering](docs/JOC_RENDER.md).
-The same workflow can virtualize the currently admitted six existing layouts to
-stereo through a user-supplied supported SOFA HRIR bank. 7.1.6 and the 9.1
-family provide semantic speaker-to-CAF output independently, while their
-binaural paths remain closed.
+OpenJOC 0.5.0 is the current release line. It includes major
+reconstruction-fidelity corrections, including corrected QMF synthesis
+behavior and Base/ReconstructionBasis timeline alignment, plus an
+experimental JOC-to-speaker workflow through `JocSpatialBridge`. Ordinary
+rendering assembles bridge control from decoded JOC/OAMD state;
+`--topology` remains an optional complete override/test input.
+
+The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
+`9.1`, `9.1.2`, `9.1.4`, and `9.1.6` workflows are documented in
+[JOC speaker rendering](docs/JOC_RENDER.md). The same workflow can virtualize
+the six admitted binaural layouts through a user-supplied exact-direction SOFA
+HRIR bank. `7.1.6` and the `9.1` family provide semantic speaker-to-CAF output
+independently; their binaural paths remain closed.
 The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
 generic N-channel library interface for caller-defined layouts; the CLI names
 are convenience presets, not the renderer's fundamental maximum.
@@ -57,8 +60,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.4.2 capability status.
-- [Experimental JOC speaker rendering](docs/JOC_RENDER.md) — the 0.4.2 real-input workflow.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.5.0 capability status.
+- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.5.0 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
@@ -93,11 +96,11 @@ cargo install --path crates/openjoc-cli --locked --root /path/to/prefix
 /path/to/prefix/bin/openjoc --help
 ```
 
-Prebuilt binaries for OpenJOC 0.2.0 are available from the
-[GitHub Release](https://github.com/chyinan/OpenJOC/releases/tag/v0.2.0) for
-Apple silicon macOS, Windows 11 x86_64, and GNU/Linux x86_64. No Homebrew
-formula or crates.io installation is advertised by the source repository. The
-source installation path remains the workspace source tree.
+Binary distribution is handled by the human-created GitHub Release workflow
+after a stable version tag. The historical [OpenJOC 0.2.0 release](https://github.com/chyinan/OpenJOC/releases/tag/v0.2.0)
+contains the prior published assets; this source tree does not advertise a
+Homebrew formula or crates.io installation. The source installation path
+remains the workspace source tree.
 
 ## Basic CLI
 
@@ -141,7 +144,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble the 0.4.2 Apple-Silicon release bundle
+## Assemble the 0.5.0 Apple-Silicon release bundle
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the release
@@ -150,9 +153,9 @@ bundle locally before publication:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.4.2-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.4.2-aarch64-apple-darwin.tar.gz
-cd openjoc-0.4.2-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.5.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.5.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.5.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
@@ -182,26 +185,21 @@ checks, and the macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 
-The 0.3.0 release candidate has been locally assembled and validated on the
-documented Apple-silicon macOS workflow. It has not been tagged, published, or
-validated as a 0.3.0 platform-asset matrix. The prior OpenJOC 0.2.0 release
-provides the historical prebuilt assets for Apple silicon macOS, Windows 11
-x86_64, and GNU/Linux x86_64.
-
-Windows was validated natively on Windows 11 Pro x86_64. The GNU/Linux binary
-was built and validated under Ubuntu 20.04.6 LTS on WSL2. This Linux validation
-does not claim native Linux hardware support or validation across all Linux
-distributions. These Windows/Linux statements describe the historical 0.2.0
-assets, not a 0.3.0 platform-asset validation claim.
-
-The macOS local candidate is not Developer-ID signed and is not notarized.
+The 0.5.0 release workflow targets Apple-silicon macOS
+(`aarch64-apple-darwin`), Windows x86_64 (`x86_64-pc-windows-msvc`), and
+GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The local bundle command and
+the candidate in this worktree validate only the Apple-silicon macOS path;
+Windows and Linux release results come from their native CI jobs and must not
+be inferred from a macOS build. The macOS bundle is ad-hoc signed and is not
+Developer-ID signed or notarized.
 
 ## Contributing and provenance
 
 Before changing codec behavior, read [CONTRIBUTING.md](CONTRIBUTING.md) and the
 release-facing capability and limitation documents. The project treats public
-normative sources, permitted synthetic tests, and controlled evidence as
-separate claim classes.
+normative sources and behavioral clean-room specifications as separate claim
+classes; neither is a claim of Dolby endorsement, certification, or
+bit-identical Reference Player output.
 
 ## License
 

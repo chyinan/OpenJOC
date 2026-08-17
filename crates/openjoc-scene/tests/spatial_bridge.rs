@@ -306,7 +306,7 @@ fn projection_covers_endpoints_midpoint_tensor_clamp_exclusion_spread_and_pair()
 }
 
 #[test]
-fn red_region_metadata_is_currently_ignored_by_projection() {
+fn region_metadata_affects_projection() {
     let layout = executable_layout("7.1.4");
     let default_descriptor = dynamic_point(0.25, 0.5, 0.0);
     let mut screen_only = default_descriptor.clone();
@@ -415,7 +415,7 @@ fn channel_lock_uses_ordinary_maximum_instead_of_nearest_anchor() {
         .project_with_outcome(&descriptor)
         .expect("selection-order outcome");
 
-    assert!(outcome.target[active_index(&layout, "B")] == 1.0);
+    assert_eq!(outcome.target[active_index(&layout, "B")], 1.0);
     assert_eq!(outcome.locked_output, Some(active_index(&layout, "B")));
     assert_eq!(outcome.effective_position, Some([0.15, 0.15, 0.0]));
 }
@@ -626,7 +626,7 @@ fn channel_lock_configuration_inherits_without_inheriting_an_acquired_target() {
 #[test]
 fn red_region_projection_must_not_be_a_post_projection_mask() {
     let layout = executable_layout("7.1.4");
-    let mut screen_only = dynamic_point(0.25, 0.5, 0.0);
+    let mut screen_only = dynamic_point(0.25, QMAX_CLEAN, 0.0);
     screen_only.zones = Some([true, false, false, false, false, true]);
 
     let constrained_target = layout.project(&screen_only).expect("screen-only target");
@@ -636,7 +636,7 @@ fn red_region_projection_must_not_be_a_post_projection_mask() {
         active_index(&layout, "FR"),
     ];
     let mut naive = layout
-        .project(&dynamic_point(0.25, 0.5, 0.0))
+        .project(&dynamic_point(0.25, QMAX_CLEAN, 0.0))
         .expect("full-layout target");
     for (index, value) in naive.iter_mut().enumerate() {
         if !screen_indices.contains(&index) {

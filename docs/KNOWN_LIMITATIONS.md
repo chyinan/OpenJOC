@@ -1,139 +1,85 @@
-# OpenJOC 0.4.2 known limitations
+# OpenJOC 0.5.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
-> research and requirement status belong in the linked documents under `docs/`.
+> research and implementation chronology belong in the source-only documents.
 
-This snapshot is part of the current release contract. It states the same
-user-visible boundary as the canonical repository documentation without
-claiming capabilities that the current evidence does not support.
+OpenJOC 0.5.0 is an independent, experimental interoperability project. It
+does not claim Dolby endorsement, certification, a licensed implementation, or
+bit-identical Reference Player output.
 
 - `scene.json` is metadata-only. It does not bind decoded audio to authored
-  objects.
-- `render-scene` supports only static explicit sources, mono PCM16/24/32 or
-  float32 WAV, and the strict SimpleFreeFieldHRIR NetCDF classic CDF-1 SOFA
-  subset. HDF5/NetCDF-4, other conventions, interpolation, moving sources,
-  and resampling are not supported.
-- Diagnostic `ReconstructionBasis` rows are available, but they are not
-  verified authored-object PCM. `SemanticBindingState` remains `Unresolved`.
-- Authored-object PCM and an audio-bound `ObjectScene` are unavailable.
-- The codec-domain `JocSpatialFrameBridge` exposes aligned Base/RB/RcLfe/OAMD
-  inputs and an explicit unresolved-operator gate; the time-varying
-  reconstruction operator `T(t)` is not established. The 0.4.2
-  `render-joc` command is a separate experimental ordinary-domain speaker
-  projection that assembles bridge control automatically from decoded
-  JOC/OAMD state. A complete bridge-control topology sidecar remains an
-  optional explicit override/test input. It
-  supports the 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2,
-  9.1.4, and 9.1.6 presets. The 7.1.6 and 9.1.x presets emit semantic
-  multichannel CAF only; standard speaker channel-mask metadata is emitted for
-  the other multichannel speaker WAV
-  layouts. It does not infer
-  authored-object identity, and does not resolve `T(t)` or provide a
-  vendor renderer. 2.0 remains blocked by unspecified bass/LFE
-  fold-down policy; 22.2 has generic 24-channel renderer
-  capacity but remains blocked by missing admitted clean 22.2 geometry. The
-  public `SpatialLayout` plus `JocSpatialBridge` API accepts arbitrary
-  caller-defined layouts, but the CLI has no custom-layout file format.
-  Ordinary diagnostic WAV output remains RIFF-only and may not carry speaker
-  identity metadata; large-channel renderer capacity is not a third-party DAW
-  interoperability guarantee. Full x/y/z projection is available for the
-  admitted topology family; ordinary Dynamic Extent and admitted non-default
-  Region × nonzero Extent composition are supported for the documented eleven
-  layouts, while standalone Dynamic point ChannelLock is supported across the
-  current one- and two-layer topology family. Ordinary ChannelLock × Region,
-  ChannelLock × Extent, and their admitted triple composition use the unified
-  Region-first/ChannelLock-precedence graph; special selector-6, arbitrary
-  region algebra, and unadmitted layer/fallback semantics remain unsupported.
-- The real-JOC binaural mode is a separate speaker-virtualization stage:
-  `render-joc` first renders the selected 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, or
-  7.1.4 virtual
-  layout, then sends each non-LFE public speaker channel through its fixed
-  exact-direction HRIR from the caller's supported SOFA file. Every required
-  direction is preflighted; nearest-neighbor lookup, interpolation, and HRIR
-  resampling are not used. The decoded JOC rate must equal the SOFA rate.
-  Because the admitted layouts contain LFE, the command requires an explicit
-  renderer policy: `exclude` or `equal-power-dual-mono`. This is OpenJOC output
-  policy, not JOC semantics or vendor bass management. The output is stereo
-  Left then Right WAV with the complete causal HRIR tail and remains
-  experimental with `SemanticBindingState::Unresolved`. The 7.1.6 speaker
-  preset is not admitted for this binaural path because the exact-direction
-  registry lacks `Ltm` and `Rtm`; no nearest-speaker, alias, interpolation, or
-  omitted-channel fallback is used.
-- `render-joc` has TTY-aware stderr progress plus an opt-in versioned
-  `--performance-report FILE.json` containing stage timings, frame timing
-  percentiles, realtime metrics, and opt-in JOC reconstruction sub-stage
-  timings. The current local evidence is a release synthetic reconstruction
-  and speaker/WAV harness; it excludes real E-AC-3/OAMD/JOC media. The
-  reconstruction harness demonstrates the measured QMF optimization but does
-  not qualify a real DEE stream.
-  Because no real DEE media is present in this checkout, the current
-  qualification is exactly
-  `OPENJOC_JOC_RENDER_PROFILED_REAL_MEDIA_RETEST_REQUIRED`. A synthetic or
-  public-fixture result must not be presented as real-media qualification.
-- The explicit `openjoc-render` foundation accepts caller-supplied mono sources
-  and provides FL/FR equal-power stereo plus a general validated horizontal
-  speaker-layout renderer with public 2D VBAP-style pair gains, plus an
-  explicit 3D speaker topology/triplet renderer. The 3D caller must provide
-  public speaker order and every triplet; automatic triangulation, Delaunay,
-  hull, and best-triplet inference are deliberately absent. Both renderers
-  reject uncovered directions and have no LFE/bass-management, JOC semantic
-  bridge, binaural renderer, room model, or Dolby renderer fidelity
-  implementation. Its trajectories are sample-accurate absolute-timeline
-  paths: 2D uses explicit azimuth policy, while 3D uses piecewise-shortest
-  great-circle segments over caller-declared triplets with linear gain. 3D
-  antipodal routes require explicit intermediate keyframes. Neither path
-  models radius, distance, Doppler, listener orientation, room effects,
-  elevation smoothing, or acceleration physics.
-- Static binaural rendering has two explicit caller-selected backends. Direct
-  FIR remains the numerical/reference path; the uniform partitioned backend
-  uses one fixed power-of-two input partition and a `2P` FFT, with explicit
-  one-partition scheduling latency, final partial input, and exact `M-1` tail
-  draining. Both require finite HRIR tap pairs and exact source directions at
-  the renderer sample rate, emit left then right ear PCM, and preserve causal
-  delay. There is no measured HRTF database, proprietary/Dolby HRTF claim,
-  SOFA parser, nearest-direction lookup, angular interpolation, moving source,
-  head tracking, room/distance model, adaptive/nonuniform partitioning, or
-  automatic backend selection.
-- The strict `openjoc-sofa` loader accepts only caller-specified local
-  `SimpleFreeFieldHRIR` SOFA files in the portable NetCDF classic CDF-1 form
-  exercised by the project tests. It requires exactly two fixed receivers,
-  fixed listener pose, spherical `degree, degree, metre` source positions,
-  common integer sample rate, and nonnegative integer `Data.Delay` samples.
-  Receiver geometry determines left/right ear order. HDF5/NetCDF-4, other SOFA
-  conventions, fractional delays, resampling, interpolation, nearest lookup,
-  writing, dataset downloads, and license inference are not supported.
-- `HARD_RESEARCH_BLOCKER_ACTIVE_COMPANION_RB_OPERATOR`: signal-dependent,
-  window-dependent RB redistribution is admitted, but common gauge,
-  row-transfer and rank-1 models are rejected. No implementation-ready
-  universal operator is known; this is deferred until it blocks a required
-  decoder or renderer capability or new admissible evidence appears.
+  objects. `SemanticBindingState` remains `Unresolved`, and
+  `ReconstructionBasis` rows are diagnostic reconstruction coordinates rather
+  than verified authored-object PCM.
+- The codec-domain JOC operator `T(t)` remains unresolved. The separate
+  `render-joc` path is an experimental ordinary-domain speaker projection that
+  assembles control from decoded JOC/OAMD state; it does not infer authored
+  object identity or resolve the codec-domain operator.
+- The public `render-joc` presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`,
+  `7.1.4`, `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, and `9.1.6`. `7.1.6` and the
+  `9.1` family require semantic CAF output. WAV requests for layouts without
+  an exact WAVEFORMATEXTENSIBLE mask fail closed; no identity substitution or
+  fabricated mask is used. `2.0` and `22.2` are not public CLI presets.
+- The generic `SpatialLayout`/`JocSpatialBridge` library API accepts caller-
+  defined layouts, but the CLI has no custom-layout file format. Generic
+  library capacity does not imply a public `22.2` contract or third-party DAW
+  interoperability.
+- The admitted Dynamic Region/Zone contract is limited to six horizontal
+  states (`NoConstraints`, `BackExcluded`, `SideExcluded`, `CentreAndBack`,
+  `ScreenOnly`, and `SurroundOnly`) plus independent Top-Bottom
+  include/exclude on validated one- or two-plane layouts. Region selects a
+  constrained topology before projection, and points outside selected support
+  clamp to its endpoints.
+- Ordinary Dynamic Extent is supported on the admitted eleven layouts. It
+  reduces the three size components to one isotropic scalar, preserves the
+  point target at zero, and uses the existing Q32 target scheduler. Region ×
+  Extent uses the Region-first effective topology and retains the authored
+  center for the Extent path.
+- Ordinary point Dynamic ChannelLock is supported across the current one- and
+  two-layer topology family. Region is applied first; an active ChannelLock
+  owns current target generation and bypasses the Extent target branch while
+  retaining Extent state. When ChannelLock is released, inherited Extent
+  behavior resumes. Non-point ChannelLock, selector-6 special behavior,
+  Spread/Pair, Fixed/Named routing, rare Region fallback/tie cases, arbitrary
+  region algebra, and unadmitted layer/fallback combinations remain withheld
+  and fail closed.
+- Real-JOC binaural output is speaker virtualization through exact-direction
+  SOFA HRIR data for `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and `7.1.4` only.
+  The selected virtual layout must have every required direction at the input
+  sample rate. Nearest-neighbor lookup, interpolation, HRIR resampling, and
+  omitted-channel fallback are not used. An explicit `exclude` or
+  `equal-power-dual-mono` LFE policy is required.
+- The strict `openjoc-sofa` loader accepts only the tested local
+  `SimpleFreeFieldHRIR` NetCDF classic CDF-1 subset: fixed listener pose,
+  spherical metre/degree coordinates, two receivers, common sample rate, and
+  integer nonnegative delays. HDF5/NetCDF-4, other conventions, writing,
+  downloads, moving sources, and resampling are not supported.
+- The independent `openjoc-render` foundation remains caller-bound. It
+  supports explicit mono-source 2D/3D rendering and static exact-direction
+  binaural reference paths, but does not provide JOC semantic binding, room or
+  distance modeling, Doppler, head tracking, or a vendor renderer.
 - `ETSI_STRICT` rejects the observed reserved OAMD warp value `raw=3`.
-- `OBSERVED_VENDOR_COMPAT` is explicit and partial. Observed continuation remains
-  opaque; warp-3 and vendor continuation semantics are unresolved.
-- Public-syntax coupling, SPX, AHT, and dependent-substream paths have bounded
-  synthetic/numerical admission, but some coding-tool combinations still lack
-  activation in the qualified real corpus. Full real-world fidelity is not
-  claimed.
-- Raw E-AC-3 streaming is supported internally. Seekable ISO BMFF uses
-  `ffprobe`; non-seekable and fragmented MP4 are not admitted by the 0.3.0
-  contract. Capture/demux and compatible-base workflows may also require
-  `ffmpeg`.
-- Machine-readable scene, component, streaming-summary, retention, and
-  internal-base manifests carry explicit `openjoc.*.v1` schema identifiers.
-  Decode commands refuse to reuse an existing output directory; callers must
-  choose a fresh destination and consume artifact paths relative to it.
-- The prior OpenJOC 0.2.0 release provides prebuilt assets for `aarch64-apple-darwin`,
-  `x86_64-pc-windows-msvc`, and `x86_64-unknown-linux-gnu`. Windows was
-  validated natively on Windows 11 x86_64. The GNU/Linux binary was built and
-  validated under Ubuntu 20.04.6 LTS on WSL2. This does not claim native Linux
-  hardware support or validation across all Linux distributions. These
-  Windows/Linux statements are inherited historical 0.2.0 evidence, not a
-  0.3.0 platform-asset claim. The validation used the repository's available
-  fixtures; private frozen JOC media were not present in this checkout.
-- The macOS local candidate is not signed with a Developer ID or other user identity
-  and is not notarized. Its Mach-O executable has the automatic linker-generated
-  ad-hoc signature required by the measured Apple-silicon toolchain. It is not
-  an official published release.
+  `OBSERVED_VENDOR_COMPAT` is explicit and partial; opaque continuation is
+  retained without assigning vendor semantics. Malformed, unsafe, unknown, or
+  non-whitelisted metadata remains a failure.
+- Raw E-AC-3 streaming and seekable ordinary ISO BMFF input are supported
+  within the documented boundaries. Non-seekable and fragmented MP4 are not
+  admitted. Some capture/demux and compatible-base paths require `ffmpeg` or
+  `ffprobe`.
+- Public syntax coding-tool support has bounded synthetic/numerical coverage;
+  full real-world activation and fidelity for every E-AC-3 coding-tool
+  combination are not claimed.
+- The QMF and reconstruction diagnostics establish the 577-sample round-trip
+  and zero Base/RB bridge lag contracts. They are engineering regressions, not
+  a subjective real-media or realtime qualification. Real-media listening and
+  long-render acceptance remain manual release steps.
+- Decode output directories are create-once destinations. Render replacement
+  requires interactive confirmation or `--overwrite`, and transactional output
+  and input/output alias protection remain in force.
+- The release workflow targets macOS arm64, Windows x86_64, and GNU/Linux
+  x86_64. The local candidate validates macOS arm64 only; Windows/Linux status
+  must come from native CI. The macOS artifact is ad-hoc signed, not
+  Developer-ID signed, and not notarized.
 
-See `README.md` in the bundle and `docs/REQUIREMENTS_MATRIX.md` in the
-corresponding source archive for the full capability contract.
+See the [capability matrix](CAPABILITIES.md) and [JOC rendering contract](JOC_RENDER.md)
+for the corresponding positive support claims.

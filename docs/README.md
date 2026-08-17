@@ -5,18 +5,23 @@ Use the document that owns the question:
 | Question | Canonical document |
 |---|---|
 | What is OpenJOC and how do I run it? | [root README](../README.md) |
-| What does the 0.4.2 release support? | [CAPABILITIES.md](CAPABILITIES.md) |
+| What changed in each release? | root `CHANGELOG.md` |
+| What does the 0.5.0 release support? | [CAPABILITIES.md](CAPABILITIES.md) |
 | What does it not support? | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |
 | How do I render a supported JOC stream to speakers? | [JOC_RENDER.md](JOC_RENDER.md) |
 | How is production code structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| What is the detailed engineering design? | [ENGINEERING_SPEC.md](ENGINEERING_SPEC.md) |
 | What is planned next? | [ROADMAP.md](ROADMAP.md) |
+| What provenance policy governs implementation claims? | source-only `docs/PROVENANCE.md` |
 
 Contributor rules and verification commands live in
-[CONTRIBUTING.md](../CONTRIBUTING.md). The engineering specification is a
-design reference; current status and limitations always belong to the current
-snapshot documents above.
+[CONTRIBUTING.md](../CONTRIBUTING.md). Architecture and renderer behavior are
+owned by the technical documents above; current status and limitations always
+belong in the current snapshot documents.
 
 Current snapshot documents own current truth. Internal research chronology and
 workspace-specific provenance are retained in the source repository, not in
-the standalone release documentation bundle.
+the standalone release documentation bundle. `CHANGELOG.md` owns versioned
+release history; `KNOWN_LIMITATIONS.md` owns current user-facing limitations;
+technical renderer behavior belongs in `JOC_RENDER.md` and
+`JOC_SPATIAL_BRIDGE.md`. Historical design notes that are no longer suitable
+for the public repository are intentionally not part of the current tree.

@@ -9,6 +9,16 @@ from the public normative specifications listed below, the official ETSI
 companion archive, and public mathematical/DSP literature where explicitly
 recorded. No existing JOC decoder source code is an implementation reference.
 
+The project separates `NORMATIVE / PUBLIC SPECIFICATION` from
+`BEHAVIORAL CLEAN-ROOM SPECIFICATION`. A behavioral clean-room specification
+may define observable interoperability behavior, numerical contracts, and
+functional constants through a separated analysis → sanitized specification →
+independent implementation process. It does not transfer implementation code,
+decompiler output, private symbols, addresses, or internal proprietary
+structures. This provenance record is source-repository history; the binary
+release bundle intentionally excludes this file, `REQUIREMENTS_MATRIX.md`, and
+the research chronology.
+
 OpenJOC is an independent project and is not affiliated with, endorsed by, or
 sponsored by Dolby Laboratories. References to Dolby, Dolby Atmos, E-AC-3 and
 JOC describe relevant technologies and interoperability contexts; they do not

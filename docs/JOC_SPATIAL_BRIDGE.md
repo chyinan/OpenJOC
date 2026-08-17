@@ -14,15 +14,16 @@ binding), provide a validated `SpatialLayout`, and call
 planes. It is therefore opt-in and cannot silently alter the existing decode
 path.
 
-The bridge implements only the supported ordinary domain:
+The bridge implements the supported ordinary release domain:
 
 - deterministic explicit-group/fixed-layout/dynamic-record flattening with
   persistent `(topology_epoch, ordinal)` binding state and selective
   inheritance;
 - public active non-LFE layout channels, full normalized `(x, y, signed-z)` point
   coordinates, data-driven layer/row/anchor topology, row-local equal-power X
-  interpolation, plane-local equal-power Y interpolation, fixed/named route
-  vectors, optional weighted spread, and optional equal-power paired geometry;
+  interpolation, and plane-local equal-power Y interpolation. Spread/Pair and
+  Fixed/Named routing are not part of the admitted 0.5.0 dynamic-object
+  contract; withheld or malformed variants fail closed;
 - ordinary dynamic Region/Zone states are resolved into a constrained
   layer/row/anchor topology before point projection. The default/no-region
   state retains the complete canonical topology; points outside selected
@@ -41,7 +42,9 @@ The bridge implements only the supported ordinary domain:
   produces an exclusive one-hot target and a local effective-position snap.
   Extent semantic state is retained while its current target branch is
   bypassed, and ordinary, locked, and switched targets all use the existing
-  Q32 scheduler;
+  Q32 scheduler. `effective_position` is a `LOCAL_ONLY` outcome of the
+  ChannelLock evaluation; it is not propagated into Region, Extent, or Q32
+  state;
 - Q32 gain scheduling with persistent phase across blocks, restart on binding
   rebuild/layout change, and linear `Y = Σ G X` accumulation;
 - finite-value, dimension, duplicate, unsupported-class, and malformed-input
@@ -51,7 +54,7 @@ The descriptor's raw warp-3 field is preserved as opaque data and is never
 used as a projection input. Its public semantic meaning remains unresolved.
 The bridge does not make `SemanticBindingState` production-resolved, does not
 claim an official spatial oracle, and does not admit a vendor-fidelity result.
-The 0.4.0 `render-joc` command composes this function with automatic
+The 0.5.0 `render-joc` command composes this function with automatic
 decoded JOC/OAMD bridge-control assembly for experimental speaker output. A
 complete topology sidecar remains an optional explicit override/test input.
 unsupported/default branches, unadmitted preprocessing, and malformed-recovery
@@ -65,6 +68,15 @@ target reduces to the Region-first ChannelLock branch; retained Extent state
 resumes through the existing Extent path when ChannelLock is released. Non-
 point ChannelLock sources, special selector-6 behavior, arbitrary region
 algebra, and unadmitted layer/fallback combinations remain fail-closed.
+
+The admitted target-generation precedence is therefore:
+
+```text
+Region -> effective topology
+  ChannelLock active -> exclusive ChannelLock target; bypass Extent target path
+  otherwise Extent active -> Extent target
+  otherwise -> ordinary Point target
+```
 
 Ordinary dynamic point projection is one generic full-XYZ operator. Layout
 names select channel identities and topology data; they do not select separate
@@ -210,6 +222,7 @@ RB-row/object or renderer semantic result.
 - `ETSI_STRICT` still treats observed OAMD `warp=3` as
   `ReservedWarpMode { raw: 3 }`.
 - No proprietary decoder, renderer, or vendor semantic source is used.
-- No automatic authored-object mapping or binaural rendering is admitted by
-  this bridge. The explicit `render-joc` composition is experimental and
-  limited to the documented 5.1 speaker workflow.
+- No automatic authored-object mapping or direct-object binaural rendering is
+  admitted by this bridge. The explicit `render-joc` composition is
+  experimental and covers the documented eleven speaker presets, with
+  binaural output limited to the six exact-HRIR layouts.

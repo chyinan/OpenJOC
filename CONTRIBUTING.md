@@ -6,7 +6,6 @@ Keep each project fact in its canonical documentation owner:
 - current support: `docs/CAPABILITIES.md`;
 - current boundaries: `docs/KNOWN_LIMITATIONS.md`;
 - architecture: `docs/ARCHITECTURE.md`;
-- detailed engineering design: `docs/ENGINEERING_SPEC.md`;
 - requirements and status: `docs/REQUIREMENTS_MATRIX.md`;
 - provenance and clean-room rules: `docs/PROVENANCE.md`;
 - future work: `docs/ROADMAP.md`;

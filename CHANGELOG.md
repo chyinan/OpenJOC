@@ -1,22 +1,63 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] — 2026-08-17
+
+OpenJOC 0.5.0 is a feature release focused on reconstruction fidelity and the
+generic spatial-rendering path. Users of 0.4.x are strongly encouraged to
+upgrade because this release corrects reconstruction timing and synthesis
+behavior in addition to adding new output and dynamic-object coverage.
+
+### Added
+
+- Public speaker presets for `5.1.4`, `7.1.2`, `7.1.6`, and the `9.1`, `9.1.2`,
+  `9.1.4`, and `9.1.6` family, extending the admitted preset set through
+  `9.1.6`.
+- Semantic Core Audio Format multichannel output for layouts whose speaker
+  identities cannot be represented exactly by WAVEFORMATEXTENSIBLE.
+- Ordinary Dynamic Region/Zone, Dynamic Extent, and Dynamic ChannelLock
+  rendering for the admitted topology family, including Region × Extent and
+  the unified Region-first/ChannelLock-precedence composition.
+
+### Changed
+
+- The speaker path now uses one generic full-XYZ, data-driven layer/row/anchor
+  projector. Layout names select topology data and semantic channel order;
+  they do not select separate projection mathematics.
+- Speaker output now has an explicit semantic channel-order contract. WAV
+  output remains fail-closed when a standard speaker mask cannot represent the
+  requested layout; CAF preserves the richer semantic channel descriptions.
+- Release-facing capability, limitation, provenance, installation, and
+  platform documentation now identify 0.5.0 as the current release line.
 
 ### Fixed
 
+- Corrected QMF reconstruction synthesis behavior and retained the 577-sample
+  round-trip contract.
+- Corrected Base/ReconstructionBasis timeline handling so the renderer input
+  has zero lag under the established R2 alignment contract.
+- Corrected generic point projection across X, Y, and Z, including endpoint,
+  symmetry, normalization, wide-channel, and upper-row behavior.
 - Corrected 7.1 and 7.1.4 speaker identity/order so back-left/back-right
   precede side-left/side-right in the public channel sequence.
-- Added standard WAVEFORMATEXTENSIBLE speaker/channel mask metadata for
-  multichannel speaker WAV output while preserving PCM samples and
-  transactional writing.
-- Added explicit fixed/named route-registry lookup for supplied route vectors;
-  missing routes now fail deterministically without geometric substitution.
+- Preserved transactional output, overwrite checks, and input/output alias
+  protection, including the empty-overwrite-prompt fix.
+
+### Performance
+
+- Retained the landed E-AC-3 reconstruction and JOC-stage performance work,
+  including invariant QMF table reuse and versioned performance diagnostics.
 
 ### Known limitations
 
-- Full 3D projection, complete region/layer/fallback behavior, output-policy
-  formulas, and semantic binding remain unresolved. No vendor-fidelity claim
-  is made.
+- Authored-object binding and the codec-domain JOC operator `T(t)` remain
+  unresolved. The speaker bridge is experimental and makes no Dolby or
+  Reference Player equivalence claim.
+- Selector-6 special behavior, Spread/Pair, Fixed/Named routing, rare Region
+  fallback/tie cases, >2-layer semantics, 22.2, and broader binaural policies
+  remain withheld. Binaural output remains limited to the six exact-HRIR
+  layouts; 7.1.6 and the 9.1 family are CAF speaker-output paths only.
+- Real-media subjective listening and long-render acceptance remain manual
+  release steps; synthetic regressions do not establish realtime readiness.
 
 ## [0.4.2] — 2026-08-16
 
