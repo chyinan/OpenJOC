@@ -38,6 +38,7 @@ mod dynamic_range;
 mod mantissa;
 mod rematrix;
 mod spx;
+mod stereo_downmix;
 mod timing;
 mod transform;
 
@@ -82,6 +83,10 @@ pub use mantissa::{
 };
 pub use rematrix::rematrix_channels;
 pub use spx::synthesize_spectral_extension;
+pub use stereo_downmix::{
+    StereoDownmixError, StereoDownmixMatrix, StereoDownmixMode, StereoDownmixRow,
+    stereo_downmix_matrix,
+};
 pub use timing::Eac3DecodeStageTiming;
 pub use transform::{
     InverseTransformTrace, OverlapAddTrace, inverse_transform, inverse_transform_with_trace,

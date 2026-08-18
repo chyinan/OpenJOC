@@ -14,8 +14,9 @@
 
 use openjoc_eac3::{
     ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata, InternalBasePolicy,
-    JocAccessUnitPcmDecoder, JocMetadataFrame, extract_joc_access_unit_for_profile,
-    group_access_units, index_syncframes, parse_joc_access_unit, validate_complexity_index,
+    JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode,
+    extract_joc_access_unit_for_profile, group_access_units, index_syncframes,
+    parse_joc_access_unit, stereo_downmix_matrix, validate_complexity_index,
     validate_joc_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
@@ -1131,23 +1132,11 @@ fn base_coordinate(location: ChannelLocation) -> Result<BaseFullBandCoordinate, 
     })
 }
 
-fn selected_stereo_policy(requested: DownmixPolicy, metadata: DownmixMetadata) -> DownmixPolicy {
-    match requested {
-        DownmixPolicy::Auto => match metadata.dmixmod {
-            Some(1) => DownmixPolicy::LtRt,
-            _ => DownmixPolicy::LoRo,
-        },
-        explicit => explicit,
-    }
-}
-
-fn mix_level(code: Option<u8>, table: [f64; 8], default: f64, reserved: f64) -> f64 {
-    match code {
-        Some(code @ 0..=7) => {
-            let value = table[usize::from(code)];
-            if value.is_finite() { value } else { reserved }
-        }
-        _ => default,
+const fn stereo_downmix_mode(policy: DownmixPolicy) -> StereoDownmixMode {
+    match policy {
+        DownmixPolicy::Auto => StereoDownmixMode::Auto,
+        DownmixPolicy::LoRo => StereoDownmixMode::LoRo,
+        DownmixPolicy::LtRt => StereoDownmixMode::LtRt,
     }
 }
 
@@ -1156,83 +1145,15 @@ fn add_stereo_base_downmix(
     base: &DecodedAccessUnitPcm,
     requested: DownmixPolicy,
 ) -> Result<(), OpenJocError> {
-    const DEFAULT_LEVEL: f64 = 0.707;
-    const CENTER_LEVELS: [f64; 8] = [1.414, 1.189, 1.0, 0.841, 0.707, 0.595, 0.5, 0.0];
-    const SURROUND_LEVELS: [f64; 8] = [f64::NAN, f64::NAN, f64::NAN, 0.841, 0.707, 0.595, 0.5, 0.0];
-    if active.len() != 2 {
-        return Err(OpenJocError::Render(
-            "stereo output needs two active channels".to_owned(),
-        ));
-    }
-    let selected = selected_stereo_policy(requested, base.downmix);
-    let center = match selected {
-        DownmixPolicy::LoRo => mix_level(
-            base.downmix.loro_center_mix_level,
-            CENTER_LEVELS,
-            DEFAULT_LEVEL,
-            DEFAULT_LEVEL,
-        ),
-        _ => mix_level(
-            base.downmix.ltrt_center_mix_level,
-            CENTER_LEVELS,
-            DEFAULT_LEVEL,
-            DEFAULT_LEVEL,
-        ),
-    };
-    let surround = match selected {
-        DownmixPolicy::LoRo => mix_level(
-            base.downmix.loro_surround_mix_level,
-            SURROUND_LEVELS,
-            DEFAULT_LEVEL,
-            0.841,
-        ),
-        _ => mix_level(
-            base.downmix.ltrt_surround_mix_level,
-            SURROUND_LEVELS,
-            DEFAULT_LEVEL,
-            0.841,
-        ),
-    };
-    let lfe = base
-        .downmix
-        .lfe_mix_level_code
-        .map(|code| 10.0_f64.powf((10.0 - f64::from(code) - 4.5) / 20.0));
-    for (channel, location) in base.channels.iter().zip(&base.channel_locations) {
-        let (left, right) = match *location {
-            ChannelLocation::Left => (1.0, 0.0),
-            ChannelLocation::Right => (0.0, 1.0),
-            ChannelLocation::Centre => (center, center),
-            ChannelLocation::LeftSurround => match selected {
-                DownmixPolicy::LoRo => (surround, 0.0),
-                _ => (-surround, surround),
-            },
-            ChannelLocation::RightSurround => match selected {
-                DownmixPolicy::LoRo => (0.0, surround),
-                _ => (-surround, surround),
-            },
-            ChannelLocation::Other(3) => match selected {
-                DownmixPolicy::LoRo => (0.7 * surround, 0.7 * surround),
-                _ => (-surround, surround),
-            },
-            unsupported => {
-                return Err(OpenJocError::Render(format!(
-                    "2.0 downmix does not admit Base channel {}",
-                    unsupported.label()
-                )));
-            }
-        };
-        for (index, value) in channel.iter().copied().enumerate() {
-            active[0][index] += left * value;
-            active[1][index] += right * value;
-        }
-    }
-    if let (Some(channel), Some(gain)) = (base.lfe.as_deref(), lfe) {
-        for (index, value) in channel.iter().copied().enumerate() {
-            active[0][index] += gain * value;
-            active[1][index] += gain * value;
-        }
-    }
-    Ok(())
+    let matrix = stereo_downmix_matrix(
+        stereo_downmix_mode(requested),
+        base.downmix,
+        &base.channel_locations,
+    )
+    .map_err(|error| OpenJocError::Render(error.to_string()))?;
+    matrix
+        .apply(base, active)
+        .map_err(|error| OpenJocError::Render(error.to_string()))
 }
 
 #[derive(Debug)]

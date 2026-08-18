@@ -638,6 +638,18 @@ selected public E-AC-3 policy:
   excluded. No crossover, subwoofer redirect, or other bass-management DSP is
   performed.
 
+The unscaled equations are followed by ETSI TS 102 366 clause 6.8 overload-
+protection scaling: all coefficients contributing to a given stereo output
+row are attenuated by one common factor so that its absolute coefficient sum
+does not exceed one. OpenJOC selects that factor per actual decoded matrix
+configuration, including an explicitly admitted LFE coefficient. This is a
+fixed downmix matrix property, not peak normalization, limiting, clipping, or
+mastering. For the ordinary 5.1/default levels the factors are `1/2.414`
+(`0.41425...`, Lo/Ro) and `1/3.121` (`0.32041...`, Lt/Rt), while center,
+surround, and Lt/Rt polarity relationships remain unchanged. LFE is excluded
+unless its metadata is present; when admitted, its public fold-down
+coefficient receives the same matrix scale.
+
 The admitted 2.0 Base matrix is constrained to L/R/C/Ls/Rs and mono surround
 (`Cs`) locations. Base back/height channels are rejected rather than reduced
 with an invented coefficient. `--downmix` is a 2.0 speaker policy and cannot
