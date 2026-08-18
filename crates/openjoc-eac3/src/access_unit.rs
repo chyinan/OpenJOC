@@ -3,7 +3,7 @@
 //! TS 103 420 E-AC-3 access-unit audio assembly.
 
 use crate::{
-    AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm,
+    AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, DownmixMetadata,
     Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy, StreamType, SyncframeIndexEntry,
     audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
     inspect_audio_block_carriers, parse_bsi,
@@ -25,6 +25,8 @@ pub struct DecodedAccessUnitPcm {
     /// Logical LFE location retained in [`Self::lfe`], when present.
     pub lfe_location: Option<ChannelLocation>,
     pub lfe: Option<Vec<f64>>,
+    /// E-AC-3 mixing metadata owned by this decoded programme frame.
+    pub downmix: DownmixMetadata,
 }
 
 impl DecodedAccessUnitPcm {
@@ -585,6 +587,11 @@ fn merge_substreams(
         channels,
         lfe_location,
         lfe,
+        downmix: if independent_info.downmix == DownmixMetadata::default() {
+            dependent.map_or_else(DownmixMetadata::default, |(info, _)| info.downmix)
+        } else {
+            independent_info.downmix
+        },
     })
 }
 
@@ -683,6 +690,7 @@ mod tests {
             dialnorm_2: None,
             compr: None,
             compr_2: None,
+            downmix: DownmixMetadata::default(),
             channel_map,
             addbsi: None,
         }
@@ -992,6 +1000,7 @@ mod tests {
             channels: vec![vec![1.0]],
             lfe_location: None,
             lfe: None,
+            downmix: DownmixMetadata::default(),
         };
         assert_eq!(
             mono.validate_joc_topology(),
@@ -1014,6 +1023,7 @@ mod tests {
             channels: vec![vec![1.0]; 5],
             lfe_location: Some(ChannelLocation::Lfe(1)),
             lfe: Some(vec![2.0]),
+            downmix: DownmixMetadata::default(),
         };
         assert!(matches!(
             lfe2.validate_joc_topology(),

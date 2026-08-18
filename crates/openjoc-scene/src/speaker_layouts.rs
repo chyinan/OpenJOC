@@ -10,9 +10,13 @@ use crate::{
 use std::fmt;
 
 /// Public speaker presets exposed by the JOC speaker-rendering workflow.
-pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 11] = [
-    "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 12] = [
+    "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
+    "9.1.6",
 ];
+
+/// Canonical channel order for the admitted 2.0 speaker pair.
+pub const SPEAKER_LAYOUT_2_0_CHANNELS: [&str; 2] = ["FL", "FR"];
 
 /// Canonical channel order for the 5.1 family.
 pub const SPEAKER_LAYOUT_5_1_CHANNELS: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
@@ -205,9 +209,10 @@ pub struct SpeakerLayoutPreset {
 }
 
 impl SpeakerLayoutPreset {
-    /// Returns one of the eleven public speaker presets.
+    /// Returns one of the twelve public speaker presets.
     pub fn for_name(name: &str) -> Result<Self, SpeakerLayoutPresetError> {
         match name {
+            "2.0" => speaker_layout_2_0_preset(),
             "5.1" => speaker_layout_5_1_preset(),
             "5.1.2" => speaker_layout_5_1_2_preset(),
             "5.1.4" => speaker_layout_5_1_4_preset(),
@@ -294,6 +299,28 @@ pub fn speaker_channel_mask_for_labels(labels: &[&str]) -> Result<u32, SpeakerCh
         return Err(SpeakerChannelMaskError::NonAscendingOrder);
     }
     Ok(bits.into_iter().fold(0, |mask, bit| mask | bit))
+}
+
+/// Returns the 2.0 [`SpatialLayout`] topology.
+pub fn speaker_layout_2_0() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_2_0_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 2.0 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
+fn speaker_layout_2_0_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    generic_preset(
+        "2.0",
+        &SPEAKER_LAYOUT_2_0_CHANNELS,
+        None,
+        vec![bed_layer(vec![row(
+            0.0,
+            vec![anchor("FL", 0.0, 0.0, 0.0), anchor("FR", QMAX, 0.0, 0.0)],
+        )])],
+    )
 }
 
 /// Returns the 5.1.4 [`SpatialLayout`] topology.

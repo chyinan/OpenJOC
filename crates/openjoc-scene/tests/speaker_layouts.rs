@@ -39,10 +39,15 @@ fn public_presets_have_the_admitted_names_and_backend_contracts() {
     assert_eq!(
         SPEAKER_LAYOUT_PRESET_NAMES,
         [
-            "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
-            "9.1.6",
+            "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2",
+            "9.1.4", "9.1.6",
         ]
     );
+    let stereo = SpeakerLayoutPreset::for_name("2.0").expect("2.0 public preset");
+    assert_eq!(stereo.channel_labels(), vec!["FL", "FR"]);
+    assert_eq!(stereo.channel_count(), 2);
+    assert_eq!(stereo.lfe_index(), None);
+    assert_eq!(stereo.wav_channel_mask(), Some(0x0000_0003));
     let expected = [
         ("5.1", 6, 0x0000_060f),
         ("5.1.2", 8, 0x0000_560f),
@@ -111,6 +116,27 @@ fn public_presets_have_the_admitted_names_and_backend_contracts() {
         assert_eq!(preset.channel_labels(), labels);
     }
     assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
+}
+
+#[test]
+fn two_point_zero_reuses_generic_full_xyz_projection() {
+    let preset = SpeakerLayoutPreset::for_name("2.0").expect("2.0 preset");
+    let left = preset.layout.project(&point(0.0, 0.0, 0.0)).unwrap();
+    let right = preset.layout.project(&point(QMAX, 0.0, 0.0)).unwrap();
+    let center = preset.layout.project(&point(0.5, 0.0, 0.0)).unwrap();
+    let rear = preset.layout.project(&point(0.5, QMAX, 0.0)).unwrap();
+    let height = preset.layout.project(&point(0.5, 0.0, QMAX)).unwrap();
+    let negative_z = preset.layout.project(&point(0.5, 0.0, -QMAX)).unwrap();
+    assert_eq!(left, vec![1.0, 0.0]);
+    assert_eq!(right, vec![0.0, 1.0]);
+    assert_unit_l2(&center);
+    assert_unit_l2(&rear);
+    assert_unit_l2(&height);
+    assert_unit_l2(&negative_z);
+    assert!(center[0] > 0.0 && center[1] > 0.0);
+    assert_eq!(rear, center);
+    assert_eq!(height, center);
+    assert_eq!(negative_z, center);
 }
 
 #[test]

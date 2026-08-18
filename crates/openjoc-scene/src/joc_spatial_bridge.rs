@@ -25,7 +25,8 @@ const CHANNEL_LOCK_THRESHOLD_SQUARED: f64 = 0.04;
 const UPPER_A: f64 = 0.5011872_f32 as f64;
 const UPPER_B: f64 = 0.70794576_f32 as f64;
 const UPPER_C: f64 = 1.0;
-const NAMED_PUBLIC_LAYOUTS: [(&str, &[&str]); 11] = [
+const NAMED_PUBLIC_LAYOUTS: [(&str, &[&str]); 12] = [
+    ("2.0", &["FL", "FR"]),
     ("5.1", &["FL", "FR", "FC", "Ls", "Rs"]),
     ("5.1.2", &["FL", "FR", "FC", "Ls", "Rs", "TFL", "TFR"]),
     (
@@ -1865,6 +1866,7 @@ fn named_upper_candidates<'a>(
 
 fn named_matrix_direct_ids(layout: &str) -> &'static [u8] {
     match layout {
+        "2.0" => &[0, 1],
         "5.1" => &[0, 1, 2],
         "5.1.2" => &[0, 1, 2, 9, 15],
         "5.1.4" => &[0, 1, 2, 9, 10, 15],

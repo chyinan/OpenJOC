@@ -555,6 +555,45 @@ fn parses_custom_channel_map_on_a_dependent_substream() {
 }
 
 #[test]
+fn parses_public_eac3_stereo_downmix_and_optional_lfe_metadata() {
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(0, 2); // independent
+    bits.push(0, 3);
+    bits.push(15, 11); // 32-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(0, 2); // one block
+    bits.push(7, 3); // 3/2
+    bits.push(1, 1); // LFE
+    bits.push(16, 5);
+    bits.push(31, 5); // dialnorm
+    bits.push(0, 1); // no compression word
+    bits.push(1, 1); // mixing metadata
+    bits.push(1, 2); // dmixmod: Lt/Rt preferred
+    bits.push(4, 3); // Lt/Rt center mix level
+    bits.push(2, 3); // Lo/Ro center mix level
+    bits.push(4, 3); // Lt/Rt surround mix level
+    bits.push(5, 3); // Lo/Ro surround mix level
+    bits.push(1, 1); // LFE mix level code exists
+    bits.push(31, 5); // -21 dB LFE level
+    bits.push(0, 1); // pgmscle
+    bits.push(0, 1); // extpgmscle
+    bits.push(0, 2); // mixdef: no mixdata
+    bits.push(0, 1); // frmmixcfginfoe
+    bits.push(0, 1); // no informational metadata
+    bits.push(0, 1); // convsync
+    bits.push(0, 1); // no addbsi
+
+    let bsi = parse_bsi(&bits.bytes(32)).expect("valid stereo metadata BSI");
+    assert_eq!(bsi.downmix.dmixmod, Some(1));
+    assert_eq!(bsi.downmix.ltrt_center_mix_level, Some(4));
+    assert_eq!(bsi.downmix.loro_center_mix_level, Some(2));
+    assert_eq!(bsi.downmix.ltrt_surround_mix_level, Some(4));
+    assert_eq!(bsi.downmix.loro_surround_mix_level, Some(5));
+    assert_eq!(bsi.downmix.lfe_mix_level_code, Some(31));
+}
+
+#[test]
 fn decodes_an_indexed_independent_joc_access_unit_to_pcm() {
     let bytes = six_block_mono_frame(0, None, Some(0xa5));
     let frames = index_syncframes(&bytes).expect("indexed frame");

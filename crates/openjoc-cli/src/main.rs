@@ -46,7 +46,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -97,6 +97,7 @@ struct RenderJocArgs {
     no_progress: bool,
     performance_report: Option<PathBuf>,
     diagnostic_contribution: SpatialContributionMode,
+    downmix_policy: Option<joc_render::StereoDownmixPolicy>,
     overwrite: bool,
 }
 
@@ -188,8 +189,8 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
-        "  render-joc supported presets: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt] [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
+        "  render-joc supported presets: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -213,9 +214,10 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt] [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
+        "                         [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
         "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
         "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
         "                         [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
@@ -262,7 +264,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
-        "  render-joc SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6; bridge control is automatic by default\n",
+        "  render-joc SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6; bridge control is automatic by default\n",
         "  GENERIC/CUSTOM LIBRARY CAPABILITY: use openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format\n",
     ));
     Ok(())
@@ -304,7 +306,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders explicit static sources transactionally to stereo float32 WAV.\n",
         ),
         "render-joc" => concat!(
-            "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <LAYOUT> --output <OUTPUT.wav|OUTPUT.caf>\n",
+            "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|LAYOUT> --output <OUTPUT.wav|OUTPUT.caf>\n",
+            "       [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
             "       [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N]\n",
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
@@ -315,7 +318,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
             "--drc controls encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
-            "SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
+            "SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
@@ -915,6 +918,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut no_progress = false;
     let mut performance_report = None;
     let mut diagnostic_contribution = SpatialContributionMode::Full;
+    let mut downmix_policy = None;
     let mut overwrite = false;
     let mut index = 1;
     while index < values.len() {
@@ -1026,6 +1030,16 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
                     }
                 };
             }
+            "--downmix" => {
+                if downmix_policy.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--downmix may be supplied only once",
+                    )
+                    .into());
+                }
+                downmix_policy = Some(parse_downmix_policy(value)?);
+            }
             _ => return Err(usage_error().into()),
         }
         index += 2;
@@ -1058,6 +1072,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         no_progress,
         performance_report,
         diagnostic_contribution,
+        downmix_policy,
         overwrite,
     })
 }
@@ -1069,6 +1084,18 @@ fn parse_internal_base_policy(value: &str) -> Result<InternalBasePolicy, io::Err
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("unknown internal base policy {value}; expected current-default or codec-core"),
+        )),
+    }
+}
+
+fn parse_downmix_policy(value: &str) -> Result<joc_render::StereoDownmixPolicy, io::Error> {
+    match value {
+        "auto" | "AUTO" => Ok(joc_render::StereoDownmixPolicy::Auto),
+        "loro" | "LO_RO" | "LO/RO" => Ok(joc_render::StereoDownmixPolicy::LoRo),
+        "ltrt" | "LT_RT" | "LT/RT" => Ok(joc_render::StereoDownmixPolicy::LtRt),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown downmix policy {value}; expected auto, loro, or ltrt"),
         )),
     }
 }
@@ -1430,7 +1457,21 @@ fn render_joc_preflight(
     // state or opening/decoding the input stream. In particular, a blocked
     // speaker-WAV mapping must never prompt about an existing target first.
     joc_render::validate_speaker_output(&arguments.layout, &arguments.output)?;
+    if arguments.downmix_policy.is_some() && arguments.layout != "2.0" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--downmix is only meaningful with --layout 2.0",
+        )
+        .into());
+    }
     if arguments.binaural_sofa.is_some() {
+        if arguments.downmix_policy.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "--downmix is a 2.0 speaker policy and cannot be combined with --binaural-sofa",
+            )
+            .into());
+        }
         joc_render::validate_binaural_layout(&arguments.layout)?;
     } else if arguments.lfe_policy.is_some() || arguments.binaural_backend_requested {
         return Err(io::Error::new(
@@ -1697,6 +1738,7 @@ fn render_joc(
                 arguments.diagnostic_contribution,
             )?
         };
+        renderer.set_downmix_policy(arguments.downmix_policy.unwrap_or_default())?;
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
@@ -3585,6 +3627,27 @@ mod profile_name_tests {
     }
 
     #[test]
+    fn render_joc_stereo_policy_defaults_to_auto_and_accepts_only_stereo_matrix_names() {
+        let base = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "2.0".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+        ];
+        let parsed = parse_render_joc(&base).expect("2.0 defaults to Auto");
+        assert_eq!(parsed.downmix_policy, None);
+
+        let mut explicit = base.to_vec();
+        explicit.extend(["--downmix".to_owned(), "ltrt".to_owned()]);
+        let parsed = parse_render_joc(&explicit).expect("Lt/Rt policy");
+        assert_eq!(
+            parsed.downmix_policy,
+            Some(joc_render::StereoDownmixPolicy::LtRt)
+        );
+    }
+
+    #[test]
     fn legacy_cli_profile_name_is_input_only_alias() {
         assert_eq!(
             parse_validation_profile("dolby-vendor-compat").expect("legacy alias"),
@@ -3924,7 +3987,7 @@ mod retention_tests {
 #[cfg(test)]
 mod internal_base_tests {
     use super::InternalBasePcm;
-    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
+    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata};
 
     fn frame(value: f64, lfe: Option<f64>) -> DecodedAccessUnitPcm {
         DecodedAccessUnitPcm {
@@ -3942,6 +4005,7 @@ mod internal_base_tests {
                 .collect(),
             lfe_location: lfe.map(|_| ChannelLocation::Lfe(0)),
             lfe: lfe.map(|value| vec![value, value + 0.5]),
+            downmix: DownmixMetadata::default(),
         }
     }
 

@@ -2810,8 +2810,10 @@ that feeds JOC; it does not reuse Q32 spatial gains or alter object projection.
 
 ETSI TS 102 366 clauses 6.8.0-6.8.2 and Annex D clauses D.1.3.2-D.2.1.2 were
 audited for Lo/Ro, Lt/Rt, `dmixmod`, center/surround coefficients, matrix phase,
-and LFE rules. OpenJOC does not expose those policies publicly: its current
-JOC output contract has no admitted 2.0 speaker layout, stereo bass-management
-or LFE fold-down ownership. Exact downmix equations are documented in the
-private audit artifacts, but no partial downmix implementation or CLI flag is
-claimed here.
+and LFE rules. The admitted `2.0` speaker contract applies those public matrices
+after JOC reconstruction to supported L/R/C/Ls/Rs/Cs Base channels. Auto uses
+`dmixmod` with deterministic Lo/Ro fallback; optional `lfemixlevcode` controls
+LFE fold-down and absent metadata excludes LFE. Base back/height channels fail
+closed because the public 6.8 matrix does not define their reduction. This is
+normative/public-specification behavior, not binaural/HRIR rendering or
+bass-management DSP.

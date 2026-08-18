@@ -950,10 +950,27 @@ pub struct BitstreamInformation {
     pub compr: Option<u8>,
     /// Syncframe-level RF/heavy-compression word for dual-mono channel 2.
     pub compr_2: Option<u8>,
+    /// E-AC-3 mixing metadata used by an admitted stereo downmix.
+    pub downmix: DownmixMetadata,
     /// Custom channel map for a dependent substream, in the MSB-first table
     /// E.1.4 representation. `None` means the `acmod`/`lfeon` mapping applies.
     pub channel_map: Option<u16>,
     pub addbsi: Option<Vec<u8>>,
+}
+
+/// Raw E-AC-3 stereo-downmix metadata from E.1.2.2.
+///
+/// The fields remain raw bitstream codes. Decoder/render policy converts them
+/// to coefficients only at the 2.0 speaker-output boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DownmixMetadata {
+    pub dmixmod: Option<u8>,
+    pub ltrt_center_mix_level: Option<u8>,
+    pub loro_center_mix_level: Option<u8>,
+    pub ltrt_surround_mix_level: Option<u8>,
+    pub loro_surround_mix_level: Option<u8>,
+    /// `Some(code)` means `lfemixlevcode` was present and enabled.
+    pub lfe_mix_level_code: Option<u8>,
 }
 
 /// E.1.2.3 frame state required to decode each following audio block.
@@ -1115,9 +1132,11 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
     } else {
         None
     };
-    if bits.read_bit()? {
-        parse_mixing_metadata(bits, header.stream_type, acmod, lfe_on, num_blocks_code)?;
-    }
+    let downmix = if bits.read_bit()? {
+        parse_mixing_metadata(bits, header.stream_type, acmod, lfe_on, num_blocks_code)?
+    } else {
+        DownmixMetadata::default()
+    };
     if bits.read_bit()? {
         parse_informational_metadata(bits, acmod)?;
     }
@@ -1150,6 +1169,7 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
             dialnorm_2,
             compr,
             compr_2,
+            downmix,
             channel_map,
             addbsi,
         },
@@ -1538,21 +1558,33 @@ fn parse_mixing_metadata(
     acmod: u8,
     lfe_on: bool,
     num_blocks_code: u8,
-) -> Result<(), Eac3Error> {
-    if acmod > 2 {
-        skip(bits, 2)?;
-    }
-    if acmod & 1 != 0 && acmod > 2 {
-        skip(bits, 6)?;
-    }
-    if acmod & 4 != 0 {
-        skip(bits, 6)?;
-    }
-    if lfe_on && bits.read_bit()? {
-        skip(bits, 5)?;
-    }
+) -> Result<DownmixMetadata, Eac3Error> {
+    let dmixmod = (acmod > 2).then(|| read_u8(bits, 2)).transpose()?;
+    let (ltrt_center_mix_level, loro_center_mix_level) = if acmod & 1 != 0 && acmod > 2 {
+        (Some(read_u8(bits, 3)?), Some(read_u8(bits, 3)?))
+    } else {
+        (None, None)
+    };
+    let (ltrt_surround_mix_level, loro_surround_mix_level) = if acmod & 4 != 0 {
+        (Some(read_u8(bits, 3)?), Some(read_u8(bits, 3)?))
+    } else {
+        (None, None)
+    };
+    let lfe_mix_level_code = if lfe_on && bits.read_bit()? {
+        Some(read_u8(bits, 5)?)
+    } else {
+        None
+    };
+    let metadata = DownmixMetadata {
+        dmixmod,
+        ltrt_center_mix_level,
+        loro_center_mix_level,
+        ltrt_surround_mix_level,
+        loro_surround_mix_level,
+        lfe_mix_level_code,
+    };
     if stream_type != StreamType::Independent {
-        return Ok(());
+        return Ok(metadata);
     }
     skip_optional(bits, 6)?;
     if acmod == 0 {
@@ -1589,7 +1621,7 @@ fn parse_mixing_metadata(
             }
         }
     }
-    Ok(())
+    Ok(metadata)
 }
 
 fn parse_informational_metadata(bits: &mut BitReader<'_>, acmod: u8) -> Result<(), Eac3Error> {

@@ -5,7 +5,7 @@
 //! row order.
 
 use crate::performance::RenderStageTiming;
-use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, JocMetadataFrame};
+use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata, JocMetadataFrame};
 use openjoc_emdf::JocValidationProfile;
 use openjoc_joc::{
     AlignedReconstructionOutput, ReconstructionBasis, ReconstructionOutputTimeline,
@@ -42,7 +42,28 @@ pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
 pub const JOC_RENDER_LAYOUT: &str = "5.1";
 #[cfg(test)]
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = SPEAKER_LAYOUT_5_1_CHANNELS;
-pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 11] = SPEAKER_LAYOUT_PRESET_NAMES;
+pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 12] = SPEAKER_LAYOUT_PRESET_NAMES;
+
+/// Channel-based stereo downmix policy for the admitted 2.0 speaker output.
+/// This is intentionally separate from the binaural/SOFA output mode.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StereoDownmixPolicy {
+    #[default]
+    Auto,
+    LoRo,
+    LtRt,
+}
+
+impl StereoDownmixPolicy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::LoRo => "loro",
+            Self::LtRt => "ltrt",
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum JocRenderError {
@@ -382,6 +403,7 @@ struct PendingRenderFrame {
     frame: DecodedPayloadFrame,
     channel_locations: Vec<ChannelLocation>,
     lfe_location: Option<ChannelLocation>,
+    downmix: DownmixMetadata,
 }
 
 #[derive(Debug)]
@@ -401,6 +423,7 @@ pub struct JocSpeakerRenderer {
     selected_profile: Option<JocValidationProfile>,
     deviations: BTreeSet<String>,
     contribution_mode: SpatialContributionMode,
+    downmix_policy: StereoDownmixPolicy,
     stage_timings: RenderStageTiming,
     stage_timing_enabled: bool,
 }
@@ -448,6 +471,7 @@ impl JocSpeakerRenderer {
             selected_profile: None,
             deviations: BTreeSet::new(),
             contribution_mode,
+            downmix_policy: StereoDownmixPolicy::Auto,
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
         })
@@ -483,9 +507,25 @@ impl JocSpeakerRenderer {
             selected_profile: None,
             deviations: BTreeSet::new(),
             contribution_mode,
+            downmix_policy: StereoDownmixPolicy::Auto,
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
         })
+    }
+
+    /// Selects the channel-based stereo policy for the 2.0 speaker preset.
+    /// Other speaker layouts reject an explicit stereo matrix policy.
+    pub fn set_downmix_policy(
+        &mut self,
+        policy: StereoDownmixPolicy,
+    ) -> Result<(), JocRenderError> {
+        if self.preset.name != "2.0" && policy != StereoDownmixPolicy::Auto {
+            return Err(JocRenderError::InvalidControl(
+                "--downmix is only meaningful with --layout 2.0".to_owned(),
+            ));
+        }
+        self.downmix_policy = policy;
+        Ok(())
     }
 
     /// Compatibility entry point for already aligned/synthetic bridge frames.
@@ -546,6 +586,7 @@ impl JocSpeakerRenderer {
             frame: frame.clone(),
             channel_locations: base.channel_locations.clone(),
             lfe_location: base.lfe_location,
+            downmix: base.downmix,
         });
         self.next_input_frame = self
             .next_input_frame
@@ -619,6 +660,7 @@ impl JocSpeakerRenderer {
             return Err(JocRenderError::FrameSampleCount);
         }
         let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
+        let stereo_speaker = self.preset.name == "2.0";
         let automatic_frame = if let Some(assembler) = self.assembler.as_mut() {
             let start = self.stage_timing_enabled.then(Instant::now);
             let frame = assembler.assemble_frame(frame, &base_coordinates, None)?;
@@ -635,7 +677,9 @@ impl JocSpeakerRenderer {
                 &bridge_frame,
                 &control_frame,
                 sample_count,
+                base,
                 &mut active,
+                stereo_speaker,
             )?;
             if let Some(start) = start {
                 self.stage_timings.spatial_bridge_render += start.elapsed();
@@ -650,9 +694,14 @@ impl JocSpeakerRenderer {
                 .then_some(&control.topology);
             let updates = update_index.map(|index| control.updates[index].updates.as_slice());
             let start = self.stage_timing_enabled.then(Instant::now);
+            let bridge_contribution = if stereo_speaker {
+                SpatialContributionMode::ReconstructionOnly
+            } else {
+                self.contribution_mode
+            };
             self.bridge.render_codec_basis_frame_with_contribution(
                 &bridge_frame,
-                self.contribution_mode,
+                bridge_contribution,
                 topology,
                 updates,
                 &self.preset.layout,
@@ -661,6 +710,9 @@ impl JocSpeakerRenderer {
             )?;
             if let Some(start) = start {
                 self.stage_timings.spatial_bridge_render += start.elapsed();
+            }
+            if stereo_speaker && self.contribution_mode.includes_base() {
+                add_stereo_base_downmix(&mut active, base, self.downmix_policy)?;
             }
         }
 
@@ -727,7 +779,9 @@ impl JocSpeakerRenderer {
         bridge_frame: &openjoc_scene::JocSpatialReconstructionFrame<'_>,
         control_frame: &BridgeControlFrame,
         sample_count: usize,
+        base: &DecodedAccessUnitPcm,
         active: &mut [Vec<f64>],
+        stereo_speaker: bool,
     ) -> Result<(), JocRenderError> {
         let mut boundaries = vec![0_usize, sample_count];
         for event in &control_frame.events {
@@ -744,15 +798,16 @@ impl JocSpeakerRenderer {
         }
         boundaries.sort_unstable();
         boundaries.dedup();
-        let zero_pcm = (!matches!(self.contribution_mode, SpatialContributionMode::Full))
-            .then(|| vec![0.0; sample_count]);
-        let zero_pcm = zero_pcm.as_deref().unwrap_or(&[]);
+        let zero_storage = (stereo_speaker
+            || !matches!(self.contribution_mode, SpatialContributionMode::Full))
+        .then(|| vec![0.0; sample_count]);
+        let zero_pcm = zero_storage.as_deref().unwrap_or(&[]);
         let mut coordinates = Vec::with_capacity(
             bridge_frame.basis.base_full_band_pcm.len()
                 + bridge_frame.basis.reconstruction_basis.rows.len(),
         );
         coordinates.extend(bridge_frame.basis.base_full_band_pcm.iter().map(|pcm| {
-            if self.contribution_mode.includes_base() {
+            if !stereo_speaker && self.contribution_mode.includes_base() {
                 pcm.as_slice()
             } else {
                 zero_pcm
@@ -803,6 +858,9 @@ impl JocSpeakerRenderer {
                 bridge_frame.sample_rate,
                 &mut output_planes,
             )?;
+        }
+        if stereo_speaker && self.contribution_mode.includes_base() {
+            add_stereo_base_downmix(active, base, self.downmix_policy)?;
         }
         Ok(())
     }
@@ -905,10 +963,11 @@ impl JocSpeakerRenderer {
             )
         };
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nQMF round-trip latency: {} samples\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic{}",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\ndownmix policy: {}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nQMF round-trip latency: {} samples\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic{}",
             self.preset.name,
             self.preset.channel_count(),
             self.preset.lfe_index(),
+            self.downmix_policy.as_str(),
             requested_profile.as_str(),
             selected.as_str(),
             deviations,
@@ -1688,6 +1747,136 @@ fn base_coordinate(location: ChannelLocation) -> Result<BaseFullBandCoordinate, 
     })
 }
 
+fn selected_stereo_policy(
+    requested: StereoDownmixPolicy,
+    metadata: DownmixMetadata,
+) -> StereoDownmixPolicy {
+    match requested {
+        StereoDownmixPolicy::Auto => match metadata.dmixmod {
+            Some(1) => StereoDownmixPolicy::LtRt,
+            _ => StereoDownmixPolicy::LoRo,
+        },
+        explicit => explicit,
+    }
+}
+
+fn mix_level(code: Option<u8>, table: [f64; 8], default: f64, reserved: f64) -> f64 {
+    match code {
+        Some(code @ 0..=7) => {
+            let value = table[usize::from(code)];
+            if value.is_finite() { value } else { reserved }
+        }
+        _ => default,
+    }
+}
+
+type StereoDownmixCoefficients = (StereoDownmixPolicy, Vec<(f64, f64)>, Option<f64>);
+
+fn stereo_downmix_coefficients(
+    requested: StereoDownmixPolicy,
+    metadata: DownmixMetadata,
+    locations: &[ChannelLocation],
+) -> Result<StereoDownmixCoefficients, JocRenderError> {
+    const DEFAULT_LEVEL: f64 = 0.707;
+    const CENTER_LEVELS: [f64; 8] = [1.414, 1.189, 1.0, 0.841, 0.707, 0.595, 0.5, 0.0];
+    const SURROUND_LEVELS: [f64; 8] = [f64::NAN, f64::NAN, f64::NAN, 0.841, 0.707, 0.595, 0.5, 0.0];
+    let selected = selected_stereo_policy(requested, metadata);
+    let center = match selected {
+        StereoDownmixPolicy::LoRo => mix_level(
+            metadata.loro_center_mix_level,
+            CENTER_LEVELS,
+            DEFAULT_LEVEL,
+            DEFAULT_LEVEL,
+        ),
+        StereoDownmixPolicy::LtRt | StereoDownmixPolicy::Auto => mix_level(
+            metadata.ltrt_center_mix_level,
+            CENTER_LEVELS,
+            DEFAULT_LEVEL,
+            DEFAULT_LEVEL,
+        ),
+    };
+    let surround = match selected {
+        StereoDownmixPolicy::LoRo => mix_level(
+            metadata.loro_surround_mix_level,
+            SURROUND_LEVELS,
+            DEFAULT_LEVEL,
+            0.841,
+        ),
+        StereoDownmixPolicy::LtRt | StereoDownmixPolicy::Auto => mix_level(
+            metadata.ltrt_surround_mix_level,
+            SURROUND_LEVELS,
+            DEFAULT_LEVEL,
+            0.841,
+        ),
+    };
+    let mut coefficients = Vec::with_capacity(locations.len());
+    for location in locations {
+        let coefficient = match *location {
+            ChannelLocation::Left => (1.0, 0.0),
+            ChannelLocation::Right => (0.0, 1.0),
+            ChannelLocation::Centre => (center, center),
+            ChannelLocation::LeftSurround => match selected {
+                StereoDownmixPolicy::LoRo => (surround, 0.0),
+                _ => (-surround, surround),
+            },
+            ChannelLocation::RightSurround => match selected {
+                StereoDownmixPolicy::LoRo => (0.0, surround),
+                _ => (-surround, surround),
+            },
+            ChannelLocation::Other(3) => match selected {
+                StereoDownmixPolicy::LoRo => (0.7 * surround, 0.7 * surround),
+                _ => (-surround, surround),
+            },
+            unsupported => {
+                return Err(JocRenderError::InvalidControl(format!(
+                    "2.0 E-AC-3 stereo downmix does not admit Base channel {}",
+                    unsupported.label()
+                )));
+            }
+        };
+        coefficients.push(coefficient);
+    }
+    let lfe = metadata.lfe_mix_level_code.map(|code| {
+        let db = 10.0 - f64::from(code) - 4.5;
+        10.0_f64.powf(db / 20.0)
+    });
+    Ok((selected, coefficients, lfe))
+}
+
+fn add_stereo_base_downmix(
+    active: &mut [Vec<f64>],
+    base: &DecodedAccessUnitPcm,
+    policy: StereoDownmixPolicy,
+) -> Result<(), JocRenderError> {
+    if active.len() != 2 {
+        return Err(JocRenderError::InvalidControl(
+            "2.0 downmix requires exactly two active output channels".to_owned(),
+        ));
+    }
+    let (_, coefficients, lfe_coefficient) =
+        stereo_downmix_coefficients(policy, base.downmix, &base.channel_locations)?;
+    let sample_count = base.samples as usize;
+    for (channel, &(left, right)) in base.channels.iter().zip(&coefficients) {
+        if channel.len() != sample_count {
+            return Err(JocRenderError::FrameSampleCount);
+        }
+        for (sample, value) in channel.iter().copied().enumerate() {
+            active[0][sample] += left * value;
+            active[1][sample] += right * value;
+        }
+    }
+    if let (Some(lfe), Some(coefficient)) = (base.lfe.as_deref(), lfe_coefficient) {
+        if lfe.len() != sample_count {
+            return Err(JocRenderError::FrameSampleCount);
+        }
+        for (sample, value) in lfe.iter().copied().enumerate() {
+            active[0][sample] += coefficient * value;
+            active[1][sample] += coefficient * value;
+        }
+    }
+    Ok(())
+}
+
 fn aligned_base_pcm(
     pending: &PendingRenderFrame,
     aligned: &AlignedReconstructionOutput,
@@ -1700,6 +1889,7 @@ fn aligned_base_pcm(
         channels: aligned.base_full_band_pcm.clone(),
         lfe_location: pending.lfe_location,
         lfe: aligned.lfe_pcm.clone(),
+        downmix: pending.downmix,
     }
 }
 
@@ -2213,10 +2403,11 @@ mod tests {
         BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
         JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocCafOutput, JocPcmOutput,
         JocRenderError, JocSpeakerRenderer, JocWavOutput, OutputContainer, RenderControl,
-        RenderedBlock, SemanticChannelLayout, SpeakerLayoutPreset, five_point_one_layout,
-        five_point_one_preset, virtual_speaker_direction,
+        RenderedBlock, SemanticChannelLayout, SpeakerLayoutPreset, StereoDownmixPolicy,
+        add_stereo_base_downmix, five_point_one_layout, five_point_one_preset,
+        selected_stereo_policy, stereo_downmix_coefficients, virtual_speaker_direction,
     };
-    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm};
+    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata};
     use openjoc_emdf::JocValidationProfile;
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
     use openjoc_oamd::{ContentDescription, OamdContentPrefix, OamdPayload, ObjectClass};
@@ -2464,6 +2655,24 @@ mod tests {
                 .collect(),
             lfe_location: Some(ChannelLocation::Lfe(0)),
             lfe: Some(vec![99.0; samples]),
+            downmix: DownmixMetadata::default(),
+        }
+    }
+
+    fn stereo_base(
+        locations: &[ChannelLocation],
+        values: &[f64],
+        lfe: Option<f64>,
+        downmix: DownmixMetadata,
+    ) -> DecodedAccessUnitPcm {
+        DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: locations.to_vec(),
+            channels: values.iter().copied().map(|value| vec![value]).collect(),
+            lfe_location: lfe.map(|_| ChannelLocation::Lfe(0)),
+            lfe: lfe.map(|value| vec![value]),
+            downmix,
         }
     }
 
@@ -2527,6 +2736,141 @@ mod tests {
     }
 
     #[test]
+    fn stereo_downmix_loro_numeric_fixture_uses_center_and_surround_metadata() {
+        let metadata = DownmixMetadata {
+            loro_center_mix_level: Some(4),
+            loro_surround_mix_level: Some(4),
+            ..DownmixMetadata::default()
+        };
+        let base = stereo_base(
+            &[
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ],
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            None,
+            metadata,
+        );
+        let (_, coefficients, _) = stereo_downmix_coefficients(
+            StereoDownmixPolicy::LoRo,
+            metadata,
+            &base.channel_locations,
+        )
+        .unwrap();
+        assert_eq!(coefficients[0], (1.0, 0.0));
+        assert_eq!(coefficients[2], (0.707, 0.707));
+        let mut active = vec![vec![0.0], vec![0.0]];
+        add_stereo_base_downmix(&mut active, &base, StereoDownmixPolicy::LoRo).unwrap();
+        assert_eq!(active[0][0], 1.0 + 3.0 * 0.707 + 4.0 * 0.707);
+        assert_eq!(active[1][0], 2.0 + 3.0 * 0.707 + 5.0 * 0.707);
+        let drc_scaled = stereo_base(
+            &base.channel_locations,
+            &[2.0, 4.0, 6.0, 8.0, 10.0],
+            None,
+            metadata,
+        );
+        let mut scaled_active = vec![vec![0.0], vec![0.0]];
+        add_stereo_base_downmix(&mut scaled_active, &drc_scaled, StereoDownmixPolicy::LoRo)
+            .unwrap();
+        assert_eq!(scaled_active[0][0], 2.0 * active[0][0]);
+        assert_eq!(scaled_active[1][0], 2.0 * active[1][0]);
+    }
+
+    #[test]
+    fn stereo_downmix_ltrt_numeric_fixture_preserves_surround_polarity() {
+        let metadata = DownmixMetadata {
+            ltrt_center_mix_level: Some(4),
+            ltrt_surround_mix_level: Some(4),
+            ..DownmixMetadata::default()
+        };
+        let base = stereo_base(
+            &[
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ],
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            None,
+            metadata,
+        );
+        let mut active = vec![vec![0.0], vec![0.0]];
+        add_stereo_base_downmix(&mut active, &base, StereoDownmixPolicy::LtRt).unwrap();
+        assert_eq!(active[0][0], 1.0 + 3.0 * 0.707 - 4.0 * 0.707 - 5.0 * 0.707);
+        assert_eq!(active[1][0], 2.0 + 3.0 * 0.707 + 4.0 * 0.707 + 5.0 * 0.707);
+        assert!(active[0][0] < active[1][0]);
+    }
+
+    #[test]
+    fn stereo_downmix_auto_follows_preference_and_defaults_to_loro() {
+        let ltrt = DownmixMetadata {
+            dmixmod: Some(1),
+            ..DownmixMetadata::default()
+        };
+        let loro = DownmixMetadata {
+            dmixmod: Some(2),
+            ..DownmixMetadata::default()
+        };
+        assert_eq!(
+            selected_stereo_policy(StereoDownmixPolicy::Auto, ltrt),
+            StereoDownmixPolicy::LtRt
+        );
+        assert_eq!(
+            selected_stereo_policy(StereoDownmixPolicy::Auto, loro),
+            StereoDownmixPolicy::LoRo
+        );
+        assert_eq!(
+            selected_stereo_policy(StereoDownmixPolicy::Auto, DownmixMetadata::default()),
+            StereoDownmixPolicy::LoRo
+        );
+    }
+
+    #[test]
+    fn stereo_downmix_lfe_is_optional_metadata_not_bass_management() {
+        let base = stereo_base(
+            &[ChannelLocation::Left, ChannelLocation::Right],
+            &[0.0, 0.0],
+            Some(1.0),
+            DownmixMetadata {
+                lfe_mix_level_code: Some(31),
+                ..DownmixMetadata::default()
+            },
+        );
+        let mut active = vec![vec![0.0], vec![0.0]];
+        add_stereo_base_downmix(&mut active, &base, StereoDownmixPolicy::LoRo).unwrap();
+        let expected = 10.0_f64.powf((-25.5) / 20.0);
+        assert_eq!(active[0][0], expected);
+        assert_eq!(active[1][0], expected);
+
+        let excluded = stereo_base(
+            &[ChannelLocation::Left, ChannelLocation::Right],
+            &[0.0, 0.0],
+            Some(1.0),
+            DownmixMetadata::default(),
+        );
+        let mut excluded_output = vec![vec![0.0], vec![0.0]];
+        add_stereo_base_downmix(&mut excluded_output, &excluded, StereoDownmixPolicy::LoRo)
+            .unwrap();
+        assert_eq!(excluded_output, vec![vec![0.0], vec![0.0]]);
+    }
+
+    #[test]
+    fn stereo_downmix_rejects_unmapped_back_or_height_base_channels() {
+        let base = stereo_base(
+            &[ChannelLocation::LeftBack],
+            &[1.0],
+            None,
+            DownmixMetadata::default(),
+        );
+        let mut active = vec![vec![0.0], vec![0.0]];
+        assert!(add_stereo_base_downmix(&mut active, &base, StereoDownmixPolicy::LoRo).is_err());
+    }
+
+    #[test]
     fn clean_full_xyz_side_position_uses_the_5_1_side_row() {
         let preset = five_point_one_preset().expect("5.1 preset");
         assert_eq!(preset.layout.coordinate_dimension_count(), 3);
@@ -2549,8 +2893,8 @@ mod tests {
         assert_eq!(
             JOC_RENDER_SUPPORTED_LAYOUTS,
             [
-                "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
-                "9.1.6",
+                "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2",
+                "9.1.4", "9.1.6",
             ]
         );
         let expected = [
@@ -2703,6 +3047,35 @@ mod tests {
         assert!(error.to_string().contains("7.1.2"));
         assert!(error.to_string().contains("7.1.4"));
         assert!(!error.to_string().contains("fallback"));
+    }
+
+    #[test]
+    fn stereo_downmix_policy_is_admitted_only_for_the_2_0_speaker_layout() {
+        let mut stereo = JocSpeakerRenderer::new_automatic("2.0").unwrap();
+        stereo
+            .set_downmix_policy(StereoDownmixPolicy::LtRt)
+            .expect("2.0 accepts stereo policy");
+        let mut multichannel = JocSpeakerRenderer::new_automatic("5.1").unwrap();
+        assert!(
+            multichannel
+                .set_downmix_policy(StereoDownmixPolicy::LoRo)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn two_point_zero_speaker_renderer_combines_projected_objects_with_base_stereo() {
+        let mut renderer = JocSpeakerRenderer::new("2.0", control(false, 6)).unwrap();
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .unwrap();
+        let block = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &base(2, 1.0))
+            .unwrap();
+        assert_eq!(block.channels.len(), 2);
+        assert_eq!(block.channels[0].len(), 2);
+        assert_eq!(block.channels[1].len(), 2);
+        assert_ne!(block.channels[0], block.channels[1]);
     }
 
     #[test]
@@ -3093,7 +3466,11 @@ mod tests {
                 .unwrap();
             let preset = SpeakerLayoutPreset::for_name(name).unwrap();
             assert_eq!(block.channels.len(), preset.channel_count());
-            assert_eq!(block.channels[preset.lfe_index().unwrap()], vec![99.0; 2]);
+            if let Some(lfe_index) = preset.lfe_index() {
+                assert_eq!(block.channels[lfe_index], vec![99.0; 2]);
+            } else {
+                assert_ne!(block.channels, vec![vec![99.0; 2], vec![99.0; 2]]);
+            }
         }
     }
 
@@ -3602,7 +3979,7 @@ mod tests {
         for &layout in JOC_RENDER_SUPPORTED_LAYOUTS.iter().filter(|layout| {
             matches!(
                 **layout,
-                "5.1" | "5.1.2" | "5.1.4" | "7.1" | "7.1.2" | "7.1.4"
+                "2.0" | "5.1" | "5.1.2" | "5.1.4" | "7.1" | "7.1.2" | "7.1.4"
             )
         }) {
             let root = std::env::temp_dir().join(format!(
@@ -3837,8 +4214,8 @@ mod tests {
         assert_eq!(
             JOC_RENDER_SUPPORTED_LAYOUTS,
             [
-                "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
-                "9.1.6",
+                "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2",
+                "9.1.4", "9.1.6",
             ]
         );
         assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
@@ -3943,7 +4320,7 @@ mod tests {
             .map(|index| base(SAMPLES, index as f64 * 0.001))
             .collect::<Vec<_>>();
 
-        for layout in ["5.1", "7.1.4", "7.1.6", "9.1", "9.1.6"] {
+        for layout in ["2.0", "5.1", "7.1.4", "7.1.6", "9.1", "9.1.6"] {
             let mut samples = Vec::new();
             for repetition in 0..=repetitions {
                 let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();

@@ -2560,6 +2560,7 @@ fn named_fallback_red_case_recomputes_after_layout_epoch_and_keeps_lfe_out() {
 
 fn matrix_direct_ids(layout: &str) -> &'static [u8] {
     match layout {
+        "2.0" => &[0, 1],
         "5.1" => &[0, 1, 2],
         "5.1.2" => &[0, 1, 2, 9, 15],
         "5.1.4" => &[0, 1, 2, 9, 10, 15],
@@ -2626,9 +2627,9 @@ fn named_route_disposition_matrix_is_exhaustive_and_deterministic() {
             }
         }
     }
-    assert_eq!(direct_count, 83);
-    assert_eq!(fallback_count, 82);
-    assert_eq!(unsupported_count, 11);
+    assert_eq!(direct_count, 85);
+    assert_eq!(fallback_count, 94);
+    assert_eq!(unsupported_count, 12);
 }
 
 #[test]
