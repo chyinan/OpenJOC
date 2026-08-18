@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-eac3 = { version = "0.5.0", path = "../openjoc-eac3" }
+openjoc-eac3 = { version = "0.6.0", path = "../openjoc-eac3" }
 
 [lints]
 workspace = true

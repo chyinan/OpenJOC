@@ -1,6 +1,6 @@
 # JOC speaker rendering
 
-OpenJOC 0.5.0 exposes one experimental JOC-to-speaker workflow with an
+OpenJOC 0.6.0 exposes one experimental JOC-to-speaker workflow with an
 explicit selectable speaker preset:
 
 ```sh
@@ -73,10 +73,9 @@ uses Core Audio Format with an ordered `chan` chunk of semantic channel
 descriptions, preserving richer identities such as public left/right wide
 labels and coordinate-described top-middle channels. The currently public
 presets include `7.1.6` and the 9.1 family; `Lw`/`Rw` use semantic CAF labels
-and `Ltm`/`Rtm` use distinct coordinate descriptions. The 9.1 family is not
-currently admitted for binaural rendering because the exact-HRIR direction
-registry lacks the new identities; CAF speaker output and binaural capability
-are independent.
+and `Ltm`/`Rtm` use distinct coordinate descriptions. Those layouts can also
+be selected as binaural virtual fields when the supplied SOFA dataset provides
+exact or safely interpolatable coverage.
 Binaural output may also use `.caf`; its PCM remains stereo and its SOFA/DSP
 path is unchanged.
 
@@ -504,6 +503,42 @@ evaluate the report's realtime factor plus the core-frame p99 against the
 project's stated realtime budget. Synthetic or public-fixture results alone
 must not be reported as a real DEE qualification.
 
+## Stereo speaker output and E-AC-3 decoder policy
+
+`2.0` is speaker stereo, not binaural. Its physical output is always `FL, FR`:
+
+```sh
+openjoc render-joc INPUT.m4a \
+  --layout 2.0 --downmix auto -o stereo.wav
+openjoc render-joc INPUT.m4a \
+  --layout 2.0 --downmix loro -o stereo-loro.wav
+openjoc render-joc INPUT.m4a \
+  --layout 2.0 --downmix ltrt -o stereo-ltrt.wav
+```
+
+`--downmix auto` follows the encoded `dmixmod` metadata; `loro` and `ltrt`
+select the corresponding public stereo matrices. Optional encoded LFE mix
+metadata may fold LFE into both channels; otherwise LFE is excluded. Base
+back/height configurations without an admitted reduction remain fail closed,
+while generic reconstructed/object projection to 2.0 remains available. No
+playback crossover or bass-management DSP is added.
+
+E-AC-3 dynamic-range control is metadata-driven, not a generic compressor:
+
+```sh
+openjoc render-joc INPUT.m4a --layout 7.1.4 --drc disabled -o output.wav
+openjoc render-joc INPUT.m4a --layout 7.1.4 --drc line -o output.wav
+openjoc render-joc INPUT.m4a --layout 7.1.4 --drc rf -o output.wav
+openjoc render-joc INPUT.m4a --layout 7.1.4 --drc custom \
+  --drc-boost 75 --drc-cut 50 -o output.wav
+```
+
+`--drc` accepts `disabled`, `line`, `rf`, or `custom`; custom boost and cut
+values are percentages in `0..=100`. With no override, existing decoder
+behavior is preserved, including full Line-mode `dynrng` where applicable.
+`dialnorm` remains available as decoded metadata but is not applied as
+calibrated playback-level normalization.
+
 ## SOFA-backed binaural rendering
 
 The same real-JOC command can virtualize one supported speaker preset to stereo
@@ -512,9 +547,8 @@ through a caller-supplied admitted SOFA file:
 ```sh
 openjoc render-joc INPUT.m4a \
   --binaural \
-  --sofa HRTF.sofa \
-  --lfe-policy equal-power-dual-mono \
-  --output OUTPUT-binaural.wav
+  --sofa listener.sofa \
+  -o binaural.wav
 ```
 
 The ordinary binaural command does not require a physical `--layout`. Its
@@ -523,8 +557,8 @@ two-channel stereo (`Left Ear`, `Right Ear`). To choose another internal field:
 
 ```sh
 openjoc render-joc INPUT.m4a \
-  --binaural --sofa HRTF.sofa --virtual-layout 9.1.6 \
-  --lfe-policy exclude --output OUTPUT-binaural.wav
+  --binaural --sofa listener.sofa --virtual-layout 9.1.6 \
+  -o binaural-9.1.6.wav
 ```
 
 This is speaker-virtualized binaural rendering:
@@ -547,7 +581,8 @@ selected SOFA provides exact or safely interpolatable coverage. Missing or
 sparse directions fail closed; OpenJOC never aliases a direction to a nearest
 speaker or silently omits a virtual channel.
 
-The SOFA path is local and user-supplied. It is parsed only within the existing
+The SOFA path is local and user-supplied; 0.6.0 does not bundle a generic HRTF
+dataset. It is parsed only within the existing
 strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
 explicitly shared with the renderer contract: local `+X` is right, `+Y` is
 front, and `+Z` is up. The virtual directions cover front, side/rear, wide,

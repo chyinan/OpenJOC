@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.6.0] — 2026-08-18
+
+OpenJOC 0.6.0 — Stereo, Binaural & Decoder Policy expands the public
+speaker, source-routing, decoder-policy, and binaural workflows. Users of
+earlier 0.x releases are strongly encouraged to upgrade due to the combined
+reconstruction, routing, stereo, and binaural improvements.
+
+### Added
+
+- Fixed source routing and Named direct routing for the admitted neutral route
+  identifiers, including deterministic Named fallback families where the
+  current layout supplies a valid target set.
+- E-AC-3 metadata-driven dynamic-range controls: Disabled, Line, RF, and
+  Custom boost/cut percentages.
+- Public `2.0` speaker stereo with `Auto`, Lo/Ro, and Lt/Rt downmix policies,
+  `dmixmod` selection, public mix metadata, and optional metadata-gated LFE
+  fold-down.
+- Deterministic SOFA HRIR interpolation for safely covered spherical segments
+  and triangles, including delay/ITD-aware ear alignment.
+
+### Changed
+
+- Dynamic Spread/Pair projection now uses the corrected admitted pair
+  geometry and deterministic fail-closed handling for unsupported combinations.
+- Binaural rendering now defaults to the internal virtual speaker field
+  `7.1.4`, supports larger public virtual fields when the supplied SOFA data
+  covers them, and always writes two-channel Left Ear/Right Ear output.
+- Physical speaker layout and binaural virtual layout are documented and
+  validated as separate concepts. The simple binaural CLI form is
+  `--binaural --sofa FILE`; `--virtual-layout` selects only the internal field.
+- Release-facing capability, routing, decoder-policy, stereo, binaural, and
+  limitation documentation now describes the 0.6.0 public contract.
+
+### Fixed
+
+- Corrected automatic 2.0 JOC rendering so Base channels remain on the
+  normative Auto/Lo/Ro/Lt/Rt downmix path while reconstructed JOC objects use
+  generic spatial projection to the physical `FL`/`FR` pair.
+
+### Known limitations
+
+- Binaural rendering requires a user-provided compatible SOFA file; no generic
+  HRTF is bundled. The admitted SimpleFreeFieldHRIR/NetCDF CDF-1 boundary,
+  sample-rate match, sparse/outside-domain fail-closed behavior, and no
+  silent resampling policy remain in force.
+- `2.0` Base reductions remain constrained to the publicly specified channel
+  set; unsupported Base back/height combinations fail closed and no playback
+  crossover or bass-management DSP is invented.
+- Friendly Named display names remain unavailable; neutral route identifiers
+  are used. Unsupported Named cells and malformed route inputs fail closed.
+- `dialnorm` remains decoded metadata and is not applied as calibrated
+  playback-level normalization.
+
 ## [0.5.0] — 2026-08-17
 
 OpenJOC 0.5.0 is a feature release focused on reconstruction fidelity and the

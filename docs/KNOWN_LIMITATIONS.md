@@ -1,9 +1,9 @@
-# OpenJOC 0.5.0 known limitations
+# OpenJOC 0.6.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.5.0 is an independent, experimental interoperability project. It
+OpenJOC 0.6.0 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 
@@ -64,13 +64,17 @@ bit-identical Reference Player output.
   The eleven explicit LFE-target cells, zero-survivor fallback families, and
   malformed or out-of-domain identities remain fail closed. Friendly Named
   display names are intentionally not exposed.
-- Real-JOC binaural output is speaker virtualization through a strict
-  `SimpleFreeFieldHRIR` SOFA bank. The default virtual field is `7.1.4`; the
+- Real-JOC binaural output currently requires a user-provided compatible SOFA
+  file; 0.6.0 does not include a bundled generic HRTF. It is speaker
+  virtualization through a strict `SimpleFreeFieldHRIR` SOFA bank. The default
+  virtual field is `7.1.4`; the
   public `5.1`/`7.1`/`9.1` families are eligible when every non-LFE direction is
   exact or safely interpolatable from the selected dataset. Interpolation is a
   bounded spherical-local segment/triangle method with shared ear weights and
   separate integer delay alignment; sparse or outside-domain requests fail
-  closed. HRIR resampling and omitted-channel fallback are not used. An
+  closed. HRIR resampling and omitted-channel fallback are not used, and a
+  SOFA/input sample-rate mismatch is rejected rather than silently converted.
+  An
   explicit `exclude` or `equal-power-dual-mono` LFE policy is required.
 - The strict `openjoc-sofa` loader accepts only the tested local
   `SimpleFreeFieldHRIR` NetCDF classic CDF-1 subset: fixed listener pose,

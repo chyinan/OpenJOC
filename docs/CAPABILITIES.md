@@ -1,6 +1,6 @@
-# OpenJOC 0.5.0 capabilities
+# OpenJOC 0.6.0 capabilities
 
-This is the canonical current capability status for the OpenJOC 0.5.0
+This is the canonical current capability status for the OpenJOC 0.6.0
 release. The historical v0.3.0 release baseline remains separately
 documented by its changelog entry. This is a release-facing snapshot, not a
 research journal. Detailed engineering and historical evidence remain outside
@@ -48,7 +48,7 @@ renderer.
 | Rendering | Static explicit-source uniform partitioned binaural convolution | `ADMITTED_WITH_SCOPE` | `openjoc-render` fixed-FFT backend, Direct FIR equivalence, multiple partition sizes/sources, partial-input, exact-tail and lifecycle regressions | Caller selects one fixed power-of-two `P`; FFT size is `2P`, input is exact `P`-sample partitions plus one final partial, scheduling latency is explicitly `P` samples; no adaptive selection, nonuniform partitions, SOFA, interpolation, moving sources, or JOC bridge |
 | Rendering | Strict `SimpleFreeFieldHRIR` SOFA ingestion and bounded HRIR interpolation | `ADMITTED_WITH_SCOPE` | `openjoc-sofa` synthetic CDF-1 fixture, coordinate/ear/delay/malformed-file tests, exact identity, spherical segment/triangle interpolation, delay/ITD, azimuth wrap, finite-result and sparse-coverage tests, direct and partitioned construction integration | Local read-only NetCDF classic CDF-1 subset; SOFA convention versions 1.0–1.2, exactly two receivers, spherical degree/degree/metre sources, integer sample delays; no HDF5/NetCDF-4, resampling, downloads, writing, or universal-coverage claim; interpolation fails closed outside the measured local spherical domain |
 | Rendering | Audio-bound `ObjectScene` or renderer fidelity | `NOT_ADMITTED` | Semantic binding remains unresolved and no proprietary renderer evidence is admitted | No authored-object/JOC audio binding, binaural parity, or Dolby renderer-fidelity claim |
-| Release | OpenJOC 0.5.0 platform release assets | `ADMITTED_WITH_SCOPE` | Tagged GitHub Actions source/version checks, native platform quality gates, bundle verification, and aggregate checksum verification | Release workflow targets macOS arm64, Windows x86_64, and GNU/Linux x86_64; the macOS asset is ad-hoc signed and not notarized; local RC evidence covers macOS only |
+| Release | OpenJOC 0.6.0 platform release assets | `ADMITTED_WITH_SCOPE` | Tagged GitHub Actions source/version checks, native platform quality gates, bundle verification, and aggregate checksum verification | Release workflow targets macOS arm64, Windows x86_64, and GNU/Linux x86_64; the macOS asset is ad-hoc signed and not notarized; local RC evidence covers macOS only |
 
 The matrix deliberately separates production status from evidence class. A
 numerically valid reconstruction row is not an authored object, and a real
@@ -64,7 +64,7 @@ openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR
 openjoc diagnose-tools FILE --vector-id ID --json OUTPUT
 openjoc census [MANIFEST] -o DIR
 openjoc diagnose-oamd FILE [OPTIONS]
-openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav [--binaural --sofa HRTF.sofa --virtual-layout LAYOUT | --binaural-sofa HRTF.sofa] [--lfe-policy exclude|equal-power-dual-mono]
+openjoc render-joc FILE [--topology TOPOLOGY.json] [--layout LAYOUT | --binaural --sofa HRTF.sofa [--virtual-layout LAYOUT]] --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--lfe-policy exclude|equal-power-dual-mono]
 openjoc --version
 ```
 

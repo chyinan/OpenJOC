@@ -24,11 +24,11 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.5.0 is the current release line. It includes major
-reconstruction-fidelity corrections, including corrected QMF synthesis
-behavior and Base/ReconstructionBasis timeline alignment, plus an
-experimental JOC-to-speaker workflow through `JocSpatialBridge`. Ordinary
-rendering assembles bridge control from decoded JOC/OAMD state;
+OpenJOC 0.6.0 is the current release line: **Stereo, Binaural & Decoder
+Policy**. It adds substantially expanded source routing, E-AC-3 dynamic-range
+controls, standards-based 2.0 speaker output, and broader SOFA-backed binaural
+virtual layouts while retaining the experimental JOC-to-speaker boundary.
+Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
 `--topology` remains an optional complete override/test input.
 
 The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
@@ -62,8 +62,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.5.0 capability status.
-- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.5.0 real-input workflow.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.6.0 capability status.
+- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.6.0 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
@@ -114,14 +114,23 @@ openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-st
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
 openjoc render-joc input.m4a --layout 7.1.4 --output render.caf
 openjoc render-joc input.m4a --layout 9.1.6 --output render-9.1.6.caf
-openjoc render-joc input.m4a --binaural --sofa HRTF.sofa \
-  --lfe-policy equal-power-dual-mono --output render-binaural.wav
-openjoc render-joc input.m4a --binaural --sofa HRTF.sofa \
-  --virtual-layout 9.1.6 --lfe-policy exclude --output render-binaural-9.1.6.wav
+openjoc render-joc input.m4a --layout 2.0 --downmix auto -o stereo.wav
+openjoc render-joc input.m4a --binaural --sofa listener.sofa -o binaural.wav
+openjoc render-joc input.m4a --binaural --sofa listener.sofa \
+  --virtual-layout 9.1.6 -o binaural-9.1.6.wav
 # Optional complete explicit override/test input:
 openjoc render-joc input.m4a --topology bridge-control.json --layout 7.1.4 --output render.wav
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
+
+`2.0` is speaker stereo and is separate from binaural output. Select the
+standards-based stereo policy with `--downmix auto`, `--downmix loro`, or
+`--downmix ltrt`. E-AC-3 dynamic-range metadata can be selected with
+`--drc disabled|line|rf|custom`; custom mode accepts `--drc-boost` and
+`--drc-cut` percentages from `0` through `100`. These controls apply encoded
+decoder metadata, not a generic compressor or playback bass-management DSP.
+For 2.0 JOC rendering, Base channels use the selected stereo downmix while
+reconstructed JOC objects use generic spatial projection to physical `FL`/`FR`.
 
 `render-joc` selects the output container from the destination extension:
 `.wav` uses WAVEFORMATEXTENSIBLE where the semantic layout is exactly
@@ -148,7 +157,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble the 0.5.0 Apple-Silicon release bundle
+## Assemble the 0.6.0 Apple-Silicon release bundle
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the release
@@ -157,9 +166,9 @@ bundle locally before publication:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.5.0-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.5.0-aarch64-apple-darwin.tar.gz
-cd openjoc-0.5.0-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.6.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.6.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.6.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
@@ -189,7 +198,7 @@ checks, and the macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 
-The 0.5.0 release workflow targets Apple-silicon macOS
+The 0.6.0 release workflow targets Apple-silicon macOS
 (`aarch64-apple-darwin`), Windows x86_64 (`x86_64-pc-windows-msvc`), and
 GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The local bundle command and
 the candidate in this worktree validate only the Apple-silicon macOS path;

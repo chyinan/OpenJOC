@@ -388,7 +388,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
-            --title "OpenJOC $RELEASE_TAG" \
+            --title "OpenJOC ${version} — Stereo, Binaural & Decoder Policy" \
             --notes-file "$notes"
           gh release upload "$RELEASE_TAG" \
             "$asset_dir/openjoc-${version}-aarch64-apple-darwin.tar.gz" \

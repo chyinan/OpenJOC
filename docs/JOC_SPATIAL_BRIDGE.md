@@ -72,7 +72,7 @@ The descriptor's raw warp-3 field is preserved as opaque data and is never
 used as a projection input. Its public semantic meaning remains unresolved.
 The bridge does not make `SemanticBindingState` production-resolved, does not
 claim an official spatial oracle, and does not admit a vendor-fidelity result.
-The 0.5.0 `render-joc` command composes this function with automatic
+The 0.6.0 `render-joc` command composes this function with automatic
 decoded JOC/OAMD bridge-control assembly for experimental speaker output. A
 complete topology sidecar remains an optional explicit override/test input.
 unsupported/default branches, unadmitted preprocessing, and malformed-recovery
@@ -249,5 +249,6 @@ RB-row/object or renderer semantic result.
 - No proprietary decoder, renderer, or vendor semantic source is used.
 - No automatic authored-object mapping or direct-object binaural rendering is
   admitted by this bridge. The explicit `render-joc` composition is
-  experimental and covers the documented eleven speaker presets, with
-  binaural output limited to the six exact-HRIR layouts.
+  experimental and covers the documented eleven speaker presets; binaural
+  virtual layouts are dataset-dependent and require exact or safely
+  interpolatable SOFA coverage.

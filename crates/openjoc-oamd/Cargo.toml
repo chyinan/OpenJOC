@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-bitio = { version = "0.5.0", path = "../openjoc-bitio" }
+openjoc-bitio = { version = "0.6.0", path = "../openjoc-bitio" }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 
