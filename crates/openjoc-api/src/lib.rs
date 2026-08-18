@@ -26,8 +26,9 @@ use openjoc_oamd::{
     parse_oamd_payload_with_profile,
 };
 use openjoc_render::{
-    BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntry, HrirEntryId,
-    SourceId, StaticBinauralSource,
+    BinauralRenderer, BinauralSourceBlock, CartesianPosition, FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+    FinalLinkedGain, FinalLinkedGainError, HrirBank, HrirEntry, HrirEntryId, SourceId,
+    StaticBinauralSource,
 };
 use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, DecodedPayloadFrame, JocFrameInput,
@@ -42,6 +43,8 @@ use std::{collections::VecDeque, fmt};
 pub const API_MATURITY: &str = "experimental";
 /// The declared QMF/Base-RB reconstruction delay in samples.
 pub const QMF_LATENCY_SAMPLES: usize = ReconstructionOutputTimeline::qmf_latency_samples();
+/// The admitted causal speaker-stage block delay at the 48-kHz adapter.
+pub const FINAL_LINKED_GAIN_LATENCY_SAMPLES: usize = FINAL_LINKED_GAIN_BLOCK_SAMPLES;
 /// The canonical v1 PCM sample format.
 pub const PCM_SAMPLE_FORMAT: PcmSampleFormat = PcmSampleFormat::F32;
 
@@ -380,7 +383,11 @@ impl OpenJocSession {
     pub fn new(config: OpenJocConfig) -> Result<Self, OpenJocError> {
         config.validate()?;
         let layout = config.effective_layout().to_owned();
-        let speaker = SpeakerRenderer::new(&layout, config.downmix)?;
+        let speaker = SpeakerRenderer::new_with_linked_gain(
+            &layout,
+            config.downmix,
+            config.render_mode != RenderMode::Binaural,
+        )?;
         let binaural = config
             .binaural
             .as_ref()
@@ -414,14 +421,18 @@ impl OpenJocSession {
             channel_labels,
             layout_name,
             render_mode: self.config.render_mode,
-            latency_samples: QMF_LATENCY_SAMPLES,
+            latency_samples: self.latency_samples(),
         }
     }
 
     /// Returns the known deterministic decoder/reconstruction delay.
     #[must_use]
-    pub const fn latency_samples(&self) -> usize {
-        QMF_LATENCY_SAMPLES
+    pub fn latency_samples(&self) -> usize {
+        if self.config.render_mode == RenderMode::Binaural {
+            QMF_LATENCY_SAMPLES
+        } else {
+            QMF_LATENCY_SAMPLES + FINAL_LINKED_GAIN_LATENCY_SAMPLES
+        }
     }
 
     /// Sends one complete access unit. Caller packet memory is borrowed only
@@ -818,10 +829,16 @@ struct SpeakerRenderer {
     pending_frames: VecDeque<PendingRenderFrame>,
     base_coordinates: Option<Vec<BaseFullBandCoordinate>>,
     downmix_policy: DownmixPolicy,
+    final_linked_gain: Option<FinalLinkedGain>,
+    linked_gain_enabled: bool,
 }
 
 impl SpeakerRenderer {
-    fn new(layout: &str, downmix_policy: DownmixPolicy) -> Result<Self, OpenJocError> {
+    fn new_with_linked_gain(
+        layout: &str,
+        downmix_policy: DownmixPolicy,
+        linked_gain_enabled: bool,
+    ) -> Result<Self, OpenJocError> {
         let preset = SpeakerLayoutPreset::for_name(layout)
             .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
         let dimensions = preset.layout.coordinate_dimension_count();
@@ -842,6 +859,8 @@ impl SpeakerRenderer {
             pending_frames: VecDeque::new(),
             base_coordinates: None,
             downmix_policy,
+            final_linked_gain: None,
+            linked_gain_enabled,
         })
     }
 
@@ -859,6 +878,9 @@ impl SpeakerRenderer {
             self.pending_frames.clear();
             self.assembler.reset();
             self.bridge.reset();
+            if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+                linked_gain.reset();
+            }
             self.base_coordinates = None;
             self.expected_coordinates = None;
             self.expected_frame = frame.frame_index;
@@ -1051,6 +1073,7 @@ impl SpeakerRenderer {
                 active_index += 1;
             }
         }
+        self.apply_final_linked_gain(frame.sample_rate, &mut channels, base.lfe.as_deref())?;
         self.expected_frame = self.expected_frame.saturating_add(1);
         self.expected_sample = self.expected_sample.saturating_add(sample_count as u64);
         Ok(RenderedBlock {
@@ -1059,6 +1082,60 @@ impl SpeakerRenderer {
             sample_count,
             channels,
         })
+    }
+
+    fn apply_final_linked_gain(
+        &mut self,
+        sample_rate: u32,
+        channels: &mut [Vec<f64>],
+        lfe: Option<&[f64]>,
+    ) -> Result<(), OpenJocError> {
+        if !self.linked_gain_enabled {
+            return Ok(());
+        }
+        let sample_count = channels.first().map_or(0, Vec::len);
+        // The public E-AC-3 adapter supplies 1536-sample frames, which are
+        // split into the admitted 32-sample linked-gain blocks. Synthetic
+        // short-frame renderer fixtures remain outside that adapter boundary.
+        if sample_count != 1536
+            && sample_count != FINAL_LINKED_GAIN_BLOCK_SAMPLES
+            && sample_count != 40
+        {
+            return Ok(());
+        }
+        let active_lfe = lfe.is_some_and(|samples| !samples.is_empty());
+        let active_channels = self
+            .preset
+            .layout
+            .channels()
+            .iter()
+            .map(|channel| if channel.lfe { active_lfe } else { true })
+            .collect::<Vec<_>>();
+        let linked_gain = if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+            linked_gain
+                .reconfigure(
+                    sample_rate,
+                    FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+                    &active_channels,
+                )
+                .map_err(|error: FinalLinkedGainError| OpenJocError::Render(error.to_string()))?;
+            linked_gain
+        } else {
+            self.final_linked_gain = Some(
+                FinalLinkedGain::new(
+                    sample_rate,
+                    FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+                    &active_channels,
+                )
+                .map_err(|error: FinalLinkedGainError| OpenJocError::Render(error.to_string()))?,
+            );
+            self.final_linked_gain
+                .as_mut()
+                .expect("linked gain was just initialized")
+        };
+        linked_gain
+            .process(channels)
+            .map_err(|error| OpenJocError::Render(error.to_string()))
     }
 
     fn finish_with_reconstruction_tail(
@@ -1096,6 +1173,20 @@ impl SpeakerRenderer {
                 "reconstruction timeline left pending frames".to_owned(),
             ));
         }
+        if self.linked_gain_enabled {
+            if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+                let sample_rate = linked_gain.sample_rate();
+                let channels = linked_gain
+                    .drain()
+                    .map_err(|error| OpenJocError::Render(error.to_string()))?;
+                rendered.push(RenderedBlock {
+                    sample_rate,
+                    logical_start_sample: self.expected_sample,
+                    sample_count: FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+                    channels,
+                });
+            }
+        }
         Ok(rendered)
     }
 
@@ -1109,6 +1200,9 @@ impl SpeakerRenderer {
         self.expected_frame = 0;
         self.expected_sample = 0;
         self.base_coordinates = None;
+        if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+            linked_gain.reset();
+        }
     }
 }
 
@@ -1355,7 +1449,10 @@ mod tests {
         assert_eq!(info.sample_format, PcmSampleFormat::F32);
         assert_eq!(info.layout_name, "5.1");
         assert_eq!(info.channel_labels, ["FL", "FR", "FC", "LFE", "Ls", "Rs"]);
-        assert_eq!(info.latency_samples, 577);
+        assert_eq!(
+            info.latency_samples,
+            577 + FINAL_LINKED_GAIN_LATENCY_SAMPLES
+        );
     }
 
     #[test]

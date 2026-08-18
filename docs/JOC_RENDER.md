@@ -94,6 +94,9 @@ Base/ReconstructionBasis intervals. Logical sample ranges and frame indices
 are preserved; Base and ReconstructionBasis are not independently retimed at
 the bridge. The final decoder QMF state is flushed at end of stream, so the
 last pending Base intervals are emitted with their ReconstructionBasis tail.
+The formed speaker-domain planes then pass through one shared causal linked
+gain stage at 48 kHz on 32-sample processing blocks. This adds one 32-sample
+speaker-stage delay and is not applied to the SOFA binaural path.
 The same path validates sample rate, contiguous sample ranges, frame order,
 coordinate counts, topology/reset epochs, finite PCM, and LFE length before
 bridge projection. Startup pre-roll and EOF tail validity are carried in the
@@ -245,9 +248,11 @@ explicit: Base coordinates first, then ReconstructionBasis rows. A masked
 coordinate remains present with zero PCM. Its canonical ordinal, topology,
 descriptor, metadata inheritance, binding record, projection target, and Q32
 scheduler are unchanged. All modes retain the same access-unit timing, bridge
-control, layout, WAV writer, channel order, and sample timeline. For the
-current linear, non-postprocessed speaker path, the expected numerical check
-is `FULL ≈ BASE_ONLY + RECONSTRUCTION_ONLY`, with LFE owned by `BASE_ONLY`.
+control, layout, WAV writer, channel order, and sample timeline. Before the
+final linked stage, the expected numerical check is
+`FULL_PRE_GAIN ≈ BASE_PRE_GAIN + RECONSTRUCTION_PRE_GAIN`, with LFE owned by
+`BASE_ONLY`. Post-gain output is stateful and nonlinear, so it must not be
+checked as `FULL ≈ BASE_ONLY + RECONSTRUCTION_ONLY`.
 
 ReconstructionBasis rows are diagnostic reconstruction coordinates, not
 authored-object stems. Reconstruction-only audio may therefore sound

@@ -57,10 +57,11 @@ until the first AU establishes the stream format.
 
 PTS uses the decoded sample domain. If a first packet has PTS `P`, output for
 logical sample `n` reports `P + n`; the PTS is not silently moved by the
-filterbank delay. `latency_samples()` reports the deterministic 577-sample
-QMF/Base-RB delay that controls when output becomes available. This makes the
-availability delay explicit without forcing callers to reverse-engineer it
-from frame counts.
+filterbank or final linked-gain delay. Speaker output reports the deterministic
+577-sample QMF/Base-RB delay plus the admitted 32-sample causal speaker-stage
+block; binaural output remains on the existing QMF-only latency contract.
+This makes availability delay explicit without forcing callers to reverse-
+engineer it from frame counts.
 
 - `drain()` flushes QMF/reconstruction state and the direct SOFA FIR tail.
 - `flush()` discards pending PCM and resets stream-derived state while keeping

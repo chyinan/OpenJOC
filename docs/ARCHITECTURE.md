@@ -40,8 +40,10 @@ bounded AU delivery → E-AC-3 Base + RcLfe + JOC/OAMD decode
 decoded Base/RB codec-coordinate bundle + automatic bridge-control assembly
           ↓
 persistent JocSpatialBridge → active N-channel speaker planes
-          ├── Base LFE/RcLfe → LFE plane only
-          └── active planes + LFE → incremental semantic WAV/CAF output
+  ├── Base LFE/RcLfe → LFE plane only
+  └── active planes + LFE → shared final linked speaker gain
+                              ↓
+                      incremental semantic WAV/CAF output
 ```
 
 The CLI presets are data-only registrations over the generic `SpatialLayout`
@@ -146,6 +148,14 @@ not change profile validation, assign authored-object identity, or resolve
 excluded from projection arithmetic. The supported ordinary domain and
 activation surface are documented in
 [`JOC_SPATIAL_BRIDGE.md`](JOC_SPATIAL_BRIDGE.md).
+
+After Base and ReconstructionBasis contributions have been accumulated into
+the final semantic speaker planes, the shared renderer applies a causal,
+common FinalLinkedGain stage for the admitted 48-kHz 32-sample adapter blocks.
+It includes active LFE in the linked channel set, adds one block of speaker
+output history, and is reset with the stream/timeline lifecycle. The stage is
+not applied to the SOFA binaural path; Base downmix overload protection and
+pre-gain contribution linearity remain separate contracts.
 
 ### Explicit spatial renderer
 

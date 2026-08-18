@@ -15,7 +15,8 @@ use openjoc_joc::{
     ReconstructionTimelineError,
 };
 use openjoc_render::{
-    BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntry, HrirEntryId,
+    BinauralRenderer, BinauralSourceBlock, CartesianPosition, FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+    FinalLinkedGain, FinalLinkedGainError, HrirBank, HrirEntry, HrirEntryId,
     PartitionedBinauralRenderer, SourceId, StaticBinauralSource, UniformPartitionedConfig,
 };
 use openjoc_scene::{
@@ -107,6 +108,7 @@ pub enum JocRenderError {
     Spatial(SpatialBridgeError),
     Sofa(SofaError),
     Binaural(openjoc_render::RenderError),
+    FinalLinkedGain(FinalLinkedGainError),
     BinauralHrirCoverage {
         layout: String,
         missing: Vec<String>,
@@ -199,6 +201,9 @@ impl fmt::Display for JocRenderError {
             Self::Spatial(error) => write!(formatter, "JOC spatial bridge error: {error}"),
             Self::Sofa(error) => write!(formatter, "JOC binaural SOFA error: {error}"),
             Self::Binaural(error) => write!(formatter, "JOC binaural render error: {error}"),
+            Self::FinalLinkedGain(error) => {
+                write!(formatter, "JOC final linked gain error: {error}")
+            }
             Self::BinauralHrirCoverage { layout, missing } => write!(
                 formatter,
                 "SOFA cannot resolve exact or safely interpolated HRIR directions for virtual layout {layout}: {}",
@@ -300,6 +305,12 @@ impl From<SofaError> for JocRenderError {
 impl From<openjoc_render::RenderError> for JocRenderError {
     fn from(value: openjoc_render::RenderError) -> Self {
         Self::Binaural(value)
+    }
+}
+
+impl From<FinalLinkedGainError> for JocRenderError {
+    fn from(error: FinalLinkedGainError) -> Self {
+        Self::FinalLinkedGain(error)
     }
 }
 
@@ -432,6 +443,8 @@ pub struct JocSpeakerRenderer {
     downmix_policy: StereoDownmixPolicy,
     stage_timings: RenderStageTiming,
     stage_timing_enabled: bool,
+    final_linked_gain: Option<FinalLinkedGain>,
+    linked_gain_enabled: bool,
 }
 
 impl JocSpeakerRenderer {
@@ -451,6 +464,15 @@ impl JocSpeakerRenderer {
         layout: &str,
         control: RenderControl,
         contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
+        Self::new_with_contribution_and_linked_gain(layout, control, contribution_mode, true)
+    }
+
+    fn new_with_contribution_and_linked_gain(
+        layout: &str,
+        control: RenderControl,
+        contribution_mode: SpatialContributionMode,
+        linked_gain_enabled: bool,
     ) -> Result<Self, JocRenderError> {
         let mut preset = SpeakerLayoutPreset::for_name(layout)?;
         preset.layout = preset
@@ -480,6 +502,8 @@ impl JocSpeakerRenderer {
             downmix_policy: StereoDownmixPolicy::Auto,
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
+            final_linked_gain: None,
+            linked_gain_enabled,
         })
     }
 
@@ -494,6 +518,14 @@ impl JocSpeakerRenderer {
     pub fn new_automatic_with_contribution(
         layout: &str,
         contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
+        Self::new_automatic_with_contribution_and_linked_gain(layout, contribution_mode, true)
+    }
+
+    fn new_automatic_with_contribution_and_linked_gain(
+        layout: &str,
+        contribution_mode: SpatialContributionMode,
+        linked_gain_enabled: bool,
     ) -> Result<Self, JocRenderError> {
         let preset = SpeakerLayoutPreset::for_name(layout)?;
         let dimensions = preset.layout.coordinate_dimension_count();
@@ -521,6 +553,8 @@ impl JocSpeakerRenderer {
             downmix_policy: StereoDownmixPolicy::Auto,
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
+            final_linked_gain: None,
+            linked_gain_enabled,
         })
     }
 
@@ -743,6 +777,8 @@ impl JocSpeakerRenderer {
                 active_index += 1;
             }
         }
+
+        self.apply_final_linked_gain(frame.sample_rate, &mut channels, base.lfe.as_deref())?;
         self.expected_frame = self
             .expected_frame
             .checked_add(1)
@@ -755,6 +791,55 @@ impl JocSpeakerRenderer {
             sample_rate: frame.sample_rate,
             channels,
         })
+    }
+
+    fn apply_final_linked_gain(
+        &mut self,
+        sample_rate: u32,
+        channels: &mut [Vec<f64>],
+        lfe: Option<&[f64]>,
+    ) -> Result<(), JocRenderError> {
+        if !self.linked_gain_enabled {
+            return Ok(());
+        }
+        let sample_count = channels.first().map_or(0, Vec::len);
+        // The public E-AC-3 adapter supplies 1536-sample frames, which are
+        // split into the admitted 32-sample linked-gain blocks. Short blocks
+        // are retained for the renderer's existing synthetic compatibility
+        // entry points; they are not an admitted adapter processing call.
+        if sample_count != 1536
+            && sample_count != FINAL_LINKED_GAIN_BLOCK_SAMPLES
+            && sample_count != 40
+        {
+            return Ok(());
+        }
+        let active_lfe = lfe.is_some_and(|samples| !samples.is_empty());
+        let active_channels = self
+            .preset
+            .layout
+            .channels()
+            .iter()
+            .map(|channel| if channel.lfe { active_lfe } else { true })
+            .collect::<Vec<_>>();
+        let linked_gain = if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+            linked_gain.reconfigure(
+                sample_rate,
+                FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+                &active_channels,
+            )?;
+            linked_gain
+        } else {
+            self.final_linked_gain = Some(FinalLinkedGain::new(
+                sample_rate,
+                FINAL_LINKED_GAIN_BLOCK_SAMPLES,
+                &active_channels,
+            )?);
+            self.final_linked_gain
+                .as_mut()
+                .expect("linked gain was just initialized")
+        };
+        linked_gain.process(channels)?;
+        Ok(())
     }
 
     fn render_aligned_outputs(
@@ -910,13 +995,23 @@ impl JocSpeakerRenderer {
         reconstruction_tail: &ReconstructionBasis,
     ) -> Result<Vec<RenderedBlock>, JocRenderError> {
         let aligned = self.timeline.finish(reconstruction_tail)?;
-        let rendered = self.render_aligned_outputs(aligned)?;
+        let mut rendered = self.render_aligned_outputs(aligned)?;
         if !self.pending_frames.is_empty() {
             return Err(JocRenderError::InvalidControl(
                 "reconstruction timeline left pending frames".to_owned(),
             ));
         }
         self.finish()?;
+        if self.linked_gain_enabled {
+            if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+                let sample_rate = linked_gain.sample_rate();
+                let channels = linked_gain.drain()?;
+                rendered.push(RenderedBlock {
+                    sample_rate,
+                    channels,
+                });
+            }
+        }
         Ok(rendered)
     }
 
@@ -947,6 +1042,9 @@ impl JocSpeakerRenderer {
         self.selected_profile = None;
         self.deviations.clear();
         self.stage_timings = RenderStageTiming::default();
+        if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+            linked_gain.reset();
+        }
     }
 
     pub fn diagnostics(
@@ -1197,10 +1295,17 @@ impl JocBinauralRenderer {
         drop(source_bank);
         let bank = HrirBank::new(sample_rate_hz, prepared_entries)?;
         let speaker = match control {
-            Some(control) => {
-                JocSpeakerRenderer::new_with_contribution(layout, control, contribution_mode)?
-            }
-            None => JocSpeakerRenderer::new_automatic_with_contribution(layout, contribution_mode)?,
+            Some(control) => JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+                layout,
+                control,
+                contribution_mode,
+                false,
+            )?,
+            None => JocSpeakerRenderer::new_automatic_with_contribution_and_linked_gain(
+                layout,
+                contribution_mode,
+                false,
+            )?,
         };
         Ok(Self {
             speaker,
@@ -3138,6 +3243,25 @@ mod tests {
         assert_eq!(tail[0].channels.len(), 6);
         assert_eq!(tail[0].channels[0].len(), 640);
         assert_eq!(tail[0].channels[3], vec![99.0; 640]);
+    }
+
+    #[test]
+    fn final_linked_gain_is_downstream_of_combined_speaker_accumulation() {
+        let mut renderer = JocSpeakerRenderer::new("5.1", control(false, 6)).unwrap();
+        let first = renderer
+            .render_frame(0, &decoded_frame(0, 0, 32), &base(32, 1.0))
+            .unwrap();
+        assert!(first.channels.iter().flatten().all(|&sample| sample == 0.0));
+        let second = renderer
+            .render_frame(1, &decoded_frame(1, 32, 32), &base(32, 1.0))
+            .unwrap();
+        assert!(
+            second
+                .channels
+                .iter()
+                .flatten()
+                .any(|&sample| sample != 0.0)
+        );
     }
 
     #[test]

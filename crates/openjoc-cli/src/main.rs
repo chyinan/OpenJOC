@@ -3698,6 +3698,7 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         | joc_render::JocRenderError::Spatial(_)
         | joc_render::JocRenderError::Timeline(_)
         | joc_render::JocRenderError::Binaural(_)
+        | joc_render::JocRenderError::FinalLinkedGain(_)
         | joc_render::JocRenderError::BinauralSampleRateMismatch { .. } => {
             CliErrorCategory::DecodeFailure
         }

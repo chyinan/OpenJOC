@@ -23,8 +23,13 @@
 
 use std::fmt;
 
+mod final_linked_gain;
 mod partitioned;
 
+pub use final_linked_gain::{
+    FINAL_LINKED_GAIN_BLOCK_SAMPLES, FinalLinkedGain, FinalLinkedGainAvailability,
+    FinalLinkedGainError, final_linked_gain_availability,
+};
 pub use partitioned::{
     PartitionedBinauralRenderer, UniformPartitionedConfig, UniformPartitionedConvolver,
 };
