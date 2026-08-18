@@ -64,17 +64,20 @@ bit-identical Reference Player output.
   The eleven explicit LFE-target cells, zero-survivor fallback families, and
   malformed or out-of-domain identities remain fail closed. Friendly Named
   display names are intentionally not exposed.
-- Real-JOC binaural output is speaker virtualization through exact-direction
-  SOFA HRIR data for `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and `7.1.4` only.
-  The selected virtual layout must have every required direction at the input
-  sample rate. Nearest-neighbor lookup, interpolation, HRIR resampling, and
-  omitted-channel fallback are not used. An explicit `exclude` or
-  `equal-power-dual-mono` LFE policy is required.
+- Real-JOC binaural output is speaker virtualization through a strict
+  `SimpleFreeFieldHRIR` SOFA bank. The default virtual field is `7.1.4`; the
+  public `5.1`/`7.1`/`9.1` families are eligible when every non-LFE direction is
+  exact or safely interpolatable from the selected dataset. Interpolation is a
+  bounded spherical-local segment/triangle method with shared ear weights and
+  separate integer delay alignment; sparse or outside-domain requests fail
+  closed. HRIR resampling and omitted-channel fallback are not used. An
+  explicit `exclude` or `equal-power-dual-mono` LFE policy is required.
 - The strict `openjoc-sofa` loader accepts only the tested local
   `SimpleFreeFieldHRIR` NetCDF classic CDF-1 subset: fixed listener pose,
   spherical metre/degree coordinates, two receivers, common sample rate, and
   integer nonnegative delays. HDF5/NetCDF-4, other conventions, writing,
-  downloads, moving sources, and resampling are not supported.
+  downloads, moving sources, and resampling are not supported. Dataset support
+  remains capability-dependent; the loader does not claim universal coverage.
 - The independent `openjoc-render` foundation remains caller-bound. It
   supports explicit mono-source 2D/3D rendering and static exact-direction
   binaural reference paths, but does not provide JOC semantic binding, room or

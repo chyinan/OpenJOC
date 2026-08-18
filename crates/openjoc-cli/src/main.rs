@@ -189,7 +189,8 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt] [--binaural-sofa <HRTF.sofa> --lfe-policy exclude|equal-power-dual-mono] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
+        "  openjoc render-joc <FILE> --binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] --output <OUTPUT.wav|OUTPUT.caf>\n",
         "  render-joc supported presets: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
@@ -214,7 +215,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt] [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
+        "                         [--binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>] [--backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
@@ -308,7 +310,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         "render-joc" => concat!(
             "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|LAYOUT> --output <OUTPUT.wav|OUTPUT.caf>\n",
             "       [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
-            "       [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N]\n",
+            "       [--binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]\n",
+            "       [--backend direct|partitioned --partition-size N]\n",
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
@@ -322,8 +325,11 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
-            "With --binaural-sofa, the selected layout is virtualized to stereo through exact SOFA HRIR directions.\n",
-            "Binaural layouts require an explicit LFE policy; direct is the default backend and no vendor-fidelity claim is made.\n",
+            "With --binaural --sofa, the default virtual layout is 7.1.4 and the output is always two-channel L/R-ear stereo.\n",
+            "--virtual-layout selects the internal field; --layout remains physical output unless used as a legacy binaural alias.\n",
+            "HRIRs use exact lookup when available and deterministic delay-aligned spherical interpolation when safely covered by SOFA measurements.\n",
+            "The simple binaural form defaults to virtual layout 7.1.4 and LFE policy exclude; output remains two-channel L/R-ear stereo.\n",
+            "Binaural layouts use exclude unless --lfe-policy equal-power-dual-mono is selected; direct is the default backend and no vendor-fidelity claim is made.\n",
             "The output extension selects the container: .wav for WAVEFORMATEXTENSIBLE or .caf for Core Audio Format.\n",
             "CAF preserves semantic channel descriptions; no new public speaker preset is introduced here.\n",
             "Progress is enabled on interactive stderr, throttled, and disabled for non-TTY output; --no-progress opts out.\n",
@@ -902,8 +908,10 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let input = values.first().filter(|value| !value.starts_with('-'));
     let mut topology = None;
     let mut layout = None;
+    let mut virtual_layout = None;
     let mut output = None;
     let mut binaural_sofa = None;
+    let mut binaural_requested = false;
     let mut binaural_backend = joc_render::BinauralBackend::Direct;
     let mut binaural_backend_requested = false;
     let mut lfe_policy = None;
@@ -938,12 +946,21 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
             index += 1;
             continue;
         }
+        if flag == "--binaural" {
+            binaural_requested = true;
+            index += 1;
+            continue;
+        }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
             "--topology" => topology = Some(PathBuf::from(value)),
             "--layout" => layout = Some(value.clone()),
+            "--virtual-layout" => virtual_layout = Some(value.clone()),
             "-o" | "--output" => output = Some(PathBuf::from(value)),
-            "--binaural-sofa" => binaural_sofa = Some(PathBuf::from(value)),
+            "--sofa" | "--binaural-sofa" => {
+                binaural_requested = true;
+                binaural_sofa = Some(PathBuf::from(value));
+            }
             "--backend" => {
                 binaural_backend_requested = true;
                 binaural_backend = match value.as_str() {
@@ -1052,10 +1069,49 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         drc_cut,
         true,
     )?;
+    if virtual_layout.is_some() && layout.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--layout and --virtual-layout are competing layout selections; use --layout for physical speaker output or --virtual-layout for binaural",
+        )
+        .into());
+    }
+    let binaural = binaural_requested || binaural_sofa.is_some();
+    if binaural && binaural_sofa.is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--binaural requires --sofa FILE (legacy --binaural-sofa is also accepted)",
+        )
+        .into());
+    }
+    if !binaural && virtual_layout.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--virtual-layout is only valid with binaural rendering",
+        )
+        .into());
+    }
+    let layout = if binaural {
+        virtual_layout
+            .or(layout)
+            .unwrap_or_else(|| joc_render::DEFAULT_BINAURAL_VIRTUAL_LAYOUT.to_owned())
+    } else {
+        layout.ok_or_else(usage_error)?
+    };
+    if binaural && layout == "2.0" {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "2.0 is a physical Left Speaker/Right Speaker output layout, not a binaural virtual layout",
+        )
+        .into());
+    }
+    if binaural && lfe_policy.is_none() {
+        lfe_policy = Some(joc_render::BinauralLfePolicy::Exclude);
+    }
     Ok(RenderJocArgs {
         input: PathBuf::from(input.ok_or_else(usage_error)?),
         topology,
-        layout: layout.ok_or_else(usage_error)?,
+        layout,
         output: output.ok_or_else(usage_error)?,
         binaural_sofa,
         binaural_backend,
@@ -1454,9 +1510,12 @@ fn render_joc_preflight(
         }
     }
     // Validate semantic layout/output capability before checking overwrite
-    // state or opening/decoding the input stream. In particular, a blocked
-    // speaker-WAV mapping must never prompt about an existing target first.
-    joc_render::validate_speaker_output(&arguments.layout, &arguments.output)?;
+    // state or opening/decoding the input stream. A binaural virtual layout is
+    // renderer configuration; it must not be treated as physical output
+    // metadata or leak its channel count into the sink.
+    if arguments.binaural_sofa.is_none() {
+        joc_render::validate_speaker_output(&arguments.layout, &arguments.output)?;
+    }
     if arguments.downmix_policy.is_some() && arguments.layout != "2.0" {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -3697,6 +3756,55 @@ mod profile_name_tests {
     }
 
     #[test]
+    fn binaural_defaults_to_714_and_virtual_layout_never_becomes_physical_layout() {
+        let values = [
+            "input.m4a".to_owned(),
+            "--binaural".to_owned(),
+            "--sofa".to_owned(),
+            "listener.sofa".to_owned(),
+            "--output".to_owned(),
+            "binaural.wav".to_owned(),
+        ];
+        let parsed = parse_render_joc(&values).expect("default binaural configuration");
+        assert_eq!(parsed.layout, joc_render::DEFAULT_BINAURAL_VIRTUAL_LAYOUT);
+        assert_eq!(parsed.binaural_sofa, Some(PathBuf::from("listener.sofa")));
+        assert_eq!(
+            parsed.lfe_policy,
+            Some(joc_render::BinauralLfePolicy::Exclude)
+        );
+
+        let mut advanced = values.to_vec();
+        advanced.extend(["--virtual-layout".to_owned(), "9.1.6".to_owned()]);
+        assert_eq!(parse_render_joc(&advanced).unwrap().layout, "9.1.6");
+    }
+
+    #[test]
+    fn binaural_cli_rejects_competing_layouts_and_keeps_20_physical() {
+        let competing = [
+            "input.m4a".to_owned(),
+            "--binaural".to_owned(),
+            "--sofa".to_owned(),
+            "listener.sofa".to_owned(),
+            "--layout".to_owned(),
+            "7.1.4".to_owned(),
+            "--virtual-layout".to_owned(),
+            "9.1.6".to_owned(),
+            "--output".to_owned(),
+            "out.wav".to_owned(),
+        ];
+        assert!(parse_render_joc(&competing).is_err());
+
+        let physical = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "2.0".to_owned(),
+            "--output".to_owned(),
+            "out.wav".to_owned(),
+        ];
+        assert_eq!(parse_render_joc(&physical).unwrap().layout, "2.0");
+    }
+
+    #[test]
     fn render_joc_performance_and_progress_options_are_diagnostic() {
         let values = [
             "input.m4a".to_owned(),
@@ -3828,10 +3936,8 @@ mod profile_name_tests {
         ];
         let parsed = parse_render_joc(&values).unwrap();
         let terminal = TerminalCapabilities::from_inputs(false, false, None, false, None, None);
-        let error = render_joc_preflight(&parsed, terminal).expect_err("binaural must be blocked");
-        assert!(error.to_string().contains("not currently admitted"));
-        assert!(error.to_string().contains("Ltm"));
-        assert!(!error.to_string().contains("failed to open input"));
+        render_joc_preflight(&parsed, terminal)
+            .expect("layout preflight is independent of dataset coverage");
     }
 
     #[test]

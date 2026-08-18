@@ -511,39 +511,55 @@ through a caller-supplied admitted SOFA file:
 
 ```sh
 openjoc render-joc INPUT.m4a \
-  --layout 7.1.4 \
-  --binaural-sofa HRTF.sofa \
+  --binaural \
+  --sofa HRTF.sofa \
   --lfe-policy equal-power-dual-mono \
   --output OUTPUT-binaural.wav
+```
+
+The ordinary binaural command does not require a physical `--layout`. Its
+product default virtual speaker field is `7.1.4`, and the output is always
+two-channel stereo (`Left Ear`, `Right Ear`). To choose another internal field:
+
+```sh
+openjoc render-joc INPUT.m4a \
+  --binaural --sofa HRTF.sofa --virtual-layout 9.1.6 \
+  --lfe-policy exclude --output OUTPUT-binaural.wav
 ```
 
 This is speaker-virtualized binaural rendering:
 
 ```text
 real JOC -> JocSpatialBridge -> selected virtual speaker layout
-          -> one fixed exact-direction HRIR per non-LFE speaker -> Left/Right
+          -> exact or safely interpolated HRIR per non-LFE speaker -> Left/Right ears
 ```
 
 It is not a direct moving-object HRIR renderer and makes no vendor or
-reference-product headphone-rendering claim. `--layout` names the virtual
-speaker layout, not the two-channel output. The six current binaural-capable
-public presets remain available: `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and
-`7.1.4`. `7.1.6` and the 9.1 family are speaker-layout presets for semantic
-CAF output, but their binaural paths are not admitted until exact HRIR
-direction entries for every new identity are available. They must not fall
-back to nearest-speaker HRIRs, interpolation, aliasing, or omitted channels.
+reference-product headphone-rendering claim. `--virtual-layout` names the
+internal virtual speaker field; it does not select physical output channels.
+The legacy combination `--layout 7.1.4 --binaural-sofa HRTF.sofa` remains
+accepted as a virtual-layout alias. `--layout` without binaural remains the
+physical speaker output selector. `--layout` and `--virtual-layout` together
+are rejected as ambiguous. `--layout 2.0` is never routed through SOFA.
+
+All public virtual presets from `5.1` through `9.1.6` are eligible when the
+selected SOFA provides exact or safely interpolatable coverage. Missing or
+sparse directions fail closed; OpenJOC never aliases a direction to a nearest
+speaker or silently omits a virtual channel.
 
 The SOFA path is local and user-supplied. It is parsed only within the existing
 strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
 explicitly shared with the renderer contract: local `+X` is right, `+Y` is
-front, and `+Z` is up. The virtual directions cover front, side/rear, and
-front/rear height positions. Lookup is exact; all required directions are
-preflighted before output starts, with no nearest-direction fallback or
-interpolation. The decoded JOC sample rate must equal the SOFA HRIR rate;
+front, and `+Z` is up. The virtual directions cover front, side/rear, wide,
+and front/middle/rear height positions. Exact lookup is preferred. Non-exact
+directions use a bounded spherical-local segment/triangle interpolation with
+common ear weights and delay-aligned HRIR shapes; all required directions are
+prepared before output starts. The decoded JOC sample rate must equal the SOFA
+HRIR rate;
 OpenJOC does not silently resample either stream.
 
-The admitted presets contain LFE, so binaural rendering requires one explicit
-renderer-level policy:
+The admitted presets contain LFE. The simple CLI form defaults to
+`--lfe-policy exclude`; an explicit renderer-level policy can be selected:
 
 - `--lfe-policy exclude` omits the virtual LFE channel.
 - `--lfe-policy equal-power-dual-mono` adds the virtual LFE to both ears at
@@ -592,7 +608,7 @@ The admitted 2.0 Base matrix is constrained to L/R/C/Ls/Rs and mono surround
 with an invented coefficient. `--downmix` is a 2.0 speaker policy and cannot
 be combined with SOFA binaural output. The 9.1 family remains exposed for CAF
 speaker output using the authorized clean-room Wide-row geometry; its binaural
-path remains blocked.
+path is dataset-dependent on exact or safely interpolatable Wide HRIR coverage.
 The generic bridge API can still accept caller-defined layouts at library
 
 ## Professional preset feasibility audit
@@ -609,11 +625,11 @@ name alone as evidence of a clean geometry definition.
 | `7.1` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit front/side/rear bed rows and public order. |
 | `7.1.2` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with one upper row and explicit public order/mask. |
 | `7.1.4` | `SUPPORTED_EXISTING_GEOMETRY` | Exposed | Uses the generic full-XYZ projector with explicit bed/top rows and public order. |
-| `7.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Uses the same generic full-XYZ projector with three upper rows and distinct top-middle identities; standard speaker WAV and current exact-direction binaural output are rejected. |
-| `9.1` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Adds the authorized Q15 Wide bed row to the existing 7.1 bed; WAV and current exact-direction binaural output are rejected. |
-| `9.1.2` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and one existing upper row; WAV and current exact-direction binaural output are rejected. |
-| `9.1.4` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing two-row upper topology; WAV and current exact-direction binaural output are rejected. |
-| `9.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing three-row upper topology; WAV and current exact-direction binaural output are rejected. |
+| `7.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Speaker output retains the existing three-row geometry and CAF-only identity boundary; binaural virtual output is ready when Top Middle directions are exact or safely interpolatable. |
+| `9.1` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Speaker output retains the authorized Q15 Wide bed and CAF-only identity boundary; binaural virtual output is ready when Wide directions are exact or safely interpolatable. |
+| `9.1.2` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and one existing upper row; binaural virtual output is dataset-dependent on Wide and upper-direction coverage. |
+| `9.1.4` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing two-row upper topology; binaural virtual output is dataset-dependent on Wide and upper-direction coverage. |
+| `9.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing three-row upper topology; binaural virtual output is dataset-dependent on Wide, Top Middle, and upper-direction coverage. |
 | `22.2` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | The generic engine can represent a 24-channel 3D layout, but no clean/public 22.2 speaker geometry is admitted in this repository. |
 
 The 22.2 result is not a renderer-domain limitation. If a clean speaker

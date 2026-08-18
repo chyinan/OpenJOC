@@ -34,9 +34,11 @@ rendering assembles bridge control from decoded JOC/OAMD state;
 The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
 `9.1`, `9.1.2`, `9.1.4`, and `9.1.6` workflows are documented in
 [JOC speaker rendering](docs/JOC_RENDER.md). The same workflow can virtualize
-the six admitted binaural layouts through a user-supplied exact-direction SOFA
-HRIR bank. `7.1.6` and the `9.1` family provide semantic speaker-to-CAF output
-independently; their binaural paths remain closed.
+all public virtual binaural layouts through a user-supplied strict SOFA HRIR
+bank when directions are exact or safely interpolatable. The default virtual
+layout is `7.1.4`; `7.1.6` and the `9.1` family provide semantic speaker-to-CAF
+output independently and can also be used as dataset-dependent binaural
+virtual fields.
 The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
 generic N-channel library interface for caller-defined layouts; the CLI names
 are convenience presets, not the renderer's fundamental maximum.
@@ -112,8 +114,10 @@ openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-st
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
 openjoc render-joc input.m4a --layout 7.1.4 --output render.caf
 openjoc render-joc input.m4a --layout 9.1.6 --output render-9.1.6.caf
-openjoc render-joc input.m4a --layout 7.1.4 --binaural-sofa HRTF.sofa \
+openjoc render-joc input.m4a --binaural --sofa HRTF.sofa \
   --lfe-policy equal-power-dual-mono --output render-binaural.wav
+openjoc render-joc input.m4a --binaural --sofa HRTF.sofa \
+  --virtual-layout 9.1.6 --lfe-policy exclude --output render-binaural-9.1.6.wav
 # Optional complete explicit override/test input:
 openjoc render-joc input.m4a --topology bridge-control.json --layout 7.1.4 --output render.wav
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json

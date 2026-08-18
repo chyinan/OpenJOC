@@ -206,16 +206,17 @@ HRTF/binaural rendering, JOC, ObjectScene, and authored-object bridges remain
 outside the contract.
 
 `HrirPair`, `HrirEntry`, and `HrirBank` provide a compact caller-supplied
-exact-direction HRIR contract. `StaticBinauralSource` binds a fixed explicit
-source ID, canonical direction, linear gain, and HRIR entry; it does not infer
-authored-object identity. `BinauralRenderer` uses the fixed listener convention
-(`+Y` forward, `+X` right, `+Z` up), emits `LEFT_EAR` then `RIGHT_EAR`, and
-performs direct causal time-domain FIR convolution. It preserves leading HRIR
-delay, keeps bounded per-source history across caller-owned input blocks, and
-exposes explicit tail draining and reset semantics. Exact direction and
-sample-rate matching are mandatory; there is no nearest-neighbor lookup,
-interpolation, SOFA parser, moving source, listener pose, room, distance,
-Doppler, or JOC semantic bridge. `PartitionedBinauralRenderer` is an additive,
+exact-direction HRIR contract, with optional explicit per-ear delay metadata
+retained for construction-time interpolation. `StaticBinauralSource` binds a
+fixed explicit source ID, canonical direction, linear gain, and HRIR entry; it
+does not infer authored-object identity. `BinauralRenderer` uses the fixed
+listener convention (`+Y` forward, `+X` right, `+Z` up), emits `LEFT_EAR` then
+`RIGHT_EAR`, and performs direct causal time-domain FIR convolution. It
+preserves leading HRIR delay, keeps bounded per-source history across
+caller-owned input blocks, and exposes explicit tail draining and reset
+semantics. `openjoc-sofa` resolves exact directions first and performs bounded
+delay-aligned spherical interpolation before registering static sources.
+`PartitionedBinauralRenderer` is an additive,
 caller-selected uniform overlap-add backend: its fixed power-of-two partition
 `P` uses a `2P` FFT, reports one-partition scheduling latency, accepts exactly
 `P`-sample input partitions plus one explicit final partial operation, and
@@ -232,11 +233,13 @@ of file parsing, NetCDF/HDF5 libraries, and OS-specific APIs. The current
 portable reader accepts the project-tested NetCDF classic CDF-1 subset, fixed
 listener pose, spherical degree/degree/metre source positions, exactly two
 receivers, common sample rate, and integer sample delays. Receiver geometry,
-not array order, determines left/right ear mapping. After construction no
-SOFA file handle is retained and neither renderer performs file I/O per audio
-block. HDF5/NetCDF-4, interpolation, nearest-direction fallback, moving
-sources, SOFA writing, dataset downloads, and any JOC semantic bridge remain
-outside this boundary.
+not array order, determines left/right ear mapping. Exact lookup is preferred;
+non-exact requests use a deterministic local spherical segment/triangle with
+shared ear weights, while sparse/outside coverage fails closed. After
+construction no SOFA file handle is retained and neither renderer performs
+file I/O per audio block. HDF5/NetCDF-4, resampling, moving sources, SOFA
+writing, dataset downloads, and any JOC semantic bridge remain outside this
+boundary.
 
 ### Capture and streaming
 

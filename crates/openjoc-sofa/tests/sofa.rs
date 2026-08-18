@@ -1,9 +1,10 @@
 use openjoc_render::{
-    BinauralRenderer, CartesianPosition, HrirBank, SourceId, StaticBinauralSource,
-    UniformPartitionedConfig, UniformPartitionedConvolver,
+    BinauralRenderer, CartesianPosition, HrirBank, HrirEntry, HrirEntryId, HrirPair, SourceId,
+    StaticBinauralSource, UniformPartitionedConfig, UniformPartitionedConvolver,
 };
 use openjoc_sofa::{
     SofaError, SofaLoadLimits, load_simple_free_field_hrir, parse_simple_free_field_hrir,
+    resolve_hrir,
 };
 
 #[test]
@@ -109,6 +110,124 @@ fn file_path_loader_uses_local_file_only() {
     let loaded = load_simple_free_field_hrir(&path, SofaLoadLimits::default()).expect("path load");
     std::fs::remove_file(&path).expect("remove fixture");
     assert_eq!(loaded.metadata.convention_version, "1.2");
+}
+
+#[test]
+fn interpolation_preserves_exact_identity_and_aligns_delays() {
+    let bank = synthetic_bank(vec![
+        (
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            HrirPair::new_with_delays(
+                48_000,
+                vec![0.0, 1.0, 2.0, 0.0, 0.0],
+                vec![0.0, 2.0, 4.0, 0.0, 0.0],
+                [1, 1],
+            )
+            .unwrap(),
+        ),
+        (
+            CartesianPosition::new(1.0, 0.0, 0.0),
+            HrirPair::new_with_delays(
+                48_000,
+                vec![0.0, 0.0, 0.0, 3.0, 4.0],
+                vec![0.0, 0.0, 0.0, 6.0, 8.0],
+                [3, 3],
+            )
+            .unwrap(),
+        ),
+    ]);
+    let exact = resolve_hrir(&bank, CartesianPosition::new(0.0, 1.0, 0.0)).unwrap();
+    assert_eq!(exact.exact_entry, Some(HrirEntryId::new(1)));
+    assert_eq!(exact.pair, bank.entries()[0].pair().clone());
+
+    let midpoint = resolve_hrir(&bank, CartesianPosition::new(1.0, 1.0, 0.0)).unwrap();
+    assert_eq!(midpoint.exact_entry, None);
+    assert_eq!(midpoint.neighbor_count, 2);
+    assert_eq!(
+        midpoint.pair.delay_samples(openjoc_render::HrirEar::Left),
+        2
+    );
+    assert_eq!(midpoint.pair.left_taps(), &[0.0, 0.0, 2.0, 3.0, 0.0, 0.0]);
+    assert_eq!(midpoint.pair.right_taps(), &[0.0, 0.0, 4.0, 6.0, 0.0, 0.0]);
+}
+
+#[test]
+fn interpolation_handles_azimuth_wrap_and_fails_closed_for_sparse_or_outside_data() {
+    let wrap_bank = synthetic_bank(vec![
+        (
+            azimuth(179.0),
+            HrirPair::new(48_000, vec![1.0, 0.0], vec![1.0, 0.0]).unwrap(),
+        ),
+        (
+            azimuth(-179.0),
+            HrirPair::new(48_000, vec![3.0, 0.0], vec![3.0, 0.0]).unwrap(),
+        ),
+    ]);
+    let wrapped = resolve_hrir(&wrap_bank, CartesianPosition::new(0.0, -1.0, 0.0)).unwrap();
+    assert_eq!(wrapped.pair.left_taps()[0], 2.0);
+
+    let sparse = synthetic_bank(vec![(
+        CartesianPosition::new(0.0, 1.0, 0.0),
+        HrirPair::new(48_000, vec![1.0], vec![1.0]).unwrap(),
+    )]);
+    assert!(matches!(
+        resolve_hrir(&sparse, CartesianPosition::new(1.0, 0.0, 0.0)),
+        Err(SofaError::InsufficientInterpolationData { .. })
+    ));
+    assert!(matches!(
+        resolve_hrir(&wrap_bank, CartesianPosition::new(0.0, 1.0, 0.0)),
+        Err(SofaError::InterpolationOutsideCoverage(_))
+    ));
+}
+
+#[test]
+fn internal_coordinate_model_resolves_cardinal_directions() {
+    let directions = [
+        CartesianPosition::new(0.0, 1.0, 0.0),  // front
+        CartesianPosition::new(-1.0, 0.0, 0.0), // left
+        CartesianPosition::new(1.0, 0.0, 0.0),  // right
+        CartesianPosition::new(0.0, -1.0, 0.0), // rear
+        CartesianPosition::new(0.0, 0.0, 1.0),  // top
+        CartesianPosition::new(0.0, 0.0, -1.0), // bottom
+    ];
+    let bank = synthetic_bank(
+        directions
+            .into_iter()
+            .map(|direction| {
+                (
+                    direction,
+                    HrirPair::new(48_000, vec![1.0], vec![1.0]).unwrap(),
+                )
+            })
+            .collect(),
+    );
+    for direction in directions {
+        assert!(
+            resolve_hrir(&bank, direction)
+                .unwrap()
+                .exact_entry
+                .is_some()
+        );
+    }
+}
+
+fn synthetic_bank(entries: Vec<(CartesianPosition, HrirPair)>) -> HrirBank {
+    HrirBank::new(
+        48_000,
+        entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, (direction, pair))| {
+                HrirEntry::new(HrirEntryId::new(index as u64 + 1), direction, pair).unwrap()
+            })
+            .collect(),
+    )
+    .unwrap()
+}
+
+fn azimuth(degrees: f64) -> CartesianPosition {
+    let radians = degrees.to_radians();
+    CartesianPosition::new(radians.sin(), radians.cos(), 0.0)
 }
 
 fn fixture(convention: &str, delays: [f64; 2], per_measurement_delay: bool) -> Vec<u8> {

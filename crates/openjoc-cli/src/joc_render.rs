@@ -12,7 +12,7 @@ use openjoc_joc::{
     ReconstructionTimelineError,
 };
 use openjoc_render::{
-    BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntryId,
+    BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntry, HrirEntryId,
     PartitionedBinauralRenderer, SourceId, StaticBinauralSource, UniformPartitionedConfig,
 };
 use openjoc_scene::{
@@ -24,7 +24,7 @@ use openjoc_scene::{
 };
 #[cfg(test)]
 use openjoc_scene::{SPEAKER_LAYOUT_5_1_CHANNELS, SpatialLayout};
-use openjoc_sofa::SofaError;
+use openjoc_sofa::{SofaError, resolve_hrir};
 use openjoc_wave::{
     CafChannelDescription, CafError, CafWriter, Clipping, Dither, SampleFormat, WaveEncodeOptions,
     WaveError, WaveWriter,
@@ -43,6 +43,9 @@ pub const JOC_RENDER_LAYOUT: &str = "5.1";
 #[cfg(test)]
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = SPEAKER_LAYOUT_5_1_CHANNELS;
 pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 12] = SPEAKER_LAYOUT_PRESET_NAMES;
+/// Product default for the internal virtual speaker field used by binaural.
+/// This does not change physical speaker output semantics.
+pub const DEFAULT_BINAURAL_VIRTUAL_LAYOUT: &str = "7.1.4";
 
 /// Channel-based stereo downmix policy for the admitted 2.0 speaker output.
 /// This is intentionally separate from the binaural/SOFA output mode.
@@ -195,12 +198,12 @@ impl fmt::Display for JocRenderError {
             Self::Binaural(error) => write!(formatter, "JOC binaural render error: {error}"),
             Self::BinauralHrirCoverage { layout, missing } => write!(
                 formatter,
-                "SOFA does not provide exact HRIR directions for virtual layout {layout}: {}",
+                "SOFA cannot resolve exact or safely interpolated HRIR directions for virtual layout {layout}: {}",
                 missing.join(", ")
             ),
             Self::BinauralLayoutNotReady { layout, missing } => write!(
                 formatter,
-                "binaural rendering is not currently admitted for semantic layout {layout}: exact direction identities are missing for {}; no nearest-speaker, alias, interpolation, or omitted-channel fallback is used; CAF speaker output is independent",
+                "binaural rendering is not currently admitted for semantic layout {layout}: no public direction mapping exists for {}; physical speaker output is independent",
                 missing.join(", ")
             ),
             Self::BinauralSampleRateMismatch { expected, actual } => write!(
@@ -1024,6 +1027,7 @@ pub struct BinauralSpeakerMapping {
     pub direction: CartesianPosition,
     pub source_id: SourceId,
     pub hrir_entry: HrirEntryId,
+    pub interpolated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1038,9 +1042,10 @@ enum BinauralEngine {
     Partitioned(Box<PartitionedBinauralRenderer>),
 }
 
-/// Real-JOC speaker virtualization followed by static exact-direction HRIR
-/// binaural rendering. This is an OpenJOC renderer path, not a vendor-fidelity
-/// or direct-object binaural implementation.
+/// Real-JOC speaker virtualization followed by static SOFA HRIR binaural
+/// rendering. Exact directions are preferred and safely covered directions
+/// are prepared by `openjoc-sofa` interpolation. This is an OpenJOC renderer
+/// path, not a vendor-fidelity or direct-object binaural implementation.
 pub struct JocBinauralRenderer {
     speaker: JocSpeakerRenderer,
     layout: String,
@@ -1050,6 +1055,7 @@ pub struct JocBinauralRenderer {
     lfe_policy: Option<BinauralLfePolicy>,
     lfe_index: Option<usize>,
     mappings: Vec<BinauralSpeakerMapping>,
+    interpolated_hrir_count: usize,
     max_taps: usize,
     engine: Option<BinauralEngine>,
     sample_rate: Option<u32>,
@@ -1103,8 +1109,12 @@ impl JocBinauralRenderer {
         if let BinauralBackend::Partitioned { partition_size } = backend {
             UniformPartitionedConfig::new(partition_size)?;
         }
+        let source_bank = bank;
+        let mut prepared_entries = source_bank.entries().to_vec();
+        let mut next_interpolated_id = u64::MAX;
         let mut mappings = Vec::with_capacity(preset.channel_count().saturating_sub(1));
         let mut missing = Vec::new();
+        let mut interpolated_hrir_count = 0;
         let mut max_taps = 0;
         for (channel_index, label) in preset.labels.iter().enumerate() {
             if preset.lfe_index() == Some(channel_index) {
@@ -1115,10 +1125,38 @@ impl JocBinauralRenderer {
                     "no binaural direction is defined for public speaker {label}"
                 )));
             };
-            let Ok(entry) = bank.resolve_exact(direction) else {
-                missing.push(format!("{label}={direction:?}"));
-                continue;
+            let resolved = match resolve_hrir(&source_bank, direction) {
+                Ok(resolved) => resolved,
+                Err(error) => {
+                    missing.push(format!("{label}={direction:?}: {error}"));
+                    continue;
+                }
             };
+            let (hrir_entry, interpolated) = if let Some(exact_entry) = resolved.exact_entry {
+                (exact_entry, false)
+            } else {
+                while prepared_entries
+                    .iter()
+                    .any(|entry| entry.id() == HrirEntryId::new(next_interpolated_id))
+                {
+                    next_interpolated_id = next_interpolated_id
+                        .checked_sub(1)
+                        .ok_or(JocRenderError::FrameSampleCount)?;
+                }
+                let entry_id = HrirEntryId::new(next_interpolated_id);
+                next_interpolated_id = next_interpolated_id
+                    .checked_sub(1)
+                    .ok_or(JocRenderError::FrameSampleCount)?;
+                let entry = HrirEntry::new(entry_id, direction, resolved.pair)?;
+                max_taps = max_taps.max(entry.pair().tap_count());
+                prepared_entries.push(entry);
+                interpolated_hrir_count += 1;
+                (entry_id, true)
+            };
+            let entry = prepared_entries
+                .iter()
+                .find(|entry| entry.id() == hrir_entry)
+                .ok_or(JocRenderError::FrameSampleCount)?;
             max_taps = max_taps.max(entry.pair().tap_count());
             let source_id = SourceId::new(
                 u64::try_from(channel_index)
@@ -1131,7 +1169,8 @@ impl JocBinauralRenderer {
                 channel_index,
                 direction,
                 source_id,
-                hrir_entry: entry.id(),
+                hrir_entry,
+                interpolated,
             });
         }
         if !missing.is_empty() {
@@ -1140,6 +1179,9 @@ impl JocBinauralRenderer {
                 missing,
             });
         }
+        let sample_rate_hz = source_bank.sample_rate_hz();
+        drop(source_bank);
+        let bank = HrirBank::new(sample_rate_hz, prepared_entries)?;
         let speaker = match control {
             Some(control) => {
                 JocSpeakerRenderer::new_with_contribution(layout, control, contribution_mode)?
@@ -1155,6 +1197,7 @@ impl JocBinauralRenderer {
             lfe_policy,
             lfe_index: preset.lfe_index(),
             mappings,
+            interpolated_hrir_count,
             max_taps,
             engine: None,
             sample_rate: None,
@@ -1389,7 +1432,7 @@ impl JocBinauralRenderer {
         let output_container =
             output_container_for_path(output).map_or("unknown", |container| container.name());
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: complete (exact-direction lookup)\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {} {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural stereo (L/R ears)\nphysical output channel count: 2\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: {} exact, {} interpolated\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {} {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
             requested_profile.as_str(),
             selected_profile.as_str(),
             self.layout,
@@ -1398,6 +1441,10 @@ impl JocBinauralRenderer {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("<unnamed>"),
+            self.mappings
+                .len()
+                .saturating_sub(self.interpolated_hrir_count),
+            self.interpolated_hrir_count,
             self.backend.name(),
             match self.backend {
                 BinauralBackend::Direct => 0,
@@ -1598,8 +1645,15 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
         "Rb" => CartesianPosition::new(1.0, -1.0, 0.0),
         "TFL" | "Ltf" => CartesianPosition::new(-1.0, 1.0, 1.0),
         "TFR" | "Rtf" => CartesianPosition::new(1.0, 1.0, 1.0),
+        "Ltm" => CartesianPosition::new(-1.0, 0.0, 1.0),
+        "Rtm" => CartesianPosition::new(1.0, 0.0, 1.0),
         "TBL" | "Ltr" => CartesianPosition::new(-1.0, -1.0, 1.0),
         "TBR" | "Rtr" => CartesianPosition::new(1.0, -1.0, 1.0),
+        // The public 9.1 wide row is slightly forward of the side row.  Keep
+        // this renderer direction tied to the existing scene geometry's
+        // normalized coordinate convention (+Y front, -Y rear).
+        "Lw" => CartesianPosition::new(-1.0, 0.67767333984375, 0.0),
+        "Rw" => CartesianPosition::new(1.0, 0.67767333984375, 0.0),
         _ => return None,
     })
 }
@@ -1654,8 +1708,8 @@ pub fn validate_speaker_output(
     }
 }
 
-/// Validates the current exact-direction binaural admission independently of
-/// the selected speaker output container.
+/// Validates public direction mappings independently of SOFA dataset coverage
+/// and the selected physical speaker output container.
 pub fn validate_binaural_layout(layout: &str) -> Result<(), JocRenderError> {
     let preset = SpeakerLayoutPreset::for_name(layout)?;
     validate_binaural_layout_preset(layout, &preset)
@@ -3118,28 +3172,37 @@ mod tests {
     }
 
     #[test]
-    fn binaural_preflight_rejects_716_without_hrir_aliasing() {
-        let error = super::validate_binaural_layout("7.1.6")
-            .expect_err("7.1.6 binaural is not currently admitted");
-        assert!(matches!(
-            error,
-            JocRenderError::BinauralLayoutNotReady { ref layout, ref missing }
-                if layout == "7.1.6" && missing == &["Ltm".to_owned(), "Rtm".to_owned()]
-        ));
-        assert!(error.to_string().contains("not currently admitted"));
-        assert!(error.to_string().contains("no nearest-speaker"));
+    fn binaural_preflight_admits_public_716_direction_mappings() {
+        super::validate_binaural_layout("7.1.6").expect("7.1.6 has public directions");
     }
 
     #[test]
-    fn binaural_preflight_rejects_the_91_family_without_hrir_aliasing() {
+    fn binaural_preflight_admits_the_91_family_direction_mappings() {
         for layout in ["9.1", "9.1.2", "9.1.4", "9.1.6"] {
-            let error = super::validate_binaural_layout(layout)
-                .expect_err("9.1-family binaural is not currently admitted");
-            assert!(matches!(
-                error,
-                JocRenderError::BinauralLayoutNotReady { layout: ref selected, ref missing }
-                    if selected == layout && missing.iter().any(|identity| identity == "Lw")
-            ));
+            super::validate_binaural_layout(layout)
+                .expect("9.1-family has public direction mappings");
+        }
+    }
+
+    #[test]
+    fn binaural_interpolates_top_middle_and_wide_directions_from_714_bank() {
+        for (layout, expected_interpolated) in [("7.1.6", 2), ("9.1.6", 4)] {
+            let renderer = JocBinauralRenderer::new(
+                layout,
+                binaural_bank("7.1.4", 48_000),
+                BinauralBackend::Direct,
+                Some(BinauralLfePolicy::Exclude),
+                Some(control(false, 6)),
+            )
+            .expect("covered virtual directions interpolate");
+            assert_eq!(renderer.interpolated_hrir_count, expected_interpolated);
+            assert_eq!(
+                renderer.mappings.len(),
+                SpeakerLayoutPreset::for_name(layout)
+                    .unwrap()
+                    .channel_count()
+                    - 1
+            );
         }
     }
 

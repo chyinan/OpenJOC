@@ -17,9 +17,9 @@
 //! FIR stream with explicit history and tail draining. J5R7 adds an additive
 //! fixed-uniform FFT partitioned backend with explicit input-partition,
 //! latency, final-partial-input, and tail contracts; Direct FIR remains the
-//! reference implementation. SOFA, interpolation, moving binaural sources,
-//! distance, room acoustics, occlusion, and JOC semantic binding remain
-//! explicit non-features.
+//! reference implementation. SOFA ingestion and deterministic interpolation
+//! live at the `openjoc-sofa` boundary; moving binaural sources, distance, room
+//! acoustics, occlusion, and JOC semantic binding remain explicit non-features.
 
 use std::fmt;
 
@@ -739,11 +739,27 @@ pub struct HrirPair {
     sample_rate_hz: u32,
     left: Vec<f64>,
     right: Vec<f64>,
+    delays: [usize; 2],
 }
 
 impl HrirPair {
     /// Creates a pair without changing, normalizing, trimming, or resampling taps.
     pub fn new(sample_rate_hz: u32, left: Vec<f64>, right: Vec<f64>) -> Result<Self, RenderError> {
+        Self::new_with_delays(sample_rate_hz, left, right, [0, 0])
+    }
+
+    /// Creates a pair with explicit causal sample delays for the two ears.
+    ///
+    /// The tap vectors remain fully expanded causal FIRs. Delay metadata is
+    /// retained separately so a spatial interpolator can remove measured
+    /// onset before averaging the HRIR shape and restore the interpolated
+    /// onset without changing exact-direction rendering.
+    pub fn new_with_delays(
+        sample_rate_hz: u32,
+        left: Vec<f64>,
+        right: Vec<f64>,
+        delays: [usize; 2],
+    ) -> Result<Self, RenderError> {
         if sample_rate_hz == 0 {
             return Err(RenderError::InvalidSampleRate);
         }
@@ -761,10 +777,24 @@ impl HrirPair {
                 return Err(RenderError::NonFiniteHrirTap { ear, tap_index });
             }
         }
+        for (ear, (delay, taps)) in delays.into_iter().zip([&left, &right]).enumerate() {
+            if delay > taps.len() {
+                return Err(RenderError::InvalidHrirDelay {
+                    ear: if ear == 0 {
+                        HrirEar::Left
+                    } else {
+                        HrirEar::Right
+                    },
+                    delay,
+                    tap_count: taps.len(),
+                });
+            }
+        }
         Ok(Self {
             sample_rate_hz,
             left,
             right,
+            delays,
         })
     }
 
@@ -790,6 +820,15 @@ impl HrirPair {
     #[must_use]
     pub fn tap_count(&self) -> usize {
         self.left.len()
+    }
+
+    /// Returns the explicit source delay for one ear.
+    #[must_use]
+    pub const fn delay_samples(&self, ear: HrirEar) -> usize {
+        match ear {
+            HrirEar::Left => self.delays[0],
+            HrirEar::Right => self.delays[1],
+        }
     }
 }
 
@@ -2698,6 +2737,11 @@ pub enum RenderError {
         ear: HrirEar,
         tap_index: usize,
     },
+    InvalidHrirDelay {
+        ear: HrirEar,
+        delay: usize,
+        tap_count: usize,
+    },
     HrirSampleRateMismatch {
         expected: u32,
         actual: u32,
@@ -2906,6 +2950,14 @@ impl fmt::Display for RenderError {
                     "{ear:?} HRIR tap is non-finite at index {tap_index}"
                 )
             }
+            Self::InvalidHrirDelay {
+                ear,
+                delay,
+                tap_count,
+            } => write!(
+                formatter,
+                "{ear:?} HRIR delay {delay} exceeds tap count {tap_count}"
+            ),
             Self::HrirSampleRateMismatch { expected, actual } => write!(
                 formatter,
                 "HRIR sample rate mismatch: expected {expected}, actual {actual}"

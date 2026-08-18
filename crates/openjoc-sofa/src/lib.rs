@@ -8,7 +8,7 @@
 
 use std::{fmt, fs, path::Path};
 
-use openjoc_render::{CartesianPosition, HrirBank, HrirEntry, HrirEntryId, HrirPair};
+use openjoc_render::{CartesianPosition, HrirBank, HrirEar, HrirEntry, HrirEntryId, HrirPair};
 
 const MAX_COORDINATE_TOLERANCE: f64 = 1.0e-9;
 const NC_DIMENSION_TAG: u32 = 10;
@@ -72,6 +72,17 @@ pub struct LoadedSofaHrirBank {
     pub metadata: SofaHrirMetadata,
 }
 
+/// Result of resolving one virtual-speaker direction against a SOFA bank.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedHrir {
+    /// The exact or prepared interpolated pair for the requested direction.
+    pub pair: HrirPair,
+    /// The source entry identity when the exact path was selected.
+    pub exact_entry: Option<HrirEntryId>,
+    /// Number of source measurements used for an interpolated pair.
+    pub neighbor_count: usize,
+}
+
 /// Typed failures from the narrow SOFA ingestion boundary.
 #[derive(Debug, PartialEq)]
 pub enum SofaError {
@@ -93,6 +104,13 @@ pub enum SofaError {
         value: f64,
     },
     InvalidImpulseResponse(String),
+    InsufficientInterpolationData {
+        required: usize,
+        available: usize,
+    },
+    InterpolationOutsideCoverage(String),
+    DegenerateInterpolationGeometry,
+    InvalidInterpolationResult(String),
     DuplicateDirection {
         first: usize,
         second: usize,
@@ -134,6 +152,25 @@ impl fmt::Display for SofaError {
             ),
             Self::InvalidImpulseResponse(message) => {
                 write!(f, "invalid SOFA impulse response: {message}")
+            }
+            Self::InsufficientInterpolationData {
+                required,
+                available,
+            } => write!(
+                f,
+                "SOFA interpolation needs at least {required} local measurements; only {available} are available"
+            ),
+            Self::InterpolationOutsideCoverage(message) => {
+                write!(
+                    f,
+                    "SOFA interpolation request is outside measured coverage: {message}"
+                )
+            }
+            Self::DegenerateInterpolationGeometry => {
+                f.write_str("SOFA interpolation neighborhood is geometrically degenerate")
+            }
+            Self::InvalidInterpolationResult(message) => {
+                write!(f, "invalid SOFA interpolation result: {message}")
             }
             Self::DuplicateDirection { first, second } => {
                 write!(
@@ -673,8 +710,10 @@ fn validate_and_build(
             &ir_values[(measurement * receivers + right_receiver) * taps
                 ..(measurement * receivers + right_receiver + 1) * taps],
         );
-        let pair = HrirPair::new(sample_rate, left, right)
-            .map_err(|_| SofaError::InvalidImpulseResponse("HrirPair validation".to_string()))?;
+        let pair = HrirPair::new_with_delays(sample_rate, left, right, [left_delay, right_delay])
+            .map_err(|_| {
+            SofaError::InvalidImpulseResponse("HrirPair validation".to_string())
+        })?;
         entries.push(
             HrirEntry::new(HrirEntryId::new(measurement as u64), direction, pair)
                 .map_err(|_| SofaError::InvalidCoordinate(format!("direction {measurement}")))?,
@@ -725,6 +764,323 @@ fn validate_and_build(
         sample_rate_hz: sample_rate,
     };
     Ok(LoadedSofaHrirBank { bank, metadata })
+}
+
+/// Resolves a virtual-speaker direction using exact lookup first and a
+/// bounded, deterministic spherical-local interpolation otherwise.
+///
+/// The interpolation uses the nearest valid two-point great-circle segment or
+/// three-point spherical neighborhood.  The requested direction must lie on
+/// the selected segment or inside the selected local spherical triangle;
+/// extrapolation is rejected.  Both ears use the same spatial weights.  HRIR
+/// onset delays are interpolated separately from the delay-aligned FIR shape.
+pub fn resolve_hrir(
+    bank: &HrirBank,
+    direction: CartesianPosition,
+) -> Result<ResolvedHrir, SofaError> {
+    let target = normalize(direction).ok_or_else(|| {
+        SofaError::InvalidCoordinate("binaural direction must be finite and nonzero".to_string())
+    })?;
+    let target_position = CartesianPosition::new(target.x, target.y, target.z);
+    let target = [target.x, target.y, target.z];
+    if let Ok(entry) = bank.resolve_exact(target_position) {
+        return Ok(ResolvedHrir {
+            pair: entry.pair().clone(),
+            exact_entry: Some(entry.id()),
+            neighbor_count: 1,
+        });
+    }
+    if bank.entries().len() < 2 {
+        return Err(SofaError::InsufficientInterpolationData {
+            required: 2,
+            available: bank.entries().len(),
+        });
+    }
+
+    let mut candidates = bank
+        .entries()
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| Candidate {
+            index,
+            angle: angular_distance(target, entry.direction()),
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left.angle
+            .total_cmp(&right.angle)
+            .then_with(|| left.index.cmp(&right.index))
+    });
+    candidates.truncate(MAX_LOCAL_INTERPOLATION_CANDIDATES.min(candidates.len()));
+
+    for first in 0..candidates.len() {
+        for second in first + 1..candidates.len() {
+            for third in second + 1..candidates.len() {
+                let selected = [candidates[first], candidates[second], candidates[third]];
+                if selected
+                    .iter()
+                    .any(|candidate| candidate.angle > MAX_INTERPOLATION_ANGLE_RADIANS)
+                {
+                    continue;
+                }
+                if let Some(weights) = spherical_triangle_weights(
+                    target,
+                    selected.map(|candidate| bank.entries()[candidate.index].direction()),
+                ) {
+                    return build_resolved_interpolation(
+                        bank,
+                        &selected.map(|candidate| candidate.index),
+                        &weights,
+                    );
+                }
+            }
+        }
+    }
+
+    for first in 0..candidates.len() {
+        for second in first + 1..candidates.len() {
+            let left = candidates[first];
+            let right = candidates[second];
+            if let Some(weights) = great_circle_segment_weights(
+                target,
+                bank.entries()[left.index].direction(),
+                bank.entries()[right.index].direction(),
+            ) {
+                return build_resolved_interpolation(bank, &[left.index, right.index], &weights);
+            }
+        }
+    }
+
+    Err(SofaError::InterpolationOutsideCoverage(format!(
+        "nearest measurement is {:.2} degrees away and no local spherical segment/triangle contains the request",
+        candidates[0].angle.to_degrees()
+    )))
+}
+
+const MAX_LOCAL_INTERPOLATION_CANDIDATES: usize = 8;
+const MAX_INTERPOLATION_ANGLE_RADIANS: f64 = 2.0 * std::f64::consts::PI / 3.0;
+const INTERPOLATION_GEOMETRY_TOLERANCE: f64 = 1.0e-10;
+const INTERPOLATION_WEIGHT_TOLERANCE: f64 = 1.0e-8;
+
+#[derive(Clone, Copy, Debug)]
+struct Candidate {
+    index: usize,
+    angle: f64,
+}
+
+fn build_resolved_interpolation(
+    bank: &HrirBank,
+    indices: &[usize],
+    weights: &[f64],
+) -> Result<ResolvedHrir, SofaError> {
+    if indices.len() != weights.len() || indices.len() < 2 {
+        return Err(SofaError::InvalidInterpolationResult(
+            "weight/index cardinality".to_string(),
+        ));
+    }
+    let mut weight_sum = 0.0;
+    for weight in weights {
+        if !weight.is_finite() || *weight < -INTERPOLATION_WEIGHT_TOLERANCE {
+            return Err(SofaError::InvalidInterpolationResult(
+                "non-finite or negative interpolation weight".to_string(),
+            ));
+        }
+        weight_sum += *weight;
+    }
+    if !weight_sum.is_finite() || weight_sum <= 0.0 {
+        return Err(SofaError::InvalidInterpolationResult(
+            "invalid interpolation weight sum".to_string(),
+        ));
+    }
+    let normalized_weights = weights
+        .iter()
+        .map(|weight| (*weight).max(0.0) / weight_sum)
+        .collect::<Vec<_>>();
+    let pair = interpolate_pair(bank, indices, &normalized_weights)?;
+    Ok(ResolvedHrir {
+        pair,
+        exact_entry: None,
+        neighbor_count: indices.len(),
+    })
+}
+
+fn interpolate_pair(
+    bank: &HrirBank,
+    indices: &[usize],
+    weights: &[f64],
+) -> Result<HrirPair, SofaError> {
+    let mut max_aligned_taps = 0usize;
+    let mut delay_values = [0.0; 2];
+    for (index, weight) in indices.iter().zip(weights) {
+        let entry = bank
+            .entries()
+            .get(*index)
+            .ok_or_else(|| SofaError::InvalidInterpolationResult("neighbor index".to_string()))?;
+        for (ear_index, ear) in [HrirEar::Left, HrirEar::Right].into_iter().enumerate() {
+            let taps = match ear {
+                HrirEar::Left => entry.pair().left_taps(),
+                HrirEar::Right => entry.pair().right_taps(),
+            };
+            let delay = entry.pair().delay_samples(ear);
+            if delay > taps.len() {
+                return Err(SofaError::InvalidInterpolationResult(format!(
+                    "{ear:?} delay exceeds tap count"
+                )));
+            }
+            max_aligned_taps = max_aligned_taps.max(taps.len() - delay);
+            delay_values[ear_index] += *weight * delay as f64;
+        }
+    }
+    if max_aligned_taps == 0 {
+        return Err(SofaError::InvalidInterpolationResult(
+            "empty delay-aligned HRIR".to_string(),
+        ));
+    }
+    let delays = [
+        rounded_delay(delay_values[0])?,
+        rounded_delay(delay_values[1])?,
+    ];
+    let output_len = delays
+        .iter()
+        .copied()
+        .max()
+        .and_then(|delay| delay.checked_add(max_aligned_taps))
+        .ok_or_else(|| SofaError::InvalidInterpolationResult("tap length overflow".to_string()))?;
+    let mut output = [vec![0.0; output_len], vec![0.0; output_len]];
+
+    for (index, weight) in indices.iter().zip(weights) {
+        let entry = bank
+            .entries()
+            .get(*index)
+            .ok_or_else(|| SofaError::InvalidInterpolationResult("neighbor index".to_string()))?;
+        for (ear_index, ear) in [HrirEar::Left, HrirEar::Right].into_iter().enumerate() {
+            let taps = match ear {
+                HrirEar::Left => entry.pair().left_taps(),
+                HrirEar::Right => entry.pair().right_taps(),
+            };
+            let source_delay = entry.pair().delay_samples(ear);
+            for (tap_index, tap) in taps[source_delay..].iter().enumerate() {
+                output[ear_index][delays[ear_index] + tap_index] += *weight * *tap;
+            }
+        }
+    }
+    if output
+        .iter()
+        .flat_map(|taps| taps.iter())
+        .any(|tap| !tap.is_finite())
+    {
+        return Err(SofaError::InvalidInterpolationResult(
+            "non-finite interpolated tap".to_string(),
+        ));
+    }
+    HrirPair::new_with_delays(
+        bank.sample_rate_hz(),
+        output[0].clone(),
+        output[1].clone(),
+        delays,
+    )
+    .map_err(|error| SofaError::InvalidInterpolationResult(error.to_string()))
+}
+
+fn rounded_delay(value: f64) -> Result<usize, SofaError> {
+    if !value.is_finite() || value < 0.0 || value > usize::MAX as f64 {
+        return Err(SofaError::InvalidInterpolationResult(
+            "non-finite interpolated delay".to_string(),
+        ));
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok(value.round() as usize)
+}
+
+fn spherical_triangle_weights(target: [f64; 3], vertices: [[f64; 3]; 3]) -> Option<[f64; 3]> {
+    let reference = if target[2].abs() < 0.9 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let basis_x = normalize_array(cross_array(reference, target))?;
+    let basis_y = cross_array(target, basis_x);
+    let projected = vertices.map(|vertex| {
+        [
+            dot_array(
+                sub_array(vertex, scale_array(target, dot_array(vertex, target))),
+                basis_x,
+            ),
+            dot_array(
+                sub_array(vertex, scale_array(target, dot_array(vertex, target))),
+                basis_y,
+            ),
+        ]
+    });
+    let a = projected[0][0] - projected[2][0];
+    let b = projected[1][0] - projected[2][0];
+    let c = projected[0][1] - projected[2][1];
+    let d = projected[1][1] - projected[2][1];
+    let determinant = a.mul_add(d, -b * c);
+    if !determinant.is_finite() || determinant.abs() <= INTERPOLATION_GEOMETRY_TOLERANCE {
+        return None;
+    }
+    let alpha = ((-projected[2][0]).mul_add(d, -b * -projected[2][1])) / determinant;
+    let beta = (a.mul_add(-projected[2][1], projected[2][0] * c)) / determinant;
+    let gamma = 1.0 - alpha - beta;
+    let weights = [alpha, beta, gamma];
+    weights
+        .iter()
+        .all(|weight| weight.is_finite() && *weight >= -INTERPOLATION_WEIGHT_TOLERANCE)
+        .then_some(weights.map(|weight| weight.max(0.0)))
+}
+
+fn great_circle_segment_weights(
+    target: [f64; 3],
+    first: [f64; 3],
+    second: [f64; 3],
+) -> Option<[f64; 2]> {
+    let whole = angular_distance(first, second);
+    if !whole.is_finite()
+        || whole <= INTERPOLATION_GEOMETRY_TOLERANCE
+        || whole >= std::f64::consts::PI
+    {
+        return None;
+    }
+    let first_part = angular_distance(first, target);
+    let second_part = angular_distance(target, second);
+    if first_part + second_part > whole + INTERPOLATION_WEIGHT_TOLERANCE {
+        return None;
+    }
+    Some([second_part / whole, first_part / whole])
+}
+
+fn angular_distance(first: [f64; 3], second: [f64; 3]) -> f64 {
+    dot_array(first, second).clamp(-1.0, 1.0).acos()
+}
+
+fn dot_array(first: [f64; 3], second: [f64; 3]) -> f64 {
+    first[0].mul_add(second[0], first[1].mul_add(second[1], first[2] * second[2]))
+}
+
+fn cross_array(first: [f64; 3], second: [f64; 3]) -> [f64; 3] {
+    [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ]
+}
+
+fn sub_array(first: [f64; 3], second: [f64; 3]) -> [f64; 3] {
+    [
+        first[0] - second[0],
+        first[1] - second[1],
+        first[2] - second[2],
+    ]
+}
+
+fn scale_array(value: [f64; 3], factor: f64) -> [f64; 3] {
+    [value[0] * factor, value[1] * factor, value[2] * factor]
+}
+
+fn normalize_array(value: [f64; 3]) -> Option<[f64; 3]> {
+    let norm = dot_array(value, value).sqrt();
+    (norm.is_finite() && norm > 0.0).then_some(scale_array(value, 1.0 / norm))
 }
 
 fn read_delays(
