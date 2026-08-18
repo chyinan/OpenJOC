@@ -118,6 +118,9 @@ openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
 openjoc render-joc input.m4a --layout 7.1.4 --output render.caf
 openjoc render-joc input.m4a --layout 9.1.6 --output render-9.1.6.caf
 openjoc render-joc input.m4a --layout 2.0 --downmix auto -o stereo.wav
+openjoc render-joc input.m4a --layout 2.0 --dialnorm default -o calibrated.wav
+openjoc render-joc input.m4a --layout 2.0 --dialnorm default --normalize-peak -0.1 -o normalized.wav
+openjoc render-joc input.m4a --layout 2.0 --dialnorm analog -o analog.wav
 openjoc render-joc input.m4a --binaural --sofa listener.sofa -o binaural.wav
 openjoc render-joc input.m4a --binaural --sofa listener.sofa \
   --virtual-layout 9.1.6 -o binaural-9.1.6.wav
@@ -132,6 +135,17 @@ standards-based stereo policy with `--downmix auto`, `--downmix loro`, or
 `--drc disabled|line|rf|custom`; custom mode accepts `--drc-boost` and
 `--drc-cut` percentages from `0` through `100`. These controls apply encoded
 decoder metadata, not a generic compressor or playback bass-management DSP.
+`--dialnorm default` is the calibrated decoder/program-level default;
+`--dialnorm digital` explicitly selects the same encoded digital calibration,
+while `--dialnorm analog` uses unity dialnorm and may make FinalLinkedGain work
+harder. Dialnorm is separate from DRC.
+
+`--normalize-peak TARGET_DBFS` is an optional file-export transform. It performs
+sample-peak analysis and a deterministic two-pass render, then applies one
+common scalar after FinalLinkedGain (and after binaural convolution when
+selected) before WAV/CAF conversion. It is disabled by default, supports both
+boost and attenuation, and is not true-peak analysis or LUFS targeting; an
+inter-sample true peak may exceed the sample-peak target.
 For 2.0 JOC rendering, Base channels use the selected stereo downmix while
 reconstructed JOC objects use generic spatial projection to physical `FL`/`FR`.
 

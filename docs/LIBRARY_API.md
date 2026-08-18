@@ -82,11 +82,17 @@ supports disabled, line, RF, and custom boost/cut. `DownmixPolicy` supports
 auto, Lo/Ro, and Lt/Rt for stereo output. No CLI enum is reused as a public
 library type.
 
-The session automatically applies the supported Default E-AC-3 dialnorm
-program scalar from each valid independent syncframe to the complete decoded
+`OpenJocConfig::dialnorm` selects the decoder/program calibration policy:
+`DialnormMode::Default` (the calibrated Digital/Line behavior) is the default,
+`Digital` explicitly selects the same encoded program calibration, and
+`Analog` uses a unity dialnorm factor. Dialnorm is separate from `DrcPolicy`;
+DRC remains encoded dynamic-range metadata processing.
+
+The selected dialnorm program scalar is applied once to the complete decoded
 program before speaker projection, FinalLinkedGain, or SOFA convolution.
-Dialnorm is separate from `DrcPolicy`; no new public configuration field is
-required for this first integration.
+`OpenJocSession` never performs file-export peak normalization or any other
+two-pass output transform; applications may apply their own final gain policy
+after receiving PCM.
 
 `BinauralConfig` accepts a complete in-memory SimpleFreeFieldHRIR SOFA buffer,
 a virtual speaker layout, and an explicit LFE policy. The session does not

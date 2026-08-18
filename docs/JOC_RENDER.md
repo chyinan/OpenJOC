@@ -79,6 +79,28 @@ exact or safely interpolatable coverage.
 Binaural output may also use `.caf`; its PCM remains stereo and its SOFA/DSP
 path is unchanged.
 
+## Output-level policies
+
+DRC is encoded E-AC-3 dynamic-range metadata processing. Dialnorm is decoder
+program calibration and is selected independently with `--dialnorm default`,
+`--dialnorm digital`, or `--dialnorm analog`; omitted means calibrated
+`default`. Analog is a legitimate policy, but a hot unity-dialnorm render can
+make FinalLinkedGain work harder.
+
+`--normalize-peak TARGET_DBFS` is an explicit, optional file-export transform.
+It performs two deterministic complete renders: pass 1 measures sample peak
+after DRC, dialnorm, JOC reconstruction, speaker projection, FinalLinkedGain,
+and (when selected) SOFA convolution; pass 2 applies the resulting one common
+scalar immediately before WAV/CAF conversion. It is disabled by default,
+allows both boost and attenuation, and preserves the spatial image. Silence
+uses unity gain. This is sample-peak normalization, not true-peak analysis,
+limiting, compression, or LUFS targeting; no particular integrated loudness is
+promised and inter-sample true peak may exceed the target.
+
+The streaming Rust and C APIs do not perform this two-pass file transform.
+Applications that consume their PCM may apply an equivalent final gain policy
+after the session output.
+
 The command performs container extraction, E-AC-3 Base/LFE decoding, JOC and
 OAMD validation/decoding, persistent `JocSpatialBridge` accumulation, and
 incremental container writing. It does not materialize a duration-sized

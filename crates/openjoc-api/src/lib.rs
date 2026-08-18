@@ -99,6 +99,11 @@ pub enum DrcPolicy {
     },
 }
 
+/// Decoder/program calibration policy for encoded E-AC-3 dialnorm metadata.
+/// This is intentionally separate from [`DrcPolicy`] and from any file-export
+/// gain policy in an application.
+pub use openjoc_eac3::DialnormMode;
+
 impl DrcPolicy {
     fn internal(self) -> InternalBasePolicy {
         let control = match self {
@@ -151,6 +156,7 @@ pub struct OpenJocConfig {
     pub speaker_layout: String,
     pub downmix: DownmixPolicy,
     pub drc: DrcPolicy,
+    pub dialnorm: DialnormMode,
     pub validation_profile: ValidationProfile,
     pub oamd: OamdDecoderConfig,
     pub binaural: Option<BinauralConfig>,
@@ -163,6 +169,7 @@ impl Default for OpenJocConfig {
             speaker_layout: "5.1".to_owned(),
             downmix: DownmixPolicy::Auto,
             drc: DrcPolicy::Line,
+            dialnorm: DialnormMode::Default,
             validation_profile: ValidationProfile::Auto,
             oamd: OamdDecoderConfig::default(),
             binaural: None,
@@ -393,9 +400,11 @@ impl OpenJocSession {
             .as_ref()
             .map(BinauralState::new)
             .transpose()?;
+        let mut audio_decoder = JocAccessUnitPcmDecoder::new();
+        audio_decoder.set_dialnorm_mode(config.dialnorm);
         Ok(Self {
             payload_decoder: new_payload_decoder(&config),
-            audio_decoder: JocAccessUnitPcmDecoder::new(),
+            audio_decoder,
             speaker,
             binaural,
             output_queue: VecDeque::new(),
@@ -591,6 +600,7 @@ impl OpenJocSession {
 
     fn reset_stream_state(&mut self) {
         self.audio_decoder.reset();
+        self.audio_decoder.set_dialnorm_mode(self.config.dialnorm);
         self.payload_decoder = new_payload_decoder(&self.config);
         self.speaker.reset();
         if let Some(binaural) = self.binaural.as_mut() {
@@ -1457,6 +1467,7 @@ mod tests {
 
     #[test]
     fn default_config_is_headless_and_has_stable_output_contract() {
+        assert_eq!(OpenJocConfig::default().dialnorm, DialnormMode::Default);
         let session = OpenJocSession::new(OpenJocConfig::default()).expect("default config");
         let info = session.output_info();
         assert_eq!(info.sample_format, PcmSampleFormat::F32);

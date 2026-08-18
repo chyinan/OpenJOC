@@ -135,6 +135,8 @@ pub enum JocRenderError {
         layout: String,
         label: String,
     },
+    InvalidPeakNormalizationTarget(String),
+    NonFinitePcm,
     OutputExists(PathBuf),
     NoRenderedFrames,
 }
@@ -240,6 +242,14 @@ impl fmt::Display for JocRenderError {
                 formatter,
                 "CAF cannot represent semantic speaker {label} in layout {layout} using public Core Audio descriptions"
             ),
+            Self::InvalidPeakNormalizationTarget(reason) => {
+                write!(
+                    formatter,
+                    "invalid sample-peak normalization target: {reason}"
+                )
+            }
+            Self::NonFinitePcm => formatter
+                .write_str("sample-peak normalization encountered non-finite final renderer PCM"),
             Self::OutputExists(path) => {
                 write!(formatter, "refusing to overwrite output {}", path.display())
             }
@@ -413,6 +423,89 @@ impl RenderControl {
 pub struct RenderedBlock {
     pub sample_rate: u32,
     pub channels: Vec<Vec<f64>>,
+}
+
+/// Explicit file-export sample-peak normalization policy. This is deliberately
+/// separate from decoder dialnorm and is never used by the streaming API.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PeakNormalization {
+    target_dbfs: f64,
+}
+
+impl PeakNormalization {
+    /// Creates a validated sample-peak target. True-peak/inter-sample
+    /// analysis is intentionally outside this first implementation.
+    pub fn new(target_dbfs: f64) -> Result<Self, JocRenderError> {
+        if !target_dbfs.is_finite() {
+            return Err(JocRenderError::InvalidPeakNormalizationTarget(
+                "target must be finite".to_owned(),
+            ));
+        }
+        if target_dbfs > 0.0 {
+            return Err(JocRenderError::InvalidPeakNormalizationTarget(
+                "target must be at or below 0 dBFS".to_owned(),
+            ));
+        }
+        if target_dbfs < -120.0 {
+            return Err(JocRenderError::InvalidPeakNormalizationTarget(
+                "target must be at or above -120 dBFS".to_owned(),
+            ));
+        }
+        Ok(Self { target_dbfs })
+    }
+
+    #[must_use]
+    pub const fn target_dbfs(self) -> f64 {
+        self.target_dbfs
+    }
+
+    #[must_use]
+    pub fn target_linear(self) -> f64 {
+        10.0_f64.powf(self.target_dbfs / 20.0)
+    }
+
+    /// Computes one common scalar for all output channels. Silence stays
+    /// silent; both boost and attenuation are intentional.
+    pub fn gain_for_peak(self, peak: f64) -> Result<f64, JocRenderError> {
+        if !peak.is_finite() || peak < 0.0 {
+            return Err(JocRenderError::NonFinitePcm);
+        }
+        if peak == 0.0 {
+            Ok(1.0)
+        } else {
+            Ok(self.target_linear() / peak)
+        }
+    }
+
+    /// Measures sample peak across every physical output channel and sample.
+    pub fn sample_peak(block: &RenderedBlock) -> Result<f64, JocRenderError> {
+        let mut peak = 0.0_f64;
+        for channel in &block.channels {
+            for &sample in channel {
+                if !sample.is_finite() {
+                    return Err(JocRenderError::NonFinitePcm);
+                }
+                peak = peak.max(sample.abs());
+            }
+        }
+        Ok(peak)
+    }
+
+    /// Applies one linked scalar to all physical output channels.
+    pub fn apply(block: &mut RenderedBlock, gain: f64) -> Result<(), JocRenderError> {
+        if !gain.is_finite() {
+            return Err(JocRenderError::NonFinitePcm);
+        }
+        for channel in &mut block.channels {
+            for sample in channel {
+                *sample *= gain;
+                if !sample.is_finite() {
+                    return Err(JocRenderError::NonFinitePcm);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -2546,9 +2639,9 @@ mod tests {
     use super::{
         BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
         JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocCafOutput, JocPcmOutput,
-        JocRenderError, JocSpeakerRenderer, JocWavOutput, OutputContainer, RenderControl,
-        RenderedBlock, SemanticChannelLayout, SpeakerLayoutPreset, StereoDownmixPolicy,
-        add_stereo_base_downmix, five_point_one_layout, five_point_one_preset,
+        JocRenderError, JocSpeakerRenderer, JocWavOutput, OutputContainer, PeakNormalization,
+        RenderControl, RenderedBlock, SemanticChannelLayout, SpeakerLayoutPreset,
+        StereoDownmixPolicy, add_stereo_base_downmix, five_point_one_layout, five_point_one_preset,
         selected_stereo_policy, stereo_downmix_coefficients, virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata};
@@ -3342,6 +3435,39 @@ mod tests {
         let unity_peak = peak_metrics(&unity.channels).0;
         let calibrated_peak = peak_metrics(&calibrated.channels).0;
         assert!(calibrated_peak < unity_peak);
+    }
+
+    #[test]
+    fn digital_peak_normalization_is_not_analog_when_linked_gain_is_active() {
+        let digital_scale =
+            DialnormState::new(openjoc_eac3::DialnormMode::Digital, 20).linear_gain();
+        let mut digital_linked = FinalLinkedGain::new(48_000, 32, &[true]).unwrap();
+        let mut analog_linked = FinalLinkedGain::new(48_000, 32, &[true]).unwrap();
+        let mut digital = Vec::new();
+        let mut analog = Vec::new();
+        for _ in 0..8 {
+            let mut digital_block = vec![vec![0.7 * digital_scale; 32]];
+            let mut analog_block = vec![vec![0.7; 32]];
+            digital_linked.process(&mut digital_block).unwrap();
+            analog_linked.process(&mut analog_block).unwrap();
+            digital.extend(digital_block[0].iter().copied());
+            analog.extend(analog_block[0].iter().copied());
+        }
+        let digital_peak = digital
+            .iter()
+            .map(|sample| sample.abs())
+            .fold(0.0, f64::max);
+        let normalize_to_analog_input = 0.7 / digital_peak;
+        let normalized_digital = digital
+            .iter()
+            .map(|sample| sample * normalize_to_analog_input)
+            .collect::<Vec<_>>();
+        assert!(
+            normalized_digital
+                .iter()
+                .zip(analog.iter())
+                .any(|(digital, analog)| (digital - analog).abs() > 1.0e-9)
+        );
     }
 
     #[test]
@@ -4266,6 +4392,124 @@ mod tests {
     fn unsupported_layout_is_explicit() {
         let error = JocSpeakerRenderer::new("22.2", control(false, 6)).unwrap_err();
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
+    }
+
+    #[test]
+    fn sample_peak_normalization_math_covers_silence_boost_attenuation_and_linking() {
+        let minus_point_one = PeakNormalization::new(-0.1).expect("target");
+        let target = minus_point_one.target_linear();
+        assert_eq!(minus_point_one.gain_for_peak(0.0).unwrap(), 1.0);
+
+        let positive = RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![vec![0.25, 0.5], vec![-0.1, 0.2]],
+        };
+        assert_eq!(PeakNormalization::sample_peak(&positive).unwrap(), 0.5);
+        assert_eq!(
+            PeakNormalization::sample_peak(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![-0.75]],
+            })
+            .unwrap(),
+            0.75
+        );
+        assert_eq!(
+            PeakNormalization::sample_peak(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![0.1], vec![0.8]],
+            })
+            .unwrap(),
+            0.8
+        );
+        let boost = minus_point_one.gain_for_peak(0.5).unwrap();
+        assert!(boost > 1.0);
+        let attenuation = minus_point_one.gain_for_peak(1.0).unwrap();
+        assert!(attenuation < 1.0);
+
+        let mut linked = RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![vec![0.5, -0.25], vec![0.1, 0.25]],
+        };
+        PeakNormalization::apply(&mut linked, boost).unwrap();
+        assert!((PeakNormalization::sample_peak(&linked).unwrap() - target).abs() < 1.0e-12);
+        assert!((linked.channels[1][0] - 0.1 * boost).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn sample_peak_normalization_target_validation_is_explicit() {
+        for target in [0.1, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -120.1] {
+            assert!(PeakNormalization::new(target).is_err(), "target={target}");
+        }
+        assert!(PeakNormalization::new(-1.0).is_ok());
+    }
+
+    #[test]
+    fn normalized_pcm_reaches_the_same_linked_target_in_wav_and_caf() {
+        let normalization = PeakNormalization::new(-1.0).unwrap();
+        let gain = normalization.gain_for_peak(0.25).unwrap();
+        let mut block = RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![vec![0.25, -0.1], vec![0.2, 0.05]],
+        };
+        PeakNormalization::apply(&mut block, gain).unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-peak-normalization-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let wav_path = root.join("normalized.wav");
+        let caf_path = root.join("normalized.caf");
+        let integer_path = root.join("normalized-s16.wav");
+        let semantic = SpeakerLayoutPreset::for_name("2.0")
+            .unwrap()
+            .semantic_channel_layout();
+        let mut wav =
+            JocPcmOutput::new_for_semantic_layout(&wav_path, SampleFormat::F32, false, &semantic)
+                .unwrap();
+        wav.write_block(&block).unwrap();
+        wav.finish().unwrap();
+        let mut caf =
+            JocPcmOutput::new_for_semantic_layout(&caf_path, SampleFormat::F32, false, &semantic)
+                .unwrap();
+        caf.write_block(&block).unwrap();
+        caf.finish().unwrap();
+
+        let wav_pcm = decode(&fs::read(&wav_path).unwrap()).unwrap();
+        let wav_peak = wav_pcm
+            .channels
+            .iter()
+            .flatten()
+            .map(|sample| sample.abs())
+            .fold(0.0, f64::max);
+        let caf_peak = caf_f32_samples(&fs::read(&caf_path).unwrap())
+            .into_iter()
+            .map(f64::abs)
+            .fold(0.0, f64::max);
+        let mut integer = JocPcmOutput::new_for_semantic_layout(
+            &integer_path,
+            SampleFormat::S16,
+            false,
+            &semantic,
+        )
+        .unwrap();
+        integer.write_block(&block).unwrap();
+        integer.finish().unwrap();
+        let integer_pcm = decode(&fs::read(&integer_path).unwrap()).unwrap();
+        assert!(
+            integer_pcm
+                .channels
+                .iter()
+                .flatten()
+                .all(|sample| sample.abs() <= normalization.target_linear() + 1.0e-4)
+        );
+        let target = normalization.target_linear();
+        assert!((wav_peak - target).abs() < 1.0e-6);
+        assert!((caf_peak - target).abs() < 1.0e-6);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

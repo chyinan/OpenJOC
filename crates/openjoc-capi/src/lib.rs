@@ -17,8 +17,9 @@
 #![allow(non_camel_case_types)]
 
 use openjoc_api::{
-    BinauralConfig, BinauralLfePolicy, DownmixPolicy, DrcPolicy, OpenJocConfig, OpenJocError,
-    OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
+    BinauralConfig, BinauralLfePolicy, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig,
+    OpenJocError, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
+    ValidationProfile,
 };
 use std::{
     ffi::{CStr, CString},
@@ -31,7 +32,7 @@ use std::{
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 0;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 1;
 const NO_PTS: i64 = i64::MIN;
 
 #[repr(C)]
@@ -87,6 +88,14 @@ pub enum openjoc_drc_mode {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum openjoc_dialnorm_mode {
+    OPENJOC_DIALNORM_DEFAULT = 0,
+    OPENJOC_DIALNORM_DIGITAL = 1,
+    OPENJOC_DIALNORM_ANALOG = 2,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum openjoc_validation_profile {
     OPENJOC_VALIDATION_AUTO = 0,
     OPENJOC_VALIDATION_ETSI_STRICT = 1,
@@ -119,6 +128,8 @@ pub struct openjoc_decoder_config {
     pub sofa_size: usize,
     pub virtual_layout: *const c_char,
     pub lfe_policy: u32,
+    /// Appended in ABI minor 1; older `struct_size` callers use Default.
+    pub dialnorm_mode: u32,
 }
 
 #[repr(C)]
@@ -151,6 +162,7 @@ pub struct openjoc_output_info {
 }
 
 const CONFIG_SIZE: u32 = std::mem::size_of::<openjoc_decoder_config>() as u32;
+const CONFIG_SIZE_BEFORE_DIALNORM: u32 = CONFIG_SIZE - std::mem::size_of::<u32>() as u32;
 const FRAME_SIZE: u32 = std::mem::size_of::<openjoc_pcm_frame>() as u32;
 const INFO_SIZE: u32 = std::mem::size_of::<openjoc_output_info>() as u32;
 
@@ -203,12 +215,58 @@ fn c_string(pointer: *const c_char, name: &str) -> Result<String, OpenJocError> 
         .map_err(|_| OpenJocError::InvalidConfig(format!("{name} is not UTF-8")))
 }
 
-fn config_from_c(config: &openjoc_decoder_config) -> Result<OpenJocConfig, OpenJocError> {
-    if config.struct_size < CONFIG_SIZE {
+fn config_from_c(config: *const openjoc_decoder_config) -> Result<OpenJocConfig, OpenJocError> {
+    // Read only the prefix advertised by the caller before constructing a
+    // Rust value. This keeps ABI 1.0 callers, whose allocation ends before
+    // `dialnorm_mode`, from being treated as a reference to the larger 1.1
+    // struct.
+    let struct_size = unsafe { ptr::read_unaligned(ptr::addr_of!((*config).struct_size)) };
+    if struct_size < CONFIG_SIZE_BEFORE_DIALNORM {
         return Err(OpenJocError::InvalidConfig(
             "config.struct_size is too small".to_owned(),
         ));
     }
+    let mut owned: openjoc_decoder_config = unsafe { std::mem::zeroed() };
+    unsafe {
+        ptr::copy_nonoverlapping(
+            config.cast::<u8>(),
+            (&raw mut owned).cast::<u8>(),
+            CONFIG_SIZE_BEFORE_DIALNORM as usize,
+        );
+        if struct_size >= CONFIG_SIZE {
+            owned.dialnorm_mode = ptr::read_unaligned(ptr::addr_of!((*config).dialnorm_mode));
+        }
+    }
+    owned.struct_size = struct_size;
+    config_from_c_fields(&owned)
+}
+
+fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig, OpenJocError> {
+    if config.struct_size < CONFIG_SIZE_BEFORE_DIALNORM {
+        return Err(OpenJocError::InvalidConfig(
+            "config.struct_size is too small".to_owned(),
+        ));
+    }
+    let dialnorm = if config.struct_size >= CONFIG_SIZE {
+        match config.dialnorm_mode {
+            value if value == openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32 => {
+                DialnormMode::Default
+            }
+            value if value == openjoc_dialnorm_mode::OPENJOC_DIALNORM_DIGITAL as u32 => {
+                DialnormMode::Digital
+            }
+            value if value == openjoc_dialnorm_mode::OPENJOC_DIALNORM_ANALOG as u32 => {
+                DialnormMode::Analog
+            }
+            _ => {
+                return Err(OpenJocError::InvalidConfig(
+                    "unknown dialnorm mode".to_owned(),
+                ));
+            }
+        }
+    } else {
+        DialnormMode::Default
+    };
     let speaker_layout = if config.speaker_layout.is_null() {
         "5.1".to_owned()
     } else {
@@ -305,6 +363,7 @@ fn config_from_c(config: &openjoc_decoder_config) -> Result<OpenJocConfig, OpenJ
         speaker_layout,
         downmix,
         drc,
+        dialnorm,
         validation_profile,
         oamd: Default::default(),
         binaural,
@@ -355,6 +414,7 @@ pub extern "C" fn openjoc_decoder_config_init(
             sofa_size: 0,
             virtual_layout: ptr::null(),
             lfe_policy: openjoc_lfe_policy::OPENJOC_LFE_EXCLUDE as u32,
+            dialnorm_mode: openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32,
         };
     }
     openjoc_status::OPENJOC_STATUS_OK
@@ -370,8 +430,6 @@ pub extern "C" fn openjoc_decoder_create(
         return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
     }
     let result = catch_unwind(AssertUnwindSafe(|| {
-        // SAFETY: pointers were checked and are valid for this call by the C contract.
-        let config = unsafe { &*config };
         let session = OpenJocSession::new(config_from_c(config)?)?;
         let layout_name =
             CString::new(session.output_info().layout_name).expect("layout name contains no NUL");

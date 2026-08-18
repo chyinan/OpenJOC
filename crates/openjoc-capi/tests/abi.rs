@@ -6,7 +6,7 @@ use std::ptr;
 
 #[test]
 fn version_and_struct_initialization_are_stable() {
-    assert_eq!(openjoc_get_abi_version(), 0x0001_0000);
+    assert_eq!(openjoc_get_abi_version(), 0x0001_0001);
     assert_eq!(std::mem::size_of::<openjoc_decoder_config>() as u32, {
         let mut config = std::mem::MaybeUninit::uninit();
         assert_eq!(
@@ -16,6 +16,23 @@ fn version_and_struct_initialization_are_stable() {
         // The public init call writes the complete descriptor, including its size.
         unsafe { config.assume_init().struct_size }
     });
+}
+
+#[test]
+fn pre_dialnorm_config_size_keeps_the_calibrated_default() {
+    let mut config = std::mem::MaybeUninit::uninit();
+    assert_eq!(
+        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let mut config = unsafe { config.assume_init() };
+    config.struct_size = std::mem::size_of::<openjoc_decoder_config>() as u32 - 4;
+    let mut decoder = ptr::null_mut();
+    assert_eq!(
+        openjoc_decoder_create(&config, &mut decoder),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    openjoc_decoder_destroy(decoder);
 }
 
 #[test]
@@ -40,6 +57,15 @@ fn create_destroy_multiple_instances_and_invalid_config() {
     assert!(!first.is_null());
     assert!(!second.is_null());
     assert_ne!(first, second);
+
+    let mut analog = config;
+    analog.dialnorm_mode = openjoc_dialnorm_mode::OPENJOC_DIALNORM_ANALOG as u32;
+    let mut analog_decoder = ptr::null_mut();
+    assert_eq!(
+        openjoc_decoder_create(&analog, &mut analog_decoder),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    openjoc_decoder_destroy(analog_decoder);
 
     let mut invalid = config;
     invalid.downmix = 999;

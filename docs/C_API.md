@@ -8,12 +8,15 @@ dynamic-library targets through Cargo.
 
 ## ABI policy
 
-The ABI is `1.0-experimental`, independent of the OpenJOC package version.
+The ABI is `1.1-experimental`, independent of the OpenJOC package version.
 Major changes may break layout or ownership rules and require an ABI-major
 increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
 contain `struct_size`; callers must initialize them and producers must reject a
-smaller size. `openjoc_get_abi_version()` returns `(major << 16) | minor`.
+smaller size. The `dialnorm_mode` field was appended in ABI minor 1. A caller
+presenting the ABI 1.0 configuration size is accepted and receives
+`OPENJOC_DIALNORM_DEFAULT`. `openjoc_get_abi_version()` returns
+`(major << 16) | minor`.
 
 Experimental means the C surface may evolve during 0.7 integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
@@ -49,9 +52,11 @@ Semantic labels are available through `openjoc_decoder_get_channel_label` and
 the output/frame descriptors. The canonical PCM sample format value is `1`
 (interleaved float32).
 
-The C adapter inherits the shared session's automatic Default E-AC-3 dialnorm
-program calibration. Dialnorm is metadata-derived and separate from the
-existing DRC fields; ABI 1.0 exposes no dialnorm configuration field.
+The C adapter inherits the shared session's calibrated Default E-AC-3 dialnorm
+program calibration unless `dialnorm_mode` is explicitly set to
+`OPENJOC_DIALNORM_DIGITAL` or `OPENJOC_DIALNORM_ANALOG`. Dialnorm is
+metadata-derived and separate from the existing DRC fields. The C ABI is a
+streaming PCM interface and does not perform two-pass file peak normalization.
 
 ## Failure containment
 

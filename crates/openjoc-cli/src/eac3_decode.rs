@@ -3,9 +3,10 @@
 use crate::performance::DecodeStageTiming;
 use openjoc_container::{InputMediaError, RawEac3AccessUnitReader};
 use openjoc_eac3::{
-    DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame,
-    extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit, group_access_units,
-    index_syncframes, parse_joc_access_unit, validate_complexity_index, validate_joc_access_unit,
+    DecodedAccessUnitPcm, DialnormMode, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder,
+    JocMetadataFrame, extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit,
+    group_access_units, index_syncframes, parse_joc_access_unit, validate_complexity_index,
+    validate_joc_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_joc::ReconstructionBasis;
@@ -526,6 +527,7 @@ where
         validation_profile,
         dither_values,
         base_policy,
+        DialnormMode::Default,
         false,
         sink,
         base_sink,
@@ -557,6 +559,7 @@ where
         validation_profile,
         dither_values,
         base_policy,
+        DialnormMode::Default,
         true,
         sink,
         base_sink,
@@ -572,6 +575,7 @@ where
 /// access unit while both are still bounded to the current access unit. This
 /// is the integration boundary used by the speaker render command; it does
 /// not change the decoder or bridge mathematics.
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn decode_internal_eac3_streaming_with_render_sink_and_policy<S, B>(
     stream: &[u8],
@@ -592,12 +596,50 @@ where
     ) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
 {
+    decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
+        stream,
+        config,
+        validation_profile,
+        dither_values,
+        base_policy,
+        DialnormMode::Default,
+        sink,
+        base_sink,
+        timing,
+    )
+}
+
+/// Streaming internal-base decode with a combined render sink and an
+/// explicit decoder dialnorm policy. The rendering order and dialnorm math
+/// remain owned by the existing decoder/renderer stages.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm<S, B>(
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    validation_profile: JocValidationProfile,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    dialnorm_mode: DialnormMode,
+    sink: S,
+    base_sink: B,
+    timing: Option<&mut DecodeStageTiming>,
+) -> Result<(StreamingSceneSummary, ReconstructionBasis), DecodeEac3Error>
+where
+    S: FnMut(
+        usize,
+        &JocMetadataFrame,
+        &DecodedPayloadFrame,
+        &DecodedAccessUnitPcm,
+    ) -> Result<(), DecodeEac3Error>,
+    B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
     decode_internal_eac3_core(
         stream,
         config,
         validation_profile,
         dither_values,
         base_policy,
+        dialnorm_mode,
         true,
         |_frame_index, _metadata, _frame| Ok(()),
         base_sink,
@@ -748,6 +790,7 @@ fn decode_internal_eac3_core<S, B, C, R, F>(
     validation_profile: JocValidationProfile,
     dither_values: &[f64],
     base_policy: InternalBasePolicy,
+    dialnorm_mode: DialnormMode,
     streaming: bool,
     mut sink: S,
     mut base_sink: B,
@@ -772,6 +815,7 @@ where
         return Err(DecodeEac3Error::EmptyStream);
     }
     let mut audio_decoder = JocAccessUnitPcmDecoder::new();
+    audio_decoder.set_dialnorm_mode(dialnorm_mode);
     let oamd_profile = match validation_profile {
         JocValidationProfile::EtsiStrict => OamdParseProfile::EtsiStrict,
         JocValidationProfile::ObservedVendorCompat => OamdParseProfile::ObservedVendorCompat,

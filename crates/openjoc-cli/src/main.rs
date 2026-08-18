@@ -24,8 +24,8 @@ use openjoc_container::{
     open_seekable_iso_bmff,
 };
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, DynamicRangeControl, Eac3Error, InternalBasePolicy,
-    emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
+    ChannelLocation, DecodedAccessUnitPcm, DialnormMode, DynamicRangeControl, Eac3Error,
+    InternalBasePolicy, emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
 };
 use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
 use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
@@ -51,7 +51,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -98,6 +98,8 @@ struct RenderJocArgs {
     validation_profile: ValidationProfileRequest,
     trim_configuration_count: Option<NonZeroU8>,
     internal_base_policy: InternalBasePolicy,
+    dialnorm: DialnormMode,
+    normalize_peak: Option<joc_render::PeakNormalization>,
     output_format: SampleFormat,
     no_progress: bool,
     performance_report: Option<PathBuf>,
@@ -315,6 +317,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         "render-joc" => concat!(
             "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|LAYOUT> --output <OUTPUT.wav|OUTPUT.caf>\n",
             "       [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
+            "       [--dialnorm default|digital|analog] [--normalize-peak <TARGET_DBFS>]\n",
             "       [--binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]\n",
             "       [--backend direct|partitioned --partition-size N]\n",
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
@@ -326,6 +329,8 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
             "--drc controls encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
+            "--dialnorm selects decoder/program calibration; it is separate from DRC. Default is calibrated digital behavior.\n",
+            "--normalize-peak is optional post-render sample-peak gain for file output only; it is not part of decoding or true-peak analysis.\n",
             "SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
@@ -925,6 +930,8 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
     let mut internal_base_policy_explicit = false;
+    let mut dialnorm = DialnormMode::Default;
+    let mut normalize_peak = None;
     let mut drc_mode = None;
     let mut drc_boost = None;
     let mut drc_cut = None;
@@ -1007,6 +1014,23 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
             "--internal-base-policy" => {
                 internal_base_policy = parse_internal_base_policy(value)?;
                 internal_base_policy_explicit = true;
+            }
+            "--dialnorm" => dialnorm = parse_dialnorm_mode(value)?,
+            "--normalize-peak" => {
+                if normalize_peak.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--normalize-peak may be supplied only once",
+                    )
+                    .into());
+                }
+                let target_dbfs = value.parse::<f64>().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!("invalid sample-peak normalization target {value}"),
+                    )
+                })?;
+                normalize_peak = Some(joc_render::PeakNormalization::new(target_dbfs)?);
             }
             "--drc" => {
                 if drc_mode.replace(value.clone()).is_some() {
@@ -1125,6 +1149,8 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         validation_profile,
         trim_configuration_count,
         internal_base_policy,
+        dialnorm,
+        normalize_peak,
         output_format: if reference_f64 {
             SampleFormat::F64
         } else {
@@ -1145,6 +1171,18 @@ fn parse_internal_base_policy(value: &str) -> Result<InternalBasePolicy, io::Err
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("unknown internal base policy {value}; expected current-default or codec-core"),
+        )),
+    }
+}
+
+fn parse_dialnorm_mode(value: &str) -> Result<DialnormMode, io::Error> {
+    match value {
+        "default" | "DEFAULT" => Ok(DialnormMode::Default),
+        "digital" | "DIGITAL" => Ok(DialnormMode::Digital),
+        "analog" | "ANALOG" => Ok(DialnormMode::Analog),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown dialnorm mode {value}; expected default, digital, or analog"),
         )),
     }
 }
@@ -1583,6 +1621,463 @@ fn render_joc_preflight(
     }
 }
 
+trait PcmBlockSink {
+    fn consume(
+        &mut self,
+        block: &joc_render::RenderedBlock,
+    ) -> Result<(), joc_render::JocRenderError>;
+
+    fn frames(&self) -> u64;
+
+    fn fingerprint(&self) -> u64;
+}
+
+struct PeakBlockSink {
+    peak: f64,
+    frames: u64,
+    fingerprint: u64,
+}
+
+impl PeakBlockSink {
+    fn new() -> Self {
+        Self {
+            peak: 0.0,
+            frames: 0,
+            fingerprint: 0xcbf2_9ce4_8422_2325,
+        }
+    }
+}
+
+impl PcmBlockSink for PeakBlockSink {
+    fn consume(
+        &mut self,
+        block: &joc_render::RenderedBlock,
+    ) -> Result<(), joc_render::JocRenderError> {
+        self.peak = self
+            .peak
+            .max(joc_render::PeakNormalization::sample_peak(block)?);
+        self.frames = self
+            .frames
+            .checked_add(
+                u64::try_from(block.channels.first().map_or(0, Vec::len))
+                    .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
+            )
+            .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
+        self.fingerprint = update_pcm_fingerprint(self.fingerprint, block);
+        Ok(())
+    }
+
+    fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    fn fingerprint(&self) -> u64 {
+        self.fingerprint
+    }
+}
+
+struct OutputBlockSink<'a> {
+    output: &'a mut joc_render::JocPcmOutput,
+    gain: f64,
+    frames: u64,
+    fingerprint: u64,
+}
+
+impl PcmBlockSink for OutputBlockSink<'_> {
+    fn consume(
+        &mut self,
+        block: &joc_render::RenderedBlock,
+    ) -> Result<(), joc_render::JocRenderError> {
+        let mut normalized = block.clone();
+        joc_render::PeakNormalization::apply(&mut normalized, self.gain)?;
+        self.output.write_block(&normalized)?;
+        self.frames = self
+            .frames
+            .checked_add(
+                u64::try_from(normalized.channels.first().map_or(0, Vec::len))
+                    .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
+            )
+            .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
+        self.fingerprint = update_pcm_fingerprint(self.fingerprint, block);
+        Ok(())
+    }
+
+    fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    fn fingerprint(&self) -> u64 {
+        self.fingerprint
+    }
+}
+
+fn update_pcm_fingerprint(mut fingerprint: u64, block: &joc_render::RenderedBlock) -> u64 {
+    for channel in &block.channels {
+        fingerprint = fingerprint.wrapping_mul(0x1000_0000_01b3) ^ channel.len() as u64;
+        for &sample in channel {
+            fingerprint = fingerprint.wrapping_mul(0x1000_0000_01b3) ^ sample.to_bits();
+        }
+    }
+    fingerprint
+}
+
+struct LegacyPassReport {
+    diagnostics: String,
+    frames: u64,
+    fingerprint: u64,
+    decode_timing: performance::DecodeStageTiming,
+    render_timing: performance::RenderStageTiming,
+}
+
+fn run_legacy_render_pass(
+    arguments: &RenderJocArgs,
+    stream: &[u8],
+    config: PayloadDecoderConfig,
+    selected_profile: JocValidationProfile,
+    sink: &mut dyn PcmBlockSink,
+    progress: &mut progress::ProgressReporter,
+    timing_requested: bool,
+) -> Result<LegacyPassReport, Box<dyn Error>> {
+    let mut decode_timing = performance::DecodeStageTiming::new(timing_requested);
+    let mut render_timing = performance::RenderStageTiming::default();
+    let dither = deterministic_dither_values();
+    if let Some(sofa_path) = &arguments.binaural_sofa {
+        let sofa = openjoc_sofa::load_simple_free_field_hrir(
+            sofa_path,
+            openjoc_sofa::SofaLoadLimits::default(),
+        )
+        .map_err(joc_render::JocRenderError::from)?;
+        let control = arguments
+            .topology
+            .as_ref()
+            .map(|path| joc_render::RenderControl::from_path(path))
+            .transpose()?;
+        let mut renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            joc_render::JocBinauralRenderer::new(
+                &arguments.layout,
+                sofa.bank,
+                arguments.binaural_backend,
+                arguments.lfe_policy,
+                control,
+            )?
+        } else {
+            joc_render::JocBinauralRenderer::new_with_contribution(
+                &arguments.layout,
+                sofa.bank,
+                arguments.binaural_backend,
+                arguments.lfe_policy,
+                control,
+                arguments.diagnostic_contribution,
+            )?
+        };
+        if timing_requested {
+            renderer.enable_stage_timing();
+        }
+        let result =
+            eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
+                stream,
+                config,
+                selected_profile,
+                &dither,
+                arguments.internal_base_policy,
+                arguments.dialnorm,
+                |frame_index, metadata, frame, base| {
+                    let blocks = renderer
+                        .render_frame_aligned(frame_index, frame, base)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                    for block in blocks {
+                        sink.consume(&joc_render::RenderedBlock {
+                            sample_rate: block.sample_rate,
+                            channels: vec![block.left, block.right],
+                        })
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                    }
+                    let stage_timings = renderer.take_stage_timings();
+                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
+                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
+                    render_timing.binaural_render += stage_timings.binaural_render;
+                    render_timing.rendered_frames += 1;
+                    render_timing.rendered_samples += u64::from(base.samples);
+                    progress.update(frame_index, render_timing.rendered_samples);
+                    renderer
+                        .record_profile(metadata)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+                },
+                |_access_unit, _pcm| Ok(()),
+                timing_requested.then_some(&mut decode_timing),
+            );
+        let (summary, reconstruction_tail) = result?;
+        let tail = renderer.finish_with_reconstruction_tail(&reconstruction_tail)?;
+        for block in tail {
+            sink.consume(&joc_render::RenderedBlock {
+                sample_rate: block.sample_rate,
+                channels: vec![block.left, block.right],
+            })?;
+        }
+        let diagnostics = renderer.diagnostics(
+            sofa_path,
+            arguments.validation_profile,
+            selected_profile,
+            &summary,
+            &arguments.output,
+            arguments.output_format,
+        );
+        Ok(LegacyPassReport {
+            diagnostics,
+            frames: sink.frames(),
+            fingerprint: sink.fingerprint(),
+            decode_timing,
+            render_timing,
+        })
+    } else {
+        let mut renderer = if let Some(topology) = &arguments.topology {
+            let control = joc_render::RenderControl::from_path(topology)?;
+            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
+            } else {
+                joc_render::JocSpeakerRenderer::new_with_contribution(
+                    &arguments.layout,
+                    control,
+                    arguments.diagnostic_contribution,
+                )?
+            }
+        } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
+        } else {
+            joc_render::JocSpeakerRenderer::new_automatic_with_contribution(
+                &arguments.layout,
+                arguments.diagnostic_contribution,
+            )?
+        };
+        renderer.set_downmix_policy(arguments.downmix_policy.unwrap_or_default())?;
+        if timing_requested {
+            renderer.enable_stage_timing();
+        }
+        let result =
+            eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
+                stream,
+                config,
+                selected_profile,
+                &dither,
+                arguments.internal_base_policy,
+                arguments.dialnorm,
+                |frame_index, metadata, frame, base| {
+                    let blocks = renderer
+                        .render_frame_aligned(frame_index, frame, base)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
+                    for block in blocks {
+                        sink.consume(&block).map_err(|error| {
+                            eac3_decode::DecodeEac3Error::Sink(error.to_string())
+                        })?;
+                    }
+                    let stage_timings = renderer.take_stage_timings();
+                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
+                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
+                    render_timing.binaural_render += stage_timings.binaural_render;
+                    render_timing.rendered_frames += 1;
+                    render_timing.rendered_samples += u64::from(base.samples);
+                    progress.update(frame_index, render_timing.rendered_samples);
+                    renderer
+                        .record_profile(metadata)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+                },
+                |_access_unit, _pcm| Ok(()),
+                timing_requested.then_some(&mut decode_timing),
+            );
+        let (summary, reconstruction_tail) = result?;
+        let tail = renderer.finish_with_reconstruction_tail(&reconstruction_tail)?;
+        for block in tail {
+            sink.consume(&block)?;
+        }
+        let diagnostics = renderer.diagnostics(
+            &arguments.layout,
+            arguments.validation_profile,
+            selected_profile,
+            &summary,
+            &arguments.output,
+        );
+        Ok(LegacyPassReport {
+            diagnostics,
+            frames: sink.frames(),
+            fingerprint: sink.fingerprint(),
+            decode_timing,
+            render_timing,
+        })
+    }
+}
+
+fn render_joc_with_peak_normalization(
+    arguments: &RenderJocArgs,
+    stream: &[u8],
+    overwrite_authorized: bool,
+    terminal: TerminalCapabilities,
+) -> Result<(), Box<dyn Error>> {
+    let normalization = arguments
+        .normalize_peak
+        .ok_or("normalization policy is missing")?;
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
+    };
+    let profile_start = std::time::Instant::now();
+    let selected_profile =
+        eac3_decode::resolve_profile_for_stream(stream, config, arguments.validation_profile)?;
+    let timing = eac3_decode::stream_timing(stream)?;
+    let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
+    let mut performance = arguments
+        .performance_report
+        .as_ref()
+        .map(|_| performance::RenderPerformance::new());
+    if let Some(report) = performance.as_mut() {
+        report.profile_validation += profile_start.elapsed();
+        report.processed_access_units = timing.access_units;
+        report.total_audio_samples = timing.samples;
+        report.sample_rate_hz = Some(timing.sample_rate);
+    }
+
+    if progress_enabled {
+        eprintln!("Pass 1/2: analyzing final sample peak");
+    }
+    let mut pass1_progress = progress::ProgressReporter::new(
+        progress_enabled,
+        &arguments.layout,
+        timing.access_units,
+        timing.samples,
+        timing.sample_rate,
+    );
+    let mut analyzer = PeakBlockSink::new();
+    let pass1_started = std::time::Instant::now();
+    let pass1 = run_legacy_render_pass(
+        arguments,
+        stream,
+        config,
+        selected_profile,
+        &mut analyzer,
+        &mut pass1_progress,
+        performance.is_some(),
+    );
+    pass1_progress.finish();
+    let pass1 = pass1.map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("first-pass peak analysis/render failure: {error}"),
+        )
+    })?;
+    let gain = normalization.gain_for_peak(analyzer.peak)?;
+    let pass1_elapsed = pass1_started.elapsed();
+
+    if progress_enabled {
+        eprintln!("Pass 2/2: rendering output");
+    }
+    let mut pass2_progress = progress::ProgressReporter::new(
+        progress_enabled,
+        &arguments.layout,
+        timing.access_units,
+        timing.samples,
+        timing.sample_rate,
+    );
+    let mut output = if arguments.binaural_sofa.is_some() {
+        joc_render::JocPcmOutput::new_for_binaural(
+            &arguments.output,
+            arguments.output_format,
+            overwrite_authorized,
+        )?
+    } else {
+        let layout = SpeakerLayoutPreset::for_name(&arguments.layout)?.semantic_channel_layout();
+        joc_render::JocPcmOutput::new_for_semantic_layout(
+            &arguments.output,
+            arguments.output_format,
+            overwrite_authorized,
+            &layout,
+        )?
+    };
+    let pass2_started = std::time::Instant::now();
+    let pass2 = {
+        let mut writer = OutputBlockSink {
+            output: &mut output,
+            gain,
+            frames: 0,
+            fingerprint: 0xcbf2_9ce4_8422_2325,
+        };
+        run_legacy_render_pass(
+            arguments,
+            stream,
+            config,
+            selected_profile,
+            &mut writer,
+            &mut pass2_progress,
+            performance.is_some(),
+        )
+    };
+    pass2_progress.finish();
+    let pass2 = match pass2 {
+        Ok(pass) => pass,
+        Err(error) => {
+            output.abort();
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("second-pass render/writer failure: {error}"),
+            )
+            .into());
+        }
+    };
+    if pass1.frames != pass2.frames || pass1.fingerprint != pass2.fingerprint {
+        output.abort();
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "two-pass render was not deterministic (pass 1: {} frames/{:016x}, pass 2: {} frames/{:016x})",
+                pass1.frames, pass1.fingerprint, pass2.frames, pass2.fingerprint
+            ),
+        )
+        .into());
+    }
+    let pass2_elapsed = pass2_started.elapsed();
+    let output_frames = output.frames();
+    if let Err(error) = output.finish() {
+        output.abort();
+        return Err(error.into());
+    }
+    if let Some(report) = performance.as_mut() {
+        report.merge_decode(pass1.decode_timing);
+        report.merge_decode(pass2.decode_timing);
+        report.merge_render(&pass1.render_timing);
+        report.merge_render(&pass2.render_timing);
+        report.output_frames = output_frames;
+        report.output_bytes = fs::metadata(&arguments.output)?.len();
+        report.progress_enabled = pass2_progress.enabled();
+        report.progress_updates = pass1_progress.updates() + pass2_progress.updates();
+        report.progress_overhead = pass1_progress.overhead() + pass2_progress.overhead();
+        performance::write_report(
+            arguments
+                .performance_report
+                .as_deref()
+                .expect("report path"),
+            report,
+            &arguments.layout,
+            selected_profile,
+            arguments.output_format,
+            overwrite_authorized,
+        )?;
+    }
+    let peak_dbfs = if analyzer.peak == 0.0 {
+        f64::NEG_INFINITY
+    } else {
+        20.0 * analyzer.peak.log10()
+    };
+    println!(
+        "{}\npost-render sample-peak normalization: target={:.3} dBFS peak={:.3} dBFS gain={:.9} (pass1={:.3}s pass2={:.3}s total={:.3}s)",
+        pass2.diagnostics,
+        normalization.target_dbfs(),
+        peak_dbfs,
+        gain,
+        pass1_elapsed.as_secs_f64(),
+        pass2_elapsed.as_secs_f64(),
+        (pass1_elapsed + pass2_elapsed).as_secs_f64(),
+    );
+    Ok(())
+}
+
 fn render_joc(
     arguments: &RenderJocArgs,
     terminal: TerminalCapabilities,
@@ -1596,6 +2091,14 @@ fn render_joc(
     let media = load_eac3(&arguments.input)?;
     if let Some(report) = performance.as_mut() {
         report.input_container += input_start.elapsed();
+    }
+    if arguments.normalize_peak.is_some() {
+        return render_joc_with_peak_normalization(
+            arguments,
+            &media.bytes,
+            overwrite_authorized,
+            terminal,
+        );
     }
     if arguments.topology.is_none()
         && arguments.binaural_sofa.is_none()
@@ -1683,42 +2186,46 @@ fn render_joc(
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();
         let dither = deterministic_dither_values();
-        let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
-            &media.bytes,
-            config,
-            selected_profile,
-            &dither,
-            arguments.internal_base_policy,
-            |frame_index, metadata, frame, base| {
-                let blocks = renderer
-                    .render_frame_aligned(frame_index, frame, base)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-                for block in blocks {
-                    let output_start = collect_timing.then(std::time::Instant::now);
-                    output
-                        .write_block(&joc_render::RenderedBlock {
-                            sample_rate: block.sample_rate,
-                            channels: vec![block.left, block.right],
-                        })
+        let result =
+            eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
+                &media.bytes,
+                config,
+                selected_profile,
+                &dither,
+                arguments.internal_base_policy,
+                arguments.dialnorm,
+                |frame_index, metadata, frame, base| {
+                    let blocks = renderer
+                        .render_frame_aligned(frame_index, frame, base)
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-                    if let Some(output_start) = output_start {
-                        render_timing.output_conversion_wav_write += output_start.elapsed();
+                    for block in blocks {
+                        let output_start = collect_timing.then(std::time::Instant::now);
+                        output
+                            .write_block(&joc_render::RenderedBlock {
+                                sample_rate: block.sample_rate,
+                                channels: vec![block.left, block.right],
+                            })
+                            .map_err(|error| {
+                                eac3_decode::DecodeEac3Error::Sink(error.to_string())
+                            })?;
+                        if let Some(output_start) = output_start {
+                            render_timing.output_conversion_wav_write += output_start.elapsed();
+                        }
                     }
-                }
-                let stage_timings = renderer.take_stage_timings();
-                render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
-                render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
-                render_timing.binaural_render += stage_timings.binaural_render;
-                render_timing.rendered_frames += 1;
-                render_timing.rendered_samples += u64::from(base.samples);
-                progress.update(frame_index, render_timing.rendered_samples);
-                renderer
-                    .record_profile(metadata)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
-            },
-            |_access_unit, _pcm| Ok(()),
-            performance.as_ref().map(|_| &mut decode_timing),
-        );
+                    let stage_timings = renderer.take_stage_timings();
+                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
+                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
+                    render_timing.binaural_render += stage_timings.binaural_render;
+                    render_timing.rendered_frames += 1;
+                    render_timing.rendered_samples += u64::from(base.samples);
+                    progress.update(frame_index, render_timing.rendered_samples);
+                    renderer
+                        .record_profile(metadata)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+                },
+                |_access_unit, _pcm| Ok(()),
+                performance.as_ref().map(|_| &mut decode_timing),
+            );
         match result {
             Ok((summary, reconstruction_tail)) => {
                 let tail = match renderer.finish_with_reconstruction_tail(&reconstruction_tail) {
@@ -1829,39 +2336,41 @@ fn render_joc(
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();
         let dither = deterministic_dither_values();
-        let result = eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy(
-            &media.bytes,
-            config,
-            selected_profile,
-            &dither,
-            arguments.internal_base_policy,
-            |frame_index, metadata, frame, base| {
-                let blocks = renderer
-                    .render_frame_aligned(frame_index, frame, base)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-                for block in blocks {
-                    let output_start = collect_timing.then(std::time::Instant::now);
-                    output
-                        .write_block(&block)
+        let result =
+            eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
+                &media.bytes,
+                config,
+                selected_profile,
+                &dither,
+                arguments.internal_base_policy,
+                arguments.dialnorm,
+                |frame_index, metadata, frame, base| {
+                    let blocks = renderer
+                        .render_frame_aligned(frame_index, frame, base)
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
-                    if let Some(output_start) = output_start {
-                        render_timing.output_conversion_wav_write += output_start.elapsed();
+                    for block in blocks {
+                        let output_start = collect_timing.then(std::time::Instant::now);
+                        output.write_block(&block).map_err(|error| {
+                            eac3_decode::DecodeEac3Error::Sink(error.to_string())
+                        })?;
+                        if let Some(output_start) = output_start {
+                            render_timing.output_conversion_wav_write += output_start.elapsed();
+                        }
                     }
-                }
-                let stage_timings = renderer.take_stage_timings();
-                render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
-                render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
-                render_timing.binaural_render += stage_timings.binaural_render;
-                render_timing.rendered_frames += 1;
-                render_timing.rendered_samples += u64::from(base.samples);
-                progress.update(frame_index, render_timing.rendered_samples);
-                renderer
-                    .record_profile(metadata)
-                    .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
-            },
-            |_access_unit, _pcm| Ok(()),
-            performance.as_ref().map(|_| &mut decode_timing),
-        );
+                    let stage_timings = renderer.take_stage_timings();
+                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
+                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
+                    render_timing.binaural_render += stage_timings.binaural_render;
+                    render_timing.rendered_frames += 1;
+                    render_timing.rendered_samples += u64::from(base.samples);
+                    progress.update(frame_index, render_timing.rendered_samples);
+                    renderer
+                        .record_profile(metadata)
+                        .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))
+                },
+                |_access_unit, _pcm| Ok(()),
+                performance.as_ref().map(|_| &mut decode_timing),
+            );
         match result {
             Ok((summary, reconstruction_tail)) => {
                 let tail = match renderer.finish_with_reconstruction_tail(&reconstruction_tail) {
@@ -1983,6 +2492,7 @@ fn render_joc_with_embedded_session(
         speaker_layout: arguments.layout.clone(),
         downmix,
         drc,
+        dialnorm: arguments.dialnorm,
         validation_profile,
         oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
         binaural: None,
@@ -3672,7 +4182,8 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         | joc_render::JocRenderError::UnsupportedCafSpeaker { .. }
         | joc_render::JocRenderError::NoRenderedFrames
         | joc_render::JocRenderError::BinauralOutput(_) => CliErrorCategory::OutputFailure,
-        joc_render::JocRenderError::UnsupportedOutputExtension(_) => {
+        joc_render::JocRenderError::UnsupportedOutputExtension(_)
+        | joc_render::JocRenderError::InvalidPeakNormalizationTarget(_) => {
             CliErrorCategory::InvalidArgument
         }
         joc_render::JocRenderError::InvalidControl(_)
@@ -3699,9 +4210,8 @@ const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErr
         | joc_render::JocRenderError::Timeline(_)
         | joc_render::JocRenderError::Binaural(_)
         | joc_render::JocRenderError::FinalLinkedGain(_)
-        | joc_render::JocRenderError::BinauralSampleRateMismatch { .. } => {
-            CliErrorCategory::DecodeFailure
-        }
+        | joc_render::JocRenderError::BinauralSampleRateMismatch { .. }
+        | joc_render::JocRenderError::NonFinitePcm => CliErrorCategory::DecodeFailure,
     }
 }
 
@@ -3797,9 +4307,9 @@ fn usage_error() -> io::Error {
 #[cfg(test)]
 mod profile_name_tests {
     use super::{
-        OverwriteDecision, SpatialContributionMode, TerminalCapabilities, ValidationProfileRequest,
-        decide_overwrite, overwrite_answer_is_affirmative, parse_render_joc,
-        parse_validation_profile, planned_render_outputs, render_joc_preflight,
+        DialnormMode, OverwriteDecision, SpatialContributionMode, TerminalCapabilities,
+        ValidationProfileRequest, decide_overwrite, overwrite_answer_is_affirmative,
+        parse_render_joc, parse_validation_profile, planned_render_outputs, render_joc_preflight,
         should_prompt_for_overwrite,
     };
     use crate::joc_render;
@@ -3835,6 +4345,50 @@ mod profile_name_tests {
             .validation_profile;
         assert_eq!(omitted_profile, ValidationProfileRequest::Auto);
         assert_eq!(omitted_profile, explicit_profile);
+    }
+
+    #[test]
+    fn render_joc_dialnorm_and_peak_normalization_are_explicit_and_distinct_from_drc() {
+        let base = [
+            "input.m4a".to_owned(),
+            "--layout".to_owned(),
+            "2.0".to_owned(),
+            "--output".to_owned(),
+            "output.wav".to_owned(),
+        ];
+        let parsed = parse_render_joc(&base).expect("default policy");
+        assert_eq!(parsed.dialnorm, DialnormMode::Default);
+        assert!(parsed.normalize_peak.is_none());
+
+        let explicit = [
+            base[0].clone(),
+            base[1].clone(),
+            base[2].clone(),
+            base[3].clone(),
+            base[4].clone(),
+            "--dialnorm".to_owned(),
+            "analog".to_owned(),
+            "--normalize-peak".to_owned(),
+            "-0.1".to_owned(),
+        ];
+        let parsed = parse_render_joc(&explicit).expect("explicit output policies");
+        assert_eq!(parsed.dialnorm, DialnormMode::Analog);
+        assert_eq!(
+            parsed.normalize_peak.expect("peak policy").target_dbfs(),
+            -0.1
+        );
+        assert!(
+            parse_render_joc(&[
+                base[0].clone(),
+                base[1].clone(),
+                base[2].clone(),
+                base[3].clone(),
+                base[4].clone(),
+                "--normalize-peak".to_owned(),
+                "0.1".to_owned(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

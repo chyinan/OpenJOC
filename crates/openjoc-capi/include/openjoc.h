@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define OPENJOC_ABI_VERSION_MAJOR 1u
-#define OPENJOC_ABI_VERSION_MINOR 0u
+#define OPENJOC_ABI_VERSION_MINOR 1u
 #define OPENJOC_NO_PTS INT64_MIN
 
 typedef struct openjoc_decoder openjoc_decoder;
@@ -47,6 +47,12 @@ typedef enum openjoc_drc_mode {
     OPENJOC_DRC_CUSTOM = 3
 } openjoc_drc_mode;
 
+typedef enum openjoc_dialnorm_mode {
+    OPENJOC_DIALNORM_DEFAULT = 0,
+    OPENJOC_DIALNORM_DIGITAL = 1,
+    OPENJOC_DIALNORM_ANALOG = 2
+} openjoc_dialnorm_mode;
+
 typedef enum openjoc_validation_profile {
     OPENJOC_VALIDATION_AUTO = 0,
     OPENJOC_VALIDATION_ETSI_STRICT = 1,
@@ -74,6 +80,8 @@ typedef struct openjoc_decoder_config {
     size_t sofa_size;
     const char *virtual_layout;
     uint32_t lfe_policy;
+    /* Appended in ABI minor 1; older struct_size callers use DEFAULT. */
+    uint32_t dialnorm_mode;
 } openjoc_decoder_config;
 
 typedef struct openjoc_pcm_frame {
