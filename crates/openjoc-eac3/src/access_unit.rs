@@ -5,7 +5,8 @@
 use crate::{
     AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm,
     Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy, StreamType, SyncframeIndexEntry,
-    audio_block::decode_audio_frame_pcm_with_policy_and_timing,
+    audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
+    inspect_audio_block_carriers, parse_bsi,
 };
 use std::time::Instant;
 
@@ -290,6 +291,9 @@ impl JocAccessUnitPcmDecoder {
         if dependent_entry.is_some() != self.dependent_present {
             dependent_synth.reset();
         }
+        let dependent_drc = dependent_entry
+            .map(|entry| dependent_dynamic_range_override(stream, entry))
+            .transpose()?;
         let (independent_info, independent, independent_configuration) = decode_frame(
             stream,
             first,
@@ -297,6 +301,7 @@ impl JocAccessUnitPcmDecoder {
             &mut independent_synth,
             self.independent_configuration,
             policy,
+            dependent_drc.as_ref(),
             stage_timing.as_mut(),
         )?;
         let dependent = dependent_entry
@@ -308,6 +313,7 @@ impl JocAccessUnitPcmDecoder {
                     &mut dependent_synth,
                     self.dependent_configuration,
                     policy,
+                    None,
                     stage_timing.as_mut(),
                 )
             })
@@ -363,6 +369,7 @@ fn decode_frame(
     synthesizer: &mut AudioPcmSynthesizer,
     previous_configuration: Option<SubstreamPcmConfiguration>,
     policy: InternalBasePolicy,
+    drc_override: Option<&DynamicRangeOverride>,
     mut timing: Option<&mut Eac3DecodeStageTiming>,
 ) -> Result<
     (
@@ -393,14 +400,55 @@ fn decode_frame(
     if previous_configuration.is_some_and(|previous| previous != configuration) {
         synthesizer.reset();
     }
-    let pcm = decode_audio_frame_pcm_with_policy_and_timing(
+    let pcm = decode_audio_frame_pcm_with_policy_override_and_timing(
         bytes,
         dither_values,
         synthesizer,
         policy,
+        drc_override,
         timing,
     )?;
     Ok((info, pcm, configuration))
+}
+
+fn dependent_dynamic_range_override(
+    stream: &[u8],
+    entry: SyncframeIndexEntry,
+) -> Result<DynamicRangeOverride, Eac3Error> {
+    let end = entry
+        .offset
+        .checked_add(entry.header.frame_size)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let bytes = stream
+        .get(entry.offset..end)
+        .ok_or(Eac3Error::TruncatedFrame {
+            offset: entry.offset,
+            declared: entry.header.frame_size,
+            available: stream.len().saturating_sub(entry.offset),
+        })?;
+    let info = parse_bsi(bytes)?;
+    let mut primary = Vec::with_capacity(usize::from(entry.header.audio_blocks));
+    let mut secondary = Vec::new();
+    let report = inspect_audio_block_carriers(bytes, |carrier| {
+        if let Some(code) = carrier.dynamic_range {
+            primary.push(code);
+        }
+        if let Some(code) = carrier.dynamic_range_2 {
+            secondary.push(code);
+        }
+    })?;
+    if report.unresolved_blocks != 0 {
+        return Err(Eac3Error::AudioBlockCarrierTraversalUnresolved {
+            examined_blocks: report.examined_blocks,
+            unresolved_blocks: report.unresolved_blocks,
+        });
+    }
+    Ok(DynamicRangeOverride {
+        primary,
+        secondary,
+        compr: info.compr,
+        compr_2: info.compr_2,
+    })
 }
 
 fn standard_channel_locations(
@@ -631,6 +679,10 @@ mod tests {
             audio_coding_mode,
             lfe_on,
             bitstream_id: 16,
+            dialnorm: 31,
+            dialnorm_2: None,
+            compr: None,
+            compr_2: None,
             channel_map,
             addbsi: None,
         }

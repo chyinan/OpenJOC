@@ -2778,3 +2778,40 @@ On the admitted Apple-silicon host, `codesign -dv` reports the Rust-linked
 Mach-O as `adhoc,linker-signed`. This automatic linker signature uses no user or
 Developer ID credential. The manifest records it separately from
 `developer_identity_signed=false` and `notarized=false`.
+
+## E-AC-3 decoder policy provenance
+
+The E-AC-3 decoder policy controls are normative/public-specification work. The
+implementation is derived from ETSI TS 102 366 V1.4.1 clauses 4.4.2.8-4.4.2.10,
+4.4.2.16-4.4.2.18, 4.4.3.3-4.4.3.6, 6.7.2.1-6.7.3.2, and E.2.8.5, using the
+authorized local reference `references/etsi/ts_102366v010401p.pdf`.
+
+`dialnorm`/`dialnorm2` and `compr`/`compr2` are retained in
+`BitstreamInformation`. `dynrng`/`dynrng2` retain the existing per-block
+presence/reuse state. The default `InternalBasePolicy::CurrentDefault` remains
+full Line-mode `dynrng` application for compatibility; `CodecCore` remains the
+unity-gain codec-core policy. The new `DynamicRangeControl` policies are
+Disabled, Line, RF, and Custom positive/negative signed-Q1.7 scaling.
+
+RF mode uses `compr`/`compr2` for the syncframe and falls back to the effective
+per-block `dynrng` word when the preferred BSI word is absent. Custom mode uses
+the public signed-fraction scaling model for `dynrng`; arbitrary CLI percentages
+are rounded to the nearest representable signed 8-bit fraction. No signal-level
+threshold/ratio/attack/release compressor is present, and no limiter or automatic
+normalizer was added. For a complete I0/D0 JOC mix, the last dependent
+substream's DRC words are applied to both source substreams before the PCM is
+handed to the JOC QMF stage, as required by E-AC-3 E.2.8.5.
+
+The JOC application point follows ETSI TS 103 420 V1.2.1 clause 8.1: the E-AC-3
+decoder produces the channel-based downmix first, then JOC transforms that PCM
+to QMF and reconstructs objects. DRC therefore remains in the E-AC-3 spectral
+coefficient/audio-block path and is applied uniformly to the Base contribution
+that feeds JOC; it does not reuse Q32 spatial gains or alter object projection.
+
+ETSI TS 102 366 clauses 6.8.0-6.8.2 and Annex D clauses D.1.3.2-D.2.1.2 were
+audited for Lo/Ro, Lt/Rt, `dmixmod`, center/surround coefficients, matrix phase,
+and LFE rules. OpenJOC does not expose those policies publicly: its current
+JOC output contract has no admitted 2.0 speaker layout, stereo bass-management
+or LFE fold-down ownership. Exact downmix equations are documented in the
+private audit artifacts, but no partial downmix implementation or CLI flag is
+claimed here.

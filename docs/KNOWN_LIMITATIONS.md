@@ -20,6 +20,14 @@ bit-identical Reference Player output.
   `9.1` family require semantic CAF output. WAV requests for layouts without
   an exact WAVEFORMATEXTENSIBLE mask fail closed; no identity substitution or
   fabricated mask is used. `2.0` and `22.2` are not public CLI presets.
+- E-AC-3 dynamic-range control is metadata-driven. `--drc` selects Disabled,
+  Line, RF, or Custom signed-fraction scaling; it is not a signal-level
+  compressor, limiter, or loudness normalizer. `dialnorm` is retained for
+  reporting but calibrated playback-level normalization remains outside the
+  current PCM contract.
+- The public ETSI Lo/Ro and Lt/Rt equations have been audited, but no partial
+  stereo downmix CLI mode is provided while the 2.0 speaker, LFE fold-down,
+  and bass-management contract remains unadmitted.
 - The generic `SpatialLayout`/`JocSpatialBridge` library API accepts caller-
   defined layouts, but the CLI has no custom-layout file format. Generic
   library capacity does not imply a public `22.2` contract or third-party DAW

@@ -1,8 +1,8 @@
 use openjoc_bitio::BitError;
 use openjoc_eac3::{
-    AudioPcmSynthesizer, ChannelLocation, CouplingInformation, Eac3DecodeStageTiming, Eac3Error,
-    InternalBasePolicy, JocAccessUnitPcmDecoder, JocAddbsi, StreamType,
-    block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
+    AudioPcmSynthesizer, ChannelLocation, CouplingInformation, DynamicRangeControl,
+    Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder, JocAddbsi,
+    StreamType, block_start_information_length, channel_end_mantissa, channel_exponent_group_count,
     classify_aux_emdf, classify_skip_field_emdf, decode_audio_blocks,
     decode_audio_blocks_with_parsed_frame, decode_audio_blocks_with_policy, decode_audio_frame_pcm,
     decode_exponents, decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain,
@@ -67,7 +67,7 @@ fn six_block_mono_frame(
     channel_map: Option<u16>,
     dynamic_range: Option<u8>,
 ) -> Vec<u8> {
-    six_block_mono_frame_with_aht(stream_type, channel_map, dynamic_range, true)
+    six_block_mono_frame_with_aht_and_compr(stream_type, channel_map, dynamic_range, None, true)
 }
 
 fn push_conventional_mono_mantissas(bits: &mut Bits) {
@@ -89,6 +89,16 @@ fn six_block_mono_frame_with_aht(
     dynamic_range: Option<u8>,
     aht: bool,
 ) -> Vec<u8> {
+    six_block_mono_frame_with_aht_and_compr(stream_type, channel_map, dynamic_range, None, aht)
+}
+
+fn six_block_mono_frame_with_aht_and_compr(
+    stream_type: u8,
+    channel_map: Option<u16>,
+    dynamic_range: Option<u8>,
+    compression: Option<u8>,
+    aht: bool,
+) -> Vec<u8> {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
     bits.push(u64::from(stream_type), 2);
@@ -100,7 +110,10 @@ fn six_block_mono_frame_with_aht(
     bits.push(0, 1); // no LFE
     bits.push(16, 5); // E-AC-3 version
     bits.push(31, 5); // dialnorm
-    bits.push(0, 1); // no compression metadata
+    bits.push(u64::from(compression.is_some()), 1); // compression metadata
+    if let Some(compression) = compression {
+        bits.push(u64::from(compression), 8);
+    }
     if stream_type == 1 {
         bits.push(u64::from(channel_map.is_some()), 1);
         if let Some(channel_map) = channel_map {
@@ -595,8 +608,8 @@ fn decodes_a_raw_dependent_d0_custom_map_through_pcm_and_replaces_i0() {
 #[test]
 fn dependent_configuration_change_resets_only_dependent_tdac_history() {
     let independent = six_block_mono_frame(0, None, Some(0x00));
-    let centre_dependent = six_block_mono_frame(1, Some(0x4000), Some(0xa5));
-    let left_dependent = six_block_mono_frame(1, Some(0x8000), Some(0xa5));
+    let centre_dependent = six_block_mono_frame(1, Some(0x4000), Some(0x00));
+    let left_dependent = six_block_mono_frame(1, Some(0x8000), Some(0x00));
 
     let centre_bytes = [independent.clone(), centre_dependent].concat();
     let centre_frames = index_syncframes(&centre_bytes).expect("centre I0/D0 frames");
@@ -1044,6 +1057,102 @@ fn codec_core_policy_disables_only_optional_dynamic_range_gain() {
     assert_eq!(
         current[0].prefix.channel_exponents,
         core[0].prefix.channel_exponents
+    );
+}
+
+#[test]
+fn rf_policy_prefers_syncframe_compression_over_line_dynamic_range() {
+    let bytes = six_block_mono_frame_with_aht_and_compr(0, None, Some(0x60), Some(0x80), true);
+    let parsed = parse_bsi(&bytes).expect("parse BSI");
+    assert_eq!(parsed.dialnorm, 31);
+    assert_eq!(parsed.compr, Some(0x80));
+
+    let dither = [0.5; 73];
+    let core = decode_audio_blocks_with_policy(&bytes, &dither, InternalBasePolicy::CodecCore)
+        .expect("codec-core policy");
+    let line = decode_audio_blocks_with_policy(
+        &bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Line),
+    )
+    .expect("line policy");
+    let rf = decode_audio_blocks_with_policy(
+        &bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Rf),
+    )
+    .expect("RF policy");
+    let source = core[0].channel_mantissas[0][0];
+    assert_eq!(line[0].channel_mantissas[0][0], source * 8.0);
+    assert_eq!(rf[0].channel_mantissas[0][0], source / 256.0);
+
+    let fallback_bytes = six_block_mono_frame(0, None, Some(0x60));
+    let fallback_rf = decode_audio_blocks_with_policy(
+        &fallback_bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Rf),
+    )
+    .expect("RF fallback policy");
+    let fallback_line = decode_audio_blocks_with_policy(
+        &fallback_bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Line),
+    )
+    .expect("fallback line policy");
+    assert_eq!(
+        fallback_rf[0].channel_mantissas,
+        fallback_line[0].channel_mantissas
+    );
+}
+
+#[test]
+fn custom_drc_percentage_endpoints_match_public_semantic_decomposition() {
+    let bytes = six_block_mono_frame(0, None, Some(0x60));
+    let dither = [0.5; 73];
+    let disabled = decode_audio_blocks_with_policy(&bytes, &dither, InternalBasePolicy::CodecCore)
+        .expect("disabled policy");
+    let boost_zero = decode_audio_blocks_with_policy(
+        &bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Custom {
+            boost_percent: 0,
+            cut_percent: 100,
+        }),
+    )
+    .expect("custom boost zero");
+    let full = decode_audio_blocks_with_policy(&bytes, &dither, InternalBasePolicy::CurrentDefault)
+        .expect("current default policy");
+    let full_custom = decode_audio_blocks_with_policy(
+        &bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Custom {
+            boost_percent: 100,
+            cut_percent: 100,
+        }),
+    )
+    .expect("custom full");
+    assert_eq!(
+        boost_zero[0].channel_mantissas,
+        disabled[0].channel_mantissas
+    );
+    assert_eq!(full_custom[0].channel_mantissas, full[0].channel_mantissas);
+
+    let negative_bytes = six_block_mono_frame(0, None, Some(0xa5));
+    let negative_disabled =
+        decode_audio_blocks_with_policy(&negative_bytes, &dither, InternalBasePolicy::CodecCore)
+            .expect("negative disabled policy");
+    let cut_zero = decode_audio_blocks_with_policy(
+        &negative_bytes,
+        &dither,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Custom {
+            boost_percent: 100,
+            cut_percent: 0,
+        }),
+    )
+    .expect("custom cut zero");
+    assert_eq!(
+        cut_zero[0].channel_mantissas,
+        negative_disabled[0].channel_mantissas
     );
 }
 

@@ -19,7 +19,7 @@ use openjoc_container::{
     open_seekable_iso_bmff,
 };
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, Eac3Error, InternalBasePolicy,
+    ChannelLocation, DecodedAccessUnitPcm, DynamicRangeControl, Eac3Error, InternalBasePolicy,
     emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
 };
 use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
@@ -46,7 +46,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -205,6 +205,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--internal-base-policy current-default|codec-core]\n",
+        "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
         "  openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n",
@@ -215,6 +216,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--binaural-sofa <HRTF.sofa> --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
+        "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
         "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
         "                         [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
@@ -243,6 +245,9 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --no-banner Disable the interactive startup banner\n",
         "      --validation-profile Select AUTO (default for decode), ETSI strict, or explicit observed-vendor compatibility\n",
         "      --internal-base-policy Select current default or codec-core gain policy\n",
+        "      --drc            Apply E-AC-3 encoded dynamic-range metadata: disabled, line, rf, or custom\n",
+        "      --drc-boost      Custom positive-gain contribution, 0..=100 percent\n",
+        "      --drc-cut        Custom negative-gain contribution, 0..=100 percent\n",
         "      --streaming      Bounded AU decode from raw EC3 or seekable ordinary ISO BMFF; requires --internal-base\n",
         "      --trim-config-count Override the normative OAMD trim configuration count (default: 9)\n",
         "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
@@ -274,8 +279,10 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "usage: openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base]\n",
             "       [--streaming] [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--internal-base-policy current-default|codec-core]\n",
+            "       [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100]\n",
             "       [--trim-config-count N] [--reference-f64]\n\n",
             "Capture mode writes a metadata-only scene plus diagnostic ReconstructionBasis rows.\n",
+            "--drc applies encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
             "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
             "and writes bounded component WAVs, internal-base diagnostics, and a summary without ObjectScene capture.\n",
             "Rows are not authored-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
@@ -302,10 +309,12 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
+            "       [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100]\n",
             "       [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
             "       [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
+            "--drc controls encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
             "SUPPORTED PRESETS: 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
@@ -789,6 +798,10 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let mut validation_profile = ValidationProfileRequest::Auto;
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
+    let mut internal_base_policy_explicit = false;
+    let mut drc_mode = None;
+    let mut drc_boost = None;
+    let mut drc_cut = None;
     let mut streaming = false;
     let mut output = None;
     let mut index = 1;
@@ -814,7 +827,39 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
             "--downmix" => downmix = Some(PathBuf::from(value)),
             "-o" | "--output" => output = Some(PathBuf::from(value)),
             "--validation-profile" => validation_profile = parse_validation_profile(value)?,
-            "--internal-base-policy" => internal_base_policy = parse_internal_base_policy(value)?,
+            "--internal-base-policy" => {
+                internal_base_policy = parse_internal_base_policy(value)?;
+                internal_base_policy_explicit = true;
+            }
+            "--drc" => {
+                if drc_mode.replace(value.clone()).is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--drc may be supplied only once",
+                    )
+                    .into());
+                }
+            }
+            "--drc-boost" => {
+                if drc_boost.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--drc-boost may be supplied only once",
+                    )
+                    .into());
+                }
+                drc_boost = Some(parse_drc_percentage(value, "boost")?);
+            }
+            "--drc-cut" => {
+                if drc_cut.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--drc-cut may be supplied only once",
+                    )
+                    .into());
+                }
+                drc_cut = Some(parse_drc_percentage(value, "cut")?);
+            }
             "--trim-config-count" => {
                 trim_configuration_count = Some(parse_trim_configuration_count(value)?);
             }
@@ -825,6 +870,14 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     if internal_base && downmix.is_some() {
         return Err(usage_error().into());
     }
+    let internal_base_policy = resolve_drc_policy(
+        internal_base_policy,
+        internal_base_policy_explicit,
+        drc_mode.as_deref(),
+        drc_boost,
+        drc_cut,
+        internal_base,
+    )?;
     Ok(DecodeEac3Args {
         input: PathBuf::from(input.ok_or_else(usage_error)?),
         downmix,
@@ -855,6 +908,10 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut validation_profile = ValidationProfileRequest::Auto;
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
+    let mut internal_base_policy_explicit = false;
+    let mut drc_mode = None;
+    let mut drc_boost = None;
+    let mut drc_cut = None;
     let mut no_progress = false;
     let mut performance_report = None;
     let mut diagnostic_contribution = SpatialContributionMode::Full;
@@ -921,7 +978,39 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
             "--trim-config-count" => {
                 trim_configuration_count = Some(parse_trim_configuration_count(value)?);
             }
-            "--internal-base-policy" => internal_base_policy = parse_internal_base_policy(value)?,
+            "--internal-base-policy" => {
+                internal_base_policy = parse_internal_base_policy(value)?;
+                internal_base_policy_explicit = true;
+            }
+            "--drc" => {
+                if drc_mode.replace(value.clone()).is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--drc may be supplied only once",
+                    )
+                    .into());
+                }
+            }
+            "--drc-boost" => {
+                if drc_boost.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--drc-boost may be supplied only once",
+                    )
+                    .into());
+                }
+                drc_boost = Some(parse_drc_percentage(value, "boost")?);
+            }
+            "--drc-cut" => {
+                if drc_cut.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "--drc-cut may be supplied only once",
+                    )
+                    .into());
+                }
+                drc_cut = Some(parse_drc_percentage(value, "cut")?);
+            }
             "--performance-report" => performance_report = Some(PathBuf::from(value)),
             "--diagnostic-contribution" => {
                 diagnostic_contribution = match value.as_str() {
@@ -941,6 +1030,14 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         }
         index += 2;
     }
+    let internal_base_policy = resolve_drc_policy(
+        internal_base_policy,
+        internal_base_policy_explicit,
+        drc_mode.as_deref(),
+        drc_boost,
+        drc_cut,
+        true,
+    )?;
     Ok(RenderJocArgs {
         input: PathBuf::from(input.ok_or_else(usage_error)?),
         topology,
@@ -974,6 +1071,93 @@ fn parse_internal_base_policy(value: &str) -> Result<InternalBasePolicy, io::Err
             format!("unknown internal base policy {value}; expected current-default or codec-core"),
         )),
     }
+}
+
+fn parse_drc_percentage(value: &str, direction: &str) -> Result<u8, io::Error> {
+    let percent = value.parse::<u8>().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid DRC {direction} percentage {value}; expected 0..=100"),
+        )
+    })?;
+    if percent > 100 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid DRC {direction} percentage {percent}; expected 0..=100"),
+        ));
+    }
+    Ok(percent)
+}
+
+fn resolve_drc_policy(
+    current: InternalBasePolicy,
+    internal_policy_explicit: bool,
+    mode: Option<&str>,
+    boost: Option<u8>,
+    cut: Option<u8>,
+    internal_base: bool,
+) -> Result<InternalBasePolicy, io::Error> {
+    if mode.is_none() && boost.is_none() && cut.is_none() {
+        return Ok(current);
+    }
+    if !internal_base {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--drc controls OpenJOC E-AC-3 decoding and requires --internal-base",
+        ));
+    }
+    if internal_policy_explicit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--drc cannot be combined with --internal-base-policy; choose one policy option",
+        ));
+    }
+    let mode = mode.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--drc-boost/--drc-cut require --drc custom",
+        )
+    })?;
+    let control = match mode {
+        "disabled" | "DISABLED" => {
+            if boost.is_some() || cut.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "DRC percentages are valid only with --drc custom",
+                ));
+            }
+            DynamicRangeControl::Disabled
+        }
+        "line" | "LINE" => {
+            if boost.is_some() || cut.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "DRC percentages are valid only with --drc custom",
+                ));
+            }
+            DynamicRangeControl::Line
+        }
+        "rf" | "RF" => {
+            if boost.is_some() || cut.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "DRC percentages are valid only with --drc custom",
+                ));
+            }
+            DynamicRangeControl::Rf
+        }
+        "custom" | "CUSTOM" => DynamicRangeControl::Custom {
+            boost_percent: boost.unwrap_or(100),
+            cut_percent: cut.unwrap_or(100),
+        },
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("unknown DRC mode {mode}; expected disabled, line, rf, or custom"),
+            ));
+        }
+    };
+    Ok(InternalBasePolicy::DynamicRange(control))
 }
 
 fn parse_trim_configuration_count(value: &str) -> Result<NonZeroU8, io::Error> {

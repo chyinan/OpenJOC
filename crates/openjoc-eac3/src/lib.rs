@@ -72,7 +72,10 @@ pub use coding_tools::{
     CodingToolBlockInventory, CodingToolInventory, InventoryProvenance, SemanticChannel,
     emit_coding_tool_inventory,
 };
-pub use dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
+pub use dynamic_range::{
+    DynamicRangeControl, apply_dynamic_range_gains, compression_gain, dynamic_range_gain,
+    scaled_dynamic_range_code,
+};
 pub use mantissa::{
     MantissaDecodeTrace, MantissaQuantizer, decode_mantissa_code, decode_mantissas,
     mantissa_quantizer, shift_mantissa, ungroup_mantissa_code,
@@ -937,6 +940,16 @@ pub struct BitstreamInformation {
     pub audio_coding_mode: u8,
     pub lfe_on: bool,
     pub bitstream_id: u8,
+    /// Raw dialogue-normalization code for the primary programme channel.
+    /// OpenJOC retains this for policy/reporting consumers but does not apply
+    /// calibrated playback-level normalization to PCM.
+    pub dialnorm: u8,
+    /// Raw dual-mono dialogue-normalization code, when `acmod == 0`.
+    pub dialnorm_2: Option<u8>,
+    /// Syncframe-level RF/heavy-compression word for the primary programme.
+    pub compr: Option<u8>,
+    /// Syncframe-level RF/heavy-compression word for dual-mono channel 2.
+    pub compr_2: Option<u8>,
     /// Custom channel map for a dependent substream, in the MSB-first table
     /// E.1.4 representation. `None` means the `acmod`/`lfeon` mapping applies.
     pub channel_map: Option<u16>,
@@ -1088,16 +1101,15 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
     let acmod = read_u8(bits, 3)?;
     let lfe_on = bits.read_bit()?;
     let bitstream_id = read_u8(bits, 5)?;
-    skip(bits, 5)?; // dialnorm
-    if bits.read_bit()? {
-        skip(bits, 8)?;
-    }
-    if acmod == 0 {
-        skip(bits, 5)?;
-        if bits.read_bit()? {
-            skip(bits, 8)?;
-        }
-    }
+    let dialnorm = read_u8(bits, 5)?;
+    let compr = bits.read_bit()?.then(|| read_u8(bits, 8)).transpose()?;
+    let (dialnorm_2, compr_2) = if acmod == 0 {
+        let dialnorm_2 = Some(read_u8(bits, 5)?);
+        let compr_2 = bits.read_bit()?.then(|| read_u8(bits, 8)).transpose()?;
+        (dialnorm_2, compr_2)
+    } else {
+        (None, None)
+    };
     let channel_map = if header.stream_type == StreamType::Dependent && bits.read_bit()? {
         Some(u16::try_from(bits.read_bits(16)?).map_err(|_| Eac3Error::FrameSizeOverflow)?)
     } else {
@@ -1134,6 +1146,10 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
             audio_coding_mode: acmod,
             lfe_on,
             bitstream_id,
+            dialnorm,
+            dialnorm_2,
+            compr,
+            compr_2,
             channel_map,
             addbsi,
         },

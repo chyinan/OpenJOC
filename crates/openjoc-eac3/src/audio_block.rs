@@ -6,7 +6,9 @@ use openjoc_bitio::{BitRead, BitReader};
 use std::time::Instant;
 
 use crate::aht::decode_aht_element_mantissas_with_information;
-use crate::dynamic_range::{apply_dynamic_range_gains, dynamic_range_gain};
+use crate::dynamic_range::{
+    DynamicRangeControl, apply_dynamic_range_gains, effective_dynamic_range_gain,
+};
 use crate::mantissa::{
     MantissaDecodeTrace, MantissaGroupingState, decode_mantissas_with_state_and_trace,
 };
@@ -71,6 +73,16 @@ pub struct AudioBlockPrefix {
     pub next_offset_bits: usize,
 }
 
+/// Effective DRC metadata supplied by the owning E-AC-3 programme when a
+/// dependent substream carries the complete-mix control words.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DynamicRangeOverride {
+    pub primary: Vec<u8>,
+    pub secondary: Vec<u8>,
+    pub compr: Option<u8>,
+    pub compr_2: Option<u8>,
+}
+
 /// Selects whether optional presentation dynamic-range metadata is applied
 /// while producing the internal base PCM.
 ///
@@ -78,18 +90,22 @@ pub struct AudioBlockPrefix {
 /// for backwards compatibility. [`InternalBasePolicy::CodecCore`] keeps the
 /// normative coefficient, coupling, spectral-extension, and transform stages
 /// intact while leaving optional presentation gain at unity.
+/// [`InternalBasePolicy::DynamicRange`] exposes the public E-AC-3 DRC policy
+/// controls without changing spatial/JOC processing.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum InternalBasePolicy {
     #[default]
     CurrentDefault,
     CodecCore,
+    DynamicRange(DynamicRangeControl),
 }
 
 impl InternalBasePolicy {
-    fn dynamic_range_gain(self, code: Option<u8>) -> f64 {
+    fn dynamic_range_control(self) -> DynamicRangeControl {
         match self {
-            Self::CurrentDefault => dynamic_range_gain(code),
-            Self::CodecCore => 1.0,
+            Self::CurrentDefault => DynamicRangeControl::Line,
+            Self::CodecCore => DynamicRangeControl::Disabled,
+            Self::DynamicRange(control) => control,
         }
     }
 }
@@ -105,6 +121,11 @@ pub struct AudioBlockCarrier {
     pub skip_field_start_offset_bits: Option<usize>,
     /// Absolute frame bit offset where this block's side information starts.
     pub prefix_start_offset_bits: usize,
+    /// Effective primary `dynrng` word for this block after presence/reuse
+    /// inheritance. Block zero is always represented as `Some(0)` when absent.
+    pub dynamic_range: Option<u8>,
+    /// Effective dual-mono channel-2 `dynrng2` word for this block.
+    pub dynamic_range_2: Option<u8>,
     /// Absolute frame bit offset immediately after this block's `skipfld`.
     pub next_offset_bits: usize,
 }
@@ -1157,6 +1178,8 @@ where
             skip_field: prefix.skip_field.clone(),
             skip_field_start_offset_bits: prefix.skip_field_start_offset_bits,
             prefix_start_offset_bits,
+            dynamic_range: state.dynamic_range,
+            dynamic_range_2: state.dynamic_range_2,
             next_offset_bits: prefix.next_offset_bits,
         });
         examined_blocks += 1;
@@ -1213,7 +1236,7 @@ pub fn decode_first_audio_block_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<DecodedAudioBlock, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, 1, policy, None, None, None)?
+    decode_audio_blocks_until(bytes, dither_values, 1, policy, None, None, None, None)?
         .into_iter()
         .next()
         .ok_or(Eac3Error::FrameSizeOverflow)
@@ -1239,7 +1262,16 @@ pub fn decode_audio_blocks_with_policy(
     dither_values: &[f64],
     policy: InternalBasePolicy,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_until(bytes, dither_values, usize::MAX, policy, None, None, None)
+    decode_audio_blocks_until(
+        bytes,
+        dither_values,
+        usize::MAX,
+        policy,
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 /// Decodes every audio block and records conventional mantissa stages.
@@ -1261,6 +1293,7 @@ pub fn decode_audio_blocks_with_diagnostic_trace(
         Some(trace),
         None,
         None,
+        None,
     )
 }
 
@@ -1280,6 +1313,7 @@ pub fn decode_audio_blocks_with_parsed_frame(
         policy,
         None,
         Some(frame.clone()),
+        None,
         None,
     )
 }
@@ -1315,11 +1349,12 @@ pub fn decode_audio_frame_pcm_with_policy(
     synthesizer.synthesize(&blocks)
 }
 
-pub(crate) fn decode_audio_frame_pcm_with_policy_and_timing(
+pub(crate) fn decode_audio_frame_pcm_with_policy_override_and_timing(
     bytes: &[u8],
     dither_values: &[f64],
     synthesizer: &mut AudioPcmSynthesizer,
     policy: InternalBasePolicy,
+    drc_override: Option<&DynamicRangeOverride>,
     mut timing: Option<&mut Eac3DecodeStageTiming>,
 ) -> Result<DecodedAudioPcm, Eac3Error> {
     let blocks = decode_audio_blocks_until(
@@ -1330,6 +1365,7 @@ pub(crate) fn decode_audio_frame_pcm_with_policy_and_timing(
         None,
         None,
         timing.as_deref_mut(),
+        drc_override,
     )?;
     synthesizer.synthesize_internal(&blocks, None, timing)
 }
@@ -1682,6 +1718,7 @@ fn decode_audio_blocks_until(
     mut trace_sink: Option<&mut Vec<MantissaElementTrace>>,
     preparsed_frame: Option<AudioFrameInformation>,
     mut timing: Option<&mut Eac3DecodeStageTiming>,
+    drc_override: Option<&DynamicRangeOverride>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
     let frame = match preparsed_frame {
         Some(frame) => frame,
@@ -1792,8 +1829,21 @@ fn decode_audio_blocks_until(
             channel_block.channel_mantissas.clone()
         };
         let channel_mantissas = channel_mantissas;
-        let primary_gain = policy.dynamic_range_gain(state.dynamic_range);
-        let secondary_gain = policy.dynamic_range_gain(state.dynamic_range_2);
+        let primary_code = drc_override
+            .and_then(|override_value| override_value.primary.get(block_index).copied())
+            .or(state.dynamic_range);
+        let secondary_code = drc_override
+            .and_then(|override_value| override_value.secondary.get(block_index).copied())
+            .or(state.dynamic_range_2);
+        let primary_compr = drc_override
+            .and_then(|override_value| override_value.compr)
+            .or(frame.bsi.compr);
+        let secondary_compr = drc_override
+            .and_then(|override_value| override_value.compr_2)
+            .or(frame.bsi.compr_2);
+        let control = policy.dynamic_range_control();
+        let primary_gain = effective_dynamic_range_gain(control, primary_code, primary_compr);
+        let secondary_gain = effective_dynamic_range_gain(control, secondary_code, secondary_compr);
         let channel_gains = if frame.bsi.audio_coding_mode == 0 {
             vec![primary_gain, secondary_gain]
         } else {
