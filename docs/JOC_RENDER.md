@@ -541,8 +541,12 @@ openjoc render-joc INPUT.m4a --layout 7.1.4 --drc custom \
 `--drc` accepts `disabled`, `line`, `rf`, or `custom`; custom boost and cut
 values are percentages in `0..=100`. With no override, existing decoder
 behavior is preserved, including full Line-mode `dynrng` where applicable.
-`dialnorm` remains available as decoded metadata but is not applied as
-calibrated playback-level normalization.
+The renderer automatically applies the supported Default E-AC-3 dialnorm
+program scalar at the shared Base/Object/ReconstructionBasis boundary. This
+metadata-derived calibration is separate from `--drc`, is applied before
+speaker projection and FinalLinkedGain, and does not perform content-dependent
+loudness normalization. No user-facing dialnorm option is exposed in this
+release.
 
 ## SOFA-backed binaural rendering
 

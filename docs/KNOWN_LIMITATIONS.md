@@ -22,10 +22,10 @@ bit-identical Reference Player output.
   fabricated mask is used. `2.0` and the current `5.1`-through-`9.1.6` family
   are public CLI presets; `22.2` remains withheld.
 - E-AC-3 dynamic-range control is metadata-driven. `--drc` selects Disabled,
-  Line, RF, or Custom signed-fraction scaling; it is not a signal-level
-  compressor, limiter, or loudness normalizer. `dialnorm` is retained for
-  reporting but calibrated playback-level normalization remains outside the
-  current PCM contract.
+  Line, RF, or Custom signed-fraction scaling; it remains separate from
+  dialnorm. OpenJOC's automatic Default dialnorm policy applies the supported
+  E-AC-3 metadata-derived calibrated program scalar; this is not content-
+  dependent LUFS/peak normalization, a signal-level compressor, or a limiter.
 - The admitted `2.0` speaker output uses the generic two-speaker projector for
   reconstructed/object coordinates and public ETSI Lo/Ro/Lt/Rt matrices for
   supported 5.1 Base channels. Optional E-AC-3 LFE metadata may fold LFE into

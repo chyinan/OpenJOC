@@ -82,6 +82,12 @@ supports disabled, line, RF, and custom boost/cut. `DownmixPolicy` supports
 auto, Lo/Ro, and Lt/Rt for stereo output. No CLI enum is reused as a public
 library type.
 
+The session automatically applies the supported Default E-AC-3 dialnorm
+program scalar from each valid independent syncframe to the complete decoded
+program before speaker projection, FinalLinkedGain, or SOFA convolution.
+Dialnorm is separate from `DrcPolicy`; no new public configuration field is
+required for this first integration.
+
 `BinauralConfig` accepts a complete in-memory SimpleFreeFieldHRIR SOFA buffer,
 a virtual speaker layout, and an explicit LFE policy. The session does not
 retain a filesystem path. The public API currently uses direct convolution;

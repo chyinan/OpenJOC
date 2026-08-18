@@ -49,6 +49,10 @@ Semantic labels are available through `openjoc_decoder_get_channel_label` and
 the output/frame descriptors. The canonical PCM sample format value is `1`
 (interleaved float32).
 
+The C adapter inherits the shared session's automatic Default E-AC-3 dialnorm
+program calibration. Dialnorm is metadata-derived and separate from the
+existing DRC fields; ABI 1.0 exposes no dialnorm configuration field.
+
 ## Failure containment
 
 Every exported operation contains Rust panics before returning. No Rust panic,

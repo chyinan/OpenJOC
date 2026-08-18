@@ -6,8 +6,8 @@
 
 use crate::performance::RenderStageTiming;
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata, JocMetadataFrame, StereoDownmixMode,
-    stereo_downmix_matrix,
+    ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata, JocMetadataFrame,
+    StereoDownmixMode, stereo_downmix_matrix,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_joc::{
@@ -421,6 +421,7 @@ struct PendingRenderFrame {
     channel_locations: Vec<ChannelLocation>,
     lfe_location: Option<ChannelLocation>,
     downmix: DownmixMetadata,
+    dialnorm: DialnormState,
 }
 
 #[derive(Debug)]
@@ -632,6 +633,7 @@ impl JocSpeakerRenderer {
             channel_locations: base.channel_locations.clone(),
             lfe_location: base.lfe_location,
             downmix: base.downmix,
+            dialnorm: base.dialnorm,
         });
         self.next_input_frame = self
             .next_input_frame
@@ -666,6 +668,11 @@ impl JocSpeakerRenderer {
                 frame: frame.sample_rate,
             });
         }
+        let calibrated_base = base.with_dialnorm_applied();
+        let mut calibrated_frame = frame.clone();
+        for row in &mut calibrated_frame.decoded.reconstruction_basis.rows {
+            base.dialnorm.apply_to_samples(row);
+        }
         let base_coordinates = base
             .channel_locations
             .iter()
@@ -691,10 +698,10 @@ impl JocSpeakerRenderer {
             self.expected_coordinates = Some(expected);
         }
         let bridge_frame = self.frame_bridge.frame(
-            frame,
+            &calibrated_frame,
             &base_coordinates,
-            &base.channels,
-            base.lfe.as_deref(),
+            &calibrated_base.channels,
+            calibrated_base.lfe.as_deref(),
         )?;
         let sample_count = usize::try_from(bridge_frame.sample_range.len())
             .map_err(|_| JocRenderError::FrameSampleCount)?;
@@ -708,7 +715,7 @@ impl JocSpeakerRenderer {
         let stereo_speaker = self.preset.name == "2.0";
         let automatic_frame = if let Some(assembler) = self.assembler.as_mut() {
             let start = self.stage_timing_enabled.then(Instant::now);
-            let frame = assembler.assemble_frame(frame, &base_coordinates, None)?;
+            let frame = assembler.assemble_frame(&calibrated_frame, &base_coordinates, None)?;
             if let Some(start) = start {
                 self.stage_timings.bridge_control_assembly += start.elapsed();
             }
@@ -722,7 +729,7 @@ impl JocSpeakerRenderer {
                 &bridge_frame,
                 &control_frame,
                 sample_count,
-                base,
+                &calibrated_base,
                 &mut active,
                 stereo_speaker,
             )?;
@@ -735,7 +742,7 @@ impl JocSpeakerRenderer {
                 JocRenderError::InvalidControl("missing explicit control source".to_owned())
             })?;
             let update_index = control.mark_update_for(frame_index);
-            let topology = (self.expected_frame == 0 || frame.decoded.state_reset)
+            let topology = (self.expected_frame == 0 || calibrated_frame.decoded.state_reset)
                 .then_some(&control.topology);
             let updates = update_index.map(|index| control.updates[index].updates.as_slice());
             let start = self.stage_timing_enabled.then(Instant::now);
@@ -759,7 +766,7 @@ impl JocSpeakerRenderer {
                 self.stage_timings.spatial_bridge_render += start.elapsed();
             }
             if stereo_speaker && self.contribution_mode.includes_base() {
-                add_stereo_base_downmix(&mut active, base, self.downmix_policy)?;
+                add_stereo_base_downmix(&mut active, &calibrated_base, self.downmix_policy)?;
             }
         }
 
@@ -768,7 +775,7 @@ impl JocSpeakerRenderer {
         for (output_index, channel) in self.preset.layout.channels().iter().enumerate() {
             if channel.lfe {
                 if self.contribution_mode.includes_base() {
-                    if let Some(lfe) = base.lfe.as_deref() {
+                    if let Some(lfe) = calibrated_base.lfe.as_deref() {
                         channels[output_index].copy_from_slice(lfe);
                     }
                 }
@@ -778,7 +785,11 @@ impl JocSpeakerRenderer {
             }
         }
 
-        self.apply_final_linked_gain(frame.sample_rate, &mut channels, base.lfe.as_deref())?;
+        self.apply_final_linked_gain(
+            frame.sample_rate,
+            &mut channels,
+            calibrated_base.lfe.as_deref(),
+        )?;
         self.expected_frame = self
             .expected_frame
             .checked_add(1)
@@ -2022,6 +2033,7 @@ fn aligned_base_pcm(
         lfe_location: pending.lfe_location,
         lfe: aligned.lfe_pcm.clone(),
         downmix: pending.downmix,
+        dialnorm: pending.dialnorm,
     }
 }
 
@@ -2539,7 +2551,7 @@ mod tests {
         add_stereo_base_downmix, five_point_one_layout, five_point_one_preset,
         selected_stereo_policy, stereo_downmix_coefficients, virtual_speaker_direction,
     };
-    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata};
+    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata};
     use openjoc_emdf::JocValidationProfile;
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
     use openjoc_oamd::{
@@ -2826,6 +2838,7 @@ mod tests {
             lfe_location: Some(ChannelLocation::Lfe(0)),
             lfe: Some(vec![99.0; samples]),
             downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
         }
     }
 
@@ -2843,6 +2856,7 @@ mod tests {
             lfe_location: lfe.map(|_| ChannelLocation::Lfe(0)),
             lfe: lfe.map(|value| vec![value]),
             downmix,
+            dialnorm: DialnormState::default(),
         }
     }
 
@@ -3262,6 +3276,72 @@ mod tests {
                 .flatten()
                 .any(|&sample| sample != 0.0)
         );
+    }
+
+    #[test]
+    fn dialnorm_scales_base_and_reconstruction_before_common_projection() {
+        let frame = decoded_frame(0, 0, 2);
+        let unity_base = base(2, 1.0);
+        let mut calibrated_base = base(2, 1.0);
+        calibrated_base.dialnorm = DialnormState::new(openjoc_eac3::DialnormMode::Digital, 24);
+
+        let mut unity_renderer =
+            JocSpeakerRenderer::new("5.1", fixed_route_control(true)).expect("unity renderer");
+        let mut calibrated_renderer =
+            JocSpeakerRenderer::new("5.1", fixed_route_control(true)).expect("renderer");
+        let unity = unity_renderer
+            .render_frame(0, &frame, &unity_base)
+            .expect("unity output");
+        let calibrated = calibrated_renderer
+            .render_frame(0, &frame, &calibrated_base)
+            .expect("calibrated output");
+        let gain = calibrated_base.dialnorm.linear_gain();
+        assert_eq!(unity.channels[0], vec![7.0; 2]);
+        for (actual, expected) in calibrated.channels[0]
+            .iter()
+            .zip(unity.channels[0].iter().map(|sample| sample * gain))
+        {
+            assert!((actual - expected).abs() <= 1.0e-12);
+        }
+        assert!(unity_base.dialnorm.linear_gain() > gain);
+    }
+
+    #[test]
+    fn calibrated_dialnorm_reduces_the_level_seen_by_final_linked_gain() {
+        let mut first_frame = decoded_frame(0, 0, 32);
+        let mut second_frame = decoded_frame(1, 32, 32);
+        for frame in [&mut first_frame, &mut second_frame] {
+            for row in &mut frame.decoded.reconstruction_basis.rows {
+                row.fill(0.7);
+            }
+        }
+        let mut calibrated_base = base(32, 1.0);
+        for channel in &mut calibrated_base.channels {
+            channel.fill(0.7);
+        }
+        calibrated_base.lfe.as_mut().expect("LFE").fill(0.7);
+        calibrated_base.dialnorm = DialnormState::new(openjoc_eac3::DialnormMode::Digital, 20);
+        let mut unity_renderer =
+            JocSpeakerRenderer::new("5.1", control(false, 6)).expect("unity renderer");
+        let mut calibrated_renderer =
+            JocSpeakerRenderer::new("5.1", control(false, 6)).expect("renderer");
+        let mut unity_base = calibrated_base.clone();
+        unity_base.dialnorm = DialnormState::default();
+        let _ = unity_renderer
+            .render_frame(0, &first_frame, &unity_base)
+            .expect("unity first block");
+        let _ = calibrated_renderer
+            .render_frame(0, &first_frame, &calibrated_base)
+            .expect("calibrated first block");
+        let unity = unity_renderer
+            .render_frame(1, &second_frame, &unity_base)
+            .expect("unity linked block");
+        let calibrated = calibrated_renderer
+            .render_frame(1, &second_frame, &calibrated_base)
+            .expect("calibrated linked block");
+        let unity_peak = peak_metrics(&unity.channels).0;
+        let calibrated_peak = peak_metrics(&calibrated.channels).0;
+        assert!(calibrated_peak < unity_peak);
     }
 
     #[test]

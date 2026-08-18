@@ -2787,18 +2787,21 @@ implementation is derived from ETSI TS 102 366 V1.4.1 clauses 4.4.2.8-4.4.2.10,
 authorized local reference `references/etsi/ts_102366v010401p.pdf`.
 
 `dialnorm`/`dialnorm2` and `compr`/`compr2` are retained in
-`BitstreamInformation`. `dynrng`/`dynrng2` retain the existing per-block
-presence/reuse state. The default `InternalBasePolicy::CurrentDefault` remains
-full Line-mode `dynrng` application for compatibility; `CodecCore` remains the
-unity-gain codec-core policy. The new `DynamicRangeControl` policies are
-Disabled, Line, RF, and Custom positive/negative signed-Q1.7 scaling.
+`BitstreamInformation`. The primary `dialnorm` value is converted at each
+valid independent syncframe into the shared Default calibrated program scalar;
+`dialnorm2` remains limited to dual-mono channel 2. `dynrng`/`dynrng2` retain
+the existing per-block presence/reuse state. The default
+`InternalBasePolicy::CurrentDefault` remains full Line-mode `dynrng` application
+for compatibility; `CodecCore` remains the unity-gain codec-core policy. The
+new `DynamicRangeControl` policies are Disabled, Line, RF, and Custom
+positive/negative signed-Q1.7 scaling. Dialnorm and DRC remain independent.
 
 RF mode uses `compr`/`compr2` for the syncframe and falls back to the effective
 per-block `dynrng` word when the preferred BSI word is absent. Custom mode uses
 the public signed-fraction scaling model for `dynrng`; arbitrary CLI percentages
 are rounded to the nearest representable signed 8-bit fraction. No signal-level
-threshold/ratio/attack/release compressor is present, and no limiter or automatic
-normalizer was added. For a complete I0/D0 JOC mix, the last dependent
+threshold/ratio/attack/release compressor is present, and no content-dependent
+loudness normalizer or limiter was added. For a complete I0/D0 JOC mix, the last dependent
 substream's DRC words are applied to both source substreams before the PCM is
 handed to the JOC QMF stage, as required by E-AC-3 E.2.8.5.
 

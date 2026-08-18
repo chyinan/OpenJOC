@@ -13,7 +13,7 @@
 #![allow(clippy::too_many_lines)]
 
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata, InternalBasePolicy,
+    ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata, InternalBasePolicy,
     JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode,
     extract_joc_access_unit_for_profile, group_access_units, index_syncframes,
     parse_joc_access_unit, stereo_downmix_matrix, validate_complexity_index,
@@ -813,6 +813,7 @@ struct PendingRenderFrame {
     channel_locations: Vec<ChannelLocation>,
     lfe_location: Option<ChannelLocation>,
     downmix: DownmixMetadata,
+    dialnorm: DialnormState,
 }
 
 #[derive(Debug)]
@@ -913,6 +914,7 @@ impl SpeakerRenderer {
             channel_locations: base.channel_locations.clone(),
             lfe_location: base.lfe_location,
             downmix: base.downmix,
+            dialnorm: base.dialnorm,
         });
         self.next_input_frame = self.next_input_frame.saturating_add(1);
         if let Some(previous) = &self.base_coordinates {
@@ -940,6 +942,7 @@ impl SpeakerRenderer {
                 lfe_location: pending.lfe_location,
                 lfe: aligned_frame.lfe_pcm,
                 downmix: pending.downmix,
+                dialnorm: pending.dialnorm,
             };
             let mut aligned_payload = pending.frame;
             aligned_payload.decoded.reconstruction_basis = aligned_frame.reconstruction_basis;
@@ -974,6 +977,11 @@ impl SpeakerRenderer {
                 actual: base.sample_rate,
             });
         }
+        let calibrated_base = base.with_dialnorm_applied();
+        let mut calibrated_frame = frame.clone();
+        for row in &mut calibrated_frame.decoded.reconstruction_basis.rows {
+            base.dialnorm.apply_to_samples(row);
+        }
         let coordinate_count = base_coordinates
             .len()
             .checked_add(frame.decoded.reconstruction_basis.rows.len())
@@ -988,17 +996,17 @@ impl SpeakerRenderer {
             self.expected_coordinates = Some(coordinate_count);
         }
         let bridge_frame = self.frame_bridge.frame(
-            frame,
+            &calibrated_frame,
             base_coordinates,
-            &base.channels,
-            base.lfe.as_deref(),
+            &calibrated_base.channels,
+            calibrated_base.lfe.as_deref(),
         )?;
         let sample_count = usize::try_from(bridge_frame.sample_range.len())
             .map_err(|_| OpenJocError::Render("sample count overflow".to_owned()))?;
         let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
         let control = self
             .assembler
-            .assemble_frame(frame, base_coordinates, None)?;
+            .assemble_frame(&calibrated_frame, base_coordinates, None)?;
         let mut boundaries = vec![0_usize, sample_count];
         for event in &control.events {
             let start = usize::try_from(event.quantum.saturating_mul(32)).unwrap_or(usize::MAX);
@@ -1059,13 +1067,13 @@ impl SpeakerRenderer {
             )?;
         }
         if stereo {
-            add_stereo_base_downmix(&mut active, base, self.downmix_policy)?;
+            add_stereo_base_downmix(&mut active, &calibrated_base, self.downmix_policy)?;
         }
         let mut channels = vec![vec![0.0; sample_count]; self.preset.channel_count()];
         let mut active_index = 0;
         for (output_index, channel) in self.preset.layout.channels().iter().enumerate() {
             if channel.lfe {
-                if let Some(lfe) = base.lfe.as_deref() {
+                if let Some(lfe) = calibrated_base.lfe.as_deref() {
                     channels[output_index].copy_from_slice(lfe);
                 }
             } else {
@@ -1073,7 +1081,11 @@ impl SpeakerRenderer {
                 active_index += 1;
             }
         }
-        self.apply_final_linked_gain(frame.sample_rate, &mut channels, base.lfe.as_deref())?;
+        self.apply_final_linked_gain(
+            frame.sample_rate,
+            &mut channels,
+            calibrated_base.lfe.as_deref(),
+        )?;
         self.expected_frame = self.expected_frame.saturating_add(1);
         self.expected_sample = self.expected_sample.saturating_add(sample_count as u64);
         Ok(RenderedBlock {
@@ -1159,6 +1171,7 @@ impl SpeakerRenderer {
                 lfe_location: pending.lfe_location,
                 lfe: aligned_frame.lfe_pcm,
                 downmix: pending.downmix,
+                dialnorm: pending.dialnorm,
             };
             let mut frame = pending.frame;
             frame.decoded.reconstruction_basis = aligned_frame.reconstruction_basis;

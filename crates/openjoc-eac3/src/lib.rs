@@ -34,6 +34,7 @@ mod aht;
 mod audio_block;
 mod bit_allocation;
 mod coding_tools;
+mod dialnorm;
 mod dynamic_range;
 mod mantissa;
 mod rematrix;
@@ -73,6 +74,7 @@ pub use coding_tools::{
     CodingToolBlockInventory, CodingToolInventory, InventoryProvenance, SemanticChannel,
     emit_coding_tool_inventory,
 };
+pub use dialnorm::{DialnormMode, DialnormState};
 pub use dynamic_range::{
     DynamicRangeControl, apply_dynamic_range_gains, compression_gain, dynamic_range_gain,
     scaled_dynamic_range_code,
@@ -946,8 +948,8 @@ pub struct BitstreamInformation {
     pub lfe_on: bool,
     pub bitstream_id: u8,
     /// Raw dialogue-normalization code for the primary programme channel.
-    /// OpenJOC retains this for policy/reporting consumers but does not apply
-    /// calibrated playback-level normalization to PCM.
+    /// The accepted independent value is converted into the frame's prepared
+    /// calibrated program scalar at the common render boundary.
     pub dialnorm: u8,
     /// Raw dual-mono dialogue-normalization code, when `acmod == 0`.
     pub dialnorm_2: Option<u8>,

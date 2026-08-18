@@ -3,8 +3,9 @@
 //! TS 103 420 E-AC-3 access-unit audio assembly.
 
 use crate::{
-    AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, DownmixMetadata,
-    Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy, StreamType, SyncframeIndexEntry,
+    AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, DialnormMode,
+    DialnormState, DownmixMetadata, Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy,
+    StreamType, SyncframeIndexEntry,
     audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
     inspect_audio_block_carriers, parse_bsi,
 };
@@ -27,9 +28,29 @@ pub struct DecodedAccessUnitPcm {
     pub lfe: Option<Vec<f64>>,
     /// E-AC-3 mixing metadata owned by this decoded programme frame.
     pub downmix: DownmixMetadata,
+    /// One calibrated program scalar prepared from the independent BSI.
+    pub dialnorm: DialnormState,
 }
 
 impl DecodedAccessUnitPcm {
+    /// Returns a copy with the frame's prepared dialnorm scalar applied to
+    /// every decoded Base plane, including the retained LFE plane.
+    ///
+    /// ReconstructionBasis rows are owned by the JOC frame and are scaled by
+    /// the shared renderer beside this copy so the complete program receives
+    /// one common scalar exactly once.
+    #[must_use]
+    pub fn with_dialnorm_applied(&self) -> Self {
+        let mut calibrated = self.clone();
+        for channel in &mut calibrated.channels {
+            self.dialnorm.apply_to_samples(channel);
+        }
+        if let Some(lfe) = calibrated.lfe.as_mut() {
+            self.dialnorm.apply_to_samples(lfe);
+        }
+        calibrated
+    }
+
     /// Validates the channel sets admitted by TS 103 420 Table 47.
     ///
     /// The lower-level E-AC-3 assembler intentionally remains able to
@@ -150,6 +171,8 @@ pub struct JocAccessUnitPcmDecoder {
     dependent_present: bool,
     independent_configuration: Option<SubstreamPcmConfiguration>,
     dependent_configuration: Option<SubstreamPcmConfiguration>,
+    dialnorm_mode: DialnormMode,
+    dialnorm_state: DialnormState,
     stage_timing_enabled: bool,
     last_stage_timing: Eac3DecodeStageTiming,
 }
@@ -185,6 +208,21 @@ impl JocAccessUnitPcmDecoder {
         let stage_timing_enabled = self.stage_timing_enabled;
         *self = Self::default();
         self.stage_timing_enabled = stage_timing_enabled;
+    }
+
+    /// Selects the internal dialnorm branch for conformance tests.
+    ///
+    /// The public OpenJocSession intentionally keeps the automatic Default
+    /// policy and does not expose this as a user configuration option.
+    pub fn set_dialnorm_mode(&mut self, mode: DialnormMode) {
+        self.dialnorm_mode = mode;
+        self.dialnorm_state = DialnormState::new(mode, self.dialnorm_state.encoded_value());
+    }
+
+    /// Returns the currently committed semantic dialnorm state.
+    #[must_use]
+    pub const fn dialnorm_state(&self) -> DialnormState {
+        self.dialnorm_state
     }
 
     /// Enables opt-in core stage timing. Normal decoding performs no timing
@@ -334,15 +372,17 @@ impl JocAccessUnitPcmDecoder {
                 });
             }
         }
+        let dialnorm = DialnormState::new(self.dialnorm_mode, independent_info.dialnorm);
         let output = Eac3DecodeStageTiming::measure(
             stage_timing.as_mut(),
             |timing| &mut timing.pcm_assembly,
             || {
-                merge_substreams(
+                merge_substreams_with_dialnorm(
                     unit,
                     &independent_info,
                     independent,
                     dependent.as_ref().map(|(info, pcm, _)| (info, pcm)),
+                    dialnorm,
                 )
             },
         )?;
@@ -353,6 +393,7 @@ impl JocAccessUnitPcmDecoder {
         self.dependent_present = dependent_entry.is_some();
         self.independent_configuration = Some(independent_configuration);
         self.dependent_configuration = dependent.map(|(_, _, configuration)| configuration);
+        self.dialnorm_state = dialnorm;
         if let (Some(timing), Some(start)) = (stage_timing.as_mut(), commit_start) {
             timing.decoder_state_commit += start.elapsed();
         }
@@ -533,11 +574,28 @@ fn channel_locations(info: &BitstreamInformation) -> Result<Vec<ChannelLocation>
     Ok(locations)
 }
 
+#[cfg(test)]
 fn merge_substreams(
     unit: AccessUnitIndex,
     independent_info: &BitstreamInformation,
     independent: DecodedAudioPcm,
     dependent: Option<(&BitstreamInformation, &DecodedAudioPcm)>,
+) -> Result<DecodedAccessUnitPcm, Eac3Error> {
+    merge_substreams_with_dialnorm(
+        unit,
+        independent_info,
+        independent,
+        dependent,
+        DialnormState::default(),
+    )
+}
+
+fn merge_substreams_with_dialnorm(
+    unit: AccessUnitIndex,
+    independent_info: &BitstreamInformation,
+    independent: DecodedAudioPcm,
+    dependent: Option<(&BitstreamInformation, &DecodedAudioPcm)>,
+    dialnorm: DialnormState,
 ) -> Result<DecodedAccessUnitPcm, Eac3Error> {
     let mut channels = Vec::<(ChannelLocation, Vec<f64>)>::new();
     let independent_locations = channel_locations(independent_info)?;
@@ -592,6 +650,7 @@ fn merge_substreams(
         } else {
             independent_info.downmix
         },
+        dialnorm,
     })
 }
 
@@ -1001,6 +1060,7 @@ mod tests {
             lfe_location: None,
             lfe: None,
             downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
         };
         assert_eq!(
             mono.validate_joc_topology(),
@@ -1024,6 +1084,7 @@ mod tests {
             lfe_location: Some(ChannelLocation::Lfe(1)),
             lfe: Some(vec![2.0]),
             downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
         };
         assert!(matches!(
             lfe2.validate_joc_topology(),

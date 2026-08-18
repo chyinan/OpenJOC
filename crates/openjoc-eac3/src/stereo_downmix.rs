@@ -492,6 +492,7 @@ fn mix_level(code: Option<u8>, table: [f64; 8], default: f64, reserved: f64) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DialnormState;
 
     const FIVE_CHANNELS: [ChannelLocation; 5] = [
         ChannelLocation::Left,
@@ -517,6 +518,7 @@ mod tests {
             lfe_location: lfe.map(|_| ChannelLocation::Lfe(0)),
             lfe: lfe.map(|value| vec![value]),
             downmix: metadata,
+            dialnorm: DialnormState::default(),
         }
     }
 

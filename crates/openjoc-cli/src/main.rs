@@ -2983,7 +2983,7 @@ fn write_compatible_base_inventory(
             "present": lfe.is_some(),
             "sample_count": lfe.and_then(|pcm| pcm.channels.first()).map_or(0, Vec::len),
         },
-        "dialnorm_policy": "FFmpeg defaults; not independently normalized by OpenJOC",
+        "dialnorm_policy": "OpenJOC render paths apply automatic Default calibrated dialnorm; FFmpeg comparison decode uses its own defaults",
         "dynrng_policy": "FFmpeg defaults; exact presentation policy must be verified separately",
         "resampling": false,
         "decoder_delay": "not independently exposed; compare-base report estimates bounded alignment",
@@ -4245,7 +4245,7 @@ mod retention_tests {
 #[cfg(test)]
 mod internal_base_tests {
     use super::InternalBasePcm;
-    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata};
+    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata};
 
     fn frame(value: f64, lfe: Option<f64>) -> DecodedAccessUnitPcm {
         DecodedAccessUnitPcm {
@@ -4264,6 +4264,7 @@ mod internal_base_tests {
             lfe_location: lfe.map(|_| ChannelLocation::Lfe(0)),
             lfe: lfe.map(|value| vec![value, value + 0.5]),
             downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
         }
     }
 
