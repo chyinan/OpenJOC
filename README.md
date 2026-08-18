@@ -66,6 +66,9 @@ Read the canonical documentation:
 - [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.6.0 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
+- [Library API](docs/LIBRARY_API.md) — headless Rust packet/session contract.
+- [C API](docs/C_API.md) — versioned C/C++ ABI and ownership rules.
+- [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
 ## Build from source

@@ -14,6 +14,11 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use eac3_decode::ValidationProfileRequest;
+use openjoc_api::{
+    DownmixPolicy as ApiDownmixPolicy, DrcPolicy as ApiDrcPolicy, OpenJocConfig, OpenJocPacket,
+    OpenJocSession, OpenJocStatus, RenderMode as ApiRenderMode,
+    ValidationProfile as ApiValidationProfile,
+};
 use openjoc_container::{
     DEFAULT_MAX_EAC3_BYTES, InputMediaError, InputMediaKind, detect_media, load_eac3,
     open_seekable_iso_bmff,
@@ -26,7 +31,7 @@ use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
 use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{
     JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
-    SpatialContributionMode,
+    SpatialContributionMode, SpeakerLayoutPreset,
 };
 use openjoc_wave::{
     Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WavePcm, WaveWriter, decode,
@@ -1592,6 +1597,18 @@ fn render_joc(
     if let Some(report) = performance.as_mut() {
         report.input_container += input_start.elapsed();
     }
+    if arguments.topology.is_none()
+        && arguments.binaural_sofa.is_none()
+        && arguments.performance_report.is_none()
+        && arguments.diagnostic_contribution == SpatialContributionMode::Full
+    {
+        return render_joc_with_embedded_session(
+            arguments,
+            &media.bytes,
+            overwrite_authorized,
+            terminal,
+        );
+    }
     let config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
@@ -1914,6 +1931,140 @@ fn render_joc(
             }
         }
     }
+}
+
+/// File/container and output-writer wrapper around the headless public
+/// session. Topology sidecars, profiling, and binaural backend selection stay
+/// on the legacy CLI path until their adapter contracts are moved separately.
+fn render_joc_with_embedded_session(
+    arguments: &RenderJocArgs,
+    stream: &[u8],
+    overwrite_authorized: bool,
+    terminal: TerminalCapabilities,
+) -> Result<(), Box<dyn Error>> {
+    let frames = openjoc_eac3::index_syncframes(stream)?;
+    let units = openjoc_eac3::group_access_units(&frames)?;
+    let timing = eac3_decode::stream_timing(stream)?;
+    let render_mode = if arguments.layout == "2.0" {
+        ApiRenderMode::Stereo
+    } else {
+        ApiRenderMode::Speaker
+    };
+    let downmix = match arguments.downmix_policy.unwrap_or_default() {
+        joc_render::StereoDownmixPolicy::Auto => ApiDownmixPolicy::Auto,
+        joc_render::StereoDownmixPolicy::LoRo => ApiDownmixPolicy::LoRo,
+        joc_render::StereoDownmixPolicy::LtRt => ApiDownmixPolicy::LtRt,
+    };
+    let drc = match arguments.internal_base_policy {
+        InternalBasePolicy::CurrentDefault => ApiDrcPolicy::Line,
+        InternalBasePolicy::CodecCore => ApiDrcPolicy::Disabled,
+        InternalBasePolicy::DynamicRange(control) => match control {
+            DynamicRangeControl::Disabled => ApiDrcPolicy::Disabled,
+            DynamicRangeControl::Line => ApiDrcPolicy::Line,
+            DynamicRangeControl::Rf => ApiDrcPolicy::Rf,
+            DynamicRangeControl::Custom {
+                boost_percent,
+                cut_percent,
+            } => ApiDrcPolicy::Custom {
+                boost_percent,
+                cut_percent,
+            },
+        },
+    };
+    let validation_profile = match arguments.validation_profile {
+        ValidationProfileRequest::Auto => ApiValidationProfile::Auto,
+        ValidationProfileRequest::EtsiStrict => ApiValidationProfile::EtsiStrict,
+        ValidationProfileRequest::ObservedVendorCompat => {
+            ApiValidationProfile::ObservedVendorCompat
+        }
+    };
+    let config = OpenJocConfig {
+        render_mode,
+        speaker_layout: arguments.layout.clone(),
+        downmix,
+        drc,
+        validation_profile,
+        oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
+        binaural: None,
+    };
+    let mut session = OpenJocSession::new(config)?;
+    let semantic_layout =
+        SpeakerLayoutPreset::for_name(&arguments.layout)?.semantic_channel_layout();
+    let mut output = joc_render::JocPcmOutput::new_for_semantic_layout(
+        &arguments.output,
+        arguments.output_format,
+        overwrite_authorized,
+        &semantic_layout,
+    )?;
+    let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
+    let mut progress = progress::ProgressReporter::new(
+        progress_enabled,
+        &arguments.layout,
+        timing.access_units,
+        timing.samples,
+        timing.sample_rate,
+    );
+    let result = (|| -> Result<(), Box<dyn Error>> {
+        for (unit_index, unit) in units.iter().copied().enumerate() {
+            let first = frames[unit.first_frame];
+            let last = frames[unit.first_frame + unit.frame_count - 1];
+            let start = first.offset;
+            let end = last
+                .offset
+                .checked_add(last.header.frame_size)
+                .ok_or("access-unit byte range overflow")?;
+            let status = session.push_packet(OpenJocPacket {
+                data: &stream[start..end],
+                pts_samples: None,
+                discontinuity: false,
+                preroll: false,
+            })?;
+            write_embedded_session_frames(&mut session, &mut output)?;
+            if status == OpenJocStatus::OutputPending {
+                return Err("embedded API output backpressure was not drained".into());
+            }
+            progress.update(unit_index, output.frames());
+        }
+        let _ = session.drain()?;
+        write_embedded_session_frames(&mut session, &mut output)?;
+        output.finish()?;
+        progress.finish();
+        println!(
+            "embedded OpenJOC session: layout={} channels={} latency={} samples output_frames={}",
+            arguments.layout,
+            semantic_layout.channel_count(),
+            session.latency_samples(),
+            output.frames()
+        );
+        Ok(())
+    })();
+    if result.is_err() {
+        progress.finish();
+        output.abort();
+    }
+    result
+}
+
+fn write_embedded_session_frames(
+    session: &mut OpenJocSession,
+    output: &mut joc_render::JocPcmOutput,
+) -> Result<(), Box<dyn Error>> {
+    while let Some(frame) = session.receive_frame() {
+        let channels = (0..frame.channel_count)
+            .map(|channel| {
+                (0..frame.sample_count)
+                    .map(|sample| {
+                        f64::from(frame.interleaved_f32[sample * frame.channel_count + channel])
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        output.write_block(&joc_render::RenderedBlock {
+            sample_rate: frame.sample_rate,
+            channels,
+        })?;
+    }
+    Ok(())
 }
 
 fn ensure_output_directory_available(output: &Path) -> Result<(), Box<dyn Error>> {

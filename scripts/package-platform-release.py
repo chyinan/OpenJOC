@@ -28,6 +28,9 @@ PUBLIC_PATHS = (
     "docs/CAPABILITIES.md",
     "docs/KNOWN_LIMITATIONS.md",
     "docs/JOC_RENDER.md",
+    "docs/LIBRARY_API.md",
+    "docs/C_API.md",
+    "docs/FUTURE_PLAYER_ADAPTERS.md",
     "docs/README.md",
 )
 

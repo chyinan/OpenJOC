@@ -10,6 +10,9 @@ Use the document that owns the question:
 | What does it not support? | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |
 | How do I render a supported JOC stream to speakers? | [JOC_RENDER.md](JOC_RENDER.md) |
 | How is production code structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| How do I embed the streaming decoder? | [LIBRARY_API.md](LIBRARY_API.md) |
+| How do I call it from C/C++? | [C_API.md](C_API.md) |
+| Which player adapter comes next? | [FUTURE_PLAYER_ADAPTERS.md](FUTURE_PLAYER_ADAPTERS.md) |
 | What is planned next? | [ROADMAP.md](ROADMAP.md) |
 | What provenance policy governs implementation claims? | source-only `docs/PROVENANCE.md` |
 

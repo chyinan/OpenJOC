@@ -970,9 +970,12 @@ impl JocSpeakerRenderer {
                 self.contribution_mode.as_str()
             )
         };
+        let (output_layout, output_order, speaker_identities) =
+            speaker_output_presentation(&self.preset);
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\nchannel count: {}\nLFE index: {:?}\ndownmix policy: {}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nQMF round-trip latency: {} samples\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nraw3: preserved and excluded from projection arithmetic{}",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\noutput layout: {}\nchannel count: {}\nLFE index: {:?}\ndownmix policy: {}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nQMF round-trip latency: {} samples\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nspeaker identities: {}\nraw3: preserved and excluded from projection arithmetic{}",
             self.preset.name,
+            output_layout,
             self.preset.channel_count(),
             self.preset.lfe_index(),
             self.downmix_policy.as_str(),
@@ -984,7 +987,8 @@ impl JocSpeakerRenderer {
             summary.sample_rate,
             summary.frames,
             summary.duration_samples,
-            self.preset.channel_labels().join(", "),
+            output_order,
+            speaker_identities,
             contribution_diagnostic,
         )
     }
@@ -1437,7 +1441,7 @@ impl JocBinauralRenderer {
         let output_container =
             output_container_for_path(output).map_or("unknown", |container| container.name());
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput mode: binaural stereo (L/R ears)\nphysical output channel count: 2\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: {} exact, {} interpolated\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left, Right\noutput format: {} {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
+            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput layout: Binaural stereo\noutput mode: binaural stereo (L/R ears)\nphysical output channel count: 2\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: {} exact, {} interpolated\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left Ear, Right Ear\noutput format: {} {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
             requested_profile.as_str(),
             selected_profile.as_str(),
             self.layout,
@@ -1788,6 +1792,23 @@ fn drain_partitioned_tail(
         remaining -= count;
     }
     Ok(())
+}
+
+fn speaker_output_presentation(preset: &SpeakerLayoutPreset) -> (String, String, String) {
+    let identities = preset.channel_labels().join(", ");
+    if preset.name == "2.0" {
+        (
+            "Stereo speakers (2.0)".to_owned(),
+            "Left, Right".to_owned(),
+            identities,
+        )
+    } else {
+        (
+            format!("Speaker layout ({})", preset.name),
+            identities.clone(),
+            identities,
+        )
+    }
 }
 
 fn base_coordinate(location: ChannelLocation) -> Result<BaseFullBandCoordinate, JocRenderError> {
@@ -2487,6 +2508,7 @@ mod tests {
     use openjoc_wave::{SampleFormat, decode};
     use std::{
         fs,
+        path::Path,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -3157,6 +3179,31 @@ mod tests {
                 .set_downmix_policy(StereoDownmixPolicy::LoRo)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn stereo_diagnostic_explains_position_labels_without_changing_identities() {
+        let renderer = JocSpeakerRenderer::new_automatic("2.0").unwrap();
+        let summary = openjoc_scene::StreamingSceneSummary {
+            sample_rate: 48_000,
+            duration_samples: 0,
+            frames: 0,
+            object_count: 0,
+            max_reconstruction_rows: 0,
+            max_frame_samples: 0,
+            metadata_events: 0,
+            trim_events: 0,
+        };
+        let diagnostic = renderer.diagnostics(
+            "2.0",
+            crate::eac3_decode::ValidationProfileRequest::EtsiStrict,
+            JocValidationProfile::EtsiStrict,
+            &summary,
+            Path::new("stereo.wav"),
+        );
+        assert!(diagnostic.contains("output layout: Stereo speakers (2.0)"));
+        assert!(diagnostic.contains("output channel order: Left, Right"));
+        assert!(diagnostic.contains("speaker identities: FL, FR"));
     }
 
     #[test]
