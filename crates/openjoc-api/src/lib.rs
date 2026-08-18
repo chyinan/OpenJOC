@@ -365,6 +365,7 @@ pub struct OpenJocSession {
     binaural: Option<BinauralState>,
     output_queue: VecDeque<OpenJocPcmFrame>,
     selected_profile: Option<JocValidationProfile>,
+    dither_values: Vec<f64>,
     sample_rate: Option<u32>,
     segment_pts: Option<i64>,
     next_input_sample: u64,
@@ -391,6 +392,7 @@ impl OpenJocSession {
             binaural,
             output_queue: VecDeque::new(),
             selected_profile: None,
+            dither_values: dither_values(),
             sample_rate: None,
             segment_pts: None,
             next_input_sample: 0,
@@ -465,7 +467,7 @@ impl OpenJocSession {
             packet.data,
             &frames,
             unit,
-            &dither_values(),
+            &self.dither_values,
             self.config.drc.internal(),
         )?;
         pcm.validate_joc_topology()?;
