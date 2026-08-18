@@ -54,12 +54,14 @@ The bridge implements the supported ordinary release domain:
   state;
 - Fixed and Named use one mutually exclusive discrete route branch. Fixed
   accepts neutral validated family/member identities and exact route rows for
-  the current layout. Named accepts opaque IDs `0..=15` for explicit direct
-  rows on the admitted 5.1-, 7.1-, and 7.1.4-shaped layouts. Both branches
-  ignore authored coordinates, preserve supplied route magnitudes, exclude
-  LFE, and use the existing Q32 scheduler. Missing rows, unresolved Named
-  fallback cases, friendly names, and Dynamic-control compositions fail
-  closed; no nearest-speaker or Dynamic fallback is used;
+  the current layout. Named accepts neutral IDs `named/<0..15>` for the
+  admitted eleven public layouts: supplied direct rows are copied unchanged,
+  while the closed fallback families derive semantic target vectors from the
+  current active layout. Both branches ignore authored coordinates, preserve
+  supplied route magnitudes, exclude LFE, and use the existing Q32 scheduler.
+  The eleven explicit LFE-target cells, malformed identities, missing direct
+  rows, zero-survivor fallback families, friendly names, and Dynamic-control
+  compositions fail closed; no nearest-speaker or Dynamic fallback is used;
 - Q32 gain scheduling with persistent phase across blocks, reset only for
   layout/route-shape rebuilds, and linear `Y = Σ G X` accumulation. Source
   class and discrete identity changes remain ordinary target events;

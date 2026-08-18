@@ -17,14 +17,15 @@ use std::{collections::HashSet, fmt};
 mod joc_spatial_bridge;
 pub use joc_spatial_bridge::{
     FixedFamilyId, FixedMemberId, FixedRouteKey, GainScheduler, GainSchedulerError,
-    JOC_SPATIAL_BRIDGE_SCHEMA, JocSpatialBridge, NamedTargetId, SpatialBindingError,
-    SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot, SpatialBindingState,
-    SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate, SpatialDescriptor,
-    SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember, SpatialLayout,
-    SpatialLayoutAlias, SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer,
-    SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology, SpatialPairedGeometry,
-    SpatialProjectionError, SpatialProjectionOutcome, SpatialRouteStatus, SpatialRouteVector,
-    SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
+    JOC_SPATIAL_BRIDGE_SCHEMA, JocSpatialBridge, NamedFallbackParameterTuple, NamedTargetId,
+    SpatialBindingError, SpatialBindingRecord, SpatialBindingResult, SpatialBindingSnapshot,
+    SpatialBindingState, SpatialBindingTransition, SpatialBridgeError, SpatialCoordinateUpdate,
+    SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup, SpatialExplicitMember,
+    SpatialLayout, SpatialLayoutAlias, SpatialLayoutAnchor, SpatialLayoutChannel,
+    SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
+    SpatialPairedGeometry, SpatialProjectionError, SpatialProjectionOutcome, SpatialRouteStatus,
+    SpatialRouteVector, SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample,
+    SpatialTopologySnapshot, named_fallback_gain, named_fallback_product_q12, named_fallback_q12,
 };
 
 /// Versioned schema name for the borrowed codec-domain bridge contract.

@@ -44,10 +44,13 @@ bit-identical Reference Player output.
   layer/fallback combinations remain withheld and fail closed.
 - Fixed routing is supported when a validated neutral family/member key and an
   exact current-layout route row are supplied; authored coordinates do not
-  participate and missing rows fail closed. Named routing is limited to the
-  admitted opaque ID direct subset on 5.1-, 7.1-, and 7.1.4-shaped layouts.
-  Friendly names and unresolved Named fallback rows are not exposed and fail
-  closed.
+  participate and missing rows fail closed. Named routing accepts neutral
+  `named/<0..15>` identities on the eleven public layouts. Supplied direct
+  rows are copied unchanged; authorized fallback families derive semantic
+  non-LFE vectors from the current layout and use the existing Q32 scheduler.
+  The eleven explicit LFE-target cells, zero-survivor fallback families, and
+  malformed or out-of-domain identities remain fail closed. Friendly Named
+  display names are intentionally not exposed.
 - Real-JOC binaural output is speaker virtualization through exact-direction
   SOFA HRIR data for `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, and `7.1.4` only.
   The selected virtual layout must have every required direction at the input

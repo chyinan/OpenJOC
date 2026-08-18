@@ -22,6 +22,57 @@ const EPS_ACTIVITY: f64 = 0.000_001;
 const EPS_DELTA: f64 = 0.000_1;
 const SUM_TOLERANCE: f64 = 1.0e-9;
 const CHANNEL_LOCK_THRESHOLD_SQUARED: f64 = 0.04;
+const UPPER_A: f64 = 0.5011872_f32 as f64;
+const UPPER_B: f64 = 0.70794576_f32 as f64;
+const UPPER_C: f64 = 1.0;
+const NAMED_PUBLIC_LAYOUTS: [(&str, &[&str]); 11] = [
+    ("5.1", &["FL", "FR", "FC", "Ls", "Rs"]),
+    ("5.1.2", &["FL", "FR", "FC", "Ls", "Rs", "TFL", "TFR"]),
+    (
+        "5.1.4",
+        &["FL", "FR", "FC", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR"],
+    ),
+    ("7.1", &["FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs"]),
+    (
+        "7.1.2",
+        &["FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR"],
+    ),
+    (
+        "7.1.4",
+        &[
+            "FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+        ],
+    ),
+    (
+        "7.1.6",
+        &[
+            "FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr", "Rtr",
+        ],
+    ),
+    (
+        "9.1",
+        &["FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"],
+    ),
+    (
+        "9.1.2",
+        &[
+            "FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltm", "Rtm",
+        ],
+    ),
+    (
+        "9.1.4",
+        &[
+            "FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltr", "Rtr",
+        ],
+    ),
+    (
+        "9.1.6",
+        &[
+            "FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm", "Rtm",
+            "Ltr", "Rtr",
+        ],
+    ),
+];
 
 /// Spatial descriptor dispatch classes from the implementation bundle.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -168,6 +219,121 @@ impl NamedTargetId {
     pub fn identity(self) -> String {
         format!("named/{}", self.value())
     }
+}
+
+/// The clean semantic coefficient tuple consumed by Named fallback families.
+///
+/// The tuple is derived input for one target evaluation. It is not a route
+/// row, a physical output index, or persistent fallback state.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct NamedFallbackParameterTuple([i16; 24]);
+
+impl NamedFallbackParameterTuple {
+    /// Creates a tuple from its 24 signed semantic codewords.
+    #[must_use]
+    pub const fn from_codewords(codewords: [i16; 24]) -> Self {
+        Self(codewords)
+    }
+
+    /// The deterministic clean fixture tuple used by the public adapter when
+    /// no source-specific tuple is supplied.
+    #[must_use]
+    pub const fn fixture() -> Self {
+        Self([
+            0, 0, 0, 0, 0, -5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -51, 0,
+        ])
+    }
+
+    /// Returns the semantic codeword at a tuple position.
+    #[must_use]
+    pub const fn codeword(self, position: usize) -> Option<i16> {
+        if position < self.0.len() {
+            Some(self.0[position])
+        } else {
+            None
+        }
+    }
+
+    /// Returns all semantic codewords in tuple order.
+    #[must_use]
+    pub const fn codewords(self) -> [i16; 24] {
+        self.0
+    }
+}
+
+impl Default for NamedFallbackParameterTuple {
+    fn default() -> Self {
+        Self::fixture()
+    }
+}
+
+/// Exact sparse Q12 value for one clean Named fallback codeword.
+#[must_use]
+pub const fn named_fallback_q12(codeword: i16) -> i32 {
+    match codeword {
+        0 => 4096,
+        1 => 4339,
+        3 => 4868,
+        5 => 5462,
+        6 => 5786,
+        7 => 6129,
+        9 => 6876,
+        11 => 7715,
+        -1 => 3867,
+        -3 => 3446,
+        -5 => 3072,
+        -6 => 2900,
+        -7 => 2738,
+        -9 => 2440,
+        -11 => 2175,
+        -12 => 2053,
+        -13 => 1938,
+        -15 => 1727,
+        -17 => 1539,
+        -18 => 1453,
+        -19 => 1372,
+        -21 => 1223,
+        -23 => 1090,
+        -27 => 866,
+        -29 => 772,
+        -31 => 688,
+        -33 => 613,
+        -35 => 546,
+        -37 => 487,
+        -39 => 434,
+        -41 => 387,
+        -43 => 345,
+        -45 => 307,
+        -47 => 274,
+        -49 => 244,
+        -51 => 217,
+        _ => 0,
+    }
+}
+
+/// Exact clean gain conversion from a sparse Q12 codeword.
+#[must_use]
+pub fn named_fallback_gain(codeword: i16) -> f64 {
+    f64::from(named_fallback_q12(codeword)) / 4096.0
+}
+
+/// Exact clean rounded Q12 product used by ordinary pair families.
+#[must_use]
+pub const fn named_fallback_product_q12(left: i32, right: i32) -> i32 {
+    let product = (left as i64) * (right as i64);
+    if product < 0 {
+        ((product + 4095) / 4096) as i32
+    } else {
+        (product / 4096) as i32
+    }
+}
+
+fn named_fallback_product_gain(left: i16, right: i16) -> f64 {
+    f64::from(named_fallback_product_q12(
+        named_fallback_q12(left),
+        named_fallback_q12(right),
+    )) / 4096.0
 }
 
 /// Classification of a discrete route lookup.
@@ -927,6 +1093,7 @@ pub struct SpatialLayout {
     topology: SpatialLayoutTopology,
     coordinate_dimension: usize,
     route_vectors: Vec<SpatialRouteVector>,
+    named_fallback_parameters: NamedFallbackParameterTuple,
     allow_legacy_duplicate_anchors: bool,
 }
 
@@ -1039,6 +1206,7 @@ impl SpatialLayout {
             topology,
             coordinate_dimension,
             route_vectors,
+            named_fallback_parameters: NamedFallbackParameterTuple::default(),
             allow_legacy_duplicate_anchors,
         })
     }
@@ -1050,14 +1218,26 @@ impl SpatialLayout {
         &self,
         route_vectors: Vec<SpatialRouteVector>,
     ) -> Result<Self, SpatialProjectionError> {
-        Self::build(
+        let mut layout = Self::build(
             self.channels.clone(),
             self.topology.clone(),
             route_vectors,
             self.coordinate_dimension,
             self.allow_legacy_duplicate_anchors,
             true,
-        )
+        )?;
+        layout.named_fallback_parameters = self.named_fallback_parameters;
+        Ok(layout)
+    }
+
+    /// Returns this layout with the clean semantic tuple used by Named
+    /// fallback evaluation. The tuple is copied as derived adapter input and
+    /// does not alter direct rows or any Dynamic projection.
+    #[must_use]
+    pub fn with_named_fallback_parameters(&self, parameters: NamedFallbackParameterTuple) -> Self {
+        let mut layout = self.clone();
+        layout.named_fallback_parameters = parameters;
+        layout
     }
 
     /// Returns a validated layout view whose topology may omit canonical
@@ -1066,14 +1246,16 @@ impl SpatialLayout {
         &self,
         topology: SpatialLayoutTopology,
     ) -> Result<Self, SpatialProjectionError> {
-        Self::build(
+        let mut layout = Self::build(
             self.channels.clone(),
             topology,
             self.route_vectors.clone(),
             self.coordinate_dimension,
             self.allow_legacy_duplicate_anchors,
             false,
-        )
+        )?;
+        layout.named_fallback_parameters = self.named_fallback_parameters;
+        Ok(layout)
     }
 
     /// Returns the number of active non-LFE output components.
@@ -1114,15 +1296,24 @@ impl SpatialLayout {
     /// boundary.
     #[must_use]
     pub fn named_route_status(&self, target: NamedTargetId) -> SpatialRouteStatus {
-        if !self.named_direct_layout_admitted() {
+        let Some(public_layout) = self.public_named_layout() else {
+            return SpatialRouteStatus::Unsupported;
+        };
+        if target.value() == 3 {
             return SpatialRouteStatus::Unsupported;
         }
-        if self
+        let has_direct_row = self
             .route_vectors
             .iter()
-            .any(|route| route.identity == target.identity())
-        {
-            SpatialRouteStatus::DirectReady
+            .any(|route| route.identity == target.identity());
+        if named_matrix_direct_ids(public_layout).contains(&target.value()) {
+            if has_direct_row {
+                SpatialRouteStatus::DirectReady
+            } else {
+                SpatialRouteStatus::FallbackWithheld
+            }
+        } else if target.value() >= 4 {
+            SpatialRouteStatus::FallbackReady
         } else {
             SpatialRouteStatus::FallbackWithheld
         }
@@ -1459,6 +1650,9 @@ impl SpatialLayout {
                 .ok_or_else(|| SpatialProjectionError::MissingRoute(descriptor.identity.clone()));
         };
         let status = self.named_route_status(target);
+        if status == SpatialRouteStatus::FallbackReady {
+            return self.project_named_fallback(target);
+        }
         if status != SpatialRouteStatus::DirectReady {
             return Err(SpatialProjectionError::UnsupportedRoute {
                 source_class: "named",
@@ -1477,8 +1671,128 @@ impl SpatialLayout {
             })
     }
 
-    fn named_direct_layout_admitted(&self) -> bool {
-        matches!(self.active_channel_count(), 5 | 7 | 11)
+    fn public_named_layout(&self) -> Option<&'static str> {
+        let identities = self
+            .active_indices
+            .iter()
+            .map(|&index| self.channels[index].identity.as_str())
+            .collect::<Vec<_>>();
+        NAMED_PUBLIC_LAYOUTS
+            .iter()
+            .find_map(|(name, expected)| (identities == *expected).then_some(*name))
+    }
+
+    fn active_semantic_order(&self) -> Vec<&str> {
+        self.active_indices
+            .iter()
+            .map(|&index| self.channels[index].identity.as_str())
+            .collect()
+    }
+
+    fn project_named_fallback(
+        &self,
+        target: NamedTargetId,
+    ) -> Result<Vec<f64>, SpatialProjectionError> {
+        let active = self.active_semantic_order();
+        let mut vector = vec![0.0; active.len()];
+        let parameters = self.named_fallback_parameters;
+        match target.value() {
+            4 | 5 => {
+                let left = target.value() == 4;
+                let paired_identity = if left { "Lb" } else { "Rb" };
+                let front_identity = if left { "FL" } else { "FR" };
+                let paired_active = active.contains(&paired_identity);
+                let upper_pair_active = active.iter().any(|identity| {
+                    if left {
+                        matches!(*identity, "TFL" | "TBL" | "Ltf" | "Ltm" | "Ltr")
+                    } else {
+                        matches!(*identity, "TFR" | "TBR" | "Rtf" | "Rtm" | "Rtr")
+                    }
+                });
+                let gain = if paired_active || !upper_pair_active {
+                    named_fallback_gain(parameters.codeword(5).unwrap_or(-128))
+                } else {
+                    named_fallback_product_gain(
+                        parameters.codeword(5).unwrap_or(-128),
+                        parameters.codeword(1).unwrap_or(-128),
+                    )
+                };
+                place_named_gain(&mut vector, &active, front_identity, gain)?;
+            }
+            6 | 7 => {
+                let left = target.value() == 6;
+                let paired_identity = if left { "Lb" } else { "Rb" };
+                let front_identity = if left { "FL" } else { "FR" };
+                let gain = if active.contains(&paired_identity) {
+                    named_fallback_gain(parameters.codeword(5).unwrap_or(-128))
+                } else {
+                    named_fallback_product_gain(
+                        parameters.codeword(5).unwrap_or(-128),
+                        parameters.codeword(1).unwrap_or(-128),
+                    )
+                };
+                place_named_gain(
+                    &mut vector,
+                    &active,
+                    if active.contains(&paired_identity) {
+                        paired_identity
+                    } else {
+                        front_identity
+                    },
+                    gain,
+                )?;
+            }
+            8 | 9 => {
+                let left = target.value() == 8;
+                let candidates = named_upper_candidates(&active, left, false);
+                write_named_template(
+                    &mut vector,
+                    &active,
+                    &candidates,
+                    &[UPPER_C, UPPER_B, UPPER_A],
+                )?;
+            }
+            10 | 11 => {
+                let left = target.value() == 10;
+                let candidates = named_upper_candidates(&active, left, true);
+                write_named_template(
+                    &mut vector,
+                    &active,
+                    &candidates,
+                    &[UPPER_A, UPPER_B, UPPER_C, UPPER_B, UPPER_A],
+                )?;
+            }
+            12 | 13 => {
+                let left = target.value() == 12;
+                let candidates = named_upper_candidates(&active, left, false);
+                write_named_template(
+                    &mut vector,
+                    &active,
+                    &candidates,
+                    &[UPPER_A, UPPER_B, UPPER_C],
+                )?;
+            }
+            14 | 15 => {
+                let front_identity = if target.value() == 14 { "FL" } else { "FR" };
+                let gain = named_fallback_gain(parameters.codeword(22).unwrap_or(-128));
+                place_named_gain(&mut vector, &active, front_identity, gain)?;
+            }
+            _ => {
+                return Err(SpatialProjectionError::UnsupportedRoute {
+                    source_class: "named",
+                    identity: target.identity(),
+                    status: SpatialRouteStatus::Unsupported,
+                });
+            }
+        }
+        if vector.iter().all(|value| *value == 0.0) {
+            return Err(SpatialProjectionError::UnsupportedRoute {
+                source_class: "named",
+                identity: target.identity(),
+                status: SpatialRouteStatus::Unsupported,
+            });
+        }
+        Ok(vector)
     }
 
     fn anchor_for_identity(
@@ -1530,6 +1844,91 @@ impl SpatialLayout {
             .map(|(first, second)| lower * first + upper * second)
             .collect())
     }
+}
+
+fn named_upper_candidates<'a>(
+    active: &'a [&'a str],
+    left: bool,
+    include_wide: bool,
+) -> Vec<&'a str> {
+    active
+        .iter()
+        .copied()
+        .filter(|identity| {
+            let is_left = matches!(*identity, "TFL" | "TBL" | "Ltf" | "Ltm" | "Ltr" | "Lw");
+            let is_right = matches!(*identity, "TFR" | "TBR" | "Rtf" | "Rtm" | "Rtr" | "Rw");
+            let is_wide = matches!(*identity, "Lw" | "Rw");
+            (if left { is_left } else { is_right }) && (include_wide || !is_wide)
+        })
+        .collect()
+}
+
+fn named_matrix_direct_ids(layout: &str) -> &'static [u8] {
+    match layout {
+        "5.1" => &[0, 1, 2],
+        "5.1.2" => &[0, 1, 2, 9, 15],
+        "5.1.4" => &[0, 1, 2, 9, 10, 15],
+        "7.1" => &[0, 1, 2, 4, 5],
+        "7.1.2" => &[0, 1, 2, 4, 5, 9, 15],
+        "7.1.4" => &[0, 1, 2, 4, 5, 9, 10, 15],
+        "7.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11],
+        "9.1" | "9.1.4" => &[0, 1, 2, 4, 5, 6, 7, 14, 15],
+        "9.1.2" | "9.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11, 14, 15],
+        _ => &[],
+    }
+}
+
+fn place_named_gain(
+    vector: &mut [f64],
+    active: &[&str],
+    identity: &str,
+    gain: f64,
+) -> Result<(), SpatialProjectionError> {
+    let Some(index) = active.iter().position(|candidate| *candidate == identity) else {
+        return Err(SpatialProjectionError::InvalidLayout(
+            "Named fallback target is absent from the active semantic layout",
+        ));
+    };
+    if !gain.is_finite() {
+        return Err(SpatialProjectionError::NonFiniteLayoutValue);
+    }
+    vector[index] = gain;
+    Ok(())
+}
+
+fn write_named_template(
+    vector: &mut [f64],
+    active: &[&str],
+    candidates: &[&str],
+    weights: &[f64],
+) -> Result<(), SpatialProjectionError> {
+    for (identity, weight) in candidates.iter().zip(weights.iter().copied()) {
+        place_named_gain(vector, active, identity, weight)?;
+    }
+    let survivors = vector.iter().filter(|value| **value != 0.0).count();
+    match survivors {
+        0 => {}
+        1 => {
+            if let Some(value) = vector.iter_mut().find(|value| **value != 0.0) {
+                *value = 1.0;
+            }
+        }
+        _ => {
+            let norm = vector
+                .iter()
+                .fold(0.0_f64, |sum, value| value.mul_add(*value, sum))
+                .sqrt();
+            if !norm.is_finite() || norm == 0.0 {
+                return Err(SpatialProjectionError::InvalidLayout(
+                    "Named fallback template has no finite L2 norm",
+                ));
+            }
+            for value in vector {
+                *value /= norm;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn legacy_topology(

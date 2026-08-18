@@ -182,10 +182,13 @@ persistent bridge state.
 The sidecar schema retains fields for source classes outside the ordinary
 dynamic contract. Fixed records may use validated neutral
 `fixed/<family>/<member>` identities with exact supplied route rows; Named
-records may use opaque `named/<id>` identities for the admitted direct subset.
-Missing discrete rows, unresolved Named fallback cases, friendly names, and
-unsupported combinations fail explicitly rather than falling through to
-dynamic geometry. Automatic control never fabricates such routes.
+records may use neutral `named/<0..15>` identities across the eleven admitted
+public layouts. Supplied Named direct rows are copied unchanged, and missing
+rows in the authorized fallback families derive semantic target vectors from
+the current layout. The eleven explicit LFE-target cells, malformed identities,
+zero-survivor fallback families, friendly names, and unsupported combinations
+fail explicitly rather than falling through to dynamic geometry. Automatic
+control never fabricates a nearest-speaker route.
 
 A minimal 5-channel Base plus one ReconstructionBasis row control file is:
 
@@ -564,9 +567,9 @@ point-like records, the admitted Region/Extent/ChannelLock records, and
 explicitly supplied Fixed/Named route rows. `raw3` remains opaque with no
 assigned semantic name. `AUTO` behavior is unchanged: strict validation is
 selected first and the existing compatibility policy is used only where its
-current whitelist admits it. Friendly Named names, unresolved Named fallback
-rows, linked limiting, delay, bass management, and Region combinations outside
-the admitted subset remain incomplete or withheld.
+current whitelist admits it. Friendly Named names, linked limiting, delay,
+bass management, and Region combinations outside the admitted subset remain
+incomplete or withheld. Named fallback does not change the binaural policy.
 
 `2.0` is not exposed: the existing bridge keeps Base LFE separate, but the
 repository does not define a consumer-style stereo bass-management or LFE

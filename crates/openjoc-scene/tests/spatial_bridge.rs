@@ -1,12 +1,13 @@
 use openjoc_scene::{
-    FixedRouteKey, GainScheduler, JocSpatialBridge, NamedTargetId, RegionHorizontalState,
-    RegionSemanticState, RegionTopBottomState, RegionTopologySelector, SPEAKER_LAYOUT_PRESET_NAMES,
-    SemanticBindingState, SpatialBindingRecord, SpatialBindingState, SpatialBridgeError,
-    SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch, SpatialExplicitGroup,
-    SpatialExplicitMember, SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel,
-    SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow, SpatialLayoutTopology,
-    SpatialPairedGeometry, SpatialRouteStatus, SpatialRouteVector, SpatialSourceClass,
-    SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot, SpeakerLayoutPreset,
+    FixedRouteKey, GainScheduler, JocSpatialBridge, NamedFallbackParameterTuple, NamedTargetId,
+    RegionHorizontalState, RegionSemanticState, RegionTopBottomState, RegionTopologySelector,
+    SPEAKER_LAYOUT_PRESET_NAMES, SemanticBindingState, SpatialBindingRecord, SpatialBindingState,
+    SpatialBridgeError, SpatialCoordinateUpdate, SpatialDescriptor, SpatialDescriptorPatch,
+    SpatialExplicitGroup, SpatialExplicitMember, SpatialLayout, SpatialLayoutAnchor,
+    SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutNode, SpatialLayoutRow,
+    SpatialLayoutTopology, SpatialPairedGeometry, SpatialRouteStatus, SpatialRouteVector,
+    SpatialSourceClass, SpatialSpreadProfile, SpatialSpreadSample, SpatialTopologySnapshot,
+    SpeakerLayoutPreset, named_fallback_gain, named_fallback_product_q12, named_fallback_q12,
 };
 
 fn descriptor(
@@ -2494,6 +2495,234 @@ fn named_direct_route_is_explicit_and_missing_route_does_not_use_point_fallback(
         vec![0.5, 0.5, 0.0],
     );
     assert!(layout.project(&missing).is_err());
+}
+
+#[test]
+fn named_fallback_red_case_resolves_an_ordinary_pair_without_geometry() {
+    let layout = executable_layout("5.1")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry");
+    let named = SpatialDescriptor::named(NamedTargetId::new(4).unwrap(), vec![1.0, 1.0, 1.0]);
+
+    let target = layout
+        .project(&named)
+        .expect("Named fallback should resolve the missing Lb route");
+
+    assert_eq!(target.len(), 5);
+    assert!((target[active_index(&layout, "FL")] - 0.75).abs() < 1.0e-12);
+    assert!(
+        target
+            .iter()
+            .enumerate()
+            .all(|(index, value)| index == active_index(&layout, "FL") || *value == 0.0)
+    );
+}
+
+#[test]
+fn named_fallback_red_case_uses_guarded_l2_for_the_716_upper_triple() {
+    let layout = executable_layout("7.1.6")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry");
+    let named = SpatialDescriptor::named(NamedTargetId::new(8).unwrap(), vec![0.0; 3]);
+
+    let target = layout
+        .project(&named)
+        .expect("Named upper fallback should resolve");
+    let expected = [0.755416341480983, 0.534793795986174, 0.3786050010210978];
+    for (identity, value) in ["Ltf", "Ltm", "Ltr"].into_iter().zip(expected) {
+        assert!((target[active_index(&layout, identity)] - value).abs() < 1.0e-8);
+    }
+    assert_unit_l2(&target);
+    assert_eq!(target.len(), 13);
+}
+
+#[test]
+fn named_fallback_red_case_recomputes_after_layout_epoch_and_keeps_lfe_out() {
+    let first = executable_layout("9.1.4")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry");
+    let second = executable_layout("9.1.6")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry");
+    let named = SpatialDescriptor::named(NamedTargetId::new(8).unwrap(), vec![0.0; 3]);
+
+    let first_target = first.project(&named).expect("first fallback target");
+    let second_target = second.project(&named).expect("second fallback target");
+
+    assert_ne!(first_target, second_target);
+    assert_eq!(first_target.len(), 13);
+    assert_eq!(second_target.len(), 15);
+    assert!(first_target[active_index(&first, "Ltf")] > 0.0);
+    assert!(second_target[active_index(&second, "Ltm")] > 0.0);
+    assert_eq!(first.active_channel_count(), 13);
+    assert_eq!(second.active_channel_count(), 15);
+}
+
+fn matrix_direct_ids(layout: &str) -> &'static [u8] {
+    match layout {
+        "5.1" => &[0, 1, 2],
+        "5.1.2" => &[0, 1, 2, 9, 15],
+        "5.1.4" => &[0, 1, 2, 9, 10, 15],
+        "7.1" => &[0, 1, 2, 4, 5],
+        "7.1.2" => &[0, 1, 2, 4, 5, 9, 15],
+        "7.1.4" => &[0, 1, 2, 4, 5, 9, 10, 15],
+        "7.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11],
+        "9.1" | "9.1.4" => &[0, 1, 2, 4, 5, 6, 7, 14, 15],
+        "9.1.2" | "9.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11, 14, 15],
+        _ => &[],
+    }
+}
+
+#[test]
+fn named_route_disposition_matrix_is_exhaustive_and_deterministic() {
+    let mut direct_count = 0;
+    let mut fallback_count = 0;
+    let mut unsupported_count = 0;
+    for layout_name in SPEAKER_LAYOUT_PRESET_NAMES {
+        let base = executable_layout(layout_name);
+        let direct_ids = matrix_direct_ids(layout_name);
+        let routes = direct_ids
+            .iter()
+            .map(|id| {
+                SpatialRouteVector::named(
+                    NamedTargetId::new(*id).unwrap(),
+                    vec![0.0; base.active_channel_count()],
+                )
+            })
+            .collect();
+        let layout = base
+            .with_route_vectors(routes)
+            .expect("matrix route registry");
+        for id in 0..16 {
+            let target = NamedTargetId::new(id).unwrap();
+            let status = layout.named_route_status(target);
+            if id == 3 {
+                assert_eq!(
+                    status,
+                    SpatialRouteStatus::Unsupported,
+                    "{layout_name}/named/{id}"
+                );
+                unsupported_count += 1;
+            } else if direct_ids.contains(&id) {
+                assert_eq!(
+                    status,
+                    SpatialRouteStatus::DirectReady,
+                    "{layout_name}/named/{id}"
+                );
+                direct_count += 1;
+            } else if id >= 4 {
+                assert_eq!(
+                    status,
+                    SpatialRouteStatus::FallbackReady,
+                    "{layout_name}/named/{id}"
+                );
+                fallback_count += 1;
+            } else {
+                assert_eq!(
+                    status,
+                    SpatialRouteStatus::FallbackWithheld,
+                    "{layout_name}/named/{id}"
+                );
+            }
+        }
+    }
+    assert_eq!(direct_count, 83);
+    assert_eq!(fallback_count, 82);
+    assert_eq!(unsupported_count, 11);
+}
+
+#[test]
+fn named_fallback_q12_and_product_rules_are_exact() {
+    assert_eq!(named_fallback_q12(0), 4096);
+    assert_eq!(named_fallback_q12(1), 4339);
+    assert_eq!(named_fallback_q12(-5), 3072);
+    assert_eq!(named_fallback_q12(-128), 0);
+    assert_eq!(named_fallback_gain(1), 1.059326171875);
+    assert_eq!(named_fallback_product_q12(4868, 3072), 3651);
+    assert_eq!(named_fallback_product_q12(217, 7715), 408);
+}
+
+#[test]
+fn named_fallback_parameter_tuple_is_a_clean_adapter_input() {
+    let mut codewords = [0_i16; 24];
+    codewords[22] = 0;
+    let parameters = NamedFallbackParameterTuple::from_codewords(codewords);
+    let layout = executable_layout("5.1")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry")
+        .with_named_fallback_parameters(parameters);
+    let target = layout
+        .project(&SpatialDescriptor::named(
+            NamedTargetId::new(15).unwrap(),
+            vec![1.0, 1.0, 1.0],
+        ))
+        .expect("tuple-driven single gain");
+    assert_eq!(target[active_index(&layout, "FR")], 1.0);
+}
+
+#[test]
+fn named_fallback_guarded_l2_handles_one_and_zero_survivors() {
+    let one_survivor = executable_layout("5.1.2")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry");
+    let one_target = one_survivor
+        .project(&SpatialDescriptor::named(
+            NamedTargetId::new(8).unwrap(),
+            vec![0.0; 3],
+        ))
+        .expect("single active top candidate");
+    assert_eq!(one_target[active_index(&one_survivor, "TFL")], 1.0);
+    assert_unit_l2(&one_target);
+
+    let zero_survivors = executable_layout("5.1")
+        .with_route_vectors(Vec::new())
+        .expect("empty route registry");
+    assert!(matches!(
+        zero_survivors.project(&SpatialDescriptor::named(
+            NamedTargetId::new(8).unwrap(),
+            vec![0.0; 3],
+        )),
+        Err(openjoc_scene::SpatialProjectionError::UnsupportedRoute {
+            status: SpatialRouteStatus::Unsupported,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn named_unsupported_lfe_cells_fail_closed_for_every_public_layout() {
+    for layout_name in SPEAKER_LAYOUT_PRESET_NAMES {
+        let layout = executable_layout(layout_name)
+            .with_route_vectors(Vec::new())
+            .expect("empty route registry");
+        let result = layout.project(&SpatialDescriptor::named(
+            NamedTargetId::new(3).unwrap(),
+            vec![0.0; 3],
+        ));
+        assert!(
+            matches!(
+                result,
+                Err(openjoc_scene::SpatialProjectionError::UnsupportedRoute {
+                    status: SpatialRouteStatus::Unsupported,
+                    ..
+                })
+            ),
+            "{layout_name}/named/3"
+        );
+    }
+}
+
+#[test]
+fn named_direct_rows_remain_unmodified_and_coordinates_are_ignored() {
+    let target = NamedTargetId::new(0).unwrap();
+    let row = vec![0.25, 0.5, 0.0, 0.0, 0.0];
+    let layout = executable_layout("5.1")
+        .with_route_vectors(vec![SpatialRouteVector::named(target, row.clone())])
+        .expect("direct route registry");
+    let mut named = SpatialDescriptor::named(target, vec![0.0, 0.0, 0.0]);
+    assert_eq!(layout.project(&named).unwrap(), row);
+    named.coordinates = vec![1.0, 1.0, 1.0];
+    assert_eq!(layout.project(&named).unwrap(), row);
 }
 
 #[test]
