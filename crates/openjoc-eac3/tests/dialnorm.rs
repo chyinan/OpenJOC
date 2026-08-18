@@ -55,14 +55,20 @@ fn lifecycle_state_has_explicit_unity_initial_and_reset_values() {
 
 #[test]
 fn common_scalar_covers_base_object_and_full_program_once() {
-    let state = DialnormState::new(DialnormMode::Digital, 24);
-    let mut base = vec![0.25, -0.1, 0.05];
-    let mut object = vec![0.5, -0.25, 0.125];
-    state.apply_to_samples(&mut base);
-    state.apply_to_samples(&mut object);
-    assert_close(base[0], 0.11167089803774079);
-    assert_close(object[0], 0.22334179607548158);
-    assert_close(base[0] + object[0], 0.335_012_694_113_222_4);
+    let state = DialnormState::new(DialnormMode::Digital, 11);
+    assert_eq!(state.linear_gain(), 0.1);
+
+    let mut base_only = 0.25;
+    state.apply_to_samples(std::slice::from_mut(&mut base_only));
+    let mut object_only = 0.125;
+    state.apply_to_samples(std::slice::from_mut(&mut object_only));
+    let mut full = 0.25 + 0.125;
+    state.apply_to_samples(std::slice::from_mut(&mut full));
+
+    assert_close(base_only, 0.1 * 0.25);
+    assert_close(object_only, 0.1 * 0.125);
+    assert_close(full, 0.1 * (0.25 + 0.125));
+    assert!((full - 0.1 * 0.1 * (0.25 + 0.125)).abs() > 1.0e-3);
 }
 
 #[test]

@@ -2560,8 +2560,8 @@ mod tests {
         ObjectRenderInfo, ObjectUpdate,
     };
     use openjoc_render::{
-        BinauralRenderer, BinauralSourceBlock, HrirBank, HrirEntry, HrirEntryId, HrirPair,
-        StaticBinauralSource,
+        BinauralRenderer, BinauralSourceBlock, FinalLinkedGain, HrirBank, HrirEntry, HrirEntryId,
+        HrirPair, StaticBinauralSource,
     };
     use openjoc_scene::{
         BaseFullBandCoordinate, DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout,
@@ -3342,6 +3342,20 @@ mod tests {
         let unity_peak = peak_metrics(&unity.channels).0;
         let calibrated_peak = peak_metrics(&calibrated.channels).0;
         assert!(calibrated_peak < unity_peak);
+    }
+
+    #[test]
+    fn low_level_dialnorm_audit_keeps_final_linked_gain_at_unity() {
+        let mut linked = FinalLinkedGain::new(48_000, 32, &[true]).expect("linked gain");
+        let mut channels = vec![vec![0.375; 32]];
+        linked
+            .process(&mut channels)
+            .expect("low-level linked gain");
+        let mut next = vec![vec![0.375; 32]];
+        linked
+            .process(&mut next)
+            .expect("low-level linked gain output");
+        assert_eq!(next[0], vec![0.375; 32]);
     }
 
     #[test]
