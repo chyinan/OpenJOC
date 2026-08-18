@@ -246,6 +246,7 @@ struct CoordinateBinding {
 pub struct BridgeControlAssembler {
     capacity: usize,
     coordinate_dimensions: usize,
+    base_projection_enabled: bool,
     topology_epoch: u64,
     signature: Option<Vec<(SpatialSourceClass, String)>>,
     bindings: Vec<CoordinateBinding>,
@@ -256,9 +257,22 @@ impl BridgeControlAssembler {
     /// Creates a streaming assembler for one public layout dimension.
     #[must_use]
     pub fn new(capacity: usize, coordinate_dimensions: usize) -> Self {
+        Self::new_with_base_projection(capacity, coordinate_dimensions, true)
+    }
+
+    /// Creates a streaming assembler with explicit Base spatial-projection
+    /// ownership. The 2.0 speaker path disables Base projection because Base
+    /// PCM is reduced by its separate E-AC-3 stereo policy.
+    #[must_use]
+    pub fn new_with_base_projection(
+        capacity: usize,
+        coordinate_dimensions: usize,
+        base_projection_enabled: bool,
+    ) -> Self {
         Self {
             capacity,
             coordinate_dimensions,
+            base_projection_enabled,
             topology_epoch: 0,
             signature: None,
             bindings: Vec::new(),
@@ -327,6 +341,7 @@ impl BridgeControlAssembler {
                 &families,
                 &self.bindings,
                 self.coordinate_dimensions,
+                self.base_projection_enabled,
             )?);
         } else {
             self.bindings = bindings;
@@ -483,7 +498,8 @@ impl BridgeControlAssembler {
                     reference_screen,
                 )?;
                 record.scalar = bridge_gain_scalar(update.basic.gain)?;
-                record.active = true;
+                record.active =
+                    self.base_projection_enabled || binding.family != CoordinateFamily::Base;
             } else {
                 // An inactive record keeps its descriptor and scalar. The
                 // downstream bridge independently forces its contribution to
@@ -660,6 +676,7 @@ fn default_records(
     families: &[(CoordinateFamily, Option<ObjectAnchor>, String)],
     bindings: &[CoordinateBinding],
     dimensions: usize,
+    base_projection_enabled: bool,
 ) -> Result<Vec<SpatialBindingRecord>, BridgeControlAssemblyError> {
     let mut records = Vec::with_capacity(families.len());
     for (index, ((family, anchor, identity), binding)) in families.iter().zip(bindings).enumerate()
@@ -675,7 +692,7 @@ fn default_records(
             Vec::new()
         };
         let (active, scalar) = if *family == CoordinateFamily::Base {
-            (true, 1.0)
+            (base_projection_enabled, 1.0)
         } else {
             (false, 0.0)
         };

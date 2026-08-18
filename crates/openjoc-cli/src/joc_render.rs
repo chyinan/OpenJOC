@@ -494,12 +494,17 @@ impl JocSpeakerRenderer {
     ) -> Result<Self, JocRenderError> {
         let preset = SpeakerLayoutPreset::for_name(layout)?;
         let dimensions = preset.layout.coordinate_dimension_count();
+        let base_projection_enabled = preset.name != "2.0";
         Ok(Self {
             frame_bridge: JocSpatialFrameBridge,
             bridge: JocSpatialBridge::new(),
             preset,
             control: None,
-            assembler: Some(BridgeControlAssembler::new(64, dimensions)),
+            assembler: Some(BridgeControlAssembler::new_with_base_projection(
+                64,
+                dimensions,
+                base_projection_enabled,
+            )),
             expected_coordinates: None,
             next_input_frame: 0,
             expected_frame: 0,
@@ -2464,16 +2469,20 @@ mod tests {
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata};
     use openjoc_emdf::JocValidationProfile;
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
-    use openjoc_oamd::{ContentDescription, OamdContentPrefix, OamdPayload, ObjectClass};
+    use openjoc_oamd::{
+        ContentDescription, Gain, MetadataBlockTiming, MetadataTiming, OamdContentPrefix,
+        OamdElement, OamdElementMetadata, OamdPayload, ObjectBasicInfo, ObjectClass, ObjectElement,
+        ObjectRenderInfo, ObjectUpdate,
+    };
     use openjoc_render::{
         BinauralRenderer, BinauralSourceBlock, HrirBank, HrirEntry, HrirEntryId, HrirPair,
         StaticBinauralSource,
     };
     use openjoc_scene::{
-        DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout, SampleRange, SpatialBindingRecord,
-        SpatialContributionMode, SpatialDescriptor, SpatialExplicitGroup, SpatialExplicitMember,
-        SpatialRouteVector, SpatialSourceClass, SpatialTopologySnapshot,
-        speaker_channel_mask_for_labels,
+        BaseFullBandCoordinate, DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout,
+        SampleRange, SpatialBindingRecord, SpatialContributionMode, SpatialDescriptor,
+        SpatialExplicitGroup, SpatialExplicitMember, SpatialRouteVector, SpatialSourceClass,
+        SpatialTopologySnapshot, speaker_channel_mask_for_labels,
     };
     use openjoc_wave::{SampleFormat, decode};
     use std::{
@@ -2691,6 +2700,39 @@ mod tests {
             },
             programme_layout: ProgrammeLayout::from_prefix(&prefix).unwrap(),
         }
+    }
+
+    fn automatic_decoded_frame(position: openjoc_oamd::Position3) -> DecodedPayloadFrame {
+        let mut frame = decoded_frame(0, 0, 2);
+        frame.oamd.prefix.element_count = 1;
+        frame.oamd.elements = vec![OamdElementMetadata {
+            id: 1,
+            alternate_data_id: None,
+            discard_unknown: false,
+            element: OamdElement::Objects(ObjectElement {
+                timing: MetadataTiming {
+                    sample_offset: 0,
+                    blocks: vec![MetadataBlockTiming {
+                        start_sample: 0,
+                        ramp_duration: 0,
+                    }],
+                },
+                objects: vec![vec![ObjectUpdate {
+                    active: true,
+                    basic: ObjectBasicInfo {
+                        gain: Gain::Decibels(0),
+                        priority: 0.0,
+                    },
+                    render: ObjectRenderInfo {
+                        position,
+                        ..ObjectRenderInfo::DEFAULT
+                    },
+                    additional_table_data: None,
+                }]],
+                consumed_bits: 0,
+            }),
+        }];
+        frame
     }
 
     fn base(samples: usize, value: f64) -> DecodedAccessUnitPcm {
@@ -3115,6 +3157,100 @@ mod tests {
                 .set_downmix_policy(StereoDownmixPolicy::LoRo)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn automatic_20_render_initializes_spatial_topology_before_downmix() {
+        let positions = [
+            (
+                "center",
+                openjoc_oamd::Position3 {
+                    x: 0.5,
+                    y: 0.5,
+                    z: 0.0,
+                },
+            ),
+            (
+                "left",
+                openjoc_oamd::Position3 {
+                    x: 0.0,
+                    y: 0.5,
+                    z: 0.0,
+                },
+            ),
+            (
+                "right",
+                openjoc_oamd::Position3 {
+                    x: 1.0,
+                    y: 0.5,
+                    z: 0.0,
+                },
+            ),
+            (
+                "rear",
+                openjoc_oamd::Position3 {
+                    x: 0.5,
+                    y: 1.0,
+                    z: 0.0,
+                },
+            ),
+            (
+                "top",
+                openjoc_oamd::Position3 {
+                    x: 0.5,
+                    y: 0.5,
+                    z: 1.0,
+                },
+            ),
+        ];
+        let frame = automatic_decoded_frame(positions[0].1);
+        let base_coordinates = [
+            BaseFullBandCoordinate::Left,
+            BaseFullBandCoordinate::Right,
+            BaseFullBandCoordinate::Centre,
+            BaseFullBandCoordinate::LeftSurround,
+            BaseFullBandCoordinate::RightSurround,
+        ];
+        let mut topology_renderer = JocSpeakerRenderer::new_automatic("2.0").unwrap();
+        let control = topology_renderer
+            .assembler
+            .as_mut()
+            .unwrap()
+            .assemble_frame(&frame, &base_coordinates, None)
+            .unwrap();
+        let topology = control.initial_topology.as_ref().unwrap();
+        for record in topology.flatten().iter().filter(|record| record.active) {
+            assert_eq!(record.descriptor.coordinates.len(), 3);
+            assert!(
+                record
+                    .descriptor
+                    .coordinates
+                    .iter()
+                    .all(|value| value.is_finite())
+            );
+        }
+
+        for policy in [
+            StereoDownmixPolicy::Auto,
+            StereoDownmixPolicy::LoRo,
+            StereoDownmixPolicy::LtRt,
+        ] {
+            for (label, position) in positions {
+                let mut renderer = JocSpeakerRenderer::new_automatic("2.0").unwrap();
+                renderer.set_downmix_policy(policy).unwrap();
+                let block = renderer
+                    .render_frame(0, &automatic_decoded_frame(position), &base(2, 1.0))
+                    .unwrap_or_else(|error| panic!("{label} / {policy:?}: {error}"));
+                assert_eq!(block.channels.len(), 2);
+                assert!(
+                    block
+                        .channels
+                        .iter()
+                        .flatten()
+                        .all(|sample| sample.is_finite())
+                );
+            }
+        }
     }
 
     #[test]
