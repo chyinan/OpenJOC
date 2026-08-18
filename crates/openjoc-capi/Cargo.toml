@@ -1,0 +1,18 @@
+[package]
+name = "openjoc-capi"
+version.workspace = true
+description = "Versioned C ABI for the OpenJOC headless streaming session"
+edition.workspace = true
+license.workspace = true
+license-file.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+openjoc-api = { version = "0.6.0", path = "../openjoc-api" }
+
+[lints]
+workspace = true

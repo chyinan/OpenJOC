@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/openjoc-bitio",
+    "crates/openjoc-api",
+    "crates/openjoc-capi",
     "crates/openjoc-cli",
     "crates/openjoc-container",
     "crates/openjoc-eac3",
@@ -26,7 +28,10 @@ repository = "https://github.com/chyinan/OpenJOC"
 rust-version = "1.85"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# The C ABI crate necessarily contains small, audited raw-pointer boundaries.
+# It opts into `allow(unsafe_code)` locally; the rest of the workspace remains
+# warning-clean and continues to use no unsafe implementation code.
+unsafe_code = "warn"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

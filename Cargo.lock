@@ -283,6 +283,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "openjoc-api"
+version = "0.6.0"
+dependencies = [
+ "openjoc-container",
+ "openjoc-eac3",
+ "openjoc-emdf",
+ "openjoc-joc",
+ "openjoc-oamd",
+ "openjoc-render",
+ "openjoc-scene",
+ "openjoc-sofa",
+]
+
+[[package]]
 name = "openjoc-bitio"
 version = "0.6.0"
 dependencies = [
@@ -290,9 +304,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "openjoc-capi"
+version = "0.6.0"
+dependencies = [
+ "openjoc-api",
+]
+
+[[package]]
 name = "openjoc-cli"
 version = "0.6.0"
 dependencies = [
+ "openjoc-api",
  "openjoc-container",
  "openjoc-eac3",
  "openjoc-emdf",

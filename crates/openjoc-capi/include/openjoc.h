@@ -1,0 +1,123 @@
+#ifndef OPENJOC_H
+#define OPENJOC_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define OPENJOC_ABI_VERSION_MAJOR 1u
+#define OPENJOC_ABI_VERSION_MINOR 0u
+#define OPENJOC_NO_PTS INT64_MIN
+
+typedef struct openjoc_decoder openjoc_decoder;
+
+typedef enum openjoc_status {
+    OPENJOC_STATUS_OK = 0,
+    OPENJOC_STATUS_NEED_MORE_INPUT = 1,
+    OPENJOC_STATUS_FRAME_AVAILABLE = 2,
+    OPENJOC_STATUS_END_OF_STREAM = 3,
+    OPENJOC_STATUS_OUTPUT_PENDING = 4,
+    OPENJOC_STATUS_UNSUPPORTED = 5,
+    OPENJOC_STATUS_INVALID_ARGUMENT = 6,
+    OPENJOC_STATUS_DECODE_ERROR = 7,
+    OPENJOC_STATUS_RENDER_ERROR = 8,
+    OPENJOC_STATUS_FORMAT_CHANGED = 9,
+    OPENJOC_STATUS_REQUIRE_RESET = 10
+} openjoc_status;
+
+typedef enum openjoc_render_mode {
+    OPENJOC_RENDER_SPEAKER = 0,
+    OPENJOC_RENDER_STEREO = 1,
+    OPENJOC_RENDER_BINAURAL = 2
+} openjoc_render_mode;
+
+typedef enum openjoc_downmix_policy {
+    OPENJOC_DOWNMIX_AUTO = 0,
+    OPENJOC_DOWNMIX_LORO = 1,
+    OPENJOC_DOWNMIX_LTRT = 2
+} openjoc_downmix_policy;
+
+typedef enum openjoc_drc_mode {
+    OPENJOC_DRC_DISABLED = 0,
+    OPENJOC_DRC_LINE = 1,
+    OPENJOC_DRC_RF = 2,
+    OPENJOC_DRC_CUSTOM = 3
+} openjoc_drc_mode;
+
+typedef enum openjoc_validation_profile {
+    OPENJOC_VALIDATION_AUTO = 0,
+    OPENJOC_VALIDATION_ETSI_STRICT = 1,
+    OPENJOC_VALIDATION_OBSERVED_VENDOR_COMPAT = 2
+} openjoc_validation_profile;
+
+typedef enum openjoc_lfe_policy {
+    OPENJOC_LFE_EXCLUDE = 0,
+    OPENJOC_LFE_EQUAL_POWER_DUAL_MONO = 1
+} openjoc_lfe_policy;
+
+#define OPENJOC_PACKET_FLAG_DISCONTINUITY 1u
+#define OPENJOC_PACKET_FLAG_PREROLL 2u
+
+typedef struct openjoc_decoder_config {
+    uint32_t struct_size;
+    uint32_t render_mode;
+    const char *speaker_layout;
+    uint32_t downmix;
+    uint32_t drc;
+    uint8_t drc_boost_percent;
+    uint8_t drc_cut_percent;
+    uint32_t validation_profile;
+    const uint8_t *sofa_data;
+    size_t sofa_size;
+    const char *virtual_layout;
+    uint32_t lfe_policy;
+} openjoc_decoder_config;
+
+typedef struct openjoc_pcm_frame {
+    uint32_t struct_size;
+    uint32_t sample_format; /* 1 = interleaved IEEE-754 float32 */
+    uint32_t sample_rate;
+    uint32_t channel_count;
+    size_t sample_count;
+    int64_t pts_samples;
+    const float *data;
+    size_t data_len;
+    const char *layout_name;
+    const char *const *channel_labels; /* reserved; use get_channel_label in ABI 1.0 */
+    size_t channel_label_count;
+} openjoc_pcm_frame;
+
+typedef struct openjoc_output_info {
+    uint32_t struct_size;
+    uint32_t sample_format;
+    uint32_t sample_rate;
+    uint32_t channel_count;
+    size_t latency_samples;
+    const char *layout_name;
+    const char *const *channel_labels; /* reserved; use get_channel_label in ABI 1.0 */
+    size_t channel_label_count;
+} openjoc_output_info;
+
+uint32_t openjoc_get_abi_version(void);
+openjoc_status openjoc_decoder_config_init(openjoc_decoder_config *config);
+openjoc_status openjoc_decoder_create(const openjoc_decoder_config *config, openjoc_decoder **output);
+void openjoc_decoder_destroy(openjoc_decoder *decoder);
+openjoc_status openjoc_decoder_send_packet(openjoc_decoder *decoder, const uint8_t *data, size_t data_len, int64_t pts_samples, uint32_t flags);
+openjoc_status openjoc_decoder_receive_frame(openjoc_decoder *decoder, openjoc_pcm_frame *output);
+openjoc_status openjoc_decoder_drain(openjoc_decoder *decoder);
+openjoc_status openjoc_decoder_flush(openjoc_decoder *decoder);
+openjoc_status openjoc_decoder_reset(openjoc_decoder *decoder);
+const char *openjoc_decoder_last_error(const openjoc_decoder *decoder);
+openjoc_status openjoc_pcm_frame_init(openjoc_pcm_frame *output);
+openjoc_status openjoc_output_info_init(openjoc_output_info *output);
+openjoc_status openjoc_decoder_get_output_info(openjoc_decoder *decoder, openjoc_output_info *output);
+const char *openjoc_decoder_get_channel_label(const openjoc_decoder *decoder, size_t index);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* OPENJOC_H */
