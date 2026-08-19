@@ -21,6 +21,10 @@ use openjoc_api::{
     OpenJocError, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
     ValidationProfile,
 };
+use openjoc_ffmpeg::{
+    BridgeError, BridgeErrorKind, BridgeStatus, FfmpegDecoder, FfmpegFrame, PacketRef, Rational,
+    ReceiveOutcome,
+};
 use std::{
     ffi::{CStr, CString},
     os::raw::c_char,
@@ -32,7 +36,7 @@ use std::{
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 1;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 2;
 const NO_PTS: i64 = i64::MIN;
 
 #[repr(C)]
@@ -43,6 +47,23 @@ pub struct openjoc_decoder {
     channel_labels: Vec<CString>,
     channel_label_ptrs: Vec<*const c_char>,
     last_frame: Option<OpenJocPcmFrame>,
+}
+
+/// Framework-neutral packet/chunk bridge used by native media adapters.
+///
+/// The contained bridge owns the single proven bounded AU assembler. It does
+/// not create its `OpenJocSession` until a complete access unit is positively
+/// classified as JOC.
+#[repr(C)]
+pub struct openjoc_stream_decoder {
+    decoder: FfmpegDecoder,
+    last_error: CString,
+    layout_name: CString,
+    channel_labels: Vec<CString>,
+    channel_label_ptrs: Vec<*const c_char>,
+    config_descriptor: CString,
+    config_fingerprint: CString,
+    last_frame: Option<FfmpegFrame>,
 }
 
 #[repr(C)]
@@ -59,6 +80,9 @@ pub enum openjoc_status {
     OPENJOC_STATUS_RENDER_ERROR = 8,
     OPENJOC_STATUS_FORMAT_CHANGED = 9,
     OPENJOC_STATUS_REQUIRE_RESET = 10,
+    OPENJOC_STATUS_NOT_JOC = 11,
+    OPENJOC_STATUS_OUT_OF_MEMORY = 12,
+    OPENJOC_STATUS_EXTERNAL_ERROR = 13,
 }
 
 #[repr(C)]
@@ -386,6 +410,54 @@ fn panic_status(decoder: &mut openjoc_decoder) -> openjoc_status {
     openjoc_status::OPENJOC_STATUS_DECODE_ERROR
 }
 
+fn stream_status(status: BridgeStatus) -> openjoc_status {
+    match status {
+        BridgeStatus::Ok => openjoc_status::OPENJOC_STATUS_OK,
+        BridgeStatus::NeedMoreInput => openjoc_status::OPENJOC_STATUS_NEED_MORE_INPUT,
+        BridgeStatus::FrameAvailable => openjoc_status::OPENJOC_STATUS_FRAME_AVAILABLE,
+        BridgeStatus::WouldBlock => openjoc_status::OPENJOC_STATUS_OUTPUT_PENDING,
+        BridgeStatus::EndOfStream => openjoc_status::OPENJOC_STATUS_END_OF_STREAM,
+        BridgeStatus::NotJoc => openjoc_status::OPENJOC_STATUS_NOT_JOC,
+    }
+}
+
+fn stream_error_status(error: &BridgeError) -> openjoc_status {
+    match error.kind {
+        BridgeErrorKind::InvalidConfig | BridgeErrorKind::InvalidTimestamp => {
+            openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT
+        }
+        BridgeErrorKind::Unsupported => openjoc_status::OPENJOC_STATUS_UNSUPPORTED,
+        BridgeErrorKind::OutputPending => openjoc_status::OPENJOC_STATUS_OUTPUT_PENDING,
+        BridgeErrorKind::EndOfStream => openjoc_status::OPENJOC_STATUS_END_OF_STREAM,
+        BridgeErrorKind::Ffmpeg | BridgeErrorKind::InternalPanic => {
+            openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR
+        }
+        BridgeErrorKind::InvalidData => openjoc_status::OPENJOC_STATUS_DECODE_ERROR,
+    }
+}
+
+fn set_stream_error(decoder: &mut openjoc_stream_decoder, error: BridgeError) -> openjoc_status {
+    let result = stream_error_status(&error);
+    decoder.last_error = CString::new(error.to_string())
+        .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
+    result
+}
+
+fn set_stream_message(
+    decoder: &mut openjoc_stream_decoder,
+    message: impl ToString,
+) -> openjoc_status {
+    decoder.last_error = CString::new(message.to_string())
+        .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
+    openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT
+}
+
+fn stream_panic_status(decoder: &mut openjoc_stream_decoder) -> openjoc_status {
+    decoder.last_error =
+        CString::new("panic contained at OpenJOC C ABI boundary").expect("static error");
+    openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR
+}
+
 /// Returns the packed ABI version `(major << 16) | minor`.
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_get_abi_version() -> u32 {
@@ -689,4 +761,313 @@ pub extern "C" fn openjoc_decoder_get_channel_label(
             .get(index)
             .map_or(ptr::null(), |label| label.as_c_str().as_ptr())
     }
+}
+
+/// Creates a framework-neutral compressed-stream bridge.
+///
+/// Unlike `openjoc_decoder`, this bridge accepts arbitrary byte chunks and
+/// owns bounded packet-to-access-unit staging. The render session remains
+/// lazy until the first complete access unit is positively admitted as JOC.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_create(
+    config: *const openjoc_decoder_config,
+    output: *mut *mut openjoc_stream_decoder,
+) -> openjoc_status {
+    if config.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let config = config_from_c(config)
+            .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string()))?;
+        let decoder = FfmpegDecoder::new(config)?;
+        let layout_name = CString::new(
+            decoder
+                .channel_layout()
+                .standard_layout
+                .as_deref()
+                .unwrap_or(decoder.channel_layout().name.as_str()),
+        )
+        .map_err(|_| BridgeError::new(BridgeErrorKind::InvalidConfig, "layout contains NUL"))?;
+        let channel_labels = decoder
+            .channel_layout()
+            .ffmpeg_order
+            .iter()
+            .map(|label| {
+                CString::new(label.as_str()).map_err(|_| {
+                    BridgeError::new(BridgeErrorKind::InvalidConfig, "channel label contains NUL")
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let channel_label_ptrs = channel_labels
+            .iter()
+            .map(|label| label.as_c_str().as_ptr())
+            .collect();
+        let config_descriptor =
+            CString::new(decoder.effective_config_descriptor()).map_err(|_| {
+                BridgeError::new(
+                    BridgeErrorKind::InvalidConfig,
+                    "config descriptor contains NUL",
+                )
+            })?;
+        let config_fingerprint =
+            CString::new(decoder.effective_config_fingerprint()).map_err(|_| {
+                BridgeError::new(
+                    BridgeErrorKind::InvalidConfig,
+                    "config fingerprint contains NUL",
+                )
+            })?;
+        let stream = Box::new(openjoc_stream_decoder {
+            decoder,
+            last_error: CString::new("").expect("empty CString"),
+            layout_name,
+            channel_labels,
+            channel_label_ptrs,
+            config_descriptor,
+            config_fingerprint,
+            last_frame: None,
+        });
+        // SAFETY: output was checked and receives ownership of the allocation.
+        unsafe { *output = Box::into_raw(stream) };
+        Ok::<openjoc_status, BridgeError>(openjoc_status::OPENJOC_STATUS_OK)
+    }));
+    match result {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => stream_error_status(&error),
+        Err(_) => openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR,
+    }
+}
+
+/// Destroys a framework-neutral compressed-stream bridge.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_destroy(decoder: *mut openjoc_stream_decoder) {
+    if decoder.is_null() {
+        return;
+    }
+    // SAFETY: the pointer came from `openjoc_stream_decoder_create` and is consumed once.
+    unsafe { drop(Box::from_raw(decoder)) };
+}
+
+/// Sends one borrowed compressed chunk. Bytes needed after this call are
+/// copied into the bridge's bounded staging allocation.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_send_chunk(
+    decoder: *mut openjoc_stream_decoder,
+    data: *const u8,
+    data_len: usize,
+    pts_samples: i64,
+    flags: u32,
+) -> openjoc_status {
+    if decoder.is_null() || data.is_null() || data_len == 0 {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: decoder was checked and remains owned by the caller.
+    let decoder = unsafe { &mut *decoder };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: caller guarantees a readable chunk buffer for this call.
+        let bytes = unsafe { slice::from_raw_parts(data, data_len) };
+        decoder.last_frame = None;
+        decoder
+            .decoder
+            .send_packet(PacketRef {
+                data: bytes,
+                pts: (pts_samples != NO_PTS).then_some(pts_samples),
+                dts: None,
+                duration: None,
+                time_base: Rational::SAMPLE_TIME_BASE,
+                stream_index: 0,
+                discontinuity: flags & OPENJOC_PACKET_FLAG_DISCONTINUITY != 0,
+                preroll: flags & OPENJOC_PACKET_FLAG_PREROLL != 0,
+            })
+            .map(stream_status)
+    }));
+    match result {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => set_stream_error(decoder, error),
+        Err(_) => stream_panic_status(decoder),
+    }
+}
+
+/// Receives one packed float32 PCM frame in the advertised semantic order.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_receive_frame(
+    decoder: *mut openjoc_stream_decoder,
+    output: *mut openjoc_pcm_frame,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointers were checked and remain caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: output is valid for the advertised structure size.
+        let output = unsafe { &mut *output };
+        if output.struct_size < FRAME_SIZE {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidConfig,
+                "pcm_frame.struct_size is too small",
+            ));
+        }
+        match decoder.decoder.receive_frame()? {
+            ReceiveOutcome::Frame(frame) => {
+                decoder.last_frame = Some(frame);
+                let frame = decoder.last_frame.as_ref().expect("stored frame");
+                output.sample_format = 1;
+                output.sample_rate = frame.sample_rate;
+                output.channel_count = decoder.channel_labels.len() as u32;
+                output.sample_count = frame.nb_samples;
+                output.pts_samples = frame.pts.unwrap_or(NO_PTS);
+                output.data = frame.interleaved_f32.as_ptr();
+                output.data_len = frame.interleaved_f32.len();
+                output.layout_name = decoder.layout_name.as_c_str().as_ptr();
+                output.channel_labels = decoder.channel_label_ptrs.as_ptr();
+                output.channel_label_count = decoder.channel_labels.len();
+                Ok(openjoc_status::OPENJOC_STATUS_FRAME_AVAILABLE)
+            }
+            ReceiveOutcome::NeedMoreInput => Ok(openjoc_status::OPENJOC_STATUS_NEED_MORE_INPUT),
+            ReceiveOutcome::EndOfStream => Ok(openjoc_status::OPENJOC_STATUS_END_OF_STREAM),
+            ReceiveOutcome::NotJoc => Ok(openjoc_status::OPENJOC_STATUS_NOT_JOC),
+        }
+    }));
+    match result {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => set_stream_error(decoder, error),
+        Err(_) => stream_panic_status(decoder),
+    }
+}
+
+/// Requests complete reconstruction, gain, and binaural tail drain.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_drain(
+    decoder: *mut openjoc_stream_decoder,
+) -> openjoc_status {
+    if decoder.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointer was checked and remains caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        decoder.decoder.drain().map(stream_status)
+    }));
+    match result {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => set_stream_error(decoder, error),
+        Err(_) => stream_panic_status(decoder),
+    }
+}
+
+/// Discards compressed staging, PCM, DSP history, and timestamp state.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_flush(
+    decoder: *mut openjoc_stream_decoder,
+) -> openjoc_status {
+    if decoder.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointer was checked and remains caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        decoder.last_frame = None;
+        decoder.decoder.flush();
+        openjoc_status::OPENJOC_STATUS_OK
+    }));
+    result.unwrap_or_else(|_| stream_panic_status(decoder))
+}
+
+/// Alias with explicit new-stream/seek intent.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_reset(
+    decoder: *mut openjoc_stream_decoder,
+) -> openjoc_status {
+    openjoc_stream_decoder_flush(decoder)
+}
+
+/// Returns the instance-owned diagnostic for the most recent stream failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_last_error(
+    decoder: *const openjoc_stream_decoder,
+) -> *const c_char {
+    if decoder.is_null() {
+        return c"invalid null OpenJOC stream decoder handle".as_ptr();
+    }
+    // SAFETY: pointer was checked and remains valid for the caller.
+    unsafe { (&*decoder).last_error.as_ptr() }
+}
+
+/// Returns deterministic output semantics before compressed input is sent.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_output_info(
+    decoder: *mut openjoc_stream_decoder,
+    output: *mut openjoc_output_info,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointers were checked and remain caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    let output = unsafe { &mut *output };
+    if output.struct_size < INFO_SIZE {
+        return set_stream_message(decoder, "output_info.struct_size is too small");
+    }
+    output.sample_format = 1;
+    output.sample_rate = 48_000;
+    output.channel_count = decoder.channel_labels.len() as u32;
+    output.latency_samples = decoder.decoder.latency_samples();
+    output.layout_name = decoder.layout_name.as_c_str().as_ptr();
+    output.channel_labels = decoder.channel_label_ptrs.as_ptr();
+    output.channel_label_count = decoder.channel_labels.len();
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Returns one semantic channel label in packed PCM order.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_channel_label(
+    decoder: *const openjoc_stream_decoder,
+    index: usize,
+) -> *const c_char {
+    if decoder.is_null() {
+        return ptr::null();
+    }
+    // SAFETY: pointer was checked and remains valid for the caller.
+    unsafe {
+        (&*decoder)
+            .channel_labels
+            .get(index)
+            .map_or(ptr::null(), |label| label.as_c_str().as_ptr())
+    }
+}
+
+/// Returns the exact shared effective configuration descriptor.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_config_descriptor(
+    decoder: *const openjoc_stream_decoder,
+) -> *const c_char {
+    if decoder.is_null() {
+        return ptr::null();
+    }
+    // SAFETY: pointer was checked and remains valid for the caller.
+    unsafe { (&*decoder).config_descriptor.as_ptr() }
+}
+
+/// Returns the exact shared effective configuration SHA-256 fingerprint.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_config_fingerprint(
+    decoder: *const openjoc_stream_decoder,
+) -> *const c_char {
+    if decoder.is_null() {
+        return ptr::null();
+    }
+    // SAFETY: pointer was checked and remains valid for the caller.
+    unsafe { (&*decoder).config_fingerprint.as_ptr() }
+}
+
+/// Returns the current bounded compressed staging size for diagnostics.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_staged_bytes(
+    decoder: *const openjoc_stream_decoder,
+) -> usize {
+    if decoder.is_null() {
+        return 0;
+    }
+    // SAFETY: pointer was checked and remains valid for the caller.
+    unsafe { (&*decoder).decoder.staged_bytes() }
 }

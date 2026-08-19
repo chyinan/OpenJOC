@@ -9,10 +9,11 @@ extern "C" {
 #endif
 
 #define OPENJOC_ABI_VERSION_MAJOR 1u
-#define OPENJOC_ABI_VERSION_MINOR 1u
+#define OPENJOC_ABI_VERSION_MINOR 2u
 #define OPENJOC_NO_PTS INT64_MIN
 
 typedef struct openjoc_decoder openjoc_decoder;
+typedef struct openjoc_stream_decoder openjoc_stream_decoder;
 
 typedef enum openjoc_status {
     OPENJOC_STATUS_OK = 0,
@@ -25,7 +26,10 @@ typedef enum openjoc_status {
     OPENJOC_STATUS_DECODE_ERROR = 7,
     OPENJOC_STATUS_RENDER_ERROR = 8,
     OPENJOC_STATUS_FORMAT_CHANGED = 9,
-    OPENJOC_STATUS_REQUIRE_RESET = 10
+    OPENJOC_STATUS_REQUIRE_RESET = 10,
+    OPENJOC_STATUS_NOT_JOC = 11,
+    OPENJOC_STATUS_OUT_OF_MEMORY = 12,
+    OPENJOC_STATUS_EXTERNAL_ERROR = 13
 } openjoc_status;
 
 typedef enum openjoc_render_mode {
@@ -123,6 +127,24 @@ openjoc_status openjoc_pcm_frame_init(openjoc_pcm_frame *output);
 openjoc_status openjoc_output_info_init(openjoc_output_info *output);
 openjoc_status openjoc_decoder_get_output_info(openjoc_decoder *decoder, openjoc_output_info *output);
 const char *openjoc_decoder_get_channel_label(const openjoc_decoder *decoder, size_t index);
+
+/* ABI 1.2 framework-neutral compressed-stream bridge. Input may contain a
+ * partial access unit or multiple access units. The bridge owns bounded
+ * staging, positively admits JOC before creating the render session, and
+ * returns PCM in the semantic order advertised by its channel labels. */
+openjoc_status openjoc_stream_decoder_create(const openjoc_decoder_config *config, openjoc_stream_decoder **output);
+void openjoc_stream_decoder_destroy(openjoc_stream_decoder *decoder);
+openjoc_status openjoc_stream_decoder_send_chunk(openjoc_stream_decoder *decoder, const uint8_t *data, size_t data_len, int64_t pts_samples, uint32_t flags);
+openjoc_status openjoc_stream_decoder_receive_frame(openjoc_stream_decoder *decoder, openjoc_pcm_frame *output);
+openjoc_status openjoc_stream_decoder_drain(openjoc_stream_decoder *decoder);
+openjoc_status openjoc_stream_decoder_flush(openjoc_stream_decoder *decoder);
+openjoc_status openjoc_stream_decoder_reset(openjoc_stream_decoder *decoder);
+const char *openjoc_stream_decoder_last_error(const openjoc_stream_decoder *decoder);
+openjoc_status openjoc_stream_decoder_get_output_info(openjoc_stream_decoder *decoder, openjoc_output_info *output);
+const char *openjoc_stream_decoder_get_channel_label(const openjoc_stream_decoder *decoder, size_t index);
+const char *openjoc_stream_decoder_get_config_descriptor(const openjoc_stream_decoder *decoder);
+const char *openjoc_stream_decoder_get_config_fingerprint(const openjoc_stream_decoder *decoder);
+size_t openjoc_stream_decoder_get_staged_bytes(const openjoc_stream_decoder *decoder);
 
 #ifdef __cplusplus
 }

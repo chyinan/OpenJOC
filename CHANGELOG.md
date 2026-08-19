@@ -22,6 +22,11 @@ policy work. Users of 0.6.0 are strongly encouraged to upgrade.
   handles, numeric status codes, instance-owned errors, panic containment, and
   `struct_size` forward compatibility. ABI 1.0-size configuration callers are
   accepted with calibrated Default dialnorm behavior.
+- Extended the source integration surface to experimental ABI 1.2 with a
+  framework-neutral, bounded compressed-stream decoder handle. It reuses the
+  proven packet/AU bridge for fragmentation, multi-AU input, positive JOC
+  admission, semantic output order, drain, and reset while preserving all ABI
+  1.0/1.1 callers.
 - Platform release archives now carry the public header and the generated
   static/shared C ABI libraries, including the Windows import library where
   produced.

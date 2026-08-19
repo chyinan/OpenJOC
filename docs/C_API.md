@@ -13,14 +13,15 @@ artifact, not the primary C consumer library.
 
 ## ABI policy
 
-The ABI is `1.1-experimental`, independent of the OpenJOC package version.
+The ABI is `1.2-experimental`, independent of the OpenJOC package version.
 Major changes may break layout or ownership rules and require an ABI-major
 increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
 contain `struct_size`; callers must initialize them and producers must reject a
 smaller size. The `dialnorm_mode` field was appended in ABI minor 1. A caller
 presenting the ABI 1.0 configuration size is accepted and receives
-`OPENJOC_DIALNORM_DEFAULT`. `openjoc_get_abi_version()` returns
+`OPENJOC_DIALNORM_DEFAULT`. ABI 1.2 appends functions and statuses without
+changing any existing structure layout. `openjoc_get_abi_version()` returns
 `(major << 16) | minor`.
 
 Experimental means the C surface may evolve during 0.7 integration work. It
@@ -52,6 +53,22 @@ The decoder is an opaque handle. Packet memory is borrowed only during
 the decoder and remains valid until the next send, receive, flush, reset, or
 destroy on that handle. Applications that need longer ownership copy the
 frame. Multiple handles are independent.
+
+ABI 1.2 also provides `openjoc_stream_decoder`, a framework-neutral handle for
+adapters whose packet boundaries are not complete access-unit boundaries. Its
+`openjoc_stream_decoder_send_chunk()` call accepts arbitrary compressed bytes,
+an optional 1/48000 sample-domain PTS, and the existing discontinuity/preroll
+flags. The handle reuses the external FFmpeg bridge's single 131,072-byte-
+bounded assembler, positive JOC admission, timestamp model, output queue,
+semantic channel permutation, and lazy `OpenJocSession` creation. It supports
+fragmented AUs and multiple AUs per chunk without exposing any framework type.
+
+`openjoc_stream_decoder_receive_frame()` returns packed float PCM in the order
+reported by its semantic channel labels. Output semantics, the exact shared
+configuration descriptor/fingerprint, and current bounded staging size are
+available before or during decoding. `OPENJOC_STATUS_NOT_JOC` distinguishes a
+positive ordinary-E-AC-3 rejection; out-of-memory and external-library
+categories have dedicated numeric statuses for host error mapping.
 
 Semantic labels are available through `openjoc_decoder_get_channel_label` and
 the output/frame descriptors. The canonical PCM sample format value is `1`

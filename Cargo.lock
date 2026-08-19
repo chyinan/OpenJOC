@@ -652,6 +652,7 @@ name = "openjoc-capi"
 version = "0.7.0"
 dependencies = [
  "openjoc-api",
+ "openjoc-ffmpeg",
 ]
 
 [[package]]
