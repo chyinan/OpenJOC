@@ -1,4 +1,5 @@
 /target/
+/target-gstreamer/
 /.codex-tmp/
 /references/etsi/*.pdf
 /references/etsi/*.zip

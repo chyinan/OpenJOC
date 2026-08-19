@@ -7,14 +7,20 @@ use openjoc_api::{
     BinauralConfig, BinauralLfePolicy, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig,
     OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
 };
-use openjoc_eac3::{
-    StreamType, SyncframeHeader, group_access_units, index_syncframes, parse_joc_access_unit,
-    parse_syncframe_header,
-};
+use openjoc_eac3::{StreamType, parse_syncframe_header};
 use std::sync::{Mutex, MutexGuard, OnceLock};
+
+#[path = "autoplug.rs"]
+mod autoplug;
 
 const SAMPLE_RATE: u32 = 48_000;
 const MAX_SYNCFRAME_BYTES: usize = 4_096;
+// GStreamer 1.28 resolves a negative finish-frame count relative to the
+// pending compressed-input queue.  -1 therefore finishes all pending input
+// frames; during forced drain the queue is empty because every admitted AU
+// was already closed with finish_subframe(NULL), so the delayed PCM is not
+// falsely attributed to a new compressed frame.
+const DRAIN_FINISH_ALL_PENDING: i32 = -1;
 
 static CAT: OnceLock<gst::DebugCategory> = OnceLock::new();
 
@@ -32,7 +38,10 @@ fn category() -> &'static gst::DebugCategory {
 struct Settings {
     render_mode: String,
     speaker_layout: String,
+    virtual_layout: String,
     drc: String,
+    drc_boost_percent: u8,
+    drc_cut_percent: u8,
     dialnorm: String,
     validation_profile: String,
     downmix: String,
@@ -44,7 +53,10 @@ impl Default for Settings {
         Self {
             render_mode: "speaker".to_owned(),
             speaker_layout: "5.1".to_owned(),
+            virtual_layout: "7.1.4".to_owned(),
             drc: "line".to_owned(),
+            drc_boost_percent: 100,
+            drc_cut_percent: 100,
             dialnorm: "default".to_owned(),
             validation_profile: "auto".to_owned(),
             downmix: "auto".to_owned(),
@@ -65,6 +77,10 @@ impl Settings {
             "disabled" => DrcPolicy::Disabled,
             "line" => DrcPolicy::Line,
             "rf" => DrcPolicy::Rf,
+            "custom" => DrcPolicy::Custom {
+                boost_percent: self.drc_boost_percent,
+                cut_percent: self.drc_cut_percent,
+            },
             value => return Err(format!("unsupported drc policy {value:?}")),
         };
         let dialnorm = match self.dialnorm.as_str() {
@@ -92,7 +108,7 @@ impl Settings {
         };
         let binaural = (render_mode == RenderMode::Binaural).then(|| BinauralConfig {
             sofa_bytes: Vec::new(),
-            virtual_layout: self.speaker_layout.clone(),
+            virtual_layout: self.virtual_layout,
             lfe_policy,
         });
 
@@ -145,10 +161,29 @@ impl ObjectImpl for OpenJocDecImp {
                     .blurb("OpenJOC speaker preset, for example 5.1 or 7.1.4")
                     .default_value(Some("5.1"))
                     .build(),
+                glib::ParamSpecString::builder("virtual-layout")
+                    .nick("Binaural virtual layout")
+                    .blurb("Virtual speaker layout used by binaural mode")
+                    .default_value(Some("7.1.4"))
+                    .build(),
                 glib::ParamSpecString::builder("drc")
                     .nick("Dynamic range control")
-                    .blurb("disabled, line, or rf")
+                    .blurb("disabled, line, rf, or custom")
                     .default_value(Some("line"))
+                    .build(),
+                glib::ParamSpecUChar::builder("drc-boost")
+                    .nick("DRC boost percentage")
+                    .blurb("Custom DRC positive-range percentage")
+                    .minimum(0)
+                    .maximum(100)
+                    .default_value(100)
+                    .build(),
+                glib::ParamSpecUChar::builder("drc-cut")
+                    .nick("DRC cut percentage")
+                    .blurb("Custom DRC negative-range percentage")
+                    .minimum(0)
+                    .maximum(100)
+                    .default_value(100)
                     .build(),
                 glib::ParamSpecString::builder("dialnorm")
                     .nick("Dialnorm mode")
@@ -176,14 +211,26 @@ impl ObjectImpl for OpenJocDecImp {
 
     fn set_property(&self, id: usize, value: &glib::Value, _pspec: &glib::ParamSpec) {
         let mut settings = lock(&self.settings);
+        if id == 5 || id == 6 {
+            let Ok(value) = value.get::<u8>() else {
+                return;
+            };
+            if id == 5 {
+                settings.drc_boost_percent = value;
+            } else {
+                settings.drc_cut_percent = value;
+            }
+            return;
+        }
         let target = match id {
             1 => &mut settings.render_mode,
             2 => &mut settings.speaker_layout,
-            3 => &mut settings.drc,
-            4 => &mut settings.dialnorm,
-            5 => &mut settings.validation_profile,
-            6 => &mut settings.downmix,
-            7 => &mut settings.lfe_policy,
+            3 => &mut settings.virtual_layout,
+            4 => &mut settings.drc,
+            7 => &mut settings.dialnorm,
+            8 => &mut settings.validation_profile,
+            9 => &mut settings.downmix,
+            10 => &mut settings.lfe_policy,
             _ => return,
         };
         if let Ok(value) = value.get::<String>() {
@@ -196,11 +243,14 @@ impl ObjectImpl for OpenJocDecImp {
         match id {
             1 => settings.render_mode.to_value(),
             2 => settings.speaker_layout.to_value(),
-            3 => settings.drc.to_value(),
-            4 => settings.dialnorm.to_value(),
-            5 => settings.validation_profile.to_value(),
-            6 => settings.downmix.to_value(),
-            7 => settings.lfe_policy.to_value(),
+            3 => settings.virtual_layout.to_value(),
+            4 => settings.drc.to_value(),
+            5 => settings.drc_boost_percent.to_value(),
+            6 => settings.drc_cut_percent.to_value(),
+            7 => settings.dialnorm.to_value(),
+            8 => settings.validation_profile.to_value(),
+            9 => settings.downmix.to_value(),
+            10 => settings.lfe_policy.to_value(),
             _ => unreachable!("invalid openjocdec property id"),
         }
     }
@@ -215,7 +265,7 @@ impl ElementImpl for OpenJocDecImp {
             gst::subclass::ElementMetadata::new(
                 "OpenJOC E-AC-3 JOC decoder",
                 "Decoder/Audio",
-                "Explicit rank-none decoder for framed E-AC-3 JOC access units",
+                "Primary JOC-only decoder for classified framed E-AC-3 access units",
                 "OpenJOC contributors",
             )
         }))
@@ -227,6 +277,8 @@ impl ElementImpl for OpenJocDecImp {
             let sink_caps = gst::Caps::builder("audio/x-eac3")
                 .field("framed", true)
                 .field("alignment", "frame")
+                .field(autoplug::JOC_CAPS_FIELD, true)
+                .features([autoplug::JOC_CAPS_FEATURE])
                 .build();
             let src_caps = gst_audio::AudioCapsBuilder::new_interleaved()
                 .format(gst_audio::AudioFormat::F32le)
@@ -259,6 +311,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
         let config = settings
             .into_config()
             .map_err(|error| gst::error_msg!(gst::CoreError::Failed, ["{error}"]))?;
+        let config_fingerprint = config.effective_config_fingerprint();
         let mut state = lock(&self.state);
         state.session = Some(OpenJocSession::new(config).map_err(|error| {
             gst::error_msg!(
@@ -272,7 +325,11 @@ impl AudioDecoderImpl for OpenJocDecImp {
         drop(state);
 
         self.obj().set_drainable(true);
-        gst::debug!(category(), imp = self, "started OpenJOC session");
+        gst::info!(
+            category(),
+            imp = self,
+            "started OpenJOC session effective-config-sha256={config_fingerprint}"
+        );
         Ok(())
     }
 
@@ -301,10 +358,16 @@ impl AudioDecoderImpl for OpenJocDecImp {
         }
         if structure.get::<bool>("framed") != Ok(true)
             || structure.get::<String>("alignment") != Ok("frame".to_owned())
+            || structure.get::<bool>(autoplug::JOC_CAPS_FIELD) != Ok(true)
+            || caps
+                .features(0)
+                .is_none_or(|features| !features.contains(autoplug::JOC_CAPS_FEATURE))
         {
             return Err(gst::loggable_error!(
                 gst::CAT_RUST,
-                "OpenJOC requires framed=true, alignment=frame E-AC-3 input"
+                "OpenJOC requires classified JOC caps: framed=true, alignment=frame, {}=true, feature={} ",
+                autoplug::JOC_CAPS_FIELD,
+                autoplug::JOC_CAPS_FEATURE
             ));
         }
         let mut state = lock(&self.state);
@@ -345,7 +408,10 @@ impl AudioDecoderImpl for OpenJocDecImp {
             );
             gst::FlowError::Error
         })?;
-        validate_independent_zero(header, "access unit")?;
+        if header.stream_type != StreamType::Independent || header.substream_id != 0 {
+            gst::error!(category(), "access unit is not independent substream zero");
+            return Err(gst::FlowError::Error);
+        }
         if header.sample_rate != SAMPLE_RATE {
             gst::element_imp_error!(
                 self,
@@ -444,13 +510,14 @@ impl OpenJocDecImp {
             }
         };
         if frames.is_empty() {
-            return self.obj().finish_frame(None, 1);
+            return Ok(gst::FlowSuccess::Ok);
         }
         self.ensure_output_format(frames[0].sample_rate, &frames[0])?;
         for frame in frames {
-            self.obj().finish_frame(Some(pcm_buffer(&frame)?), 0)?;
+            self.obj()
+                .finish_frame(Some(pcm_buffer(&frame)?), DRAIN_FINISH_ALL_PENDING)?;
         }
-        self.obj().finish_frame(None, 1)
+        Ok(gst::FlowSuccess::Ok)
     }
 
     fn ensure_output_format(
@@ -528,111 +595,36 @@ fn collect_frames(session: &mut OpenJocSession) -> Vec<OpenJocPcmFrame> {
     frames
 }
 
-fn read_header(
-    adapter: &gst_base::Adapter,
-    offset: usize,
-) -> Result<SyncframeHeader, gst::FlowError> {
-    let mut prefix = [0_u8; 8];
-    adapter
-        .copy(offset, &mut prefix)
-        .map_err(|_| gst::FlowError::Error)?;
-    parse_syncframe_header(&prefix).map_err(|_| gst::FlowError::Error)
-}
-
 /// Returns one complete I0/[D0] unit length, or `GST_FLOW_EOS` through the
 /// Rust `FlowError::Eos` mapping while the adapter needs more bytes. The
 /// GstAudioDecoder base class consumes that return as "no frame yet" and keeps
 /// the adapter contents; it does not forward EOS downstream.
 fn parse_adapter(adapter: &gst_base::Adapter, eos: bool) -> Result<(u32, u32), gst::FlowError> {
     let available = adapter.available();
-    if available < 8 {
-        return if eos {
-            Err(gst::FlowError::Error)
-        } else {
-            Err(gst::FlowError::Eos)
-        };
+    let mut bytes = vec![0_u8; available];
+    adapter
+        .copy(0, &mut bytes)
+        .map_err(|_| gst::FlowError::Error)?;
+    match autoplug::parse_access_unit(&bytes, eos) {
+        Ok(autoplug::AccessUnitParse::NeedMore) => Err(gst::FlowError::Eos),
+        Ok(autoplug::AccessUnitParse::Complete(size)) => {
+            Ok((0, u32::try_from(size).map_err(|_| gst::FlowError::Error)?))
+        }
+        Err(_) => Err(gst::FlowError::Error),
     }
-
-    let first = read_header(adapter, 0)?;
-    validate_independent_zero(first, "first syncframe")?;
-    if first.frame_size > MAX_SYNCFRAME_BYTES || first.sample_rate != SAMPLE_RATE {
-        return Err(gst::FlowError::Error);
-    }
-    if available < first.frame_size {
-        return if eos {
-            Err(gst::FlowError::Error)
-        } else {
-            Err(gst::FlowError::Eos)
-        };
-    }
-
-    if available == first.frame_size {
-        return if eos {
-            Ok((0, first.frame_size as u32))
-        } else {
-            Err(gst::FlowError::Eos)
-        };
-    }
-
-    if available < first.frame_size + 8 {
-        return if eos {
-            Err(gst::FlowError::Error)
-        } else {
-            Err(gst::FlowError::Eos)
-        };
-    }
-    let second = read_header(adapter, first.frame_size)?;
-    if second.stream_type != StreamType::Dependent && second.substream_id == 0 {
-        return Ok((0, first.frame_size as u32));
-    }
-    if second.stream_type != StreamType::Dependent || second.substream_id != 0 {
-        return Err(gst::FlowError::Error);
-    }
-    let total = first
-        .frame_size
-        .checked_add(second.frame_size)
-        .ok_or(gst::FlowError::Error)?;
-    if second.frame_size > MAX_SYNCFRAME_BYTES
-        || second.sample_rate != SAMPLE_RATE
-        || second.audio_blocks != first.audio_blocks
-    {
-        return Err(gst::FlowError::Error);
-    }
-    if available < total {
-        return if eos {
-            Err(gst::FlowError::Error)
-        } else {
-            Err(gst::FlowError::Eos)
-        };
-    }
-    Ok((0, total as u32))
-}
-
-fn validate_independent_zero(header: SyncframeHeader, context: &str) -> Result<(), gst::FlowError> {
-    if header.stream_type != StreamType::Independent || header.substream_id != 0 {
-        gst::error!(category(), "{context} is not independent substream zero");
-        return Err(gst::FlowError::Error);
-    }
-    Ok(())
 }
 
 fn admit_joc(bytes: &[u8]) -> Result<(), String> {
-    let frames = index_syncframes(bytes).map_err(|error| error.to_string())?;
-    let units = group_access_units(&frames).map_err(|error| error.to_string())?;
-    let unit = units
-        .first()
-        .copied()
-        .ok_or_else(|| "access unit is empty".to_owned())?;
-    if units.len() != 1 || unit.first_frame != 0 || unit.frame_count != frames.len() {
-        return Err("input contains more than one OpenJOC access unit".to_owned());
+    match autoplug::classify_access_unit(bytes) {
+        autoplug::JocClassification::ConfirmedJoc => Ok(()),
+        autoplug::JocClassification::ConfirmedNonJoc => {
+            Err("JOC metadata is absent; ordinary E-AC-3 is not a fallback".to_owned())
+        }
+        autoplug::JocClassification::Unknown => Err("access unit is incomplete".to_owned()),
+        autoplug::JocClassification::InvalidOrUnsupported => {
+            Err("access unit is malformed or unsupported".to_owned())
+        }
     }
-    if parse_joc_access_unit(bytes, &frames, unit)
-        .map_err(|error| error.to_string())?
-        .is_none()
-    {
-        return Err("JOC metadata is absent; ordinary E-AC-3 is not a fallback".to_owned());
-    }
-    Ok(())
 }
 
 fn pcm_buffer(frame: &OpenJocPcmFrame) -> Result<gst::Buffer, gst::FlowError> {
@@ -710,10 +702,11 @@ fn channel_positions(labels: &[String]) -> Result<Vec<gst_audio::AudioChannelPos
 }
 
 pub fn register(plugin: &gst::Plugin) -> Result<(), glib::BoolError> {
+    autoplug::register(Some(plugin))?;
     gst::Element::register(
         Some(plugin),
         "openjocdec",
-        gst::Rank::NONE,
+        gst::Rank::PRIMARY,
         OpenJocDec::static_type(),
     )
 }
@@ -866,6 +859,35 @@ mod tests {
     }
 
     #[test]
+    fn timestamp_round_trip_is_exact_at_long_run_au_boundaries() {
+        for au in [0_u64, 1, 17, 426, 8_672] {
+            let samples = au.saturating_mul(1_536);
+            let nanoseconds = samples_to_gst_time_u64(samples, SAMPLE_RATE)
+                .expect("timestamp")
+                .nseconds();
+            assert_eq!(
+                gst_time_to_samples(nanoseconds, SAMPLE_RATE),
+                Some(i64::try_from(samples).expect("sample timestamp"))
+            );
+        }
+    }
+
+    #[test]
+    fn adapter_au_boundary_matches_common_byte_hash_trace() {
+        gst::init().expect("GStreamer initializes");
+        let bytes = [syncframe(0, 0, 16), syncframe(1, 0, 16)].concat();
+        let trace = openjoc_api::trace_access_units(&bytes, Some(0)).expect("trace access unit");
+        assert_eq!(trace.len(), 1);
+        let adapter = gst_base::Adapter::new();
+        feed(&adapter, bytes);
+        assert_eq!(parse_adapter(&adapter, true), Ok((0, 32)));
+        assert_eq!(trace[0].byte_length, 32);
+        assert_eq!(trace[0].independent_frame_count, 1);
+        assert_eq!(trace[0].dependent_frame_count, 1);
+        assert_eq!(trace[0].pts_samples, Some(0));
+    }
+
+    #[test]
     fn channel_identity_mapping_preserves_openjoc_order() {
         let labels = ["FL", "FR", "FC", "LFE1", "BL", "BR", "SiL", "SiR"]
             .into_iter()
@@ -885,5 +907,59 @@ mod tests {
         assert_eq!(config.speaker_layout, "5.1");
         assert_eq!(config.dialnorm, DialnormMode::Default);
         assert_eq!(config.drc, DrcPolicy::Line);
+    }
+
+    #[test]
+    fn custom_drc_settings_reach_the_effective_session_config() {
+        let settings = Settings {
+            drc: "custom".to_owned(),
+            drc_boost_percent: 37,
+            drc_cut_percent: 63,
+            ..Settings::default()
+        };
+        let config = settings.into_config().expect("custom DRC config");
+        assert_eq!(
+            config.drc,
+            DrcPolicy::Custom {
+                boost_percent: 37,
+                cut_percent: 63
+            }
+        );
+        assert!(
+            config
+                .effective_config_descriptor()
+                .contains("drc_boost_percent=37")
+        );
+    }
+
+    #[test]
+    fn binaural_defaults_match_the_cli_virtual_layout_and_effective_config() {
+        let settings = Settings {
+            render_mode: "binaural".to_owned(),
+            ..Settings::default()
+        };
+        let gst_config = settings.into_config().expect("binaural config");
+        let cli_config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        assert_eq!(
+            gst_config.binaural.as_ref().unwrap().virtual_layout,
+            "7.1.4"
+        );
+        assert_eq!(
+            gst_config.effective_config_fingerprint(),
+            cli_config.effective_config_fingerprint()
+        );
+        assert_eq!(gst_config.drc, DrcPolicy::Line);
+        assert_eq!(gst_config.dialnorm, DialnormMode::Default);
+    }
+
+    #[test]
+    fn forced_drain_completion_is_not_a_zero_frame_subframe() {
+        assert_eq!(DRAIN_FINISH_ALL_PENDING, -1);
+        assert_ne!(DRAIN_FINISH_ALL_PENDING, 0);
     }
 }

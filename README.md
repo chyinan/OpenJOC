@@ -68,6 +68,9 @@ Read the canonical documentation:
 - [Third-party data notices](THIRD_PARTY_NOTICES.md) — SADIE II license, attribution, and citation.
 - [Library API](docs/LIBRARY_API.md) — headless Rust packet/session contract.
 - [C API](docs/C_API.md) — versioned C/C++ ABI and ownership rules.
+- [GStreamer integration](docs/integration/GSTREAMER.md) — experimental
+  automatic selection for admitted E-AC-3 JOC while ordinary E-AC-3 stays on
+  the normal decoder path.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
