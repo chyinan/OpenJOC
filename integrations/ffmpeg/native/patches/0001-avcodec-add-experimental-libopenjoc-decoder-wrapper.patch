@@ -1,0 +1,615 @@
+From 1a984d3bb8c1cb13d2477f6f4d6e272703fd984d Mon Sep 17 00:00:00 2001
+From: chyinan <chyinan2015@gmail.com>
+Date: Wed, 19 Aug 2026 23:40:38 +0800
+Subject: [PATCH] avcodec: add experimental libopenjoc decoder wrapper
+
+---
+ configure                  |   4 +
+ doc/decoders.texi          |  43 ++++
+ libavcodec/Makefile        |   1 +
+ libavcodec/allcodecs.c     |   3 +
+ libavcodec/libopenjocdec.c | 476 +++++++++++++++++++++++++++++++++++++
+ 5 files changed, 527 insertions(+)
+ create mode 100644 libavcodec/libopenjocdec.c
+
+diff --git a/configure b/configure
+index 374bd5c151..c1f032c8e8 100755
+--- a/configure
++++ b/configure
+@@ -257,6 +257,7 @@ External library support:
+   --enable-libopencore-amrwb enable AMR-WB decoding via libopencore-amrwb [no]
+   --enable-libopencv       enable video filtering via libopencv [no]
+   --enable-libopenh264     enable H.264 encoding via OpenH264 [no]
++  --enable-libopenjoc     enable E-AC-3 JOC decoding via OpenJOC [no]
+   --enable-libopenjpeg     enable JPEG 2000 encoding via OpenJPEG [no]
+   --enable-libopenmpt      enable decoding tracked files via libopenmpt [no]
+   --enable-libopencolorio  enable color management via OpenColorIO [no]
+@@ -2051,6 +2052,7 @@ EXTERNAL_LIBRARY_NONFREE_LIST="
+ EXTERNAL_LIBRARY_VERSION3_LIST="
+     gmp
+     libaribb24
++    libopenjoc
+     liblensfun
+     libopencore_amrnb
+     libopencore_amrwb
+@@ -3848,6 +3850,7 @@ libmodplug_demuxer_deps="libmodplug"
+ libmp3lame_encoder_deps="libmp3lame"
+ libmp3lame_encoder_select="audio_frame_queue mpegaudioheader"
+ libmpeghdec_decoder_deps="libmpeghdec"
++libopenjoc_decoder_deps="libopenjoc"
+ liboapv_encoder_deps="liboapv"
+ libopencore_amrnb_decoder_deps="libopencore_amrnb"
+ libopencore_amrnb_encoder_deps="libopencore_amrnb"
+@@ -7408,6 +7411,7 @@ enabled libopencv         && { check_pkg_config libopencv opencv4 opencv2/core/c
+                                require libopencv opencv2/core/core_c.h cvCreateImageHeader -lopencv_core -lopencv_imgproc; }
+ enabled libopencolorio    && require_pkg_config_cxx libopencolorio "OpenColorIO" OpenColorIO/OpenColorIO.h OCIO_NAMESPACE::Config
+ enabled libopenh264       && require_pkg_config libopenh264 "openh264 >= 1.3.0" wels/codec_api.h WelsGetCodecVersion
++enabled libopenjoc       && require_pkg_config libopenjoc "openjoc >= 0.7.0" openjoc.h openjoc_stream_decoder_create
+ enabled libopenjpeg       && { check_pkg_config libopenjpeg "libopenjp2 >= 2.1.0" openjpeg.h opj_version ||
+                                { require_pkg_config libopenjpeg "libopenjp2 >= 2.1.0" openjpeg.h opj_version -DOPJ_STATIC && add_cppflags -DOPJ_STATIC; } }
+ enabled libopenmpt        && require_pkg_config libopenmpt "libopenmpt >= 0.2.6557" libopenmpt/libopenmpt.h openmpt_module_create -lstdc++ && append libopenmpt_extralibs "-lstdc++"
+diff --git a/doc/decoders.texi b/doc/decoders.texi
+index c8177c15e7..8fea5f5e48 100644
+--- a/doc/decoders.texi
++++ b/doc/decoders.texi
+@@ -347,6 +347,49 @@ Requires the presence of the libmpeghdec headers and library during
+ configuration. You need to explicitly configure the build with
+ @code{--enable-libmpeghdec --enable-nonfree}.
+ 
++@section libopenjoc
++
++OpenJOC E-AC-3 JOC decoder wrapper.
++
++This experimental decoder requires OpenJOC C ABI 1.2 or newer and a build
++configured with @code{--enable-version3 --enable-libopenjoc}. It is selected
++explicitly by the decoder name @code{libopenjoc}; the ordinary @code{eac3}
++decoder remains the generic/default decoder for the E-AC-3 codec ID.
++
++Output is packed float32 at 48 kHz. The decoder reports OpenJOC's deterministic
++rendering delay through @code{AVCodecContext.delay} and preserves logical frame
++timestamps in a 1/48000 time base without pre-subtracting that delay.
++
++@subsection Options
++
++@table @option
++
++@item render_mode
++Choose @code{speaker} (default), @code{stereo}, or @code{binaural}.
++
++@item speaker_layout
++Set the physical render target. Common values include @code{2.0}, @code{5.1},
++@code{7.1.4}, @code{9.1.6}, and @code{22.2}. A two-channel physical target does
++not imply headphone rendering.
++
++@item virtual_layout
++Set the virtual speaker target for binaural rendering. The default is
++@code{7.1.4}.
++
++@item drc
++Choose @code{disabled}, @code{line} (default), @code{rf}, or @code{custom}.
++The @option{drc_boost} and @option{drc_cut} percentage options apply to custom
++DRC.
++
++@item dialnorm
++Choose @code{default} (recommended), @code{digital}, or @code{analog}.
++
++@item sofa
++Load a custom SOFA file for binaural rendering. If omitted, OpenJOC uses its
++built-in SADIE II D1 resource.
++
++@end table
++
+ @section libopencore-amrnb
+ 
+ libopencore-amrnb decoder wrapper.
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 95ba308504..8a48018005 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -1188,6 +1188,7 @@ OBJS-$(CONFIG_LIBLC3_ENCODER)             += liblc3enc.o
+ OBJS-$(CONFIG_LIBLC3_DECODER)             += liblc3dec.o
+ OBJS-$(CONFIG_LIBMP3LAME_ENCODER)         += libmp3lame.o
+ OBJS-$(CONFIG_LIBMPEGHDEC_DECODER)        += libmpeghdec.o
++OBJS-$(CONFIG_LIBOPENJOC_DECODER)         += libopenjocdec.o
+ OBJS-$(CONFIG_LIBOAPV_ENCODER)            += liboapvenc.o
+ OBJS-$(CONFIG_LIBOPENCORE_AMRNB_DECODER)  += libopencore-amr.o
+ OBJS-$(CONFIG_LIBOPENCORE_AMRNB_ENCODER)  += libopencore-amr.o
+diff --git a/libavcodec/allcodecs.c b/libavcodec/allcodecs.c
+index 47eded261f..1dd3e68c41 100644
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -791,6 +791,9 @@ extern const FFCodec ff_liblc3_encoder;
+ extern const FFCodec ff_liblc3_decoder;
+ extern const FFCodec ff_libmp3lame_encoder;
+ extern const FFCodec ff_libmpeghdec_decoder;
++/* Explicit JOC-only decoder. AV_CODEC_CAP_EXPERIMENTAL keeps generic E-AC-3
++ * discovery on the non-experimental stock decoder regardless of list order. */
++extern const FFCodec ff_libopenjoc_decoder;
+ extern const FFCodec ff_liboapv_encoder;
+ extern const FFCodec ff_libopencore_amrnb_encoder;
+ extern const FFCodec ff_libopencore_amrnb_decoder;
+diff --git a/libavcodec/libopenjocdec.c b/libavcodec/libopenjocdec.c
+new file mode 100644
+index 0000000000..3bf536b515
+--- /dev/null
++++ b/libavcodec/libopenjocdec.c
+@@ -0,0 +1,476 @@
++/*
++ * OpenJOC E-AC-3 JOC decoder wrapper
++ *
++ * Copyright (c) 2026 OpenJOC contributors
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <stddef.h>
++#include <stdint.h>
++#include <inttypes.h>
++#include <string.h>
++
++#include <openjoc.h>
++
++#include "libavutil/avstring.h"
++#include "libavutil/channel_layout.h"
++#include "libavutil/error.h"
++#include "libavutil/file.h"
++#include "libavutil/opt.h"
++#include "libavutil/rational.h"
++#include "libavutil/samplefmt.h"
++
++#include "avcodec.h"
++#include "codec_internal.h"
++#include "decode.h"
++
++typedef struct LibOpenJocContext {
++    const AVClass *class;
++
++    openjoc_stream_decoder *decoder;
++    char *speaker_layout;
++    char *virtual_layout;
++    char *sofa;
++    int render_mode;
++    int downmix;
++    int drc;
++    int drc_boost;
++    int drc_cut;
++    int dialnorm;
++    int validation_profile;
++    int lfe_policy;
++    int terminal_error;
++} LibOpenJocContext;
++
++static int libopenjoc_error(AVCodecContext *avctx, openjoc_status status,
++                            const char *operation)
++{
++    LibOpenJocContext *s = avctx->priv_data;
++    const char *detail = s->decoder ?
++        openjoc_stream_decoder_last_error(s->decoder) : NULL;
++
++    if (status != OPENJOC_STATUS_OUTPUT_PENDING &&
++        status != OPENJOC_STATUS_END_OF_STREAM)
++        s->terminal_error = 1;
++
++    if (status == OPENJOC_STATUS_NOT_JOC) {
++        av_log(avctx, AV_LOG_ERROR,
++               "OpenJOC rejected ordinary E-AC-3 input: the explicitly "
++               "selected libopenjoc decoder requires positively admitted JOC\n");
++        return AVERROR_INVALIDDATA;
++    }
++
++    if (detail && detail[0])
++        av_log(avctx, AV_LOG_ERROR, "%s failed: %s\n", operation, detail);
++    else
++        av_log(avctx, AV_LOG_ERROR, "%s failed with OpenJOC status %d\n",
++               operation, status);
++
++    switch (status) {
++    case OPENJOC_STATUS_INVALID_ARGUMENT:
++        return AVERROR(EINVAL);
++    case OPENJOC_STATUS_DECODE_ERROR:
++        return AVERROR_INVALIDDATA;
++    case OPENJOC_STATUS_UNSUPPORTED:
++        return AVERROR(ENOSYS);
++    case OPENJOC_STATUS_OUT_OF_MEMORY:
++        return AVERROR(ENOMEM);
++    case OPENJOC_STATUS_RENDER_ERROR:
++    case OPENJOC_STATUS_EXTERNAL_ERROR:
++        return AVERROR_EXTERNAL;
++    case OPENJOC_STATUS_FORMAT_CHANGED:
++    case OPENJOC_STATUS_REQUIRE_RESET:
++        return AVERROR_INPUT_CHANGED;
++    case OPENJOC_STATUS_OUTPUT_PENDING:
++        return AVERROR(EAGAIN);
++    case OPENJOC_STATUS_END_OF_STREAM:
++        return AVERROR_EOF;
++    default:
++        return AVERROR_EXTERNAL;
++    }
++}
++
++static int layout_matches_stream(const AVChannelLayout *layout,
++                                 const openjoc_stream_decoder *decoder,
++                                 unsigned int channels)
++{
++    if (layout->nb_channels != channels)
++        return 0;
++
++    for (unsigned int i = 0; i < channels; i++) {
++        const char *label = openjoc_stream_decoder_get_channel_label(decoder, i);
++        enum AVChannel expected;
++
++        if (!label)
++            return 0;
++        expected = av_channel_from_string(label);
++        if (expected == AV_CHAN_NONE ||
++            av_channel_layout_channel_from_index(layout, i) != expected)
++            return 0;
++    }
++    return 1;
++}
++
++static int libopenjoc_output_layout(AVCodecContext *avctx,
++                                    const openjoc_output_info *info,
++                                    AVChannelLayout *layout)
++{
++    LibOpenJocContext *s = avctx->priv_data;
++    int ret;
++
++    memset(layout, 0, sizeof(*layout));
++    if (info->layout_name &&
++        av_channel_layout_from_string(layout, info->layout_name) >= 0 &&
++        layout_matches_stream(layout, s->decoder, info->channel_count))
++        return 0;
++
++    av_channel_layout_uninit(layout);
++    ret = av_channel_layout_custom_init(layout, info->channel_count);
++    if (ret < 0)
++        return ret;
++
++    for (unsigned int i = 0; i < info->channel_count; i++) {
++        const char *label = openjoc_stream_decoder_get_channel_label(s->decoder, i);
++        enum AVChannel id;
++
++        if (!label) {
++            ret = AVERROR_INVALIDDATA;
++            goto fail;
++        }
++        id = av_channel_from_string(label);
++        if (id == AV_CHAN_NONE) {
++            av_log(avctx, AV_LOG_ERROR,
++                   "OpenJOC channel identity '%s' has no AVChannel mapping\n",
++                   label);
++            ret = AVERROR(ENOSYS);
++            goto fail;
++        }
++        layout->u.map[i].id = id;
++        av_strlcpy(layout->u.map[i].name, label,
++                   sizeof(layout->u.map[i].name));
++    }
++
++    if (!av_channel_layout_check(layout)) {
++        ret = AVERROR_INVALIDDATA;
++        goto fail;
++    }
++    return 0;
++
++fail:
++    av_channel_layout_uninit(layout);
++    return ret;
++}
++
++static av_cold int libopenjoc_init(AVCodecContext *avctx)
++{
++    LibOpenJocContext *s = avctx->priv_data;
++    openjoc_decoder_config config;
++    openjoc_output_info info;
++    AVChannelLayout layout = { 0 };
++    uint8_t *sofa_data = NULL;
++    size_t sofa_size = 0;
++    uint32_t abi_version;
++    openjoc_status status;
++    int ret;
++
++    abi_version = openjoc_get_abi_version();
++    if ((abi_version >> 16) != 1 || (abi_version & 0xffff) < 2) {
++        av_log(avctx, AV_LOG_ERROR,
++               "libopenjoc requires OpenJOC C ABI 1.2 or newer within major 1; "
++               "found %u.%u\n", abi_version >> 16, abi_version & 0xffff);
++        return AVERROR(ENOSYS);
++    }
++
++    status = openjoc_decoder_config_init(&config);
++    if (status != OPENJOC_STATUS_OK)
++        return libopenjoc_error(avctx, status, "configuration initialization");
++
++    config.render_mode       = s->render_mode;
++    config.speaker_layout    = s->speaker_layout;
++    config.virtual_layout    = s->virtual_layout;
++    config.downmix           = s->downmix;
++    config.drc               = s->drc;
++    config.drc_boost_percent = s->drc_boost;
++    config.drc_cut_percent   = s->drc_cut;
++    config.dialnorm_mode     = s->dialnorm;
++    config.validation_profile = s->validation_profile;
++    config.lfe_policy        = s->lfe_policy;
++
++    if (s->sofa && s->sofa[0]) {
++        ret = av_file_map(s->sofa, &sofa_data, &sofa_size, 0, avctx);
++        if (ret < 0)
++            return ret;
++        config.sofa_data = sofa_data;
++        config.sofa_size = sofa_size;
++    }
++
++    status = openjoc_stream_decoder_create(&config, &s->decoder);
++    av_file_unmap(sofa_data, sofa_size);
++    if (status != OPENJOC_STATUS_OK)
++        return libopenjoc_error(avctx, status, "decoder creation");
++
++    status = openjoc_output_info_init(&info);
++    if (status == OPENJOC_STATUS_OK)
++        status = openjoc_stream_decoder_get_output_info(s->decoder, &info);
++    if (status != OPENJOC_STATUS_OK)
++        return libopenjoc_error(avctx, status, "output configuration");
++
++    if (info.sample_format != 1 || info.sample_rate != 48000 ||
++        !info.channel_count) {
++        av_log(avctx, AV_LOG_ERROR,
++               "OpenJOC returned unsupported output shape: format=%u rate=%u channels=%u\n",
++               info.sample_format, info.sample_rate, info.channel_count);
++        return AVERROR(ENOSYS);
++    }
++
++    ret = libopenjoc_output_layout(avctx, &info, &layout);
++    if (ret < 0)
++        return ret;
++
++    av_channel_layout_uninit(&avctx->ch_layout);
++    avctx->ch_layout = layout;
++    avctx->sample_fmt = AV_SAMPLE_FMT_FLT;
++    avctx->sample_rate = 48000;
++    avctx->delay = info.latency_samples;
++
++    av_log(avctx, AV_LOG_VERBOSE,
++           "OpenJOC config %s (fingerprint %s), delay %d samples\n",
++           openjoc_stream_decoder_get_config_descriptor(s->decoder),
++           openjoc_stream_decoder_get_config_fingerprint(s->decoder),
++           avctx->delay);
++    return 0;
++}
++
++static av_cold int libopenjoc_close(AVCodecContext *avctx)
++{
++    LibOpenJocContext *s = avctx->priv_data;
++
++    openjoc_stream_decoder_destroy(s->decoder);
++    s->decoder = NULL;
++    return 0;
++}
++
++static int libopenjoc_output_frame(AVCodecContext *avctx, AVFrame *frame,
++                                   const openjoc_pcm_frame *pcm)
++{
++    const AVRational sample_time_base = { 1, 48000 };
++    AVRational output_time_base = avctx->pkt_timebase.num &&
++                                  avctx->pkt_timebase.den ?
++                                  avctx->pkt_timebase : sample_time_base;
++    size_t expected_samples;
++    int ret;
++
++    if (pcm->sample_format != 1 || pcm->sample_rate != 48000 ||
++        pcm->channel_count != avctx->ch_layout.nb_channels ||
++        pcm->sample_count > INT_MAX)
++        return AVERROR_INVALIDDATA;
++
++    if (pcm->sample_count > SIZE_MAX / pcm->channel_count)
++        return AVERROR_INVALIDDATA;
++    expected_samples = pcm->sample_count * (size_t)pcm->channel_count;
++    if (!pcm->data || pcm->data_len != expected_samples ||
++        expected_samples > SIZE_MAX / sizeof(*pcm->data))
++        return AVERROR_INVALIDDATA;
++
++    frame->format = AV_SAMPLE_FMT_FLT;
++    frame->sample_rate = 48000;
++    frame->nb_samples = pcm->sample_count;
++    ret = av_channel_layout_copy(&frame->ch_layout, &avctx->ch_layout);
++    if (ret < 0)
++        return ret;
++    ret = ff_get_buffer(avctx, frame, 0);
++    if (ret < 0)
++        return ret;
++
++    memcpy(frame->data[0], pcm->data, expected_samples * sizeof(*pcm->data));
++
++    /* ff_get_buffer() propagates packet properties. OpenJOC owns the logical
++     * sample timeline, so install its exact values after allocation without
++     * latency pre-subtraction; avctx->delay reports that fact separately. */
++    frame->pts = pcm->pts_samples == OPENJOC_NO_PTS ? AV_NOPTS_VALUE :
++                 av_rescale_q(pcm->pts_samples, sample_time_base,
++                              output_time_base);
++    frame->pkt_dts = AV_NOPTS_VALUE;
++    frame->time_base = output_time_base;
++    frame->duration = av_rescale_q(pcm->sample_count, sample_time_base,
++                                   output_time_base);
++    return 0;
++}
++
++static int libopenjoc_receive_frame(AVCodecContext *avctx, AVFrame *frame)
++{
++    LibOpenJocContext *s = avctx->priv_data;
++    openjoc_pcm_frame pcm;
++    openjoc_status status;
++    int ret;
++
++    if (s->terminal_error)
++        return AVERROR_EOF;
++
++    for (;;) {
++        status = openjoc_pcm_frame_init(&pcm);
++        if (status != OPENJOC_STATUS_OK)
++            return libopenjoc_error(avctx, status, "PCM descriptor initialization");
++
++        status = openjoc_stream_decoder_receive_frame(s->decoder, &pcm);
++        if (status == OPENJOC_STATUS_FRAME_AVAILABLE)
++            return libopenjoc_output_frame(avctx, frame, &pcm);
++        if (status == OPENJOC_STATUS_END_OF_STREAM)
++            return AVERROR_EOF;
++        if (status == OPENJOC_STATUS_NOT_JOC)
++            return libopenjoc_error(avctx, status, "JOC admission");
++        if (status != OPENJOC_STATUS_NEED_MORE_INPUT)
++            return libopenjoc_error(avctx, status, "frame receive");
++
++        AVPacket pkt = { 0 };
++        int64_t pts_samples = OPENJOC_NO_PTS;
++
++        ret = ff_decode_get_packet(avctx, &pkt);
++        if (ret == AVERROR_EOF) {
++            status = openjoc_stream_decoder_drain(s->decoder);
++            av_packet_unref(&pkt);
++            if (status == OPENJOC_STATUS_FRAME_AVAILABLE ||
++                status == OPENJOC_STATUS_OUTPUT_PENDING)
++                continue;
++            if (status == OPENJOC_STATUS_END_OF_STREAM)
++                return AVERROR_EOF;
++            return libopenjoc_error(avctx, status, "stream drain");
++        }
++        if (ret < 0) {
++            av_packet_unref(&pkt);
++            return ret;
++        }
++
++        if (pkt.pts != AV_NOPTS_VALUE) {
++            if (!avctx->pkt_timebase.num || !avctx->pkt_timebase.den) {
++                av_log(avctx, AV_LOG_ERROR,
++                       "cannot convert packet PTS without AVCodecContext.pkt_timebase\n");
++                av_packet_unref(&pkt);
++                return AVERROR(EINVAL);
++            }
++            pts_samples = av_rescale_q_rnd(pkt.pts, avctx->pkt_timebase,
++                                            (AVRational){ 1, 48000 },
++                                            AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX);
++        }
++
++        status = openjoc_stream_decoder_send_chunk(s->decoder, pkt.data,
++                                                    pkt.size, pts_samples, 0);
++        av_log(avctx, AV_LOG_DEBUG,
++               "OpenJOC consumed compressed chunk size=%d pts_samples=%"PRId64
++               " status=%d staged=%zu\n", pkt.size, pts_samples, status,
++               openjoc_stream_decoder_get_staged_bytes(s->decoder));
++        av_packet_unref(&pkt);
++        if (status == OPENJOC_STATUS_FRAME_AVAILABLE ||
++            status == OPENJOC_STATUS_NEED_MORE_INPUT)
++            continue;
++        if (status == OPENJOC_STATUS_NOT_JOC)
++            return libopenjoc_error(avctx, status, "JOC admission");
++        return libopenjoc_error(avctx, status, "compressed input");
++    }
++}
++
++static void libopenjoc_flush(AVCodecContext *avctx)
++{
++    LibOpenJocContext *s = avctx->priv_data;
++    openjoc_status status;
++
++    if (!s->decoder)
++        return;
++    s->terminal_error = 0;
++    status = openjoc_stream_decoder_flush(s->decoder);
++    if (status != OPENJOC_STATUS_OK)
++        libopenjoc_error(avctx, status, "flush");
++}
++
++#define OFFSET(x) offsetof(LibOpenJocContext, x)
++#define AD AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_DECODING_PARAM
++
++static const AVOption libopenjoc_options[] = {
++    { "render_mode", "Select physical speaker, stereo, or binaural rendering",
++      OFFSET(render_mode), AV_OPT_TYPE_INT, { .i64 = OPENJOC_RENDER_SPEAKER },
++      OPENJOC_RENDER_SPEAKER, OPENJOC_RENDER_BINAURAL, AD, .unit = "render_mode" },
++    { "speaker",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_RENDER_SPEAKER }, 0, 0, AD, .unit = "render_mode" },
++    { "stereo",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_RENDER_STEREO },  0, 0, AD, .unit = "render_mode" },
++    { "binaural", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_RENDER_BINAURAL }, 0, 0, AD, .unit = "render_mode" },
++    { "speaker_layout", "Physical speaker target (for example 2.0, 5.1, 7.1.4, 9.1.6, or 22.2)",
++      OFFSET(speaker_layout), AV_OPT_TYPE_STRING, { .str = "5.1" }, 0, 0, AD },
++    { "virtual_layout", "Virtual speaker target used by binaural rendering",
++      OFFSET(virtual_layout), AV_OPT_TYPE_STRING, { .str = "7.1.4" }, 0, 0, AD },
++    { "downmix", "Select encoded downmix policy", OFFSET(downmix), AV_OPT_TYPE_INT,
++      { .i64 = OPENJOC_DOWNMIX_AUTO }, OPENJOC_DOWNMIX_AUTO, OPENJOC_DOWNMIX_LTRT,
++      AD, .unit = "downmix" },
++    { "auto", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DOWNMIX_AUTO }, 0, 0, AD, .unit = "downmix" },
++    { "loro", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DOWNMIX_LORO }, 0, 0, AD, .unit = "downmix" },
++    { "ltrt", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DOWNMIX_LTRT }, 0, 0, AD, .unit = "downmix" },
++    { "drc", "Select OpenJOC dynamic-range policy", OFFSET(drc), AV_OPT_TYPE_INT,
++      { .i64 = OPENJOC_DRC_LINE }, OPENJOC_DRC_DISABLED, OPENJOC_DRC_CUSTOM,
++      AD, .unit = "drc" },
++    { "disabled", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DRC_DISABLED }, 0, 0, AD, .unit = "drc" },
++    { "line",     NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DRC_LINE },     0, 0, AD, .unit = "drc" },
++    { "rf",       NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DRC_RF },       0, 0, AD, .unit = "drc" },
++    { "custom",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DRC_CUSTOM },   0, 0, AD, .unit = "drc" },
++    { "drc_boost", "Custom DRC boost percentage", OFFSET(drc_boost), AV_OPT_TYPE_INT,
++      { .i64 = 100 }, 0, 100, AD },
++    { "drc_cut", "Custom DRC cut percentage", OFFSET(drc_cut), AV_OPT_TYPE_INT,
++      { .i64 = 100 }, 0, 100, AD },
++    { "dialnorm", "Select dialog-normalization policy", OFFSET(dialnorm), AV_OPT_TYPE_INT,
++      { .i64 = OPENJOC_DIALNORM_DEFAULT }, OPENJOC_DIALNORM_DEFAULT,
++      OPENJOC_DIALNORM_ANALOG, AD, .unit = "dialnorm" },
++    { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DIALNORM_DEFAULT }, 0, 0, AD, .unit = "dialnorm" },
++    { "digital", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DIALNORM_DIGITAL }, 0, 0, AD, .unit = "dialnorm" },
++    { "analog",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_DIALNORM_ANALOG },  0, 0, AD, .unit = "dialnorm" },
++    { "validation", "Select JOC validation profile", OFFSET(validation_profile), AV_OPT_TYPE_INT,
++      { .i64 = OPENJOC_VALIDATION_AUTO }, OPENJOC_VALIDATION_AUTO,
++      OPENJOC_VALIDATION_OBSERVED_VENDOR_COMPAT, AD, .unit = "validation" },
++    { "auto",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_VALIDATION_AUTO }, 0, 0, AD, .unit = "validation" },
++    { "strict", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_VALIDATION_ETSI_STRICT }, 0, 0, AD, .unit = "validation" },
++    { "vendor", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_VALIDATION_OBSERVED_VENDOR_COMPAT }, 0, 0, AD, .unit = "validation" },
++    { "sofa", "Optional custom SOFA file; empty uses built-in SADIE II D1",
++      OFFSET(sofa), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, AD },
++    { "binaural_lfe", "Select binaural LFE policy", OFFSET(lfe_policy), AV_OPT_TYPE_INT,
++      { .i64 = OPENJOC_LFE_EXCLUDE }, OPENJOC_LFE_EXCLUDE,
++      OPENJOC_LFE_EQUAL_POWER_DUAL_MONO, AD, .unit = "binaural_lfe" },
++    { "exclude", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_LFE_EXCLUDE }, 0, 0, AD, .unit = "binaural_lfe" },
++    { "dual_mono", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_LFE_EQUAL_POWER_DUAL_MONO }, 0, 0, AD, .unit = "binaural_lfe" },
++    { NULL }
++};
++
++static const AVClass libopenjoc_class = {
++    .class_name = "libopenjoc decoder",
++    .item_name  = av_default_item_name,
++    .option     = libopenjoc_options,
++    .version    = LIBAVUTIL_VERSION_INT,
++};
++
++const FFCodec ff_libopenjoc_decoder = {
++    .p.name         = "libopenjoc",
++    CODEC_LONG_NAME("OpenJOC E-AC-3 JOC decoder"),
++    .p.type         = AVMEDIA_TYPE_AUDIO,
++    .p.id           = AV_CODEC_ID_EAC3,
++    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_DR1 |
++                      AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_EXPERIMENTAL,
++    .p.priv_class   = &libopenjoc_class,
++    .p.wrapper_name = "libopenjoc",
++    .priv_data_size = sizeof(LibOpenJocContext),
++    .init           = libopenjoc_init,
++    .close          = libopenjoc_close,
++    .flush          = libopenjoc_flush,
++    FF_CODEC_RECEIVE_FRAME_CB(libopenjoc_receive_frame),
++    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_FLT),
++    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
++};
+-- 
+2.47.1
+

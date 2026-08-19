@@ -1439,6 +1439,19 @@ mod tests {
         five_channel_audio_frame(&joc_emdf(&inactive_oamd(), &one_object_joc()), true)
     }
 
+    #[test]
+    fn export_synthetic_joc_fixture_when_requested() {
+        let Some(path) = std::env::var_os("OPENJOC_SYNTHETIC_JOC_PATH") else {
+            return;
+        };
+        let frame = synthetic_joc_frame();
+        let mut stream = Vec::with_capacity(frame.len() * 8);
+        for _ in 0..8 {
+            stream.extend_from_slice(&frame);
+        }
+        std::fs::write(path, stream).expect("write requested synthetic JOC fixture");
+    }
+
     fn huffman_codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {
         fn visit(nodes: &[[i16; 2]], node: usize, wanted: u16, path: &mut Vec<bool>) -> bool {
             for branch in 0..2 {
