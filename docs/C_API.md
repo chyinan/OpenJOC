@@ -54,9 +54,22 @@ the output/frame descriptors. The canonical PCM sample format value is `1`
 
 The C adapter inherits the shared session's calibrated Default E-AC-3 dialnorm
 program calibration unless `dialnorm_mode` is explicitly set to
-`OPENJOC_DIALNORM_DIGITAL` or `OPENJOC_DIALNORM_ANALOG`. Dialnorm is
-metadata-derived and separate from the existing DRC fields. The C ABI is a
-streaming PCM interface and does not perform two-pass file peak normalization.
+`OPENJOC_DIALNORM_DIGITAL` or `OPENJOC_DIALNORM_ANALOG`. Default is recommended
+for normal playback/decoding. Digital explicitly selects encoded digital
+program-level calibration. Analog uses unity dialnorm gain and is an advanced
+compatibility/diagnostic policy, not a recommended louder-output or mastering
+mode. Dialnorm is metadata-derived and separate from the existing DRC fields;
+DRC changes encoded dynamic-range behavior. FinalLinkedGain is internal
+renderer headroom behavior, not a user mastering control.
+
+The C ABI is a streaming PCM interface and does not perform file-export peak
+normalization or spool a complete program for a file-level transform.
+Applications may apply their own final static gain policy after receiving PCM.
+The CLI's
+`--normalize-peak` is an offline file-output convenience: it normalizes the
+final rendered file to a requested sample peak after decoder and renderer
+processing, and is not dialnorm, DRC, a limiter, compressor, LUFS, or true-peak
+normalization.
 
 ## Failure containment
 

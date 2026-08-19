@@ -26,6 +26,12 @@ bit-identical Reference Player output.
   dialnorm. OpenJOC's automatic Default dialnorm policy applies the supported
   E-AC-3 metadata-derived calibrated program scalar; this is not content-
   dependent LUFS/peak normalization, a signal-level compressor, or a limiter.
+- Calibrated dialnorm can request substantial attenuation for some programs;
+  a lower absolute offline file level is not by itself a decoder bug. When a
+  conveniently loud offline file is wanted, use optional post-render
+  `--normalize-peak TARGET_DBFS`. `--dialnorm analog` remains available as an
+  advanced unity-dialnorm compatibility/diagnostic policy, not as the default
+  louder-output workflow.
 - The admitted `2.0` speaker output uses the generic two-speaker projector for
   reconstructed/object coordinates and public ETSI Lo/Ro/Lt/Rt matrices for
   supported 5.1 Base channels. Optional E-AC-3 LFE metadata may fold LFE into

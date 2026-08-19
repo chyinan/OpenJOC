@@ -329,8 +329,11 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
             "--drc controls encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
-            "--dialnorm selects decoder/program calibration; it is separate from DRC. Default is calibrated digital behavior.\n",
-            "--normalize-peak is optional post-render sample-peak gain for file output only; it is not part of decoding or true-peak analysis.\n",
+            "--dialnorm default uses calibrated default behavior and is recommended for normal playback/decoding.\n",
+            "--dialnorm digital applies encoded digital program-level calibration.\n",
+            "--dialnorm analog uses unity dialnorm gain; advanced compatibility/diagnostic policy. Hot material may drive downstream headroom processing more heavily.\n",
+            "--normalize-peak TARGET_DBFS normalizes the final rendered file to the requested sample peak after decoder, renderer, and FinalLinkedGain processing. It is optional, file-output only, one static linked gain before file encoding, and not DRC, dialnorm, a limiter, compressor, LUFS, or true-peak normalization.\n",
+            "Recommended convenient offline workflow: omit --dialnorm (default) and add --normalize-peak -0.1 when you want a hotter file. Do not choose analog merely because it is louder.\n",
             "SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
@@ -1628,103 +1631,27 @@ trait PcmBlockSink {
     ) -> Result<(), joc_render::JocRenderError>;
 
     fn frames(&self) -> u64;
-
-    fn fingerprint(&self) -> u64;
 }
 
-struct PeakBlockSink {
-    peak: f64,
-    frames: u64,
-    fingerprint: u64,
+struct IntermediateBlockSink<'a> {
+    intermediate: &'a mut joc_render::PcmIntermediateWriter,
 }
 
-impl PeakBlockSink {
-    fn new() -> Self {
-        Self {
-            peak: 0.0,
-            frames: 0,
-            fingerprint: 0xcbf2_9ce4_8422_2325,
-        }
-    }
-}
-
-impl PcmBlockSink for PeakBlockSink {
+impl PcmBlockSink for IntermediateBlockSink<'_> {
     fn consume(
         &mut self,
         block: &joc_render::RenderedBlock,
     ) -> Result<(), joc_render::JocRenderError> {
-        self.peak = self
-            .peak
-            .max(joc_render::PeakNormalization::sample_peak(block)?);
-        self.frames = self
-            .frames
-            .checked_add(
-                u64::try_from(block.channels.first().map_or(0, Vec::len))
-                    .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
-            )
-            .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
-        self.fingerprint = update_pcm_fingerprint(self.fingerprint, block);
-        Ok(())
+        self.intermediate.write_block(block)
     }
 
     fn frames(&self) -> u64 {
-        self.frames
+        self.intermediate.frames()
     }
-
-    fn fingerprint(&self) -> u64 {
-        self.fingerprint
-    }
-}
-
-struct OutputBlockSink<'a> {
-    output: &'a mut joc_render::JocPcmOutput,
-    gain: f64,
-    frames: u64,
-    fingerprint: u64,
-}
-
-impl PcmBlockSink for OutputBlockSink<'_> {
-    fn consume(
-        &mut self,
-        block: &joc_render::RenderedBlock,
-    ) -> Result<(), joc_render::JocRenderError> {
-        let mut normalized = block.clone();
-        joc_render::PeakNormalization::apply(&mut normalized, self.gain)?;
-        self.output.write_block(&normalized)?;
-        self.frames = self
-            .frames
-            .checked_add(
-                u64::try_from(normalized.channels.first().map_or(0, Vec::len))
-                    .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
-            )
-            .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
-        self.fingerprint = update_pcm_fingerprint(self.fingerprint, block);
-        Ok(())
-    }
-
-    fn frames(&self) -> u64 {
-        self.frames
-    }
-
-    fn fingerprint(&self) -> u64 {
-        self.fingerprint
-    }
-}
-
-fn update_pcm_fingerprint(mut fingerprint: u64, block: &joc_render::RenderedBlock) -> u64 {
-    for channel in &block.channels {
-        fingerprint = fingerprint.wrapping_mul(0x1000_0000_01b3) ^ channel.len() as u64;
-        for &sample in channel {
-            fingerprint = fingerprint.wrapping_mul(0x1000_0000_01b3) ^ sample.to_bits();
-        }
-    }
-    fingerprint
 }
 
 struct LegacyPassReport {
     diagnostics: String,
-    frames: u64,
-    fingerprint: u64,
     decode_timing: performance::DecodeStageTiming,
     render_timing: performance::RenderStageTiming,
 }
@@ -1814,18 +1741,18 @@ fn run_legacy_render_pass(
                 channels: vec![block.left, block.right],
             })?;
         }
-        let diagnostics = renderer.diagnostics(
+        let diagnostics = renderer.diagnostics_with_output(
             sofa_path,
             arguments.validation_profile,
             selected_profile,
             &summary,
             &arguments.output,
             arguments.output_format,
+            arguments.dialnorm,
+            sink.frames(),
         );
         Ok(LegacyPassReport {
             diagnostics,
-            frames: sink.frames(),
-            fingerprint: sink.fingerprint(),
             decode_timing,
             render_timing,
         })
@@ -1889,17 +1816,18 @@ fn run_legacy_render_pass(
         for block in tail {
             sink.consume(&block)?;
         }
-        let diagnostics = renderer.diagnostics(
+        let diagnostics = renderer.diagnostics_with_output(
             &arguments.layout,
             arguments.validation_profile,
             selected_profile,
             &summary,
             &arguments.output,
+            arguments.output_format,
+            arguments.dialnorm,
+            sink.frames(),
         );
         Ok(LegacyPassReport {
             diagnostics,
-            frames: sink.frames(),
-            fingerprint: sink.fingerprint(),
             decode_timing,
             render_timing,
         })
@@ -1936,46 +1864,43 @@ fn render_joc_with_peak_normalization(
     }
 
     if progress_enabled {
-        eprintln!("Pass 1/2: analyzing final sample peak");
+        eprintln!("Rendering and analyzing final sample peak");
     }
-    let mut pass1_progress = progress::ProgressReporter::new(
+    let mut render_progress = progress::ProgressReporter::new(
         progress_enabled,
         &arguments.layout,
         timing.access_units,
         timing.samples,
         timing.sample_rate,
     );
-    let mut analyzer = PeakBlockSink::new();
-    let pass1_started = std::time::Instant::now();
-    let pass1 = run_legacy_render_pass(
-        arguments,
-        stream,
-        config,
-        selected_profile,
-        &mut analyzer,
-        &mut pass1_progress,
-        performance.is_some(),
-    );
-    pass1_progress.finish();
-    let pass1 = pass1.map_err(|error| {
+    let mut intermediate = joc_render::PcmIntermediateWriter::new(&arguments.output)?;
+    let render_started = std::time::Instant::now();
+    let render_pass = {
+        let mut sink = IntermediateBlockSink {
+            intermediate: &mut intermediate,
+        };
+        run_legacy_render_pass(
+            arguments,
+            stream,
+            config,
+            selected_profile,
+            &mut sink,
+            &mut render_progress,
+            performance.is_some(),
+        )
+    };
+    render_progress.finish();
+    let render_pass = render_pass.map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("first-pass peak analysis/render failure: {error}"),
+            format!("render/peak-analysis failure: {error}"),
         )
     })?;
-    let gain = normalization.gain_for_peak(analyzer.peak)?;
-    let pass1_elapsed = pass1_started.elapsed();
+    let peak = intermediate.peak();
+    let gain = normalization.gain_for_peak(peak)?;
+    let render_elapsed = render_started.elapsed();
+    let mut intermediate = intermediate.finish()?;
 
-    if progress_enabled {
-        eprintln!("Pass 2/2: rendering output");
-    }
-    let mut pass2_progress = progress::ProgressReporter::new(
-        progress_enabled,
-        &arguments.layout,
-        timing.access_units,
-        timing.samples,
-        timing.sample_rate,
-    );
     let mut output = if arguments.binaural_sofa.is_some() {
         joc_render::JocPcmOutput::new_for_binaural(
             &arguments.output,
@@ -1991,63 +1916,32 @@ fn render_joc_with_peak_normalization(
             &layout,
         )?
     };
-    let pass2_started = std::time::Instant::now();
-    let pass2 = {
-        let mut writer = OutputBlockSink {
-            output: &mut output,
-            gain,
-            frames: 0,
-            fingerprint: 0xcbf2_9ce4_8422_2325,
-        };
-        run_legacy_render_pass(
-            arguments,
-            stream,
-            config,
-            selected_profile,
-            &mut writer,
-            &mut pass2_progress,
-            performance.is_some(),
-        )
-    };
-    pass2_progress.finish();
-    let pass2 = match pass2 {
-        Ok(pass) => pass,
-        Err(error) => {
-            output.abort();
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("second-pass render/writer failure: {error}"),
+    let postprocess_started = std::time::Instant::now();
+    let mut output_frames = 0_u64;
+    while let Some(mut block) = intermediate.read_block()? {
+        joc_render::PeakNormalization::apply(&mut block, gain)?;
+        output.write_block(&block)?;
+        output_frames = output_frames
+            .checked_add(
+                u64::try_from(block.channels.first().map_or(0, Vec::len))
+                    .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
             )
-            .into());
-        }
-    };
-    if pass1.frames != pass2.frames || pass1.fingerprint != pass2.fingerprint {
-        output.abort();
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "two-pass render was not deterministic (pass 1: {} frames/{:016x}, pass 2: {} frames/{:016x})",
-                pass1.frames, pass1.fingerprint, pass2.frames, pass2.fingerprint
-            ),
-        )
-        .into());
+            .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
     }
-    let pass2_elapsed = pass2_started.elapsed();
-    let output_frames = output.frames();
+    let postprocess_elapsed = postprocess_started.elapsed();
     if let Err(error) = output.finish() {
         output.abort();
         return Err(error.into());
     }
     if let Some(report) = performance.as_mut() {
-        report.merge_decode(pass1.decode_timing);
-        report.merge_decode(pass2.decode_timing);
-        report.merge_render(&pass1.render_timing);
-        report.merge_render(&pass2.render_timing);
+        report.merge_decode(render_pass.decode_timing);
+        report.merge_render(&render_pass.render_timing);
+        report.output_conversion_wav_write += postprocess_elapsed;
         report.output_frames = output_frames;
         report.output_bytes = fs::metadata(&arguments.output)?.len();
-        report.progress_enabled = pass2_progress.enabled();
-        report.progress_updates = pass1_progress.updates() + pass2_progress.updates();
-        report.progress_overhead = pass1_progress.overhead() + pass2_progress.overhead();
+        report.progress_enabled = render_progress.enabled();
+        report.progress_updates = render_progress.updates();
+        report.progress_overhead = render_progress.overhead();
         performance::write_report(
             arguments
                 .performance_report
@@ -2060,20 +1954,20 @@ fn render_joc_with_peak_normalization(
             overwrite_authorized,
         )?;
     }
-    let peak_dbfs = if analyzer.peak == 0.0 {
+    let peak_dbfs = if peak == 0.0 {
         f64::NEG_INFINITY
     } else {
-        20.0 * analyzer.peak.log10()
+        20.0 * peak.log10()
     };
     println!(
-        "{}\npost-render sample-peak normalization: target={:.3} dBFS peak={:.3} dBFS gain={:.9} (pass1={:.3}s pass2={:.3}s total={:.3}s)",
-        pass2.diagnostics,
+        "{}\npost-render sample-peak normalization:\ntarget: {:.3} dBFS\nmeasured pre-normalization peak: {:.3} dBFS\ngain: {:.9}\nanalysis/render/postprocess timing: render={:.3}s postprocess={:.3}s total={:.3}s",
+        render_pass.diagnostics,
         normalization.target_dbfs(),
         peak_dbfs,
         gain,
-        pass1_elapsed.as_secs_f64(),
-        pass2_elapsed.as_secs_f64(),
-        (pass1_elapsed + pass2_elapsed).as_secs_f64(),
+        render_elapsed.as_secs_f64(),
+        postprocess_elapsed.as_secs_f64(),
+        (render_elapsed + postprocess_elapsed).as_secs_f64(),
     );
     Ok(())
 }
@@ -2278,13 +2172,15 @@ fn render_joc(
                 }
                 println!(
                     "{}",
-                    renderer.diagnostics(
+                    renderer.diagnostics_with_output(
                         sofa_path,
                         arguments.validation_profile,
                         selected_profile,
                         &summary,
                         &arguments.output,
                         arguments.output_format,
+                        arguments.dialnorm,
+                        output_frames,
                     )
                 );
                 Ok(())
@@ -2332,7 +2228,6 @@ fn render_joc(
             overwrite_authorized,
             &semantic_layout,
         )?;
-        let output_container = output.container().name();
         let mut decode_timing = performance::DecodeStageTiming::new(performance.is_some());
         let mut render_timing = performance::RenderStageTiming::default();
         let dither = deterministic_dither_values();
@@ -2415,21 +2310,17 @@ fn render_joc(
                     )?;
                 }
                 println!(
-                    "{}\noutput container: {}\noutput format: {}",
-                    renderer.diagnostics(
+                    "{}",
+                    renderer.diagnostics_with_output(
                         &arguments.layout,
                         arguments.validation_profile,
                         selected_profile,
                         &summary,
                         &arguments.output,
-                    ),
-                    output_container,
-                    match arguments.output_format {
-                        SampleFormat::F32 => "IEEE float32",
-                        SampleFormat::F64 => "IEEE float64",
-                        SampleFormat::S24 => "signed PCM24",
-                        SampleFormat::S16 => "signed PCM16",
-                    }
+                        arguments.output_format,
+                        arguments.dialnorm,
+                        output_frames,
+                    )
                 );
                 Ok(())
             }
@@ -2454,6 +2345,15 @@ fn render_joc_with_embedded_session(
     let frames = openjoc_eac3::index_syncframes(stream)?;
     let units = openjoc_eac3::group_access_units(&frames)?;
     let timing = eac3_decode::stream_timing(stream)?;
+    let decode_config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
+    };
+    let selected_profile = eac3_decode::resolve_profile_for_stream(
+        stream,
+        decode_config,
+        arguments.validation_profile,
+    )?;
     let render_mode = if arguments.layout == "2.0" {
         ApiRenderMode::Stereo
     } else {
@@ -2506,6 +2406,7 @@ fn render_joc_with_embedded_session(
         overwrite_authorized,
         &semantic_layout,
     )?;
+    let output_container = output.container().name().to_owned();
     let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
     let mut progress = progress::ProgressReporter::new(
         progress_enabled,
@@ -2537,15 +2438,37 @@ fn render_joc_with_embedded_session(
         }
         let _ = session.drain()?;
         write_embedded_session_frames(&mut session, &mut output)?;
+        let output_frames = output.frames();
         output.finish()?;
         progress.finish();
-        println!(
-            "embedded OpenJOC session: layout={} channels={} latency={} samples output_frames={}",
-            arguments.layout,
-            semantic_layout.channel_count(),
-            session.latency_samples(),
-            output.frames()
-        );
+        let presentation = joc_render::RenderSummaryPresentation {
+            requested_layout: arguments.layout.clone(),
+            selected_layout: semantic_layout.name.clone(),
+            output_layout: format!("Speaker layout ({})", semantic_layout.name),
+            channel_count: semantic_layout.channel_count(),
+            lfe_index: semantic_layout.lfe_index,
+            dialnorm_policy: joc_render::dialnorm_policy_name(arguments.dialnorm).to_owned(),
+            downmix_policy: arguments
+                .downmix_policy
+                .unwrap_or_default()
+                .as_str()
+                .to_owned(),
+            requested_profile: arguments.validation_profile.as_str().to_owned(),
+            selected_profile: selected_profile.as_str().to_owned(),
+            compatibility_deviations: "not exposed by OpenJocSession".to_owned(),
+            qmf_latency_samples: openjoc_api::QMF_LATENCY_SAMPLES,
+            total_latency_samples: session.latency_samples(),
+            output: arguments.output.clone(),
+            sample_rate: timing.sample_rate,
+            output_frames,
+            output_samples: output_frames.saturating_mul(semantic_layout.channel_count() as u64),
+            output_channel_order: semantic_layout.labels.join(", "),
+            speaker_identities: semantic_layout.labels.join(", "),
+            output_container,
+            output_format: joc_render::sample_format_name(arguments.output_format).to_owned(),
+            extra: vec!["render session: OpenJocSession".to_owned()],
+        };
+        println!("{}", joc_render::format_render_summary(&presentation));
         Ok(())
     })();
     if result.is_err() {

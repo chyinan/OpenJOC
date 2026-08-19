@@ -114,14 +114,18 @@ openjoc inspect input.ec3
 openjoc decode input.ec3 -o output/ --internal-base
 openjoc decode input.mp4 -o output/ --internal-base --streaming
 openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
-openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
-openjoc render-joc input.m4a --layout 7.1.4 --output render.caf
-openjoc render-joc input.m4a --layout 9.1.6 --output render-9.1.6.caf
-openjoc render-joc input.m4a --layout 2.0 --downmix auto -o stereo.wav
-openjoc render-joc input.m4a --layout 2.0 --dialnorm default -o calibrated.wav
-openjoc render-joc input.m4a --layout 2.0 --dialnorm default --normalize-peak -0.1 -o normalized.wav
-openjoc render-joc input.m4a --layout 2.0 --dialnorm analog -o analog.wav
-openjoc render-joc input.m4a --binaural --sofa listener.sofa -o binaural.wav
+# Calibrated speaker render (Default dialnorm is implicit)
+openjoc render-joc input.m4a \
+  --layout 7.1.4 -o output.wav
+# Convenient offline file level (static post-render sample peak)
+openjoc render-joc input.m4a \
+  --layout 7.1.4 --normalize-peak -0.1 -o output-loud.wav
+# Binaural with the same optional offline file-level step
+openjoc render-joc input.m4a \
+  --binaural --sofa listener.sofa --normalize-peak -0.1 -o headphones.wav
+# Semantic CAF output for the 9.1.6 speaker layout
+openjoc render-joc input.m4a \
+  --layout 9.1.6 -o render-9.1.6.caf
 openjoc render-joc input.m4a --binaural --sofa listener.sofa \
   --virtual-layout 9.1.6 -o binaural-9.1.6.wav
 # Optional complete explicit override/test input:
@@ -129,23 +133,54 @@ openjoc render-joc input.m4a --topology bridge-control.json --layout 7.1.4 --out
 openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
 ```
 
+For normal decoding and playback, OpenJOC's default calibrated dialnorm policy
+is recommended; basic examples intentionally omit `--dialnorm default` because
+it is already the engine default. For an offline file that should be
+conveniently loud, add `--normalize-peak -0.1` (or another chosen dBFS target).
+This does not change decoder dynamics.
+
 `2.0` is speaker stereo and is separate from binaural output. Select the
 standards-based stereo policy with `--downmix auto`, `--downmix loro`, or
-`--downmix ltrt`. E-AC-3 dynamic-range metadata can be selected with
-`--drc disabled|line|rf|custom`; custom mode accepts `--drc-boost` and
-`--drc-cut` percentages from `0` through `100`. These controls apply encoded
-decoder metadata, not a generic compressor or playback bass-management DSP.
-`--dialnorm default` is the calibrated decoder/program-level default;
-`--dialnorm digital` explicitly selects the same encoded digital calibration,
-while `--dialnorm analog` uses unity dialnorm and may make FinalLinkedGain work
-harder. Dialnorm is separate from DRC.
+`--downmix ltrt`.
+
+## Advanced decoder/output policies
+
+`--drc disabled|line|rf|custom` controls encoded E-AC-3 dynamic-range metadata;
+custom mode accepts `--drc-boost` and `--drc-cut` percentages from `0` through
+`100`. DRC changes program dynamics; it is not a generic compressor or volume
+normalization.
+
+`--dialnorm default` uses calibrated default behavior and is recommended for
+normal playback/decoding. `--dialnorm digital` explicitly selects encoded
+digital program-level calibration. `--dialnorm analog` uses unity dialnorm
+gain; it is an advanced compatibility/diagnostic policy. On hot material,
+unity dialnorm can present a substantially hotter level to downstream
+headroom processing, so it may make FinalLinkedGain engage more heavily. Do
+not choose Analog merely because it is louder; it is not a higher-quality,
+uncompressed, lossless, raw, or mastering mode.
 
 `--normalize-peak TARGET_DBFS` is an optional file-export transform. It performs
-sample-peak analysis and a deterministic two-pass render, then applies one
-common scalar after FinalLinkedGain (and after binaural convolution when
-selected) before WAV/CAF conversion. It is disabled by default, supports both
-boost and attenuation, and is not true-peak analysis or LUFS targeting; an
-inter-sample true peak may exceed the sample-peak target.
+one canonical render while spooling bounded, renderer-native PCM and measuring
+the sample peak, then sequentially applies one common scalar after
+FinalLinkedGain (and after binaural convolution when selected) before WAV/CAF
+conversion. It is disabled by default, supports both boost and attenuation, and
+is sample-peak based and post-render. It is not dialnorm, DRC, a limiter, a
+compressor, LUFS normalization, or true-peak normalization; an inter-sample
+true peak may exceed the sample-peak target.
+
+Recommended offline signal flow:
+
+```text
+DRC -> calibrated dialnorm -> JOC rendering -> FinalLinkedGain
+    -> optional static sample-peak normalization -> file
+```
+
+Analog instead uses unity dialnorm before JOC rendering and FinalLinkedGain.
+Post-render normalization is applied after FinalLinkedGain, so it preserves the
+already-rendered dynamic shape with one static linked scalar. Analog changes the
+level entering FinalLinkedGain and may therefore change its gain-reduction
+behavior. FinalLinkedGain is internal renderer headroom behavior, not a user
+mastering control.
 For 2.0 JOC rendering, Base channels use the selected stereo downmix while
 reconstructed JOC objects use generic spatial projection to physical `FL`/`FR`.
 

@@ -81,23 +81,54 @@ path is unchanged.
 
 ## Output-level policies
 
-DRC is encoded E-AC-3 dynamic-range metadata processing. Dialnorm is decoder
-program calibration and is selected independently with `--dialnorm default`,
-`--dialnorm digital`, or `--dialnorm analog`; omitted means calibrated
-`default`. Analog is a legitimate policy, but a hot unity-dialnorm render can
-make FinalLinkedGain work harder.
+The normal decoder/playback policy is `DialnormMode::Default`, also selected by
+omitting `--dialnorm`. It applies OpenJOC's calibrated default behavior. For an
+offline file that should be conveniently loud, use the default calibrated
+dialnorm and optionally add `--normalize-peak -0.1` (or another chosen dBFS
+target). Do not choose Analog merely because it produces a louder render.
 
-`--normalize-peak TARGET_DBFS` is an explicit, optional file-export transform.
-It performs two deterministic complete renders: pass 1 measures sample peak
-after DRC, dialnorm, JOC reconstruction, speaker projection, FinalLinkedGain,
-and (when selected) SOFA convolution; pass 2 applies the resulting one common
-scalar immediately before WAV/CAF conversion. It is disabled by default,
-allows both boost and attenuation, and preserves the spatial image. Silence
-uses unity gain. This is sample-peak normalization, not true-peak analysis,
-limiting, compression, or LUFS targeting; no particular integrated loudness is
-promised and inter-sample true peak may exceed the target.
+The policies are intentionally separate:
 
-The streaming Rust and C APIs do not perform this two-pass file transform.
+- DRC controls encoded E-AC-3 dynamic-range metadata and changes program
+  dynamics.
+- Dialnorm applies encoded program-level calibration. `default` is recommended
+  for normal playback/decoding; `digital` explicitly selects encoded digital
+  calibration.
+- FinalLinkedGain is internal renderer headroom behavior, not a user mastering
+  control.
+- `--normalize-peak TARGET_DBFS` is optional, file-output only, post-render,
+  sample-peak based, and applies one constant linked gain across all output
+  channels. It is not dialnorm, DRC, a limiter, compressor, LUFS normalization,
+  or true-peak normalization. Silence uses unity gain.
+
+`--dialnorm analog` is supported as an advanced compatibility/diagnostic
+policy. It uses unity dialnorm gain instead of digital dialnorm attenuation.
+For hot material, that can present a substantially hotter level to downstream
+headroom processing and make FinalLinkedGain engage more heavily. Analog is not
+uncompressed, lossless, raw, reference-mastering, or the recommended louder
+output mode.
+
+Recommended offline signal flow:
+
+```text
+DRC -> calibrated dialnorm -> JOC rendering -> FinalLinkedGain
+    -> optional static sample-peak normalization -> file
+```
+
+Analog instead uses unity dialnorm before JOC rendering and FinalLinkedGain.
+Because peak normalization runs after FinalLinkedGain, it preserves the
+already-rendered dynamic shape using one static scalar. Analog changes the
+level entering FinalLinkedGain and may therefore change its gain-reduction
+behavior. The output-level target is stream-independent; no fixed loudness,
+LUFS, or true-peak result is promised.
+
+`--normalize-peak` performs one canonical render while measuring the final
+sample peak and writing bounded renderer-native PCM to a transactional
+intermediate. A sequential post-process applies the scalar immediately before
+WAV/CAF conversion, including after SOFA convolution when binaural output is
+selected.
+
+The streaming Rust and C APIs do not perform this file-export transform.
 Applications that consume their PCM may apply an equivalent final gain policy
 after the session output.
 
@@ -564,11 +595,12 @@ openjoc render-joc INPUT.m4a --layout 7.1.4 --drc custom \
 values are percentages in `0..=100`. With no override, existing decoder
 behavior is preserved, including full Line-mode `dynrng` where applicable.
 The renderer automatically applies the supported Default E-AC-3 dialnorm
-program scalar at the shared Base/Object/ReconstructionBasis boundary. This
-metadata-derived calibration is separate from `--drc`, is applied before
-speaker projection and FinalLinkedGain, and does not perform content-dependent
-loudness normalization. No user-facing dialnorm option is exposed in this
-release.
+program scalar at the shared Base/Object/ReconstructionBasis boundary unless a
+`--dialnorm` policy is explicitly selected. This metadata-derived calibration
+is separate from `--drc`, is applied before speaker projection and
+FinalLinkedGain, and does not perform content-dependent loudness normalization.
+See [Output-level policies](#output-level-policies) for the recommended
+default, advanced Analog positioning, and optional offline peak normalization.
 
 ## SOFA-backed binaural rendering
 
@@ -580,6 +612,15 @@ openjoc render-joc INPUT.m4a \
   --binaural \
   --sofa listener.sofa \
   -o binaural.wav
+
+For a conveniently loud offline headphone file, keep calibrated dialnorm and
+add the optional post-render scalar:
+
+```sh
+openjoc render-joc INPUT.m4a \
+  --binaural --sofa listener.sofa \
+  --normalize-peak -0.1 -o headphones.wav
+```
 ```
 
 The ordinary binaural command does not require a physical `--layout`. Its

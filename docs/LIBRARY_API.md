@@ -78,21 +78,29 @@ another packet; `OpenJocStatus::OutputPending` is returned otherwise.
 ## Policies
 
 `DrcPolicy` maps directly to the existing E-AC-3 `InternalBasePolicy` and
-supports disabled, line, RF, and custom boost/cut. `DownmixPolicy` supports
-auto, Lo/Ro, and Lt/Rt for stereo output. No CLI enum is reused as a public
-library type.
+supports disabled, line, RF, and custom boost/cut. DRC changes program
+dynamics; it is not a final volume or loudness control. `DownmixPolicy`
+supports auto, Lo/Ro, and Lt/Rt for stereo output. No CLI enum is reused as a
+public library type.
 
 `OpenJocConfig::dialnorm` selects the decoder/program calibration policy:
-`DialnormMode::Default` (the calibrated Digital/Line behavior) is the default,
-`Digital` explicitly selects the same encoded program calibration, and
-`Analog` uses a unity dialnorm factor. Dialnorm is separate from `DrcPolicy`;
-DRC remains encoded dynamic-range metadata processing.
+`DialnormMode::Default` (calibrated default behavior) is the default and is
+recommended for normal playback/decoding. `Digital` explicitly selects
+encoded digital program-level calibration. `Analog` uses a unity dialnorm
+factor and is an advanced compatibility/diagnostic policy; it is not a
+recommended louder-output or mastering mode. Dialnorm is separate from
+`DrcPolicy`; DRC remains encoded dynamic-range metadata processing.
 
 The selected dialnorm program scalar is applied once to the complete decoded
 program before speaker projection, FinalLinkedGain, or SOFA convolution.
-`OpenJocSession` never performs file-export peak normalization or any other
-two-pass output transform; applications may apply their own final gain policy
-after receiving PCM.
+FinalLinkedGain is internal renderer headroom behavior, not a user mastering
+control. `OpenJocSession` never performs file-export peak normalization or any
+other file-oriented output transform; applications may apply their own final
+gain policy after receiving PCM. The CLI's `--normalize-peak` is a separate
+offline convenience: one static sample-peak gain applied after renderer
+processing, not DRC, dialnorm, limiting, compression, LUFS, or true-peak
+normalization. The streaming API does not perform file-export peak
+normalization or spool a complete program for a file-level transform.
 
 `BinauralConfig` accepts a complete in-memory SimpleFreeFieldHRIR SOFA buffer,
 a virtual speaker layout, and an explicit LFE policy. The session does not

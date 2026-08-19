@@ -6,8 +6,8 @@
 
 use crate::performance::RenderStageTiming;
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata, JocMetadataFrame,
-    StereoDownmixMode, stereo_downmix_matrix,
+    ChannelLocation, DecodedAccessUnitPcm, DialnormMode, DialnormState, DownmixMetadata,
+    JocMetadataFrame, StereoDownmixMode, stereo_downmix_matrix,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_joc::{
@@ -37,8 +37,9 @@ use serde::Deserialize;
 use std::{
     collections::{BTreeSet, VecDeque},
     fmt, fs, io,
+    io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
@@ -425,6 +426,232 @@ pub struct RenderedBlock {
     pub channels: Vec<Vec<f64>>,
 }
 
+const INTERMEDIATE_PCM_MAGIC: [u8; 8] = *b"OJPCM01\0";
+const INTERMEDIATE_PCM_FRAME_CHUNK: usize = 4096;
+
+/// Transactional, bounded-storage PCM spool used by file-oriented transforms.
+///
+/// Samples remain in the renderer's f64 representation until the final output
+/// writer is reached. The spool is private temporary state and removes itself
+/// on drop, including error paths.
+pub struct PcmIntermediateWriter {
+    path: PathBuf,
+    file: Option<BufWriter<fs::File>>,
+    committed: bool,
+    sample_rate: Option<u32>,
+    channels: Option<usize>,
+    frames: u64,
+    peak: f64,
+}
+
+pub struct PcmIntermediateReader {
+    path: PathBuf,
+    file: BufReader<fs::File>,
+    sample_rate: u32,
+    channels: usize,
+    remaining_frames: u64,
+}
+
+impl PcmIntermediateWriter {
+    pub fn new(output: &Path) -> Result<Self, JocRenderError> {
+        let parent = output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
+        let name = output
+            .file_name()
+            .ok_or_else(|| JocRenderError::InvalidControl("output has no filename".to_owned()))?
+            .to_string_lossy();
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?
+            .as_nanos();
+        for attempt in 0..100_u32 {
+            let path = parent.join(format!(
+                ".{name}.openjoc-normalize-{stamp}-{}-{attempt}.pcm",
+                std::process::id()
+            ));
+            match fs::OpenOptions::new()
+                .write(true)
+                .read(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(file) => {
+                    return Ok(Self {
+                        path,
+                        file: Some(BufWriter::new(file)),
+                        committed: false,
+                        sample_rate: None,
+                        channels: None,
+                        frames: 0,
+                        peak: 0.0,
+                    });
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "could not allocate a unique normalization intermediate",
+        )
+        .into())
+    }
+
+    pub fn write_block(&mut self, block: &RenderedBlock) -> Result<(), JocRenderError> {
+        if block.channels.is_empty()
+            || block.channels.iter().any(Vec::is_empty)
+            || block
+                .channels
+                .iter()
+                .any(|channel| channel.len() != block.channels[0].len())
+        {
+            return Err(JocRenderError::InvalidControl(
+                "normalization intermediate received an invalid PCM block".to_owned(),
+            ));
+        }
+        let channels = block.channels.len();
+        if let Some(sample_rate) = self.sample_rate {
+            if sample_rate != block.sample_rate || self.channels != Some(channels) {
+                return Err(JocRenderError::InvalidControl(
+                    "normalization intermediate format changed during render".to_owned(),
+                ));
+            }
+        } else {
+            let file = self.file.as_mut().ok_or(JocRenderError::NoRenderedFrames)?;
+            file.write_all(&INTERMEDIATE_PCM_MAGIC)?;
+            file.write_all(&block.sample_rate.to_le_bytes())?;
+            file.write_all(
+                &(u32::try_from(channels).map_err(|_| {
+                    JocRenderError::InvalidControl("too many PCM channels".to_owned())
+                })?)
+                .to_le_bytes(),
+            )?;
+            file.write_all(&0_u64.to_le_bytes())?;
+            self.sample_rate = Some(block.sample_rate);
+            self.channels = Some(channels);
+        }
+        let file = self.file.as_mut().ok_or(JocRenderError::NoRenderedFrames)?;
+        for frame in 0..block.channels[0].len() {
+            for channel in &block.channels {
+                let sample = channel[frame];
+                if !sample.is_finite() {
+                    return Err(JocRenderError::NonFinitePcm);
+                }
+                self.peak = self.peak.max(sample.abs());
+                file.write_all(&sample.to_le_bytes())?;
+            }
+        }
+        self.frames = self
+            .frames
+            .checked_add(
+                u64::try_from(block.channels[0].len())
+                    .map_err(|_| JocRenderError::NoRenderedFrames)?,
+            )
+            .ok_or(JocRenderError::NoRenderedFrames)?;
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn peak(&self) -> f64 {
+        self.peak
+    }
+
+    #[must_use]
+    pub const fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    pub fn finish(mut self) -> Result<PcmIntermediateReader, JocRenderError> {
+        let sample_rate = self.sample_rate.ok_or(JocRenderError::NoRenderedFrames)?;
+        let frames = self.frames;
+        let channels = self.channels.ok_or(JocRenderError::NoRenderedFrames)?;
+        let file = self.file.as_mut().ok_or(JocRenderError::NoRenderedFrames)?;
+        file.seek(SeekFrom::Start(16))?;
+        file.write_all(&frames.to_le_bytes())?;
+        file.flush()?;
+        file.get_ref().sync_all()?;
+        let file = self
+            .file
+            .take()
+            .ok_or(JocRenderError::NoRenderedFrames)?
+            .into_inner()
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        let path = self.path.clone();
+        self.committed = true;
+        Ok(PcmIntermediateReader {
+            path,
+            file: BufReader::new(file),
+            sample_rate,
+            channels,
+            remaining_frames: frames,
+        })
+    }
+}
+
+impl Drop for PcmIntermediateWriter {
+    fn drop(&mut self) {
+        let _ = self.file.take();
+        if !self.committed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+impl PcmIntermediateReader {
+    pub fn read_block(&mut self) -> Result<Option<RenderedBlock>, JocRenderError> {
+        if self.remaining_frames == 0 {
+            let mut trailing = [0_u8; 1];
+            if self.file.read(&mut trailing)? != 0 {
+                return Err(JocRenderError::InvalidControl(
+                    "normalization intermediate has trailing data".to_owned(),
+                ));
+            }
+            return Ok(None);
+        }
+        let frames = usize::try_from(self.remaining_frames)
+            .unwrap_or(usize::MAX)
+            .min(INTERMEDIATE_PCM_FRAME_CHUNK);
+        let samples = frames
+            .checked_mul(self.channels)
+            .ok_or(JocRenderError::NoRenderedFrames)?;
+        let mut interleaved = vec![0.0_f64; samples];
+        let bytes = samples
+            .checked_mul(std::mem::size_of::<f64>())
+            .ok_or(JocRenderError::NoRenderedFrames)?;
+        let mut raw = vec![0_u8; bytes];
+        self.file.read_exact(&mut raw)?;
+        for (sample, bytes) in interleaved.iter_mut().zip(raw.chunks_exact(8)) {
+            *sample = f64::from_le_bytes(bytes.try_into().expect("f64 bytes"));
+            if !sample.is_finite() {
+                return Err(JocRenderError::NonFinitePcm);
+            }
+        }
+        let mut channels = vec![Vec::with_capacity(frames); self.channels];
+        for frame in interleaved.chunks_exact(self.channels) {
+            for (channel, &sample) in channels.iter_mut().zip(frame) {
+                channel.push(sample);
+            }
+        }
+        self.remaining_frames = self
+            .remaining_frames
+            .checked_sub(frames as u64)
+            .ok_or(JocRenderError::NoRenderedFrames)?;
+        Ok(Some(RenderedBlock {
+            sample_rate: self.sample_rate,
+            channels,
+        }))
+    }
+}
+
+impl Drop for PcmIntermediateReader {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 /// Explicit file-export sample-peak normalization policy. This is deliberately
 /// separate from decoder dialnorm and is never used by the streaming API.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -478,6 +705,7 @@ impl PeakNormalization {
     }
 
     /// Measures sample peak across every physical output channel and sample.
+    #[allow(dead_code)]
     pub fn sample_peak(block: &RenderedBlock) -> Result<f64, JocRenderError> {
         let mut peak = 0.0_f64;
         for channel in &block.channels {
@@ -1151,6 +1379,7 @@ impl JocSpeakerRenderer {
         }
     }
 
+    #[allow(dead_code)]
     pub fn diagnostics(
         &self,
         requested_layout: &str,
@@ -1158,6 +1387,30 @@ impl JocSpeakerRenderer {
         selected_profile: JocValidationProfile,
         summary: &openjoc_scene::StreamingSceneSummary,
         output: &Path,
+    ) -> String {
+        self.diagnostics_with_output(
+            requested_layout,
+            requested_profile,
+            selected_profile,
+            summary,
+            output,
+            SampleFormat::F32,
+            DialnormMode::Default,
+            summary.frames,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn diagnostics_with_output(
+        &self,
+        requested_layout: &str,
+        requested_profile: crate::eac3_decode::ValidationProfileRequest,
+        selected_profile: JocValidationProfile,
+        summary: &openjoc_scene::StreamingSceneSummary,
+        output: &Path,
+        output_format: SampleFormat,
+        dialnorm: DialnormMode,
+        output_frames: u64,
     ) -> String {
         let selected = self.selected_profile.unwrap_or(selected_profile);
         let deviations = if self.deviations.is_empty() {
@@ -1169,35 +1422,126 @@ impl JocSpeakerRenderer {
                 .collect::<Vec<_>>()
                 .join("; ")
         };
-        let contribution_diagnostic = if self.contribution_mode == SpatialContributionMode::Full {
-            String::new()
-        } else {
-            format!(
-                "\ndiagnostic contribution: {} (experimental fidelity isolation)",
+        let mut extra = Vec::new();
+        if self.contribution_mode != SpatialContributionMode::Full {
+            extra.push(format!(
+                "diagnostic contribution: {} (experimental fidelity isolation)",
                 self.contribution_mode.as_str()
-            )
+            ));
+        }
+        let channel_count = self.preset.channel_count();
+        let presentation = RenderSummaryPresentation {
+            requested_layout: requested_layout.to_owned(),
+            selected_layout: self.preset.name.to_owned(),
+            output_layout: speaker_output_presentation(&self.preset).0,
+            channel_count,
+            lfe_index: self.preset.lfe_index(),
+            dialnorm_policy: dialnorm_policy_name(dialnorm).to_owned(),
+            downmix_policy: self.downmix_policy.as_str().to_owned(),
+            requested_profile: requested_profile.as_str().to_owned(),
+            selected_profile: selected.as_str().to_owned(),
+            compatibility_deviations: deviations,
+            qmf_latency_samples: ReconstructionOutputTimeline::qmf_latency_samples(),
+            total_latency_samples: ReconstructionOutputTimeline::qmf_latency_samples()
+                .saturating_add(FINAL_LINKED_GAIN_BLOCK_SAMPLES),
+            output: output.to_owned(),
+            sample_rate: summary.sample_rate,
+            output_frames,
+            output_samples: output_frames.saturating_mul(channel_count as u64),
+            output_channel_order: speaker_output_presentation(&self.preset).1,
+            speaker_identities: speaker_output_presentation(&self.preset).2,
+            output_container: output_container_for_path(output)
+                .map_or("unknown", OutputContainer::name)
+                .to_owned(),
+            output_format: sample_format_name(output_format).to_owned(),
+            extra,
         };
-        let (output_layout, output_order, speaker_identities) =
-            speaker_output_presentation(&self.preset);
+        format_render_summary(&presentation)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RenderSummaryPresentation {
+    pub requested_layout: String,
+    pub selected_layout: String,
+    pub output_layout: String,
+    pub channel_count: usize,
+    pub lfe_index: Option<usize>,
+    pub dialnorm_policy: String,
+    pub downmix_policy: String,
+    pub requested_profile: String,
+    pub selected_profile: String,
+    pub compatibility_deviations: String,
+    pub qmf_latency_samples: usize,
+    pub total_latency_samples: usize,
+    pub output: PathBuf,
+    pub sample_rate: u32,
+    pub output_frames: u64,
+    pub output_samples: u64,
+    pub output_channel_order: String,
+    pub speaker_identities: String,
+    pub output_container: String,
+    pub output_format: String,
+    pub extra: Vec<String>,
+}
+
+pub fn format_render_summary(presentation: &RenderSummaryPresentation) -> String {
+    let mut lines = vec![
+        "feature: JocSpatialBridge".to_owned(),
+        "implementation maturity: Experimental".to_owned(),
+        "semantic binding: Unresolved".to_owned(),
+        format!("requested layout: {}", presentation.requested_layout),
+        format!("selected layout: {}", presentation.selected_layout),
+        format!("output layout: {}", presentation.output_layout),
+        format!("channel count: {}", presentation.channel_count),
+        format!("LFE index: {:?}", presentation.lfe_index),
+        format!("dialnorm policy: {}", presentation.dialnorm_policy),
+        format!("downmix policy: {}", presentation.downmix_policy),
+        format!("requested profile: {}", presentation.requested_profile),
+        format!("selected profile: {}", presentation.selected_profile),
         format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nrequested layout: {requested_layout}\nselected layout: {}\noutput layout: {}\nchannel count: {}\nLFE index: {:?}\ndownmix policy: {}\nrequested profile: {}\nselected profile: {}\ncompatibility deviations: {}\nQMF round-trip latency: {} samples\noutput: {}\nsample rate: {} Hz\nframes: {}\nsamples: {}\noutput channel order: {}\nspeaker identities: {}\nraw3: preserved and excluded from projection arithmetic{}",
-            self.preset.name,
-            output_layout,
-            self.preset.channel_count(),
-            self.preset.lfe_index(),
-            self.downmix_policy.as_str(),
-            requested_profile.as_str(),
-            selected.as_str(),
-            deviations,
-            ReconstructionOutputTimeline::qmf_latency_samples(),
-            output.display(),
-            summary.sample_rate,
-            summary.frames,
-            summary.duration_samples,
-            output_order,
-            speaker_identities,
-            contribution_diagnostic,
-        )
+            "compatibility deviations: {}",
+            presentation.compatibility_deviations
+        ),
+        format!(
+            "QMF round-trip latency: {} samples",
+            presentation.qmf_latency_samples
+        ),
+        format!(
+            "total reported latency: {} samples",
+            presentation.total_latency_samples
+        ),
+        format!("output: {}", presentation.output.display()),
+        format!("sample rate: {} Hz", presentation.sample_rate),
+        format!("frames: {}", presentation.output_frames),
+        format!("samples: {}", presentation.output_samples),
+        format!(
+            "output channel order: {}",
+            presentation.output_channel_order
+        ),
+        format!("speaker identities: {}", presentation.speaker_identities),
+        format!("output container: {}", presentation.output_container),
+        format!("output format: {}", presentation.output_format),
+        "raw3: preserved and excluded from projection arithmetic".to_owned(),
+    ];
+    lines.extend(presentation.extra.iter().cloned());
+    lines.join("\n")
+}
+
+pub fn sample_format_name(format: SampleFormat) -> &'static str {
+    match format {
+        SampleFormat::F32 => "IEEE float32",
+        SampleFormat::F64 => "IEEE float64",
+        SampleFormat::S24 => "signed PCM24",
+        SampleFormat::S16 => "signed PCM16",
+    }
+}
+
+pub fn dialnorm_policy_name(mode: DialnormMode) -> &'static str {
+    match mode {
+        DialnormMode::Default => "default (digital calibrated)",
+        DialnormMode::Digital => "digital (encoded calibration)",
+        DialnormMode::Analog => "analog (unity)",
     }
 }
 
@@ -1634,6 +1978,7 @@ impl JocBinauralRenderer {
     }
 
     /// Returns the user-facing diagnostic summary for this mode.
+    #[allow(dead_code)]
     pub fn diagnostics(
         &self,
         sofa_file: &Path,
@@ -1643,54 +1988,105 @@ impl JocBinauralRenderer {
         output: &Path,
         output_format: SampleFormat,
     ) -> String {
+        self.diagnostics_with_output(
+            sofa_file,
+            requested_profile,
+            selected_profile,
+            summary,
+            output,
+            output_format,
+            DialnormMode::Default,
+            summary.duration_samples,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn diagnostics_with_output(
+        &self,
+        sofa_file: &Path,
+        requested_profile: crate::eac3_decode::ValidationProfileRequest,
+        selected_profile: JocValidationProfile,
+        summary: &openjoc_scene::StreamingSceneSummary,
+        output: &Path,
+        output_format: SampleFormat,
+        dialnorm: DialnormMode,
+        output_frames: u64,
+    ) -> String {
         let contribution_diagnostic =
             if self.speaker.contribution_mode == SpatialContributionMode::Full {
-                String::new()
+                None
             } else {
-                format!(
-                    "\ndiagnostic contribution: {} (experimental fidelity isolation)",
+                Some(format!(
+                    "diagnostic contribution: {} (experimental fidelity isolation)",
                     self.speaker.contribution_mode.as_str()
-                )
+                ))
             };
         let output_container =
             output_container_for_path(output).map_or("unknown", |container| container.name());
-        format!(
-            "feature: JocSpatialBridge\nimplementation maturity: Experimental\nsemantic binding: Unresolved\nvalidation profile: requested={} selected={}\noutput layout: Binaural stereo\noutput mode: binaural stereo (L/R ears)\nphysical output channel count: 2\nvirtual speaker layout: {}\nvirtual speaker count: {}\nSOFA: {}\nHRIR coverage: {} exact, {} interpolated\nbinaural backend: {}\nalgorithmic latency: {} samples\nLFE policy: {}\nsample rate: {} Hz\ninput samples: {}\nconvolution tail: {} samples\noutput samples: {}\noutput channel order: Left Ear, Right Ear\noutput format: {} {}\noutput: {}\nraw3: preserved and excluded from projection arithmetic\nautomatic bridge-control: enabled unless --topology is supplied\nCONTROL.json requirement: none\nvendor binaural fidelity: not claimed{}",
-            requested_profile.as_str(),
-            selected_profile.as_str(),
-            self.layout,
-            self.mappings.len(),
-            sofa_file
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("<unnamed>"),
-            self.mappings
-                .len()
-                .saturating_sub(self.interpolated_hrir_count),
-            self.interpolated_hrir_count,
-            self.backend.name(),
-            match self.backend {
-                BinauralBackend::Direct => 0,
-                BinauralBackend::Partitioned { partition_size } => partition_size,
-            },
-            self.lfe_policy
-                .map_or("not-applicable", BinauralLfePolicy::name),
-            summary.sample_rate,
-            summary.duration_samples,
-            self.tail_samples(),
-            summary
-                .duration_samples
-                .saturating_add(self.tail_samples() as u64),
-            match output_format {
-                SampleFormat::F32 => "IEEE float32 stereo",
-                SampleFormat::F64 => "IEEE float64 stereo",
-                SampleFormat::S24 => "signed PCM24 stereo",
-                SampleFormat::S16 => "signed PCM16 stereo",
-            },
-            output_container,
-            output.display(),
-            contribution_diagnostic,
-        )
+        let algorithmic_latency = match self.backend {
+            BinauralBackend::Direct => 0,
+            BinauralBackend::Partitioned { partition_size } => partition_size,
+        };
+        let mut extra = vec![
+            "output mode: binaural stereo (L/R ears)".to_owned(),
+            format!("virtual speaker layout: {}", self.layout),
+            format!("virtual speaker count: {}", self.mappings.len()),
+            format!(
+                "SOFA: {}",
+                sofa_file
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("<unnamed>")
+            ),
+            format!(
+                "HRIR coverage: {} exact, {} interpolated",
+                self.mappings
+                    .len()
+                    .saturating_sub(self.interpolated_hrir_count),
+                self.interpolated_hrir_count
+            ),
+            format!("binaural backend: {}", self.backend.name()),
+            format!("algorithmic latency: {algorithmic_latency} samples"),
+            format!(
+                "LFE policy: {}",
+                self.lfe_policy
+                    .map_or("not-applicable", BinauralLfePolicy::name)
+            ),
+            format!("virtual LFE index: {:?}", self.lfe_index),
+            format!("input samples: {}", summary.duration_samples),
+            format!("convolution tail: {} samples", self.tail_samples()),
+            "automatic bridge-control: enabled unless --topology is supplied".to_owned(),
+            "CONTROL.json requirement: none".to_owned(),
+            "vendor binaural fidelity: not claimed".to_owned(),
+        ];
+        if let Some(contribution_diagnostic) = contribution_diagnostic {
+            extra.push(contribution_diagnostic);
+        }
+        let presentation = RenderSummaryPresentation {
+            requested_layout: self.layout.clone(),
+            selected_layout: self.layout.clone(),
+            output_layout: "Binaural stereo".to_owned(),
+            channel_count: 2,
+            lfe_index: None,
+            dialnorm_policy: dialnorm_policy_name(dialnorm).to_owned(),
+            downmix_policy: StereoDownmixPolicy::Auto.as_str().to_owned(),
+            requested_profile: requested_profile.as_str().to_owned(),
+            selected_profile: selected_profile.as_str().to_owned(),
+            compatibility_deviations: "reported by the selected JOC profile".to_owned(),
+            qmf_latency_samples: ReconstructionOutputTimeline::qmf_latency_samples(),
+            total_latency_samples: ReconstructionOutputTimeline::qmf_latency_samples()
+                .saturating_add(algorithmic_latency),
+            output: output.to_owned(),
+            sample_rate: summary.sample_rate,
+            output_frames,
+            output_samples: output_frames.saturating_mul(2),
+            output_channel_order: "Left Ear, Right Ear".to_owned(),
+            speaker_identities: "Left Ear, Right Ear".to_owned(),
+            output_container: output_container.to_owned(),
+            output_format: sample_format_name(output_format).to_owned(),
+            extra,
+        };
+        format_render_summary(&presentation)
     }
 
     fn ensure_engine(&mut self, sample_rate: u32) -> Result<(), JocRenderError> {
@@ -2639,10 +3035,11 @@ mod tests {
     use super::{
         BinauralBackend, BinauralLfePolicy, FrameUpdates, JOC_RENDER_CHANNEL_ORDER,
         JOC_RENDER_SUPPORTED_LAYOUTS, JocBinauralRenderer, JocCafOutput, JocPcmOutput,
-        JocRenderError, JocSpeakerRenderer, JocWavOutput, OutputContainer, PeakNormalization,
-        RenderControl, RenderedBlock, SemanticChannelLayout, SpeakerLayoutPreset,
-        StereoDownmixPolicy, add_stereo_base_downmix, five_point_one_layout, five_point_one_preset,
-        selected_stereo_policy, stereo_downmix_coefficients, virtual_speaker_direction,
+        JocRenderError, JocSpeakerRenderer, JocWavOutput, OutputContainer, PcmIntermediateWriter,
+        PeakNormalization, RenderControl, RenderedBlock, SemanticChannelLayout,
+        SpeakerLayoutPreset, StereoDownmixPolicy, add_stereo_base_downmix, five_point_one_layout,
+        five_point_one_preset, selected_stereo_policy, stereo_downmix_coefficients,
+        virtual_speaker_direction,
     };
     use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata};
     use openjoc_emdf::JocValidationProfile;
@@ -3529,6 +3926,7 @@ mod tests {
             Path::new("stereo.wav"),
         );
         assert!(diagnostic.contains("output layout: Stereo speakers (2.0)"));
+        assert!(diagnostic.contains("dialnorm policy: default (digital calibrated)"));
         assert!(diagnostic.contains("output channel order: Left, Right"));
         assert!(diagnostic.contains("speaker identities: FL, FR"));
     }
@@ -4441,6 +4839,73 @@ mod tests {
             assert!(PeakNormalization::new(target).is_err(), "target={target}");
         }
         assert!(PeakNormalization::new(-1.0).is_ok());
+    }
+
+    #[test]
+    fn normalization_intermediate_proves_pre_gain_and_constant_gain_equivalence() {
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-normalization-intermediate-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("normalized.wav");
+        let ordinary_calibrated = vec![
+            RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![0.125, -0.5, 0.25], vec![0.375, 0.1, -0.2]],
+            },
+            RenderedBlock {
+                sample_rate: 48_000,
+                channels: vec![vec![0.75, -0.125], vec![0.2, -0.3]],
+            },
+        ];
+        let mut intermediate = PcmIntermediateWriter::new(&output).unwrap();
+        for block in &ordinary_calibrated {
+            intermediate.write_block(block).unwrap();
+        }
+        let peak = intermediate.peak();
+        assert_eq!(peak, 0.75);
+        let normalization = PeakNormalization::new(-1.0).unwrap();
+        let gain = normalization.gain_for_peak(peak).unwrap();
+        let mut reader = intermediate.finish().unwrap();
+        let mut normalized_pre_gain = RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![Vec::new(), Vec::new()],
+        };
+        while let Some(block) = reader.read_block().unwrap() {
+            for (actual, block_channel) in
+                normalized_pre_gain.channels.iter_mut().zip(block.channels)
+            {
+                actual.extend(block_channel);
+            }
+        }
+        let ordinary_flat = RenderedBlock {
+            sample_rate: 48_000,
+            channels: vec![
+                ordinary_calibrated
+                    .iter()
+                    .flat_map(|block| block.channels[0].iter().copied())
+                    .collect(),
+                ordinary_calibrated
+                    .iter()
+                    .flat_map(|block| block.channels[1].iter().copied())
+                    .collect(),
+            ],
+        };
+        assert_eq!(normalized_pre_gain, ordinary_flat);
+
+        let mut expected_normalized = ordinary_flat.clone();
+        PeakNormalization::apply(&mut expected_normalized, gain).unwrap();
+        let mut actual_normalized = normalized_pre_gain;
+        PeakNormalization::apply(&mut actual_normalized, gain).unwrap();
+        assert_eq!(actual_normalized, expected_normalized);
+        drop(reader);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

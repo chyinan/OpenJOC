@@ -127,6 +127,23 @@ fn decode_help_freezes_semantic_profile_and_streaming_boundaries() {
 }
 
 #[test]
+fn render_help_explains_calibration_and_offline_level_workflows() {
+    let result = openjoc()
+        .args(["render-joc", "--help"])
+        .output()
+        .expect("run render-joc help");
+    assert!(result.status.success());
+    let stdout = String::from_utf8(result.stdout).expect("UTF-8 help");
+    assert!(stdout.contains("--dialnorm default uses calibrated default behavior"));
+    assert!(stdout.contains("recommended for normal playback/decoding"));
+    assert!(stdout.contains("--dialnorm analog uses unity dialnorm gain"));
+    assert!(stdout.contains("advanced compatibility/diagnostic policy"));
+    assert!(stdout.contains("--normalize-peak TARGET_DBFS normalizes the final rendered file"));
+    assert!(stdout.contains("not DRC, dialnorm, a limiter, compressor, LUFS, or true-peak"));
+    assert!(stdout.contains("Do not choose analog merely because it is louder"));
+}
+
+#[test]
 fn unsupported_streaming_combination_has_stable_category_and_nonzero_exit() {
     let result = openjoc()
         .args(["decode", "missing.ec3", "--streaming", "-o", "out"])
