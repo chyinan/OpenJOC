@@ -286,7 +286,7 @@ GST_PLUGIN_PATH="${OPENJOC_GSTREAMER_TARGET_DIR:-$PWD/target-gstreamer}/release"
 gst-launch-1.0 -e -v \
   filesrc location=/path/to/joc.ec3 ! ac3parse ! openjocclassify ! \
   openjocdec render-mode=auto ! \
-  audio/x-raw,format=F32LE,rate=48000,layout=interleaved,channels=12,channel-mask=\(bitmask\)0x2d63f ! \
+  audio/x-raw,format=F32LE,rate=48000,layout=interleaved,channels=12,channel-mask=\(bitmask\)0x33c3f ! \
   fakesink sync=false
 ```
 

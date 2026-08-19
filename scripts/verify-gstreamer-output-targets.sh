@@ -34,23 +34,34 @@ run_target() {
     channels=$2
     mask=$3
     log_file=$(mktemp "${TMPDIR:-/tmp}/openjoc-gstreamer-target.XXXXXX")
-    trap 'rm -f "$log_file"' EXIT HUP INT TERM
-    GST_PLUGIN_PATH=$plugin_path GST_DEBUG_NO_COLOR=1 \
-    GST_DEBUG='openjocdec:5' \
-    gst-launch-1.0 -e -v \
-        filesrc location="$fixture" ! ac3parse ! openjocclassify ! \
-        openjocdec render-mode=auto ! \
-        "audio/x-raw,format=F32LE,rate=48000,layout=interleaved,channels=$channels,channel-mask=(bitmask)$mask" ! \
-        fakesink sync=false >"$log_file" 2>&1
-    grep -q "target=speaker:$target" "$log_file"
-    grep -q "channels=(int)$channels" "$log_file"
+    if GST_PLUGIN_PATH=$plugin_path GST_DEBUG_NO_COLOR=1 \
+        GST_DEBUG='openjocdec:5' \
+        gst-launch-1.0 -e -v \
+            filesrc location="$fixture" ! ac3parse ! openjocclassify ! \
+            openjocdec render-mode=auto ! \
+            "audio/x-raw,format=F32LE,rate=48000,layout=interleaved,channels=$channels,channel-mask=(bitmask)$mask" ! \
+            fakesink sync=false >"$log_file" 2>&1; then
+        result=0
+    else
+        result=$?
+    fi
+
+    if [ "$result" -ne 0 ] || ! grep -q "target=speaker:$target" "$log_file" || \
+        ! grep -q "channels=(int)$channels" "$log_file"; then
+        echo "FAIL target=$target" >&2
+        echo "command/result: gst-launch-1.0 exit=$result channels=$channels mask=$mask" >&2
+        echo "relevant GStreamer log tail (full log: $log_file):" >&2
+        tail -n 40 "$log_file" >&2
+        return 1
+    fi
+
+    echo "PASS target=$target"
     rm -f "$log_file"
-    trap - EXIT HUP INT TERM
 }
 
 GST_PLUGIN_PATH=$plugin_path gst-inspect-1.0 openjocdec >/dev/null
 run_target 2.0 2 0x3
-run_target 5.1 6 0x60f
-run_target 7.1.4 12 0x2d63f
+run_target 5.1 6 0xc0f
+run_target 7.1.4 12 0x33c3f
 
 echo "GStreamer exact output-target negotiation passed: 2.0, 5.1, and 7.1.4."

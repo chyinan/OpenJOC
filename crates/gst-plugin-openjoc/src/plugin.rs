@@ -658,6 +658,10 @@ impl OpenJocDecImp {
         {
             return Ok(());
         }
+        gstreamer_channel_mask(&frame.channel_labels).map_err(|error| {
+            gst::element_imp_error!(self, gst::StreamError::Format, ("{error}"));
+            gst::FlowError::NotNegotiated
+        })?;
         let (positions, _) = gst_channel_order(&frame.channel_labels).map_err(|error| {
             gst::element_imp_error!(self, gst::StreamError::Format, ("{error}"));
             gst::FlowError::NotNegotiated
@@ -834,6 +838,12 @@ fn channel_positions(labels: &[String]) -> Result<Vec<gst_audio::AudioChannelPos
             )),
         })
         .collect()
+}
+
+fn gstreamer_channel_mask(labels: &[String]) -> Result<u64, String> {
+    let positions = channel_positions(labels)?;
+    gst_audio::AudioChannelPosition::positions_to_mask(&positions, false)
+        .map_err(|error| format!("OpenJOC channel positions have no GStreamer mask: {error}"))
 }
 
 fn gst_channel_order(
@@ -1177,6 +1187,80 @@ mod tests {
         assert_eq!(positions[6], gst_audio::AudioChannelPosition::SideLeft);
     }
 
+    #[test]
+    fn gstreamer_masks_are_derived_for_every_native_speaker_layout() {
+        gst::init().expect("GStreamer initializes");
+        let expected_masks = [
+            ("2.0", 0x0000_0003_u64),
+            ("5.1", 0x0000_0c0f_u64),
+            ("5.1.2", 0x0000_3c0f_u64),
+            ("5.1.4", 0x0003_3c0f_u64),
+            ("7.1", 0x0000_0c3f_u64),
+            ("7.1.2", 0x0000_3c3f_u64),
+            ("7.1.4", 0x0003_3c3f_u64),
+            ("7.1.6", 0x000f_3c3f_u64),
+            ("9.1", 0x0300_0c3f_u64),
+            ("9.1.2", 0x030c_0c3f_u64),
+            ("9.1.4", 0x0303_3c3f_u64),
+            ("9.1.6", 0x030f_3c3f_u64),
+            ("22.2", 0x00ff_ffff_u64),
+        ];
+
+        for (layout, expected_mask) in expected_masks {
+            let labels = supported_speaker_layouts()
+                .iter()
+                .find(|(name, _)| *name == layout)
+                .map(|(_, labels)| {
+                    labels
+                        .iter()
+                        .map(|label| (*label).to_owned())
+                        .collect::<Vec<_>>()
+                })
+                .expect("known native speaker layout");
+            let mask = gstreamer_channel_mask(&labels).expect("layout channel mask");
+            assert_eq!(mask, expected_mask, "layout {layout}");
+            assert_eq!(mask.count_ones() as usize, labels.len(), "layout {layout}");
+        }
+    }
+
+    #[test]
+    fn gstreamer_masks_are_not_waveformatextensible_masks() {
+        gst::init().expect("GStreamer initializes");
+        let five_one = ["FL", "FR", "FC", "LFE", "Ls", "Rs"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(gstreamer_channel_mask(&five_one), Ok(0x0000_0c0f));
+        assert_ne!(gstreamer_channel_mask(&five_one), Ok(0x0000_060f));
+
+        let mut old_five_one_positions = vec![gst_audio::AudioChannelPosition::None; 6];
+        gst_audio::AudioChannelPosition::positions_from_mask(
+            0x0000_060f,
+            &mut old_five_one_positions,
+        )
+        .expect("old WAVE mask is numerically valid to GStreamer");
+        assert_eq!(
+            old_five_one_positions,
+            vec![
+                gst_audio::AudioChannelPosition::FrontLeft,
+                gst_audio::AudioChannelPosition::FrontRight,
+                gst_audio::AudioChannelPosition::FrontCenter,
+                gst_audio::AudioChannelPosition::Lfe1,
+                gst_audio::AudioChannelPosition::Lfe2,
+                gst_audio::AudioChannelPosition::SideLeft,
+            ]
+        );
+
+        let seven_one_four = [
+            "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+        assert_eq!(gstreamer_channel_mask(&seven_one_four), Ok(0x0003_3c3f));
+        assert_ne!(gstreamer_channel_mask(&seven_one_four), Ok(0x0002_d63f));
+    }
+
     fn exact_audio_caps(layout: &str) -> gst::Caps {
         gst::init().expect("GStreamer initializes");
         let labels = supported_speaker_layouts()
@@ -1188,9 +1272,7 @@ mod tests {
             .iter()
             .map(|label| (*label).to_owned())
             .collect::<Vec<_>>();
-        let positions = channel_positions(&labels).expect("layout positions");
-        let mask = gst_audio::AudioChannelPosition::positions_to_mask(&positions, false)
-            .expect("layout channel mask");
+        let mask = gstreamer_channel_mask(&labels).expect("layout channel mask");
         gst_audio::AudioCapsBuilder::new_interleaved()
             .format(gst_audio::AudioFormat::F32le)
             .rate(i32::try_from(SAMPLE_RATE).expect("sample rate fits"))
