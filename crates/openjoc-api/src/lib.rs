@@ -35,7 +35,9 @@ use openjoc_scene::{
     JocSpatialBridge, JocSpatialFrameBridge, PayloadDecoder, PayloadDecoderConfig,
     SemanticChannelLayout, SpeakerLayoutPreset,
 };
-use openjoc_sofa::{SofaLoadLimits, parse_simple_free_field_hrir, resolve_hrir};
+use openjoc_sofa::{
+    SofaLoadLimits, load_builtin_generic_hrir, parse_simple_free_field_hrir, resolve_hrir,
+};
 use std::{collections::VecDeque, fmt};
 
 /// The first public C ABI is intentionally experimental. This is separate
@@ -139,13 +141,47 @@ pub enum BinauralLfePolicy {
     EqualPowerDualMono,
 }
 
-/// In-memory SOFA configuration. The parser copies validated HRIR data into
-/// the renderer; no path or file handle is retained by a session.
+/// In-memory binaural configuration. An empty `sofa_bytes` value selects the
+/// bundled SADIE II generic resource; non-empty bytes select an explicit user
+/// SOFA and retain the existing fail-closed parser behavior.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BinauralConfig {
+    /// Explicit SOFA bytes, or empty to use [`Self::builtin_generic`].
     pub sofa_bytes: Vec<u8>,
     pub virtual_layout: String,
     pub lfe_policy: BinauralLfePolicy,
+}
+
+impl BinauralConfig {
+    /// Selects the offline built-in generic HRTF without a filesystem path.
+    #[must_use]
+    pub fn builtin_generic(virtual_layout: impl Into<String>) -> Self {
+        Self {
+            sofa_bytes: Vec::new(),
+            virtual_layout: virtual_layout.into(),
+            lfe_policy: BinauralLfePolicy::Exclude,
+        }
+    }
+
+    /// Selects a caller-owned SOFA buffer. The existing strict SOFA checks
+    /// remain in force when the session is created.
+    #[must_use]
+    pub fn from_sofa_bytes(
+        sofa_bytes: Vec<u8>,
+        virtual_layout: impl Into<String>,
+        lfe_policy: BinauralLfePolicy,
+    ) -> Self {
+        Self {
+            sofa_bytes,
+            virtual_layout: virtual_layout.into(),
+            lfe_policy,
+        }
+    }
+
+    #[must_use]
+    fn is_builtin_generic(&self) -> bool {
+        self.sofa_bytes.is_empty()
+    }
 }
 
 /// Stable high-level session configuration.
@@ -197,7 +233,8 @@ impl OpenJocConfig {
             .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
         if self.render_mode == RenderMode::Binaural && self.binaural.is_none() {
             return Err(OpenJocError::InvalidConfig(
-                "binaural mode requires an in-memory SOFA configuration".to_owned(),
+                "binaural mode requires BinauralConfig (built-in generic or explicit SOFA)"
+                    .to_owned(),
             ));
         }
         if self.render_mode != RenderMode::Stereo && self.downmix != DownmixPolicy::Auto {
@@ -1291,14 +1328,18 @@ struct BinauralMapping {
 
 impl BinauralState {
     fn new(config: &BinauralConfig) -> Result<Self, OpenJocError> {
-        let loaded = parse_simple_free_field_hrir(&config.sofa_bytes, SofaLoadLimits::default())?;
+        let loaded = if config.is_builtin_generic() {
+            load_builtin_generic_hrir()?
+        } else {
+            parse_simple_free_field_hrir(&config.sofa_bytes, SofaLoadLimits::default())?
+        };
         let preset = SpeakerLayoutPreset::for_name(&config.virtual_layout)
             .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
         let mut entries = loaded.bank.entries().to_vec();
         let mut next_id = u64::MAX;
         let mut mappings = Vec::new();
         for (channel_index, label) in preset.labels.iter().enumerate() {
-            if preset.lfe_index() == Some(channel_index) {
+            if preset.layout.channels()[channel_index].lfe {
                 continue;
             }
             let direction = virtual_speaker_direction(label).ok_or_else(|| {
@@ -1443,19 +1484,21 @@ impl BinauralState {
 
 fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
     let (x, y, z) = match label {
-        "FL" => (-1.0, 0.0, 0.0),
-        "FR" => (1.0, 0.0, 0.0),
-        "FC" => (0.0, -1.0, 0.0),
-        "Ls" | "Lb" => (-1.0, 1.0, 0.0),
-        "Rs" | "Rb" => (1.0, 1.0, 0.0),
-        "TFL" | "Ltf" => (-1.0, 0.0, 1.0),
-        "TFR" | "Rtf" => (1.0, 0.0, 1.0),
-        "TBL" | "Ltr" => (-1.0, 1.0, 1.0),
-        "TBR" | "Rtr" => (1.0, 1.0, 1.0),
-        "Ltm" => (-1.0, 0.5, 1.0),
-        "Rtm" => (1.0, 0.5, 1.0),
-        "Lw" => (-1.0, -0.2, 0.0),
-        "Rw" => (1.0, -0.2, 0.0),
+        "FL" => (-1.0, 1.0, 0.0),
+        "FR" => (1.0, 1.0, 0.0),
+        "FC" => (0.0, 1.0, 0.0),
+        "Ls" => (-1.0, 0.0, 0.0),
+        "Rs" => (1.0, 0.0, 0.0),
+        "Lb" => (-1.0, -1.0, 0.0),
+        "Rb" => (1.0, -1.0, 0.0),
+        "TFL" | "Ltf" => (-1.0, 1.0, 1.0),
+        "TFR" | "Rtf" => (1.0, 1.0, 1.0),
+        "TBL" | "Ltr" => (-1.0, -1.0, 1.0),
+        "TBR" | "Rtr" => (1.0, -1.0, 1.0),
+        "Ltm" => (-1.0, 0.0, 1.0),
+        "Rtm" => (1.0, 0.0, 1.0),
+        "Lw" => (-1.0, 0.67767333984375, 0.0),
+        "Rw" => (1.0, 0.67767333984375, 0.0),
         _ => return None,
     };
     Some(CartesianPosition::new(x, y, z))
@@ -1477,6 +1520,34 @@ mod tests {
             info.latency_samples,
             577 + FINAL_LINKED_GAIN_LATENCY_SAMPLES
         );
+    }
+
+    #[test]
+    fn native_twenty_two_two_is_available_through_the_rust_session_api() {
+        let session = OpenJocSession::new(OpenJocConfig {
+            speaker_layout: "22.2".to_owned(),
+            ..OpenJocConfig::default()
+        })
+        .expect("22.2 session");
+        let info = session.output_info();
+        assert_eq!(info.layout_name, "22.2");
+        assert_eq!(info.channel_labels.len(), 24);
+        assert_eq!(info.channel_labels[3], "LFE1");
+        assert_eq!(info.channel_labels[9], "LFE2");
+    }
+
+    #[test]
+    fn builtin_generic_binaural_is_available_without_sofa_bytes() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        let session = OpenJocSession::new(config).expect("built-in generic HRTF session");
+        let info = session.output_info();
+        assert_eq!(info.layout_name, "Binaural stereo");
+        assert_eq!(info.channel_labels, ["Left Ear", "Right Ear"]);
     }
 
     #[test]

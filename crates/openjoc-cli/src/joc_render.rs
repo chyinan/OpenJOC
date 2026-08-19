@@ -47,7 +47,7 @@ pub const JOC_RENDER_CONTROL_SCHEMA: &str = "openjoc.joc-render-control.v1";
 pub const JOC_RENDER_LAYOUT: &str = "5.1";
 #[cfg(test)]
 pub const JOC_RENDER_CHANNEL_ORDER: [&str; 6] = SPEAKER_LAYOUT_5_1_CHANNELS;
-pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 12] = SPEAKER_LAYOUT_PRESET_NAMES;
+pub const JOC_RENDER_SUPPORTED_LAYOUTS: [&str; 13] = SPEAKER_LAYOUT_PRESET_NAMES;
 /// Product default for the internal virtual speaker field used by binaural.
 /// This does not change physical speaker output semantics.
 pub const DEFAULT_BINAURAL_VIRTUAL_LAYOUT: &str = "7.1.4";
@@ -1436,6 +1436,7 @@ impl JocSpeakerRenderer {
             output_layout: speaker_output_presentation(&self.preset).0,
             channel_count,
             lfe_index: self.preset.lfe_index(),
+            lfe_count: self.preset.lfe_count(),
             dialnorm_policy: dialnorm_policy_name(dialnorm).to_owned(),
             downmix_policy: self.downmix_policy.as_str().to_owned(),
             requested_profile: requested_profile.as_str().to_owned(),
@@ -1467,6 +1468,7 @@ pub struct RenderSummaryPresentation {
     pub output_layout: String,
     pub channel_count: usize,
     pub lfe_index: Option<usize>,
+    pub lfe_count: usize,
     pub dialnorm_policy: String,
     pub downmix_policy: String,
     pub requested_profile: String,
@@ -1494,6 +1496,7 @@ pub fn format_render_summary(presentation: &RenderSummaryPresentation) -> String
         format!("selected layout: {}", presentation.selected_layout),
         format!("output layout: {}", presentation.output_layout),
         format!("channel count: {}", presentation.channel_count),
+        format!("LFE count: {}", presentation.lfe_count),
         format!("LFE index: {:?}", presentation.lfe_index),
         format!("dialnorm policy: {}", presentation.dialnorm_policy),
         format!("downmix policy: {}", presentation.downmix_policy),
@@ -1614,6 +1617,8 @@ pub struct JocBinauralRenderer {
     backend: BinauralBackend,
     lfe_policy: Option<BinauralLfePolicy>,
     lfe_index: Option<usize>,
+    hrtf_source: String,
+    hrtf_dataset: String,
     mappings: Vec<BinauralSpeakerMapping>,
     interpolated_hrir_count: usize,
     max_taps: usize,
@@ -1661,7 +1666,7 @@ impl JocBinauralRenderer {
     ) -> Result<Self, JocRenderError> {
         let preset = SpeakerLayoutPreset::for_name(layout)?;
         validate_binaural_layout_preset(layout, &preset)?;
-        if preset.lfe_index().is_some() && lfe_policy.is_none() {
+        if preset.lfe_count() > 0 && lfe_policy.is_none() {
             return Err(JocRenderError::BinauralLfePolicyRequired {
                 layout: layout.to_owned(),
             });
@@ -1677,7 +1682,7 @@ impl JocBinauralRenderer {
         let mut interpolated_hrir_count = 0;
         let mut max_taps = 0;
         for (channel_index, label) in preset.labels.iter().enumerate() {
-            if preset.lfe_index() == Some(channel_index) {
+            if preset.layout.channels()[channel_index].lfe {
                 continue;
             }
             let Some(direction) = virtual_speaker_direction(label) else {
@@ -1763,6 +1768,8 @@ impl JocBinauralRenderer {
             backend,
             lfe_policy,
             lfe_index: preset.lfe_index(),
+            hrtf_source: "user SOFA".to_owned(),
+            hrtf_dataset: "user-provided SOFA".to_owned(),
             mappings,
             interpolated_hrir_count,
             max_taps,
@@ -1775,6 +1782,13 @@ impl JocBinauralRenderer {
             stage_timings: RenderStageTiming::default(),
             stage_timing_enabled: false,
         })
+    }
+
+    /// Marks a renderer built from the offline bundled generic resource for
+    /// concise, provenance-aware diagnostics.
+    pub fn mark_builtin_generic_hrtf(&mut self) {
+        "built-in generic".clone_into(&mut self.hrtf_source);
+        openjoc_sofa::BUILTIN_GENERIC_HRTF_DATASET.clone_into(&mut self.hrtf_dataset);
     }
 
     /// Returns the maximum causal HRIR tail in samples.
@@ -2031,13 +2045,8 @@ impl JocBinauralRenderer {
             "output mode: binaural stereo (L/R ears)".to_owned(),
             format!("virtual speaker layout: {}", self.layout),
             format!("virtual speaker count: {}", self.mappings.len()),
-            format!(
-                "SOFA: {}",
-                sofa_file
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("<unnamed>")
-            ),
+            format!("HRTF source: {}", self.hrtf_source),
+            format!("HRTF dataset: {}", self.hrtf_dataset),
             format!(
                 "HRIR coverage: {} exact, {} interpolated",
                 self.mappings
@@ -2059,6 +2068,18 @@ impl JocBinauralRenderer {
             "CONTROL.json requirement: none".to_owned(),
             "vendor binaural fidelity: not claimed".to_owned(),
         ];
+        if self.hrtf_source != "built-in generic" {
+            extra.insert(
+                2,
+                format!(
+                    "SOFA: {}",
+                    sofa_file
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("<unnamed>")
+                ),
+            );
+        }
         if let Some(contribution_diagnostic) = contribution_diagnostic {
             extra.push(contribution_diagnostic);
         }
@@ -2068,6 +2089,7 @@ impl JocBinauralRenderer {
             output_layout: "Binaural stereo".to_owned(),
             channel_count: 2,
             lfe_index: None,
+            lfe_count: 0,
             dialnorm_policy: dialnorm_policy_name(dialnorm).to_owned(),
             downmix_policy: StereoDownmixPolicy::Auto.as_str().to_owned(),
             requested_profile: requested_profile.as_str().to_owned(),
@@ -2254,6 +2276,15 @@ impl JocBinauralRenderer {
 }
 
 fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
+    let spherical = |azimuth_degrees: f64, elevation_degrees: f64| {
+        let azimuth = azimuth_degrees.to_radians();
+        let elevation = elevation_degrees.to_radians();
+        CartesianPosition::new(
+            -azimuth.sin() * elevation.cos(),
+            azimuth.cos() * elevation.cos(),
+            elevation.sin(),
+        )
+    };
     Some(match label {
         "FL" => CartesianPosition::new(-1.0, 1.0, 0.0),
         "FR" => CartesianPosition::new(1.0, 1.0, 0.0),
@@ -2273,6 +2304,28 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
         // normalized coordinate convention (+Y front, -Y rear).
         "Lw" => CartesianPosition::new(-1.0, 0.67767333984375, 0.0),
         "Rw" => CartesianPosition::new(1.0, 0.67767333984375, 0.0),
+        // ITU-R BS.2051-3 Sound System H midpoint directions. These are the
+        // virtual speaker directions used by the same OpenJOC SOFA path as
+        // the established layouts.
+        "FLc" => spherical(26.25, 0.0),
+        "FRc" => spherical(-26.25, 0.0),
+        "SiL" => spherical(90.0, 0.0),
+        "SiR" => spherical(-90.0, 0.0),
+        "BL" => spherical(122.5, 0.0),
+        "BR" => spherical(-122.5, 0.0),
+        "BC" => spherical(180.0, 0.0),
+        "TpFL" => spherical(52.5, 37.5),
+        "TpFR" => spherical(-52.5, 37.5),
+        "TpFC" => spherical(0.0, 37.5),
+        "TpC" => spherical(0.0, 90.0),
+        "TpBL" => spherical(122.5, 37.5),
+        "TpBR" => spherical(-122.5, 37.5),
+        "TpSiL" => spherical(90.0, 37.5),
+        "TpSiR" => spherical(-90.0, 37.5),
+        "TpBC" => spherical(180.0, 37.5),
+        "BtFL" => spherical(52.5, -22.5),
+        "BtFR" => spherical(-52.5, -22.5),
+        "BtFC" => spherical(0.0, -22.5),
         _ => return None,
     })
 }
@@ -2285,7 +2338,7 @@ fn validate_binaural_layout_preset(
         .labels
         .iter()
         .enumerate()
-        .filter(|(index, _)| preset.lfe_index() != Some(*index))
+        .filter(|(index, _)| !preset.layout.channels()[*index].lfe)
         .filter_map(|(_, label)| {
             virtual_speaker_direction(label)
                 .is_none()
@@ -2312,7 +2365,9 @@ pub fn validate_speaker_output(
     let semantic = preset.semantic_channel_layout();
     let container = output_container_for_path(output)?;
     match container {
-        OutputContainer::Wav if semantic.wav_channel_mask().is_none() => {
+        OutputContainer::Wav
+            if semantic.wav_channel_mask().is_none() && semantic.name != "22.2" =>
+        {
             Err(JocRenderError::WavLayoutNotExactlyRepresentable {
                 layout: layout.to_owned(),
             })
@@ -2707,12 +2762,16 @@ impl JocWavOutput {
         overwrite: bool,
         layout: &SemanticChannelLayout,
     ) -> Result<Self, JocRenderError> {
-        let speaker_mask = layout.wav_channel_mask().ok_or_else(|| {
-            JocRenderError::WavLayoutNotExactlyRepresentable {
-                layout: layout.name.clone(),
+        let speaker_mask = match layout.wav_channel_mask() {
+            Some(mask) => Some(mask),
+            None if layout.name == "22.2" => None,
+            None => {
+                return Err(JocRenderError::WavLayoutNotExactlyRepresentable {
+                    layout: layout.name.clone(),
+                });
             }
-        })?;
-        Self::new_with_mask(output, format, overwrite, Some(speaker_mask))
+        };
+        Self::new_with_mask(output, format, overwrite, speaker_mask)
     }
 
     fn new_with_mask(
@@ -2991,15 +3050,27 @@ fn caf_description(
         "FL" | "front-left" | "Left" => caf_label(1),
         "FR" | "front-right" | "Right" => caf_label(2),
         "FC" | "front-center" | "Center" => caf_label(3),
-        "LFE" | "low-frequency" => caf_label(4),
+        "LFE" | "LFE1" | "low-frequency" => caf_label(4),
+        "LFE2" => caf_label(37),
         "Lb" | "BL" | "back-left" => caf_label(5),
         "Rb" | "BR" | "back-right" => caf_label(6),
-        "Ls" | "SL" | "side-left" => caf_label(10),
-        "Rs" | "SR" | "side-right" => caf_label(11),
-        "TFL" | "Ltf" | "top-front-left" => caf_label(13),
-        "TFR" | "Rtf" | "top-front-right" => caf_label(15),
-        "TBL" | "Ltr" | "top-back-left" => caf_label(16),
-        "TBR" | "Rtr" | "top-back-right" => caf_label(18),
+        "FLc" => caf_label(7),
+        "FRc" => caf_label(8),
+        "BC" => caf_label(9),
+        "Ls" | "SiL" | "SL" | "side-left" => caf_label(10),
+        "Rs" | "SiR" | "SR" | "side-right" => caf_label(11),
+        "TFL" | "Ltf" | "TpFL" | "top-front-left" => caf_label(13),
+        "TFR" | "Rtf" | "TpFR" | "top-front-right" => caf_label(15),
+        "TBL" | "Ltr" | "TpBL" | "top-back-left" => caf_label(16),
+        "TBR" | "Rtr" | "TpBR" | "top-back-right" => caf_label(18),
+        "TpFC" => caf_label(14),
+        "TpC" => caf_label(12),
+        "TpBC" => caf_label(17),
+        "TpSiL" => caf_22_2_coordinate(90.0, 37.5),
+        "TpSiR" => caf_22_2_coordinate(-90.0, 37.5),
+        "BtFC" => caf_22_2_coordinate(0.0, -22.5),
+        "BtFL" => caf_22_2_coordinate(52.5, -22.5),
+        "BtFR" => caf_22_2_coordinate(-52.5, -22.5),
         "Lw" | "left-wide" => caf_label(35),
         "Rw" | "right-wide" => caf_label(36),
         "Ltm" => caf_coordinate(TOP_MIDDLE_X_LEFT),
@@ -3027,6 +3098,24 @@ fn caf_coordinate(openjoc_x: f64) -> CafChannelDescription {
         label: CAF_LABEL_USE_COORDINATES,
         flags: CAF_FLAG_RECTANGULAR_COORDINATES,
         coordinates: [(2.0 * openjoc_x - 1.0) as f32, 0.0, TOP_MIDDLE_Z as f32],
+    }
+}
+
+fn caf_22_2_coordinate(azimuth_degrees: f64, elevation_degrees: f64) -> CafChannelDescription {
+    let azimuth = azimuth_degrees.to_radians();
+    let elevation = elevation_degrees.to_radians();
+    caf_coordinate_xyz(
+        -azimuth.sin() * elevation.cos(),
+        azimuth.cos() * elevation.cos(),
+        elevation.sin(),
+    )
+}
+
+fn caf_coordinate_xyz(x: f64, y: f64, z: f64) -> CafChannelDescription {
+    CafChannelDescription {
+        label: CAF_LABEL_USE_COORDINATES,
+        flags: CAF_FLAG_RECTANGULAR_COORDINATES,
+        coordinates: [x as f32, y as f32, z as f32],
     }
 }
 
@@ -3371,7 +3460,7 @@ mod tests {
             .iter()
             .enumerate()
             .filter_map(|(index, label)| {
-                if preset.lfe_index() == Some(index) {
+                if preset.layout.channels()[index].lfe {
                     return None;
                 }
                 Some(
@@ -3604,7 +3693,7 @@ mod tests {
             JOC_RENDER_SUPPORTED_LAYOUTS,
             [
                 "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2",
-                "9.1.4", "9.1.6",
+                "9.1.4", "9.1.6", "22.2",
             ]
         );
         let expected = [
@@ -3883,7 +3972,7 @@ mod tests {
 
     #[test]
     fn unknown_layout_reports_supported_values_without_fallback() {
-        let error = JocSpeakerRenderer::new("22.2", control(false, 6)).unwrap_err();
+        let error = JocSpeakerRenderer::new("22.3", control(false, 6)).unwrap_err();
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
         assert!(error.to_string().contains("5.1.4"));
         assert!(error.to_string().contains("7.1.2"));
@@ -4059,7 +4148,7 @@ mod tests {
                 .labels
                 .iter()
                 .enumerate()
-                .filter(|(index, _)| preset.lfe_index() != Some(*index))
+                .filter(|(index, _)| !preset.layout.channels()[*index].lfe)
                 .map(|(index, label)| (*label, index))
                 .collect::<Vec<_>>();
             assert_eq!(
@@ -4437,8 +4526,10 @@ mod tests {
                 .unwrap();
             let preset = SpeakerLayoutPreset::for_name(name).unwrap();
             assert_eq!(block.channels.len(), preset.channel_count());
-            if let Some(lfe_index) = preset.lfe_index() {
-                assert_eq!(block.channels[lfe_index], vec![99.0; 2]);
+            if preset.lfe_count() > 0 {
+                for lfe_index in preset.lfe_indices() {
+                    assert_eq!(block.channels[lfe_index], vec![99.0; 2]);
+                }
             } else {
                 assert_ne!(block.channels, vec![vec![99.0; 2], vec![99.0; 2]]);
             }
@@ -4788,7 +4879,7 @@ mod tests {
 
     #[test]
     fn unsupported_layout_is_explicit() {
-        let error = JocSpeakerRenderer::new("22.2", control(false, 6)).unwrap_err();
+        let error = JocSpeakerRenderer::new("22.3", control(false, 6)).unwrap_err();
         assert!(matches!(error, JocRenderError::UnsupportedLayout(_)));
     }
 
@@ -5232,6 +5323,50 @@ mod tests {
     }
 
     #[test]
+    fn twenty_two_two_has_explicit_lfe_order_and_container_boundaries() {
+        let preset = SpeakerLayoutPreset::for_name("22.2").expect("22.2 preset");
+        assert_eq!(preset.channel_count(), 24);
+        assert_eq!(preset.lfe_indices(), vec![3, 9]);
+        assert!(super::validate_speaker_output("22.2", Path::new("22.2.wav")).is_ok());
+        assert!(super::validate_speaker_output("22.2", Path::new("22.2.caf")).is_ok());
+
+        let root =
+            std::env::temp_dir().join(format!("openjoc-22-2-container-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let channels = (0..24).map(|index| vec![index as f64]).collect::<Vec<_>>();
+
+        let wav_path = root.join("22.2.wav");
+        let mut wav =
+            JocPcmOutput::new_for_speaker_layout(&wav_path, SampleFormat::F32, false, "22.2")
+                .unwrap();
+        wav.write_block(&RenderedBlock {
+            sample_rate: 48_000,
+            channels: channels.clone(),
+        })
+        .unwrap();
+        wav.finish().unwrap();
+        let decoded = decode(&fs::read(&wav_path).unwrap()).unwrap();
+        assert_eq!(decoded.channels.len(), 24);
+        assert_eq!(decoded.channel_mask, None);
+
+        let caf_path = root.join("22.2.caf");
+        let mut caf =
+            JocPcmOutput::new_for_speaker_layout(&caf_path, SampleFormat::F32, false, "22.2")
+                .unwrap();
+        caf.write_block(&RenderedBlock {
+            sample_rate: 48_000,
+            channels,
+        })
+        .unwrap();
+        caf.finish().unwrap();
+        let descriptions = caf_channel_descriptions(&fs::read(&caf_path).unwrap());
+        assert_eq!(descriptions.len(), 24);
+        assert_eq!(descriptions[3].0, 4);
+        assert_eq!(descriptions[9].0, 37);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn public_91_family_is_caf_capable_and_wav_fails_closed() {
         for layout in ["9.1", "9.1.2", "9.1.4", "9.1.6"] {
             let root = std::env::temp_dir().join(format!(
@@ -5418,10 +5553,10 @@ mod tests {
             JOC_RENDER_SUPPORTED_LAYOUTS,
             [
                 "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2",
-                "9.1.4", "9.1.6",
+                "9.1.4", "9.1.6", "22.2",
             ]
         );
-        assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
+        assert!(SpeakerLayoutPreset::for_name("22.2").is_ok());
         assert_eq!(
             super::validate_output_path(std::path::Path::new("output.WAV")).unwrap(),
             OutputContainer::Wav

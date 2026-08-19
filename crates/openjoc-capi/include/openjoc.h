@@ -76,8 +76,8 @@ typedef struct openjoc_decoder_config {
     uint8_t drc_boost_percent;
     uint8_t drc_cut_percent;
     uint32_t validation_profile;
-    const uint8_t *sofa_data;
-    size_t sofa_size;
+    const uint8_t *sofa_data; /* NULL/0 selects the built-in generic HRTF. */
+    size_t sofa_size;         /* Nonzero selects a strict caller-provided SOFA. */
     const char *virtual_layout;
     uint32_t lfe_policy;
     /* Appended in ABI minor 1; older struct_size callers use DEFAULT. */

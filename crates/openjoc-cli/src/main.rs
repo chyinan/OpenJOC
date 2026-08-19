@@ -86,11 +86,13 @@ struct DecodeEac3Args {
     streaming: bool,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 struct RenderJocArgs {
     input: PathBuf,
     topology: Option<PathBuf>,
     layout: String,
     output: PathBuf,
+    binaural: bool,
     binaural_sofa: Option<PathBuf>,
     binaural_backend: joc_render::BinauralBackend,
     binaural_backend_requested: bool,
@@ -196,9 +198,9 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc decode-payload [OPTIONS]\n",
         "  openjoc sofa inspect <FILE> [--json]\n",
         "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
-        "  openjoc render-joc <FILE> --binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] --output <OUTPUT.wav|OUTPUT.caf>\n",
-        "  render-joc supported presets: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6|22.2> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
+        "  openjoc render-joc <FILE> --binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] --output <OUTPUT.wav|OUTPUT.caf>\n",
+        "  render-joc supported presets: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, 22.2\n",
         "  openjoc --help\n",
         "  openjoc --version\n",
         "\n",
@@ -222,8 +224,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
-        "                         [--binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>] [--backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
+        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|5.1|5.1.2|5.1.4|7.1|7.1.2|7.1.4|7.1.6|9.1|9.1.2|9.1.4|9.1.6|22.2> --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
+        "                         [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>] [--backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
@@ -273,7 +275,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
         "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
-        "  render-joc SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6; bridge control is automatic by default\n",
+        "  render-joc SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, and 22.2; bridge control is automatic by default\n",
         "  GENERIC/CUSTOM LIBRARY CAPABILITY: use openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format\n",
     ));
     Ok(())
@@ -318,7 +320,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] --layout <2.0|LAYOUT> --output <OUTPUT.wav|OUTPUT.caf>\n",
             "       [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
             "       [--dialnorm default|digital|analog] [--normalize-peak <TARGET_DBFS>]\n",
-            "       [--binaural --sofa <HRTF.sofa> [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]\n",
+            "       [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]\n",
             "       [--backend direct|partitioned --partition-size N]\n",
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
@@ -334,11 +336,11 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "--dialnorm analog uses unity dialnorm gain; advanced compatibility/diagnostic policy. Hot material may drive downstream headroom processing more heavily.\n",
             "--normalize-peak TARGET_DBFS normalizes the final rendered file to the requested sample peak after decoder, renderer, and FinalLinkedGain processing. It is optional, file-output only, one static linked gain before file encoding, and not DRC, dialnorm, a limiter, compressor, LUFS, or true-peak normalization.\n",
             "Recommended convenient offline workflow: omit --dialnorm (default) and add --normalize-peak -0.1 when you want a hotter file. Do not choose analog merely because it is louder.\n",
-            "SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, and 9.1.6.\n",
+            "SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, and 22.2.\n",
             "GENERIC/CUSTOM LIBRARY CAPABILITY: openjoc_scene::SpatialLayout + JocSpatialBridge; no custom CLI file format.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
-            "With --binaural --sofa, the default virtual layout is 7.1.4 and the output is always two-channel L/R-ear stereo.\n",
+            "With --binaural, the default virtual layout is 7.1.4 and the output is always two-channel L/R-ear stereo. Without --sofa, the bundled generic HRTF is used; --sofa selects a user SOFA.\n",
             "--virtual-layout selects the internal field; --layout remains physical output unless used as a legacy binaural alias.\n",
             "HRIRs use exact lookup when available and deterministic delay-aligned spherical interpolation when safely covered by SOFA measurements.\n",
             "The simple binaural form defaults to virtual layout 7.1.4 and LFE policy exclude; output remains two-channel L/R-ear stereo.\n",
@@ -1109,13 +1111,6 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         .into());
     }
     let binaural = binaural_requested || binaural_sofa.is_some();
-    if binaural && binaural_sofa.is_none() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "--binaural requires --sofa FILE (legacy --binaural-sofa is also accepted)",
-        )
-        .into());
-    }
     if !binaural && virtual_layout.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -1145,6 +1140,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         topology,
         layout,
         output: output.ok_or_else(usage_error)?,
+        binaural,
         binaural_sofa,
         binaural_backend,
         binaural_backend_requested,
@@ -1559,7 +1555,7 @@ fn render_joc_preflight(
     // state or opening/decoding the input stream. A binaural virtual layout is
     // renderer configuration; it must not be treated as physical output
     // metadata or leak its channel count into the sink.
-    if arguments.binaural_sofa.is_none() {
+    if !arguments.binaural {
         joc_render::validate_speaker_output(&arguments.layout, &arguments.output)?;
     }
     if arguments.downmix_policy.is_some() && arguments.layout != "2.0" {
@@ -1569,11 +1565,11 @@ fn render_joc_preflight(
         )
         .into());
     }
-    if arguments.binaural_sofa.is_some() {
+    if arguments.binaural {
         if arguments.downmix_policy.is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "--downmix is a 2.0 speaker policy and cannot be combined with --binaural-sofa",
+                "--downmix is a 2.0 speaker policy and cannot be combined with binaural rendering",
             )
             .into());
         }
@@ -1581,7 +1577,7 @@ fn render_joc_preflight(
     } else if arguments.lfe_policy.is_some() || arguments.binaural_backend_requested {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "--backend, --partition-size, and --lfe-policy require --binaural-sofa",
+            "--backend, --partition-size, and --lfe-policy require --binaural",
         )
         .into());
     }
@@ -1668,12 +1664,23 @@ fn run_legacy_render_pass(
     let mut decode_timing = performance::DecodeStageTiming::new(timing_requested);
     let mut render_timing = performance::RenderStageTiming::default();
     let dither = deterministic_dither_values();
-    if let Some(sofa_path) = &arguments.binaural_sofa {
-        let sofa = openjoc_sofa::load_simple_free_field_hrir(
-            sofa_path,
-            openjoc_sofa::SofaLoadLimits::default(),
-        )
-        .map_err(joc_render::JocRenderError::from)?;
+    if arguments.binaural {
+        let (sofa, builtin_hrtf) = if let Some(sofa_path) = &arguments.binaural_sofa {
+            (
+                openjoc_sofa::load_simple_free_field_hrir(
+                    sofa_path,
+                    openjoc_sofa::SofaLoadLimits::default(),
+                )
+                .map_err(joc_render::JocRenderError::from)?,
+                false,
+            )
+        } else {
+            (
+                openjoc_sofa::load_builtin_generic_hrir()
+                    .map_err(joc_render::JocRenderError::from)?,
+                true,
+            )
+        };
         let control = arguments
             .topology
             .as_ref()
@@ -1697,6 +1704,9 @@ fn run_legacy_render_pass(
                 arguments.diagnostic_contribution,
             )?
         };
+        if builtin_hrtf {
+            renderer.mark_builtin_generic_hrtf();
+        }
         if timing_requested {
             renderer.enable_stage_timing();
         }
@@ -1742,7 +1752,10 @@ fn run_legacy_render_pass(
             })?;
         }
         let diagnostics = renderer.diagnostics_with_output(
-            sofa_path,
+            arguments
+                .binaural_sofa
+                .as_deref()
+                .unwrap_or(Path::new("builtin-generic")),
             arguments.validation_profile,
             selected_profile,
             &summary,
@@ -1901,7 +1914,7 @@ fn render_joc_with_peak_normalization(
     let render_elapsed = render_started.elapsed();
     let mut intermediate = intermediate.finish()?;
 
-    let mut output = if arguments.binaural_sofa.is_some() {
+    let mut output = if arguments.binaural {
         joc_render::JocPcmOutput::new_for_binaural(
             &arguments.output,
             arguments.output_format,
@@ -1995,7 +2008,7 @@ fn render_joc(
         );
     }
     if arguments.topology.is_none()
-        && arguments.binaural_sofa.is_none()
+        && !arguments.binaural
         && arguments.performance_report.is_none()
         && arguments.diagnostic_contribution == SpatialContributionMode::Full
     {
@@ -2040,12 +2053,23 @@ fn render_joc(
         total_samples,
         sample_rate,
     );
-    if let Some(sofa_path) = &arguments.binaural_sofa {
-        let sofa = openjoc_sofa::load_simple_free_field_hrir(
-            sofa_path,
-            openjoc_sofa::SofaLoadLimits::default(),
-        )
-        .map_err(joc_render::JocRenderError::from)?;
+    if arguments.binaural {
+        let (sofa, builtin_hrtf) = if let Some(sofa_path) = &arguments.binaural_sofa {
+            (
+                openjoc_sofa::load_simple_free_field_hrir(
+                    sofa_path,
+                    openjoc_sofa::SofaLoadLimits::default(),
+                )
+                .map_err(joc_render::JocRenderError::from)?,
+                false,
+            )
+        } else {
+            (
+                openjoc_sofa::load_builtin_generic_hrir()
+                    .map_err(joc_render::JocRenderError::from)?,
+                true,
+            )
+        };
         let control = arguments
             .topology
             .as_ref()
@@ -2069,6 +2093,9 @@ fn render_joc(
                 arguments.diagnostic_contribution,
             )?
         };
+        if builtin_hrtf {
+            renderer.mark_builtin_generic_hrtf();
+        }
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
@@ -2173,7 +2200,10 @@ fn render_joc(
                 println!(
                     "{}",
                     renderer.diagnostics_with_output(
-                        sofa_path,
+                        arguments
+                            .binaural_sofa
+                            .as_deref()
+                            .unwrap_or(Path::new("builtin-generic")),
                         arguments.validation_profile,
                         selected_profile,
                         &summary,
@@ -2194,7 +2224,7 @@ fn render_joc(
     } else if arguments.lfe_policy.is_some() || arguments.binaural_backend_requested {
         Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "--backend, --partition-size, and --lfe-policy require --binaural-sofa",
+            "--backend, --partition-size, and --lfe-policy require --binaural",
         )
         .into())
     } else {
@@ -2447,6 +2477,7 @@ fn render_joc_with_embedded_session(
             output_layout: format!("Speaker layout ({})", semantic_layout.name),
             channel_count: semantic_layout.channel_count(),
             lfe_index: semantic_layout.lfe_index,
+            lfe_count: semantic_layout.lfe_count(),
             dialnorm_policy: joc_render::dialnorm_policy_name(arguments.dialnorm).to_owned(),
             downmix_policy: arguments
                 .downmix_policy
@@ -4357,6 +4388,7 @@ mod profile_name_tests {
             "output.wav".to_owned(),
         ];
         let parsed = parse_render_joc(&base).expect("base render-joc options");
+        assert!(!parsed.binaural);
         assert_eq!(parsed.binaural_backend, joc_render::BinauralBackend::Direct);
         assert!(parsed.binaural_sofa.is_none());
         let mut binaural = base.to_vec();
@@ -4371,6 +4403,7 @@ mod profile_name_tests {
             "equal-power-dual-mono".to_owned(),
         ]);
         let parsed = parse_render_joc(&binaural).expect("binaural render-joc options");
+        assert!(parsed.binaural);
         assert_eq!(parsed.binaural_sofa, Some(PathBuf::from("HRTF.sofa")));
         assert_eq!(
             parsed.binaural_backend,
@@ -4401,6 +4434,16 @@ mod profile_name_tests {
             parsed.lfe_policy,
             Some(joc_render::BinauralLfePolicy::Exclude)
         );
+
+        let builtin = [
+            "input.m4a".to_owned(),
+            "--binaural".to_owned(),
+            "--output".to_owned(),
+            "binaural.wav".to_owned(),
+        ];
+        let parsed = parse_render_joc(&builtin).expect("zero-config binaural configuration");
+        assert!(parsed.binaural);
+        assert!(parsed.binaural_sofa.is_none());
 
         let mut advanced = values.to_vec();
         advanced.extend(["--virtual-layout".to_owned(), "9.1.6".to_owned()]);

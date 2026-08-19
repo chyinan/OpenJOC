@@ -330,13 +330,14 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
         }
     };
     let binaural = if render_mode == RenderMode::Binaural {
-        if config.sofa_data.is_null() || config.sofa_size == 0 {
-            return Err(OpenJocError::InvalidConfig(
-                "binaural mode requires sofa_data and sofa_size".to_owned(),
-            ));
-        }
-        // SAFETY: the caller owns a readable buffer for the duration of create.
-        let bytes = unsafe { slice::from_raw_parts(config.sofa_data, config.sofa_size) }.to_vec();
+        // A null/empty SOFA selects the bundled generic HRTF. A non-empty
+        // buffer retains the strict user-SOFA path and its validation gates.
+        let bytes = if config.sofa_data.is_null() || config.sofa_size == 0 {
+            Vec::new()
+        } else {
+            // SAFETY: the caller owns a readable buffer for the duration of create.
+            unsafe { slice::from_raw_parts(config.sofa_data, config.sofa_size) }.to_vec()
+        };
         let virtual_layout = if config.virtual_layout.is_null() {
             speaker_layout.clone()
         } else {

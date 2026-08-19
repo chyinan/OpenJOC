@@ -72,6 +72,28 @@ pub struct LoadedSofaHrirBank {
     pub metadata: SofaHrirMetadata,
 }
 
+/// Official dataset identity for the offline default renderer resource.
+pub const BUILTIN_GENERIC_HRTF_DATASET: &str = "SADIE II D1 (KU100), v2-2";
+/// The built-in resource is the official D1 48 kHz, 256-tap HRIR set converted
+/// to the CDF-1 subset already used by the portable SOFA loader.
+pub const BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ: u32 = 48_000;
+pub const BUILTIN_GENERIC_HRTF_TAP_COUNT: usize = 256;
+
+/// Loads the bundled, offline generic HRTF through the same SOFA parser used
+/// for caller-provided files. The larger measurement limit is specific to the
+/// authorized SADIE II D1 grid; it does not weaken user-file defaults.
+pub fn load_builtin_generic_hrir() -> Result<LoadedSofaHrirBank, SofaError> {
+    let limits = SofaLoadLimits {
+        max_measurements: 16_384,
+        max_file_bytes: 32 * 1024 * 1024,
+        ..SofaLoadLimits::default()
+    };
+    parse_simple_free_field_hrir(
+        include_bytes!("../assets/sadie-ii-d1-48k-256tap.sofa"),
+        limits,
+    )
+}
+
 /// Result of resolving one virtual-speaker direction against a SOFA bank.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedHrir {
@@ -1295,6 +1317,118 @@ fn transform(value: CartesianPosition, basis: [CartesianPosition; 3]) -> Cartesi
         dot(value, basis[1]),
         dot(value, basis[2]),
     )
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod builtin_tests {
+    use super::{BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, load_builtin_generic_hrir, resolve_hrir};
+    use super::{SofaLoadLimits, parse_simple_free_field_hrir};
+    use openjoc_render::CartesianPosition;
+
+    #[test]
+    fn bundled_generic_resource_round_trips_through_the_strict_sofa_path() {
+        let loaded = load_builtin_generic_hrir().expect("bundled SADIE II resource");
+        assert_eq!(
+            loaded.metadata.sample_rate_hz,
+            BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ
+        );
+        assert_eq!(loaded.metadata.measurement_count, 8_817);
+        assert_eq!(loaded.metadata.original_fir_length, 256);
+        assert_eq!(loaded.metadata.expanded_max_tap_length, 256);
+        assert_eq!(loaded.bank.entries().len(), 8_817);
+    }
+
+    #[test]
+    fn bundled_generic_resource_covers_the_admitted_virtual_directions() {
+        let loaded = load_builtin_generic_hrir().expect("bundled SADIE II resource");
+        for (name, direction) in [
+            ("front", CartesianPosition::new(0.0, 1.0, 0.0)),
+            ("30-left", CartesianPosition::new(-0.5, 0.8660254, 0.0)),
+            ("left", CartesianPosition::new(-1.0, 0.0, 0.0)),
+            (
+                "rear-left",
+                CartesianPosition::new(
+                    -std::f64::consts::FRAC_1_SQRT_2,
+                    -std::f64::consts::FRAC_1_SQRT_2,
+                    0.0,
+                ),
+            ),
+            ("rear", CartesianPosition::new(0.0, -1.0, 0.0)),
+            (
+                "upper-front",
+                CartesianPosition::new(
+                    0.0,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                ),
+            ),
+            ("zenith", CartesianPosition::new(0.0, 0.0, 1.0)),
+            (
+                "lower-front",
+                CartesianPosition::new(
+                    0.0,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    -std::f64::consts::FRAC_1_SQRT_2,
+                ),
+            ),
+            ("api-top-front", CartesianPosition::new(-1.0, 0.0, 1.0)),
+            ("api-top-rear", CartesianPosition::new(-1.0, 1.0, 1.0)),
+            ("api-top-middle", CartesianPosition::new(-1.0, 0.0, 1.0)),
+            ("api-wide", CartesianPosition::new(-1.0, -0.2, 0.0)),
+        ] {
+            let resolved = resolve_hrir(&loaded.bank, direction)
+                .unwrap_or_else(|error| panic!("{name}: {error}"));
+            assert!(resolved.pair.left_taps().iter().all(|tap| tap.is_finite()));
+            assert!(resolved.pair.right_taps().iter().all(|tap| tap.is_finite()));
+            assert!(resolved.neighbor_count >= 1);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual release performance harness"]
+    fn builtin_hrtf_performance_harness() {
+        use std::{hint::black_box, mem::size_of, time::Instant};
+
+        let builtin_started = Instant::now();
+        let builtin = load_builtin_generic_hrir().expect("built-in HRTF");
+        let builtin_setup = builtin_started.elapsed();
+        let external_started = Instant::now();
+        let external = parse_simple_free_field_hrir(
+            include_bytes!("../assets/sadie-ii-d1-48k-256tap.sofa"),
+            SofaLoadLimits {
+                max_measurements: 16_384,
+                max_file_bytes: 32 * 1024 * 1024,
+                ..SofaLoadLimits::default()
+            },
+        )
+        .expect("representative external CDF-1 SOFA");
+        let external_setup = external_started.elapsed();
+        let directions = [
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            CartesianPosition::new(-1.0, 1.0, 0.0),
+            CartesianPosition::new(-1.0, 0.0, 0.0),
+            CartesianPosition::new(-1.0, -1.0, 0.0),
+            CartesianPosition::new(-1.0, 1.0, 1.0),
+            CartesianPosition::new(-1.0, 0.0, 1.0),
+            CartesianPosition::new(-1.0, -1.0, 1.0),
+            CartesianPosition::new(0.0, 0.0, 1.0),
+        ];
+        let resolve_started = Instant::now();
+        for direction in directions {
+            black_box(resolve_hrir(&builtin.bank, direction).expect("built-in coverage"));
+            black_box(resolve_hrir(&external.bank, direction).expect("external coverage"));
+        }
+        let resolve_elapsed = resolve_started.elapsed();
+        let estimated_tap_bytes = builtin.bank.entries().len() * 2 * 256 * size_of::<f64>();
+        println!(
+            "builtin_setup_ms={} external_setup_ms={} resolve_16_directions_ms={} entries={} estimated_hrir_tap_bytes={estimated_tap_bytes}",
+            builtin_setup.as_secs_f64() * 1_000.0,
+            external_setup.as_secs_f64() * 1_000.0,
+            resolve_elapsed.as_secs_f64() * 1_000.0,
+            builtin.bank.entries().len(),
+        );
+    }
 }
 fn same_direction(current: [f64; 3], direction: CartesianPosition) -> bool {
     (current[0] * direction.x + current[1] * direction.y + current[2] * direction.z - 1.0).abs()

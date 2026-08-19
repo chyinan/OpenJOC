@@ -21,7 +21,10 @@
 //! live at the `openjoc-sofa` boundary; moving binaural sources, distance, room
 //! acoustics, occlusion, and JOC semantic binding remain explicit non-features.
 
-use std::fmt;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 mod final_linked_gain;
 mod partitioned;
@@ -902,17 +905,31 @@ impl HrirBank {
                 });
             }
         }
-        for first in 0..entries.len() {
-            for second in first + 1..entries.len() {
-                if entries[first].id == entries[second].id {
-                    return Err(RenderError::DuplicateHrirEntryId {
-                        id: entries[first].id,
-                    });
-                }
-                if same_direction_3d(entries[first].direction, entries[second].direction) {
-                    return Err(RenderError::DuplicateHrirDirection { first, second });
+        let mut ids = HashSet::with_capacity(entries.len());
+        let mut direction_grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
+        for (index, entry) in entries.iter().enumerate() {
+            if !ids.insert(entry.id) {
+                return Err(RenderError::DuplicateHrirEntryId { id: entry.id });
+            }
+            let cell = hrir_direction_cell(entry.direction);
+            for dx in -2..=2 {
+                for dy in -2..=2 {
+                    for dz in -2..=2 {
+                        let neighbor = [cell[0] + dx, cell[1] + dy, cell[2] + dz];
+                        if let Some(candidates) = direction_grid.get(&neighbor) {
+                            if let Some(&first) = candidates.iter().find(|&&candidate| {
+                                same_direction_3d(entries[candidate].direction, entry.direction)
+                            }) {
+                                return Err(RenderError::DuplicateHrirDirection {
+                                    first,
+                                    second: index,
+                                });
+                            }
+                        }
+                    }
                 }
             }
+            direction_grid.entry(cell).or_default().push(index);
         }
         Ok(Self {
             sample_rate_hz,
@@ -2353,6 +2370,12 @@ fn same_direction_3d(first: [f64; 3], second: [f64; 3]) -> bool {
         .map(|(left, right)| left * right)
         .sum::<f64>();
     (1.0 - dot).abs() <= HRIR_DIRECTION_DOT_TOLERANCE
+}
+
+const HRIR_DIRECTION_GRID_SCALE: f64 = 1_000_000.0;
+
+fn hrir_direction_cell(direction: [f64; 3]) -> [i64; 3] {
+    direction.map(|value| (value * HRIR_DIRECTION_GRID_SCALE).floor() as i64)
 }
 
 fn validate_binaural_outputs(left: &[f64], right: &[f64]) -> Result<(), RenderError> {
