@@ -322,66 +322,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
     }
 
     fn parse(&self, adapter: &gst_base::Adapter) -> Result<(u32, u32), gst::FlowError> {
-        let available = adapter.available();
-        if available < 8 {
-            return Err(gst::FlowError::Eos);
-        }
-
-        let first = read_header(adapter, 0)?;
-        validate_independent_zero(first, "first syncframe")?;
-        if first.frame_size > MAX_SYNCFRAME_BYTES || first.sample_rate != SAMPLE_RATE {
-            return Err(gst::FlowError::Error);
-        }
-        if available < first.frame_size {
-            return if self.obj().parse_state().1 {
-                Err(gst::FlowError::Error)
-            } else {
-                Err(gst::FlowError::Eos)
-            };
-        }
-
-        let eos = self.obj().parse_state().1;
-        if available == first.frame_size {
-            return if eos {
-                Ok((0, first.frame_size as u32))
-            } else {
-                Err(gst::FlowError::Eos)
-            };
-        }
-
-        if available < first.frame_size + 8 {
-            return if eos {
-                Ok((0, first.frame_size as u32))
-            } else {
-                Err(gst::FlowError::Eos)
-            };
-        }
-        let second_offset = first.frame_size;
-        let second = read_header(adapter, second_offset)?;
-        if second.stream_type != StreamType::Dependent && second.substream_id == 0 {
-            return Ok((0, first.frame_size as u32));
-        }
-        if second.stream_type != StreamType::Dependent || second.substream_id != 0 {
-            return Err(gst::FlowError::Error);
-        }
-        let total = first
-            .frame_size
-            .checked_add(second.frame_size)
-            .ok_or(gst::FlowError::Error)?;
-        if second.frame_size > MAX_SYNCFRAME_BYTES
-            || second.sample_rate != SAMPLE_RATE
-            || second.audio_blocks != first.audio_blocks
-        {
-            return Err(gst::FlowError::Error);
-        }
-        if available < total {
-            return if eos {
-                Err(gst::FlowError::Error)
-            } else {
-                Err(gst::FlowError::Eos)
-            };
-        }
-        Ok((0, total as u32))
+        parse_adapter(adapter, self.obj().parse_state().1)
     }
 
     fn handle_frame(
@@ -598,6 +539,75 @@ fn read_header(
     parse_syncframe_header(&prefix).map_err(|_| gst::FlowError::Error)
 }
 
+/// Returns one complete I0/[D0] unit length, or `GST_FLOW_EOS` through the
+/// Rust `FlowError::Eos` mapping while the adapter needs more bytes. The
+/// GstAudioDecoder base class consumes that return as "no frame yet" and keeps
+/// the adapter contents; it does not forward EOS downstream.
+fn parse_adapter(adapter: &gst_base::Adapter, eos: bool) -> Result<(u32, u32), gst::FlowError> {
+    let available = adapter.available();
+    if available < 8 {
+        return if eos {
+            Err(gst::FlowError::Error)
+        } else {
+            Err(gst::FlowError::Eos)
+        };
+    }
+
+    let first = read_header(adapter, 0)?;
+    validate_independent_zero(first, "first syncframe")?;
+    if first.frame_size > MAX_SYNCFRAME_BYTES || first.sample_rate != SAMPLE_RATE {
+        return Err(gst::FlowError::Error);
+    }
+    if available < first.frame_size {
+        return if eos {
+            Err(gst::FlowError::Error)
+        } else {
+            Err(gst::FlowError::Eos)
+        };
+    }
+
+    if available == first.frame_size {
+        return if eos {
+            Ok((0, first.frame_size as u32))
+        } else {
+            Err(gst::FlowError::Eos)
+        };
+    }
+
+    if available < first.frame_size + 8 {
+        return if eos {
+            Err(gst::FlowError::Error)
+        } else {
+            Err(gst::FlowError::Eos)
+        };
+    }
+    let second = read_header(adapter, first.frame_size)?;
+    if second.stream_type != StreamType::Dependent && second.substream_id == 0 {
+        return Ok((0, first.frame_size as u32));
+    }
+    if second.stream_type != StreamType::Dependent || second.substream_id != 0 {
+        return Err(gst::FlowError::Error);
+    }
+    let total = first
+        .frame_size
+        .checked_add(second.frame_size)
+        .ok_or(gst::FlowError::Error)?;
+    if second.frame_size > MAX_SYNCFRAME_BYTES
+        || second.sample_rate != SAMPLE_RATE
+        || second.audio_blocks != first.audio_blocks
+    {
+        return Err(gst::FlowError::Error);
+    }
+    if available < total {
+        return if eos {
+            Err(gst::FlowError::Error)
+        } else {
+            Err(gst::FlowError::Eos)
+        };
+    }
+    Ok((0, total as u32))
+}
+
 fn validate_independent_zero(header: SyncframeHeader, context: &str) -> Result<(), gst::FlowError> {
     if header.stream_type != StreamType::Independent || header.substream_id != 0 {
         gst::error!(category(), "{context} is not independent substream zero");
@@ -730,6 +740,111 @@ gst::plugin_define!(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn push_bits(bytes: &mut [u8], cursor: &mut usize, value: u64, width: usize) {
+        for shift in (0..width).rev() {
+            if value & (1_u64 << shift) != 0 {
+                bytes[*cursor / 8] |= 0x80 >> (*cursor % 8);
+            }
+            *cursor += 1;
+        }
+    }
+
+    fn syncframe(stream_type: u8, substream_id: u8, size: usize) -> Vec<u8> {
+        let mut bytes = vec![0_u8; size];
+        let mut cursor = 0;
+        push_bits(&mut bytes, &mut cursor, 0x0b77, 16);
+        push_bits(&mut bytes, &mut cursor, u64::from(stream_type), 2);
+        push_bits(&mut bytes, &mut cursor, u64::from(substream_id), 3);
+        push_bits(
+            &mut bytes,
+            &mut cursor,
+            u64::try_from(size / 2 - 1).expect("frame words"),
+            11,
+        );
+        push_bits(&mut bytes, &mut cursor, 0, 2);
+        push_bits(&mut bytes, &mut cursor, 3, 2);
+        bytes
+    }
+
+    fn feed(adapter: &gst_base::Adapter, bytes: Vec<u8>) {
+        adapter.push(gst::Buffer::from_mut_slice(bytes));
+    }
+
+    #[test]
+    fn independent_only_unit_waits_for_eos_then_finishes() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(&adapter, syncframe(0, 0, 16));
+        assert_eq!(parse_adapter(&adapter, false), Err(gst::FlowError::Eos));
+        assert_eq!(parse_adapter(&adapter, true), Ok((0, 16)));
+        adapter.flush(16);
+        assert_eq!(adapter.available(), 0);
+    }
+
+    #[test]
+    fn dependent_frame_in_the_next_buffer_is_not_eos() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(&adapter, syncframe(0, 0, 16));
+        assert_eq!(parse_adapter(&adapter, false), Err(gst::FlowError::Eos));
+        feed(&adapter, syncframe(1, 0, 16));
+        assert_eq!(parse_adapter(&adapter, false), Ok((0, 32)));
+        adapter.flush(32);
+        assert_eq!(adapter.available(), 0);
+    }
+
+    #[test]
+    fn consecutive_access_units_are_emitted_one_at_a_time() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(
+            &adapter,
+            [syncframe(0, 0, 16), syncframe(1, 0, 16)].concat(),
+        );
+        feed(
+            &adapter,
+            [syncframe(0, 0, 16), syncframe(1, 0, 16)].concat(),
+        );
+        assert_eq!(parse_adapter(&adapter, false), Ok((0, 32)));
+        adapter.flush(32);
+        assert_eq!(parse_adapter(&adapter, false), Ok((0, 32)));
+        adapter.flush(32);
+        assert_eq!(adapter.available(), 0);
+    }
+
+    #[test]
+    fn partial_dependent_frame_at_eos_fails_closed() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(&adapter, syncframe(0, 0, 16));
+        let dependent = syncframe(1, 0, 16);
+        feed(&adapter, dependent[..4].to_vec());
+        assert_eq!(parse_adapter(&adapter, true), Err(gst::FlowError::Error));
+    }
+
+    #[test]
+    fn flush_clears_a_partial_access_unit() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(&adapter, syncframe(0, 0, 16));
+        assert_eq!(parse_adapter(&adapter, false), Err(gst::FlowError::Eos));
+        adapter.clear();
+        assert_eq!(adapter.available(), 0);
+        feed(&adapter, syncframe(0, 0, 16));
+        assert_eq!(parse_adapter(&adapter, true), Ok((0, 16)));
+    }
+
+    #[test]
+    fn discontinuity_reset_does_not_retain_partial_input() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(&adapter, syncframe(0, 0, 16));
+        assert_eq!(parse_adapter(&adapter, false), Err(gst::FlowError::Eos));
+        adapter.clear();
+        feed(&adapter, syncframe(0, 0, 16));
+        assert_eq!(parse_adapter(&adapter, true), Ok((0, 16)));
+    }
 
     #[test]
     fn timestamp_conversion_is_rational_and_bounded() {

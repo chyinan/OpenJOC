@@ -75,6 +75,27 @@ JOC admission is performed by `OpenJocSession`, reusing the existing public
 E-AC-3/JOC parser and validation path. There is no generic E-AC-3 fallback and
 no second JOC detector in the plugin.
 
+### Need-data and EOS semantics
+
+`GstAudioDecoder` has no separate `NEED_DATA` return value. While the bounded
+adapter contains an incomplete syncframe or a complete I0 whose possible D0 has
+not arrived, `openjocdec` returns Rust `FlowError::Eos`. The GStreamer base
+class maps that to `GST_FLOW_EOS` internally, interprets it as “no frame yet,”
+keeps the adapter contents, and returns to the upstream chain without emitting
+an EOS event or transitioning the pipeline to EOS. This is the documented
+`GstAudioDecoder` parser contract, not end-of-stream signalling; see the
+[official decoder source](https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/1.28/subprojects/gst-plugins-base/gst-libs/gst/audio/gstaudiodecoder.c)
+and [decoder API documentation](https://gstreamer.freedesktop.org/documentation/audio/gstaudiodecoder.html).
+
+Genuine upstream EOS sets the decoder parse-state EOS flag. A complete
+independent-only unit is then finalized and drained. A partial syncframe or
+partial dependent frame fails closed with a decoder error; it is not silently
+converted into an independent-only unit. The GStreamer base class clears its
+adapter during flush/reset, while the plugin flushes the OpenJOC session, so a
+flush, seek, or discontinuity cannot retain compressed AU bytes or renderer
+history. The focused framing tests cover independent-only input, I0/D0 across
+buffers, consecutive AUs, partial EOS, flush, and discontinuity reset.
+
 ## Decoder lifecycle
 
 The element maps the GStreamer lifecycle as follows:
