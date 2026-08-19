@@ -6,6 +6,7 @@ members = [
     "crates/openjoc-cli",
     "crates/openjoc-container",
     "crates/openjoc-eac3",
+    "crates/gst-plugin-openjoc",
     "crates/openjoc-emdf",
     "crates/openjoc-joc",
     "crates/openjoc-oamd",
