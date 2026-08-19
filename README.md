@@ -75,6 +75,9 @@ Read the canonical documentation:
 - [FFmpeg-facing external bridge](docs/integration/FFMPEG.md) — experimental
   libavformat/AVFrame integration for applications embedding FFmpeg. It does
   not modify stock FFmpeg binaries or register an out-of-tree decoder plugin.
+- [Native FFmpeg libavcodec wrapper](docs/integration/FFMPEG_NATIVE.md) — an
+  experimental `libopenjoc` named decoder for custom FFmpeg source builds;
+  stock FFmpeg binaries remain unchanged and ordinary E-AC-3 stays on `eac3`.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
@@ -112,7 +115,9 @@ decoder state.
 The experimental C ABI is distributed with the platform archives as
 `include/openjoc.h` plus static/shared libraries. It uses opaque handles,
 numeric statuses, `struct_size` forward compatibility, instance-owned errors,
-and panic containment. The C surface is ABI 1.1-experimental; compatibility may
+and panic containment. ABI 1.2 adds a framework-neutral bounded compressed-
+stream handle used by native media adapters while preserving the complete-AU
+decoder API. The C surface is ABI 1.2-experimental; compatibility may
 evolve during OpenJOC 0.x; framework adapters are documented separately.
 
 OpenJOC also provides an experimental FFmpeg-facing libavformat/AVFrame bridge
@@ -121,6 +126,12 @@ transport, while the same `OpenJocSession` owns JOC decode and spatial
 rendering. Build it explicitly with `-p openjoc-ffmpeg --features ffmpeg`; see
 the focused integration document for the FFmpeg 9 development dependencies
 and proof executable.
+
+OpenJOC additionally provides an experimental native libavcodec wrapper for
+custom FFmpeg builds configured with `--enable-version3 --enable-libopenjoc`.
+It registers the explicit named decoder `libopenjoc`; it does not alter stock
+FFmpeg installations or replace the ordinary `eac3` decoder. The focused
+native integration document contains the reproducible patch and build flow.
 
 ## Install into a prefix
 

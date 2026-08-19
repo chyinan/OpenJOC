@@ -1,7 +1,9 @@
-# Future native FFmpeg OpenJOC decoder wrapper
+# Historical native FFmpeg wrapper design
 
-This is a design note, not an implementation. No FFmpeg source is modified by
-the current repository.
+The native wrapper described by this design note is now implemented as an
+exported FFmpeg patch series. See [Native FFmpeg libavcodec wrapper](FFMPEG_NATIVE.md)
+for the build, selection, options, timing, parity, and acceptance contract.
+This file is retained only as the pre-implementation design record.
 
 A future FFmpeg-source integration would add one small `FFCodec` wrapper whose
 private context owns an `OpenJocSession` and the already-proven bounded AU

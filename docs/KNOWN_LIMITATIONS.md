@@ -14,11 +14,13 @@ bit-identical Reference Player output.
 - The embeddable packet API accepts exactly one complete E-AC-3 JOC access unit
   per push. Arbitrary byte fragmentation, multiple AUs in one push, demuxing,
   CLI parsing, and filesystem output remain outside `OpenJocSession`.
-- The C ABI is experimental ABI 1.1. It is intended for integration during the
+- The C ABI is experimental ABI 1.2. It is intended for integration during the
   OpenJOC 0.x series; layout and compatibility details may evolve. The
   published header and platform libraries are the supported C consumer
-  surface, but no FFmpeg, GStreamer, mpv, VLC, DirectShow/LAV, or PotPlayer
-  adapter is shipped.
+  surface. The repository provides GStreamer integration, an external FFmpeg
+  bridge, and a native `libopenjoc` source patch, but stock FFmpeg binaries do
+  not contain it and no mpv, VLC, DirectShow/LAV, or PotPlayer adapter is
+  shipped.
 - The codec-domain JOC operator `T(t)` remains unresolved. The separate
   `render-joc` path is an experimental ordinary-domain speaker projection that
   assembles control from decoded JOC/OAMD state; it does not infer authored

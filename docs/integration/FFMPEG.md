@@ -292,9 +292,10 @@ not legal advice.
 - It does not implement mpv integration.
 
 The bridge proves packet assembly, timing, output ownership, and channel
-semantics, but mpv normally consumes decoded audio through libavcodec. The
-recommended next work is therefore the native source wrapper described in
-[FFmpeg native wrapper design](FFMPEG_NATIVE_FUTURE.md), followed by mpv.
+semantics and remains the embedding/reference frontend. The additional
+[native FFmpeg wrapper](FFMPEG_NATIVE.md) now exposes the same semantics through
+libavcodec for custom patched FFmpeg builds. Player integration can select that
+named decoder after positive JOC probing without duplicating this bridge.
 
 ## Local acceptance and performance
 
