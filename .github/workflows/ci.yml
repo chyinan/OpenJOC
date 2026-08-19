@@ -32,14 +32,42 @@ jobs:
           rustc -vV
           cargo -Vv
 
-      - name: Install GStreamer development packages
+      - name: Install media-framework development packages
         run: |
           sudo apt-get update
           sudo apt-get install --yes \
             gstreamer1.0-tools \
             gstreamer1.0-plugins-good \
             libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            libgstreamer-plugins-base1.0-dev \
+            ffmpeg \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev
+
+      - name: Build the minimum FFmpeg 9 SDK
+        run: |
+          curl --fail --location --retry 3 \
+            https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz \
+            --output "$RUNNER_TEMP/ffmpeg-9.0.1.tar.xz"
+          tar -xJf "$RUNNER_TEMP/ffmpeg-9.0.1.tar.xz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/ffmpeg-9.0.1"
+          ./configure \
+            --prefix="$RUNNER_TEMP/ffmpeg9" \
+            --disable-programs \
+            --disable-doc \
+            --disable-debug \
+            --disable-autodetect \
+            --disable-static \
+            --enable-shared \
+            --disable-everything \
+            --enable-protocol=file \
+            --enable-demuxer=eac3,mov,matroska \
+            --enable-parser=ac3
+          make -j2
+          make install
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/ffmpeg9/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg9/lib" >> "$GITHUB_ENV"
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -101,8 +129,8 @@ jobs:
           rustc -vV
           cargo -Vv
 
-      - name: Install GStreamer development package
-        run: brew install gstreamer
+      - name: Install media-framework development packages
+        run: brew install gstreamer ffmpeg
 
       - name: Platform-neutral workspace tests
         run: cargo test --workspace --all-features --locked
@@ -125,8 +153,38 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes \
             libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev
+            libgstreamer-plugins-base1.0-dev \
+            ffmpeg \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev
           rustup toolchain install 1.85.0 --profile minimal
           rustc +1.85.0 -vV
           cargo +1.85.0 -Vv
-          cargo +1.85.0 check --workspace --all-features --locked
+
+      - name: Build the minimum FFmpeg 9 SDK
+        run: |
+          curl --fail --location --retry 3 \
+            https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz \
+            --output "$RUNNER_TEMP/ffmpeg-9.0.1.tar.xz"
+          tar -xJf "$RUNNER_TEMP/ffmpeg-9.0.1.tar.xz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/ffmpeg-9.0.1"
+          ./configure \
+            --prefix="$RUNNER_TEMP/ffmpeg9" \
+            --disable-programs \
+            --disable-doc \
+            --disable-debug \
+            --disable-autodetect \
+            --disable-static \
+            --enable-shared \
+            --disable-everything \
+            --enable-protocol=file \
+            --enable-demuxer=eac3,mov,matroska \
+            --enable-parser=ac3
+          make -j2
+          make install
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/ffmpeg9/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg9/lib" >> "$GITHUB_ENV"
+
+      - name: Check all features at the documented Rust minimum
+        run: cargo +1.85.0 check --workspace --all-features --locked

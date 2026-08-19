@@ -72,6 +72,9 @@ Read the canonical documentation:
   automatic selection for admitted E-AC-3 JOC while ordinary E-AC-3 stays on
   the normal decoder path; applications can select binaural or native
   multichannel speaker rendering while OpenJOC retains the spatial DSP.
+- [FFmpeg-facing external bridge](docs/integration/FFMPEG.md) — experimental
+  libavformat/AVFrame integration for applications embedding FFmpeg. It does
+  not modify stock FFmpeg binaries or register an out-of-tree decoder plugin.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
@@ -110,7 +113,14 @@ The experimental C ABI is distributed with the platform archives as
 `include/openjoc.h` plus static/shared libraries. It uses opaque handles,
 numeric statuses, `struct_size` forward compatibility, instance-owned errors,
 and panic containment. The C surface is ABI 1.1-experimental; compatibility may
-evolve during OpenJOC 0.x, and external-player adapters remain future work.
+evolve during OpenJOC 0.x; framework adapters are documented separately.
+
+OpenJOC also provides an experimental FFmpeg-facing libavformat/AVFrame bridge
+for applications embedding FFmpeg. It uses FFmpeg for demux and packet
+transport, while the same `OpenJocSession` owns JOC decode and spatial
+rendering. Build it explicitly with `-p openjoc-ffmpeg --features ffmpeg`; see
+the focused integration document for the FFmpeg 9 development dependencies
+and proof executable.
 
 ## Install into a prefix
 

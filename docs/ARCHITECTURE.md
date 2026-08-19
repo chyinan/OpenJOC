@@ -10,6 +10,13 @@ audio APIs may be used for integration and I/O, but they do not define
 OpenJOC's spatial rendering result. One renderer. Same spatial semantics across
 platforms.
 
+The CLI, GStreamer plugin, and external FFmpeg bridge are transport frontends
+over the same `OpenJocSession`; they do not contain separate render pipelines.
+GStreamer owns its buffer/caps/segment lifecycle. The FFmpeg bridge uses
+libavformat for demux and public libavutil AVFrame allocation. In both cases
+OpenJOC retains E-AC-3/JOC decode, scene construction, DRC/dialnorm, speaker
+rendering, binaural HRTF rendering, latency, and drain state.
+
 ## Data flow
 
 The explicit render-scene workflow is implemented in `openjoc-render-scene`.

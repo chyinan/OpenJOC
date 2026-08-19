@@ -116,6 +116,11 @@ a virtual speaker layout, and an explicit LFE policy. The session does not
 retain a filesystem path. The public API currently uses direct convolution;
 partitioned convolution is deferred to a later ABI extension.
 
+For frontend parity audits, `OpenJocConfig::effective_config_descriptor()` and
+`effective_config_fingerprint()` expose the normalized session-boundary fields.
+`trace_access_units()` records each grouped AU's exact byte length, SHA-256,
+sample-domain PTS, rate, and independent/dependent frame counts.
+
 ## Errors and status
 
 Statuses are numeric and non-error lifecycle outcomes: `NeedMoreInput`,
