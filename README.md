@@ -32,13 +32,11 @@ rendering assembles bridge control from decoded JOC/OAMD state; `--topology`
 remains an optional complete override/test input.
 
 The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
-`9.1`, `9.1.2`, `9.1.4`, and `9.1.6` workflows are documented in
+`9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and native `22.2` workflows are documented in
 [JOC speaker rendering](docs/JOC_RENDER.md). The same workflow can virtualize
-all public virtual binaural layouts through a user-supplied strict SOFA HRIR
-bank when directions are exact or safely interpolatable. The default virtual
-layout is `7.1.4`; `7.1.6` and the `9.1` family provide semantic speaker-to-CAF
-output independently and can also be used as dataset-dependent binaural
-virtual fields.
+all public virtual binaural layouts through the built-in SADIE II generic HRIR
+or a user-supplied strict SOFA HRIR bank when directions are exact or safely
+interpolatable. The default virtual layout is `7.1.4`.
 The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
 generic N-channel library interface for caller-defined layouts; the CLI names
 are convenience presets, not the renderer's fundamental maximum.
@@ -66,6 +64,8 @@ Read the canonical documentation:
 - [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.7.0 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
+- [Spatial portability](docs/SPATIAL_PORTABILITY.md) — 22.2 geometry, built-in HRTF, and platform-independence policy.
+- [Third-party data notices](THIRD_PARTY_NOTICES.md) — SADIE II license, attribution, and citation.
 - [Library API](docs/LIBRARY_API.md) — headless Rust packet/session contract.
 - [C API](docs/C_API.md) — versioned C/C++ ABI and ownership rules.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.

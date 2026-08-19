@@ -24,11 +24,12 @@ bit-identical Reference Player output.
   assembles control from decoded JOC/OAMD state; it does not infer authored
   object identity or resolve the codec-domain operator.
 - The public `render-joc` presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`,
-  `7.1.4`, `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, and `9.1.6`. `7.1.6` and the
+  `7.1.4`, `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`. `7.1.6` and the
   `9.1` family require semantic CAF output. WAV requests for layouts without
   an exact WAVEFORMATEXTENSIBLE mask fail closed; no identity substitution or
   fabricated mask is used. `2.0` and the current `5.1`-through-`9.1.6` family
-  are public CLI presets; `22.2` remains withheld.
+  are public CLI presets; `22.2` uses explicit unmasked WAV or rich CAF
+  metadata because no complete standard WAVEFORMATEXTENSIBLE mask exists.
 - E-AC-3 dynamic-range control is metadata-driven. `--drc` selects Disabled,
   Line, RF, or Custom signed-fraction scaling; it remains separate from
   dialnorm. OpenJOC's automatic Default dialnorm policy applies the supported
@@ -48,16 +49,16 @@ bit-identical Reference Player output.
   reduction. No crossover, subwoofer redirect, or other bass-management DSP is
   performed.
 - The generic `SpatialLayout`/`JocSpatialBridge` library API accepts caller-
-  defined layouts, but the CLI has no custom-layout file format. Generic
-  library capacity does not imply a public `22.2` contract or third-party DAW
-  interoperability.
+  defined layouts, but the CLI has no custom-layout file format. The public
+  22.2 contract is renderer/container-specific and does not imply third-party
+  DAW interoperability.
 - The admitted Dynamic Region/Zone contract is limited to six horizontal
   states (`NoConstraints`, `BackExcluded`, `SideExcluded`, `CentreAndBack`,
   `ScreenOnly`, and `SurroundOnly`) plus independent Top-Bottom
   include/exclude on validated one- or two-plane layouts. Region selects a
   constrained topology before projection, and points outside selected support
   clamp to its endpoints.
-- Ordinary Dynamic Extent is supported on the admitted eleven layouts. It
+- Ordinary Dynamic Extent is supported on the admitted 5.1-through-22.2 layouts. It
   reduces the three size components to one isotropic scalar, preserves the
   point target at zero, and uses the existing Q32 target scheduler. Region ×
   Extent uses the Region-first effective topology and retains the authored
@@ -72,17 +73,18 @@ bit-identical Reference Player output.
 - Fixed routing is supported when a validated neutral family/member key and an
   exact current-layout route row are supplied; authored coordinates do not
   participate and missing rows fail closed. Named routing accepts neutral
-  `named/<0..15>` identities on the eleven public layouts. Supplied direct
+  `named/<0..15>` identities on the public layouts, including the admitted 22.2
+  topology. Supplied direct
   rows are copied unchanged; authorized fallback families derive semantic
   non-LFE vectors from the current layout and use the existing Q32 scheduler.
-  The eleven explicit LFE-target cells, zero-survivor fallback families, and
+  The explicit LFE-target cells, zero-survivor fallback families, and
   malformed or out-of-domain identities remain fail closed. Friendly Named
   display names are intentionally not exposed.
-- Real-JOC binaural output currently requires a user-provided compatible SOFA
-  file; 0.7.0 does not include a bundled generic HRTF. It is speaker
+- Real-JOC binaural output uses the bundled SADIE II D1 generic HRTF by
+  default, or a user-provided compatible SOFA override. It is speaker
   virtualization through a strict `SimpleFreeFieldHRIR` SOFA bank. The default
   virtual field is `7.1.4`; the
-  public `5.1`/`7.1`/`9.1` families are eligible when every non-LFE direction is
+  public `5.1`/`7.1`/`9.1`/`22.2` families are eligible when every non-LFE direction is
   exact or safely interpolatable from the selected dataset. Interpolation is a
   bounded spherical-local segment/triangle method with shared ear weights and
   separate integer delay alignment; sparse or outside-domain requests fail

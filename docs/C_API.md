@@ -57,6 +57,14 @@ Semantic labels are available through `openjoc_decoder_get_channel_label` and
 the output/frame descriptors. The canonical PCM sample format value is `1`
 (interleaved float32).
 
+Set `render_mode` to `OPENJOC_RENDER_BINAURAL` with a null/zero `sofa_data` /
+`sofa_size` pair to use the bundled offline SADIE II generic HRTF. Supplying a
+non-empty SOFA buffer selects the existing strict user-dataset path. The
+virtual layout defaults to the configured speaker layout when
+`virtual_layout` is null. A native 22.2 speaker session is selected with
+`speaker_layout = "22.2"`; its output exposes 24 ordered semantic labels,
+including `LFE1` and `LFE2`.
+
 The C adapter inherits the shared session's calibrated Default E-AC-3 dialnorm
 program calibration unless `dialnorm_mode` is explicitly set to
 `OPENJOC_DIALNORM_DIGITAL` or `OPENJOC_DIALNORM_ANALOG`. Default is recommended

@@ -47,8 +47,14 @@ The canonical format is interleaved IEEE-754 `f32`. Each `OpenJocPcmFrame`
 owns its vector and may be retained by a Rust caller. It reports sample rate,
 sample count, sample-domain PTS, render mode, layout name, and ordered semantic
 channel labels. Speaker layouts use the repository's canonical public presets;
-2.0 is `FL, FR`, 5.1 is `FL, FR, FC, LFE, Ls, Rs`, and binaural is physical
+2.0 is `FL, FR`, 5.1 is `FL, FR, FC, LFE, Ls, Rs`, 22.2 is the canonical
+24-channel `FL, FR, FC, LFE1, ... , BtFR` order, and binaural is physical
 stereo `Left, Right` even when its virtual layout is multichannel.
+
+For binaural sessions, `BinauralConfig::builtin_generic("7.1.4")` selects the
+offline bundled SADIE II generic HRTF without a filesystem path. Use
+`BinauralConfig::from_sofa_bytes(...)` for an explicit user SOFA; strict SOFA
+validation and fail-closed coverage behavior are unchanged.
 
 `output_info()` is available before the first packet. Sample rate is `None`
 until the first AU establishes the stream format.

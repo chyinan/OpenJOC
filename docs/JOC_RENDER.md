@@ -28,10 +28,12 @@ openjoc render-joc INPUT.m4a --layout 9.1 --output output-9.1.caf
 openjoc render-joc INPUT.m4a --layout 9.1.2 --output output-9.1.2.caf
 openjoc render-joc INPUT.m4a --layout 9.1.4 --output output-9.1.4.caf
 openjoc render-joc INPUT.m4a --layout 9.1.6 --output output-9.1.6.caf
+openjoc render-joc INPUT.m4a --layout 22.2 --output output-22.2.caf
+openjoc render-joc INPUT.m4a --layout 22.2 --output output-22.2.wav
 ```
 
 Supported presets are `2.0`, `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`,
-`7.1.6`, `9.1`, `9.1.2`, `9.1.4`, and `9.1.6`. The `--layout`
+`7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`. The `--layout`
 argument is required; there is no implicit output-layout default. `5.1` is the
 regression anchor for the original 0.4.0 integration. The renderer remains
 experimental and does not claim Dolby or Reference Player equivalence.
@@ -54,6 +56,7 @@ zero-based and LFE is not a geometric projection anchor.
 | `9.1.2` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltm, Rtm` | 12 | 3 | `none; CAF only` |
 | `9.1.4` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltr, Rtr` | 14 | 3 | `none; CAF only` |
 | `9.1.6` | `FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr` | 16 | 3 | `none; CAF only` |
+| `22.2` | `FL, FR, FC, LFE1, BL, BR, FLc, FRc, BC, LFE2, SiL, SiR, TpFL, TpFR, TpFC, TpC, TpBL, TpBR, TpSiL, TpSiR, TpBC, BtFC, BtFL, BtFR` | 24 | 3, 9 | `none; WAV is unmasked 24-channel PCM` |
 
 The seven layouts with an exact standard mask use WAVEFORMATEXTENSIBLE with the
 standard speaker mask and IEEE float32 samples by default (`--reference-f64`
@@ -65,6 +68,12 @@ have no exact standard mask bits. A `.wav` request fails closed with no
 substituted identities or fake mask. Use `.caf` for semantic multichannel
 output. The public library exposes the canonical order and optional mask
 through `openjoc_scene::SpeakerLayoutPreset`.
+
+`22.2` is an explicit exception: WAVEFORMATEXTENSIBLE cannot carry all 24
+public identities, so OpenJOC writes ordinary 24-channel WAV PCM with no
+fabricated channel mask and reports that limitation in the CLI summary. CAF is
+preferred for rich semantic output and carries ordered CAF labels or explicit
+coordinates. Neither container silently relabels the 22.2 channel order.
 
 Output container selection is independent of the renderer’s semantic channel
 layout. A `.wav` destination uses WAVEFORMATEXTENSIBLE and fails closed when a
@@ -179,12 +188,11 @@ coordinates, not authored object positions and not a vendor renderer geometry
 claim.
 
 The same generic engine is internally validated with clean executable fixtures
-for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, and 7.1.6. The twelve
-public presets share one data-driven full-XYZ projector; their layout
+for 2.0, 3.1, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, and 22.2. The
+public presets share one data-driven full-XYZ/N-layer projector; their layout
 differences are topology data. LFE remains independently owned and is excluded
 from geometric projection. Additional topology families do not become public
-product presets without their separate output contracts. Storage capability
-does not imply arbitrary-layout or 22.2 semantics.
+product presets without their separate output contracts.
 
 The public library layer is broader than this CLI preset list. Callers can
 construct a validated `openjoc_scene::SpatialLayout` with arbitrary enabled
@@ -198,7 +206,7 @@ admitted subset. Region selection derives a constrained speaker topology
 before the existing point projector, so the default/no-region state is
 unchanged and points outside selected support clamp to selected topology
 endpoints instead of being muted. Ordinary Dynamic Extent metadata is also
-honored for the eleven admitted 5.1/7.1/9.1-family layouts: XYZ metadata is
+honored for the admitted 5.1/7.1/9.1-family and 22.2 layouts: XYZ metadata is
 reduced to one isotropic scalar, zero extent preserves the point target, and
 extent target changes use the existing Q32 scheduler. Only the six named
 horizontal states and independent Top-Bottom include/exclude behavior on
@@ -238,10 +246,10 @@ persistent bridge state.
 The sidecar schema retains fields for source classes outside the ordinary
 dynamic contract. Fixed records may use validated neutral
 `fixed/<family>/<member>` identities with exact supplied route rows; Named
-records may use neutral `named/<0..15>` identities across the eleven admitted
+records may use neutral `named/<0..15>` identities across the admitted
 public layouts. Supplied Named direct rows are copied unchanged, and missing
 rows in the authorized fallback families derive semantic target vectors from
-the current layout. The eleven explicit LFE-target cells, malformed identities,
+the current layout. The explicit LFE-target cells, malformed identities,
 zero-survivor fallback families, friendly names, and unsupported combinations
 fail explicitly rather than falling through to dynamic geometry. Automatic
 control never fabricates a nearest-speaker route.
@@ -605,12 +613,23 @@ default, advanced Analog positioning, and optional offline peak normalization.
 ## SOFA-backed binaural rendering
 
 The same real-JOC command can virtualize one supported speaker preset to stereo
-through a caller-supplied admitted SOFA file:
+through the bundled generic HRTF:
 
 ```sh
 openjoc render-joc INPUT.m4a \
   --binaural \
-  --sofa listener.sofa \
+  -o binaural.wav
+```
+
+The built-in source is SADIE II D1 (KU100), an openly redistributable Apache-2.0
+dataset resource published by the University of York. It is an offline data
+resource; the OpenJOC SOFA/interpolation/convolution DSP remains the renderer.
+The default virtual layout is `7.1.4`. A caller-provided SOFA explicitly
+overrides the built-in source:
+
+```sh
+openjoc render-joc INPUT.m4a \
+  --binaural --sofa listener.sofa \
   -o binaural.wav
 
 For a conveniently loud offline headphone file, keep calibrated dialnorm and
@@ -629,7 +648,7 @@ two-channel stereo (`Left Ear`, `Right Ear`). To choose another internal field:
 
 ```sh
 openjoc render-joc INPUT.m4a \
-  --binaural --sofa listener.sofa --virtual-layout 9.1.6 \
+  --binaural --virtual-layout 9.1.6 \
   -o binaural-9.1.6.wav
 ```
 
@@ -653,8 +672,7 @@ selected SOFA provides exact or safely interpolatable coverage. Missing or
 sparse directions fail closed; OpenJOC never aliases a direction to a nearest
 speaker or silently omits a virtual channel.
 
-The SOFA path is local and user-supplied; 0.7.0 does not bundle a generic HRTF
-dataset. It is parsed only within the existing
+The built-in and explicit SOFA paths are parsed only within the existing
 strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
 explicitly shared with the renderer contract: local `+X` is right, `+Y` is
 front, and `+Z` is up. The virtual directions cover front, side/rear, wide,
@@ -664,6 +682,10 @@ common ear weights and delay-aligned HRIR shapes; all required directions are
 prepared before output starts. The decoded JOC sample rate must equal the SOFA
 HRIR rate;
 OpenJOC does not silently resample either stream.
+
+See [spatial portability](SPATIAL_PORTABILITY.md) and
+[third-party data notices](../THIRD_PARTY_NOTICES.md) for the bundled-data
+license, attribution, source hashes, and reproducible conversion path.
 
 The admitted presets contain LFE. The simple CLI form defaults to
 `--lfe-policy exclude`; an explicit renderer-level policy can be selected:
@@ -749,14 +771,11 @@ name alone as evidence of a clean geometry definition.
 | `9.1.2` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and one existing upper row; binaural virtual output is dataset-dependent on Wide and upper-direction coverage. |
 | `9.1.4` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing two-row upper topology; binaural virtual output is dataset-dependent on Wide and upper-direction coverage. |
 | `9.1.6` | `SUPPORTED_SEMANTIC_CAF_ONLY` | Exposed | Reuses the 9.1 bed and existing three-row upper topology; binaural virtual output is dataset-dependent on Wide, Top Middle, and upper-direction coverage. |
-| `22.2` | `BLOCKED_BY_CLEAN_GEOMETRY_DEFINITION` | Not exposed | The generic engine can represent a 24-channel 3D layout, but no clean/public 22.2 speaker geometry is admitted in this repository. |
+| `22.2` | `SUPPORTED_MULTILAYER_PUBLIC_GEOMETRY` | Exposed | ITU-R BS.2051-3 Sound System H midpoint geometry uses the same generic four-layer projector; LFE1/LFE2 remain semantic destinations, WAV is explicit unmasked 24-channel PCM, and CAF carries richer descriptions. |
 
-The 22.2 result is not a renderer-domain limitation. If a clean speaker
-definition is later admitted, adding its channels, geometry, LFE designation,
-and public order is expected to be `DATA_ONLY`; no JOC bridge mathematics or
-source-class behavior needs to change. The tests exercise a synthetic
-24-channel layout to separate renderer capacity from professional-layout
-provenance.
+The 22.2 geometry is derived from the public ITU-R ranges and documented in
+[`SPATIAL_PORTABILITY.md`](SPATIAL_PORTABILITY.md). No platform spatial
+renderer is involved.
 
 ## Large-channel output audit
 

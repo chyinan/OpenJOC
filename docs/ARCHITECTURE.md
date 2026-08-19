@@ -4,6 +4,12 @@ This is the canonical description of the current production data flow. It
 describes implemented boundaries, not a promise that every historical design
 goal is complete.
 
+OpenJOC implements its spatial rendering DSP directly rather than delegating
+object rendering to platform-specific spatial audio engines. Operating-system
+audio APIs may be used for integration and I/O, but they do not define
+OpenJOC's spatial rendering result. One renderer. Same spatial semantics across
+platforms.
+
 ## Data flow
 
 The explicit render-scene workflow is implemented in `openjoc-render-scene`.
@@ -51,6 +57,12 @@ and `JocSpatialBridge` projection path. The public library can consume a
 caller-defined channel registry, geometry, and output order without a
 preset-specific projection algorithm; the CLI does not currently serialize
 that custom layout as a file format.
+
+The `22.2` preset is ITU-R BS.2051-3 Sound System H (9+10+3): a four-layer
+bottom/middle/upper/top topology with 22 spatial speakers and two semantic
+LFE destinations. It uses the same N-layer point projector and semantic
+operation boundaries as the established layouts; LFE channels are never
+projection vertices.
 
 Automatic assembly derives codec-coordinate control from validated OAMD and
 decoded Base/RB state. A complete sidecar is optional and takes precedence as
@@ -247,9 +259,10 @@ not array order, determines left/right ear mapping. Exact lookup is preferred;
 non-exact requests use a deterministic local spherical segment/triangle with
 shared ear weights, while sparse/outside coverage fails closed. After
 construction no SOFA file handle is retained and neither renderer performs
-file I/O per audio block. HDF5/NetCDF-4, resampling, moving sources, SOFA
-writing, dataset downloads, and any JOC semantic bridge remain outside this
-boundary.
+file I/O per audio block. HDF5/NetCDF-4 remains outside the portable runtime
+reader; the bundled SADIE II resource is converted offline to the same CDF-1
+path and needs no network access at render time. Resampling, moving sources,
+SOFA writing, and any JOC semantic bridge remain outside this boundary.
 
 ### Capture and streaming
 
