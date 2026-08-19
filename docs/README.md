@@ -12,6 +12,7 @@ Use the document that owns the question:
 | How is production code structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | How do I embed the streaming decoder? | [LIBRARY_API.md](LIBRARY_API.md) |
 | How do I call it from C/C++? | [C_API.md](C_API.md) |
+| How do I use the native GStreamer decoder? | [integration/GSTREAMER.md](integration/GSTREAMER.md) |
 | Which player adapter comes next? | [FUTURE_PLAYER_ADAPTERS.md](FUTURE_PLAYER_ADAPTERS.md) |
 | What is planned next? | [ROADMAP.md](ROADMAP.md) |
 | What provenance policy governs implementation claims? | source-only `docs/PROVENANCE.md` |

@@ -24,3 +24,12 @@ KU100 HRIR set (48 kHz, 256 taps, 8,802 measured directions).
 The bundled data is not OpenJOC source code and is not relabeled Apache-2.0
 OpenJOC code. Its upstream source, conversion, and generated hashes are
 recorded in `docs/SPATIAL_PORTABILITY.md` and the repository provenance notes.
+
+## GStreamer integration dependencies
+
+The optional `gst-plugin-openjoc` build uses the official gstreamer-rs crates
+(`gstreamer`, `gstreamer-base`, `gstreamer-audio`, and `gstreamer-app`). Those
+Rust bindings are distributed under MIT OR Apache-2.0. The native GStreamer
+runtime and plugin modules retain their upstream licenses; this repository does
+not vendor or relabel the GStreamer SDK. See the integration build notes in
+`docs/integration/GSTREAMER.md` before distributing a combined runtime.
