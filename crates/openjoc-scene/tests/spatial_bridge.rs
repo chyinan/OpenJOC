@@ -636,10 +636,10 @@ fn semantic_pair_withheld_combinations_and_malformed_state_fail_closed() {
     );
 
     let three_layers = three_layer_pair_layout();
-    assert_eq!(
-        three_layers.project(&pair),
-        Err(openjoc_scene::SpatialProjectionError::InvalidPair)
-    );
+    let three_layer_target = three_layers
+        .project(&pair)
+        .expect("Pair uses the same generic multilayer projector");
+    assert_unit_l2(&three_layer_target);
 }
 
 #[test]
@@ -2570,6 +2570,7 @@ fn matrix_direct_ids(layout: &str) -> &'static [u8] {
         "7.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11],
         "9.1" | "9.1.4" => &[0, 1, 2, 4, 5, 6, 7, 14, 15],
         "9.1.2" | "9.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11, 14, 15],
+        "22.2" => &[0, 1, 2, 14, 15],
         _ => &[],
     }
 }
@@ -2627,9 +2628,9 @@ fn named_route_disposition_matrix_is_exhaustive_and_deterministic() {
             }
         }
     }
-    assert_eq!(direct_count, 85);
-    assert_eq!(fallback_count, 94);
-    assert_eq!(unsupported_count, 12);
+    assert_eq!(direct_count, 90);
+    assert_eq!(fallback_count, 104);
+    assert_eq!(unsupported_count, 13);
 }
 
 #[test]
@@ -3676,7 +3677,7 @@ fn clean_one_and_three_upper_rows_and_wide_anchors_use_the_same_data_law() {
 }
 
 #[test]
-fn clean_topology_validation_and_unadmitted_layers_fail_closed() {
+fn clean_topology_validation_and_multilayer_projection_are_generic() {
     let duplicate_x = SpatialLayout::from_topology(
         clean_channels(&["A", "B"], None),
         SpatialLayoutTopology {
@@ -3714,10 +3715,12 @@ fn clean_topology_validation_and_unadmitted_layers_fail_closed() {
     )
     .unwrap();
     assert_eq!(four_layers.topology().layers.len(), 4);
-    assert_eq!(
-        four_layers.project(&dynamic_point(0.5, 0.0, 0.5)),
-        Err(openjoc_scene::SpatialProjectionError::UnadmittedLayerPolicy)
-    );
+    let projected = four_layers
+        .project(&dynamic_point(0.5, 0.0, 0.5))
+        .expect("generic four-layer interpolation");
+    assert_unit_l2(&projected);
+    assert!(projected[active_index(&four_layers, "B")] > 0.0);
+    assert!(projected[active_index(&four_layers, "C")] > 0.0);
 }
 
 #[test]

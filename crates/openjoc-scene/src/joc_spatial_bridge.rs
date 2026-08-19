@@ -25,7 +25,7 @@ const CHANNEL_LOCK_THRESHOLD_SQUARED: f64 = 0.04;
 const UPPER_A: f64 = 0.5011872_f32 as f64;
 const UPPER_B: f64 = 0.70794576_f32 as f64;
 const UPPER_C: f64 = 1.0;
-const NAMED_PUBLIC_LAYOUTS: [(&str, &[&str]); 12] = [
+const NAMED_PUBLIC_LAYOUTS: [(&str, &[&str]); 13] = [
     ("2.0", &["FL", "FR"]),
     ("5.1", &["FL", "FR", "FC", "Ls", "Rs"]),
     ("5.1.2", &["FL", "FR", "FC", "Ls", "Rs", "TFL", "TFR"]),
@@ -71,6 +71,13 @@ const NAMED_PUBLIC_LAYOUTS: [(&str, &[&str]); 12] = [
         &[
             "FL", "FR", "FC", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm", "Rtm",
             "Ltr", "Rtr",
+        ],
+    ),
+    (
+        "22.2",
+        &[
+            "FL", "FR", "FC", "BL", "BR", "FLc", "FRc", "BC", "SiL", "SiR", "TpFL", "TpFR", "TpFC",
+            "TpC", "TpBL", "TpBR", "TpSiL", "TpSiR", "TpBC", "BtFC", "BtFL", "BtFR",
         ],
     ),
 ];
@@ -1427,7 +1434,6 @@ impl SpatialLayout {
         }
         if !matches!(descriptor.source_class, SpatialSourceClass::DynamicPoint)
             || self.topology.layers.is_empty()
-            || self.topology.layers.len() > 2
         {
             return Err(SpatialProjectionError::InvalidPair);
         }
@@ -1856,8 +1862,14 @@ fn named_upper_candidates<'a>(
         .iter()
         .copied()
         .filter(|identity| {
-            let is_left = matches!(*identity, "TFL" | "TBL" | "Ltf" | "Ltm" | "Ltr" | "Lw");
-            let is_right = matches!(*identity, "TFR" | "TBR" | "Rtf" | "Rtm" | "Rtr" | "Rw");
+            let is_left = matches!(
+                *identity,
+                "TFL" | "TBL" | "Ltf" | "Ltm" | "Ltr" | "Lw" | "TpFL" | "TpBL" | "TpSiL"
+            );
+            let is_right = matches!(
+                *identity,
+                "TFR" | "TBR" | "Rtf" | "Rtm" | "Rtr" | "Rw" | "TpFR" | "TpBR" | "TpSiR"
+            );
             let is_wide = matches!(*identity, "Lw" | "Rw");
             (if left { is_left } else { is_right }) && (include_wide || !is_wide)
         })
@@ -1876,6 +1888,7 @@ fn named_matrix_direct_ids(layout: &str) -> &'static [u8] {
         "7.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11],
         "9.1" | "9.1.4" => &[0, 1, 2, 4, 5, 6, 7, 14, 15],
         "9.1.2" | "9.1.6" => &[0, 1, 2, 4, 5, 6, 7, 10, 11, 14, 15],
+        "22.2" => &[0, 1, 2, 14, 15],
         _ => &[],
     }
 }
@@ -2202,7 +2215,46 @@ fn generic_point_projector(
                     .collect())
             }
         }
-        _ => Err(SpatialProjectionError::UnadmittedLayerPolicy),
+        layers => {
+            let first = &layers[0];
+            let last_index = layers.len() - 1;
+            if position[2] <= first.z {
+                return plane_vector(first, channels, active_indices, position[0], position[1]);
+            }
+            if position[2] >= layers[last_index].z {
+                return plane_vector(
+                    &layers[last_index],
+                    channels,
+                    active_indices,
+                    position[0],
+                    position[1],
+                );
+            }
+            let upper = layers.partition_point(|layer| layer.z < position[2]);
+            let lower = upper - 1;
+            let t = (position[2] - layers[lower].z) / (layers[upper].z - layers[lower].z);
+            let lower_weight = (std::f64::consts::PI * t / 2.0).cos();
+            let upper_weight = (std::f64::consts::PI * t / 2.0).sin();
+            let lower_vector = plane_vector(
+                &layers[lower],
+                channels,
+                active_indices,
+                position[0],
+                position[1],
+            )?;
+            let upper_vector = plane_vector(
+                &layers[upper],
+                channels,
+                active_indices,
+                position[0],
+                position[1],
+            )?;
+            Ok(lower_vector
+                .iter()
+                .zip(upper_vector)
+                .map(|(lower, upper)| lower_weight * lower + upper_weight * upper)
+                .collect())
+        }
     }
 }
 

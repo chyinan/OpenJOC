@@ -329,17 +329,21 @@ fn derive_selected_layout(
     canonical: &SpatialLayout,
     state: RegionSemanticState,
 ) -> Result<SpatialLayout, SpatialProjectionError> {
-    if canonical.topology().layers.len() > 2 {
-        return Err(SpatialProjectionError::UnadmittedLayerPolicy);
-    }
-
     let five_x = !canonical
         .channels()
         .iter()
         .any(|channel| matches!(channel.identity.as_str(), "Lb" | "Rb" | "Lw" | "Rw"));
+    let is_22_2 = canonical
+        .channels()
+        .iter()
+        .any(|channel| channel.identity == "FLc");
     let mut layers = Vec::with_capacity(canonical.topology().layers.len());
     for (layer_index, layer) in canonical.topology().layers.iter().enumerate() {
-        let is_upper = canonical.topology().layers.len() == 2 && layer_index == 1;
+        let is_upper = if is_22_2 {
+            layer.z > 0.0
+        } else {
+            canonical.topology().layers.len() == 2 && layer_index == 1
+        };
         if is_upper && matches!(state.top_bottom, RegionTopBottomState::Exclude) {
             continue;
         }
@@ -350,6 +354,7 @@ fn derive_selected_layout(
                 .iter()
                 .filter(|anchor| {
                     is_upper
+                        || (is_22_2 && layer.z < 0.0)
                         || matches_bed_state(state.horizontal, &anchor.identity, five_x)
                             .unwrap_or(false)
                 })
@@ -395,11 +400,11 @@ fn matches_bed_state(
     five_x: bool,
 ) -> Result<bool, ()> {
     let classes = match identity {
-        "FL" | "FR" => (true, false, false, false),
+        "FL" | "FR" | "FLc" | "FRc" => (true, false, false, false),
         "FC" => (true, true, false, false),
         "Ls" | "Rs" if five_x => (false, false, true, true),
-        "Ls" | "Rs" => (false, false, true, false),
-        "Lb" | "Rb" => (false, false, false, true),
+        "Ls" | "Rs" | "SiL" | "SiR" => (false, false, true, false),
+        "Lb" | "Rb" | "BL" | "BR" | "BC" => (false, false, false, true),
         "Lw" | "Rw" => (false, false, false, false),
         _ => return Err(()),
     };

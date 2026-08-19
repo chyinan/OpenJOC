@@ -196,7 +196,7 @@ pub(crate) struct ExtentFieldCache {
 impl ExtentFieldCache {
     pub(crate) fn build(layout: &SpatialLayout) -> Result<Self, SpatialProjectionError> {
         let layers = &layout.topology().layers;
-        if layers.is_empty() || layers.len() > 2 {
+        if layers.is_empty() {
             return Err(SpatialProjectionError::UnadmittedLayerPolicy);
         }
         let channels = layout
@@ -212,7 +212,7 @@ impl ExtentFieldCache {
         }
         let x = AxisResponseTable::new(layout.topology(), &channels, Axis::X)?;
         let y = AxisResponseTable::new(layout.topology(), &channels, Axis::Y)?;
-        let z = (layers.len() == 2)
+        let z = (layers.len() > 1)
             .then(|| AxisResponseTable::new(layout.topology(), &channels, Axis::Z))
             .transpose()?;
         Ok(Self {
@@ -463,7 +463,26 @@ fn selected_layer_weights(topology: &SpatialLayoutTopology, coordinate: f64) -> 
             (0, (std::f64::consts::PI * coordinate / 2.0).cos()),
             (1, (std::f64::consts::PI * coordinate / 2.0).sin()),
         ],
-        _ => Vec::new(),
+        _ => {
+            let first = &topology.layers[0];
+            let last_index = topology.layers.len() - 1;
+            if coordinate <= first.z {
+                return vec![(0, 1.0)];
+            }
+            if coordinate >= topology.layers[last_index].z {
+                return vec![(last_index, 1.0)];
+            }
+            let upper = topology
+                .layers
+                .partition_point(|layer| layer.z < coordinate);
+            let lower = upper - 1;
+            let t = (coordinate - topology.layers[lower].z)
+                / (topology.layers[upper].z - topology.layers[lower].z);
+            vec![
+                (lower, (std::f64::consts::PI * t / 2.0).cos()),
+                (upper, (std::f64::consts::PI * t / 2.0).sin()),
+            ]
+        }
     }
 }
 

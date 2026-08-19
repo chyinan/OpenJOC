@@ -40,7 +40,7 @@ fn public_presets_have_the_admitted_names_and_backend_contracts() {
         SPEAKER_LAYOUT_PRESET_NAMES,
         [
             "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2",
-            "9.1.4", "9.1.6",
+            "9.1.4", "9.1.6", "22.2",
         ]
     );
     let stereo = SpeakerLayoutPreset::for_name("2.0").expect("2.0 public preset");
@@ -115,7 +115,11 @@ fn public_presets_have_the_admitted_names_and_backend_contracts() {
         assert_eq!(preset.wav_channel_mask(), None);
         assert_eq!(preset.channel_labels(), labels);
     }
-    assert!(SpeakerLayoutPreset::for_name("22.2").is_err());
+    let twenty_two_two = SpeakerLayoutPreset::for_name("22.2").expect("22.2 public preset");
+    assert_eq!(twenty_two_two.channel_count(), 24);
+    assert_eq!(twenty_two_two.lfe_count(), 2);
+    assert_eq!(twenty_two_two.lfe_index(), Some(3));
+    assert_eq!(twenty_two_two.wav_channel_mask(), None);
 }
 
 #[test]
@@ -369,6 +373,78 @@ fn seven_one_six_inserts_only_the_middle_upper_row_over_seven_one_four_geometry(
 }
 
 #[test]
+fn twenty_two_two_uses_one_generic_multilayer_projector_for_all_public_speakers() {
+    let preset = SpeakerLayoutPreset::for_name("22.2").expect("22.2 preset");
+    let topology = preset.layout.topology();
+    assert_eq!(topology.layers.len(), 4);
+    assert_eq!(
+        topology
+            .layers
+            .iter()
+            .map(|layer| layer.z)
+            .collect::<Vec<_>>(),
+        [
+            -22.5_f64.to_radians().sin() * QMAX,
+            0.0,
+            37.5_f64.to_radians().sin() * QMAX,
+            QMAX,
+        ]
+    );
+    assert_eq!(preset.lfe_count(), 2);
+    assert_eq!(preset.layout.active_channel_count(), 22);
+
+    for layer in &topology.layers {
+        for row in &layer.rows {
+            for anchor in &row.anchors {
+                let projected = preset
+                    .layout
+                    .project(&point(anchor.x, anchor.y, anchor.z))
+                    .expect("exact 22.2 speaker location");
+                let index = active_index(&preset, &anchor.identity);
+                assert!(
+                    projected.iter().enumerate().all(|(candidate, value)| {
+                        if candidate == index {
+                            (*value - 1.0).abs() < 2.0e-12
+                        } else {
+                            value.abs() < 2.0e-12
+                        }
+                    }),
+                    "{} projected as {projected:?}",
+                    anchor.identity
+                );
+            }
+        }
+    }
+
+    let center = preset
+        .layout
+        .project(&point(0.5, 0.0, 0.0))
+        .expect("middle center");
+    assert!(center[active_index(&preset, "FC")] > 0.99);
+    assert_unit_l2(&center);
+
+    let top = preset
+        .layout
+        .project(&point(0.5, 0.5, QMAX))
+        .expect("zenith");
+    assert!(top[active_index(&preset, "TpC")] > 0.99);
+    assert_unit_l2(&top);
+
+    for z in [
+        f64::midpoint(topology.layers[0].z, topology.layers[1].z),
+        f64::midpoint(topology.layers[1].z, topology.layers[2].z),
+        f64::midpoint(topology.layers[2].z, topology.layers[3].z),
+    ] {
+        let transition = preset
+            .layout
+            .project(&point(0.5, 0.5, z))
+            .expect("vertical layer transition");
+        assert_unit_l2(&transition);
+        assert!(transition.iter().filter(|value| **value > 1.0e-12).count() >= 2);
+    }
+}
+
+#[test]
 fn five_one_four_uses_clean_two_row_upper_topology_and_generic_xyz_projection() {
     let preset = SpeakerLayoutPreset::for_name("5.1.4").expect("5.1.4 preset");
     assert_eq!(preset.layout.topology().layers.len(), 2);
@@ -512,4 +588,39 @@ fn named_layout_helpers_return_the_same_canonical_data_instances() {
     let two = speaker_layout_7_1_2().expect("7.1.2 helper");
     let two_by_name = SpeakerLayoutPreset::for_name("7.1.2").expect("7.1.2 name");
     assert_eq!(two, two_by_name.layout);
+}
+
+#[test]
+#[ignore = "manual release performance harness"]
+fn multilayer_layout_performance_harness() {
+    use std::time::Instant;
+
+    const ITERATIONS: usize = 100_000;
+    for name in ["7.1.4", "9.1.6", "22.2"] {
+        let setup_started = Instant::now();
+        let preset = SpeakerLayoutPreset::for_name(name).expect("performance preset");
+        let setup_elapsed = setup_started.elapsed();
+        let topology_bytes = serde_json::to_vec(preset.layout.topology())
+            .expect("topology serialization")
+            .len();
+        let render_started = Instant::now();
+        let mut checksum = 0.0;
+        for index in 0..ITERATIONS {
+            let t = index as f64 / (ITERATIONS - 1) as f64;
+            let descriptor = point(
+                0.5 + 0.49 * (std::f64::consts::TAU * t).sin(),
+                0.5 + 0.49 * (std::f64::consts::TAU * t).cos(),
+                -0.38 + 1.37 * t,
+            );
+            let target = preset.layout.project(&descriptor).expect("finite target");
+            checksum += target.iter().sum::<f64>();
+        }
+        let render_elapsed = render_started.elapsed();
+        println!(
+            "layout={name} setup_us={} render_us={} projections_per_sec={:.0} topology_bytes={topology_bytes} checksum={checksum:.6}",
+            setup_elapsed.as_micros(),
+            render_elapsed.as_micros(),
+            ITERATIONS as f64 / render_elapsed.as_secs_f64(),
+        );
+    }
 }

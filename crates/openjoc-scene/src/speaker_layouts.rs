@@ -10,9 +10,9 @@ use crate::{
 use std::fmt;
 
 /// Public speaker presets exposed by the JOC speaker-rendering workflow.
-pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 12] = [
+pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 13] = [
     "2.0", "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
-    "9.1.6",
+    "9.1.6", "22.2",
 ];
 
 /// Canonical channel order for the admitted 2.0 speaker pair.
@@ -67,6 +67,16 @@ pub const SPEAKER_LAYOUT_9_1_4_CHANNELS: [&str; 14] = [
 pub const SPEAKER_LAYOUT_9_1_6_CHANNELS: [&str; 16] = [
     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
     "Rtr",
+];
+
+/// Canonical OpenJOC semantic order for ITU-R BS.2051-3 Sound System H.
+///
+/// The order is deliberately renderer-owned. It follows the public H layout
+/// identities (including both LFEs) and is not inferred from a WAVE mask or a
+/// host API's memory order.
+pub const SPEAKER_LAYOUT_22_2_CHANNELS: [&str; 24] = [
+    "FL", "FR", "FC", "LFE1", "BL", "BR", "FLc", "FRc", "BC", "LFE2", "SiL", "SiR", "TpFL", "TpFR",
+    "TpFC", "TpC", "TpBL", "TpBR", "TpSiL", "TpSiR", "TpBC", "BtFC", "BtFL", "BtFR",
 ];
 
 const QMAX: f64 = 32_767.0 / 32_768.0;
@@ -192,6 +202,16 @@ impl SemanticChannelLayout {
     pub fn channel_count(&self) -> usize {
         self.labels.len()
     }
+
+    /// Returns the number of LFE identities represented by this semantic
+    /// layout. This remains independent of any container channel order.
+    #[must_use]
+    pub fn lfe_count(&self) -> usize {
+        self.labels
+            .iter()
+            .filter(|label| matches!(label.as_str(), "LFE" | "LFE1" | "LFE2" | "low-frequency"))
+            .count()
+    }
 }
 
 /// A validated public speaker preset and its output metadata contract.
@@ -209,7 +229,7 @@ pub struct SpeakerLayoutPreset {
 }
 
 impl SpeakerLayoutPreset {
-    /// Returns one of the twelve public speaker presets.
+    /// Returns one of the thirteen public speaker presets.
     pub fn for_name(name: &str) -> Result<Self, SpeakerLayoutPresetError> {
         match name {
             "2.0" => speaker_layout_2_0_preset(),
@@ -224,6 +244,7 @@ impl SpeakerLayoutPreset {
             "9.1.2" => speaker_layout_9_1_2_preset(),
             "9.1.4" => speaker_layout_9_1_4_preset(),
             "9.1.6" => speaker_layout_9_1_6_preset(),
+            "22.2" => speaker_layout_22_2_preset(),
             other => Err(SpeakerLayoutPresetError::UnsupportedLayout(
                 other.to_owned(),
             )),
@@ -246,6 +267,23 @@ impl SpeakerLayoutPreset {
     #[must_use]
     pub const fn lfe_index(&self) -> Option<usize> {
         self.lfe_index
+    }
+
+    /// Returns every LFE index in canonical output order.
+    #[must_use]
+    pub fn lfe_indices(&self) -> Vec<usize> {
+        self.layout
+            .channels()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, channel)| channel.lfe.then_some(index))
+            .collect()
+    }
+
+    /// Returns the number of semantic LFE output channels.
+    #[must_use]
+    pub fn lfe_count(&self) -> usize {
+        self.lfe_indices().len()
     }
 
     /// Returns the standard WAVEFORMATEXTENSIBLE speaker mask, when the
@@ -311,6 +349,16 @@ pub fn speaker_layout_2_0() -> Result<SpatialLayout, SpatialProjectionError> {
         .layout)
 }
 
+/// Returns the canonical ITU-R BS.2051-3 Sound System H (22.2) topology.
+pub fn speaker_layout_22_2() -> Result<SpatialLayout, SpatialProjectionError> {
+    Ok(speaker_layout_22_2_preset()
+        .map_err(|error| match error {
+            SpeakerLayoutPresetError::Projection(error) => error,
+            other => unreachable!("validated 22.2 preset failed outside projection: {other}"),
+        })?
+        .layout)
+}
+
 fn speaker_layout_2_0_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
     generic_preset(
         "2.0",
@@ -320,6 +368,49 @@ fn speaker_layout_2_0_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPrese
             0.0,
             vec![anchor("FL", 0.0, 0.0, 0.0), anchor("FR", QMAX, 0.0, 0.0)],
         )])],
+    )
+}
+
+fn speaker_layout_22_2_preset() -> Result<SpeakerLayoutPreset, SpeakerLayoutPresetError> {
+    // ITU-R BS.2051-3 Table 10 specifies ranges for most H positions. The
+    // renderer needs one deterministic point per semantic speaker, so the
+    // midpoint of each public range is used. Coordinates are a normalized
+    // spherical projection: x is left/right, y is front/rear, and z is the
+    // signed elevation. LFE channels remain semantic outputs, not vertices.
+    let middle = bed_layer(vec![
+        spherical_row(0.0, [("FC", 0.0, 0.0)]),
+        spherical_row(26.25, [("FLc", 26.25, 0.0), ("FRc", -26.25, 0.0)]),
+        spherical_row(52.5, [("FL", 52.5, 0.0), ("FR", -52.5, 0.0)]),
+        spherical_row(90.0, [("SiL", 90.0, 0.0), ("SiR", -90.0, 0.0)]),
+        spherical_row(122.5, [("BL", 122.5, 0.0), ("BR", -122.5, 0.0)]),
+        spherical_row(180.0, [("BC", 180.0, 0.0)]),
+    ]);
+    let bottom = SpatialLayoutLayer {
+        z: spherical_z(-22.5),
+        rows: vec![
+            spherical_row(-0.0, [("BtFC", 0.0, -22.5)]),
+            spherical_row(52.5, [("BtFL", 52.5, -22.5), ("BtFR", -52.5, -22.5)]),
+        ],
+    };
+    let upper = SpatialLayoutLayer {
+        z: spherical_z(37.5),
+        rows: vec![
+            spherical_row(0.0, [("TpFC", 0.0, 37.5)]),
+            spherical_row(52.5, [("TpFL", 52.5, 37.5), ("TpFR", -52.5, 37.5)]),
+            spherical_row(90.0, [("TpSiL", 90.0, 37.5), ("TpSiR", -90.0, 37.5)]),
+            spherical_row(122.5, [("TpBL", 122.5, 37.5), ("TpBR", -122.5, 37.5)]),
+            spherical_row(180.0, [("TpBC", 180.0, 37.5)]),
+        ],
+    };
+    let top = SpatialLayoutLayer {
+        z: QMAX,
+        rows: vec![row(0.5, vec![anchor("TpC", 0.5, 0.5, QMAX)])],
+    };
+    generic_preset(
+        "22.2",
+        &SPEAKER_LAYOUT_22_2_CHANNELS,
+        Some(3),
+        vec![bottom, middle, upper, top],
     )
 }
 
@@ -654,7 +745,7 @@ fn generic_preset(
         .map(|(index, identity)| SpatialLayoutChannel {
             identity: (*identity).to_owned(),
             enabled: true,
-            lfe: lfe_index == Some(index),
+            lfe: lfe_index == Some(index) || matches!(*identity, "LFE1" | "LFE2"),
         })
         .collect();
     let layout = SpatialLayout::from_topology(
@@ -666,7 +757,7 @@ fn generic_preset(
         Vec::new(),
     )?;
     let wav_channel_mask = match name {
-        "7.1.6" | "9.1" | "9.1.2" | "9.1.4" | "9.1.6" => None,
+        "7.1.6" | "9.1" | "9.1.2" | "9.1.4" | "9.1.6" | "22.2" => None,
         _ => Some(speaker_channel_mask_for_labels(&labels)?),
     };
     Ok(SpeakerLayoutPreset {
@@ -730,6 +821,40 @@ fn bed_layer(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
 
 fn upper_layer(rows: Vec<SpatialLayoutRow>) -> SpatialLayoutLayer {
     SpatialLayoutLayer { z: QMAX, rows }
+}
+
+fn spherical_row<const N: usize>(
+    _sort_azimuth: f64,
+    speakers: [(&'static str, f64, f64); N],
+) -> SpatialLayoutRow {
+    let mut anchors = speakers
+        .into_iter()
+        .map(|(identity, azimuth, elevation)| spherical_anchor(identity, azimuth, elevation))
+        .collect::<Vec<_>>();
+    anchors.sort_by(|left, right| left.x.total_cmp(&right.x));
+    let y = anchors[0].y;
+    debug_assert!(anchors.iter().all(|anchor| (anchor.y - y).abs() < 1.0e-12));
+    SpatialLayoutRow { y, anchors }
+}
+
+fn spherical_anchor(
+    identity: &'static str,
+    azimuth_degrees: f64,
+    elevation_degrees: f64,
+) -> SpatialLayoutAnchor {
+    let azimuth = azimuth_degrees.to_radians();
+    let elevation = elevation_degrees.to_radians();
+    let horizontal = elevation.cos();
+    anchor(
+        identity,
+        0.5 - 0.5 * azimuth.sin() * horizontal,
+        0.5 * (1.0 - azimuth.cos() * horizontal),
+        spherical_z(elevation_degrees),
+    )
+}
+
+fn spherical_z(elevation_degrees: f64) -> f64 {
+    elevation_degrees.to_radians().sin() * QMAX
 }
 
 fn row(y: f64, anchors: Vec<SpatialLayoutAnchor>) -> SpatialLayoutRow {
