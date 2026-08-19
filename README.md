@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="docs/assets/openjoc-header.png" alt="OpenJOC — open-source Dolby JOC decoder" width="100%">
 </p>
@@ -120,7 +122,7 @@ for applications embedding FFmpeg. It uses FFmpeg for demux and packet
 transport, while the same `OpenJocSession` owns JOC decode and spatial
 rendering. Build it explicitly with `-p openjoc-ffmpeg --features ffmpeg`; see
 the focused integration document for the FFmpeg 9 development dependencies
-and proof executable.
+and the `openjoc-avdecode` proof executable.
 
 ## Install into a prefix
 
