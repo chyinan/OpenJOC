@@ -16,7 +16,9 @@ emits an explicit classification before decoder autoplugging.
 `openjocdec` is registered at `GST_RANK_PRIMARY`, but its sink caps are
 JOC-only. Ordinary E-AC-3 remains on the normal GStreamer decoder path before
 OpenJOC consumes any ordinary data. The exact design/source audit is recorded
-in [the autoplug design note](../research/GSTREAMER_JOC_AUTOPLUG_DESIGN.md).
+in [the autoplug design note](../research/GSTREAMER_JOC_AUTOPLUG_DESIGN.md),
+and the output-side framework audit is in
+[the output-target negotiation note](../research/GSTREAMER_OUTPUT_TARGET_NEGOTIATION.md).
 
 ## Version and build matrix
 
@@ -147,7 +149,7 @@ GStreamer callback access is serialized by the element state mutex.
 The focused property surface is:
 
 ```text
-render-mode=speaker|stereo|binaural       (default speaker)
+render-mode=speaker|stereo|binaural|auto   (default speaker)
 speaker-layout=2.0|5.1|...|22.2           (default 5.1)
 virtual-layout=5.1|7.1.4|...|22.2        (default 7.1.4; binaural only)
 drc=disabled|line|rf|custom                (default line)
@@ -169,13 +171,45 @@ channel binaural output should set `render-mode=binaural` and, when needed,
 `virtual-layout=7.1.4` on the created decoder, or use the explicit classified
 engineering pipeline shown below.
 
+The output target policy is intentionally separate from JOC autoplugging:
+
+| Product intent | OpenJOC configuration | PCM result |
+|---|---|---|
+| Headphones / Binaural | `render-mode=binaural`, `virtual-layout=7.1.4` | OpenJOC SADIE II HRTF, 2 channels: Left Ear / Right Ear |
+| Stereo Speakers (2.0) | `render-mode=speaker`, `speaker-layout=2.0` | OpenJOC native FL / FR speaker rendering, 2 channels |
+| Physical Speakers | `render-mode=speaker`, `speaker-layout=5.1`, `7.1.4`, `9.1.6`, `22.2`, or another admitted preset | OpenJOC native N-channel speaker rendering |
+
+`virtual-layout` is a binaural-only virtual speaker topology. `speaker-layout`
+is a physical multichannel PCM topology. Two-channel transport caps do not
+identify headphones; the player must supply headphone/binaural intent. No
+device-name heuristic, operating-system spatial renderer, or platform device
+enumeration is used by OpenJOC.
+
+The opt-in `render-mode=auto` is deliberately narrower than device discovery.
+On the first admitted JOC access unit it queries the downstream source-pad peer
+once. If the peer exposes one `audio/x-raw` structure with a fixed channel
+count and a fixed semantic `channel-mask`, it recognizes the current native
+OpenJOC presets and selects the matching `speaker` configuration. The special
+two-channel caps convention is treated as physical `2.0`, never as headphones.
+Broad ranges, multiple structures, missing multichannel masks, and unrecognized
+positions remain ambiguous and fail with `GST_FLOW_NOT_NEGOTIATED`; they do not
+silently select binaural or a fallback layout. `auto` therefore does not claim
+to detect the final hardware device through `audioconvert` or an audio sink.
+
+The current native preset set is `2.0`, `5.1`, `5.1.2`, `5.1.4`, `7.1`,
+`7.1.2`, `7.1.4`, `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`.
+OpenJOC emits its semantic order. The adapter supplies the corresponding
+GStreamer channel positions and performs only the canonical transport reorder
+needed by `GstAudioInfo`; it does not mix or spatially downmix channels.
+
 No offline peak/LUFS/true-peak normalization is exposed. Custom SOFA loading
 is deferred; `render-mode=binaural` uses the existing built-in SADIE II generic
 HRTF without a filesystem or network dependency.
 
 Output is `audio/x-raw`, `format=F32LE`, `layout=interleaved`, 48 kHz, with
 truthful channel positions. OpenJOC's semantic channel order is retained and
-mapped once at the adapter boundary:
+mapped once at the adapter boundary; only the transport order is canonicalized
+where GStreamer requires a different positional order:
 
 - `2.0` and binaural use Front Left / Front Right transport positions;
 - `5.1` uses Front Left, Front Right, Front Center, LFE1, Side Left, Side Right;
@@ -224,6 +258,13 @@ The output buffer owns one copied PCM representation. This is required because
 OpenJOC's Rust frame is owned by the session and must not be borrowed beyond
 the next session operation.
 
+For an exact-target path, link the decoder directly to a capsfilter or an
+appsink/fakesink. Do not put an unconstrained `audioconvert` between the
+decoder and a sink when the result must remain exact: `audioconvert` is allowed
+to perform channel reordering, upmixing, or downmixing when its negotiated caps
+require it. Sample-format conversion is harmless only when the channel count
+and semantic positions remain unchanged.
+
 ## Explicit pipeline
 
 For a raw/framed `.ec3` or `.eac3` elementary stream:
@@ -235,6 +276,24 @@ GST_PLUGIN_PATH="${OPENJOC_GSTREAMER_TARGET_DIR:-$PWD/target-gstreamer}/release"
   openjocdec render-mode=binaural ! \
   audioconvert ! audioresample ! autoaudiosink
 ```
+
+The explicit native physical path can be tested without physical speakers. This
+example fixes a truthful 7.1.4 target and terminates in `fakesink`; `auto`
+selects OpenJOC speaker `7.1.4`, which produces 12-channel PCM before the sink:
+
+```sh
+GST_PLUGIN_PATH="${OPENJOC_GSTREAMER_TARGET_DIR:-$PWD/target-gstreamer}/release" \
+gst-launch-1.0 -e -v \
+  filesrc location=/path/to/joc.ec3 ! ac3parse ! openjocclassify ! \
+  openjocdec render-mode=auto ! \
+  audio/x-raw,format=F32LE,rate=48000,layout=interleaved,channels=12,channel-mask=\(bitmask\)0x2d63f ! \
+  fakesink sync=false
+```
+
+For a physical stereo target use `render-mode=speaker speaker-layout=2.0`.
+For headphones use `render-mode=binaural virtual-layout=7.1.4`; both paths
+transport two channels, but their PCM is produced by different OpenJOC
+renderers.
 
 For automatic JOC-aware decoder selection, the application does not name
 `openjocdec`:
@@ -262,6 +321,43 @@ smoke pipeline:
 scripts/verify-gstreamer.sh /path/to/joc.ec3
 ```
 
+For a caps-driven physical-target smoke test, use:
+
+```sh
+scripts/verify-gstreamer-output-targets.sh /path/to/joc.ec3
+```
+
+This runs exact 2.0, 5.1, and 7.1.4 capsfilter/fakesink pipelines and checks
+the OpenJOC debug selection log. It is a deterministic renderer/caps test, not
+a claim that the host audio device has those speakers.
+
+### Application configuration
+
+For `playbin`/`playbin3`, the clean integration surface is the documented
+`element-setup` signal. The application may set properties on the
+automatically-created `openjocdec` before the pipeline is played:
+
+```rust,ignore
+playbin.connect("element-setup", false, move |values| {
+    let element = values[1].get::<gst::Element>().ok()?;
+    if element.factory().is_some_and(|factory| factory.name() == "openjocdec") {
+        element.set_property("render-mode", "binaural");
+        element.set_property("virtual-layout", "7.1.4");
+        // For a player-selected physical system instead:
+        // element.set_property("render-mode", "speaker");
+        // element.set_property("speaker-layout", "7.1.4");
+    }
+    None
+});
+```
+
+The exact Rust closure signature can vary with the `glib` binding version; the
+policy is the important part: the player selects headphones or a physical
+layout, and OpenJOC performs the spatial rendering. `gst-launch-1.0` cannot
+reliably set a property on a decoder that `decodebin` or `playbin` creates
+internally, so use the explicit classified pipeline when a command-line test
+must configure `openjocdec` directly.
+
 The repository does not include a commercial or private programme fixture.
 The helper therefore requires a user-supplied legal/public JOC file. A
 successful explicit run demonstrates plugin loading, classified caps
@@ -278,6 +374,10 @@ instantiated by the playback stack.
 - Preroll data is decoded as normal session input; the current public session
   API does not expose an output discard policy for preroll-origin frames.
 - Custom SOFA properties remain deferred.
+- Live device-layout switching is not performed inside an active session. Stop,
+  reconfigure the target properties or caps, and restart/new-stream negotiate;
+  this guarantees that binaural and speaker renderer state cannot cross a
+  target change.
 - Cross-platform builds use the same platform-neutral Rust code, but the
   platform SDK/runtime package must be installed for each target.
 

@@ -67,11 +67,33 @@ impl Default for Settings {
 
 impl Settings {
     fn into_config(self) -> Result<OpenJocConfig, String> {
-        let render_mode = match self.render_mode.as_str() {
-            "speaker" => RenderMode::Speaker,
-            "stereo" => RenderMode::Stereo,
-            "binaural" => RenderMode::Binaural,
+        let target = match self.render_mode.as_str() {
+            "speaker" => OutputTarget::Speaker {
+                layout: self.speaker_layout.clone(),
+                render_mode: RenderMode::Speaker,
+            },
+            "stereo" => OutputTarget::Speaker {
+                layout: "2.0".to_owned(),
+                render_mode: RenderMode::Stereo,
+            },
+            "binaural" => OutputTarget::Binaural {
+                virtual_layout: self.virtual_layout.clone(),
+            },
+            "auto" => {
+                return Err(
+                    "render-mode=auto requires a fixed semantic downstream target".to_owned(),
+                );
+            }
             value => return Err(format!("unsupported render-mode {value:?}")),
+        };
+        self.config_for_target(target)
+    }
+
+    fn config_for_target(&self, target: OutputTarget) -> Result<OpenJocConfig, String> {
+        let render_mode = target.render_mode();
+        let speaker_layout = match &target {
+            OutputTarget::Speaker { layout, .. } => layout.clone(),
+            OutputTarget::Binaural { .. } => self.speaker_layout.clone(),
         };
         let drc = match self.drc.as_str() {
             "disabled" => DrcPolicy::Disabled,
@@ -106,15 +128,18 @@ impl Settings {
             "equal-power-dual-mono" => BinauralLfePolicy::EqualPowerDualMono,
             value => return Err(format!("unsupported lfe-policy {value:?}")),
         };
-        let binaural = (render_mode == RenderMode::Binaural).then(|| BinauralConfig {
-            sofa_bytes: Vec::new(),
-            virtual_layout: self.virtual_layout,
-            lfe_policy,
-        });
+        let binaural = match target {
+            OutputTarget::Binaural { virtual_layout } => Some(BinauralConfig {
+                sofa_bytes: Vec::new(),
+                virtual_layout,
+                lfe_policy,
+            }),
+            OutputTarget::Speaker { .. } => None,
+        };
 
         Ok(OpenJocConfig {
             render_mode,
-            speaker_layout: self.speaker_layout,
+            speaker_layout,
             downmix,
             drc,
             dialnorm,
@@ -123,6 +148,49 @@ impl Settings {
             ..OpenJocConfig::default()
         })
     }
+
+    fn auto_config(&self, downstream_caps: &gst::Caps) -> Result<(OpenJocConfig, String), String> {
+        let Some(layout) = fixed_downstream_speaker_layout(downstream_caps)? else {
+            return Err(
+                "render-mode=auto requires one fixed audio/x-raw target with recognized channel positions; broad or positionless caps are ambiguous, and two channels do not imply headphones".to_owned(),
+            );
+        };
+        let target = OutputTarget::Speaker {
+            layout: layout.clone(),
+            render_mode: RenderMode::Speaker,
+        };
+        Ok((self.config_for_target(target)?, format!("speaker:{layout}")))
+    }
+
+    fn explicit_target_description(&self) -> Result<String, String> {
+        match self.render_mode.as_str() {
+            "speaker" => Ok(format!("speaker:{}", self.speaker_layout)),
+            "stereo" => Ok("speaker:2.0".to_owned()),
+            "binaural" => Ok(format!("binaural:virtual={}", self.virtual_layout)),
+            "auto" => Err("auto target is selected at downstream negotiation".to_owned()),
+            value => Err(format!("unsupported render-mode {value:?}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum OutputTarget {
+    Speaker {
+        layout: String,
+        render_mode: RenderMode,
+    },
+    Binaural {
+        virtual_layout: String,
+    },
+}
+
+impl OutputTarget {
+    fn render_mode(&self) -> RenderMode {
+        match self {
+            Self::Speaker { render_mode, .. } => *render_mode,
+            Self::Binaural { .. } => RenderMode::Binaural,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -130,6 +198,7 @@ struct State {
     session: Option<OpenJocSession>,
     configured_rate: Option<u32>,
     configured_channels: Option<usize>,
+    configured_labels: Option<Vec<String>>,
     pending_discontinuity: bool,
 }
 
@@ -153,7 +222,7 @@ impl ObjectImpl for OpenJocDecImp {
             vec![
                 glib::ParamSpecString::builder("render-mode")
                     .nick("Render mode")
-                    .blurb("speaker, stereo, or binaural")
+                    .blurb("speaker, stereo, binaural, or auto")
                     .default_value(Some("speaker"))
                     .build(),
                 glib::ParamSpecString::builder("speaker-layout")
@@ -308,28 +377,50 @@ impl ElementImpl for OpenJocDecImp {
 impl AudioDecoderImpl for OpenJocDecImp {
     fn start(&self) -> Result<(), gst::ErrorMessage> {
         let settings = lock(&self.settings).clone();
-        let config = settings
-            .into_config()
-            .map_err(|error| gst::error_msg!(gst::CoreError::Failed, ["{error}"]))?;
-        let config_fingerprint = config.effective_config_fingerprint();
-        let mut state = lock(&self.state);
-        state.session = Some(OpenJocSession::new(config).map_err(|error| {
-            gst::error_msg!(
-                gst::CoreError::Failed,
-                ["failed to create OpenJOC session: {error}"]
+        let (session, target, config_fingerprint) = if settings.render_mode == "auto" {
+            (None, None, None)
+        } else {
+            let config = settings
+                .clone()
+                .into_config()
+                .map_err(|error| gst::error_msg!(gst::CoreError::Failed, ["{error}"]))?;
+            let fingerprint = config.effective_config_fingerprint();
+            let target = settings
+                .explicit_target_description()
+                .map_err(|error| gst::error_msg!(gst::CoreError::Failed, ["{error}"]))?;
+            (
+                Some(OpenJocSession::new(config).map_err(|error| {
+                    gst::error_msg!(
+                        gst::CoreError::Failed,
+                        ["failed to create OpenJOC session: {error}"]
+                    )
+                })?),
+                Some(target),
+                Some(fingerprint),
             )
-        })?);
+        };
+        let mut state = lock(&self.state);
+        state.session = session;
         state.configured_rate = None;
         state.configured_channels = None;
+        state.configured_labels = None;
         state.pending_discontinuity = false;
         drop(state);
 
         self.obj().set_drainable(true);
-        gst::info!(
-            category(),
-            imp = self,
-            "started OpenJOC session effective-config-sha256={config_fingerprint}"
-        );
+        if let (Some(target), Some(fingerprint)) = (target, config_fingerprint) {
+            gst::info!(
+                category(),
+                imp = self,
+                "started OpenJOC session effective-config-sha256={fingerprint} target={target}"
+            );
+        } else {
+            gst::info!(
+                category(),
+                imp = self,
+                "started OpenJOC auto-target session"
+            );
+        }
         Ok(())
     }
 
@@ -338,6 +429,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
         state.session = None;
         state.configured_rate = None;
         state.configured_channels = None;
+        state.configured_labels = None;
         state.pending_discontinuity = false;
         Ok(())
     }
@@ -371,15 +463,15 @@ impl AudioDecoderImpl for OpenJocDecImp {
             ));
         }
         let mut state = lock(&self.state);
-        let Some(session) = state.session.as_mut() else {
-            return Err(gst::loggable_error!(
-                gst::CAT_RUST,
-                "OpenJOC session is not started"
-            ));
-        };
-        session.flush();
+        if let Some(session) = state.session.as_mut() {
+            session.flush();
+        }
+        if lock(&self.settings).render_mode == "auto" {
+            state.session = None;
+        }
         state.configured_rate = None;
         state.configured_channels = None;
+        state.configured_labels = None;
         state.pending_discontinuity = false;
         Ok(())
     }
@@ -435,6 +527,8 @@ impl AudioDecoderImpl for OpenJocDecImp {
             return Err(gst::FlowError::Error);
         }
 
+        self.ensure_session_for_output_target()?;
+
         let discontinuity = input.flags().contains(gst::BufferFlags::DISCONT)
             || lock(&self.state).pending_discontinuity;
         let pts_samples = input
@@ -486,11 +580,43 @@ impl AudioDecoderImpl for OpenJocDecImp {
         }
         state.configured_rate = None;
         state.configured_channels = None;
+        state.configured_labels = None;
         state.pending_discontinuity = true;
     }
 }
 
 impl OpenJocDecImp {
+    fn ensure_session_for_output_target(&self) -> Result<(), gst::FlowError> {
+        if lock(&self.state).session.is_some() {
+            return Ok(());
+        }
+        let settings = lock(&self.settings).clone();
+        let downstream_caps = self.obj().src_pad().peer_query_caps(None);
+        let (config, target) = settings.auto_config(&downstream_caps).map_err(|error| {
+            gst::element_imp_error!(self, gst::StreamError::Format, ("{error}"));
+            gst::FlowError::NotNegotiated
+        })?;
+        let fingerprint = config.effective_config_fingerprint();
+        let session = OpenJocSession::new(config).map_err(|error| {
+            gst::element_imp_error!(
+                self,
+                gst::StreamError::Format,
+                ("failed to create OpenJOC auto-target session: {error}")
+            );
+            gst::FlowError::NotNegotiated
+        })?;
+        let mut state = lock(&self.state);
+        if state.session.is_none() {
+            state.session = Some(session);
+            gst::info!(
+                category(),
+                imp = self,
+                "selected OpenJOC auto target effective-config-sha256={fingerprint} target={target} downstream-caps={downstream_caps}"
+            );
+        }
+        Ok(())
+    }
+
     fn handle_drain(&self) -> Result<gst::FlowSuccess, gst::FlowError> {
         let frames = {
             let mut state = lock(&self.state);
@@ -528,10 +654,11 @@ impl OpenJocDecImp {
         let mut state = lock(&self.state);
         if state.configured_rate == Some(sample_rate)
             && state.configured_channels == Some(frame.channel_count)
+            && state.configured_labels.as_ref() == Some(&frame.channel_labels)
         {
             return Ok(());
         }
-        let positions = channel_positions(&frame.channel_labels).map_err(|error| {
+        let (positions, _) = gst_channel_order(&frame.channel_labels).map_err(|error| {
             gst::element_imp_error!(self, gst::StreamError::Format, ("{error}"));
             gst::FlowError::NotNegotiated
         })?;
@@ -563,6 +690,7 @@ impl OpenJocDecImp {
         self.obj().set_latency(latency, latency);
         state.configured_rate = Some(sample_rate);
         state.configured_channels = Some(frame.channel_count);
+        state.configured_labels = Some(frame.channel_labels.clone());
         Ok(())
     }
 
@@ -634,9 +762,16 @@ fn pcm_buffer(frame: &OpenJocPcmFrame) -> Result<gst::Buffer, gst::FlowError> {
     {
         return Err(gst::FlowError::Error);
     }
+    let (_, reorder) =
+        gst_channel_order(&frame.channel_labels).map_err(|_| gst::FlowError::Error)?;
     let mut bytes = Vec::with_capacity(frame.interleaved_f32.len().saturating_mul(4));
-    for sample in &frame.interleaved_f32 {
-        bytes.extend_from_slice(&sample.to_le_bytes());
+    for sample in 0..frame.sample_count {
+        for &input_channel in &reorder {
+            let index = sample
+                .saturating_mul(frame.channel_count)
+                .saturating_add(input_channel);
+            bytes.extend_from_slice(&frame.interleaved_f32[index].to_le_bytes());
+        }
     }
     let mut buffer = gst::Buffer::from_mut_slice(bytes);
     buffer.get_mut().unwrap().set_duration(
@@ -699,6 +834,148 @@ fn channel_positions(labels: &[String]) -> Result<Vec<gst_audio::AudioChannelPos
             )),
         })
         .collect()
+}
+
+fn gst_channel_order(
+    labels: &[String],
+) -> Result<(Vec<gst_audio::AudioChannelPosition>, Vec<usize>), String> {
+    let semantic_positions = channel_positions(labels)?;
+    let mut gst_positions = semantic_positions.clone();
+    gst_audio::AudioChannelPosition::positions_to_valid_order(&mut gst_positions).map_err(
+        |error| format!("OpenJOC channel order is not representable by GStreamer: {error}"),
+    )?;
+    let reorder = gst_positions
+        .iter()
+        .map(|position| {
+            semantic_positions
+                .iter()
+                .position(|candidate| candidate == position)
+                .ok_or_else(|| "GStreamer channel order lost a semantic channel".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((gst_positions, reorder))
+}
+
+fn fixed_downstream_speaker_layout(caps: &gst::Caps) -> Result<Option<String>, String> {
+    if caps.is_any() || caps.is_empty() || caps.size() != 1 {
+        return Ok(None);
+    }
+    let Some(structure) = caps.structure(0) else {
+        return Ok(None);
+    };
+    if structure.name() != "audio/x-raw" {
+        return Ok(None);
+    }
+    let Ok(channels) = structure.get::<i32>("channels") else {
+        return Ok(None);
+    };
+    let Ok(channels) = usize::try_from(channels) else {
+        return Ok(None);
+    };
+    if channels == 0 || channels > 24 {
+        return Ok(None);
+    }
+    let positions = if channels == 2 && structure.get::<gst::Bitmask>("channel-mask").is_err() {
+        vec![
+            gst_audio::AudioChannelPosition::FrontLeft,
+            gst_audio::AudioChannelPosition::FrontRight,
+        ]
+    } else {
+        let Ok(mask) = structure.get::<gst::Bitmask>("channel-mask") else {
+            return Ok(None);
+        };
+        if mask.0.count_ones() as usize != channels {
+            return Ok(None);
+        }
+        let mut positions = vec![gst_audio::AudioChannelPosition::None; channels];
+        gst_audio::AudioChannelPosition::positions_from_mask(mask.0, &mut positions)
+            .map_err(|error| format!("invalid downstream channel mask: {error}"))?;
+        positions
+    };
+
+    for (name, labels) in supported_speaker_layouts() {
+        let expected = channel_positions(
+            &labels
+                .iter()
+                .map(|label| (*label).to_owned())
+                .collect::<Vec<_>>(),
+        )?;
+        if expected.len() == positions.len()
+            && expected.iter().all(|position| positions.contains(position))
+        {
+            return Ok(Some((*name).to_owned()));
+        }
+    }
+    Ok(None)
+}
+
+fn supported_speaker_layouts() -> &'static [(&'static str, &'static [&'static str])] {
+    &[
+        ("2.0", &["FL", "FR"]),
+        ("5.1", &["FL", "FR", "FC", "LFE", "Ls", "Rs"]),
+        (
+            "5.1.2",
+            &["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
+        ),
+        (
+            "5.1.4",
+            &[
+                "FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+            ],
+        ),
+        ("7.1", &["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"]),
+        (
+            "7.1.2",
+            &[
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR",
+            ],
+        ),
+        (
+            "7.1.4",
+            &[
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+            ],
+        ),
+        (
+            "7.1.6",
+            &[
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
+                "Rtr",
+            ],
+        ),
+        (
+            "9.1",
+            &["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"],
+        ),
+        (
+            "9.1.2",
+            &[
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltm", "Rtm",
+            ],
+        ),
+        (
+            "9.1.4",
+            &[
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltr",
+                "Rtr",
+            ],
+        ),
+        (
+            "9.1.6",
+            &[
+                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm",
+                "Rtm", "Ltr", "Rtr",
+            ],
+        ),
+        (
+            "22.2",
+            &[
+                "FL", "FR", "FC", "LFE1", "BL", "BR", "FLc", "FRc", "BC", "LFE2", "SiL", "SiR",
+                "TpFL", "TpFR", "TpFC", "TpC", "TpBL", "TpBR", "TpSiL", "TpSiR", "TpBC", "BtFC",
+                "BtFL", "BtFR",
+            ],
+        ),
+    ]
 }
 
 pub fn register(plugin: &gst::Plugin) -> Result<(), glib::BoolError> {
@@ -898,6 +1175,156 @@ mod tests {
         assert_eq!(positions[3], gst_audio::AudioChannelPosition::Lfe1);
         assert_eq!(positions[4], gst_audio::AudioChannelPosition::RearLeft);
         assert_eq!(positions[6], gst_audio::AudioChannelPosition::SideLeft);
+    }
+
+    fn exact_audio_caps(layout: &str) -> gst::Caps {
+        gst::init().expect("GStreamer initializes");
+        let labels = supported_speaker_layouts()
+            .iter()
+            .find(|(name, _)| *name == layout)
+            .map(|(_, labels)| *labels)
+            .expect("known speaker layout");
+        let labels = labels
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect::<Vec<_>>();
+        let positions = channel_positions(&labels).expect("layout positions");
+        let mask = gst_audio::AudioChannelPosition::positions_to_mask(&positions, false)
+            .expect("layout channel mask");
+        gst_audio::AudioCapsBuilder::new_interleaved()
+            .format(gst_audio::AudioFormat::F32le)
+            .rate(i32::try_from(SAMPLE_RATE).expect("sample rate fits"))
+            .channels(i32::try_from(labels.len()).expect("channel count fits"))
+            .channel_mask(mask)
+            .build()
+    }
+
+    #[test]
+    fn fixed_caps_recognize_every_current_native_speaker_layout() {
+        for (layout, _) in supported_speaker_layouts() {
+            assert_eq!(
+                fixed_downstream_speaker_layout(&exact_audio_caps(layout)),
+                Ok(Some((*layout).to_owned())),
+                "layout {layout}"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_selects_native_speaker_layout_but_never_binaural_from_caps() {
+        let settings = Settings {
+            render_mode: "auto".to_owned(),
+            ..Settings::default()
+        };
+        let (config, target) = settings
+            .auto_config(&exact_audio_caps("7.1.4"))
+            .expect("fixed physical target");
+        assert_eq!(target, "speaker:7.1.4");
+        assert_eq!(config.render_mode, RenderMode::Speaker);
+        assert_eq!(config.speaker_layout, "7.1.4");
+        assert!(config.binaural.is_none());
+        assert!(
+            config
+                .effective_config_descriptor()
+                .contains("render_mode=speaker\nlayout=7.1.4")
+        );
+
+        let stereo_caps = gst::Caps::builder("audio/x-raw")
+            .field("channels", 2_i32)
+            .build();
+        let (config, target) = settings
+            .auto_config(&stereo_caps)
+            .expect("fixed stereo target");
+        assert_eq!(target, "speaker:2.0");
+        assert_eq!(config.render_mode, RenderMode::Speaker);
+        assert_eq!(config.speaker_layout, "2.0");
+        assert!(config.binaural.is_none());
+    }
+
+    #[test]
+    fn broad_or_positionless_multichannel_caps_do_not_select_a_layout() {
+        gst::init().expect("GStreamer initializes");
+        let broad = gst::Caps::builder("audio/x-raw")
+            .field("channels", gst::IntRange::new(1, 64))
+            .build();
+        assert_eq!(fixed_downstream_speaker_layout(&broad), Ok(None));
+
+        let positionless = gst::Caps::builder("audio/x-raw")
+            .field("channels", 12_i32)
+            .build();
+        assert_eq!(fixed_downstream_speaker_layout(&positionless), Ok(None));
+    }
+
+    #[test]
+    fn gstreamer_transport_order_is_canonical_without_changing_two_channel_binaural() {
+        let labels = supported_speaker_layouts()
+            .iter()
+            .find(|(name, _)| *name == "9.1.6")
+            .expect("9.1.6")
+            .1
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect::<Vec<_>>();
+        let (positions, reorder) = gst_channel_order(&labels).expect("9.1.6 mapping");
+        assert_eq!(positions.len(), labels.len());
+        assert_eq!(reorder.len(), labels.len());
+        assert!(
+            reorder
+                .iter()
+                .enumerate()
+                .any(|(output, input)| output != *input)
+        );
+
+        let (positions, reorder) =
+            gst_channel_order(&["Left Ear".to_owned(), "Right Ear".to_owned()])
+                .expect("binaural transport mapping");
+        assert_eq!(
+            positions,
+            vec![
+                gst_audio::AudioChannelPosition::FrontLeft,
+                gst_audio::AudioChannelPosition::FrontRight,
+            ]
+        );
+        assert_eq!(reorder, vec![0, 1]);
+    }
+
+    #[test]
+    fn pcm_transport_is_a_permutation_only_for_noncanonical_layout_order() {
+        let labels = supported_speaker_layouts()
+            .iter()
+            .find(|(name, _)| *name == "9.1.6")
+            .expect("9.1.6")
+            .1
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect::<Vec<_>>();
+        let values = (0..labels.len())
+            .map(|value| value as f32)
+            .collect::<Vec<_>>();
+        let frame = OpenJocPcmFrame {
+            sample_format: openjoc_api::PcmSampleFormat::F32,
+            sample_rate: SAMPLE_RATE,
+            channel_count: labels.len(),
+            channel_labels: labels.clone(),
+            layout_name: "9.1.6".to_owned(),
+            render_mode: RenderMode::Speaker,
+            sample_count: 1,
+            pts_samples: Some(0),
+            interleaved_f32: values.clone(),
+        };
+        let (_, reorder) = gst_channel_order(&labels).expect("9.1.6 order");
+        let buffer = pcm_buffer(&frame).expect("PCM buffer");
+        let map = buffer.map_readable().expect("readable PCM");
+        let transported = map
+            .as_slice()
+            .chunks_exact(4)
+            .map(|sample| f32::from_le_bytes(sample.try_into().expect("f32 bytes")))
+            .collect::<Vec<_>>();
+        let expected = reorder
+            .iter()
+            .map(|index| values[*index])
+            .collect::<Vec<_>>();
+        assert_eq!(transported, expected);
     }
 
     #[test]

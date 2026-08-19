@@ -1,6 +1,9 @@
 #![cfg(feature = "gstreamer")]
 
 use gst::prelude::*;
+use std::sync::{Mutex, OnceLock};
+
+static RANK_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn generic_eac3_caps() -> gst::Caps {
     gst::Caps::builder("audio/x-eac3")
@@ -23,6 +26,10 @@ fn classified_eac3_caps(joc: bool) -> gst::Caps {
 
 #[test]
 fn openjocdec_registers_as_a_joc_only_primary_decoder() {
+    let _guard = RANK_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("rank test lock");
     gst::init().expect("GStreamer initializes");
     gstopenjoc::register_static_plugin().expect("OpenJOC plugin registers");
 
@@ -63,6 +70,10 @@ fn openjocdec_registers_as_a_joc_only_primary_decoder() {
 
 #[test]
 fn ordinary_eac3_never_autoplugs_openjoc_even_at_high_rank() {
+    let _guard = RANK_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("rank test lock");
     gst::init().expect("GStreamer initializes");
     gstopenjoc::register_static_plugin().expect("OpenJOC plugin registers");
 

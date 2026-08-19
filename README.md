@@ -70,7 +70,8 @@ Read the canonical documentation:
 - [C API](docs/C_API.md) — versioned C/C++ ABI and ownership rules.
 - [GStreamer integration](docs/integration/GSTREAMER.md) — experimental
   automatic selection for admitted E-AC-3 JOC while ordinary E-AC-3 stays on
-  the normal decoder path.
+  the normal decoder path; applications can select binaural or native
+  multichannel speaker rendering while OpenJOC retains the spatial DSP.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
