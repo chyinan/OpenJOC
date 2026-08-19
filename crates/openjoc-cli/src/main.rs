@@ -1885,6 +1885,7 @@ fn render_joc_with_peak_normalization(
         timing.access_units,
         timing.samples,
         timing.sample_rate,
+        terminal.width,
     );
     let mut intermediate = joc_render::PcmIntermediateWriter::new(&arguments.output)?;
     let render_started = std::time::Instant::now();
@@ -2052,6 +2053,7 @@ fn render_joc(
         total_access_units,
         total_samples,
         sample_rate,
+        terminal.width,
     );
     if arguments.binaural {
         let (sofa, builtin_hrtf) = if let Some(sofa_path) = &arguments.binaural_sofa {
@@ -2444,6 +2446,7 @@ fn render_joc_with_embedded_session(
         timing.access_units,
         timing.samples,
         timing.sample_rate,
+        terminal.width,
     );
     let result = (|| -> Result<(), Box<dyn Error>> {
         for (unit_index, unit) in units.iter().copied().enumerate() {

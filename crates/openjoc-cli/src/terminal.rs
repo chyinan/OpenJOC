@@ -20,7 +20,7 @@ impl TerminalCapabilities {
     pub fn detect() -> Self {
         let is_tty = std::io::stdout().is_terminal();
         let stderr_is_tty = std::io::stderr().is_terminal();
-        let width = if is_tty {
+        let width = if is_tty || stderr_is_tty {
             terminal_size::terminal_size()
                 .map(|(Width(width), _)| width)
                 .or_else(|| {
@@ -115,5 +115,17 @@ mod tests {
         assert_eq!(context.terminal_width, Some(99));
         assert!(context.is_root_help);
         assert!(!context.is_root_without_task);
+    }
+
+    #[test]
+    fn progress_requires_a_stderr_tty() {
+        assert!(
+            TerminalCapabilities::from_inputs(true, true, Some(99), false, None, None)
+                .progress_is_tty()
+        );
+        assert!(
+            !TerminalCapabilities::from_inputs(true, false, Some(99), false, None, None)
+                .progress_is_tty()
+        );
     }
 }

@@ -396,9 +396,11 @@ When `render-joc` is attached to an interactive terminal, it writes a bounded,
 throttled progress line to stderr. The line includes rendered audio, total
 audio when the input can be indexed, elapsed time, and an estimated realtime
 factor/ETA. Progress is disabled when stderr is not a TTY and can be disabled
-explicitly with `--no-progress`. It uses no ANSI cursor or color assumptions;
-stdout remains reserved for the final diagnostic summary. Progress is not
-part of the render math and its measured write overhead is included in a
+explicitly with `--no-progress`. Refreshes stay within the detected terminal
+width, using a compact form when the detailed status would wrap, so a carriage
+return always addresses one physical line. It uses no ANSI cursor or color
+assumptions; stdout remains reserved for the final diagnostic summary. Progress
+is not part of the render math and its measured write overhead is included in a
 performance report.
 
 For a successful render, `--performance-report FILE.json` writes a new JSON

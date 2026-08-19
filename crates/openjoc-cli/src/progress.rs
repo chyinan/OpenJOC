@@ -4,6 +4,7 @@ use std::{
 };
 
 const UPDATE_INTERVAL: Duration = Duration::from_millis(250);
+const DEFAULT_TERMINAL_WIDTH: usize = 80;
 
 pub(crate) struct ProgressReporter {
     enabled: bool,
@@ -11,6 +12,7 @@ pub(crate) struct ProgressReporter {
     total_frames: u64,
     total_samples: u64,
     sample_rate: u32,
+    max_width: usize,
     started_at: Instant,
     last_update: Instant,
     last_len: usize,
@@ -25,6 +27,7 @@ impl ProgressReporter {
         total_frames: u64,
         total_samples: u64,
         sample_rate: u32,
+        terminal_width: Option<u16>,
     ) -> Self {
         Self {
             enabled,
@@ -32,6 +35,7 @@ impl ProgressReporter {
             total_frames,
             total_samples,
             sample_rate,
+            max_width: max_progress_width(terminal_width),
             started_at: Instant::now(),
             last_update: Instant::now()
                 .checked_sub(UPDATE_INTERVAL)
@@ -90,21 +94,47 @@ impl ProgressReporter {
             "--:--".to_owned()
         };
         let line = if self.total_samples > 0 {
-            format!(
+            let detailed = format!(
                 "Rendering {} [{:>5.1}%] {} / {} audio  {:.2}x realtime  elapsed {}  ETA {}",
                 self.layout, percentage, audio, total_audio, speed, elapsed_text, eta
+            );
+            select_progress_line(
+                detailed,
+                self.max_width,
+                || {
+                    format!(
+                        "Rendering {} [{:>5.1}%] {} / {}  {:.2}x ETA {}",
+                        self.layout, percentage, audio, total_audio, speed, eta
+                    )
+                },
+                || {
+                    format!(
+                        "Rendering {} [{:>5.1}%] {:.2}x",
+                        self.layout, percentage, speed
+                    )
+                },
             )
         } else {
-            format!(
+            let detailed = format!(
                 "Rendering {}  frame {} / {}  {} audio  {:.2}x realtime  elapsed {}",
                 self.layout, frame, self.total_frames, audio, speed, elapsed_text
+            );
+            select_progress_line(
+                detailed,
+                self.max_width,
+                || {
+                    format!(
+                        "Rendering {} frame {}/{} {:.2}x",
+                        self.layout, frame, self.total_frames, speed
+                    )
+                },
+                || format!("Rendering {} {:.2}x", self.layout, speed),
             )
         };
         let mut stderr = io::stderr().lock();
-        let padding = self.last_len.saturating_sub(line.len());
-        let _ = write!(stderr, "\r{}{}", line, " ".repeat(padding));
+        let _ = write_progress_update(&mut stderr, &line, self.last_len);
         let _ = stderr.flush();
-        self.last_len = line.len();
+        self.last_len = display_width(&line);
         self.last_update = Instant::now();
         self.updates = self.updates.saturating_add(1);
         self.overhead += start.elapsed();
@@ -114,13 +144,74 @@ impl ProgressReporter {
         if !self.enabled {
             return;
         }
+        if self.last_len == 0 {
+            return;
+        }
         let start = Instant::now();
         let mut stderr = io::stderr().lock();
-        let _ = write!(stderr, "\r{}\r", " ".repeat(self.last_len));
+        let _ = write_progress_finish(&mut stderr, self.last_len);
         let _ = stderr.flush();
         self.overhead += start.elapsed();
         self.last_len = 0;
     }
+}
+
+fn max_progress_width(terminal_width: Option<u16>) -> usize {
+    terminal_width.map_or(DEFAULT_TERMINAL_WIDTH - 1, |width| {
+        usize::from(width).saturating_sub(1).max(1)
+    })
+}
+
+fn display_width(line: &str) -> usize {
+    line.chars().count()
+}
+
+fn select_progress_line(
+    detailed: String,
+    max_width: usize,
+    compact: impl FnOnce() -> String,
+    minimal: impl FnOnce() -> String,
+) -> String {
+    if display_width(&detailed) <= max_width {
+        detailed
+    } else {
+        let compact = compact();
+        if display_width(&compact) <= max_width {
+            compact
+        } else {
+            let minimal = minimal();
+            if display_width(&minimal) <= max_width {
+                minimal
+            } else {
+                truncate_progress_line(&minimal, max_width)
+            }
+        }
+    }
+}
+
+fn truncate_progress_line(line: &str, max_width: usize) -> String {
+    if display_width(line) <= max_width {
+        return line.to_owned();
+    }
+    if max_width < 3 {
+        return line.chars().take(max_width).collect();
+    }
+    let mut truncated: String = line.chars().take(max_width - 3).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+fn write_progress_update<W: Write>(
+    writer: &mut W,
+    line: &str,
+    previous_width: usize,
+) -> io::Result<()> {
+    let padding = previous_width.saturating_sub(display_width(line));
+    write!(writer, "\r{}{}", line, " ".repeat(padding))
+}
+
+fn write_progress_finish<W: Write>(writer: &mut W, previous_width: usize) -> io::Result<()> {
+    write!(writer, "\r{}\r\n", " ".repeat(previous_width))
 }
 
 fn format_duration(seconds: f64) -> String {
@@ -136,5 +227,55 @@ fn format_duration(seconds: f64) -> String {
         format!("{hours:02}:{minutes:02}:{seconds:02}")
     } else {
         format!("{minutes:02}:{seconds:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        display_width, max_progress_width, select_progress_line, write_progress_finish,
+        write_progress_update,
+    };
+
+    #[test]
+    fn progress_line_stays_inside_terminal_width() {
+        let detailed =
+            "Rendering 7.1.4 [64.1%] 00:12 / 00:20 audio  1.50x realtime  elapsed 00:13  ETA 00:08";
+        let compact = "Rendering 7.1.4 [64.1%] 00:12 / 00:20  1.50x ETA 00:08";
+        let minimal = "Rendering 7.1.4 [64.1%] 1.50x";
+
+        for terminal_width in [Some(80), Some(40), Some(20), None] {
+            let max_width = max_progress_width(terminal_width);
+            let line = select_progress_line(
+                detailed.to_owned(),
+                max_width,
+                || compact.to_owned(),
+                || minimal.to_owned(),
+            );
+            assert!(display_width(&line) <= max_width, "{line:?} > {max_width}");
+            assert!(!line.contains('\r'));
+            assert!(!line.contains('\n'));
+        }
+    }
+
+    #[test]
+    fn detailed_progress_is_preserved_when_terminal_is_wide() {
+        let detailed = "detailed".to_owned();
+        let compact = "compact".to_owned();
+        let minimal = "minimal".to_owned();
+        assert_eq!(
+            select_progress_line(detailed.clone(), 80, || compact, || minimal),
+            detailed
+        );
+    }
+
+    #[test]
+    fn refresh_has_no_newline_and_finish_moves_to_a_clean_line() {
+        let mut output = Vec::new();
+        write_progress_update(&mut output, "Rendering 7.1.4 [64.1%]", 30).unwrap();
+        assert_eq!(output, b"\rRendering 7.1.4 [64.1%]       ");
+
+        write_progress_finish(&mut output, 30).unwrap();
+        assert!(output.ends_with(b"\r                              \r\n"));
     }
 }
