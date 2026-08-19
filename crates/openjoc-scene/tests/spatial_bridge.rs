@@ -1785,7 +1785,8 @@ fn seven_composition_reductions_match_the_existing_operator_branches() {
 #[test]
 fn channel_lock_composition_covers_the_admitted_public_layouts() {
     for name in [
-        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
+        "9.1.6", "22.2",
     ] {
         let layout = executable_layout(name);
         let mut lock = dynamic_point(0.5, 0.0, 0.0);
@@ -2257,7 +2258,8 @@ fn region_extent_retains_authored_outside_center_and_compensates_selected_suppor
 #[test]
 fn region_extent_composition_covers_each_public_layout() {
     for name in [
-        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4", "9.1.6",
+        "5.1", "5.1.2", "5.1.4", "7.1", "7.1.2", "7.1.4", "7.1.6", "9.1", "9.1.2", "9.1.4",
+        "9.1.6", "22.2",
     ] {
         let layout = executable_layout(name);
         let mut descriptor = dynamic_point(0.37, 0.61, 0.0);
@@ -2272,6 +2274,46 @@ fn region_extent_composition_covers_each_public_layout() {
         assert_eq!(target.len(), layout.active_channel_count(), "{name}");
         assert_unit_l2(&target);
     }
+}
+
+#[test]
+fn twenty_two_two_admits_point_region_extent_spread_pair_and_channel_lock() {
+    let layout = executable_layout("22.2");
+    let point = dynamic_point(0.5, 0.5, 0.0);
+    assert_unit_l2(&layout.project(&point).expect("22.2 Point"));
+
+    let mut region = point.clone();
+    region.zones = Some(region_zones(
+        RegionHorizontalState::ScreenOnly,
+        RegionTopBottomState::Exclude,
+    ));
+    region.extent = Some([0.25; 3]);
+    assert_unit_l2(&layout.project(&region).expect("22.2 Region × Extent"));
+
+    let mut spread = point.clone();
+    spread.spread = Some(SpatialSpreadProfile {
+        samples: vec![
+            SpatialSpreadSample {
+                position: vec![0.35, 0.5, 0.0],
+                weight: 0.5,
+            },
+            SpatialSpreadSample {
+                position: vec![0.65, 0.5, 0.0],
+                weight: 0.5,
+            },
+        ],
+    });
+    assert_unit_l2(&layout.project(&spread).expect("22.2 Spread"));
+
+    let mut pair = point.clone();
+    pair.pair_span_q15 = Some(8_192);
+    assert_unit_l2(&layout.project(&pair).expect("22.2 Pair"));
+
+    let mut locked = point;
+    locked.channel_lock = true;
+    let locked_target = layout.project(&locked).expect("22.2 ChannelLock");
+    assert_unit_l2(&locked_target);
+    assert_eq!(locked_target.len(), 22);
 }
 
 #[test]
