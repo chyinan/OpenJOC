@@ -24,12 +24,12 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.6.0 is the current release line: **Stereo, Binaural & Decoder
-Policy**. It adds substantially expanded source routing, E-AC-3 dynamic-range
-controls, standards-based 2.0 speaker output, and broader SOFA-backed binaural
-virtual layouts while retaining the experimental JOC-to-speaker boundary.
-Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
-`--topology` remains an optional complete override/test input.
+OpenJOC 0.7.0 is the current release line: **Library Integration & Output
+Fidelity**. It makes the decode/render engine embeddable through a headless
+Rust session API and an experimental versioned C ABI, while completing
+important stereo, speaker-headroom, and calibrated dialnorm behavior. Ordinary
+rendering assembles bridge control from decoded JOC/OAMD state; `--topology`
+remains an optional complete override/test input.
 
 The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
 `9.1`, `9.1.2`, `9.1.4`, and `9.1.6` workflows are documented in
@@ -62,8 +62,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.6.0 capability status.
-- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.6.0 real-input workflow.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.7.0 capability status.
+- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.7.0 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Library API](docs/LIBRARY_API.md) — headless Rust packet/session contract.
@@ -91,6 +91,22 @@ cargo build -p openjoc-cli --release --locked --offline
 This is not a claim that a brand-new machine can build without first obtaining
 the Rust toolchain and dependencies. The repository declares a minimum Rust
 version but does not pin one exact compiler release.
+
+## Embed the decode/render engine
+
+OpenJOC 0.7.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
+integration. A push supplies one complete E-AC-3 JOC access unit; receive returns
+owned interleaved `f32` PCM with sample-domain timestamps and semantic channel
+labels. Sessions support push/receive, drain, flush, reset/discontinuity, and
+report the public output delay (609 samples for speaker output, 577 for
+binaural). The API does not parse CLI arguments, open files, or use global
+decoder state.
+
+The experimental C ABI is distributed with the platform archives as
+`include/openjoc.h` plus static/shared libraries. It uses opaque handles,
+numeric statuses, `struct_size` forward compatibility, instance-owned errors,
+and panic containment. The C surface is ABI 1.1-experimental; compatibility may
+evolve during OpenJOC 0.x, and external-player adapters remain future work.
 
 ## Install into a prefix
 
@@ -209,7 +225,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble the 0.6.0 Apple-Silicon release bundle
+## Assemble the 0.7.0 Apple-Silicon release bundle
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the release
@@ -218,16 +234,17 @@ bundle locally before publication:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.6.0-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.6.0-aarch64-apple-darwin.tar.gz
-cd openjoc-0.6.0-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.7.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.7.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.7.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
 The bundle includes the canonical `docs/` tree, uses `git archive HEAD`, builds
-with the locked dependency set, and refuses tracked worktree/index changes.
-It is not Developer-ID signed and is not notarized. The script derives the
-artifact version from the workspace package metadata.
+with the locked dependency set, includes `openjoc.h` and the macOS C ABI
+static/shared libraries, and refuses tracked worktree/index changes. It is not
+Developer-ID signed and is not notarized. The script derives the artifact
+version from the workspace package metadata.
 
 ## CI and tagged releases
 
@@ -241,16 +258,18 @@ Only a human-created stable tag can start release automation (the historical
 `v0.1.0` tag is preserved). The workflow requires the tag to match the Cargo
 package version exactly, then
 builds and verifies macOS arm64, Windows x86_64, and GNU/Linux x86_64 release
-archives. Per-platform manifests remain internal workflow artifacts. The
-aggregation job recomputes archive hashes and publishes only the three binary
-archives plus one unified `SHA256SUMS` file. The workflow never creates or
-pushes tags, and refuses to overwrite an existing GitHub Release. Artifact
-attestation is not currently enabled; aggregate SHA-256, per-platform manifest
-checks, and the macOS bundle's `verify.sh` remain release verification surfaces.
+archives. Each archive carries the CLI, public docs, `openjoc.h`, and the
+platform C ABI static/shared libraries (including the Windows import library).
+Per-platform manifests remain internal workflow artifacts. The aggregation job
+recomputes archive hashes and publishes only the three binary archives plus one
+unified `SHA256SUMS` file. The workflow never creates or pushes tags, and
+refuses to overwrite an existing GitHub Release. Artifact attestation is not
+currently enabled; aggregate SHA-256, per-platform manifest checks, and the
+macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 
-The 0.6.0 release workflow targets Apple-silicon macOS
+The 0.7.0 release workflow targets Apple-silicon macOS
 (`aarch64-apple-darwin`), Windows x86_64 (`x86_64-pc-windows-msvc`), and
 GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The local bundle command and
 the candidate in this worktree validate only the Apple-silicon macOS path;

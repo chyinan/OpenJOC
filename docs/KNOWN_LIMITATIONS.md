@@ -1,9 +1,9 @@
-# OpenJOC 0.6.0 known limitations
+# OpenJOC 0.7.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.6.0 is an independent, experimental interoperability project. It
+OpenJOC 0.7.0 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 
@@ -11,6 +11,14 @@ bit-identical Reference Player output.
   objects. `SemanticBindingState` remains `Unresolved`, and
   `ReconstructionBasis` rows are diagnostic reconstruction coordinates rather
   than verified authored-object PCM.
+- The embeddable packet API accepts exactly one complete E-AC-3 JOC access unit
+  per push. Arbitrary byte fragmentation, multiple AUs in one push, demuxing,
+  CLI parsing, and filesystem output remain outside `OpenJocSession`.
+- The C ABI is experimental ABI 1.1. It is intended for integration during the
+  OpenJOC 0.x series; layout and compatibility details may evolve. The
+  published header and platform libraries are the supported C consumer
+  surface, but no FFmpeg, GStreamer, mpv, VLC, DirectShow/LAV, or PotPlayer
+  adapter is shipped.
 - The codec-domain JOC operator `T(t)` remains unresolved. The separate
   `render-joc` path is an experimental ordinary-domain speaker projection that
   assembles control from decoded JOC/OAMD state; it does not infer authored
@@ -71,7 +79,7 @@ bit-identical Reference Player output.
   malformed or out-of-domain identities remain fail closed. Friendly Named
   display names are intentionally not exposed.
 - Real-JOC binaural output currently requires a user-provided compatible SOFA
-  file; 0.6.0 does not include a bundled generic HRTF. It is speaker
+  file; 0.7.0 does not include a bundled generic HRTF. It is speaker
   virtualization through a strict `SimpleFreeFieldHRIR` SOFA bank. The default
   virtual field is `7.1.4`; the
   public `5.1`/`7.1`/`9.1` families are eligible when every non-LFE direction is
@@ -92,6 +100,8 @@ bit-identical Reference Player output.
   supports explicit mono-source 2D/3D rendering and static exact-direction
   binaural reference paths, but does not provide JOC semantic binding, room or
   distance modeling, Doppler, head tracking, or a vendor renderer.
+- JOC clip-gain fields are parsed as part of the public syntax boundary, but
+  clip-gain rendering semantics are not applied by the public renderer.
 - `ETSI_STRICT` rejects the observed reserved OAMD warp value `raw=3`.
   `OBSERVED_VENDOR_COMPAT` is explicit and partial; opaque continuation is
   retained without assigning vendor semantics. Malformed, unsafe, unknown, or

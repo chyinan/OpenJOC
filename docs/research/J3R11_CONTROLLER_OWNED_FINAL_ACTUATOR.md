@@ -32,7 +32,7 @@ durable nonce consumption.
 
 ## Controller boundary
 
-`OpenJOC-Private/scripts/j3r11_controller.py` implements a fail-closed
+The private controller script implements a fail-closed
 controller-owned state machine. Computer Use can only reach `READY_TO_ARM`.
 The controller then:
 
@@ -81,7 +81,8 @@ PCM, or renderer semantics.
 
 Private evidence package:
 
-`OpenJOC-Private/reports/runs/20260812T_j3r11-controller-owned-final-actuator_fe3b782/`
+the private controller-owned-actuator evidence run (path omitted from public
+documentation)
 
 The next blocker is a controller-owned standard non-media semantic AXPress
 oracle, followed only by fresh cancel-only S_FL/S_FR/D_SWAP rehearsals. No

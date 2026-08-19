@@ -22,6 +22,9 @@ PAYLOAD_PATHS = (
     "LICENSE",
     "README.md",
     "bin/openjoc",
+    "include/openjoc.h",
+    "lib/libopenjoc_capi.a",
+    "lib/libopenjoc_capi.dylib",
     "verify.sh",
 )
 STATIC_BUNDLE_PATHS = (
@@ -30,6 +33,9 @@ STATIC_BUNDLE_PATHS = (
     "RELEASE_MANIFEST.json",
     "SHA256SUMS",
     "bin/openjoc",
+    "include/openjoc.h",
+    "lib/libopenjoc_capi.a",
+    "lib/libopenjoc_capi.dylib",
     "verify.sh",
 )
 
@@ -214,8 +220,7 @@ def main() -> int:
             [
                 "cargo",
                 "build",
-                "-p",
-                "openjoc-cli",
+                "--workspace",
                 "--release",
                 "--locked",
                 "--offline",
@@ -227,7 +232,15 @@ def main() -> int:
 
         bundle_root = temporary_root / base_name
         (bundle_root / "bin").mkdir(parents=True)
+        (bundle_root / "include").mkdir(parents=True)
+        (bundle_root / "lib").mkdir(parents=True)
         shutil.copy2(target / "release/openjoc", bundle_root / "bin/openjoc")
+        shutil.copy2(
+            source / "crates/openjoc-capi/include/openjoc.h",
+            bundle_root / "include/openjoc.h",
+        )
+        for library in ("libopenjoc_capi.a", "libopenjoc_capi.dylib"):
+            shutil.copy2(target / "release" / library, bundle_root / "lib" / library)
         shutil.copy2(source / "LICENSE", bundle_root / "LICENSE")
         shutil.copy2(source / "README.md", bundle_root / "README.md")
         # Ship the canonical documentation tree so the standalone release

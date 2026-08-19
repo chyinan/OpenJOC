@@ -9,8 +9,8 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-joc = { version = "0.6.0", path = "../openjoc-joc" }
-openjoc-oamd = { version = "0.6.0", path = "../openjoc-oamd" }
+openjoc-joc = { version = "0.7.0", path = "../openjoc-joc" }
+openjoc-oamd = { version = "0.7.0", path = "../openjoc-oamd" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

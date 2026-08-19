@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.7.0] — 2026-08-19
+
+OpenJOC 0.7.0 — Library Integration & Output Fidelity makes the decode/render
+engine embeddable and completes important speaker-output fidelity and level
+policy work. Users of 0.6.0 are strongly encouraged to upgrade.
+
+### Highlights
+
+- A headless Rust `OpenJocSession` / `OpenJocConfig` API accepts one complete
+  E-AC-3 JOC access unit per packet and returns owned interleaved `f32` PCM with
+  sample-domain timestamps, semantic channel labels, drain, flush, reset, and
+  discontinuity handling.
+- The CLI continues to use the shared engine, while separate sessions remain
+  independent and the core does not require CLI parsing, terminal access, or
+  filesystem output.
+
+### Library & C Integration
+
+- Added the experimental C ABI 1.1 with public `openjoc.h`, opaque decoder
+  handles, numeric status codes, instance-owned errors, panic containment, and
+  `struct_size` forward compatibility. ABI 1.0-size configuration callers are
+  accepted with calibrated Default dialnorm behavior.
+- Platform release archives now carry the public header and the generated
+  static/shared C ABI libraries, including the Windows import library where
+  produced.
+- The Rust API reports the public output delay: 609 samples for speaker output
+  and 577 samples for binaural output.
+
+### Output Fidelity
+
+- Corrected the real-media 2.0 spatial projection path while retaining semantic
+  `FL`/`FR` speaker identities.
+- Applied the public Lo/Ro and Lt/Rt overload-protection scaling for supported
+  Base downmixes; Auto continues to follow `dmixmod`.
+- Added common linked speaker-output headroom behavior after combined speaker
+  contribution. This is output headroom behavior, not a mastering limiter.
+
+### Dialnorm & Output-Level Policies
+
+- Completed calibrated program-level dialnorm handling across Base, Object, and
+  full-program paths. Default is the recommended calibrated decoder behavior;
+  Digital explicitly selects encoded digital calibration; Analog is an
+  advanced unity-dialnorm compatibility/diagnostic policy.
+- Added optional `--normalize-peak TARGET_DBFS` as a disabled-by-default,
+  offline post-render sample-peak normalization step using one common static
+  gain. It is separate from DRC and dialnorm and is not LUFS or true-peak
+  normalization.
+
+### CLI / Developer Experience
+
+- Unified render diagnostics identify physical speaker output separately from
+  binaural Left Ear/Right Ear output and report layout, channel order, policy,
+  latency, and PCM frame/sample counts.
+- Documented the offline workflow:
+  `openjoc render-joc input.m4a --layout 7.1.4 --normalize-peak -0.1 -o output.wav`.
+- Clarified that 0.7.0 provides the foundation for external-player and media-
+  framework adapters; FFmpeg, GStreamer, mpv, VLC, DirectShow/LAV, and
+  PotPlayer adapters are not shipped.
+
+### Known Limitations
+
+- The C ABI remains experimental and may evolve during OpenJOC 0.x.
+- The packet API requires exactly one complete JOC access unit per push;
+  arbitrary byte fragmentation and multiple AUs per push are unsupported.
+- Binaural output still requires a compatible user-provided SOFA dataset, with
+  finite supported container/profile boundaries and fail-closed sparse or
+  out-of-domain coverage.
+- JOC clip-gain rendering semantics remain outside the public renderer.
+
+### Upgrade Notes
+
+OpenJOC 0.7.0 includes important corrections to stereo downmix gain staging,
+final speaker-output headroom behavior, and dialnorm program-level calibration.
+Users of 0.6.0 are strongly encouraged to upgrade.
+
 ## [0.6.0] — 2026-08-18
 
 OpenJOC 0.6.0 — Stereo, Binaural & Decoder Policy expands the public

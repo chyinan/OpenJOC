@@ -20,6 +20,7 @@ EOF
     cd "$bundle_root"
     find docs -type f -print | LC_ALL=C sort
 ) >> "$expected"
+printf '%s\n' include/openjoc.h lib/libopenjoc_capi.a lib/libopenjoc_capi.dylib >> "$expected"
 printf '%s\n' verify.sh >> "$expected"
 
 (
@@ -42,6 +43,9 @@ for required in \
     RELEASE_MANIFEST.json \
     SHA256SUMS \
     bin/openjoc \
+    include/openjoc.h \
+    lib/libopenjoc_capi.a \
+    lib/libopenjoc_capi.dylib \
     verify.sh
 do
     if [ -L "$bundle_root/$required" ]; then

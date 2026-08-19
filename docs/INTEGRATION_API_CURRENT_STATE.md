@@ -1,7 +1,7 @@
 # OpenJOC integration API: current state audit
 
-This audit records the pre-0.7 integration boundary at public HEAD
-`5292d0007dfefc0d958d7e00edf7742e0e9bbdb7`.
+This document records the OpenJOC 0.7 integration boundary at the release
+source state. The release commit is the authoritative source revision.
 
 ## Existing pipeline
 
@@ -36,7 +36,7 @@ The repository already has a bounded, sequential raw E-AC-3 input path:
 | AU boundary | `RawEac3AccessUnitReader`, `group_access_units` | One packet = I0 + optional D0, no arbitrary byte fragmentation promise |
 | Base PCM | `JocAccessUnitPcmDecoder` | Owned transiently for one AU, then copied only into bounded timeline state |
 | JOC/OAMD state | `PayloadDecoder` / `JocDecoderState` | Session-owned, serially accessed |
-| QMF/Base-RB delay | `ReconstructionOutputTimeline` | 577 samples reported publicly; logical PTS is not shifted |
+| QMF/Base-RB delay | `ReconstructionOutputTimeline` | 577 samples for binaural; speaker output reports 609 samples including the admitted 32-sample final linked speaker stage; logical PTS is not shifted |
 | Speaker output | `JocSpatialBridge` + canonical `SpeakerLayoutPreset` | Session-owned automatic-control renderer |
 | Stereo | Existing E-AC-3 downmix metadata and policy equations | Shared policy mapping in the high-level API |
 | SOFA | `openjoc-sofa::parse_simple_free_field_hrir` | Memory-buffer configuration supported; no path retained |

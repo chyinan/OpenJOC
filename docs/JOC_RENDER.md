@@ -1,6 +1,6 @@
 # JOC speaker rendering
 
-OpenJOC 0.6.0 exposes one experimental JOC-to-speaker workflow with an
+OpenJOC 0.7.0 exposes one experimental JOC-to-speaker workflow with an
 explicit selectable speaker preset:
 
 ```sh
@@ -653,7 +653,7 @@ selected SOFA provides exact or safely interpolatable coverage. Missing or
 sparse directions fail closed; OpenJOC never aliases a direction to a nearest
 speaker or silently omits a virtual channel.
 
-The SOFA path is local and user-supplied; 0.6.0 does not bundle a generic HRTF
+The SOFA path is local and user-supplied; 0.7.0 does not bundle a generic HRTF
 dataset. It is parsed only within the existing
 strict `SimpleFreeFieldHRIR`/NetCDF classic CDF-1 scope. Listener basis is
 explicitly shared with the renderer contract: local `+X` is right, `+Y` is

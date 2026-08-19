@@ -1668,7 +1668,7 @@ and a test or explicit TODO before implementation proceeds.
 
 - Inputs are the existing controlled Logic raw EC-3, its MP4, and the same
   exported ADM BWF.  New evidence is written only under
-  `OpenJOC-Private/reports/oamd_round2/`; the prior forensic/census outputs
+  a private controlled evidence directory; the prior forensic/census outputs
   are not a source of decoder semantics and are not overwritten by the CLI.
 - The timing report records 126 AUs at 48 kHz/1,536 samples (`0.032 s/AU`),
   first payload-11 change at AU 15 / `0.480 s`, 63 unique payload-11 bodies,
@@ -1759,7 +1759,7 @@ and a test or explicit TODO before implementation proceeds.
 The corpus was created and exported through Logic Pro 12.3 on macOS 26.6
 (25G72), using the existing deterministic 48 kHz sources and the same DD+
 Atmos export profile. Nothing below is committed to Git. The immutable run
-directory is `OpenJOC-Private/reports/runs/2026-08-05T004530Z_vector-corpus_1330681`.
+directory path is intentionally omitted from public documentation.
 The Logic project hash is the SHA-256 of sorted relative file paths and file
 hashes inside each `.logicx` package.
 
@@ -1804,7 +1804,8 @@ manifest, forensic report, census output, `.DS_Store`, or `references/` entry
 was committed or overwritten.
 
 The new private batch is
-`OpenJOC-Private/reports/runs/2026-08-05T1042Z_logic-warp-evidence_952b052`.
+an internal controlled logic-warp evidence run whose path is intentionally
+omitted from public documentation.
 It contains two carrier reports per A-F and one fresh ADM inventory report per
 vector. Raw and MP4 observations normalize identically for all 126 AUs. The
 payload-11 unique counts are A/E=1 and B/C/D/F=63; the first transition where
@@ -1895,7 +1896,8 @@ comparison only; measured frequency energy is distributed across several JOC
 rows and does not uniquely prove row-to-name identity.
 
 The reproducible private evidence package is
-`OpenJOC-Private/reports/runs/2026-08-05T044606Z_object-cardinality_a4f88af_r3`.
+an internal controlled object-cardinality evidence run whose path is
+intentionally omitted from public documentation.
 Its `programme_layout`, `oamd_joc_bindings`, `base_lfe_inventory`,
 `joc_row_metrics`, `object_pcm_metrics`, `scene_inventory`,
 `adm_partial_comparison`, and `strict_vs_vendor` JSON/TXT pairs were written
@@ -1911,7 +1913,8 @@ speaker render, or `--internal-base` fidelity claim is made.
 ## Internal-base fidelity run (2026-08-05)
 
 The first numerical base comparison is private and non-overwriting:
-`OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`.
+an internal controlled base-fidelity evidence run whose path is intentionally
+omitted from public documentation.
 It uses raw EC-3 for A static-centre, E no-dynamic-object, D existing mixed
 motion, and F two-objects. MP4 and ADM files are retained by SHA-256 in the
 report; decoding uses raw EC-3 because the prior MP4 path has a known
@@ -1943,8 +1946,8 @@ fidelity, speaker render, or nonzero-PCM fidelity claim is made.
 
 ## Round-7 base-root-cause policy audit (2026-08-05)
 
-The private, non-overwriting run
-`OpenJOC-Private/reports/runs/2026-08-05T070007Z_base-root-cause_792d937`
+The private, non-overwriting run is an internal controlled base-root-cause
+evidence run whose path is intentionally omitted from public documentation
 records local FFmpeg 8.1.2 decoder help, build configuration, version, and
 the complete R0--R6 command lines. R0 is the implicit default; R1 is
 `drc_scale=0`; R2 is `drc_scale=1`; R3/R4 are `cons_noisegen=0/1`; R5 is
@@ -1981,8 +1984,8 @@ rule or semantic remap was introduced.
 
 ## TDAC contribution trace and boundary evidence (2026-08-05)
 
-The private, non-overwriting run
-`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary-corrected_054d3d4`
+The private, non-overwriting run is an internal controlled TDAC-boundary
+evidence run whose path is intentionally omitted from public documentation
 (repeated in `..._repeat`) uses the opt-in
 `AudioPcmSynthesizer::synthesize_with_trace`
 sink. It records the bounded transform/window and overlap components without
@@ -2063,8 +2066,8 @@ TDAC.
 
 ## Logic AU0/block5 provenance and controlled pre-roll corpus (2026-08-05)
 
-The non-overwriting private run
-`OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9`
+The non-overwriting private run is an internal controlled logic-first-block
+evidence run whose path is intentionally omitted from public documentation
 is diagnostic-only. Its starting repository head was
 `b18ea4d8dc5a72bc00bbb179cf8484f6291b9211`; no production TDAC, AU-boundary
 reset, gain, remap, warp remap, or decoder compatibility branch was added.

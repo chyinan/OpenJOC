@@ -423,8 +423,8 @@ Decision: `RECONSTRUCTION_BASIS_NUMERICAL_ACCEPTANCE_ESTABLISHED` within this
 declared numerical/structural scope. `SemanticBindingState::Unresolved`,
 authored-object PCM inadmissibility, audio-bound ObjectScene inadmissibility,
 and ETSI reserved `warp=3` behavior are unchanged. No new media or fixtures
-were created. The private evidence package is under
-`OpenJOC-Private/reports/runs/20260810T151025Z_j1r15-reconstruction-basis-acceptance_ef3c43f/`.
+were created. The private evidence package path is omitted from public
+documentation.
 
 ## J1R16 — Existing-corpus end-to-end acceptance matrix
 
@@ -443,8 +443,7 @@ status, authored-object PCM inadmissibility, audio-bound ObjectScene
 inadmissibility, and raw-warp behavior are unchanged. No new media or fixture
 was created. The highest-value next non-fixture blocker is admissible evidence
 for the bounded vendor continuation after raw warp 3, or continued explicit
-opacity. Evidence package:
-`OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.
+opacity. Evidence package path is omitted from public documentation.
 
 ## J1R17 — Opaque vendor-continuation preservation contract
 

@@ -144,7 +144,7 @@ jobs:
             throw 'Windows artifact does not contain bin/openjoc.exe'
           }
           foreach ($path in $relativePaths) {
-            if ($path -match '(?i)(^|/)(references|OpenJOC-Private|target/debug|\.DS_Store)(/|$)') {
+            if ($path -match '(?i)(^|/)(references|openjoc[-_]private|target/debug|\.DS_Store)(/|$)') {
               throw "forbidden path in Windows artifact: $path"
             }
           }

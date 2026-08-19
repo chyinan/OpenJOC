@@ -544,8 +544,8 @@ but no second independent real encoder/sample has been supplied. Therefore no
 Dolby compatibility syntax rule, warp remapping, offset constant, or reserved
 value exception is added. At that dated round, the first real blocker was the exact OAMD
 `ReservedWarpMode{3}` boundary. Private reports are retained outside Git at
-`OpenJOC-Private/reports/oamd_forensics_raw` and
-`OpenJOC-Private/reports/oamd_forensics_mp4`; their final JSON SHA-256 values
+private forensic reports retained outside Git (paths omitted from public
+documentation); their final JSON SHA-256 values
 are respectively
 `fe4cace04ce7cf5a33515ae16e6ecedb69cb9379b3eb9b367eca8d2147fc2b32` and
 `0978b86e1dc908645d1453c8c126a22e18567c673fc7ec17d64fff88dee9ba46`.
@@ -593,7 +593,7 @@ ETSI PDF/companion-file and public ETSI deliverable search.  The strict parser
 continues to return `ReservedWarpMode{code: 3}`.
 
 Computer Use successfully created the private copy
-`OpenJOC-Private/logic/warp-study/Vector_D_existing_mixed_motion.logicx`
+the private Logic export (path omitted from public documentation)
 through Logic Pro Save As.  The later A/B/C/E/F copies and exports are
 retained outside Git; B/C are explicitly non-canonical because their ADM
 exports still contain D's mixed automation.  No private media, manifest,
@@ -612,7 +612,7 @@ This increment started at commit `13306818f854ab29709bac27929194f1442b1b6a`
 and kept the pre-existing `.DS_Store` and `references/` entries untouched.
 Computer Use was used for Logic Pro project duplication, track/automation
 editing in copies, and all spatial exports. The private run is
-`OpenJOC-Private/reports/runs/2026-08-05T004530Z_vector-corpus_1330681`.
+the private vector-corpus run (path omitted from public documentation).
 
 The corpus contains A static-centre, B requested single-jump, C requested
 linear-ramp, D existing mixed motion, E no dynamic object, and F two objects.
@@ -701,7 +701,7 @@ canonical in this round; the earlier B/C exports remain explicitly
 non-canonical because their ADM and payload evidence retain D's mixed motion.
 
 The new non-overwriting batch is
-`OpenJOC-Private/reports/runs/2026-08-05T1042Z_logic-warp-evidence_952b052`.
+the private logic-warp evidence run (path omitted from public documentation).
 It contains raw-EC3 and MP4 reports for A static-centre, B single-jump-copy,
 C linear-ramp-copy, D mixed-motion, E no-dynamic-object, and F two-object
 controls, plus a fresh RIFF/axml/chna ADM report for each vector. Every carrier
@@ -776,8 +776,8 @@ B/C are canonical single-variable Logic exports.
 
 Raw/MP4 normalized metadata sequences are byte-identical for A/E/D. Strict
 forensic stages remain `trim.warp_mode` for 126/126; the existing carrier
-profile deviations are not relaxed. The private non-overwriting run is
-`OpenJOC-Private/reports/runs/2026-08-05T0358Z_vendor-opaque-2f5de17`.
+profile deviations are not relaxed. The private non-overwriting run (path
+omitted from public documentation) records the vendor-opaque evidence.
 
 ## Round-5 typed programme layout and first nonzero PCM (2026-08-05)
 
@@ -824,7 +824,8 @@ scene model serializes the speaker-anchored entry as `lfe` and dynamic entries
 as `dynamic`.
 
 Private run
-`OpenJOC-Private/reports/runs/2026-08-05T044606Z_object-cardinality_a4f88af_r3`
+the private object-cardinality evidence run (path omitted from public
+documentation)
 contains A-F forensic reports and A/E/D/F compatible-base decodes. Each
 decoded vector has 126 AUs, 48 kHz, 1,536 samples/AU, 193,536 total samples,
 16 scene entries, 15 JOC-reconstructed dynamic signals, and one base-carried
@@ -862,8 +863,8 @@ orders are explicit: full base `FL,FR,FC,LFE,SL,SR`; JOC input
 rate, channel count, and frame lengths and records 126 x 1,536 samples for
 each A/E/D/F vector.
 
-The private evidence run is
-`OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`.
+The private evidence run is described without its path in public
+documentation.
 FFmpeg 8.1.2 compatible-base is generated with `-map 0:a:0`, explicit `pan`
 filters, `pcm_f64le`, and no resampling. Its default dialnorm/dynrng
 presentation behavior is recorded rather than copied into the internal path.
@@ -892,8 +893,8 @@ semantic conclusion is inferred from it.
 ## Round-7 FFmpeg/internal-base root-cause increment (2026-08-05)
 
 The starting commit was `792d937297f44a1a5d4b25613831fad5e529d572` on
-`codex/logic-warp-differential-corpus`; the private run is
-`OpenJOC-Private/reports/runs/2026-08-05T070007Z_base-root-cause_792d937`.
+`codex/logic-warp-differential-corpus`; the private run path is omitted from
+public documentation.
 The run does not touch repository `.DS_Store` or `references/`, and no media,
 manifest, ADM, forensic, census, or fidelity output is tracked.
 
@@ -948,8 +949,8 @@ unverified OAMD/JOC/ADM/fidelity boundaries are unchanged.
 ## Round-8 TDAC boundary investigation (2026-08-05)
 
 The increment starts at commit `054d3d4566c46a3ab308d0599eb1215b78171cc2` on
-`codex/logic-warp-differential-corpus`. The private run is
-`OpenJOC-Private/reports/runs/2026-08-05T_tdac-boundary-corrected_054d3d4`; its
+`codex/logic-warp-differential-corpus`. The private run path is omitted from
+public documentation; its
 repeated tree is `..._repeat`, and the core JSON/TXT diagnostics plus production
 regression hash report compare byte-for-byte. The private PCM tree used for the
 hash comparison remains in the earlier
@@ -1056,8 +1057,8 @@ ADM comparison remain open.
 
 ## Logic AU0/block5 provenance round (2026-08-05)
 
-This round is recorded in the private, non-overwriting run
-`OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9`.
+This round is recorded in a private, non-overwriting run whose path is omitted
+from public documentation.
 The repository started at `b18ea4d8dc5a72bc00bbb179cf8484f6291b9211` and the
 run deliberately leaves production TDAC, AU state lifecycle, gain, channel
 mapping, strict/vendor warp handling, and decoder semantics unchanged.
@@ -1429,8 +1430,8 @@ classification distinguishes expected `ETSI_STRICT` rejection of raw
 `warp=3` from the unresolved vendor continuation left opaque by
 `DOLBY_VENDOR_COMPAT`. No new vendor rule, semantic binding, authored-object
 PCM, audio-bound ObjectScene, or renderer claim was added. The private matrix
-and evidence freeze are under
-`OpenJOC-Private/reports/runs/20260810T153638Z_j1r16-existing-corpus-acceptance_f845fdd0/`.
+and evidence freeze are under a private run whose path is omitted from public
+documentation.
 
 ## J1R17 — Opaque vendor-continuation preservation
 
@@ -1529,8 +1530,8 @@ equivalence, J1R14/J1R15/J1R17/J1R18 architecture, `SemanticBindingState`,
 and ETSI strict raw warp=3 reservation are unchanged. The narrow decision is
 `SEEKABLE_ISOBMFF_STREAMING_ADMISSION_ESTABLISHED_WITH_INDEXED_METADATA`;
 this does not claim O(1) container index memory or semantic object binding.
-Private evidence:
-`OpenJOC-Private/reports/runs/20260810T174335Z_j1r21-isobmff-streaming_bbee0a5/j1r21_evidence_freeze.json`.
+Private evidence is retained outside Git; its path is omitted from public
+documentation.
 
 ## J1R22 — Lazy ISO BMFF cursor and derived-index elimination
 
@@ -1779,7 +1780,7 @@ ordering, permissions, ownership labels, mtimes, and gzip metadata are fixed for
 same-environment reproducibility.
 
 Release assembly remaps the active Cargo home to `/cargo` in Rust diagnostic
-paths and rejects binaries containing `/Users/` or `OpenJOC-Private`. This
+paths and rejects binaries containing `/Users/` or private workspace markers. This
 prevents dependency panic/debug metadata from disclosing a developer home path
 without changing executable behavior.
 

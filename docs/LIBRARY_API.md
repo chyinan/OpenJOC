@@ -1,8 +1,8 @@
 # Headless Rust streaming API
 
-`openjoc-api` provides the first high-level embeddable interface. It is
-experimental for OpenJOC 0.7 work, while the decoder and renderer semantics
-remain the existing 0.6 implementation.
+`openjoc-api` provides the high-level embeddable interface introduced in
+OpenJOC 0.7.0. It is experimental, while the decoder and renderer semantics
+remain bounded by the documented 0.x contracts.
 
 ## Lifecycle
 
@@ -58,8 +58,11 @@ until the first AU establishes the stream format.
 PTS uses the decoded sample domain. If a first packet has PTS `P`, output for
 logical sample `n` reports `P + n`; the PTS is not silently moved by the
 filterbank or final linked-gain delay. Speaker output reports the deterministic
-577-sample QMF/Base-RB delay plus the admitted 32-sample causal speaker-stage
-block; binaural output remains on the existing QMF-only latency contract.
+Speaker output reports a 609-sample delay: the 577-sample QMF/Base-RB delay
+plus the admitted 32-sample causal speaker-stage block. Binaural output reports
+577 samples because it does not use the speaker FinalLinkedGain stage. These
+are public synchronization contracts; dialnorm and offline static
+normalization add zero audio-sample latency.
 This makes availability delay explicit without forcing callers to reverse-
 engineer it from frame counts.
 

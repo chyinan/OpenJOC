@@ -21,6 +21,17 @@ TARGETS = {
     "x86_64-pc-windows-msvc": ("zip", "openjoc.exe"),
     "x86_64-unknown-linux-gnu": ("tar.gz", "openjoc"),
 }
+C_API_ARTIFACTS = {
+    "x86_64-pc-windows-msvc": (
+        "openjoc_capi.dll",
+        "openjoc_capi.dll.lib",
+        "openjoc_capi.lib",
+    ),
+    "x86_64-unknown-linux-gnu": (
+        "libopenjoc_capi.a",
+        "libopenjoc_capi.so",
+    ),
+}
 PUBLIC_PATHS = (
     "LICENSE",
     "README.md",
@@ -187,6 +198,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="openjoc-platform-release-") as temporary:
         source_root = pathlib.Path(temporary) / base_name
         (source_root / "bin").mkdir(parents=True)
+        (source_root / "include").mkdir(parents=True)
+        (source_root / "lib").mkdir(parents=True)
         for relative in PUBLIC_PATHS:
             source = REPOSITORY / relative
             if not source.is_file():
@@ -194,6 +207,15 @@ def main() -> int:
             destination = source_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+        shutil.copy2(
+            REPOSITORY / "crates/openjoc-capi/include/openjoc.h",
+            source_root / "include/openjoc.h",
+        )
+        for library in C_API_ARTIFACTS[target]:
+            source = REPOSITORY / "target" / "release" / library
+            if not source.is_file() or source.is_symlink():
+                raise SystemExit(f"required C ABI artifact is missing or invalid: {source}")
+            shutil.copy2(source, source_root / "lib" / library)
         shutil.copy2(executable, source_root / "bin" / executable_name)
         (source_root / "bin" / executable_name).chmod(0o755)
 

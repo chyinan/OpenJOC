@@ -4,7 +4,12 @@ The distributable header is
 [`crates/openjoc-capi/include/openjoc.h`](../crates/openjoc-capi/include/openjoc.h).
 It is manually maintained, deterministic, and compiled in both C and C++ by
 the repository smoke script. The crate builds `rlib`, static-library, and
-dynamic-library targets through Cargo.
+dynamic-library targets through Cargo. Platform release archives expose the
+consumer-facing subset as `include/openjoc.h` plus
+`libopenjoc_capi.a`/`libopenjoc_capi.dylib` on macOS,
+`openjoc_capi.lib`/`openjoc_capi.dll.lib`/`openjoc_capi.dll` on Windows, and
+the corresponding `.a`/`.so` files on Linux. The `.rlib` is an internal Rust
+artifact, not the primary C consumer library.
 
 ## ABI policy
 

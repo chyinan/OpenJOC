@@ -350,7 +350,7 @@ available.
 
 ## Internal-base fidelity evidence (2026-08-05)
 
-The private run `OpenJOC-Private/reports/runs/2026-08-05T053438Z_internal-base-fidelity_dcfb56c`
+The private controlled run (path intentionally omitted from public documentation)
 compares the same raw EC-3 through FFmpeg 8.1.2 `pcm_f64le` compatible-base
 and OpenJOC `--internal-base` paths. FFmpeg selects `0:a:0`, disables
 resampling, and explicitly pans `FL,FR,FC,LFE,SL,SR`; the JOC input is
@@ -421,7 +421,7 @@ lane remain unchanged/open.
 | requirement | implementation/evidence | status |
 | --- | --- | --- |
 | Apple/macOS comparator | `afconvert` is available and decodes the Logic MP4 path; afinfo supplies `L,C,R,Ls,Rs,LFE`, remapped explicitly to `FL,FR,FC,LFE,SL,SR` as `[0,2,1,5,3,4]` | verified; comparator evidence |
-| Tri-decoder boundary | Private run `OpenJOC-Private/reports/runs/2026-08-05T125009Z_logic-first-block-provenance_77116e9` compares Apple, FFmpeg MP4/raw, and OpenJOC without changing production; delay-aligned and unaligned AU-1 windows are reported separately | verified; diagnostic |
+| Tri-decoder boundary | A private controlled run compares Apple, FFmpeg MP4/raw, and OpenJOC without changing production; delay-aligned and unaligned AU-1 windows are reported separately | verified; diagnostic |
 | Tool/stage inventory | AU0/block5 Ls/Rs contains no observed coupling, SPX, rematrix, or AHT; BAP=0 bins are classified as dither/noise only when the dither flag is set; frame-0 exponent/BAP state differs from later blocks | verified; provenance remains unresolved |
 | Matched later blocks and state lifecycle | Exact and relaxed match sets are recorded for A/E/D/F and Logic LE0/LE1/LE2/LE4; relaxed matching requires excluding exponent strategy, and no state-reset or hidden AU boundary is introduced | verified; diagnostic |
 | Independent tail backprojection | Private inverse is explicitly ill-conditioned/non-unique and uses only FFmpeg black-box output plus the independent TDAC oracle; dominant bins are not treated as tool attribution | verified; diagnostic only |

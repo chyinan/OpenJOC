@@ -9,16 +9,16 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-eac3 = { version = "0.6.0", path = "../openjoc-eac3" }
-openjoc-emdf = { version = "0.6.0", path = "../openjoc-emdf" }
-openjoc-joc = { version = "0.6.0", path = "../openjoc-joc" }
-openjoc-oamd = { version = "0.6.0", path = "../openjoc-oamd" }
-openjoc-render = { version = "0.6.0", path = "../openjoc-render" }
-openjoc-scene = { version = "0.6.0", path = "../openjoc-scene" }
-openjoc-sofa = { version = "0.6.0", path = "../openjoc-sofa" }
+openjoc-eac3 = { version = "0.7.0", path = "../openjoc-eac3" }
+openjoc-emdf = { version = "0.7.0", path = "../openjoc-emdf" }
+openjoc-joc = { version = "0.7.0", path = "../openjoc-joc" }
+openjoc-oamd = { version = "0.7.0", path = "../openjoc-oamd" }
+openjoc-render = { version = "0.7.0", path = "../openjoc-render" }
+openjoc-scene = { version = "0.7.0", path = "../openjoc-scene" }
+openjoc-sofa = { version = "0.7.0", path = "../openjoc-sofa" }
 
 [dev-dependencies]
-openjoc-container = { version = "0.6.0", path = "../openjoc-container" }
+openjoc-container = { version = "0.7.0", path = "../openjoc-container" }
 
 [lints]
 workspace = true
