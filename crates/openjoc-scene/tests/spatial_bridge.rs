@@ -2317,6 +2317,37 @@ fn twenty_two_two_admits_point_region_extent_spread_pair_and_channel_lock() {
 }
 
 #[test]
+fn explicit_base_semantic_channels_use_equivalent_output_identities_without_xyz() {
+    for (layout_name, source_identity, output_identity) in [
+        ("22.2", "Ls", "SiL"),
+        ("22.2", "Rs", "SiR"),
+        ("22.2", "Lb", "BL"),
+        ("22.2", "Rb", "BR"),
+        ("22.2", "TFL", "TpFL"),
+        ("22.2", "TFR", "TpFR"),
+        ("22.2", "TBL", "TpBL"),
+        ("22.2", "TBR", "TpBR"),
+        ("7.1.4", "SiL", "Ls"),
+        ("7.1.4", "SiR", "Rs"),
+    ] {
+        let layout = executable_layout(layout_name);
+        let projected = layout
+            .project(&descriptor(
+                SpatialSourceClass::ExplicitChannel,
+                source_identity,
+                Vec::new(),
+            ))
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{layout_name} {source_identity} must remain a discrete semantic source: {error}"
+                )
+            });
+        assert_eq!(projected[active_index(&layout, output_identity)], 1.0);
+        assert_eq!(projected.iter().filter(|value| **value != 0.0).count(), 1);
+    }
+}
+
+#[test]
 fn red_admitted_region_extent_cases_are_not_blanket_rejected() {
     let layout = executable_layout("7.1.4");
     let cases = [

@@ -1544,6 +1544,13 @@ impl SpatialLayout {
         self.active_indices
             .iter()
             .position(|&index| self.channels[index].identity == identity)
+            .or_else(|| {
+                semantic_channel_aliases(identity).iter().find_map(|alias| {
+                    self.active_indices
+                        .iter()
+                        .position(|&index| self.channels[index].identity == *alias)
+                })
+            })
     }
 
     fn point_vector(&self, coordinates: &[f64]) -> Result<Vec<f64>, SpatialProjectionError> {
@@ -1850,6 +1857,27 @@ impl SpatialLayout {
             .zip(&pair.second)
             .map(|(first, second)| lower * first + upper * second)
             .collect())
+    }
+}
+
+/// Returns equivalent public output identities for a semantic channel source.
+///
+/// These aliases preserve discrete channel routing when a source and an
+/// admitted output layout use different names for the same standard speaker
+/// position. They are deliberately limited to identities with the same
+/// physical speaker meaning; they never turn a channel source into a point
+/// source or manufacture coordinates.
+fn semantic_channel_aliases(identity: &str) -> &'static [&'static str] {
+    match identity {
+        "Ls" | "SiL" => &["Ls", "SiL"],
+        "Rs" | "SiR" => &["Rs", "SiR"],
+        "Lb" | "BL" => &["Lb", "BL"],
+        "Rb" | "BR" => &["Rb", "BR"],
+        "TFL" | "TpFL" => &["TFL", "TpFL"],
+        "TFR" | "TpFR" => &["TFR", "TpFR"],
+        "TBL" | "TpBL" => &["TBL", "TpBL"],
+        "TBR" | "TpBR" => &["TBR", "TpBR"],
+        _ => &[],
     }
 }
 
