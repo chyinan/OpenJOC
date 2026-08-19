@@ -16,6 +16,7 @@ openjoc-oamd = { version = "0.7.0", path = "../openjoc-oamd" }
 openjoc-render = { version = "0.7.0", path = "../openjoc-render" }
 openjoc-scene = { version = "0.7.0", path = "../openjoc-scene" }
 openjoc-sofa = { version = "0.7.0", path = "../openjoc-sofa" }
+sha2 = "0.10"
 
 [dev-dependencies]
 openjoc-container = { version = "0.7.0", path = "../openjoc-container" }

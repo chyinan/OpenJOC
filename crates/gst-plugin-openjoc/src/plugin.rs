@@ -1371,6 +1371,21 @@ mod tests {
     }
 
     #[test]
+    fn gstreamer_twenty_two_two_transport_retains_openjoc_semantic_order() {
+        gst::init().expect("GStreamer initializes");
+        let labels = supported_speaker_layouts()
+            .iter()
+            .find(|(name, _)| *name == "22.2")
+            .expect("22.2")
+            .1
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect::<Vec<_>>();
+        let (_, reorder) = gst_channel_order(&labels).expect("22.2 mapping");
+        assert_eq!(reorder, (0..24).collect::<Vec<_>>());
+    }
+
+    #[test]
     fn pcm_transport_is_a_permutation_only_for_noncanonical_layout_order() {
         let labels = supported_speaker_layouts()
             .iter()

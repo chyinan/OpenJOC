@@ -1,3 +1,8 @@
+use openjoc_api::{
+    BinauralConfig, DialnormMode, OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession,
+    OpenJocStatus, RenderMode, ValidationProfile,
+};
+use openjoc_joc::all_huffman_tables;
 use openjoc_wave::{decode, encode_f64_channels};
 use std::{fs, process::Command, time::SystemTime};
 
@@ -164,6 +169,10 @@ fn inactive_oamd() -> Vec<u8> {
 }
 
 fn vendor_reserved_trim_oamd() -> Vec<u8> {
+    vendor_reserved_trim_oamd_with(0b10101)
+}
+
+fn vendor_reserved_trim_oamd_with(continuation: u8) -> Vec<u8> {
     let mut bits = Vec::new();
     push(&mut bits, 0, 2); // syntax version
     push(&mut bits, 0, 5); // one object
@@ -176,7 +185,98 @@ fn vendor_reserved_trim_oamd() -> Vec<u8> {
     push(&mut bits, 0, 1); // variable_bits_max continuation false
     push(&mut bits, 0, 1); // discard_unknown false
     push(&mut bits, 3, 2); // observed reserved warp mode
-    push(&mut bits, 0b10101, 5); // opaque non-byte-aligned continuation
+    push(&mut bits, u64::from(continuation), 5); // opaque non-byte-aligned continuation
+    pack(bits)
+}
+
+fn push_element(bits: &mut Vec<bool>, id: u8, size_bytes: u8, content: &[bool]) {
+    push(bits, u64::from(id), 4);
+    push(bits, u64::from(size_bytes - 1), 4);
+    push(bits, 0, 1); // variable_bits_max continuation false
+    bits.extend_from_slice(content);
+    let target = usize::from(size_bytes) * 8;
+    assert!(content.len() <= target);
+    bits.resize(bits.len() + target - content.len(), false);
+}
+
+fn active_object_oamd(active: bool) -> Vec<u8> {
+    let mut bits = Vec::new();
+    push(&mut bits, 0, 2); // syntax version
+    push(&mut bits, 0, 5); // one object
+    push(&mut bits, 1, 1); // dynamic-only program
+    push(&mut bits, 0, 1); // no LFE
+    push(&mut bits, 0, 1); // no alternate object data
+    push(&mut bits, 1, 4); // one element
+    let mut content = vec![false]; // discard unknown false
+    push(&mut content, 0, 2); // sample offset 0
+    push(&mut content, 0, 3); // one update block
+    push(&mut content, 0, 6); // block offset 0
+    push(&mut content, 0, 2); // no ramp
+    push(&mut content, 1, 1); // reserved data absent
+    if active {
+        push(&mut content, 1, 1); // object active
+        push(&mut content, 2, 2); // gain index
+        push(&mut content, 20, 6); // gain bits
+        push(&mut content, 0, 1); // explicit priority
+        push(&mut content, 16, 5); // standard position X
+        push(&mut content, 31, 6); // standard position Y
+        push(&mut content, 1, 1); // positive Z
+        push(&mut content, 15, 4); // standard position Z
+        push(&mut content, 0, 1); // no distance
+        push(&mut content, 0, 3); // side zone excluded
+        push(&mut content, 0, 1); // elevation excluded
+        push(&mut content, 0, 2); // independent size
+        push(&mut content, 0, 1); // no screen anchor
+        push(&mut content, 0, 1); // no additional table data
+    } else {
+        push(&mut content, 0, 1); // object inactive
+        push(&mut content, 0, 1); // no additional table data
+    }
+    push_element(&mut bits, 1, 10, &content);
+    pack(bits)
+}
+
+fn huffman_codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {
+    fn visit(nodes: &[[i16; 2]], node: usize, wanted: u16, path: &mut Vec<bool>) -> bool {
+        for branch in 0..2 {
+            path.push(branch != 0);
+            let child = nodes[node][branch];
+            if child > 0 {
+                if visit(
+                    nodes,
+                    usize::try_from(child).expect("Huffman node"),
+                    wanted,
+                    path,
+                ) {
+                    return true;
+                }
+            } else if u16::try_from(-i32::from(child) - 1) == Ok(wanted) {
+                return true;
+            }
+            path.pop();
+        }
+        false
+    }
+    let mut path = Vec::new();
+    assert!(visit(nodes, 0, wanted, &mut path));
+    path
+}
+
+fn one_object_joc() -> Vec<u8> {
+    let mut bits = Vec::new();
+    for (value, width) in [(0, 3), (0, 6), (0, 3), (2, 3), (17, 5), (42, 10)] {
+        push(&mut bits, value, width);
+    }
+    push(&mut bits, 1, 1); // object present
+    push(&mut bits, 0, 3); // one band
+    push(&mut bits, 0, 1); // full matrix
+    push(&mut bits, 0, 1); // 96 steps
+    push(&mut bits, 0, 1); // smooth
+    push(&mut bits, 0, 1); // one data point
+    let codeword = huffman_codeword_for(all_huffman_tables()[0].nodes, 48);
+    for _ in 0..5 {
+        bits.extend_from_slice(&codeword);
+    }
     pack(bits)
 }
 
@@ -200,7 +300,7 @@ fn five_channel_audio_frame(emdf: &[u8]) -> Vec<u8> {
         (1, 1),    // addbsi exists
         (1, 6),    // two addbsi bytes
         (0x01, 8), // JOC extension flag
-        (1, 8),    // complexity index: one inactive object
+        (1, 8),    // complexity index: one object
     ] {
         bits.push(value, width);
     }
@@ -264,6 +364,73 @@ fn five_channel_audio_frame(emdf: &[u8]) -> Vec<u8> {
         bits.set(start + index * 8, u64::from(byte), 8);
     }
     bits.bytes(size)
+}
+
+fn collect_binaural_session_frames(
+    stream: &[u8],
+    receive_before_push: bool,
+) -> Vec<OpenJocPcmFrame> {
+    let frames = openjoc_eac3::index_syncframes(stream).expect("index synthetic stream");
+    let units = openjoc_eac3::group_access_units(&frames).expect("group synthetic stream");
+    let mut session = OpenJocSession::new(OpenJocConfig {
+        render_mode: RenderMode::Binaural,
+        speaker_layout: "5.1".to_owned(),
+        validation_profile: ValidationProfile::ObservedVendorCompat,
+        dialnorm: DialnormMode::Default,
+        binaural: Some(BinauralConfig::builtin_generic("5.1")),
+        ..OpenJocConfig::default()
+    })
+    .expect("synthetic binaural session");
+    let mut output = Vec::new();
+    for (index, unit) in units.iter().copied().enumerate() {
+        if receive_before_push {
+            assert!(session.receive_frame().is_none());
+        }
+        let first = frames[unit.first_frame];
+        let last = frames[unit.first_frame + unit.frame_count - 1];
+        let end = last.offset + last.header.frame_size;
+        let status = session
+            .push_packet(OpenJocPacket {
+                data: &stream[first.offset..end],
+                pts_samples: Some(i64::try_from(index * usize::from(unit.samples)).expect("PTS")),
+                discontinuity: false,
+                preroll: false,
+            })
+            .expect("push synthetic AU");
+        assert_ne!(status, OpenJocStatus::OutputPending);
+        if receive_before_push {
+            assert!(session.output_info().channel_count == 2);
+        }
+        while let Some(frame) = session.receive_frame() {
+            output.push(frame);
+        }
+    }
+    let _ = session.drain().expect("drain synthetic session");
+    while let Some(frame) = session.receive_frame() {
+        output.push(frame);
+    }
+    output
+}
+
+#[test]
+fn frontend_schedule_parity_survives_a_dynamic_metadata_transition() {
+    let joc = one_object_joc();
+    let first = joc_emdf_for_profile(&active_object_oamd(true), &joc, true);
+    let second = joc_emdf_for_profile(&active_object_oamd(false), &joc, true);
+    let stream = [
+        five_channel_audio_frame(&first),
+        five_channel_audio_frame(&second),
+    ]
+    .concat();
+    let trace = openjoc_api::trace_access_units(&stream, Some(0)).expect("trace synthetic AUs");
+    assert_eq!(trace.len(), 2);
+    assert_eq!(trace[0].pts_samples, Some(0));
+    assert_eq!(trace[1].pts_samples, Some(1536));
+    assert_ne!(trace[0].sha256, trace[1].sha256);
+
+    let schedule_a = collect_binaural_session_frames(&stream, false);
+    let schedule_b = collect_binaural_session_frames(&stream, true);
+    assert_eq!(schedule_a, schedule_b);
 }
 
 #[test]

@@ -38,7 +38,8 @@ use openjoc_scene::{
 use openjoc_sofa::{
     SofaLoadLimits, load_builtin_generic_hrir, parse_simple_free_field_hrir, resolve_hrir,
 };
-use std::{collections::VecDeque, fmt};
+use sha2::{Digest, Sha256};
+use std::{collections::VecDeque, fmt, fmt::Write as _};
 
 /// The first public C ABI is intentionally experimental. This is separate
 /// from the Rust package version and may evolve within the 0.7 line.
@@ -107,6 +108,16 @@ pub enum DrcPolicy {
 pub use openjoc_eac3::DialnormMode;
 
 impl DrcPolicy {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Line => "line",
+            Self::Rf => "rf",
+            Self::Custom { .. } => "custom",
+        }
+    }
+
     fn internal(self) -> InternalBasePolicy {
         let control = match self {
             Self::Disabled => openjoc_eac3::DynamicRangeControl::Disabled,
@@ -228,7 +239,72 @@ impl OpenJocConfig {
         }
     }
 
-    fn validate(&self) -> Result<(), OpenJocError> {
+    /// Returns the stable, field-by-field representation of the settings that
+    /// reach an OpenJOC session. Fields that are intentionally ignored by a
+    /// selected mode are omitted, so frontends can compare effective rather
+    /// than merely user-visible configuration.
+    #[must_use]
+    pub fn effective_config_descriptor(&self) -> String {
+        let mut descriptor = format!(
+            "openjoc-effective-config-v1\nrender_mode={}\nlayout={}\ndownmix={}\ndrc={}",
+            self.render_mode.as_str(),
+            self.effective_layout(),
+            self.downmix.as_str(),
+            self.drc.as_str(),
+        );
+        if let DrcPolicy::Custom {
+            boost_percent,
+            cut_percent,
+        } = self.drc
+        {
+            let _ = write!(
+                descriptor,
+                "\ndrc_boost_percent={boost_percent}\ndrc_cut_percent={cut_percent}"
+            );
+        }
+        let _ = write!(
+            descriptor,
+            "\ndialnorm={}\nvalidation_profile={}\noamd_trim_configuration_count={}",
+            dialnorm_name(self.dialnorm),
+            validation_profile_name(self.validation_profile),
+            self.oamd
+                .trim_configuration_count
+                .map_or_else(|| "none".to_owned(), |value| value.get().to_string()),
+        );
+        if let Some(binaural) = &self.binaural {
+            let (hrtf_source, hrtf_sha256) = if binaural.is_builtin_generic() {
+                (
+                    "builtin:SADIE_II_D1_KU100_v2-2".to_owned(),
+                    "builtin-resource".to_owned(),
+                )
+            } else {
+                (
+                    "custom-sofa-bytes".to_owned(),
+                    sha256_hex(&binaural.sofa_bytes),
+                )
+            };
+            let _ = write!(
+                descriptor,
+                "\nbinaural_virtual_layout={}\nbinaural_lfe_policy={}\nbinaural_hrtf_source={hrtf_source}\nbinaural_hrtf_sha256={hrtf_sha256}\nbinaural_backend=direct\nfinal_linked_gain=disabled",
+                binaural.virtual_layout,
+                binaural_lfe_policy_name(binaural.lfe_policy),
+            );
+        } else {
+            descriptor.push_str("\nfinal_linked_gain=enabled");
+        }
+        descriptor
+    }
+
+    /// Returns a deterministic SHA-256 fingerprint of the effective session
+    /// configuration. This is intended for adapter parity logs and tests.
+    #[must_use]
+    pub fn effective_config_fingerprint(&self) -> String {
+        sha256_hex(self.effective_config_descriptor().as_bytes())
+    }
+
+    /// Validates the effective session configuration without allocating any
+    /// decoder, renderer, or HRTF stream state.
+    pub fn validate(&self) -> Result<(), OpenJocError> {
         SpeakerLayoutPreset::for_name(self.effective_layout())
             .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
         if self.render_mode == RenderMode::Binaural && self.binaural.is_none() {
@@ -246,6 +322,39 @@ impl OpenJocConfig {
     }
 }
 
+fn dialnorm_name(mode: DialnormMode) -> &'static str {
+    match mode {
+        DialnormMode::Default => "default",
+        DialnormMode::Digital => "digital",
+        DialnormMode::Analog => "analog",
+    }
+}
+
+fn validation_profile_name(profile: ValidationProfile) -> &'static str {
+    match profile {
+        ValidationProfile::Auto => "auto",
+        ValidationProfile::EtsiStrict => "etsi-strict",
+        ValidationProfile::ObservedVendorCompat => "observed-vendor-compat",
+    }
+}
+
+fn binaural_lfe_policy_name(policy: BinauralLfePolicy) -> &'static str {
+    match policy {
+        BinauralLfePolicy::Exclude => "exclude",
+        BinauralLfePolicy::EqualPowerDualMono => "equal-power-dual-mono",
+    }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    let mut output = String::with_capacity(64);
+    for byte in digest.finalize() {
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
+}
+
 /// Borrowed compressed input. A packet is exactly one complete JOC access
 /// unit: independent substream zero and optional dependent substream zero.
 #[derive(Clone, Copy, Debug)]
@@ -256,6 +365,75 @@ pub struct OpenJocPacket<'a> {
     pub pts_samples: Option<i64>,
     pub discontinuity: bool,
     pub preroll: bool,
+}
+
+/// Deterministic audit record for one grouped JOC access unit. Frontends can
+/// use this record to prove that packet grouping, byte ownership, and sample
+/// timestamps agree before comparing PCM.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenJocAccessUnitTrace {
+    pub index: usize,
+    pub byte_length: usize,
+    pub sha256: String,
+    pub pts_samples: Option<i64>,
+    pub sample_count: u16,
+    pub sample_rate: u32,
+    pub independent_frame_count: usize,
+    pub dependent_frame_count: usize,
+}
+
+/// Groups and fingerprints every complete JOC access unit in an elementary
+/// stream. `pts_origin_samples` is the first AU's sample-domain PTS; later
+/// PTS values are advanced by each AU's declared sample count.
+pub fn trace_access_units(
+    stream: &[u8],
+    pts_origin_samples: Option<i64>,
+) -> Result<Vec<OpenJocAccessUnitTrace>, OpenJocError> {
+    let frames = index_syncframes(stream)?;
+    let units = group_access_units(&frames)?;
+    let mut sample_offset = 0_u64;
+    units
+        .into_iter()
+        .enumerate()
+        .map(|(index, unit)| {
+            let first = frames[unit.first_frame];
+            let last = frames[unit.first_frame + unit.frame_count - 1];
+            let end = last
+                .offset
+                .checked_add(last.header.frame_size)
+                .ok_or_else(|| {
+                    OpenJocError::InvalidPacket("access-unit byte range overflow".to_owned())
+                })?;
+            let bytes = stream.get(first.offset..end).ok_or_else(|| {
+                OpenJocError::InvalidPacket("access-unit byte range is outside input".to_owned())
+            })?;
+            let independent_frame_count = frames
+                [unit.first_frame..unit.first_frame + unit.frame_count]
+                .iter()
+                .filter(|entry| entry.header.stream_type == openjoc_eac3::StreamType::Independent)
+                .count();
+            let dependent_frame_count = unit.frame_count.saturating_sub(independent_frame_count);
+            let pts_samples = pts_origin_samples.map(|origin| {
+                origin.saturating_add(i64::try_from(sample_offset).unwrap_or(i64::MAX))
+            });
+            let trace = OpenJocAccessUnitTrace {
+                index,
+                byte_length: bytes.len(),
+                sha256: sha256_hex(bytes),
+                pts_samples,
+                sample_count: unit.samples,
+                sample_rate: unit.sample_rate,
+                independent_frame_count,
+                dependent_frame_count,
+            };
+            sample_offset = sample_offset
+                .checked_add(u64::from(unit.samples))
+                .ok_or_else(|| {
+                    OpenJocError::InvalidPacket("sample timeline overflow".to_owned())
+                })?;
+            Ok(trace)
+        })
+        .collect()
 }
 
 /// Canonical output sample representation.
@@ -1508,6 +1686,33 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
 mod tests {
     use super::*;
 
+    fn push_bits(bytes: &mut [u8], cursor: &mut usize, value: u64, width: usize) {
+        for shift in (0..width).rev() {
+            if value & (1_u64 << shift) != 0 {
+                bytes[*cursor / 8] |= 0x80 >> (*cursor % 8);
+            }
+            *cursor += 1;
+        }
+    }
+
+    fn indexed_syncframe(stream_type: u8, size: usize, marker: u8) -> Vec<u8> {
+        let mut bytes = vec![0_u8; size];
+        let mut cursor = 0;
+        push_bits(&mut bytes, &mut cursor, 0x0b77, 16);
+        push_bits(&mut bytes, &mut cursor, u64::from(stream_type), 2);
+        push_bits(&mut bytes, &mut cursor, 0, 3);
+        push_bits(
+            &mut bytes,
+            &mut cursor,
+            u64::try_from(size / 2 - 1).expect("frame words"),
+            11,
+        );
+        push_bits(&mut bytes, &mut cursor, 0, 2);
+        push_bits(&mut bytes, &mut cursor, 3, 2);
+        bytes[size - 1] = marker;
+        bytes
+    }
+
     #[test]
     fn default_config_is_headless_and_has_stable_output_contract() {
         assert_eq!(OpenJocConfig::default().dialnorm, DialnormMode::Default);
@@ -1548,6 +1753,50 @@ mod tests {
         let info = session.output_info();
         assert_eq!(info.layout_name, "Binaural stereo");
         assert_eq!(info.channel_labels, ["Left Ear", "Right Ear"]);
+    }
+
+    #[test]
+    fn effective_config_fingerprint_ignores_non_effective_binaural_speaker_layout() {
+        let cli_config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        let gst_config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "5.1".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        assert_eq!(
+            cli_config.effective_config_descriptor(),
+            gst_config.effective_config_descriptor()
+        );
+        assert_eq!(
+            cli_config.effective_config_fingerprint(),
+            gst_config.effective_config_fingerprint()
+        );
+    }
+
+    #[test]
+    fn access_unit_trace_records_exact_bytes_counts_and_sample_pts() {
+        let stream = [
+            indexed_syncframe(0, 16, 0x10),
+            indexed_syncframe(1, 16, 0x20),
+            indexed_syncframe(0, 16, 0x30),
+            indexed_syncframe(1, 16, 0x40),
+        ]
+        .concat();
+        let trace = trace_access_units(&stream, Some(1000)).expect("trace access units");
+        assert_eq!(trace.len(), 2);
+        assert_eq!(trace[0].byte_length, 32);
+        assert_eq!(trace[0].pts_samples, Some(1000));
+        assert_eq!(trace[0].independent_frame_count, 1);
+        assert_eq!(trace[0].dependent_frame_count, 1);
+        assert_eq!(trace[1].pts_samples, Some(2536));
+        assert_eq!(trace[1].sha256.len(), 64);
+        assert_ne!(trace[0].sha256, trace[1].sha256);
     }
 
     #[test]

@@ -15,9 +15,9 @@ mod terminal;
 use banner::{package_metadata, render_banner};
 use eac3_decode::ValidationProfileRequest;
 use openjoc_api::{
-    DownmixPolicy as ApiDownmixPolicy, DrcPolicy as ApiDrcPolicy, OpenJocConfig, OpenJocPacket,
-    OpenJocSession, OpenJocStatus, RenderMode as ApiRenderMode,
-    ValidationProfile as ApiValidationProfile,
+    BinauralConfig, BinauralLfePolicy as ApiBinauralLfePolicy, DownmixPolicy as ApiDownmixPolicy,
+    DrcPolicy as ApiDrcPolicy, OpenJocConfig, OpenJocPacket, OpenJocSession, OpenJocStatus,
+    RenderMode as ApiRenderMode, ValidationProfile as ApiValidationProfile,
 };
 use openjoc_container::{
     DEFAULT_MAX_EAC3_BYTES, InputMediaError, InputMediaKind, detect_media, load_eac3,
@@ -2009,9 +2009,9 @@ fn render_joc(
         );
     }
     if arguments.topology.is_none()
-        && !arguments.binaural
         && arguments.performance_report.is_none()
         && arguments.diagnostic_contribution == SpatialContributionMode::Full
+        && arguments.binaural_backend == joc_render::BinauralBackend::Direct
     {
         return render_joc_with_embedded_session(
             arguments,
@@ -2366,8 +2366,9 @@ fn render_joc(
 }
 
 /// File/container and output-writer wrapper around the headless public
-/// session. Topology sidecars, profiling, and binaural backend selection stay
-/// on the legacy CLI path until their adapter contracts are moved separately.
+/// session. Topology sidecars, profiling, and partitioned binaural backend
+/// selection stay on the legacy CLI path until their adapter contracts are
+/// moved separately.
 fn render_joc_with_embedded_session(
     arguments: &RenderJocArgs,
     stream: &[u8],
@@ -2386,7 +2387,9 @@ fn render_joc_with_embedded_session(
         decode_config,
         arguments.validation_profile,
     )?;
-    let render_mode = if arguments.layout == "2.0" {
+    let render_mode = if arguments.binaural {
+        ApiRenderMode::Binaural
+    } else if arguments.layout == "2.0" {
         ApiRenderMode::Stereo
     } else {
         ApiRenderMode::Speaker
@@ -2419,6 +2422,26 @@ fn render_joc_with_embedded_session(
             ApiValidationProfile::ObservedVendorCompat
         }
     };
+    let binaural = if arguments.binaural {
+        let lfe_policy = match arguments
+            .lfe_policy
+            .unwrap_or(joc_render::BinauralLfePolicy::Exclude)
+        {
+            joc_render::BinauralLfePolicy::Exclude => ApiBinauralLfePolicy::Exclude,
+            joc_render::BinauralLfePolicy::EqualPowerDualMono => {
+                ApiBinauralLfePolicy::EqualPowerDualMono
+            }
+        };
+        Some(if let Some(path) = &arguments.binaural_sofa {
+            BinauralConfig::from_sofa_bytes(fs::read(path)?, arguments.layout.clone(), lfe_policy)
+        } else {
+            let mut config = BinauralConfig::builtin_generic(arguments.layout.clone());
+            config.lfe_policy = lfe_policy;
+            config
+        })
+    } else {
+        None
+    };
     let config = OpenJocConfig {
         render_mode,
         speaker_layout: arguments.layout.clone(),
@@ -2427,17 +2450,29 @@ fn render_joc_with_embedded_session(
         dialnorm: arguments.dialnorm,
         validation_profile,
         oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
-        binaural: None,
+        binaural,
     };
+    let config_fingerprint = config.effective_config_fingerprint();
     let mut session = OpenJocSession::new(config)?;
-    let semantic_layout =
-        SpeakerLayoutPreset::for_name(&arguments.layout)?.semantic_channel_layout();
-    let mut output = joc_render::JocPcmOutput::new_for_semantic_layout(
-        &arguments.output,
-        arguments.output_format,
-        overwrite_authorized,
-        &semantic_layout,
-    )?;
+    let semantic_layout = if arguments.binaural {
+        None
+    } else {
+        Some(SpeakerLayoutPreset::for_name(&arguments.layout)?.semantic_channel_layout())
+    };
+    let mut output = if arguments.binaural {
+        joc_render::JocPcmOutput::new_for_binaural(
+            &arguments.output,
+            arguments.output_format,
+            overwrite_authorized,
+        )?
+    } else {
+        joc_render::JocPcmOutput::new_for_semantic_layout(
+            &arguments.output,
+            arguments.output_format,
+            overwrite_authorized,
+            semantic_layout.as_ref().expect("speaker layout is present"),
+        )?
+    };
     let output_container = output.container().name().to_owned();
     let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
     let mut progress = progress::ProgressReporter::new(
@@ -2474,13 +2509,34 @@ fn render_joc_with_embedded_session(
         let output_frames = output.frames();
         output.finish()?;
         progress.finish();
+        let (selected_layout, output_layout, channel_count, lfe_index, lfe_count, channel_order) =
+            if arguments.binaural {
+                (
+                    arguments.layout.clone(),
+                    "Binaural stereo".to_owned(),
+                    2,
+                    None,
+                    0,
+                    "Left Ear, Right Ear".to_owned(),
+                )
+            } else {
+                let layout = semantic_layout.as_ref().expect("speaker layout is present");
+                (
+                    layout.name.clone(),
+                    format!("Speaker layout ({})", layout.name),
+                    layout.channel_count(),
+                    layout.lfe_index,
+                    layout.lfe_count(),
+                    layout.labels.join(", "),
+                )
+            };
         let presentation = joc_render::RenderSummaryPresentation {
             requested_layout: arguments.layout.clone(),
-            selected_layout: semantic_layout.name.clone(),
-            output_layout: format!("Speaker layout ({})", semantic_layout.name),
-            channel_count: semantic_layout.channel_count(),
-            lfe_index: semantic_layout.lfe_index,
-            lfe_count: semantic_layout.lfe_count(),
+            selected_layout,
+            output_layout,
+            channel_count,
+            lfe_index,
+            lfe_count,
             dialnorm_policy: joc_render::dialnorm_policy_name(arguments.dialnorm).to_owned(),
             downmix_policy: arguments
                 .downmix_policy
@@ -2495,12 +2551,15 @@ fn render_joc_with_embedded_session(
             output: arguments.output.clone(),
             sample_rate: timing.sample_rate,
             output_frames,
-            output_samples: output_frames.saturating_mul(semantic_layout.channel_count() as u64),
-            output_channel_order: semantic_layout.labels.join(", "),
-            speaker_identities: semantic_layout.labels.join(", "),
+            output_samples: output_frames.saturating_mul(channel_count as u64),
+            output_channel_order: channel_order.clone(),
+            speaker_identities: channel_order,
             output_container,
             output_format: joc_render::sample_format_name(arguments.output_format).to_owned(),
-            extra: vec!["render session: OpenJocSession".to_owned()],
+            extra: vec![
+                "render session: OpenJocSession".to_owned(),
+                format!("effective config SHA-256: {config_fingerprint}"),
+            ],
         };
         println!("{}", joc_render::format_render_summary(&presentation));
         Ok(())
