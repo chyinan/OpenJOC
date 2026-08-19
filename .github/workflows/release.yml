@@ -129,6 +129,9 @@ jobs:
           rustc -vV
           cargo -Vv
 
+      - name: Install GStreamer development package
+        run: brew install gstreamer
+
       - name: Re-run the release quality contract
         run: |
           cargo fmt --all -- --check
@@ -197,11 +200,11 @@ jobs:
         run: |
           cargo fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo check --workspace --all-targets --all-features --locked
+          cargo check --workspace --all-targets --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo clippy --workspace --all-targets --locked -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --workspace --all-features --locked
+          cargo test --workspace --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --workspace --release --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -242,6 +245,15 @@ jobs:
           rustup default stable
           rustc -vV
           cargo -Vv
+
+      - name: Install GStreamer development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
 
       - name: Re-run the Linux release quality contract
         run: |

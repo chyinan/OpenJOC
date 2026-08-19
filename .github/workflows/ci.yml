@@ -32,6 +32,15 @@ jobs:
           rustc -vV
           cargo -Vv
 
+      - name: Install GStreamer development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            gstreamer1.0-tools \
+            gstreamer1.0-plugins-good \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
+
       - name: Format check
         run: cargo fmt --all -- --check
 
@@ -43,6 +52,9 @@ jobs:
 
       - name: Release build
         run: cargo build --workspace --release --locked
+
+      - name: Build the native GStreamer plugin
+        run: cargo build -p gst-plugin-openjoc --release --features gstreamer --locked
 
       - name: Cargo package verification
         run: cargo package --workspace --locked
@@ -67,7 +79,7 @@ jobs:
 
       - name: Platform-neutral workspace tests
         shell: pwsh
-        run: cargo test --workspace --all-features --locked
+        run: cargo test --workspace --locked
 
       - name: Platform-neutral release build
         shell: pwsh
@@ -89,11 +101,17 @@ jobs:
           rustc -vV
           cargo -Vv
 
+      - name: Install GStreamer development package
+        run: brew install gstreamer
+
       - name: Platform-neutral workspace tests
         run: cargo test --workspace --all-features --locked
 
       - name: Platform-neutral release build
         run: cargo build --workspace --release --locked
+
+      - name: Build the native GStreamer plugin
+        run: cargo build -p gst-plugin-openjoc --release --features gstreamer --locked
 
   msrv:
     name: msrv-1.85
@@ -104,6 +122,10 @@ jobs:
 
       - name: Check the documented minimum Rust version
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev
           rustup toolchain install 1.85.0 --profile minimal
           rustc +1.85.0 -vV
           cargo +1.85.0 -Vv
