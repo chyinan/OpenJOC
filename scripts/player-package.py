@@ -623,7 +623,11 @@ def sanitize_private_strings(root: pathlib.Path, extra_prefixes: list[pathlib.Pa
         b"/opt/homebrew",
         b"/usr/local/Cellar",
     ])
-    for path in [p for p in root.rglob("*") if p.is_file() and (p.name == "mpv" or p.name == "mpv.exe" or p.suffix in {".dylib", ".so", ".dll"})]:
+    for path in [
+        p for p in root.rglob("*")
+        if p.is_file()
+        and (p.name in {"mpv", "mpv.exe"} or p.suffix in {".dylib", ".so", ".dll"} or ".so." in p.name)
+    ]:
         data = path.read_bytes()
         for prefix in prefixes:
             if prefix not in data:
