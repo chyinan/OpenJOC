@@ -566,7 +566,7 @@ def bundle(arguments: argparse.Namespace) -> int:
         raise SystemExit(f"output directory must be empty: {output}")
     dev_id = development_id()
     suffix = {"macos-arm64": "macos-arm64", "linux-x86_64": "linux-x86_64", "windows-x64": "windows-x64"}[platform_name]
-    archive_name = f"openjoc-player-{dev_id}-{suffix}." + ("zip" if platform_name == "windows-x64" else "tar.gz")
+    archive_name = f"openjoc-mpv-{dev_id}-{suffix}." + ("zip" if platform_name == "windows-x64" else "tar.gz")
     root_name = archive_name.removesuffix(".tar.gz").removesuffix(".zip")
     with tempfile.TemporaryDirectory(prefix="openjoc-player-package-") as temporary:
         work = pathlib.Path(temporary)

@@ -119,7 +119,7 @@ python3 "$repo_root/scripts/player-package.py" bundle \
     --search-dir /mingw64/bin --ffmpeg-source "$ffmpeg_source" \
     --mpv-source "$mpv_source" --toolchain "$(rustc -vV | tr '\n' '; ')"
 
-archive=$(find "$output" -maxdepth 1 -name 'openjoc-player-*-windows-x64.zip' -type f -print | head -n 1)
+archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-windows-x64.zip' -type f -print | head -n 1)
 extract="$work/extracted"
 mkdir -p "$extract"
 unzip -q "$archive" -d "$extract"

@@ -191,7 +191,7 @@ case "$platform" in
             --search-dir "$ffmpeg_prefix/lib" --search-dir "$openjoc_prefix/lib" \
             --search-dir "$brew_prefix/lib" --ffmpeg-source "$ffmpeg_source" \
             --mpv-source "$mpv_source" --toolchain "$(rustc -vV | tr '\n' '; ')"
-        archive=$(find "$output" -maxdepth 1 -name 'openjoc-player-*-macos-arm64.tar.gz' -type f -print | head -n 1)
+        archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-macos-arm64.tar.gz' -type f -print | head -n 1)
         extract="$work/extracted"
         mkdir -p "$extract"
         tar -xzf "$archive" -C "$extract"
@@ -238,7 +238,7 @@ case "$platform" in
             --stage-root "$work/stage" --output "$output" --platform linux-x86_64 \
             --ffmpeg-source "$ffmpeg_source" --mpv-source "$mpv_source" \
             --toolchain "$(rustc -vV | tr '\n' '; ')"
-        archive=$(find "$output" -maxdepth 1 -name 'openjoc-player-*-linux-x86_64.tar.gz' -type f -print | head -n 1)
+        archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-linux-x86_64.tar.gz' -type f -print | head -n 1)
         extract="$work/extracted"
         mkdir -p "$extract"
         tar -xzf "$archive" -C "$extract"

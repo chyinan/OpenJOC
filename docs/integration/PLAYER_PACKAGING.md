@@ -129,7 +129,7 @@ The verifier is:
 
 ```sh
 scripts/verify-player-package.sh \
-  --root /absolute/extracted/openjoc-player-... \
+  --root /absolute/extracted/openjoc-mpv-... \
   --platform macos-arm64 --run-smoke --missing-dependency-smoke
 ```
 

@@ -49,8 +49,8 @@ jobs:
         run: |
           scripts/build-openjoc-player.sh \
             --platform macos-arm64 \
-            --output "$RUNNER_TEMP/openjoc-player-macos"
-          find "$RUNNER_TEMP/openjoc-player-macos" -maxdepth 1 -type f -print
+            --output "$RUNNER_TEMP/openjoc-mpv-macos"
+          find "$RUNNER_TEMP/openjoc-mpv-macos" -maxdepth 1 -type f -print
 
   linux-x86_64:
     name: packaged OpenJOC-enabled mpv (Linux x86_64)
@@ -82,8 +82,8 @@ jobs:
         run: |
           scripts/build-openjoc-player.sh \
             --platform linux-x86_64 \
-            --output "$RUNNER_TEMP/openjoc-player-linux"
-          find "$RUNNER_TEMP/openjoc-player-linux" -maxdepth 1 -type f -print
+            --output "$RUNNER_TEMP/openjoc-mpv-linux"
+          find "$RUNNER_TEMP/openjoc-mpv-linux" -maxdepth 1 -type f -print
 
   windows-x64:
     name: packaged OpenJOC-enabled mpv (Windows x64 / MSYS2 MinGW-w64)
@@ -128,6 +128,6 @@ jobs:
           rustup target add x86_64-pc-windows-gnu
           rustc -vV
           gcc --version | head -n 1
-          output="$(cygpath -u "$RUNNER_TEMP")/openjoc-player-windows"
+          output="$(cygpath -u "$RUNNER_TEMP")/openjoc-mpv-windows"
           scripts/build-openjoc-player-windows.sh --output "$output"
           find "$output" -maxdepth 1 -type f -print

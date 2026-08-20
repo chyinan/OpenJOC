@@ -1,4 +1,8 @@
-# OpenJOC Player Bundle
+# OpenJOC-enabled mpv
+
+This archive is distributed as an OpenJOC Player Bundle; its user-facing
+launcher is intentionally named `openjoc-mpv` because the underlying player is
+mpv.
 
 This is an OpenJOC-enabled mpv build. It is not an official mpv or FFmpeg
 release. Extract the archive anywhere and run the packaged launcher from this
