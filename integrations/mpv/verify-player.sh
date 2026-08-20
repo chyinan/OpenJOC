@@ -8,9 +8,9 @@ fi
 
 mpv=$1
 fixtures=$2
-joc=$fixtures/joc.ec3
+joc=$fixtures/joc.mp4
 ordinary=$fixtures/ordinary.eac3
-[ -f "$joc" ] || joc=$fixtures/joc.mp4
+[ -f "$joc" ] || joc=$fixtures/joc.ec3
 
 for input in "$mpv" "$joc" "$ordinary"; do
     if [ ! -e "$input" ]; then

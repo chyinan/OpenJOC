@@ -18,10 +18,21 @@ mkdir -p "$output"
 
 # This test-only exporter is project-owned and contains no programme media. It
 # writes a bounded synthetic JOC stream using the existing OpenJOC fixture
-# builder. The raw EC-3 form avoids adding a private/commercial container file.
+# builder. The resulting one-access-unit MP4 is a deterministic wrapper around
+# that project-owned raw stream, not private or commercial programme media.
 OPENJOC_SYNTHETIC_JOC_PATH="$output/joc.ec3" \
     cargo test -p openjoc-ffmpeg --lib tests::export_synthetic_joc_fixture_when_requested \
     -- --exact --nocapture
+
+# The exporter writes a short classifier corpus. Keep one complete synthetic
+# access unit for the player gate: generic FFmpeg remuxers assign unit packet
+# timestamps to this test-only raw stream, while the native OpenJOC decoder
+# contract expects 1536-sample packet spacing. The MP4 wrapper supplies a
+# normal container timestamp for the single controlled access unit.
+head -c 4096 "$output/joc.ec3" > "$output/joc.single.ec3"
+mv "$output/joc.single.ec3" "$output/joc.ec3"
+ffmpeg -v error -f eac3 -i "$output/joc.ec3" -map 0:a:0 -c:a copy \
+    -f mp4 -y "$output/joc.mp4"
 
 # Generate ordinary codec controls from deterministic lavfi sources. These are
 # temporary inputs only; the package archive and uploaded reports never include
