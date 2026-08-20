@@ -6,7 +6,7 @@ use std::ptr;
 
 #[test]
 fn version_and_struct_initialization_are_stable() {
-    assert_eq!(openjoc_get_abi_version(), 0x0001_0002);
+    assert_eq!(openjoc_get_abi_version(), 0x0001_0003);
     assert_eq!(std::mem::size_of::<openjoc_decoder_config>() as u32, {
         let mut config = std::mem::MaybeUninit::uninit();
         assert_eq!(

@@ -22,8 +22,8 @@ use openjoc_api::{
     ValidationProfile,
 };
 use openjoc_ffmpeg::{
-    BridgeError, BridgeErrorKind, BridgeStatus, FfmpegDecoder, FfmpegFrame, PacketRef, Rational,
-    ReceiveOutcome,
+    BridgeError, BridgeErrorKind, BridgeStatus, FfmpegDecoder, FfmpegFrame, JocClassification,
+    JocClassifier, PacketRef, Rational, ReceiveOutcome,
 };
 use std::{
     ffi::{CStr, CString},
@@ -36,7 +36,7 @@ use std::{
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 2;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 3;
 const NO_PTS: i64 = i64::MIN;
 
 #[repr(C)]
@@ -66,6 +66,14 @@ pub struct openjoc_stream_decoder {
     last_frame: Option<FfmpegFrame>,
 }
 
+/// Framework-neutral compressed-stream classifier. It never creates a
+/// renderer session or emits PCM.
+#[repr(C)]
+pub struct openjoc_classifier {
+    classifier: JocClassifier,
+    last_error: CString,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum openjoc_status {
@@ -83,6 +91,15 @@ pub enum openjoc_status {
     OPENJOC_STATUS_NOT_JOC = 11,
     OPENJOC_STATUS_OUT_OF_MEMORY = 12,
     OPENJOC_STATUS_EXTERNAL_ERROR = 13,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum openjoc_classification {
+    OPENJOC_CLASSIFICATION_UNKNOWN = 0,
+    OPENJOC_CLASSIFICATION_CONFIRMED_JOC = 1,
+    OPENJOC_CLASSIFICATION_CONFIRMED_NON_JOC = 2,
+    OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED = 3,
 }
 
 #[repr(C)]
@@ -454,6 +471,34 @@ fn set_stream_message(
 
 fn stream_panic_status(decoder: &mut openjoc_stream_decoder) -> openjoc_status {
     decoder.last_error =
+        CString::new("panic contained at OpenJOC C ABI boundary").expect("static error");
+    openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR
+}
+
+fn classifier_value(classification: JocClassification) -> openjoc_classification {
+    match classification {
+        JocClassification::Unknown => openjoc_classification::OPENJOC_CLASSIFICATION_UNKNOWN,
+        JocClassification::ConfirmedJoc => {
+            openjoc_classification::OPENJOC_CLASSIFICATION_CONFIRMED_JOC
+        }
+        JocClassification::ConfirmedNonJoc => {
+            openjoc_classification::OPENJOC_CLASSIFICATION_CONFIRMED_NON_JOC
+        }
+        JocClassification::InvalidOrUnsupported => {
+            openjoc_classification::OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED
+        }
+    }
+}
+
+fn set_classifier_error(classifier: &mut openjoc_classifier, error: BridgeError) -> openjoc_status {
+    let result = stream_error_status(&error);
+    classifier.last_error = CString::new(error.to_string())
+        .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
+    result
+}
+
+fn classifier_panic_status(classifier: &mut openjoc_classifier) -> openjoc_status {
+    classifier.last_error =
         CString::new("panic contained at OpenJOC C ABI boundary").expect("static error");
     openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR
 }
@@ -1070,4 +1115,137 @@ pub extern "C" fn openjoc_stream_decoder_get_staged_bytes(
     }
     // SAFETY: pointer was checked and remains valid for the caller.
     unsafe { (&*decoder).decoder.staged_bytes() }
+}
+
+/// Creates a bounded, decode-free compressed-stream classifier.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_create(
+    output: *mut *mut openjoc_classifier,
+) -> openjoc_status {
+    if output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let classifier = Box::new(openjoc_classifier {
+            classifier: JocClassifier::new(),
+            last_error: CString::new("").expect("empty CString"),
+        });
+        // SAFETY: output was checked and receives ownership of the allocation.
+        unsafe { *output = Box::into_raw(classifier) };
+        openjoc_status::OPENJOC_STATUS_OK
+    }));
+    result.unwrap_or(openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR)
+}
+
+/// Destroys a compressed-stream classifier.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_destroy(classifier: *mut openjoc_classifier) {
+    if classifier.is_null() {
+        return;
+    }
+    // SAFETY: the pointer came from openjoc_classifier_create and is consumed once.
+    unsafe { drop(Box::from_raw(classifier)) };
+}
+
+/// Supplies borrowed compressed bytes and returns the current positive
+/// classification. No OpenJOC rendering or PCM decode occurs here.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_send_chunk(
+    classifier: *mut openjoc_classifier,
+    data: *const u8,
+    data_len: usize,
+    output: *mut openjoc_classification,
+) -> openjoc_status {
+    if classifier.is_null() || data.is_null() || data_len == 0 || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: classifier was checked and remains owned by the caller.
+    let classifier = unsafe { &mut *classifier };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: caller guarantees a readable chunk buffer for this call.
+        let bytes = unsafe { slice::from_raw_parts(data, data_len) };
+        match classifier.classifier.send_chunk(bytes) {
+            Ok(value) => {
+                // SAFETY: output was checked and is caller-owned.
+                unsafe { *output = classifier_value(value) };
+                openjoc_status::OPENJOC_STATUS_OK
+            }
+            Err(error) => set_classifier_error(classifier, error),
+        }
+    }));
+    result.unwrap_or_else(|_| classifier_panic_status(classifier))
+}
+
+/// Closes the bounded classifier probe and classifies a final complete AU.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_finish(
+    classifier: *mut openjoc_classifier,
+    output: *mut openjoc_classification,
+) -> openjoc_status {
+    if classifier.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: classifier was checked and remains owned by the caller.
+    let classifier = unsafe { &mut *classifier };
+    let result = catch_unwind(AssertUnwindSafe(|| match classifier.classifier.finish() {
+        Ok(value) => {
+            // SAFETY: output was checked and is caller-owned.
+            unsafe { *output = classifier_value(value) };
+            openjoc_status::OPENJOC_STATUS_OK
+        }
+        Err(error) => set_classifier_error(classifier, error),
+    }));
+    result.unwrap_or_else(|_| classifier_panic_status(classifier))
+}
+
+/// Resets the classifier for a new stream or seek re-probe.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_reset(classifier: *mut openjoc_classifier) -> openjoc_status {
+    if classifier.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: classifier was checked and remains owned by the caller.
+    let classifier = unsafe { &mut *classifier };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        classifier.classifier.reset();
+        classifier.last_error = CString::new("").expect("empty CString");
+        openjoc_status::OPENJOC_STATUS_OK
+    }));
+    result.unwrap_or_else(|_| classifier_panic_status(classifier))
+}
+
+/// Returns the classifier's latest diagnostic string.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_last_error(
+    classifier: *const openjoc_classifier,
+) -> *const c_char {
+    if classifier.is_null() {
+        return c"invalid null OpenJOC classifier handle".as_ptr();
+    }
+    // SAFETY: classifier was checked and remains valid for the caller.
+    unsafe { (&*classifier).last_error.as_ptr() }
+}
+
+/// Returns bytes retained while waiting for a complete access unit.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_get_staged_bytes(
+    classifier: *const openjoc_classifier,
+) -> usize {
+    if classifier.is_null() {
+        return 0;
+    }
+    // SAFETY: classifier was checked and remains valid for the caller.
+    unsafe { (&*classifier).classifier.staged_bytes() }
+}
+
+/// Returns compressed bytes inspected by the classifier.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_classifier_get_inspected_bytes(
+    classifier: *const openjoc_classifier,
+) -> usize {
+    if classifier.is_null() {
+        return 0;
+    }
+    // SAFETY: classifier was checked and remains valid for the caller.
+    unsafe { (&*classifier).classifier.inspected_bytes() }
 }

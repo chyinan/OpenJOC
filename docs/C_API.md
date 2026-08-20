@@ -13,7 +13,7 @@ artifact, not the primary C consumer library.
 
 ## ABI policy
 
-The ABI is `1.2-experimental`, independent of the OpenJOC package version.
+The ABI is `1.3-experimental`, independent of the OpenJOC package version.
 Major changes may break layout or ownership rules and require an ABI-major
 increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
@@ -69,6 +69,24 @@ configuration descriptor/fingerprint, and current bounded staging size are
 available before or during decoding. `OPENJOC_STATUS_NOT_JOC` distinguishes a
 positive ordinary-E-AC-3 rejection; out-of-memory and external-library
 categories have dedicated numeric statuses for host error mapping.
+
+ABI 1.3 adds `openjoc_classifier`, a decode-free, framework-neutral compressed
+stream probe. `openjoc_classifier_send_chunk()` shares the bounded access-unit
+parser and positive JOC admission rules but never creates an OpenJOC render
+session or emits PCM. `openjoc_classifier_finish()` closes the probe so a final
+complete one-AU stream can be classified without a following syncframe. The
+output is one of `UNKNOWN`, `CONFIRMED_JOC`, `CONFIRMED_NON_JOC`, or
+`INVALID_OR_UNSUPPORTED`; the staged and inspected-byte accessors expose
+bounded probe accounting. This is intended for players that must choose a
+decoder before sending the first packet to a renderer.
+
+ABI 1.3 adds `openjoc_classifier`, a decode-free, framework-neutral compressed
+stream probe. `openjoc_classifier_send_chunk()` shares the bounded access-unit
+parser and positive JOC admission rules but never creates an OpenJOC render
+session or emits PCM. Its output is one of `UNKNOWN`, `CONFIRMED_JOC`,
+`CONFIRMED_NON_JOC`, or `INVALID_OR_UNSUPPORTED`; the staged and inspected-byte
+accessors expose bounded probe accounting. This is intended for players that
+must choose a decoder before sending the first packet to a renderer.
 
 Semantic labels are available through `openjoc_decoder_get_channel_label` and
 the output/frame descriptors. The canonical PCM sample format value is `1`

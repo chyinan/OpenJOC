@@ -185,6 +185,104 @@ impl JocClassification {
     }
 }
 
+/// Bounded, decode-free classifier for a compressed E-AC-3 stream.
+///
+/// This shares the packet-to-access-unit parser and positive JOC admission
+/// rules with [`FfmpegDecoder`], but never creates an `OpenJocSession`. It is
+/// intended for framework adapters that must choose a decoder before sending
+/// the first packet to a renderer.
+#[derive(Debug, Default)]
+pub struct JocClassifier {
+    staging: Vec<u8>,
+    classification: JocClassification,
+    inspected_bytes: usize,
+}
+
+impl JocClassifier {
+    /// Creates an empty stream classifier.
+    pub const fn new() -> Self {
+        Self {
+            staging: Vec::new(),
+            classification: JocClassification::Unknown,
+            inspected_bytes: 0,
+        }
+    }
+
+    /// Returns the current positive-admission state.
+    pub const fn classification(&self) -> JocClassification {
+        self.classification
+    }
+
+    /// Returns compressed bytes retained while waiting for a complete AU.
+    pub fn staged_bytes(&self) -> usize {
+        self.staging.len()
+    }
+
+    /// Returns compressed bytes examined by the classifier.
+    pub const fn inspected_bytes(&self) -> usize {
+        self.inspected_bytes
+    }
+
+    /// Discards the current bounded probe state.
+    pub fn reset(&mut self) {
+        self.staging.clear();
+        self.classification = JocClassification::Unknown;
+        self.inspected_bytes = 0;
+    }
+
+    /// Supplies a borrowed compressed chunk without decoding or rendering it.
+    pub fn send_chunk(&mut self, data: &[u8]) -> Result<JocClassification, BridgeError> {
+        if data.is_empty() {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                "empty classifier chunk",
+            ));
+        }
+        if self.classification != JocClassification::Unknown {
+            return Ok(self.classification);
+        }
+
+        let new_len = self.staging.len().checked_add(data.len()).ok_or_else(|| {
+            BridgeError::new(BridgeErrorKind::InvalidData, "classifier staging overflow")
+        })?;
+        if new_len > MAX_COMPRESSED_STAGING_BYTES {
+            self.classification = JocClassification::InvalidOrUnsupported;
+            return Err(BridgeError::new(
+                BridgeErrorKind::OutputPending,
+                format!("classifier staging would exceed {MAX_COMPRESSED_STAGING_BYTES} bytes"),
+            ));
+        }
+        self.staging.extend_from_slice(data);
+
+        let size = match parse_access_unit(&self.staging, false)? {
+            AccessUnitParse::NeedMore => return Ok(JocClassification::Unknown),
+            AccessUnitParse::Complete(size) => size,
+        };
+        let inspected = inspect_complete_access_unit(&self.staging[..size])?;
+        self.inspected_bytes = self.inspected_bytes.saturating_add(size);
+        self.staging.drain(..size);
+        self.classification = inspected.classification;
+        Ok(self.classification)
+    }
+
+    /// Closes the bounded probe and classifies a final complete AU when the
+    /// stream does not contain a following independent syncframe.
+    pub fn finish(&mut self) -> Result<JocClassification, BridgeError> {
+        if self.classification != JocClassification::Unknown {
+            return Ok(self.classification);
+        }
+        let size = match parse_access_unit(&self.staging, true)? {
+            AccessUnitParse::NeedMore => return Ok(JocClassification::Unknown),
+            AccessUnitParse::Complete(size) => size,
+        };
+        let inspected = inspect_complete_access_unit(&self.staging[..size])?;
+        self.inspected_bytes = self.inspected_bytes.saturating_add(size);
+        self.staging.drain(..size);
+        self.classification = inspected.classification;
+        Ok(self.classification)
+    }
+}
+
 /// Non-error send/drain status with bounded backpressure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BridgeStatus {
@@ -1751,6 +1849,33 @@ mod tests {
             classify_complete_access_unit(&[0xde, 0xad, 0xbe, 0xef]),
             JocClassification::InvalidOrUnsupported
         );
+
+        let mut classifier = JocClassifier::new();
+        let mut result = JocClassification::Unknown;
+        for chunk in joc.chunks(5) {
+            result = classifier.send_chunk(chunk).expect("classify JOC chunk");
+            if result != JocClassification::Unknown {
+                break;
+            }
+        }
+        if result == JocClassification::Unknown {
+            result = classifier.finish().expect("finish JOC classification");
+        }
+        assert_eq!(result, JocClassification::ConfirmedJoc);
+        assert_eq!(classifier.inspected_bytes(), joc.len());
+
+        let mut classifier = JocClassifier::new();
+        assert_eq!(
+            classifier
+                .send_chunk(&ordinary)
+                .expect("classify ordinary chunk"),
+            JocClassification::Unknown
+        );
+        assert_eq!(
+            classifier.finish().expect("finish ordinary classification"),
+            JocClassification::ConfirmedNonJoc
+        );
+        assert_eq!(classifier.staged_bytes(), 0);
 
         let mut decoder = FfmpegDecoder::new(OpenJocConfig::default()).expect("wrapper");
         assert_eq!(

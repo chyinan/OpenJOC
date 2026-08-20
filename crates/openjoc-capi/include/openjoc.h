@@ -9,11 +9,12 @@ extern "C" {
 #endif
 
 #define OPENJOC_ABI_VERSION_MAJOR 1u
-#define OPENJOC_ABI_VERSION_MINOR 2u
+#define OPENJOC_ABI_VERSION_MINOR 3u
 #define OPENJOC_NO_PTS INT64_MIN
 
 typedef struct openjoc_decoder openjoc_decoder;
 typedef struct openjoc_stream_decoder openjoc_stream_decoder;
+typedef struct openjoc_classifier openjoc_classifier;
 
 typedef enum openjoc_status {
     OPENJOC_STATUS_OK = 0,
@@ -31,6 +32,13 @@ typedef enum openjoc_status {
     OPENJOC_STATUS_OUT_OF_MEMORY = 12,
     OPENJOC_STATUS_EXTERNAL_ERROR = 13
 } openjoc_status;
+
+typedef enum openjoc_classification {
+    OPENJOC_CLASSIFICATION_UNKNOWN = 0,
+    OPENJOC_CLASSIFICATION_CONFIRMED_JOC = 1,
+    OPENJOC_CLASSIFICATION_CONFIRMED_NON_JOC = 2,
+    OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED = 3
+} openjoc_classification;
 
 typedef enum openjoc_render_mode {
     OPENJOC_RENDER_SPEAKER = 0,
@@ -145,6 +153,18 @@ const char *openjoc_stream_decoder_get_channel_label(const openjoc_stream_decode
 const char *openjoc_stream_decoder_get_config_descriptor(const openjoc_stream_decoder *decoder);
 const char *openjoc_stream_decoder_get_config_fingerprint(const openjoc_stream_decoder *decoder);
 size_t openjoc_stream_decoder_get_staged_bytes(const openjoc_stream_decoder *decoder);
+
+/* ABI 1.3 decode-free compressed-stream classifier. It shares the bounded
+ * access-unit parser and positive admission rules with the stream decoder,
+ * but never creates a render session or emits PCM. */
+openjoc_status openjoc_classifier_create(openjoc_classifier **output);
+void openjoc_classifier_destroy(openjoc_classifier *classifier);
+openjoc_status openjoc_classifier_send_chunk(openjoc_classifier *classifier, const uint8_t *data, size_t data_len, openjoc_classification *output);
+openjoc_status openjoc_classifier_finish(openjoc_classifier *classifier, openjoc_classification *output);
+openjoc_status openjoc_classifier_reset(openjoc_classifier *classifier);
+const char *openjoc_classifier_last_error(const openjoc_classifier *classifier);
+size_t openjoc_classifier_get_staged_bytes(const openjoc_classifier *classifier);
+size_t openjoc_classifier_get_inspected_bytes(const openjoc_classifier *classifier);
 
 #ifdef __cplusplus
 }
