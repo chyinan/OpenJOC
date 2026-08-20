@@ -399,7 +399,7 @@ fn collect_binaural_session_frames(
             .expect("push synthetic AU");
         assert_ne!(status, OpenJocStatus::OutputPending);
         if receive_before_push {
-            assert!(session.output_info().channel_count == 2);
+            assert_eq!(session.output_info().channel_count, 2);
         }
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
