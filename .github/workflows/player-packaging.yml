@@ -1,0 +1,133 @@
+name: OpenJOC player packaging
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/player-packaging.yml"
+      - "packaging/player/**"
+      - "scripts/build-openjoc-player*"
+      - "scripts/player-package.py"
+      - "scripts/verify-player-package.sh"
+      - "integrations/ffmpeg/native/**"
+      - "integrations/mpv/**"
+      - "crates/openjoc-capi/**"
+      - "crates/openjoc-ffmpeg/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: player-packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 2
+  SOURCE_DATE_EPOCH: 0
+
+jobs:
+  macos-arm64:
+    name: packaged OpenJOC-enabled mpv (macOS arm64)
+    runs-on: macos-14
+    steps:
+      - name: Check out OpenJOC
+        uses: actions/checkout@v4
+
+      - name: Install pinned build prerequisites
+        run: brew install meson ninja libass libplacebo
+
+      - name: Select stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          sw_vers
+          uname -m
+          rustc -vV
+
+      - name: Build, extract, and verify the package
+        run: |
+          scripts/build-openjoc-player.sh \
+            --platform macos-arm64 \
+            --output "$RUNNER_TEMP/openjoc-player-macos"
+          find "$RUNNER_TEMP/openjoc-player-macos" -maxdepth 1 -type f -print
+
+  linux-x86_64:
+    name: packaged OpenJOC-enabled mpv (Linux x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out OpenJOC
+        uses: actions/checkout@v4
+
+      - name: Install conservative Linux build/runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            build-essential git nasm pkg-config meson ninja-build patchelf \
+            libass-dev libplacebo-dev libx11-dev libxfixes-dev \
+            libxpresent-dev libxrandr-dev libxv-dev libxinerama-dev \
+            libxext-dev libxss-dev libxkbcommon-dev libwayland-dev \
+            libdrm-dev libgbm-dev libpipewire-0.3-dev libpulse-dev \
+            libjpeg-dev liblcms2-dev libvulkan-dev python3
+
+      - name: Select stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          uname -m
+          ldd --version | head -n 1
+          rustc -vV
+
+      - name: Build, extract, and verify the package
+        run: |
+          scripts/build-openjoc-player.sh \
+            --platform linux-x86_64 \
+            --output "$RUNNER_TEMP/openjoc-player-linux"
+          find "$RUNNER_TEMP/openjoc-player-linux" -maxdepth 1 -type f -print
+
+  windows-x64:
+    name: packaged OpenJOC-enabled mpv (Windows x64 / MSYS2 MinGW-w64)
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out OpenJOC
+        uses: actions/checkout@v4
+
+      - name: Install the isolated MinGW-w64 build surface
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            unzip
+            python
+            make
+            pkgconf
+            meson
+            ninja
+            yasm
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-libass
+            mingw-w64-x86_64-libplacebo
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-luajit
+            mingw-w64-x86_64-lcms2
+            mingw-w64-x86_64-vulkan-loader
+
+      - name: Select the GNU Rust target and build the ZIP
+        run: |
+          export PATH="$(cygpath -u "$USERPROFILE")/.cargo/bin:$PATH"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-pc-windows-gnu
+          rustc -vV
+          gcc --version | head -n 1
+          output="$(cygpath -u "$RUNNER_TEMP")/openjoc-player-windows"
+          scripts/build-openjoc-player-windows.sh --output "$output"
+          find "$output" -maxdepth 1 -type f -print
