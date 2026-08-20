@@ -49,7 +49,21 @@ case "$(uname -s)" in
     MINGW*|MSYS_NT*|CYGWIN*)
         install -m 0755 "$target_dir/openjoc_capi.dll" \
             "$stage_prefix/bin/openjoc_capi.dll"
-        install -m 0644 "$target_dir/openjoc_capi.dll.a" \
+        import_library=
+        for candidate in \
+            "$target_dir/openjoc_capi.dll.a" \
+            "$target_dir/libopenjoc_capi.dll.a"; do
+            if [ -f "$candidate" ]; then
+                import_library=$candidate
+                break
+            fi
+        done
+        if [ -z "$import_library" ]; then
+            echo "OpenJOC GNU import library was not produced" >&2
+            find "$target_dir" -maxdepth 1 -type f -name '*openjoc_capi*' -print >&2
+            exit 1
+        fi
+        install -m 0644 "$import_library" \
             "$stage_prefix/lib/libopenjoc_capi.dll.a"
         ;;
     *)
