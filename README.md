@@ -81,6 +81,10 @@ Read the canonical documentation:
 - [mpv player integration](docs/integration/MPV.md) — OpenJOC can be used as
   the JOC decoder in custom mpv builds linked against the `libopenjoc`-enabled
   FFmpeg integration; ordinary E-AC-3 remains on `eac3`.
+- [Player packaging](docs/integration/PLAYER_PACKAGING.md) — reproducible,
+  auditable OpenJOC Player Bundle tooling for the pinned macOS arm64 surface,
+  with isolated Linux and Windows CI routes; this is not an official mpv or
+  FFmpeg distribution.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 

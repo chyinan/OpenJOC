@@ -20,7 +20,8 @@ bit-identical Reference Player output.
   surface. The repository provides GStreamer integration, an external FFmpeg
   bridge, a native `libopenjoc` source patch, and a source-only mpv patchset;
   stock FFmpeg binaries do not contain it, and no custom player binary is
-  shipped.
+  publicly released. Reproducible local/CI OpenJOC Player Bundles exist for
+  development qualification; they are not official mpv/FFmpeg releases.
 - The codec-domain JOC operator `T(t)` remains unresolved. The separate
   `render-joc` path is an experimental ordinary-domain speaker projection that
   assembles control from decoded JOC/OAMD state; it does not infer authored
