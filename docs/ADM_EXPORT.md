@@ -45,6 +45,10 @@ The implementation targets the public standards subset described by:
 - ITU-R BS.2088-2 (11/2025), BW64 long-form file format.
 - EBU Tech 3285 Supplement 7 (2018), `chna` chunk reference semantics.
 
+Primary public references: [ITU-R BS.2076](https://www.itu.int/rec/R-REC-BS.2076/),
+[ITU-R BS.2088-2](https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.2088-2-202511-I!!PDF-E.pdf),
+and [EBU Tech 3285 Supplement 7](https://tech.ebu.ch/publications/tech3285s7).
+
 The generated file uses `BW64`, mandatory first `ds64`, a conventional `fmt `
 chunk, `data`, uncompressed `axml`, and `chna`. Audio is signed 24-bit
 little-endian PCM. The writer rejects non-finite or out-of-range samples and
