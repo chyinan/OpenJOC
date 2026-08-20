@@ -37,7 +37,7 @@ ffmpeg -v error -y -f lavfi -i "sine=frequency=1003:sample_rate=48000:duration=0
 ffmpeg -v error -y -f lavfi -i "anullsrc=r=48000:cl=stereo" -t 0.5 \
     -c:a ac3 -b:a 192k -f ac3 "$output/ac3.ac3"
 ffmpeg -v error -y -f lavfi -i "testsrc=size=320x180:rate=24" -f lavfi \
-    -i "anullsrc=r=48000:cl=stereo" -t 0.5 -c:v libx264 -pix_fmt yuv420p \
+    -i "anullsrc=r=48000:cl=stereo" -t 0.5 -c:v mpeg4 -pix_fmt yuv420p \
     -c:a aac -shortest "$output/video.mp4"
 
 for fixture in "$output"/*; do
