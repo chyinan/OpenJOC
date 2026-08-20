@@ -24,12 +24,19 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.7.0 is the current release line: **Library Integration & Output
-Fidelity**. It makes the decode/render engine embeddable through a headless
-Rust session API and an experimental versioned C ABI, while completing
-important stereo, speaker-headroom, and calibrated dialnorm behavior. Ordinary
-rendering assembles bridge control from decoded JOC/OAMD state; `--topology`
-remains an optional complete override/test input.
+OpenJOC 0.8.0 is the current release line: **Cross-Platform Player
+Integration**. It extends the embeddable decode/render engine with native
+22.2 speaker rendering, built-in zero-configuration binaural HRTF, GStreamer
+integration, FFmpeg-facing integrations, and reproducible OpenJOC-enabled mpv
+bundles for qualified macOS arm64, Linux x86_64, and Windows x64 surfaces.
+Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
+`--topology` remains an optional complete override/test input.
+
+One renderer. Same spatial semantics across platforms. OpenJOC implements the
+spatial rendering DSP directly; frameworks and operating systems provide
+packet/timestamp transport, PCM transport, and normal device I/O, but do not
+define the OpenJOC spatial rendering result. OpenJOC is not a zero-dependency
+distribution: integrations use their host framework and runtime dependencies.
 
 The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
 `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and native `22.2` workflows are documented in
@@ -60,8 +67,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.7.0 capability status.
-- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.7.0 real-input workflow.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.8.0 capability status.
+- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.8.0 real-input workflow.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Spatial portability](docs/SPATIAL_PORTABILITY.md) — 22.2 geometry, built-in HRTF, and platform-independence policy.
@@ -82,9 +89,8 @@ Read the canonical documentation:
   the JOC decoder in custom mpv builds linked against the `libopenjoc`-enabled
   FFmpeg integration; ordinary E-AC-3 remains on `eac3`.
 - [Player packaging](docs/integration/PLAYER_PACKAGING.md) — reproducible,
-  auditable OpenJOC Player Bundle tooling for the pinned macOS arm64 surface,
-  with isolated Linux and Windows CI routes; this is not an official mpv or
-  FFmpeg distribution.
+  auditable OpenJOC Player Bundle tooling for macOS arm64, Linux x86_64, and
+  Windows x64; this is not an official mpv or FFmpeg distribution.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
@@ -111,7 +117,7 @@ version but does not pin one exact compiler release.
 
 ## Embed the decode/render engine
 
-OpenJOC 0.7.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
+OpenJOC 0.8.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
 integration. A push supplies one complete E-AC-3 JOC access unit; receive returns
 owned interleaved `f32` PCM with sample-domain timestamps and semantic channel
 labels. Sessions support push/receive, drain, flush, reset/discontinuity, and
@@ -258,7 +264,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble the 0.7.0 Apple-Silicon release bundle
+## Assemble the 0.8.0 Apple-Silicon release bundle
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the release
@@ -267,17 +273,36 @@ bundle locally before publication:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.7.0-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.7.0-aarch64-apple-darwin.tar.gz
-cd openjoc-0.7.0-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.8.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.8.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.8.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
 The bundle includes the canonical `docs/` tree, uses `git archive HEAD`, builds
 with the locked dependency set, includes `openjoc.h` and the macOS C ABI
-static/shared libraries, and refuses tracked worktree/index changes. It is not
-Developer-ID signed and is not notarized. The script derives the artifact
-version from the workspace package metadata.
+static/shared libraries, and refuses tracked worktree/index changes. It is
+ad-hoc signed, not Developer-ID signed, and not notarized. The script derives
+the artifact version from the workspace package metadata.
+
+## Quickstart: OpenJOC-enabled mpv
+
+Download the qualified `openjoc-mpv-0.8.0-<platform>` bundle, extract it, and
+run the included launcher:
+
+```sh
+bin/openjoc-mpv path/to/media
+bin/openjoc-mpv --profile=openjoc-headphones path/to/joc-media
+```
+
+Ordinary E-AC-3 stays on the normal `eac3` decoder. Confirmed JOC is routed
+automatically to `libopenjoc`. `openjoc-headphones` is binaural output from a
+virtual 7.1.4 field through the built-in generic SADIE II HRTF; the
+`openjoc-stereo`, `openjoc-51`, `openjoc-714`, `openjoc-916`, and `openjoc-222`
+profiles are physical 2.0, 5.1, 7.1.4, 9.1.6, and 22.2 rendering. Binaural
+and physical 2.0 both produce two-channel PCM, but they are different renders.
+Explicit `--audio-spdif=eac3` requests compressed passthrough and bypasses
+OpenJOC software rendering.
 
 ## CI and tagged releases
 
@@ -294,21 +319,23 @@ builds and verifies macOS arm64, Windows x86_64, and GNU/Linux x86_64 release
 archives. Each archive carries the CLI, public docs, `openjoc.h`, and the
 platform C ABI static/shared libraries (including the Windows import library).
 Per-platform manifests remain internal workflow artifacts. The aggregation job
-recomputes archive hashes and publishes only the three binary archives plus one
-unified `SHA256SUMS` file. The workflow never creates or pushes tags, and
+recomputes archive hashes and publishes the three CLI/library archives, the
+three OpenJOC Player Bundles, and one unified `SHA256SUMS` file. The workflow
+never creates or pushes tags, and
 refuses to overwrite an existing GitHub Release. Artifact attestation is not
 currently enabled; aggregate SHA-256, per-platform manifest checks, and the
 macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 
-The 0.7.0 release workflow targets Apple-silicon macOS
+The 0.8.0 release workflow targets Apple-silicon macOS
 (`aarch64-apple-darwin`), Windows x86_64 (`x86_64-pc-windows-msvc`), and
-GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The local bundle command and
-the candidate in this worktree validate only the Apple-silicon macOS path;
-Windows and Linux release results come from their native CI jobs and must not
-be inferred from a macOS build. The macOS bundle is ad-hoc signed and is not
-Developer-ID signed or notarized.
+GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The OpenJOC Player Bundle
+workflow additionally qualifies macOS arm64, Linux x86_64, and Windows x64
+extract-and-run packages. Multichannel PCM generation and transport are
+qualified in CI; physical speaker-system playback has not been separately
+validated on Linux/Windows hardware. The macOS bundle is ad-hoc signed and is
+not Developer-ID signed or notarized.
 
 ## Contributing and provenance
 

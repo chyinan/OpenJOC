@@ -755,7 +755,8 @@ def bundle(arguments: argparse.Namespace) -> int:
         raise SystemExit(f"output directory must be empty: {output}")
     dev_id = development_id()
     suffix = {"macos-arm64": "macos-arm64", "linux-x86_64": "linux-x86_64", "windows-x64": "windows-x64"}[platform_name]
-    archive_name = f"openjoc-mpv-{dev_id}-{suffix}." + ("zip" if platform_name == "windows-x64" else "tar.gz")
+    archive_id = manifest["openjoc"]["version"] if arguments.release else dev_id
+    archive_name = f"openjoc-mpv-{archive_id}-{suffix}." + ("zip" if platform_name == "windows-x64" else "tar.gz")
     root_name = archive_name.removesuffix(".tar.gz").removesuffix(".zip")
     with tempfile.TemporaryDirectory(prefix="openjoc-player-package-") as temporary:
         work = pathlib.Path(temporary)
@@ -886,7 +887,9 @@ def bundle(arguments: argparse.Namespace) -> int:
             "archive_sha256": sha256(archive_path),
             "archive_size": archive_path.stat().st_size,
             "target": platform_name,
-            "development_id": dev_id,
+            "version": manifest["openjoc"]["version"],
+            "release_candidate": arguments.release,
+            "development_id": None if arguments.release else dev_id,
             "build_info_sha256": sha256(root / "BUILD_INFO.json"),
             "package_files": sorted(path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()),
             "license_review_required": dependency_manifest["license_review_required"],
@@ -1021,6 +1024,11 @@ def main() -> int:
     bundle_parser.add_argument("--mpv-source")
     bundle_parser.add_argument("--toolchain", default="not supplied")
     bundle_parser.add_argument("--private-prefix", action="append", default=[])
+    bundle_parser.add_argument(
+        "--release",
+        action="store_true",
+        help="name the archive after the project version for a release candidate",
+    )
     bundle_parser.add_argument("--build-timestamp", default=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     bundle_parser.set_defaults(function=bundle)
     verify_parser = subparsers.add_parser("verify")

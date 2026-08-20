@@ -15,6 +15,11 @@ TARGET_ORDER = (
     ("x86_64-pc-windows-msvc", "zip"),
     ("x86_64-unknown-linux-gnu", "tar.gz"),
 )
+PLAYER_TARGET_ORDER = (
+    ("macos-arm64", "tar.gz"),
+    ("linux-x86_64", "tar.gz"),
+    ("windows-x64", "zip"),
+)
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -143,9 +148,45 @@ def validate_public_checksums(
         raise SystemExit("SHA256SUMS archive set does not match the public archive set")
 
 
+def validate_player_manifest(
+    manifest_path: pathlib.Path,
+    archive_path: pathlib.Path,
+    *,
+    version: str,
+    target: str,
+) -> None:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read player manifest {manifest_path}: {error}") from error
+    if not isinstance(manifest, dict):
+        raise SystemExit(f"player manifest is not an object: {manifest_path}")
+    expected = {
+        "archive": archive_path.name,
+        "target": target,
+        "version": version,
+        "release_candidate": True,
+    }
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            raise SystemExit(
+                f"player manifest {manifest_path.name} has {key}={manifest.get(key)!r}; "
+                f"expected {value!r}"
+            )
+    if manifest.get("archive_sha256") != sha256(archive_path):
+        raise SystemExit(f"player manifest SHA-256 mismatch for {archive_path.name}")
+    if manifest.get("archive_size") != archive_path.stat().st_size:
+        raise SystemExit(f"player manifest size mismatch for {archive_path.name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--player-input",
+        type=pathlib.Path,
+        help="optional verified player-package artifact directory",
+    )
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--version", required=True)
     arguments = parser.parse_args()
@@ -153,6 +194,13 @@ def main() -> int:
     output_root = arguments.output.expanduser().resolve()
     if not input_root.is_dir():
         parser.error(f"input directory does not exist: {input_root}")
+    player_input = (
+        arguments.player_input.expanduser().resolve()
+        if arguments.player_input is not None
+        else None
+    )
+    if player_input is not None and not player_input.is_dir():
+        parser.error(f"player input directory does not exist: {player_input}")
     output_root.mkdir(parents=True, exist_ok=True)
     if any(output_root.iterdir()):
         parser.error(f"output directory must be empty: {output_root}")
@@ -172,6 +220,27 @@ def main() -> int:
         destination = output_root / archive.name
         shutil.copy2(archive, destination)
         archives.append(destination)
+
+    if player_input is not None:
+        for target, extension in PLAYER_TARGET_ORDER:
+            archive_name = f"openjoc-mpv-{arguments.version}-{target}.{extension}"
+            manifest_name = f"openjoc-mpv-{arguments.version}-{target}.manifest.json"
+            checksum_name = f"openjoc-mpv-{arguments.version}-{target}.SHA256SUMS"
+            archive = find_unique(player_input, archive_name, kind="player archive")
+            manifest = find_unique(player_input, manifest_name, kind="player manifest")
+            checksum = find_unique(player_input, checksum_name, kind="player checksum manifest")
+            validate_player_manifest(
+                manifest,
+                archive,
+                version=arguments.version,
+                target=target,
+            )
+            checksum_lines = checksum.read_text(encoding="utf-8").splitlines()
+            if len(checksum_lines) != 2 or checksum_lines[0] != f"{sha256(archive)}  {archive.name}" or checksum_lines[1] != f"{sha256(manifest)}  {manifest.name}":
+                raise SystemExit(f"player checksum manifest does not match {archive.name}")
+            destination = output_root / archive.name
+            shutil.copy2(archive, destination)
+            archives.append(destination)
 
     all_archives = sorted(
         path

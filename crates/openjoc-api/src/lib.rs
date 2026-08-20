@@ -42,7 +42,7 @@ use sha2::{Digest, Sha256};
 use std::{collections::VecDeque, fmt, fmt::Write as _};
 
 /// The first public C ABI is intentionally experimental. This is separate
-/// from the Rust package version and may evolve within the 0.7 line.
+/// from the Rust package version and may evolve during the OpenJOC 0.x series.
 pub const API_MATURITY: &str = "experimental";
 /// The declared QMF/Base-RB reconstruction delay in samples.
 pub const QMF_LATENCY_SAMPLES: usize = ReconstructionOutputTimeline::qmf_latency_samples();

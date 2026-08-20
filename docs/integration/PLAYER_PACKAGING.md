@@ -33,17 +33,18 @@ It pins FFmpeg `n9.0.1` at
 
 ## Qualified artifact surface
 
-The macOS arm64 package is the already-qualified development surface. The
-package is a portable `.tar.gz`; it is not a `.app`, DMG, installer, signed
-distribution, or notarized release. Linux x86_64 and Windows x64 are qualified
-only by the dedicated `player-packaging.yml` jobs on their native runners; a
-local macOS cross-toolchain is not Windows evidence.
+The qualified player surface is a portable OpenJOC 0.8.0 package for macOS
+arm64, Linux x86_64, and Windows x64. The package is not a `.app`, DMG,
+installer, or official mpv/FFmpeg distribution. Linux x86_64 and Windows x64
+are qualified by the dedicated `player-packaging.yml` jobs on native runners;
+a local macOS cross-toolchain is not Windows evidence.
 
 The maintainer entry point is:
 
 ```sh
 SOURCE_DATE_EPOCH=0 scripts/build-openjoc-player.sh \
   --platform macos-arm64 \
+  --release \
   --output /absolute/path/out
 ```
 
@@ -52,6 +53,10 @@ the patch SHA-256 values, requires `git apply --check` to pass, builds the
 OpenJOC C ABI, builds FFmpeg with the recorded flags, builds patched mpv, and
 packages an extracted runtime closure. Build worktrees and prefixes stay
 outside the repository.
+
+`--release` is required for final archive names such as
+`openjoc-mpv-0.8.0-macos-arm64.tar.gz`. Without it, the same build machinery
+uses a development `0.8.0-git<commit>` name. Neither mode publishes anything.
 
 For Windows CI, the equivalent MSYS2/MinGW-w64 entry point is
 `scripts/build-openjoc-player-windows.sh`. It builds the GNU Rust target,
@@ -174,9 +179,10 @@ integrations/mpv/verify-player.sh /absolute/extracted/.../bin/mpv /path/to/exter
 Its qualified fixture run covers ordinary E-AC-3 → `eac3`, confirmed JOC →
 `libopenjoc` without `--ad=libopenjoc`, binaural null output, exact 2.0, 5.1,
 7.1.4, 9.1.6, and 22.2 null-output channel counts, ordinary AAC/FLAC/MP3/AC-3
-and video smoke, seek/flush, EOS, and passthrough. Real physical speaker
-playback remains a hardware-only acceptance item; programme media and derived
-PCM never enter the archive.
+and video smoke, seek/flush, EOS, and passthrough. Multichannel PCM generation
+and transport are qualified in CI; physical speaker-system playback has not
+been separately validated on Linux/Windows hardware. Programme media and
+derived PCM never enter the archive.
 
 The embedded SADIE II D1 KU100 resource is compiled into `libopenjoc_capi` and
 is exercised without `--sofa`, repository-relative paths, or network access.
@@ -202,13 +208,16 @@ redistributed component. No package job uploads or publishes an artifact.
 
 No source tree, Cargo target directory, compiler cache, private media, test
 PCM, commercial HRTF data, credentials, cookies, or user configuration is
-copied. Development artifacts use `0.7.0-git<commit>` identifiers and are not
-called `0.8.0`. Signing, notarization, GitHub Release creation, tagging,
-installer formats, auto-update, and upstream submission are separate future
-release-hardening work.
+copied. Development artifacts use `0.8.0-git<commit>` identifiers; final
+release candidates use the exact `0.8.0` project version and record the full
+OpenJOC commit in `BUILD_INFO`. macOS packages are ad-hoc signed where
+required, not Developer-ID signed, and not notarized. Tagging, GitHub Release
+creation, installer formats, auto-update, and upstream submission remain
+explicitly outside this hardening phase.
 
-For a future release-hardening review, the accumulated post-0.7 user-visible
-work is: 22.2 rendering, the built-in HRTF, GStreamer integration, the external
-FFmpeg bridge, the native FFmpeg `libopenjoc` wrapper, mpv player integration,
-and reproducible player packaging. This is an internal summary, not release
-publication or a version bump.
+The 0.8.0 release theme is the accumulated cross-platform player surface:
+22.2 rendering, the built-in HRTF, GStreamer integration, the external FFmpeg
+bridge, the native FFmpeg `libopenjoc` wrapper, mpv player integration, and
+reproducible player packaging. The custom FFmpeg/mpv integrations are
+project-provided builds and patches; upstream FFmpeg and mpv do not ship
+OpenJOC.

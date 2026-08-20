@@ -1,9 +1,9 @@
-# OpenJOC 0.7.0 known limitations
+# OpenJOC 0.8.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.7.0 is an independent, experimental interoperability project. It
+OpenJOC 0.8.0 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 
@@ -20,8 +20,9 @@ bit-identical Reference Player output.
   surface. The repository provides GStreamer integration, an external FFmpeg
   bridge, a native `libopenjoc` source patch, and a source-only mpv patchset;
   stock FFmpeg binaries do not contain it, and no custom player binary is
-  publicly released. Reproducible local/CI OpenJOC Player Bundles exist for
-  development qualification; they are not official mpv/FFmpeg releases.
+  publicly released as upstream mpv/FFmpeg products. Reproducible OpenJOC
+  Player Bundle release candidates exist for the qualified macOS arm64, Linux
+  x86_64, and Windows x64 surfaces; they are not official mpv/FFmpeg releases.
 - The codec-domain JOC operator `T(t)` remains unresolved. The separate
   `render-joc` path is an experimental ordinary-domain speaker projection that
   assembles control from decoded JOC/OAMD state; it does not infer authored
@@ -126,9 +127,13 @@ bit-identical Reference Player output.
   requires interactive confirmation or `--overwrite`, and transactional output
   and input/output alias protection remain in force.
 - The release workflow targets macOS arm64, Windows x86_64, and GNU/Linux
-  x86_64. The local candidate validates macOS arm64 only; Windows/Linux status
-  must come from native CI. The macOS artifact is ad-hoc signed, not
-  Developer-ID signed, and not notarized.
+  x86_64, while the player packaging workflow qualifies macOS arm64, Linux
+  x86_64, and Windows x64. Multichannel PCM generation and transport are
+  qualified in CI; physical speaker-system playback has not been separately
+  validated on Linux/Windows hardware. The macOS artifact is ad-hoc signed,
+  not Developer-ID signed, and not notarized. Linux compatibility is bounded
+  by the Ubuntu 24.04/glibc baseline recorded in each package's `BUILD_INFO`;
+  Windows uses the qualified MSYS2 MinGW-w64 extract-and-run DLL model.
 
 See the [capability matrix](CAPABILITIES.md) and [JOC rendering contract](JOC_RENDER.md)
 for the corresponding positive support claims.

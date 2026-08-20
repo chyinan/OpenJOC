@@ -4,12 +4,11 @@ version.workspace = true
 description = "ETSI OAMD metadata parsing with explicit strict/vendor boundaries"
 edition.workspace = true
 license.workspace = true
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-bitio = { version = "0.7.0", path = "../openjoc-bitio" }
+openjoc-bitio = { version = "0.8.0", path = "../openjoc-bitio" }
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 

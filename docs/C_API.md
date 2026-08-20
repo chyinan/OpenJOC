@@ -24,7 +24,7 @@ presenting the ABI 1.0 configuration size is accepted and receives
 changing any existing structure layout. `openjoc_get_abi_version()` returns
 `(major << 16) | minor`.
 
-Experimental means the C surface may evolve during 0.7 integration work. It
+Experimental means the C surface may evolve during OpenJOC 0.x integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
 
 ## Ownership and calls

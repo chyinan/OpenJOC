@@ -454,7 +454,7 @@ index e571904378..0ee09501e3 100644
 +# Optional OpenJOC integration. The player remains fully functional without
 +# this dependency; when present, the audio wrapper can positively classify
 +# E-AC-3 before choosing the native libopenjoc decoder.
-+openjoc = dependency('openjoc', version: '>= 0.7.0', required: false)
++openjoc = dependency('openjoc', version: '>= 0.8.0', required: false)
 +features += {'openjoc': openjoc.found()}
 +if features['openjoc']
 +    dependencies += openjoc

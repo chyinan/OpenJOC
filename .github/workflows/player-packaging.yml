@@ -2,6 +2,27 @@ name: OpenJOC player packaging
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or commit to package
+        required: false
+        default: master
+        type: string
+      release_candidate:
+        description: Use final 0.8.0 archive names and release metadata
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      source_ref:
+        required: false
+        default: ''
+        type: string
+      release_candidate:
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths:
       - ".github/workflows/player-packaging.yml"
@@ -35,6 +56,8 @@ jobs:
     steps:
       - name: Check out OpenJOC
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Install pinned build prerequisites
         run: brew install ffmpeg meson ninja libass libplacebo
@@ -48,10 +71,15 @@ jobs:
           rustc -vV
 
       - name: Build, extract, and verify the package
+        env:
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
         run: |
+          release_args=()
+          if [[ "$RELEASE_CANDIDATE" == "true" ]]; then release_args+=(--release); fi
           scripts/build-openjoc-player.sh \
             --platform macos-arm64 \
-            --output "$RUNNER_TEMP/openjoc-mpv-macos"
+            --output "$RUNNER_TEMP/openjoc-mpv-macos" \
+            "${release_args[@]}"
           find "$RUNNER_TEMP/openjoc-mpv-macos" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
@@ -69,7 +97,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openjoc-player-macos-arm64-qualification
+          name: openjoc-player-${{ inputs.release_candidate && 'release' || 'development' }}-macos-arm64
           path: |
             ${{ runner.temp }}/openjoc-mpv-macos
             ${{ runner.temp }}/openjoc-player-qualification
@@ -82,6 +110,8 @@ jobs:
     steps:
       - name: Check out OpenJOC
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Install conservative Linux build/runtime tools
         run: |
@@ -104,10 +134,15 @@ jobs:
           rustc -vV
 
       - name: Build, extract, and verify the package
+        env:
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
         run: |
+          release_args=()
+          if [[ "$RELEASE_CANDIDATE" == "true" ]]; then release_args+=(--release); fi
           scripts/build-openjoc-player.sh \
             --platform linux-x86_64 \
-            --output "$RUNNER_TEMP/openjoc-mpv-linux"
+            --output "$RUNNER_TEMP/openjoc-mpv-linux" \
+            "${release_args[@]}"
           find "$RUNNER_TEMP/openjoc-mpv-linux" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
@@ -125,7 +160,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openjoc-player-linux-x86_64-qualification
+          name: openjoc-player-${{ inputs.release_candidate && 'release' || 'development' }}-linux-x86_64
           path: |
             ${{ runner.temp }}/openjoc-mpv-linux
             ${{ runner.temp }}/openjoc-player-qualification
@@ -141,6 +176,8 @@ jobs:
     steps:
       - name: Check out OpenJOC
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Install the isolated MinGW-w64 build surface
         uses: msys2/setup-msys2@v2
@@ -170,6 +207,8 @@ jobs:
             mingw-w64-x86_64-vulkan-loader
 
       - name: Select the GNU Rust target and build the ZIP
+        env:
+          RELEASE_CANDIDATE: ${{ inputs.release_candidate }}
         run: |
           export PATH="$(cygpath -u "$USERPROFILE")/.cargo/bin:$PATH"
           rustup toolchain install stable --profile minimal
@@ -179,7 +218,9 @@ jobs:
           rustc -vV
           gcc --version | head -n 1
           output="$(cygpath -u "$RUNNER_TEMP")/openjoc-mpv-windows"
-          scripts/build-openjoc-player-windows.sh --output "$output"
+          release_args=()
+          if [[ "$RELEASE_CANDIDATE" == "true" ]]; then release_args+=(--release); fi
+          scripts/build-openjoc-player-windows.sh --output "$output" "${release_args[@]}"
           find "$output" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
@@ -200,7 +241,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: openjoc-player-windows-x64-qualification
+          name: openjoc-player-${{ inputs.release_candidate && 'release' || 'development' }}-windows-x64
           path: |
             ${{ runner.temp }}/openjoc-mpv-windows
             ${{ runner.temp }}/openjoc-player-qualification

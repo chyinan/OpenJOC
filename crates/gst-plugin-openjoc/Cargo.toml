@@ -4,7 +4,6 @@ version.workspace = true
 description = "Native GStreamer audio decoder plugin for OpenJOC E-AC-3 JOC streams"
 edition.workspace = true
 license.workspace = true
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 publish = false
@@ -31,8 +30,8 @@ gst = { package = "gstreamer", version = "0.24.5", features = ["v1_20"], optiona
 gst_app = { package = "gstreamer-app", version = "0.24.5", features = ["v1_20"], optional = true }
 gst_audio = { package = "gstreamer-audio", version = "0.24.5", features = ["v1_20"], optional = true }
 gst_base = { package = "gstreamer-base", version = "0.24.5", features = ["v1_20"], optional = true }
-openjoc-api = { version = "0.7.0", path = "../openjoc-api", optional = true }
-openjoc-eac3 = { version = "0.7.0", path = "../openjoc-eac3", optional = true }
+openjoc-api = { version = "0.8.0", path = "../openjoc-api", optional = true }
+openjoc-eac3 = { version = "0.8.0", path = "../openjoc-eac3", optional = true }
 
 [lints]
 workspace = true

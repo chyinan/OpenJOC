@@ -1,7 +1,7 @@
 # Headless Rust streaming API
 
 `openjoc-api` provides the high-level embeddable interface introduced in
-OpenJOC 0.7.0. It is experimental, while the decoder and renderer semantics
+OpenJOC 0.8.0. It is experimental, while the decoder and renderer semantics
 remain bounded by the documented 0.x contracts.
 
 ## Lifecycle

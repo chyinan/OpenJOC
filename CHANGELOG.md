@@ -1,5 +1,126 @@
 # Changelog
 
+## [0.8.0] — 2026-08-20
+
+OpenJOC 0.8.0 — Cross-Platform Player Integration extends the shared OpenJOC
+renderer from an embeddable library surface into a qualified cross-platform
+player-capable stack. Users of 0.7.0 are encouraged to upgrade for the new
+player integrations, native 22.2 output, built-in binaural resource, and
+accumulated integration fixes.
+
+### Highlights
+
+- One OpenJOC renderer supplies the same spatial semantics to the CLI, Rust and
+  C APIs, GStreamer, FFmpeg integrations, and the OpenJOC-enabled mpv bundles.
+- Native 22.2 rendering follows ITU-R BS.2051-3 Sound System H with 24 PCM
+  channels, 22 spatial speakers, and separate LFE1/LFE2 destinations.
+- `--binaural` works offline with the bundled generic SADIE II D1 KU100 HRIR
+  resource at 48 kHz and 256 taps; compatible custom SOFA input remains
+  supported.
+
+### Spatial Rendering
+
+- Generalized the multilayer projection path for the 22.2 bottom, middle,
+  upper, and top speaker layers while preserving semantic speaker identity
+  equivalence and the existing DSP contracts.
+- Closed the real-media 22.2 rendering path with explicit 24-channel output,
+  semantic channel ordering, and LFE1/LFE2 handling.
+- Preserved the distinction between physical 2.0 `FL`/`FR` rendering and
+  binaural virtual-speaker rendering to Left Ear/Right Ear. Both are stereo
+  PCM, but they are not the same render.
+
+### Binaural
+
+- Added the built-in SADIE II D1 KU100 generic HRTF with no runtime network
+  dependency or personalized-HRTF claim.
+- Kept the existing interpolation, integer delay alignment, direct/partitioned
+  convolution, LFE policy, sample-rate checks, and custom SOFA override path.
+- Added required SADIE II publisher, license, attribution, citation, and
+  resource-hash records to the release notice surfaces.
+
+### GStreamer
+
+- Added the native Rust `gst-plugin-openjoc` integration with `openjocclassify`
+  and `openjocdec`, positive JOC autoplugging, ordinary E-AC-3 isolation,
+  decoder lifecycle/EOS/drain/seek handling, output-target negotiation,
+  physical speaker rendering, binaural output, and semantic channel masks.
+- Preserved exact frontend PCM parity by keeping OpenJOC responsible for the
+  spatial DSP while GStreamer supplies buffer and device transport.
+
+### FFmpeg
+
+- Added the external libavformat-facing packet/frame bridge with bounded
+  packet-to-access-unit assembly, rational timestamps, AVFrame output,
+  channel-layout semantics, binaural/22.2 targets, drain/flush/seek handling,
+  and controlled PCM parity.
+- Added the native `libopenjoc` libavcodec wrapper as a reproducible source
+  patch for FFmpeg 9.0.1 and the recorded master baseline. Stock `eac3` is
+  preserved and the OpenJOC decoder remains explicitly named.
+- Published the exact pinned FFmpeg bases, patch hashes, configure policy, and
+  OpenJOC C ABI integration metadata without vendoring FFmpeg source.
+
+### mpv / Player Integration
+
+- Added the pinned mpv 0.41.0 OpenJOC patchset and master compatibility patch,
+  including positive JOC selection, ordinary E-AC-3 isolation, explicit
+  decoder overrides, passthrough separation, binaural transport, and physical
+  2.0/5.1/7.1.4/9.1.6/22.2 profiles.
+- Added `openjoc-mpv` extract-and-run bundles for qualified macOS arm64, Linux
+  x86_64, and Windows x64 environments. Ordinary E-AC-3 continues through
+  `eac3`; confirmed JOC selects `libopenjoc`.
+- Release candidates are named `openjoc-mpv-0.8.0-<platform>` and record the
+  exact OpenJOC commit, pinned stack, dependency closure, package checksums,
+  and qualification metadata in `BUILD_INFO` and related manifests.
+
+### Cross-Platform Packaging
+
+- Retained the OpenJOC CLI/library platform assets, public `openjoc.h`, C ABI
+  1.3 libraries, and checksums while adding the player bundle asset surface.
+- Qualified macOS arm64, Linux x86_64, and Windows x64 player paths with
+  reproducible archive creation, runtime/dependency audits, third-party
+  notices, HRTF identity checks, and private-path scans.
+- macOS packages are ad-hoc signed where required and are not Developer-ID
+  signed or notarized. Linux/Windows software paths are CI-qualified; physical
+  multichannel speaker playback has not been separately validated on
+  Linux/Windows hardware.
+
+### API / ABI
+
+- Kept the experimental versioned C ABI at 1.3; the package version is 0.8.0
+  and does not change the ABI major/minor.
+- Preserved classifier, streaming session, native FFmpeg consumer,
+  struct-size compatibility, panic containment, and multi-instance contracts.
+
+### Fixes
+
+- Hardened cross-platform package dependency closure, license inventory,
+  runner-path sanitization, Windows DLL checks, archive/checksum naming, and
+  portable synthetic qualification fixtures.
+- Kept the cross-terminal CLI progress refresh fix and reconciled release
+  metadata warnings without changing DSP behavior.
+
+### Known Limitations
+
+- The C ABI remains experimental during OpenJOC 0.x.
+- FFmpeg/mpv integrations are project-provided custom source patches/builds;
+  upstream FFmpeg and mpv do not officially ship OpenJOC, and the bundles are
+  not official upstream distributions.
+- Linux/Windows physical speaker-system playback is outside this qualification
+  boundary; CI qualifies PCM generation and transport instead.
+- The macOS player bundle is ad-hoc signed and not notarized. Linux packages
+  target the Ubuntu 24.04/glibc baseline recorded in `BUILD_INFO`; Windows
+  packages use the qualified MSYS2 MinGW-w64 extract-and-run DLL model.
+- Existing packet/input, semantic-binding, custom-SOFA coverage, and other
+  fail-closed limitations remain as documented in `docs/KNOWN_LIMITATIONS.md`.
+
+### Upgrade Notes
+
+Users of 0.7.0 should upgrade to 0.8.0 for the new GStreamer, FFmpeg, and mpv
+integration surfaces, native 22.2 rendering, built-in generic binaural HRTF,
+cross-platform player packages, and accumulated correctness and packaging
+hardening. The 0.7.0 library and CLI contract remains the foundation of the
+upgrade; the C ABI remains experimental.
+
 ## [0.7.0] — 2026-08-19
 
 OpenJOC 0.7.0 — Library Integration & Output Fidelity makes the decode/render

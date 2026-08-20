@@ -68,7 +68,7 @@ E-AC-3 safety test, and optionally runs positive native decode and API tests.
 The isolated native-FFmpeg workflow runs this path only when integration files
 change or when manually dispatched.
 
-`--enable-libopenjoc` uses `pkg-config` package `openjoc >= 0.7.0` and probes
+`--enable-libopenjoc` uses `pkg-config` package `openjoc >= 0.8.0` and probes
 `openjoc.h` plus `openjoc_stream_decoder_create`. A requested build fails
 clearly if either the header or library is absent. The development staging
 script installs `libopenjoc_capi.dylib`/`.so` dynamically; static linkage is not
@@ -209,5 +209,7 @@ in FFmpeg's version-3 external-library set. This records the engineering
 configuration rather than offering a legal conclusion; redistribution still
 requires a separate license/packaging review.
 
-No FFmpeg binary is released and no patch is submitted upstream. The separate
+No standalone FFmpeg distribution is released and no patch is submitted
+upstream. The 0.8.0 OpenJOC Player Bundles contain project-provided custom
+FFmpeg/mpv integration runtimes for the qualified platforms. The separate
 source-only mpv patchset is documented in `docs/integration/MPV.md`.

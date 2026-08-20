@@ -5,6 +5,6 @@ includedir=${prefix}/include
 
 Name: openjoc
 Description: OpenJOC headless E-AC-3 JOC decoder and renderer C ABI
-Version: 0.7.0
+Version: 0.8.0
 Libs: -L${libdir} -lopenjoc_capi
 Cflags: -I${includedir}

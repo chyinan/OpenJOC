@@ -42,7 +42,7 @@ input/container ownership and access-unit delivery
                                        ▼
                               metadata-only ObjectScene
 
-The 0.7.0 `render-joc` workflow adds an explicit experimental speaker
+The 0.8.0 `render-joc` workflow adds an explicit experimental speaker
 branch after the decoded component boundary:
 
 ```text
@@ -91,7 +91,7 @@ not hide vendor compatibility decisions.
 
 Raw E-AC-3 uses the in-process incremental reader. Ordinary seekable ISO BMFF
 uses a sample cursor with container ownership kept separate from the AU
-consumer. Non-seekable and fragmented MP4 are outside the 0.7.0 contract.
+consumer. Non-seekable and fragmented MP4 are outside the 0.8.0 contract.
 
 ### E-AC-3 base
 

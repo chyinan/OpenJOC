@@ -33,3 +33,26 @@ Rust bindings are distributed under MIT OR Apache-2.0. The native GStreamer
 runtime and plugin modules retain their upstream licenses; this repository does
 not vendor or relabel the GStreamer SDK. See the integration build notes in
 `docs/integration/GSTREAMER.md` before distributing a combined runtime.
+
+## OpenJOC Player Bundle components
+
+The 0.8.0 `openjoc-mpv` packages are project-provided custom builds, not
+official mpv or FFmpeg releases. The exact pinned FFmpeg and mpv source
+commits, exported patch SHA-256 values, configure flags, and per-package
+runtime inventory are recorded in
+`packaging/player/PLAYER_PACKAGE_MANIFEST.json`, `BUILD_INFO.json`, and
+`DEPENDENCIES.json` inside each package.
+
+- The bundled OpenJOC libraries and CLI components remain Apache-2.0.
+- The selected FFmpeg recipe uses shared libraries, `--enable-version3`, and
+  no `--enable-gpl`; the package records the resulting component-specific
+  license evidence and source files.
+- mpv is distributed under its upstream GPL-2.0-or-later terms, with its
+  license/source evidence copied into each package.
+- Other bundled runtime libraries retain their own upstream licenses. The
+  package verifier rejects unresolved component mappings, and each archive
+  carries `THIRD_PARTY_NOTICES.txt`, `DEPENDENCIES.json`, and the exact inner
+  `SHA256SUMS` manifest.
+
+This notice records engineering provenance and required attribution surfaces;
+it is not a blanket legal conclusion for every possible redistribution mode.

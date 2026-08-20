@@ -387,6 +387,14 @@ limited to the platform-neutral workspace check until the official GStreamer
 Windows installer/development package can be provisioned reproducibly in CI; no
 Windows-specific decoder code is used.
 
+The feature-enabled `gst-plugin-openjoc` build is the authoritative plugin
+artifact surface. It is built with `--features gstreamer` and validated with
+`gst-inspect-1.0`; the feature-disabled workspace stub is never a release
+plugin. OpenJOC 0.8.0 does not add a separate cross-platform GStreamer binary
+packaging subsystem: users and integrators should build the plugin from source
+or use the qualified CI artifact, then provide the matching host GStreamer
+runtime and its component-specific notices.
+
 The autoplug phase does not claim support for any specific commercial player.
 Player-specific acceptance and an FFmpeg wrapper remain later phases.
 

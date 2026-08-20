@@ -12,14 +12,18 @@ platform=${OPENJOC_PLAYER_PLATFORM:-}
 output=${OPENJOC_PLAYER_OUTPUT:-}
 work=${OPENJOC_PLAYER_WORK:-}
 keep_work=0
+release_mode=0
 
 usage() {
     cat >&2 <<'EOF'
-usage: scripts/build-openjoc-player.sh --platform macos-arm64|linux-x86_64|windows-x64 --output /absolute/output [--work /absolute/work] [--keep-work]
+usage: scripts/build-openjoc-player.sh --platform macos-arm64|linux-x86_64|windows-x64 --output /absolute/output [--work /absolute/work] [--keep-work] [--release]
 
 This is the maintainer/CI entry point. It fetches the pinned FFmpeg and mpv
 commits, applies the exported patches with --check, builds OpenJOC/FFmpeg/mpv,
 creates a relocatable archive, and verifies the extracted package.
+
+--release switches the archive from the development git<sha> name to the
+project version name. It does not publish or upload anything.
 EOF
     exit 2
 }
@@ -45,6 +49,10 @@ while [ "$#" -gt 0 ]; do
             keep_work=1
             shift
             ;;
+        --release)
+            release_mode=1
+            shift
+            ;;
         *)
             usage
             ;;
@@ -59,6 +67,11 @@ case "$output" in
     /*) ;;
     *) echo "--output must be an absolute path outside the source repository" >&2; exit 2 ;;
 esac
+
+release_args=
+if [ "$release_mode" -eq 1 ]; then
+    release_args=--release
+fi
 case "$output" in
     "$repo_root"|"$repo_root"/*) echo "--output must be outside the source repository" >&2; exit 2 ;;
 esac
@@ -206,7 +219,7 @@ case "$platform" in
             --search-dir "$ffmpeg_prefix/lib" --search-dir "$openjoc_prefix/lib" \
             --search-dir "$brew_prefix/lib" --ffmpeg-source "$ffmpeg_source" \
             --mpv-source "$mpv_source" --private-prefix "$work" \
-            --toolchain "$(rustc -vV | tr '\n' '; ')"
+            --toolchain "$(rustc -vV | tr '\n' '; ')" $release_args
         echo '::endgroup::'
         echo '::group::Extracted macOS package runtime smoke'
         archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-macos-arm64.tar.gz' -type f -print | head -n 1)
@@ -268,7 +281,7 @@ case "$platform" in
             --stage-root "$work/stage" --output "$output" --platform linux-x86_64 \
             --ffmpeg-source "$ffmpeg_source" --mpv-source "$mpv_source" \
             --private-prefix "$work" \
-            --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(gcc --version | head -n 1); glibc=$(ldd --version | head -n 1); kernel=$(uname -sr)"
+            --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(gcc --version | head -n 1); glibc=$(ldd --version | head -n 1); kernel=$(uname -sr)" $release_args
         echo '::endgroup::'
         echo '::group::Extracted Linux package runtime smoke'
         archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-linux-x86_64.tar.gz' -type f -print | head -n 1)
@@ -281,9 +294,9 @@ case "$platform" in
         ;;
     windows-x64)
         if [ -n "$work" ]; then
-            exec "$repo_root/scripts/build-openjoc-player-windows.sh" --output "$output" --work "$work"
+            exec "$repo_root/scripts/build-openjoc-player-windows.sh" --output "$output" --work "$work" $release_args
         fi
-        exec "$repo_root/scripts/build-openjoc-player-windows.sh" --output "$output"
+        exec "$repo_root/scripts/build-openjoc-player-windows.sh" --output "$output" $release_args
         ;;
 esac
 

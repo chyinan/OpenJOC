@@ -10,6 +10,7 @@ repo_root=$(cd "$script_dir/.." && pwd)
 manifest="$repo_root/packaging/player/PLAYER_PACKAGE_MANIFEST.json"
 output=
 work=
+release_mode=0
 phase=MSYS2_PROVISIONING
 
 on_error() {
@@ -23,11 +24,16 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --output) output=$2; shift 2 ;;
         --work) work=$2; shift 2 ;;
-        *) echo "usage: $0 --output /absolute/output [--work /absolute/work]" >&2; exit 2 ;;
+        --release) release_mode=1; shift ;;
+        *) echo "usage: $0 --output /absolute/output [--work /absolute/work] [--release]" >&2; exit 2 ;;
     esac
 done
 [[ -n "$output" && "$output" = /* ]] || { echo "--output must be an absolute path" >&2; exit 2; }
 [[ "$output" != "$repo_root" && "$output" != "$repo_root"/* ]] || { echo "output must be outside the source repository" >&2; exit 2; }
+release_args=()
+if [[ "$release_mode" == 1 ]]; then
+    release_args+=(--release)
+fi
 if [[ -z "$work" ]]; then
     work=$(mktemp -d "${TMPDIR:-/tmp}/openjoc-player-windows.XXXXXX")
     owns_work=1
@@ -164,7 +170,8 @@ python3 "$repo_root/scripts/player-package.py" bundle \
     --search-dir "$ffmpeg_prefix/bin" --search-dir "$openjoc_prefix/bin" \
     --search-dir /mingw64/bin --ffmpeg-source "$ffmpeg_source" \
     --mpv-source "$mpv_source" --private-prefix "$work" \
-    --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(x86_64-w64-mingw32-gcc --version | head -n 1); msys2=$(uname -srv)"
+    --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(x86_64-w64-mingw32-gcc --version | head -n 1); msys2=$(uname -srv)" \
+    "${release_args[@]}"
 echo '::endgroup::'
 
 echo '::group::Extracted Windows package runtime smoke'

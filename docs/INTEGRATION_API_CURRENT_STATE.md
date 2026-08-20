@@ -1,6 +1,6 @@
 # OpenJOC integration API: current state audit
 
-This document records the OpenJOC 0.7 integration boundary at the release
+This document records the OpenJOC 0.8 integration boundary at the release
 source state. The release commit is the authoritative source revision.
 
 ## Existing pipeline
@@ -51,14 +51,14 @@ The repository already has a bounded, sequential raw E-AC-3 input path:
   the headless automatic-control path over the same lower-level decoder,
   timeline, bridge, and SOFA primitives. The legacy CLI path remains available
   for topology sidecars, detailed profiling, and WAV/CAF output.
-- The first public packet contract intentionally does not accept arbitrary
-  byte fragmentation or a packet containing multiple AUs. A framework adapter
-  should use its demuxer to hand OpenJOC one complete AU at a time.
+- The high-level Rust session contract intentionally accepts one complete AU
+  per push. Framework adapters that receive arbitrary fragmentation or multiple
+  AUs use the bounded C ABI stream decoder and its positive JOC classifier.
 - The first API exposes direct SOFA convolution. Partitioned binaural
   scheduling remains a CLI/renderer option until a later ABI extension.
 - Preroll is carried as an explicit packet flag and is decoded to prime state;
-  a later player adapter may add a discard-output policy without changing the
-  packet boundary.
+  player integrations remain responsible for applying their own discard-output
+  policy after seeking.
 
 These constraints are explicit rather than hidden behind filesystem or CLI
 assumptions.

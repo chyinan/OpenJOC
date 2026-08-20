@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "gst-plugin-openjoc"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "glib",
  "gstreamer",
@@ -502,7 +502,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "import-etsi-tables"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "sha2",
  "zip",
@@ -627,7 +627,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openjoc-api"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-container",
  "openjoc-eac3",
@@ -642,14 +642,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-bitio"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "openjoc-capi"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-api",
  "openjoc-ffmpeg",
@@ -657,7 +657,7 @@ dependencies = [
 
 [[package]]
 name = "openjoc-cli"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-api",
  "openjoc-container",
@@ -678,14 +678,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-container"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-eac3",
 ]
 
 [[package]]
 name = "openjoc-eac3"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-bitio",
  "openjoc-emdf",
@@ -696,14 +696,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-emdf"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-bitio",
 ]
 
 [[package]]
 name = "openjoc-ffmpeg"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cc",
  "openjoc-api",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "openjoc-joc"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "num-complex",
  "openjoc-bitio",
@@ -728,7 +728,7 @@ dependencies = [
 
 [[package]]
 name = "openjoc-oamd"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-bitio",
  "serde",
@@ -737,21 +737,21 @@ dependencies = [
 
 [[package]]
 name = "openjoc-qmf"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "num-complex",
 ]
 
 [[package]]
 name = "openjoc-render"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "rustfft",
 ]
 
 [[package]]
 name = "openjoc-render-scene"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-render",
  "openjoc-sofa",
@@ -763,7 +763,7 @@ dependencies = [
 
 [[package]]
 name = "openjoc-scene"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-joc",
  "openjoc-oamd",
@@ -773,14 +773,14 @@ dependencies = [
 
 [[package]]
 name = "openjoc-sofa"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "openjoc-render",
 ]
 
 [[package]]
 name = "openjoc-wave"
-version = "0.7.0"
+version = "0.8.0"
 
 [[package]]
 name = "option-operations"

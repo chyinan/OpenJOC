@@ -4,7 +4,6 @@ version.workspace = true
 description = "Checked MSB-first bit reader for OpenJOC codec syntax"
 edition.workspace = true
 license.workspace = true
-license-file.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
