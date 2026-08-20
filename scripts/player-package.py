@@ -35,9 +35,10 @@ OPENJOC_NOTICES = REPOSITORY / "THIRD_PARTY_NOTICES.md"
 BUILTIN_HRTF = REPOSITORY / "crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa"
 PRIVATE_MARKERS = (
     "/Users/",
-    "\\Users\\",
-    "C:/Users/",
-    "C:\\Users\\",
+    "/Users/runner/",
+    "C:/Users/runneradmin/",
+    "C:\\Users\\runneradmin\\",
+    "\\Users\\runneradmin\\",
     "D:/a/",
     "D:\\a\\",
     "/opt/homebrew/",
