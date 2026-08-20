@@ -437,6 +437,8 @@ def component_for_library(name: str) -> tuple[str, str]:
         "libshaderc": ("shaderc", "Apache-2.0"),
         "libspirv": ("SPIRV-Headers/tools", "Apache-2.0"),
         "libvulkan": ("Vulkan-Loader", "Apache-2.0"),
+        "libegl": ("Mesa EGL", "MIT"),
+        "libgldispatch": ("libglvnd", "MIT"),
         "libglib": ("GLib", "LGPL-2.1-or-later"),
         "libgraphite2": ("Graphite2", "MIT OR MPL-2.0 OR LGPL-2.1-or-later OR GPL-2.0-or-later"),
         "libintl": ("GNU gettext runtime", "GPL-3.0-or-later AND LGPL-2.1-or-later"),
