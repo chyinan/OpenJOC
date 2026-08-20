@@ -30,6 +30,11 @@ FORBIDDEN_MARKERS = (
     b"D:\\a\\",
     b"/opt/hostedtoolcache",
 )
+PRIVATE_MARKER_REPLACEMENTS = {
+    # Keep replacements no longer than their marker so binary offsets remain
+    # stable.  The short Windows runner prefix otherwise cannot fit `/build`.
+    b"D:\\a\\": b"/bld",
+}
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -116,7 +121,7 @@ def sanitize_private(root: pathlib.Path) -> None:
         data = path.read_bytes()
         for marker in FORBIDDEN_MARKERS:
             if marker in data:
-                replacement = b"/build"
+                replacement = PRIVATE_MARKER_REPLACEMENTS.get(marker, b"/build")
                 if len(replacement) > len(marker):
                     continue
                 data = data.replace(marker, replacement + b"\0" * (len(marker) - len(replacement)))
