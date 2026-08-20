@@ -183,7 +183,9 @@ jobs:
           find "$output" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
-        run: scripts/generate-player-fixtures.sh "$(cygpath -u "$RUNNER_TEMP")/openjoc-player-fixtures"
+        run: |
+          export PATH="$(cygpath -u "$USERPROFILE")/.cargo/bin:$PATH"
+          scripts/generate-player-fixtures.sh "$(cygpath -u "$RUNNER_TEMP")/openjoc-player-fixtures"
 
       - name: Qualify extracted Windows package
         run: |
