@@ -91,6 +91,21 @@ def scan_private(root: pathlib.Path) -> None:
                 raise SystemExit(f"forbidden build/runtime path found in package file: {path}: {marker!r}")
 
 
+def sanitize_private(root: pathlib.Path) -> None:
+    """Replace known CI/developer prefixes without changing binary lengths."""
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.name in {"LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES_FFMPEG.md"}:
+            continue
+        data = path.read_bytes()
+        for marker in FORBIDDEN_MARKERS:
+            if marker in data:
+                replacement = b"/build"
+                if len(replacement) > len(marker):
+                    continue
+                data = data.replace(marker, replacement + b"\0" * (len(marker) - len(replacement)))
+        path.write_bytes(data)
+
+
 def inventory(root: pathlib.Path) -> list[dict[str, object]]:
     return [
         {
@@ -178,6 +193,7 @@ def write_zip(root: pathlib.Path, output: pathlib.Path) -> None:
 
 
 def finish_package(stage: pathlib.Path, output: pathlib.Path, base_name: str, platform: str, kind: str) -> None:
+    sanitize_private(stage)
     scan_private(stage)
     write_sha256sums(stage)
     extension = ".zip" if platform == "windows-x64" else ".tar.gz"
