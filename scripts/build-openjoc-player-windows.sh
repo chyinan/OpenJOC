@@ -138,7 +138,7 @@ ffmpeg_prefix="$work/prefix/ffmpeg"
         --cc=x86_64-w64-mingw32-gcc --pkg-config=pkg-config \
         --disable-doc --disable-debug --disable-autodetect \
         --disable-static --enable-shared --enable-version3 \
-        --enable-libopenjoc --disable-programs --disable-network
+        --enable-libopenjoc --disable-programs --enable-ffmpeg --enable-ffprobe --disable-network
 )
 make -C "$work/build" -j"${CARGO_BUILD_JOBS:-2}"
 make -C "$work/build" install

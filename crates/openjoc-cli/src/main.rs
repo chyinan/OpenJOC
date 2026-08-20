@@ -547,7 +547,10 @@ fn self_test(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     };
     let fixture_bytes = fs::read(&fixture)?;
     let mut classifier = JocClassifier::new();
-    let classification = classifier.send_chunk(&fixture_bytes)?;
+    let mut classification = classifier.send_chunk(&fixture_bytes)?;
+    if classification == JocClassification::Unknown {
+        classification = classifier.finish()?;
+    }
     if classification == JocClassification::ConfirmedJoc {
         println!("FIXTURE      PASS ({})", fixture.display());
         println!("CLASSIFIER   PASS");

@@ -53,7 +53,8 @@ def copy_file(source: pathlib.Path, destination: pathlib.Path) -> None:
     if not source.is_file() or source.is_symlink():
         raise SystemExit(f"required package input is missing or is a symlink: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, destination)
+    shutil.copyfile(source, destination)
+    destination.chmod(source.stat().st_mode & 0o777)
 
 
 def copy_tree_files(source: pathlib.Path, destination: pathlib.Path, suffixes: tuple[str, ...] | None = None) -> list[str]:
@@ -220,8 +221,16 @@ def package_sdk(args: argparse.Namespace) -> None:
         copy_file(REPOSITORY / "crates/openjoc-capi/include/openjoc.h", stage / "include/openjoc.h")
         library_root = target / "lib" if (target / "lib").is_dir() else target
         for path in sorted(library_root.iterdir()):
-            if path.is_file() and not path.is_symlink() and path.suffix.lower() in (".a", ".so", ".dylib", ".dll", ".lib"):
-                copy_file(path, stage / ("lib" if path.suffix.lower() != ".dll" else "bin") / path.name)
+            if (
+                path.is_file()
+                and not path.is_symlink()
+                and path.suffix.lower() in (".a", ".so", ".dylib", ".dll", ".lib")
+                and (path.name.startswith("libopenjoc_capi") or path.name.startswith("openjoc_capi"))
+            ):
+                destination = stage / ("lib" if path.suffix.lower() != ".dll" else "bin") / path.name
+                copy_file(path, destination)
+                if platform == "macos-arm64" and path.suffix.lower() == ".dylib" and shutil.which("install_name_tool"):
+                    subprocess.run(["install_name_tool", "-id", f"@rpath/{path.name}", str(destination)], check=True)
         write_text(stage / "lib/pkgconfig/openjoc.pc", "prefix=${pcfiledir}/../..\n includedir=${prefix}/include\n libdir=${prefix}/lib\n Name: openjoc\n Version: " + version() + "\n Cflags: -I${includedir}\n Libs: -L${libdir} -lopenjoc_capi")
         write_text(stage / "lib/cmake/OpenJOC/OpenJOCConfig.cmake", "set(OpenJOC_VERSION \"" + version() + "\")\nset(OpenJOC_INCLUDE_DIR \"${CMAKE_CURRENT_LIST_DIR}/../../include\")\nset(OpenJOC_LIBRARY_DIR \"${CMAKE_CURRENT_LIST_DIR}/../../lib\")\n")
         copy_file(REPOSITORY / "crates/openjoc-capi/examples/c_api_example.c", stage / "examples/c_api_example.c")
@@ -260,12 +269,18 @@ def package_ffmpeg(args: argparse.Namespace) -> None:
         raise SystemExit(f"output directory must be empty: {output}")
     with tempfile.TemporaryDirectory(prefix="openjoc-ffmpeg-") as temporary:
         stage = pathlib.Path(temporary) / f"openjoc-ffmpeg-{version()}-{args.platform}"
-        copy_file(pathlib.Path(args.ffmpeg).resolve(), stage / "bin/openjoc-ffmpeg" )
-        copy_file(pathlib.Path(args.ffprobe).resolve(), stage / "bin/openjoc-ffprobe")
+        executable_suffix = ".exe" if args.platform == "windows-x64" else ""
+        copy_file(pathlib.Path(args.ffmpeg).resolve(), stage / f"bin/openjoc-ffmpeg{executable_suffix}")
+        copy_file(pathlib.Path(args.ffprobe).resolve(), stage / f"bin/openjoc-ffprobe{executable_suffix}")
         if args.openjoc_prefix:
             prefix = pathlib.Path(args.openjoc_prefix).resolve()
             copy_tree_files(prefix / "lib", stage / "lib")
             copy_tree_files(prefix / "bin", stage / "bin")
+        ffmpeg_source = pathlib.Path(args.ffmpeg_source).resolve()
+        license_file = ffmpeg_source / "LICENSE.md"
+        if not license_file.is_file():
+            license_file = ffmpeg_source / "LICENSE"
+        copy_file(license_file, stage / "THIRD_PARTY_NOTICES_FFMPEG.md")
         package_notices(stage, "ffmpeg", [{"name": "OpenJOC", "license": "Apache-2.0"}, {"name": "FFmpeg", "license": "see shipped third-party notices and pinned source license"}])
         write_build_info(stage, "ffmpeg", args.platform, {"ffmpeg_revision": args.ffmpeg_revision, "openjoc_patch_sha256": args.openjoc_patch_sha256, "identity": "OpenJOC-provided custom FFmpeg build; not an official upstream FFmpeg release"})
         write_text(stage / "QUICKSTART.md", "Use bin/openjoc-ffmpeg and bin/openjoc-ffprobe from this extracted bundle. The binaries are custom FFmpeg builds containing the OpenJOC integration patch.\n")
@@ -293,6 +308,7 @@ def main() -> int:
     ffmpeg.add_argument("--ffmpeg", required=True)
     ffmpeg.add_argument("--ffprobe", required=True)
     ffmpeg.add_argument("--openjoc-prefix")
+    ffmpeg.add_argument("--ffmpeg-source", required=True)
     ffmpeg.add_argument("--ffmpeg-revision", required=True)
     ffmpeg.add_argument("--openjoc-patch-sha256", required=True)
     ffmpeg.add_argument("--output", required=True, type=pathlib.Path)

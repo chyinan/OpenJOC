@@ -79,11 +79,41 @@ jobs:
           scripts/build-openjoc-player.sh \
             --platform macos-arm64 \
             --output "$RUNNER_TEMP/openjoc-mpv-macos" \
+            --work "$RUNNER_TEMP/openjoc-player-work-macos" \
             "${release_args[@]}"
           find "$RUNNER_TEMP/openjoc-mpv-macos" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
         run: scripts/generate-player-fixtures.sh "$RUNNER_TEMP/openjoc-player-fixtures"
+
+      - name: Build and package the macOS ecosystem artifacts
+        if: ${{ inputs.release_candidate }}
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$PWD=/openjoc --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+          gst_target="$RUNNER_TEMP/openjoc-gst-target"
+          cargo build -p gst-plugin-openjoc --release --features gstreamer --locked --target-dir "$gst_target"
+          ecosystem="$RUNNER_TEMP/openjoc-ecosystem"
+          mkdir -p "$ecosystem"
+          patch_sha=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["patch_sha256"])')
+          ffmpeg_revision=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["commit"])')
+          for kind in sdk gstreamer ffmpeg; do mkdir -p "$RUNNER_TEMP/openjoc-ecosystem-$kind"; done
+          python3 scripts/package-ecosystem.py sdk --platform macos-arm64 --target-dir target/release --output "$RUNNER_TEMP/openjoc-ecosystem-sdk"
+          python3 scripts/package-ecosystem.py gstreamer --platform macos-arm64 --plugin "$gst_target/release/libgstopenjoc.dylib" --output "$RUNNER_TEMP/openjoc-ecosystem-gstreamer"
+          python3 scripts/package-ecosystem.py ffmpeg --platform macos-arm64 --ffmpeg "$RUNNER_TEMP/openjoc-player-work-macos/prefix/ffmpeg/bin/ffmpeg" --ffprobe "$RUNNER_TEMP/openjoc-player-work-macos/prefix/ffmpeg/bin/ffprobe" --openjoc-prefix "$RUNNER_TEMP/openjoc-player-work-macos/prefix/openjoc" --ffmpeg-source "$RUNNER_TEMP/openjoc-player-work-macos/src/ffmpeg" --ffmpeg-revision "$ffmpeg_revision" --openjoc-patch-sha256 "$patch_sha" --output "$RUNNER_TEMP/openjoc-ecosystem-ffmpeg"
+          cp "$RUNNER_TEMP"/openjoc-ecosystem-{sdk,gstreamer,ffmpeg}/* "$ecosystem/"
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-sdk-*.tar.gz' -print -quit)" --kind sdk --platform macos-arm64
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-gstreamer-plugin-*.tar.gz' -print -quit)" --kind gstreamer-plugin --platform macos-arm64 --run-gstreamer
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-ffmpeg-*.tar.gz' -print -quit)" --kind ffmpeg --platform macos-arm64
+
+      - name: Upload macOS ecosystem artifacts
+        if: ${{ inputs.release_candidate }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-ecosystem-release-macos-arm64
+          path: ${{ runner.temp }}/openjoc-ecosystem
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Qualify extracted macOS package
         run: |
@@ -142,11 +172,40 @@ jobs:
           scripts/build-openjoc-player.sh \
             --platform linux-x86_64 \
             --output "$RUNNER_TEMP/openjoc-mpv-linux" \
+            --work "$RUNNER_TEMP/openjoc-player-work-linux" \
             "${release_args[@]}"
           find "$RUNNER_TEMP/openjoc-mpv-linux" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
         run: scripts/generate-player-fixtures.sh "$RUNNER_TEMP/openjoc-player-fixtures"
+
+      - name: Build and package the Linux ecosystem artifacts
+        if: ${{ inputs.release_candidate }}
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$PWD=/openjoc --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+          gst_target="$RUNNER_TEMP/openjoc-gst-target"
+          cargo build -p gst-plugin-openjoc --release --features gstreamer --locked --target-dir "$gst_target"
+          ecosystem="$RUNNER_TEMP/openjoc-ecosystem"
+          mkdir -p "$ecosystem"
+          patch_sha=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["patch_sha256"])')
+          ffmpeg_revision=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["commit"])')
+          python3 scripts/package-ecosystem.py sdk --platform linux-x86_64 --target-dir target/release --output "$RUNNER_TEMP/openjoc-ecosystem-sdk"
+          python3 scripts/package-ecosystem.py gstreamer --platform linux-x86_64 --plugin "$gst_target/release/libgstopenjoc.so" --output "$RUNNER_TEMP/openjoc-ecosystem-gstreamer"
+          python3 scripts/package-ecosystem.py ffmpeg --platform linux-x86_64 --ffmpeg "$RUNNER_TEMP/openjoc-player-work-linux/prefix/ffmpeg/bin/ffmpeg" --ffprobe "$RUNNER_TEMP/openjoc-player-work-linux/prefix/ffmpeg/bin/ffprobe" --openjoc-prefix "$RUNNER_TEMP/openjoc-player-work-linux/prefix/openjoc" --ffmpeg-source "$RUNNER_TEMP/openjoc-player-work-linux/src/ffmpeg" --ffmpeg-revision "$ffmpeg_revision" --openjoc-patch-sha256 "$patch_sha" --output "$RUNNER_TEMP/openjoc-ecosystem-ffmpeg"
+          cp "$RUNNER_TEMP"/openjoc-ecosystem-{sdk,gstreamer,ffmpeg}/* "$ecosystem/"
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-sdk-*.tar.gz' -print -quit)" --kind sdk --platform linux-x86_64
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-gstreamer-plugin-*.tar.gz' -print -quit)" --kind gstreamer-plugin --platform linux-x86_64 --run-gstreamer
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-ffmpeg-*.tar.gz' -print -quit)" --kind ffmpeg --platform linux-x86_64
+
+      - name: Upload Linux ecosystem artifacts
+        if: ${{ inputs.release_candidate }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-ecosystem-release-linux-x86_64
+          path: ${{ runner.temp }}/openjoc-ecosystem
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Qualify extracted Linux package
         run: |
@@ -218,15 +277,45 @@ jobs:
           rustc -vV
           gcc --version | head -n 1
           output="$(cygpath -u "$RUNNER_TEMP")/openjoc-mpv-windows"
+          work="$(cygpath -u "$RUNNER_TEMP")/openjoc-player-work-windows"
           release_args=()
           if [[ "$RELEASE_CANDIDATE" == "true" ]]; then release_args+=(--release); fi
-          scripts/build-openjoc-player-windows.sh --output "$output" "${release_args[@]}"
+          scripts/build-openjoc-player-windows.sh --output "$output" --work "$work" "${release_args[@]}"
           find "$output" -maxdepth 1 -type f -print
 
       - name: Generate synthetic qualification fixtures
         run: |
           export PATH="$(cygpath -u "$USERPROFILE")/.cargo/bin:$PATH"
           scripts/generate-player-fixtures.sh "$(cygpath -u "$RUNNER_TEMP")/openjoc-player-fixtures"
+
+      - name: Build and package the Windows ecosystem artifacts
+        if: ${{ inputs.release_candidate }}
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$PWD=/openjoc --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+          root="$(cygpath -u "$RUNNER_TEMP")"
+          gst_target="$root/openjoc-gst-target"
+          cargo build -p gst-plugin-openjoc --release --features gstreamer --locked --target x86_64-pc-windows-gnu --target-dir "$gst_target"
+          ecosystem="$root/openjoc-ecosystem"
+          mkdir -p "$ecosystem"
+          patch_sha=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["patch_sha256"])')
+          ffmpeg_revision=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["commit"])')
+          python3 scripts/package-ecosystem.py sdk --platform windows-x64 --target-dir "$root/target/x86_64-pc-windows-gnu/release" --output "$root/openjoc-ecosystem-sdk"
+          python3 scripts/package-ecosystem.py gstreamer --platform windows-x64 --plugin "$gst_target/x86_64-pc-windows-gnu/release/gstopenjoc.dll" --output "$root/openjoc-ecosystem-gstreamer"
+          python3 scripts/package-ecosystem.py ffmpeg --platform windows-x64 --ffmpeg "$root/openjoc-player-work-windows/prefix/ffmpeg/bin/ffmpeg.exe" --ffprobe "$root/openjoc-player-work-windows/prefix/ffmpeg/bin/ffprobe.exe" --openjoc-prefix "$root/openjoc-player-work-windows/prefix/openjoc" --ffmpeg-source "$root/openjoc-player-work-windows/src/ffmpeg" --ffmpeg-revision "$ffmpeg_revision" --openjoc-patch-sha256 "$patch_sha" --output "$root/openjoc-ecosystem-ffmpeg"
+          cp "$root"/openjoc-ecosystem-{sdk,gstreamer,ffmpeg}/* "$ecosystem/"
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-sdk-*.zip' -print -quit)" --kind sdk --platform windows-x64
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-gstreamer-plugin-*.zip' -print -quit)" --kind gstreamer-plugin --platform windows-x64 --run-gstreamer
+          python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-ffmpeg-*.zip' -print -quit)" --kind ffmpeg --platform windows-x64
+
+      - name: Upload Windows ecosystem artifacts
+        if: ${{ inputs.release_candidate }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-ecosystem-release-windows-x64
+          path: ${{ runner.temp }}/openjoc-ecosystem
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Qualify extracted Windows package
         run: |

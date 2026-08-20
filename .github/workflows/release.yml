@@ -374,6 +374,13 @@ jobs:
           path: ${{ runner.temp }}/player-assets
           merge-multiple: false
 
+      - name: Download the verified ecosystem artifact set
+        uses: actions/download-artifact@v4
+        with:
+          pattern: openjoc-ecosystem-release-*
+          path: ${{ runner.temp }}/ecosystem-assets
+          merge-multiple: true
+
       - name: Aggregate and verify the public release assets
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -384,6 +391,7 @@ jobs:
             --input "${RUNNER_TEMP}/release-assets" \
             --output "${RUNNER_TEMP}/public-release" \
             --player-input "${RUNNER_TEMP}/player-assets" \
+            --ecosystem-input "${RUNNER_TEMP}/ecosystem-assets" \
             --version "$version"
 
       - name: Verify the remote tag and required assets
@@ -401,13 +409,22 @@ jobs:
             "$asset_dir/openjoc-mpv-${version}-macos-arm64.tar.gz"
             "$asset_dir/openjoc-mpv-${version}-linux-x86_64.tar.gz"
             "$asset_dir/openjoc-mpv-${version}-windows-x64.zip"
+            "$asset_dir/openjoc-sdk-${version}-macos-arm64.tar.gz"
+            "$asset_dir/openjoc-sdk-${version}-linux-x86_64.tar.gz"
+            "$asset_dir/openjoc-sdk-${version}-windows-x64.zip"
+            "$asset_dir/openjoc-ffmpeg-${version}-macos-arm64.tar.gz"
+            "$asset_dir/openjoc-ffmpeg-${version}-linux-x86_64.tar.gz"
+            "$asset_dir/openjoc-ffmpeg-${version}-windows-x64.zip"
+            "$asset_dir/openjoc-gstreamer-plugin-${version}-macos-arm64.tar.gz"
+            "$asset_dir/openjoc-gstreamer-plugin-${version}-linux-x86_64.tar.gz"
+            "$asset_dir/openjoc-gstreamer-plugin-${version}-windows-x64.zip"
             "$asset_dir/SHA256SUMS"
           )
-          test "${#assets[@]}" -eq 7
+          test "${#assets[@]}" -eq 16
           for asset in "${assets[@]}"; do
             test -f "$asset"
           done
-          test "$(find "$asset_dir" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 7
+          test "$(find "$asset_dir" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 16
           printf '%s\n' "${assets[@]}"
 
       - name: Refuse to overwrite an existing GitHub Release
@@ -476,7 +493,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
-            --title "OpenJOC ${version} — Cross-Platform Player Integration" \
+            --title "OpenJOC ${version} — Interchange & Ecosystem" \
             --notes-file "$notes"
           gh release upload "$RELEASE_TAG" \
             "$asset_dir/openjoc-${version}-aarch64-apple-darwin.tar.gz" \
@@ -485,6 +502,15 @@ jobs:
             "$asset_dir/openjoc-mpv-${version}-macos-arm64.tar.gz" \
             "$asset_dir/openjoc-mpv-${version}-linux-x86_64.tar.gz" \
             "$asset_dir/openjoc-mpv-${version}-windows-x64.zip" \
+            "$asset_dir/openjoc-sdk-${version}-macos-arm64.tar.gz" \
+            "$asset_dir/openjoc-sdk-${version}-linux-x86_64.tar.gz" \
+            "$asset_dir/openjoc-sdk-${version}-windows-x64.zip" \
+            "$asset_dir/openjoc-ffmpeg-${version}-macos-arm64.tar.gz" \
+            "$asset_dir/openjoc-ffmpeg-${version}-linux-x86_64.tar.gz" \
+            "$asset_dir/openjoc-ffmpeg-${version}-windows-x64.zip" \
+            "$asset_dir/openjoc-gstreamer-plugin-${version}-macos-arm64.tar.gz" \
+            "$asset_dir/openjoc-gstreamer-plugin-${version}-linux-x86_64.tar.gz" \
+            "$asset_dir/openjoc-gstreamer-plugin-${version}-windows-x64.zip" \
             "$asset_dir/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY"
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false

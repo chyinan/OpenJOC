@@ -192,7 +192,7 @@ case "$platform" in
             "$ffmpeg_source/configure" --prefix="$ffmpeg_prefix" \
             --disable-doc --disable-debug --disable-autodetect \
             --disable-static --enable-shared --enable-version3 \
-            --enable-libopenjoc --disable-programs --disable-network \
+            --enable-libopenjoc --disable-programs --enable-ffmpeg --enable-ffprobe --disable-network \
             --enable-videotoolbox --enable-audiotoolbox)
         make -C "$work/build" -j"${CARGO_BUILD_JOBS:-2}"
         make -C "$work/build" install

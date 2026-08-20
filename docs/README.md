@@ -9,6 +9,7 @@ Use the document that owns the question:
 | What does the 0.8.0 release support? | [CAPABILITIES.md](CAPABILITIES.md) |
 | How do I export reconstructed ADM/BW64? | [ADM_EXPORT.md](ADM_EXPORT.md) |
 | How are ecosystem packages built? | [integration/ECOSYSTEM_PACKAGING.md](integration/ECOSYSTEM_PACKAGING.md) |
+| What is the public smoke fixture? | [PUBLIC_SMOKE_FIXTURE.md](PUBLIC_SMOKE_FIXTURE.md) |
 | What does it not support? | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |
 | How do I render a supported JOC stream to speakers? | [JOC_RENDER.md](JOC_RENDER.md) |
 | How is production code structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |

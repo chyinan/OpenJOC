@@ -85,6 +85,12 @@ jobs:
       - name: Build the native GStreamer plugin
         run: cargo build -p gst-plugin-openjoc --release --features gstreamer --locked
 
+      - name: Generate the public synthetic JOC fixture and run self-test
+        run: |
+          scripts/generate-player-fixtures.sh "$RUNNER_TEMP/openjoc-player-fixtures"
+          OPENJOC_PUBLIC_JOC_FIXTURE="$RUNNER_TEMP/openjoc-player-fixtures/joc.ec3" \
+            cargo run -p openjoc-cli --release --locked -- self-test --fixture "$RUNNER_TEMP/openjoc-player-fixtures/joc.ec3"
+
       - name: Cargo package verification
         run: cargo package --workspace --locked
 

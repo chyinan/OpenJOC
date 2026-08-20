@@ -10,6 +10,9 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
 stage_prefix=$1
 rust_target=${2-}
+cargo_home=${CARGO_HOME:-$HOME/.cargo}
+existing_rustflags=${RUSTFLAGS:-}
+export RUSTFLAGS="${existing_rustflags} --remap-path-prefix=$repo_root=/openjoc --remap-path-prefix=$cargo_home=/cargo"
 
 case "$stage_prefix" in
     /*) ;;

@@ -19,6 +19,7 @@ python3 scripts/package-ecosystem.py ffmpeg \
   --ffmpeg /path/to/custom/ffmpeg \
   --ffprobe /path/to/custom/ffprobe \
   --openjoc-prefix /path/to/openjoc-prefix \
+  --ffmpeg-source /path/to/pinned/ffmpeg-source \
   --ffmpeg-revision <pinned-commit> \
   --openjoc-patch-sha256 <patch-sha256> \
   --output /tmp/openjoc-ffmpeg-release
