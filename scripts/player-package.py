@@ -892,9 +892,10 @@ def bundle(arguments: argparse.Namespace) -> int:
             "license_review_required": dependency_manifest["license_review_required"],
             "publication_status": "LOCAL_OR_CI_ONLY_UNPUBLISHED",
         }
-        manifest_path = output / f"{archive_name.rsplit('.', 2)[0]}.manifest.json"
+        archive_stem = archive_name.removesuffix(".tar.gz").removesuffix(".zip")
+        manifest_path = output / f"{archive_stem}.manifest.json"
         write_json(manifest_path, outer_manifest)
-        checksum_path = output / f"{archive_name.rsplit('.', 2)[0]}.SHA256SUMS"
+        checksum_path = output / f"{archive_stem}.SHA256SUMS"
         checksum_path.write_text(
             f"{sha256(archive_path)}  {archive_name}\n{sha256(manifest_path)}  {manifest_path.name}\n",
             encoding="utf-8",
