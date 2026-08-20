@@ -305,6 +305,8 @@ def package_ffmpeg(args: argparse.Namespace) -> None:
         executable_suffix = ".exe" if args.platform == "windows-x64" else ""
         copy_file(pathlib.Path(args.ffmpeg).resolve(), stage / f"bin/openjoc-ffmpeg{executable_suffix}")
         copy_file(pathlib.Path(args.ffprobe).resolve(), stage / f"bin/openjoc-ffprobe{executable_suffix}")
+        ffmpeg_prefix = pathlib.Path(args.ffmpeg).resolve().parent.parent
+        copy_runtime_tree(ffmpeg_prefix / "lib", stage / "lib")
         if args.openjoc_prefix:
             prefix = pathlib.Path(args.openjoc_prefix).resolve()
             copy_runtime_tree(prefix / "lib", stage / "lib")
