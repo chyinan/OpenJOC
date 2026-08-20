@@ -299,6 +299,16 @@ def collect_linux(
     if patchelf is None:
         raise RuntimeError("Linux packaging requires patchelf to create an $ORIGIN bundle")
     binary = destination.parent / "bin" / "mpv"
+    owners = [binary, *sorted(destination / name for name in copied)]
+    for owner in owners:
+        needed = run([patchelf, "--print-needed", str(owner)], check=False)
+        for value in needed.splitlines():
+            value = value.strip()
+            if "/" not in value:
+                continue
+            name = pathlib.Path(value).name
+            if name in copied or (destination / name).is_file():
+                run([patchelf, "--replace-needed", value, name, str(owner)])
     run([patchelf, "--set-rpath", "$ORIGIN/../lib", str(binary)])
     for name in sorted(copied):
         target = destination / name
