@@ -400,7 +400,7 @@ def component_for_library(name: str) -> tuple[str, str]:
     lower = name.lower()
     if lower == "mpv":
         return "mpv", "GPL-2.0-or-later"
-    if lower.startswith(("libav", "libsw", "avcodec-", "avdevice-", "avfilter-", "avformat-", "avutil-", "swresample-", "swscale-")):
+    if lower.startswith(("libav", "libsw", "libpostproc", "avcodec-", "avdevice-", "avfilter-", "avformat-", "avutil-", "swresample-", "swscale-")):
         return "FFmpeg", "LGPL-3.0-or-later (configured with --enable-version3 and without --enable-gpl)"
     if lower.startswith(("libopenjoc", "openjoc_capi")):
         return "OpenJOC", "Apache-2.0"
