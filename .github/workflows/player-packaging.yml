@@ -93,7 +93,9 @@ jobs:
           export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$PWD=/openjoc --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
           brew_prefix=
           brew_prefix=$(brew --prefix)
-          export PKG_CONFIG_PATH="$(brew --prefix gstreamer)/lib/pkgconfig:$brew_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          pkg_config_path=
+          pkg_config_path="$(brew --prefix gstreamer)/lib/pkgconfig:$brew_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          export PKG_CONFIG_PATH="$pkg_config_path"
           gst_target="$RUNNER_TEMP/openjoc-gst-target"
           cargo build -p gst-plugin-openjoc --release --features gstreamer --locked --target-dir "$gst_target"
           ecosystem="$RUNNER_TEMP/openjoc-ecosystem"

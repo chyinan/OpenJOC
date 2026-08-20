@@ -139,6 +139,9 @@ jobs:
       - name: Install media-framework development packages
         run: |
           brew install gstreamer nasm
+          brew_prefix=
+          brew_prefix=$(brew --prefix)
+          echo "PKG_CONFIG_PATH=$(brew --prefix gstreamer)/lib/pkgconfig:$brew_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
 
       - name: Build the minimum FFmpeg 9 SDK
         run: |
