@@ -1,0 +1,142 @@
+{
+  "schema": "openjoc.player-package-manifest.v1",
+  "product": {
+    "name": "OpenJOC Player Bundle",
+    "branding": "OpenJOC-enabled mpv build",
+    "official_mpv_release": false,
+    "official_ffmpeg_release": false,
+    "upstream_submission": false,
+    "version_policy": "development identifier is 0.7.0+git.<short-commit>; no release version is inferred"
+  },
+  "openjoc": {
+    "version": "0.7.0",
+    "c_abi": {
+      "major": 1,
+      "minor": 3,
+      "packed_hex": "0x00010003"
+    },
+    "license": "Apache-2.0",
+    "dsp_renderer": "OpenJOC shared renderer; platform-neutral",
+    "features": [
+      "native FFmpeg libavcodec wrapper",
+      "decode-free bounded JOC classifier",
+      "automatic positive JOC decoder selection",
+      "binaural rendering",
+      "physical 2.0, 5.1, 7.1.4, 9.1.6, and 22.2 rendering",
+      "built-in SADIE II D1 KU100 HRTF"
+    ]
+  },
+  "pinned_stack": {
+    "ffmpeg": {
+      "tag": "n9.0.1",
+      "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
+      "patch_path": "integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch",
+      "patch_sha256": "a993a7c5244353a623498b578c1cb7c595275f8a3e17232d701254fa8d6fdb57",
+      "configure_flags": [
+        "--disable-autodetect",
+        "--disable-static",
+        "--enable-shared",
+        "--enable-version3",
+        "--enable-libopenjoc"
+      ]
+    },
+    "mpv": {
+      "tag": "v0.41.0",
+      "commit": "41f6a645068483470267271e1d09966ca3b9f413",
+      "patch_path": "integrations/mpv/patches/mpv-0.41.0-openjoc.patch",
+      "patch_sha256": "f5ae4e4419454ae8ad91122d3d489a9da57340b32bfe1fc2782f0e48124e3f00"
+    },
+    "rust": {
+      "minimum": "1.85",
+      "locked_dependencies": true
+    }
+  },
+  "platforms": {
+    "macos-arm64": {
+      "archive": "openjoc-player-<development-id>-macos-arm64.tar.gz",
+      "loader": "Mach-O @rpath with @loader_path-relative library closure",
+      "signing": "unsigned local artifact; no Developer ID or notarization claim",
+      "system_external": [
+        "Apple system frameworks",
+        "Apple system audio/video services",
+        "compatible macOS runtime"
+      ]
+    },
+    "linux-x86_64": {
+      "archive": "openjoc-player-<development-id>-linux-x86_64.tar.gz",
+      "loader": "ELF $ORIGIN RUNPATH for bundled libraries",
+      "glibc_baseline": "Ubuntu 24.04 runner baseline; record actual glibc symbol floor",
+      "system_external": [
+        "glibc and dynamic loader",
+        "libstdc++/libgcc runtime",
+        "host audio/video device backends and GPU drivers"
+      ]
+    },
+    "windows-x64": {
+      "archive": "openjoc-player-<development-id>-windows-x64.zip",
+      "loader": "adjacent DLL closure; no global PATH or MSYS2 requirement",
+      "toolchain": "MSYS2 MinGW-w64",
+      "system_external": [
+        "supported Windows kernel/user runtime"
+      ]
+    }
+  },
+  "profiles": {
+    "openjoc-headphones": {
+      "render_mode": "binaural",
+      "virtual_layout": "7.1.4",
+      "final_channel_count": 2,
+      "hrtf": true,
+      "meaning": "OpenJOC binaural output from virtual 7.1.4; explicit user choice"
+    },
+    "openjoc-stereo": {
+      "render_mode": "speaker",
+      "speaker_layout": "2.0",
+      "final_channel_count": 2,
+      "hrtf": false,
+      "meaning": "OpenJOC physical stereo speaker render; not binaural"
+    },
+    "openjoc-51": {
+      "render_mode": "speaker",
+      "speaker_layout": "5.1",
+      "final_channel_count": 6,
+      "hrtf": false,
+      "meaning": "OpenJOC physical 5.1 speaker render"
+    },
+    "openjoc-714": {
+      "render_mode": "speaker",
+      "speaker_layout": "7.1.4",
+      "final_channel_count": 12,
+      "hrtf": false,
+      "meaning": "OpenJOC physical 7.1.4 speaker render"
+    },
+    "openjoc-916": {
+      "render_mode": "speaker",
+      "speaker_layout": "9.1.6",
+      "final_channel_count": 16,
+      "hrtf": false,
+      "meaning": "OpenJOC physical 9.1.6 speaker render"
+    },
+    "openjoc-222": {
+      "render_mode": "speaker",
+      "speaker_layout": "22.2",
+      "final_channel_count": 24,
+      "hrtf": false,
+      "meaning": "OpenJOC physical 22.2 speaker render"
+    }
+  },
+  "runtime_policy": {
+    "default_decoder_policy": "preserve patched mpv safe policy: ordinary E-AC-3 uses eac3; confirmed JOC uses libopenjoc",
+    "explicit_decoder_overrides": ["--ad=libopenjoc", "--ad=eac3"],
+    "passthrough": "--audio-spdif=eac3 bypasses OpenJOC and remains user-controlled",
+    "global_config": "portable launcher uses the bundle config directory; it does not overwrite or require user global config",
+    "network": "not required for packaged playback or built-in HRTF"
+  },
+  "reproducibility": {
+    "source_date_epoch": "use SOURCE_DATE_EPOCH when supplied; otherwise record build timestamp and mark archive non-bit-for-bit reproducible",
+    "archive_order": "lexicographic",
+    "archive_owner": "root:wheel for tar entries",
+    "archive_timestamps": "zero when reproducible mode is active",
+    "publication": "local and CI artifacts only; no upload, tag, or release"
+  }
+}

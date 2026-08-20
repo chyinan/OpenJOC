@@ -21,7 +21,7 @@ esac
 cargo build --manifest-path "$repo_root/Cargo.toml" \
     -p openjoc-capi --release --locked
 
-mkdir -p "$stage_prefix/include" "$stage_prefix/lib/pkgconfig"
+mkdir -p "$stage_prefix/include" "$stage_prefix/lib/pkgconfig" "$stage_prefix/bin"
 install -m 0644 "$repo_root/crates/openjoc-capi/include/openjoc.h" \
     "$stage_prefix/include/openjoc.h"
 install -m 0644 "$repo_root/target/release/libopenjoc_capi.a" \
@@ -37,6 +37,13 @@ case "$(uname -s)" in
     Linux)
         install -m 0755 "$repo_root/target/release/libopenjoc_capi.so" \
             "$stage_prefix/lib/libopenjoc_capi.so"
+        ;;
+    MINGW*|MSYS_NT*|CYGWIN*)
+        target_dir="$repo_root/target/x86_64-pc-windows-gnu/release"
+        install -m 0755 "$target_dir/openjoc_capi.dll" \
+            "$stage_prefix/bin/openjoc_capi.dll"
+        install -m 0644 "$target_dir/openjoc_capi.dll.a" \
+            "$stage_prefix/lib/libopenjoc_capi.dll.a"
         ;;
     *)
         echo "dynamic C ABI staging is not implemented for $(uname -s)" >&2
