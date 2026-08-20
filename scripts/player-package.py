@@ -44,7 +44,8 @@ PRIVATE_MARKERS = (
     "/usr/local/Cellar/",
     "/home/runner/",
     "\\home\\runner\\",
-    "/tmp/",
+    "/tmp/openjoc-player-",
+    "/private/tmp/openjoc-player-",
 )
 WINDOWS_SYSTEM_DLLS = {
     "ADVAPI32.DLL", "API-MS-WIN-CORE-", "API-MS-WIN-CRT-", "AVRT.DLL",
