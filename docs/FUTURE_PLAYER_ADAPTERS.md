@@ -9,7 +9,7 @@ constraints.
 | FFmpeg external | arbitrary demuxed packet boundaries plus `AVStream.time_base` | owned packed-float `AVFrame` | Implemented | stock FFmpeg registration is intentionally absent |
 | GStreamer | arbitrary `GstBuffer` boundaries | negotiated interleaved float buffers | Implemented | no player work required |
 | FFmpeg native | libavcodec packet input | ordinary libavcodec packed-float frame output | Implemented through C ABI 1.3 packet-stream/classifier handles | custom patched FFmpeg build; native decoder remains explicitly named |
-| mpv/player | normal libavcodec decoder path | mpv audio frame | Implemented through the optional source patchset in `integrations/mpv/` | local custom build, device-specific AO acceptance, and private-media human playback remain acceptance work |
+| mpv/player | normal libavcodec decoder path | mpv audio frame | Implemented through the optional source patchset in `integrations/mpv/` | broader long-run, physical-hardware, Linux/Windows, and packaged-player acceptance remains |
 | DirectShow/LAV-style Windows | media sample from the upstream splitter/decoder graph | negotiated `IMediaSample` multichannel float output | Yes for a native C wrapper | COM filter, media-type negotiation, allocator, graph seeking/discontinuity plumbing |
 
 Recommended next phase after mpv hardening: **PLAYER_DISTRIBUTION_AND_PACKAGING**.
