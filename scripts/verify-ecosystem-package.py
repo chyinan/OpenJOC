@@ -113,6 +113,14 @@ def main() -> int:
                 str(consumer),
             ]
             subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            executable = consumer.with_suffix(".exe") if arguments.platform == "windows-x64" else consumer
+            environment = os.environ.copy()
+            if arguments.platform == "windows-x64":
+                environment["PATH"] = f"{root / 'bin'};{root / 'lib'};{environment.get('PATH', '')}"
+            else:
+                environment["LD_LIBRARY_PATH"] = f"{root / 'lib'}:{environment.get('LD_LIBRARY_PATH', '')}"
+                environment["DYLD_LIBRARY_PATH"] = f"{root / 'lib'}:{environment.get('DYLD_LIBRARY_PATH', '')}"
+            subprocess.run([str(executable)], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
     print(f"ecosystem package PASS: {arguments.archive}")
     return 0
 
