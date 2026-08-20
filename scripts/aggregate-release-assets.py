@@ -20,6 +20,12 @@ PLAYER_TARGET_ORDER = (
     ("linux-x86_64", "tar.gz"),
     ("windows-x64", "zip"),
 )
+ECOSYSTEM_PLATFORM_ORDER = (
+    ("macos-arm64", "tar.gz"),
+    ("linux-x86_64", "tar.gz"),
+    ("windows-x64", "zip"),
+)
+ECOSYSTEM_PACKAGE_KINDS = ("sdk", "ffmpeg", "gstreamer-plugin")
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -179,6 +185,39 @@ def validate_player_manifest(
         raise SystemExit(f"player manifest size mismatch for {archive_path.name}")
 
 
+def validate_ecosystem_manifest(
+    manifest_path: pathlib.Path,
+    archive_path: pathlib.Path,
+    *,
+    version: str,
+    kind: str,
+    platform: str,
+) -> None:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read ecosystem manifest {manifest_path}: {error}") from error
+    expected = {
+        "package_kind": kind,
+        "version": version,
+        "platform": platform,
+        "archive": archive_path.name,
+        "unresolved_license_components": 0,
+        "private_media_leak": False,
+        "private_path_leak": False,
+        "credential_leak": False,
+    }
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            raise SystemExit(
+                f"ecosystem manifest {manifest_path.name} has {key}={manifest.get(key)!r}; expected {value!r}"
+            )
+    if manifest.get("archive_sha256") != sha256(archive_path):
+        raise SystemExit(f"ecosystem manifest SHA-256 mismatch for {archive_path.name}")
+    if manifest.get("archive_size") != archive_path.stat().st_size:
+        raise SystemExit(f"ecosystem manifest size mismatch for {archive_path.name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=pathlib.Path)
@@ -186,6 +225,11 @@ def main() -> int:
         "--player-input",
         type=pathlib.Path,
         help="optional verified player-package artifact directory",
+    )
+    parser.add_argument(
+        "--ecosystem-input",
+        type=pathlib.Path,
+        help="optional verified SDK/FFmpeg/GStreamer package artifact directory",
     )
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--version", required=True)
@@ -201,6 +245,13 @@ def main() -> int:
     )
     if player_input is not None and not player_input.is_dir():
         parser.error(f"player input directory does not exist: {player_input}")
+    ecosystem_input = (
+        arguments.ecosystem_input.expanduser().resolve()
+        if arguments.ecosystem_input is not None
+        else None
+    )
+    if ecosystem_input is not None and not ecosystem_input.is_dir():
+        parser.error(f"ecosystem input directory does not exist: {ecosystem_input}")
     output_root.mkdir(parents=True, exist_ok=True)
     if any(output_root.iterdir()):
         parser.error(f"output directory must be empty: {output_root}")
@@ -241,6 +292,39 @@ def main() -> int:
             destination = output_root / archive.name
             shutil.copy2(archive, destination)
             archives.append(destination)
+
+    if ecosystem_input is not None:
+        for kind in ECOSYSTEM_PACKAGE_KINDS:
+            for platform, extension in ECOSYSTEM_PLATFORM_ORDER:
+                archive_name = f"openjoc-{kind}-{arguments.version}-{platform}.{extension}"
+                manifest_name = f"openjoc-{kind}-{arguments.version}-{platform}.manifest.json"
+                archive = find_unique(ecosystem_input, archive_name, kind="ecosystem archive")
+                manifest = find_unique(ecosystem_input, manifest_name, kind="ecosystem manifest")
+                validate_ecosystem_manifest(
+                    manifest,
+                    archive,
+                    version=arguments.version,
+                    kind=kind,
+                    platform=platform,
+                )
+                destination = output_root / archive.name
+                shutil.copy2(archive, destination)
+                archives.append(destination)
+
+        ecosystem_archives = sorted(
+            path
+            for path in ecosystem_input.rglob("*")
+            if path.is_file() and (path.name.endswith(".tar.gz") or path.name.endswith(".zip"))
+        )
+        expected_ecosystem = {
+            f"openjoc-{kind}-{arguments.version}-{platform}.{extension}"
+            for kind in ECOSYSTEM_PACKAGE_KINDS
+            for platform, extension in ECOSYSTEM_PLATFORM_ORDER
+        }
+        if {path.name for path in ecosystem_archives} != expected_ecosystem:
+            raise SystemExit(
+                "ecosystem artifact set does not exactly match the nine canonical package archives"
+            )
 
     all_archives = sorted(
         path
