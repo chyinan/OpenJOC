@@ -1,0 +1,9 @@
+# Opt-in profiles. Copy these sections into a user mpv.conf and activate one
+# with --profile=openjoc-headphones or --profile=openjoc-714.
+
+[openjoc-headphones]
+ad-lavc-o=render_mode=binaural,virtual_layout=7.1.4
+
+[openjoc-714]
+ad-lavc-o=render_mode=speaker,speaker_layout=7.1.4
+audio-channels=fl-fr-fc-lfe-bl-br-sl-sr-tfl-tfr-tbl-tbr

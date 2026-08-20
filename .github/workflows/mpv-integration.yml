@@ -1,0 +1,67 @@
+name: mpv OpenJOC integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build patched mpv (${{ matrix.ref }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ref: v0.41.0
+            patch: mpv-0.41.0-openjoc.patch
+          - ref: master
+            patch: mpv-master-openjoc.patch
+    steps:
+      - name: Check out OpenJOC
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install meson ninja libass libplacebo
+
+      - name: Build OpenJOC C ABI
+        run: |
+          cargo build -p openjoc-capi --release --locked
+          integrations/ffmpeg/native/stage-openjoc.sh "$RUNNER_TEMP/openjoc"
+
+      - name: Build patched FFmpeg 9 SDK
+        run: |
+          curl --fail --location --retry 3 \
+            https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz \
+            --output "$RUNNER_TEMP/ffmpeg-9.0.1.tar.xz"
+          tar -xJf "$RUNNER_TEMP/ffmpeg-9.0.1.tar.xz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/ffmpeg-9.0.1"
+          git apply "$GITHUB_WORKSPACE/integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch"
+          PKG_CONFIG_PATH="$RUNNER_TEMP/openjoc/lib/pkgconfig" ./configure \
+            --prefix="$RUNNER_TEMP/ffmpeg9" \
+            --enable-version3 --enable-libopenjoc \
+            --disable-programs --disable-doc --disable-debug \
+            --disable-autodetect --disable-static --enable-shared \
+            --disable-everything --enable-protocol=file \
+            --enable-demuxer=eac3,mov,matroska --enable-parser=ac3 \
+            --enable-decoder=eac3,libopenjoc
+          make -j2
+          make install
+
+      - name: Check out and patch mpv
+        run: |
+          git clone --depth=1 --branch "${{ matrix.ref }}" \
+            https://github.com/mpv-player/mpv.git "$RUNNER_TEMP/mpv"
+          git -C "$RUNNER_TEMP/mpv" apply \
+            "$GITHUB_WORKSPACE/integrations/mpv/patches/${{ matrix.patch }}"
+
+      - name: Configure and build mpv
+        env:
+          PKG_CONFIG_PATH: ${{ runner.temp }}/ffmpeg9/lib/pkgconfig:${{ runner.temp }}/openjoc/lib/pkgconfig
+          DYLD_LIBRARY_PATH: ${{ runner.temp }}/ffmpeg9/lib:${{ runner.temp }}/openjoc/lib
+        run: |
+          meson setup "$RUNNER_TEMP/mpv-build" "$RUNNER_TEMP/mpv" \
+            -Dbuildtype=debugoptimized -Dtests=false \
+            -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled
+          meson compile -C "$RUNNER_TEMP/mpv-build" -j 2

@@ -19,7 +19,7 @@ decoder is neither modified nor replaced.
 ```text
 AVPacket / ff_decode_get_packet
   -> libavcodec/libopenjocdec.c
-  -> openjoc_stream_decoder (C ABI 1.2)
+  -> openjoc_stream_decoder (C ABI 1.3)
   -> the shared bounded packet/AU bridge
   -> OpenJocSession
   -> semantic channel permutation
@@ -209,5 +209,5 @@ in FFmpeg's version-3 external-library set. This records the engineering
 configuration rather than offering a legal conclusion; redistribution still
 requires a separate license/packaging review.
 
-No FFmpeg binary is released, no patch is submitted upstream, and no mpv code
-is included in this phase.
+No FFmpeg binary is released and no patch is submitted upstream. The separate
+source-only mpv patchset is documented in `docs/integration/MPV.md`.

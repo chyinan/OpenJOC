@@ -1,0 +1,492 @@
+From 13daa8695684fc8bae7eed8b0a876f4c8ca07103 Mon Sep 17 00:00:00 2001
+From: chyinan <chyinan2015@gmail.com>
+Date: Thu, 20 Aug 2026 16:02:54 +0800
+Subject: [PATCH 1/2] audio: add optional OpenJOC JOC selection and transport
+
+---
+ audio/aframe.c              |  10 ++
+ audio/chmap.c               |   2 +
+ audio/chmap.h               |   5 +
+ audio/chmap_avchannel.c     |  20 ++-
+ audio/decode/ad_lavc.c      |   7 ++
+ filters/f_decoder_wrapper.c | 240 +++++++++++++++++++++++++++++++++++-
+ meson.build                 |   9 ++
+ 7 files changed, 287 insertions(+), 6 deletions(-)
+
+diff --git a/audio/aframe.c b/audio/aframe.c
+index fbba7a3b10..1f6e6d83cb 100644
+--- a/audio/aframe.c
++++ b/audio/aframe.c
+@@ -131,6 +131,16 @@ struct mp_aframe *mp_aframe_from_avframe(struct AVFrame *av_frame)
+         return NULL;
+     }
+ 
++    // OpenJOC's binaural AVFrame is truthfully labelled BIL/BIR. mpv's
++    // transport model has no platform-independent ear endpoint, so expose
++    // those already-rendered streams as ordinary left/right AO channels. The
++    // AVFrame data and labels remain untouched; this is only a transport map,
++    // never a rematrix or crossfeed operation.
++    if (converted_map.num == 2 &&
++        converted_map.speaker[0] == MP_SPEAKER_ID_BIL &&
++        converted_map.speaker[1] == MP_SPEAKER_ID_BIR)
++        converted_map = (struct mp_chmap)MP_CHMAP_INIT_STEREO;
++
+     int format = af_from_avformat(av_frame->format);
+     if (!format && av_frame->format != AV_SAMPLE_FMT_NONE)
+         return NULL;
+diff --git a/audio/chmap.c b/audio/chmap.c
+index 79ae2d74d6..d58b01f57e 100644
+--- a/audio/chmap.c
++++ b/audio/chmap.c
+@@ -57,6 +57,8 @@ static const char *const speaker_names[MP_SPEAKER_ID_COUNT][2] = {
+     [MP_SPEAKER_ID_BFC]         = {"bfc",  "bottom front center"},
+     [MP_SPEAKER_ID_BFL]         = {"bfl",  "bottom front left"},
+     [MP_SPEAKER_ID_BFR]         = {"bfr",  "bottom front right"},
++    [MP_SPEAKER_ID_BIL]         = {"bil",  "binaural left"},
++    [MP_SPEAKER_ID_BIR]         = {"bir",  "binaural right"},
+     [MP_SPEAKER_ID_NA]          = {"na",   "not available"},
+ };
+ 
+diff --git a/audio/chmap.h b/audio/chmap.h
+index 6f1f538da4..9caa59fc11 100644
+--- a/audio/chmap.h
++++ b/audio/chmap.h
+@@ -61,6 +61,11 @@ enum mp_speaker_id {
+     MP_SPEAKER_ID_BFL,          // BOTTOM_FRONT_LEFT
+     MP_SPEAKER_ID_BFR,          // BOTTOM_FRONT_RIGHT
+ 
++    // FFmpeg's explicit binaural transport identities. mpv maps these to
++    // ordinary stereo at the AO boundary; the source AVFrame remains BIL/BIR.
++    MP_SPEAKER_ID_BIL = 61,     // BINAURAL_LEFT
++    MP_SPEAKER_ID_BIR,          // BINAURAL_RIGHT
++
+     // Speaker IDs >= 64 are not representable in WAVEFORMATEXTENSIBLE or libav*.
+ 
+     // "Silent" channels. These are sometimes used to insert padding for
+diff --git a/audio/chmap_avchannel.c b/audio/chmap_avchannel.c
+index ec961de422..2c47a9f81b 100644
+--- a/audio/chmap_avchannel.c
++++ b/audio/chmap_avchannel.c
+@@ -31,8 +31,18 @@ bool mp_chmap_from_av_layout(struct mp_chmap *dst, const AVChannelLayout *src)
+     case AV_CHANNEL_ORDER_NATIVE:
+         mp_chmap_from_lavc(dst, src->u.mask);
+         return dst->num == src->nb_channels;
++    case AV_CHANNEL_ORDER_CUSTOM:
++        if (src->nb_channels > MP_NUM_CHANNELS)
++            return false;
++        for (int n = 0; n < src->nb_channels; n++) {
++            enum AVChannel id = av_channel_layout_channel_from_index(src, n);
++            if (id == AV_CHAN_NONE || id >= MP_SPEAKER_ID_NA)
++                return false;
++            dst->speaker[n] = id;
++        }
++        dst->num = src->nb_channels;
++        return mp_chmap_is_valid(dst);
+     default:
+-        // TODO: handle custom layouts
+         return false;
+     }
+ }
+@@ -44,8 +54,12 @@ void mp_chmap_to_av_layout(AVChannelLayout *dst, const struct mp_chmap *src)
+         .nb_channels = src->num,
+     };
+ 
+-    // TODO: handle custom layouts
+     if (!mp_chmap_is_unknown(src)) {
+-        av_channel_layout_from_mask(dst, mp_chmap_to_lavc(src));
++        if (mp_chmap_is_lavc(src)) {
++            av_channel_layout_from_mask(dst, mp_chmap_to_lavc(src));
++        } else if (av_channel_layout_custom_init(dst, src->num) >= 0) {
++            for (int n = 0; n < src->num; n++)
++                dst->u.map[n].id = src->speaker[n];
++        }
+     }
+ }
+diff --git a/audio/decode/ad_lavc.c b/audio/decode/ad_lavc.c
+index 9c83892afd..945e394322 100644
+--- a/audio/decode/ad_lavc.c
++++ b/audio/decode/ad_lavc.c
+@@ -110,6 +110,13 @@ static bool init(struct mp_filter *da, struct mp_codec_params *codec,
+     ctx->avctx->codec_id = lavc_codec->id;
+     ctx->avctx->pkt_timebase = ctx->codec_timebase;
+ 
++    // OpenJOC is intentionally registered as an experimental, explicitly
++    // named decoder in FFmpeg. Selecting that name is already a positive
++    // user/player decision, so permit this decoder without requiring users to
++    // duplicate FFmpeg's internal strictness flag in --ad-lavc-o.
++    if (strcmp(decoder, "libopenjoc") == 0)
++        ctx->avctx->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
++
+     if (opts->downmix && mpopts->audio_output_channels.num_chmaps == 1) {
+         const struct mp_chmap *requested_layout =
+             &mpopts->audio_output_channels.chmaps[0];
+diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
+index 5e2e8d74c0..ef73eef156 100644
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -26,6 +26,12 @@
+ #include <libavutil/common.h>
+ #include <libavutil/rational.h>
+ 
++#include "config.h"
++
++#if HAVE_OPENJOC
++#include <openjoc.h>
++#endif
++
+ #include "options/options.h"
+ #include "common/msg.h"
+ #include "options/m_config.h"
+@@ -203,6 +209,21 @@ struct priv {
+     struct mp_frame packet;
+     bool packet_fed, preroll_discard;
+ 
++#if HAVE_OPENJOC
++    // A bounded pre-decoder probe for ordinary E-AC-3 streams. Probe packets
++    // are retained as owned mpv frames and replayed, in order, to the chosen
++    // decoder after positive classification.
++    openjoc_classifier *joc_classifier;
++    struct mp_frame *joc_probe_packets;
++    int joc_probe_packet_count;
++    int joc_probe_replay_pos;
++    size_t joc_probe_bytes;
++    bool joc_probe_active;
++    bool joc_probe_decided;
++    bool joc_probe_use_libopenjoc;
++    bool joc_replay_active;
++#endif
++
+     size_t reverse_queue_byte_size;
+     struct mp_frame *reverse_queue;
+     int num_reverse_queue;
+@@ -234,6 +255,161 @@ struct priv {
+     int dropped_frames; // total frames _probably_ dropped
+ };
+ 
++#if HAVE_OPENJOC
++static bool reinit_decoder(struct priv *p);
++
++static void joc_probe_destroy_classifier(struct priv *p)
++{
++    if (p->joc_classifier) {
++        openjoc_classifier_destroy(p->joc_classifier);
++        p->joc_classifier = NULL;
++    }
++}
++
++static void joc_probe_clear_packets(struct priv *p)
++{
++    for (int n = 0; n < p->joc_probe_packet_count; n++)
++        mp_frame_unref(&p->joc_probe_packets[n]);
++    talloc_free(p->joc_probe_packets);
++    p->joc_probe_packets = NULL;
++    p->joc_probe_packet_count = 0;
++    p->joc_probe_replay_pos = 0;
++    p->joc_probe_bytes = 0;
++}
++
++static void joc_probe_reset(struct priv *p)
++{
++    joc_probe_destroy_classifier(p);
++    joc_probe_clear_packets(p);
++    p->joc_probe_active = false;
++    p->joc_probe_decided = false;
++    p->joc_probe_use_libopenjoc = false;
++    p->joc_replay_active = false;
++}
++
++static bool joc_probe_has_decoder(struct mp_decoder_list *list)
++{
++    for (int n = 0; n < list->num_entries; n++) {
++        if (strcmp(list->entries[n].decoder, "libopenjoc") == 0)
++            return true;
++    }
++    return false;
++}
++
++static bool joc_probe_start(struct priv *p)
++{
++    openjoc_status status = openjoc_classifier_create(&p->joc_classifier);
++    if (status != OPENJOC_STATUS_OK) {
++        MP_VERBOSE(p, "OpenJOC classifier unavailable; using normal E-AC-3 selection\n");
++        p->joc_classifier = NULL;
++        return false;
++    }
++
++    p->joc_probe_active = true;
++    p->joc_probe_decided = false;
++    p->joc_probe_use_libopenjoc = false;
++    p->joc_replay_active = false;
++    p->joc_probe_replay_pos = 0;
++    p->joc_probe_bytes = 0;
++    MP_VERBOSE(p, "Starting bounded positive JOC classifier before decoder selection\n");
++    return true;
++}
++
++static const char *joc_classification_name(openjoc_classification value)
++{
++    switch (value) {
++    case OPENJOC_CLASSIFICATION_UNKNOWN: return "UNKNOWN";
++    case OPENJOC_CLASSIFICATION_CONFIRMED_JOC: return "CONFIRMED_JOC";
++    case OPENJOC_CLASSIFICATION_CONFIRMED_NON_JOC: return "CONFIRMED_NON_JOC";
++    case OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED:
++        return "INVALID_OR_UNSUPPORTED";
++    }
++    return "INVALID_OR_UNSUPPORTED";
++}
++
++static bool joc_probe_finish(struct priv *p, openjoc_classification value)
++{
++    const size_t inspected = openjoc_classifier_get_inspected_bytes(p->joc_classifier);
++    const size_t staged = openjoc_classifier_get_staged_bytes(p->joc_classifier);
++
++    MP_VERBOSE(p, "OpenJOC classifier: %s (inspected=%zu bytes, staged=%zu bytes)\n",
++               joc_classification_name(value), inspected, staged);
++    p->joc_probe_active = false;
++    p->joc_probe_decided = true;
++    p->joc_probe_use_libopenjoc =
++        value == OPENJOC_CLASSIFICATION_CONFIRMED_JOC;
++    p->joc_replay_active = true;
++    joc_probe_destroy_classifier(p);
++
++    if (value == OPENJOC_CLASSIFICATION_CONFIRMED_JOC) {
++        if (!reinit_decoder(p)) {
++            MP_ERR(p, "Could not initialize the decoder after OpenJOC classification\n");
++            return false;
++        }
++    }
++    return true;
++}
++
++static bool joc_probe_step(struct priv *p)
++{
++    if (!p->joc_probe_active || !p->joc_classifier)
++        return p->decoder != NULL;
++
++    if (!p->packet.type)
++        return false;
++
++    struct mp_frame frame = p->packet;
++    p->packet = MP_NO_FRAME;
++
++    if (frame.type == MP_FRAME_EOF) {
++        MP_TARRAY_APPEND(p, p->joc_probe_packets, p->joc_probe_packet_count, frame);
++        openjoc_classification value = OPENJOC_CLASSIFICATION_UNKNOWN;
++        openjoc_status status = openjoc_classifier_finish(p->joc_classifier, &value);
++        if (status != OPENJOC_STATUS_OK ||
++            value == OPENJOC_CLASSIFICATION_UNKNOWN)
++            value = OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED;
++        return joc_probe_finish(p, value);
++    }
++    if (frame.type != MP_FRAME_PACKET) {
++        mp_frame_unref(&frame);
++        MP_ERR(p, "OpenJOC classifier received an unexpected demux frame\n");
++        return false;
++    }
++
++    struct demux_packet *packet = frame.data;
++    if (packet->is_cached || !packet->buffer || !packet->len) {
++        mp_frame_unref(&frame);
++        MP_ERR(p, "OpenJOC classifier received an unusable demux packet\n");
++        return false;
++    }
++    if (packet->len > 131072 || p->joc_probe_bytes > 131072 - packet->len) {
++        MP_WARN(p, "OpenJOC classifier probe exceeded its 128 KiB bound; keeping stock E-AC-3\n");
++        MP_TARRAY_APPEND(p, p->joc_probe_packets, p->joc_probe_packet_count, frame);
++        return joc_probe_finish(p, OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED);
++    }
++
++    MP_TARRAY_APPEND(p, p->joc_probe_packets, p->joc_probe_packet_count, frame);
++    frame = MP_NO_FRAME;
++    struct demux_packet *retained =
++        p->joc_probe_packets[p->joc_probe_packet_count - 1].data;
++    p->joc_probe_bytes += retained->len;
++
++    openjoc_classification value = OPENJOC_CLASSIFICATION_UNKNOWN;
++    openjoc_status status = openjoc_classifier_send_chunk(
++        p->joc_classifier, retained->buffer, retained->len, &value);
++    if (status != OPENJOC_STATUS_OK) {
++        const char *detail = openjoc_classifier_last_error(p->joc_classifier);
++        MP_WARN(p, "OpenJOC classifier error (%s); keeping stock E-AC-3\n",
++                detail && detail[0] ? detail : "unknown error");
++        value = OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED;
++    }
++
++    if (value == OPENJOC_CLASSIFICATION_UNKNOWN)
++        return false;
++    return joc_probe_finish(p, value);
++}
++#endif
++
+ static int decoder_list_help(struct mp_log *log, const m_option_t *opt,
+                              struct bstr name)
+ {
+@@ -377,6 +553,10 @@ static void decf_destroy(struct mp_filter *f)
+         p->codec->decoder_desc = NULL;
+     }
+ 
++#if HAVE_OPENJOC
++    joc_probe_reset(p);
++#endif
++
+     decf_reset(f);
+     mp_frame_unref(&p->decoded_coverart);
+ }
+@@ -397,6 +577,14 @@ struct mp_decoder_list *audio_decoder_list(void)
+ 
+ static bool reinit_decoder(struct priv *p)
+ {
++#if HAVE_OPENJOC
++    // Preserve the bounded packet replay queue while the post-classification
++    // decoder is being opened. A normal reinit starts a fresh probe state.
++    bool probe_decision = p->joc_probe_decided;
++    bool probe_use_libopenjoc = p->joc_probe_use_libopenjoc;
++    if (p->joc_probe_active)
++        joc_probe_reset(p);
++#endif
+     if (p->decoder)
+         talloc_free(p->decoder->f);
+     p->decoder = NULL;
+@@ -406,8 +594,9 @@ static bool reinit_decoder(struct priv *p)
+ 
+     const struct mp_decoder_fns *driver = NULL;
+     struct mp_decoder_list *list = NULL;
+-    char *user_list = NULL;
++    const char *user_list = NULL;
+     char *fallback = NULL;
++    bool try_spdif = false;
+ 
+     if (p->codec->type == STREAM_VIDEO) {
+         driver = &vd_lavc;
+@@ -419,7 +608,7 @@ static bool reinit_decoder(struct priv *p)
+         fallback = "aac";
+ 
+         mp_mutex_lock(&p->cache_lock);
+-        bool try_spdif = p->try_spdif;
++        try_spdif = p->try_spdif;
+         mp_mutex_unlock(&p->cache_lock);
+ 
+         if (try_spdif && p->codec->codec) {
+@@ -437,6 +626,22 @@ static bool reinit_decoder(struct priv *p)
+     if (!driver)
+         return false;
+ 
++#if HAVE_OPENJOC
++    if (p->codec->type == STREAM_AUDIO && !list && !probe_decision &&
++        (!user_list || !user_list[0]) && p->codec->codec &&
++        strcmp(p->codec->codec, "eac3") == 0) {
++        struct mp_decoder_list *full = talloc_zero(NULL, struct mp_decoder_list);
++        driver->add_decoders(full);
++        bool has_openjoc = joc_probe_has_decoder(full);
++        talloc_free(full);
++        if (has_openjoc)
++            joc_probe_start(p);
++    }
++
++    if (probe_decision && probe_use_libopenjoc && (!user_list || !user_list[0]))
++        user_list = "libopenjoc";
++#endif
++
+     if (!list) {
+         struct mp_decoder_list *full = talloc_zero(NULL, struct mp_decoder_list);
+         driver->add_decoders(full);
+@@ -475,7 +680,11 @@ static bool reinit_decoder(struct priv *p)
+     update_cached_values(p);
+ 
+     talloc_free(list);
+-    return !!p->decoder;
++    return !!p->decoder
++#if HAVE_OPENJOC
++           || p->joc_probe_active
++#endif
++        ;
+ }
+ 
+ static bool decoder_wrapper_reinit(struct mp_decoder_wrapper *d)
+@@ -886,6 +1095,21 @@ static void feed_packet(struct priv *p)
+     if (p->decoded_coverart.type)
+         return;
+ 
++    if (!p->packet.type && !p->new_segment) {
++#if HAVE_OPENJOC
++        if (p->joc_replay_active) {
++            if (p->joc_probe_replay_pos < p->joc_probe_packet_count) {
++                int index = p->joc_probe_replay_pos++;
++                p->packet = p->joc_probe_packets[index];
++                p->joc_probe_packets[index] = MP_NO_FRAME;
++            } else {
++                joc_probe_clear_packets(p);
++                p->joc_replay_active = false;
++            }
++        }
++#endif
++    }
++
+     if (!p->packet.type && !p->new_segment) {
+         p->packet = mp_pin_out_read(p->demux);
+         if (!p->packet.type)
+@@ -912,6 +1136,16 @@ static void feed_packet(struct priv *p)
+     struct demux_packet *packet =
+         p->packet.type == MP_FRAME_PACKET ? p->packet.data : NULL;
+ 
++#if HAVE_OPENJOC
++    if (p->joc_probe_active) {
++        // Keep the packet borrowed by the classifier and owned by the bounded
++        // replay queue. The selected decoder sees the exact same packet later.
++        joc_probe_step(p);
++        mp_filter_internal_mark_progress(p->decf);
++        return;
++    }
++#endif
++
+     // For video framedropping, including parts of the hr-seek logic.
+     if (p->decoder->control) {
+         double start_pts = p->start_pts;
+diff --git a/meson.build b/meson.build
+index fb10be5078..bf20e3e7c7 100644
+--- a/meson.build
++++ b/meson.build
+@@ -51,6 +51,15 @@ features = {
+     'libplacebo': true,
+ }
+ 
++# Optional OpenJOC integration. The player remains fully functional without
++# this dependency; when present, the audio wrapper can positively classify
++# E-AC-3 before choosing the native libopenjoc decoder.
++openjoc = dependency('openjoc', version: '>= 0.7.0', required: false)
++features += {'openjoc': openjoc.found()}
++if features['openjoc']
++    dependencies += openjoc
++endif
++
+ 
+ # generic sources
+ sources = files(
+
+From c78b53e3bc47e584ffa3c8c3104dda982adad6e4 Mon Sep 17 00:00:00 2001
+From: chyinan <chyinan2015@gmail.com>
+Date: Thu, 20 Aug 2026 16:11:07 +0800
+Subject: [PATCH 2/2] audio: reset OpenJOC classification at segment boundaries
+
+---
+ filters/f_decoder_wrapper.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
+index ef73eef156..500d47ea16 100644
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -1297,6 +1297,13 @@ static void read_frame(struct priv *p)
+ 
+         reset_decoder(p);
+ 
++#if HAVE_OPENJOC
++        // A segmented stream is a new classification scope. Never carry a
++        // prior file/track admission decision or retained probe packets over
++        // the boundary.
++        joc_probe_reset(p);
++#endif
++
+         if (new_segment->segmented) {
+             if (p->codec != new_segment->codec) {
+                 p->codec = new_segment->codec;

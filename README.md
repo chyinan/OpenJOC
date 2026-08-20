@@ -78,6 +78,9 @@ Read the canonical documentation:
 - [Native FFmpeg libavcodec wrapper](docs/integration/FFMPEG_NATIVE.md) — an
   experimental `libopenjoc` named decoder for custom FFmpeg source builds;
   stock FFmpeg binaries remain unchanged and ordinary E-AC-3 stays on `eac3`.
+- [mpv player integration](docs/integration/MPV.md) — OpenJOC can be used as
+  the JOC decoder in custom mpv builds linked against the `libopenjoc`-enabled
+  FFmpeg integration; ordinary E-AC-3 remains on `eac3`.
 - [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
 - [Roadmap](docs/ROADMAP.md) — future priorities only.
 
@@ -115,9 +118,10 @@ decoder state.
 The experimental C ABI is distributed with the platform archives as
 `include/openjoc.h` plus static/shared libraries. It uses opaque handles,
 numeric statuses, `struct_size` forward compatibility, instance-owned errors,
-and panic containment. ABI 1.2 adds a framework-neutral bounded compressed-
-stream handle used by native media adapters while preserving the complete-AU
-decoder API. The C surface is ABI 1.2-experimental; compatibility may
+and panic containment. ABI 1.3 adds a decode-free classifier and retains the
+framework-neutral bounded compressed-stream handle used by native media
+adapters while preserving the complete-AU decoder API. The C surface is
+ABI 1.3-experimental; compatibility may
 evolve during OpenJOC 0.x; framework adapters are documented separately.
 
 OpenJOC also provides an experimental FFmpeg-facing libavformat/AVFrame bridge
