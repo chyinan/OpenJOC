@@ -91,6 +91,9 @@ jobs:
         run: |
           set -euo pipefail
           export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$PWD=/openjoc --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
+          brew_prefix=
+          brew_prefix=$(brew --prefix)
+          export PKG_CONFIG_PATH="$(brew --prefix gstreamer)/lib/pkgconfig:$brew_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
           gst_target="$RUNNER_TEMP/openjoc-gst-target"
           cargo build -p gst-plugin-openjoc --release --features gstreamer --locked --target-dir "$gst_target"
           ecosystem="$RUNNER_TEMP/openjoc-ecosystem"
@@ -153,7 +156,9 @@ jobs:
             libxpresent-dev libxrandr-dev libxv-dev libxinerama-dev \
             libxext-dev libxss-dev libxkbcommon-dev libwayland-dev \
             libdrm-dev libgbm-dev libpipewire-0.3-dev libpulse-dev \
-            libjpeg-dev liblcms2-dev libvulkan-dev python3
+            libjpeg-dev liblcms2-dev libvulkan-dev python3 \
+            gstreamer1.0-tools gstreamer1.0-plugins-good \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 
       - name: Select stable Rust
         run: |
@@ -264,6 +269,9 @@ jobs:
             mingw-w64-x86_64-luajit
             mingw-w64-x86_64-lcms2
             mingw-w64-x86_64-vulkan-loader
+            mingw-w64-x86_64-gstreamer
+            mingw-w64-x86_64-gst-plugins-base
+            mingw-w64-x86_64-gst-plugins-good
 
       - name: Select the GNU Rust target and build the ZIP
         env:
