@@ -72,7 +72,7 @@ The descriptor's raw warp-3 field is preserved as opaque data and is never
 used as a projection input. Its public semantic meaning remains unresolved.
 The bridge does not make `SemanticBindingState` production-resolved, does not
 claim an official spatial oracle, and does not admit a vendor-fidelity result.
-The 0.8.0 `render-joc` command composes this function with automatic
+The 0.9.0 `render-joc` command composes this function with automatic
 decoded JOC/OAMD bridge-control assembly for experimental speaker output. A
 complete topology sidecar remains an optional explicit override/test input.
 unsupported/default branches, unadmitted preprocessing, and malformed-recovery

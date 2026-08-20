@@ -381,18 +381,15 @@ instantiated by the playback stack.
 - Cross-platform builds use the same platform-neutral Rust code, but the
   platform SDK/runtime package must be installed for each target.
 
-The repository's existing CI checks the workspace on Linux, macOS, and Windows,
-and builds the feature-enabled plugin on Linux and macOS. Windows coverage is
-limited to the platform-neutral workspace check until the official GStreamer
-Windows installer/development package can be provisioned reproducibly in CI; no
-Windows-specific decoder code is used.
+The repository's CI checks the workspace and feature-enabled plugin on Linux,
+macOS, and Windows. The Windows package uses the recorded MSYS2 MinGW-w64
+GStreamer development/runtime set; no Windows-specific decoder code is used.
 
 The feature-enabled `gst-plugin-openjoc` build is the authoritative plugin
 artifact surface. It is built with `--features gstreamer` and validated with
 `gst-inspect-1.0`; the feature-disabled workspace stub is never a release
-plugin. OpenJOC 0.8.0 does not add a separate cross-platform GStreamer binary
-packaging subsystem: users and integrators should build the plugin from source
-or use the qualified CI artifact, then provide the matching host GStreamer
+plugin. OpenJOC 0.9.0 provides a separate cross-platform plugin pack built by
+`scripts/package-ecosystem.py`; users still provide the matching host GStreamer
 runtime and its component-specific notices.
 
 The autoplug phase does not claim support for any specific commercial player.

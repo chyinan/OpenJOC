@@ -35,15 +35,16 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.8.0 is the current release line: **Cross-Platform Player
-Integration**. It extends the embeddable decode/render engine with native
+OpenJOC 0.9.0 is the current release line: **Interchange & Ecosystem**. It
+retains the Cross-Platform Player Integration surface and extends the
+embeddable decode/render engine with native
 22.2 speaker rendering, built-in zero-configuration binaural HRTF, GStreamer
 integration, FFmpeg-facing integrations, and reproducible OpenJOC-enabled mpv
 bundles for qualified macOS arm64, Linux x86_64, and Windows x64 surfaces.
 Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
 `--topology` remains an optional complete override/test input.
 
-The 0.9 development line adds **Interchange & Ecosystem** surfaces:
+The 0.9.0 release adds these interchange and ecosystem surfaces:
 Reconstructed ADM/BW64 export, OpenJOC-enabled FFmpeg bundles, feature-enabled
 GStreamer plugin packs, a portable C SDK, and a public self-test. Use
 `openjoc export-adm INPUT -o OUTPUT.bw64` for a standards-based reconstructed
@@ -88,8 +89,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.8.0 capability status.
-- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.8.0 real-input workflow.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.9.0 capability status.
+- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.9.0 real-input workflow.
 - [Reconstructed ADM/BW64 export](docs/ADM_EXPORT.md) — the 0.9 interchange boundary and report contract.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
@@ -139,7 +140,7 @@ version but does not pin one exact compiler release.
 
 ## Embed the decode/render engine
 
-OpenJOC 0.8.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
+OpenJOC 0.9.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
 integration. A push supplies one complete E-AC-3 JOC access unit; receive returns
 owned interleaved `f32` PCM with sample-domain timestamps and semantic channel
 labels. Sessions support push/receive, drain, flush, reset/discontinuity, and
@@ -286,7 +287,7 @@ Raw EC3 parsing and internal-base decoding run in-process. Some seekable
 MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
 [capability matrix](docs/CAPABILITIES.md) for the exact boundary.
 
-## Assemble the 0.8.0 Apple-Silicon release bundle
+## Assemble the 0.9.0 Apple-Silicon release bundle
 
 On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
 dependencies already cached, a clean committed tree can assemble the release
@@ -295,9 +296,9 @@ bundle locally before publication:
 ```sh
 python3 scripts/build-local-release.py --output /path/to/empty/output
 cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.8.0-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.8.0-aarch64-apple-darwin.tar.gz
-cd openjoc-0.8.0-aarch64-apple-darwin
+shasum -a 256 -c openjoc-0.9.0-aarch64-apple-darwin.SHA256SUMS
+tar -xzf openjoc-0.9.0-aarch64-apple-darwin.tar.gz
+cd openjoc-0.9.0-aarch64-apple-darwin
 ./verify.sh
 ```
 
@@ -309,7 +310,7 @@ the artifact version from the workspace package metadata.
 
 ## Quickstart: OpenJOC-enabled mpv
 
-Download the qualified `openjoc-mpv-0.8.0-<platform>` bundle, extract it, and
+Download the qualified `openjoc-mpv-0.9.0-<platform>` bundle, extract it, and
 run the included launcher:
 
 ```sh
@@ -350,7 +351,7 @@ macOS bundle's `verify.sh` remain release verification surfaces.
 
 ## Platform scope
 
-The 0.8.0 release workflow targets Apple-silicon macOS
+The 0.9.0 release workflow targets Apple-silicon macOS
 (`aarch64-apple-darwin`), Windows x86_64 (`x86_64-pc-windows-msvc`), and
 GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The OpenJOC Player Bundle
 workflow additionally qualifies macOS arm64, Linux x86_64, and Windows x64

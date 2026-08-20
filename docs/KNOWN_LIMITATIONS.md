@@ -1,9 +1,9 @@
-# OpenJOC 0.8.0 known limitations
+# OpenJOC 0.9.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.8.0 is an independent, experimental interoperability project. It
+OpenJOC 0.9.0 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 
@@ -11,6 +11,11 @@ bit-identical Reference Player output.
   objects. `SemanticBindingState` remains `Unresolved`, and
   `ReconstructionBasis` rows are diagnostic reconstruction coordinates rather
   than verified authored-object PCM.
+- `export-adm` writes a reconstructed ADM/BW64 interoperability representation,
+  not the original ADM/BWF master. Best-effort output keeps reconstruction
+  signals neutral and reports the unresolved audio-to-spatial-metadata binding;
+  strict mode rejects it. Original names, hierarchy, UIDs, and discarded source
+  information cannot be recovered.
 - The embeddable packet API accepts exactly one complete E-AC-3 JOC access unit
   per push. Arbitrary byte fragmentation, multiple AUs in one push, demuxing,
   CLI parsing, and filesystem output remain outside `OpenJocSession`.
