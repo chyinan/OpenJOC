@@ -14,8 +14,10 @@ path = "src/main.rs"
 
 [dependencies]
 openjoc-api = { version = "0.8.0", path = "../openjoc-api" }
+openjoc-adm = { version = "0.8.0", path = "../openjoc-adm" }
 openjoc-eac3 = { version = "0.8.0", path = "../openjoc-eac3" }
 openjoc-emdf = { version = "0.8.0", path = "../openjoc-emdf" }
+openjoc-ffmpeg = { version = "0.8.0", path = "../openjoc-ffmpeg" }
 openjoc-container = { version = "0.8.0", path = "../openjoc-container" }
 openjoc-joc = { version = "0.8.0", path = "../openjoc-joc" }
 openjoc-oamd = { version = "0.8.0", path = "../openjoc-oamd" }

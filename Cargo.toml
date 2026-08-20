@@ -2,6 +2,7 @@
 members = [
     "crates/openjoc-bitio",
     "crates/openjoc-api",
+    "crates/openjoc-adm",
     "crates/openjoc-capi",
     "crates/openjoc-cli",
     "crates/openjoc-container",

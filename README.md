@@ -43,6 +43,14 @@ bundles for qualified macOS arm64, Linux x86_64, and Windows x64 surfaces.
 Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
 `--topology` remains an optional complete override/test input.
 
+The 0.9 development line adds **Reconstructed ADM/BW64 Export**. Use
+`openjoc export-adm INPUT -o OUTPUT.bw64` for a standards-based reconstructed
+interchange file and `openjoc validate-adm OUTPUT.bw64` for the supported
+structural validator. This is not original ADM master recovery: the current
+audio-to-spatial-metadata binding remains unresolved, so best-effort exports
+neutral reconstructed signals and records the omission in an adjacent JSON
+report. See [ADM export](docs/ADM_EXPORT.md).
+
 One renderer. Same spatial semantics across platforms. OpenJOC implements the
 spatial rendering DSP directly; frameworks and operating systems provide
 packet/timestamp transport, PCM transport, and normal device I/O, but do not
@@ -80,6 +88,7 @@ Read the canonical documentation:
 
 - [Capabilities](docs/CAPABILITIES.md) — current 0.8.0 capability status.
 - [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.8.0 real-input workflow.
+- [Reconstructed ADM/BW64 export](docs/ADM_EXPORT.md) — the 0.9 interchange boundary and report contract.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
 - [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
 - [Spatial portability](docs/SPATIAL_PORTABILITY.md) — 22.2 geometry, built-in HRTF, and platform-independence policy.

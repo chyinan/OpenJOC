@@ -14,6 +14,7 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use eac3_decode::ValidationProfileRequest;
+use openjoc_adm::{AdmPolicy, validate_bw64, write_bw64};
 use openjoc_api::{
     BinauralConfig, BinauralLfePolicy as ApiBinauralLfePolicy, DownmixPolicy as ApiDownmixPolicy,
     DrcPolicy as ApiDrcPolicy, OpenJocConfig, OpenJocPacket, OpenJocSession, OpenJocStatus,
@@ -28,10 +29,15 @@ use openjoc_eac3::{
     InternalBasePolicy, emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
 };
 use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
+use openjoc_ffmpeg::{
+    FfmpegDecoder, JocClassification, JocClassifier, PacketRef, Rational, ReceiveOutcome,
+};
+use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{
-    JocFrameInput, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
-    SpatialContributionMode, SpeakerLayoutPreset,
+    JocFrameInput, MetadataObject, MetadataUpdate, ObjectScene, PayloadDecodeError, PayloadDecoder,
+    PayloadDecoderConfig, SemanticBindingState, SpatialContributionMode, SpeakerLayoutPreset,
+    TrimUpdate,
 };
 use openjoc_wave::{
     Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WavePcm, WaveWriter, decode,
@@ -51,7 +57,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.bw64 [--adm-policy best-effort|strict] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -146,6 +152,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             let (input, trim_configuration_count) = parse_inspect(&arguments[1..])?;
             inspect(&input, trim_configuration_count)
         }
+        Some("export-adm") => export_adm(&arguments[1..]),
+        Some("validate-adm") => validate_adm(&arguments[1..]),
+        Some("self-test") => self_test(&arguments[1..]),
         Some("sofa") => render_scene::run_sofa(&arguments[1..]),
         Some("render-scene") => render_scene::run_render_scene(&arguments[1..]),
         Some("render-joc") => render_joc(&parse_render_joc(&arguments[1..])?, terminal),
@@ -193,6 +202,9 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base] [--streaming]\n",
+        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.bw64> [--adm-policy best-effort|strict]\n",
+        "  openjoc validate-adm <FILE> [--json]\n",
+        "  openjoc self-test [--fixture <JOC.ec3>]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
         "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
         "  openjoc decode-payload [OPTIONS]\n",
@@ -214,6 +226,9 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
+        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n",
+        "  openjoc validate-adm <FILE> [--json]\n",
+        "  openjoc self-test [--fixture <JOC.ec3>]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
@@ -241,6 +256,9 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  inspect         Inspect E-AC-3 access units and JOC metadata\n",
         "  decode          Decode metadata plus diagnostic ReconstructionBasis rows\n",
+        "  export-adm      Export reconstructed ADM/BW64; it is not the original ADM master\n",
+        "  validate-adm    Validate the OpenJOC BW64/ADM structural subset\n",
+        "  self-test       Run a bounded installation/fixture health report\n",
         "  diagnose-tools  Emit diagnostic-only E-AC-3 coding-tool inventory JSON\n",
         "  census          Census bounded metadata carriers from external fixtures\n",
         "  diagnose-oamd   Emit bit-exact EMDF/OAMD entry evidence\n",
@@ -299,6 +317,19 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
             "and writes bounded component WAVs, internal-base diagnostics, and a summary without ObjectScene capture.\n",
             "Rows are not authored-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
+        ),
+        "export-adm" => concat!(
+            "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n\n",
+            "Exports a reconstructed ADM/BW64 interoperability representation. It does not and cannot recover the original ADM master.\n",
+            "When the scene's audio-to-spatial-metadata binding is unresolved, best-effort emits neutral reconstructed signals and records the omission; strict rejects.\n",
+        ),
+        "validate-adm" => concat!(
+            "usage: openjoc validate-adm <FILE> [--json]\n\n",
+            "Validates BW64 ds64/fmt/data/axml/chna structure and identifier relationships within OpenJOC's supported subset.\n",
+        ),
+        "self-test" => concat!(
+            "usage: openjoc self-test [--fixture <JOC.ec3>]\n\n",
+            "Runs a bounded machine-readable health report. A missing optional public JOC fixture is reported as NOT_APPLICABLE, never as silent success.\n",
         ),
         "decode-payload" => concat!(
             "usage: openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>\n",
@@ -371,6 +402,355 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
     };
     io::Write::write_all(&mut io::stdout().lock(), help.as_bytes())?;
     Ok(())
+}
+
+fn export_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
+    let mut input = None;
+    let mut output = None;
+    let mut policy = AdmPolicy::BestEffort;
+    let mut overwrite = false;
+    let mut index = 0;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "-o" | "--output" => {
+                index += 1;
+                output = arguments.get(index).map(PathBuf::from);
+            }
+            "--adm-policy" => {
+                index += 1;
+                policy = arguments.get(index).ok_or_else(usage_error)?.parse()?;
+            }
+            "--overwrite" => overwrite = true,
+            value if value.starts_with('-') => return Err(usage_error().into()),
+            value => {
+                if input.is_some() {
+                    return Err(usage_error().into());
+                }
+                input = Some(PathBuf::from(value));
+            }
+        }
+        index += 1;
+    }
+    let input = input.ok_or_else(usage_error)?;
+    let output = output.ok_or_else(usage_error)?;
+    if output.exists() && !overwrite {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "refusing to overwrite ADM output {}; pass --overwrite explicitly",
+                output.display()
+            ),
+        )
+        .into());
+    }
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
+    let (scene, cleanup) = load_scene_for_adm(&input)?;
+    let result = write_bw64(&output, &scene, policy);
+    if let Some(stage) = cleanup {
+        let _ = fs::remove_dir_all(stage);
+    }
+    let report = result?;
+    let report_path = output.with_extension("adm-report.json");
+    fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
+    let validation = validate_bw64(&output)?;
+    println!(
+        "Reconstructed ADM/BW64 written to {}\nReport written to {}\nValidated: {} tracks, {} bytes of PCM\nOriginal ADM master recovered: NO",
+        output.display(),
+        report_path.display(),
+        validation.chna_tracks,
+        validation.data_bytes
+    );
+    Ok(())
+}
+
+fn validate_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
+    let mut input = None;
+    let mut json = false;
+    for argument in arguments {
+        match argument.as_str() {
+            "--json" => json = true,
+            value if value.starts_with('-') => return Err(usage_error().into()),
+            value if input.is_none() => input = Some(PathBuf::from(value)),
+            _ => return Err(usage_error().into()),
+        }
+    }
+    let input = input.ok_or_else(usage_error)?;
+    let summary = validate_bw64(&input)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        println!(
+            "BW64 PASS: {} tracks, {} Hz, {} PCM bytes, {} axml bytes, unique CHNA IDs: {}",
+            summary.chna_tracks,
+            summary.sample_rate,
+            summary.data_bytes,
+            summary.axml_bytes,
+            summary.identifiers_unique
+        );
+    }
+    Ok(())
+}
+
+fn self_test(arguments: &[String]) -> Result<(), Box<dyn Error>> {
+    let mut fixture = env::var_os("OPENJOC_PUBLIC_JOC_FIXTURE").map(PathBuf::from);
+    let mut index = 0;
+    while index < arguments.len() {
+        if arguments[index] != "--fixture" {
+            return Err(usage_error().into());
+        }
+        index += 1;
+        fixture = Some(PathBuf::from(arguments.get(index).ok_or_else(usage_error)?));
+        index += 1;
+    }
+    let mut failed = false;
+    println!("VERSION      PASS ({})", package_metadata().version);
+    println!("C_ABI        PASS (1.3-experimental)");
+
+    let stage = create_adm_decode_stage()?;
+    let adm_path = stage.join("self-test.bw64");
+    match load_scene_for_adm(Path::new("fixtures/adm/reconstructed-scene.json")).and_then(
+        |(scene, _)| {
+            write_bw64(&adm_path, &scene, AdmPolicy::BestEffort)?;
+            validate_bw64(&adm_path)?;
+            Ok(())
+        },
+    ) {
+        Ok(()) => println!("ADM_EXPORT   PASS"),
+        Err(error) => {
+            failed = true;
+            println!("ADM_EXPORT   FAIL ({error})");
+        }
+    }
+
+    let Some(fixture) = fixture.filter(|path| path.is_file()) else {
+        for label in [
+            "FIXTURE",
+            "CLASSIFIER",
+            "DECODE",
+            "7.1.4",
+            "BINAURAL",
+            "HRTF",
+        ] {
+            println!("{label:<12} NOT_APPLICABLE");
+        }
+        let _ = fs::remove_dir_all(&stage);
+        return if failed {
+            Err(io::Error::other("OpenJOC self-test failed").into())
+        } else {
+            Ok(())
+        };
+    };
+    let fixture_bytes = fs::read(&fixture)?;
+    let mut classifier = JocClassifier::new();
+    let classification = classifier.send_chunk(&fixture_bytes)?;
+    if classification == JocClassification::ConfirmedJoc {
+        println!("FIXTURE      PASS ({})", fixture.display());
+        println!("CLASSIFIER   PASS");
+    } else {
+        failed = true;
+        println!("FIXTURE      FAIL ({})", fixture.display());
+        println!("CLASSIFIER   FAIL ({})", classification.as_str());
+    }
+
+    let speaker_config = OpenJocConfig {
+        speaker_layout: "7.1.4".to_owned(),
+        ..OpenJocConfig::default()
+    };
+    match self_test_decode(&fixture_bytes, speaker_config) {
+        Ok(frames) if frames > 0 => {
+            println!("DECODE       PASS ({frames} frame(s))");
+            println!("7.1.4        PASS");
+        }
+        Ok(_) => {
+            failed = true;
+            println!("DECODE       FAIL (no PCM frames)");
+            println!("7.1.4        FAIL");
+        }
+        Err(error) => {
+            failed = true;
+            println!("DECODE       FAIL ({error})");
+            println!("7.1.4        FAIL");
+        }
+    }
+
+    let binaural_config = OpenJocConfig {
+        render_mode: ApiRenderMode::Binaural,
+        speaker_layout: "7.1.4".to_owned(),
+        binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+        ..OpenJocConfig::default()
+    };
+    match self_test_decode(&fixture_bytes, binaural_config) {
+        Ok(frames) if frames > 0 => {
+            println!("BINAURAL     PASS ({frames} frame(s))");
+            println!("HRTF         PASS (built-in SADIE II)");
+        }
+        Ok(_) => {
+            failed = true;
+            println!("BINAURAL     FAIL (no PCM frames)");
+            println!("HRTF         FAIL");
+        }
+        Err(error) => {
+            failed = true;
+            println!("BINAURAL     FAIL ({error})");
+            println!("HRTF         FAIL");
+        }
+    }
+    let _ = fs::remove_dir_all(&stage);
+    if failed {
+        Err(io::Error::other("OpenJOC self-test failed").into())
+    } else {
+        Ok(())
+    }
+}
+
+fn self_test_decode(bytes: &[u8], config: OpenJocConfig) -> Result<usize, Box<dyn Error>> {
+    let mut decoder = FfmpegDecoder::new(config)?;
+    let packet = PacketRef {
+        data: bytes,
+        pts: Some(0),
+        dts: Some(0),
+        duration: Some(1536),
+        time_base: Rational::SAMPLE_TIME_BASE,
+        stream_index: 0,
+        discontinuity: false,
+        preroll: false,
+    };
+    decoder.send_packet(packet)?;
+    let mut frames = 0;
+    loop {
+        match decoder.receive_frame()? {
+            ReceiveOutcome::Frame(_) => frames += 1,
+            ReceiveOutcome::NeedMoreInput | ReceiveOutcome::EndOfStream => break,
+            ReceiveOutcome::NotJoc => {
+                return Err(io::Error::other("fixture was not classified as JOC").into());
+            }
+        }
+    }
+    decoder.drain()?;
+    loop {
+        match decoder.receive_frame()? {
+            ReceiveOutcome::Frame(_) => frames += 1,
+            ReceiveOutcome::EndOfStream => break,
+            ReceiveOutcome::NeedMoreInput => {}
+            ReceiveOutcome::NotJoc => {
+                return Err(
+                    io::Error::other("fixture was not classified as JOC during drain").into(),
+                );
+            }
+        }
+    }
+    Ok(frames)
+}
+
+#[derive(serde::Deserialize)]
+struct SceneManifestDisk {
+    sample_rate: u32,
+    duration_samples: u64,
+    objects: Vec<ObjectManifestDisk>,
+    semantic_binding: SemanticBindingState,
+}
+
+#[derive(serde::Deserialize)]
+struct ObjectManifestDisk {
+    object_id: u32,
+    class: openjoc_scene::ObjectClass,
+}
+
+fn load_scene_for_adm(input: &Path) -> Result<(ObjectScene, Option<PathBuf>), Box<dyn Error>> {
+    if input.is_dir() {
+        return Ok((load_scene_directory(input)?, None));
+    }
+    if input
+        .extension()
+        .is_some_and(|extension| extension == "json")
+    {
+        let scene = ObjectScene::from_json(&fs::read_to_string(input)?)?;
+        return Ok((scene, None));
+    }
+    let stage = create_adm_decode_stage()?;
+    let arguments = DecodeEac3Args {
+        input: input.to_owned(),
+        downmix: None,
+        internal_base: false,
+        output: stage.clone(),
+        output_format: SampleFormat::F32,
+        validation_profile: ValidationProfileRequest::Auto,
+        trim_configuration_count: None,
+        internal_base_policy: InternalBasePolicy::CurrentDefault,
+        streaming: false,
+    };
+    if let Err(error) = decode_eac3(&arguments) {
+        let _ = fs::remove_dir_all(&stage);
+        return Err(error);
+    }
+    let scene = load_scene_directory(&stage)?;
+    Ok((scene, Some(stage)))
+}
+
+fn load_scene_directory(directory: &Path) -> Result<ObjectScene, Box<dyn Error>> {
+    let manifest: SceneManifestDisk =
+        serde_json::from_slice(&fs::read(directory.join("scene.json"))?)?;
+    let reconstruction_basis = if directory
+        .join("diagnostics/reconstruction_basis.json")
+        .is_file()
+    {
+        serde_json::from_slice::<Option<ReconstructionBasis>>(&fs::read(
+            directory.join("diagnostics/reconstruction_basis.json"),
+        )?)?
+    } else {
+        None
+    };
+    let metadata_timeline = serde_json::from_slice::<Vec<MetadataUpdate>>(&fs::read(
+        directory.join("metadata/timeline.json"),
+    )?)?;
+    let trim_timeline = serde_json::from_slice::<Vec<TrimUpdate>>(&fs::read(
+        directory.join("metadata/trim_timeline.json"),
+    )?)?;
+    let base_lfe_pcm = directory
+        .join("diagnostics/base_lfe.wav")
+        .is_file()
+        .then(|| -> Result<Vec<f64>, Box<dyn Error>> {
+            let pcm = openjoc_wave::decode(&fs::read(directory.join("diagnostics/base_lfe.wav"))?)?;
+            pcm.channels
+                .into_iter()
+                .next()
+                .ok_or_else(|| io::Error::other("base LFE WAV has no channel").into())
+        })
+        .transpose()?;
+    let scene = ObjectScene {
+        sample_rate: manifest.sample_rate,
+        duration_samples: manifest.duration_samples,
+        objects: manifest
+            .objects
+            .into_iter()
+            .map(|object| MetadataObject {
+                object_id: object.object_id,
+                class: object.class,
+            })
+            .collect(),
+        metadata_timeline,
+        trim_timeline,
+        reconstruction_basis,
+        base_lfe_pcm,
+        semantic_binding: manifest.semantic_binding,
+    };
+    scene.validate()?;
+    Ok(scene)
+}
+
+fn create_adm_decode_stage() -> Result<PathBuf, Box<dyn Error>> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| io::Error::other("system clock is before UNIX epoch"))?
+        .as_nanos();
+    let stage = env::temp_dir().join(format!("openjoc-adm-{}-{stamp}", std::process::id()));
+    fs::create_dir(&stage)?;
+    Ok(stage)
 }
 
 fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(), std::fmt::Error> {

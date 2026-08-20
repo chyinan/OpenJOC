@@ -1,0 +1,18 @@
+{
+  "sample_rate": 48000,
+  "duration_samples": 8,
+  "objects": [
+    {"object_id": 0, "class": "dynamic"},
+    {"object_id": 1, "class": "bed_or_isf"}
+  ],
+  "metadata_timeline": [],
+  "trim_timeline": [],
+  "reconstruction_basis": {
+    "rows": [
+      [0.0, 0.125, 0.25, 0.125, 0.0, -0.125, -0.25, -0.125],
+      [0.0, -0.125, -0.25, -0.125, 0.0, 0.125, 0.25, 0.125]
+    ]
+  },
+  "base_lfe_pcm": null,
+  "semantic_binding": "unresolved"
+}

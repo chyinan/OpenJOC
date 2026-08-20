@@ -35,6 +35,19 @@ This provenance record is source-repository history; the binary release bundle
 intentionally excludes this file, `REQUIREMENTS_MATRIX.md`, and the research
 chronology.
 
+### Reconstructed ADM/BW64 export provenance
+
+The ADM/BW64 exporter is implemented from the public ITU-R BS.2076-3 and
+BS.2088-2 specifications, EBU Tech 3285 Supplement 7 `chna` semantics, and
+ordinary public XML/container rules. It does not use competitor source code,
+private vendor extensions, decompiler output, or contaminated implementation
+material. The exporter consumes the existing renderer-independent
+`ObjectScene`/`ReconstructionBasis` boundary. Because that boundary records
+audio-to-spatial-metadata binding as `Unresolved`, the exporter deliberately
+does not infer a row-to-object relationship; its report records the relation
+as `UNRESOLVED` and its strict policy rejects it. This component provenance is
+evidence-specific and does not alter the project-wide clean-room policy.
+
 OpenJOC is an independent project and is not affiliated with, endorsed by, or
 sponsored by Dolby Laboratories. References to Dolby, Dolby Atmos, E-AC-3 and
 JOC describe relevant technologies and interoperability contexts; they do not

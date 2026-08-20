@@ -626,6 +626,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "openjoc-adm"
+version = "0.8.0"
+dependencies = [
+ "openjoc-joc",
+ "openjoc-scene",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "openjoc-api"
 version = "0.8.0"
 dependencies = [
@@ -659,10 +669,12 @@ dependencies = [
 name = "openjoc-cli"
 version = "0.8.0"
 dependencies = [
+ "openjoc-adm",
  "openjoc-api",
  "openjoc-container",
  "openjoc-eac3",
  "openjoc-emdf",
+ "openjoc-ffmpeg",
  "openjoc-joc",
  "openjoc-oamd",
  "openjoc-render",
