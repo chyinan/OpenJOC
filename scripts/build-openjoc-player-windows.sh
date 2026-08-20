@@ -10,6 +10,14 @@ repo_root=$(cd "$script_dir/.." && pwd)
 manifest="$repo_root/packaging/player/PLAYER_PACKAGE_MANIFEST.json"
 output=
 work=
+phase=MSYS2_PROVISIONING
+
+on_error() {
+    status=$?
+    echo "WINDOWS_PLAYER_FAILURE_CLASS=$phase" >&2
+    exit "$status"
+}
+trap on_error ERR
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -73,6 +81,9 @@ if ! git -C "$repo_root" diff --quiet; then
 fi
 mkdir -p "$work/src" "$work/build" "$work/prefix" "$work/stage/bin" "$work/stage/lib"
 
+echo '::group::OpenJOC player Windows prerequisites and source pinning'
+phase=PINNED_SOURCE_FETCH
+
 fetch_checkout() {
     local url=$1 commit=$2 destination=$3
     mkdir -p "$destination"
@@ -99,12 +110,19 @@ git -C "$ffmpeg_source" apply --check "$ffmpeg_patch"
 git -C "$ffmpeg_source" apply "$ffmpeg_patch"
 git -C "$mpv_source" apply --check "$mpv_patch"
 git -C "$mpv_source" apply "$mpv_patch"
+echo '::endgroup::'
 
+echo '::group::OpenJOC C ABI'
+phase=OPENJOC_C_ABI
 rust_target=x86_64-pc-windows-gnu
 rustup target add "$rust_target"
 cargo build --manifest-path "$repo_root/Cargo.toml" -p openjoc-capi --release --target "$rust_target" --locked
 openjoc_prefix="$work/prefix/openjoc"
 "$repo_root/integrations/ffmpeg/native/stage-openjoc.sh" "$openjoc_prefix" "$rust_target"
+echo '::endgroup::'
+
+echo '::group::Patched FFmpeg configure and build'
+phase=FFMPEG_CONFIGURE_BUILD
 ffmpeg_prefix="$work/prefix/ffmpeg"
 (
     cd "$work/build"
@@ -118,7 +136,10 @@ ffmpeg_prefix="$work/prefix/ffmpeg"
 )
 make -C "$work/build" -j"${CARGO_BUILD_JOBS:-2}"
 make -C "$work/build" install
+echo '::endgroup::'
 
+echo '::group::Patched mpv configure and build'
+phase=MPV_CONFIGURE_BUILD
 mpv_prefix="$work/prefix/mpv"
 (
     cd "$work"
@@ -129,7 +150,10 @@ mpv_prefix="$work/prefix/mpv"
 meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
 DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
 cp "$mpv_prefix/usr/bin/mpv.exe" "$work/stage/bin/mpv.exe"
+echo '::endgroup::'
 
+echo '::group::Windows package assembly and dependency audit'
+phase=DLL_CLOSURE_AND_PACKAGE
 cp "$openjoc_prefix/bin/openjoc_capi.dll" "$work/stage/bin/openjoc_capi.dll"
 for file in "$ffmpeg_prefix"/bin/*.dll; do [[ -f "$file" ]] && cp "$file" "$work/stage/bin/"; done
 
@@ -139,11 +163,16 @@ python3 "$repo_root/scripts/player-package.py" bundle \
     --search-dir /mingw64/bin --ffmpeg-source "$ffmpeg_source" \
     --mpv-source "$mpv_source" --private-prefix "$work" \
     --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(x86_64-w64-mingw32-gcc --version | head -n 1); msys2=$(uname -srv)"
+echo '::endgroup::'
 
+echo '::group::Extracted Windows package runtime smoke'
+phase=PACKAGE_EXTRACTION_RUNTIME
 archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-windows-x64.zip' -type f -print | head -n 1)
 extract="$work/extracted"
 mkdir -p "$extract"
 unzip -q "$archive" -d "$extract"
 root=$(find "$extract" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)
 python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform windows-x64 --run-smoke --missing-dependency-smoke
+echo '::endgroup::'
+phase=COMPLETE
 echo "OpenJOC Windows player packaging complete: $output"

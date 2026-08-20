@@ -156,15 +156,20 @@ case "$platform" in
         fi
         ffmpeg_source="$work/src/ffmpeg"
         mpv_source="$work/src/mpv"
+        echo '::group::Pinned FFmpeg/mpv sources and patch gates'
         fetch_checkout https://github.com/FFmpeg/FFmpeg.git "$ffmpeg_commit" "$ffmpeg_source"
         fetch_checkout https://github.com/mpv-player/mpv.git "$mpv_commit" "$mpv_source"
         git -C "$ffmpeg_source" apply --check "$ffmpeg_patch"
         git -C "$ffmpeg_source" apply "$ffmpeg_patch"
         git -C "$mpv_source" apply --check "$mpv_patch"
         git -C "$mpv_source" apply "$mpv_patch"
+        echo '::endgroup::'
+        echo '::group::OpenJOC C ABI'
         cargo build --manifest-path "$repo_root/Cargo.toml" -p openjoc-capi --release --locked
         openjoc_prefix="$work/prefix/openjoc"
         "$repo_root/integrations/ffmpeg/native/stage-openjoc.sh" "$openjoc_prefix"
+        echo '::endgroup::'
+        echo '::group::Patched FFmpeg configure and build'
         ffmpeg_prefix="$work/prefix/ffmpeg"
         (cd "$work/build" && PKG_CONFIG_PATH="$openjoc_prefix/lib/pkgconfig" \
             "$ffmpeg_source/configure" --prefix="$ffmpeg_prefix" \
@@ -174,6 +179,8 @@ case "$platform" in
             --enable-videotoolbox --enable-audiotoolbox)
         make -C "$work/build" -j"${CARGO_BUILD_JOBS:-2}"
         make -C "$work/build" install
+        echo '::endgroup::'
+        echo '::group::Patched mpv configure and build'
         mpv_prefix="$work/prefix/mpv"
         brew_prefix=$(brew --prefix)
         dep_pkgconfig="$brew_prefix/lib/pkgconfig"
@@ -184,6 +191,8 @@ case "$platform" in
         meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
         DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
         cp "$mpv_prefix/usr/bin/mpv" "$work/stage/bin/mpv"
+        echo '::endgroup::'
+        echo '::group::macOS package assembly and dependency audit'
         cp "$openjoc_prefix/lib/libopenjoc_capi.dylib" "$work/stage/lib/libopenjoc_capi.dylib"
         for file in "$ffmpeg_prefix"/lib/*.dylib; do [ -f "$file" ] && cp "$file" "$work/stage/lib/"; done
         python3 "$repo_root/scripts/player-package.py" bundle \
@@ -192,12 +201,15 @@ case "$platform" in
             --search-dir "$brew_prefix/lib" --ffmpeg-source "$ffmpeg_source" \
             --mpv-source "$mpv_source" --private-prefix "$work" \
             --toolchain "$(rustc -vV | tr '\n' '; ')"
+        echo '::endgroup::'
+        echo '::group::Extracted macOS package runtime smoke'
         archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-macos-arm64.tar.gz' -type f -print | head -n 1)
         extract="$work/extracted"
         mkdir -p "$extract"
         tar -xzf "$archive" -C "$extract"
         root=$(find "$extract" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)
         python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform macos-arm64 --run-smoke --missing-dependency-smoke
+        echo '::endgroup::'
         ;;
     linux-x86_64)
         test "$(uname -s)" = Linux || { echo "linux-x86_64 must be built on a Linux runner" >&2; exit 1; }
@@ -206,15 +218,20 @@ case "$platform" in
         done
         ffmpeg_source="$work/src/ffmpeg"
         mpv_source="$work/src/mpv"
+        echo '::group::Pinned FFmpeg/mpv sources and patch gates'
         fetch_checkout https://github.com/FFmpeg/FFmpeg.git "$ffmpeg_commit" "$ffmpeg_source"
         fetch_checkout https://github.com/mpv-player/mpv.git "$mpv_commit" "$mpv_source"
         git -C "$ffmpeg_source" apply --check "$ffmpeg_patch"
         git -C "$ffmpeg_source" apply "$ffmpeg_patch"
         git -C "$mpv_source" apply --check "$mpv_patch"
         git -C "$mpv_source" apply "$mpv_patch"
+        echo '::endgroup::'
+        echo '::group::OpenJOC C ABI'
         cargo build --manifest-path "$repo_root/Cargo.toml" -p openjoc-capi --release --locked
         openjoc_prefix="$work/prefix/openjoc"
         "$repo_root/integrations/ffmpeg/native/stage-openjoc.sh" "$openjoc_prefix"
+        echo '::endgroup::'
+        echo '::group::Patched FFmpeg configure and build'
         ffmpeg_prefix="$work/prefix/ffmpeg"
         (cd "$work/build" && PKG_CONFIG_PATH="$openjoc_prefix/lib/pkgconfig" \
             "$ffmpeg_source/configure" --prefix="$ffmpeg_prefix" \
@@ -224,6 +241,8 @@ case "$platform" in
             )
         make -C "$work/build" -j"${CARGO_BUILD_JOBS:-2}"
         make -C "$work/build" install
+        echo '::endgroup::'
+        echo '::group::Patched mpv configure and build'
         mpv_prefix="$work/prefix/mpv"
         (cd "$work" && PKG_CONFIG_PATH="$ffmpeg_prefix/lib/pkgconfig:$openjoc_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
             meson setup "$work/build/mpv" "$mpv_source" \
@@ -232,6 +251,8 @@ case "$platform" in
         meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
         DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
         cp "$mpv_prefix/usr/bin/mpv" "$work/stage/bin/mpv"
+        echo '::endgroup::'
+        echo '::group::Linux package assembly and dependency audit'
         cp "$openjoc_prefix/lib/libopenjoc_capi.so" "$work/stage/lib/libopenjoc_capi.so"
         for file in "$ffmpeg_prefix"/lib/*.so*; do [ -f "$file" ] && cp "$file" "$work/stage/lib/"; done
         LD_LIBRARY_PATH="$ffmpeg_prefix/lib:$openjoc_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
@@ -240,12 +261,15 @@ case "$platform" in
             --ffmpeg-source "$ffmpeg_source" --mpv-source "$mpv_source" \
             --private-prefix "$work" \
             --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(gcc --version | head -n 1); glibc=$(ldd --version | head -n 1); kernel=$(uname -sr)"
+        echo '::endgroup::'
+        echo '::group::Extracted Linux package runtime smoke'
         archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-linux-x86_64.tar.gz' -type f -print | head -n 1)
         extract="$work/extracted"
         mkdir -p "$extract"
         tar -xzf "$archive" -C "$extract"
         root=$(find "$extract" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)
         python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform linux-x86_64 --run-smoke --missing-dependency-smoke
+        echo '::endgroup::'
         ;;
     windows-x64)
         if [ -n "$work" ]; then
