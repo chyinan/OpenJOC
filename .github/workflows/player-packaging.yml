@@ -60,7 +60,7 @@ jobs:
           ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Install pinned build prerequisites
-        run: brew install ffmpeg meson ninja libass libplacebo
+        run: brew install ffmpeg gstreamer meson ninja libass libplacebo
 
       - name: Select stable Rust
         run: |
