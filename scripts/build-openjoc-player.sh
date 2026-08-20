@@ -104,7 +104,11 @@ mpv_patch="$repo_root/$(json_value pinned_stack.mpv.patch_path)"
 mpv_patch_sha=$(json_value pinned_stack.mpv.patch_sha256)
 
 sha256_file() {
-    shasum -a 256 "$1" | awk '{print $1}'
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
 }
 if [ "$(sha256_file "$ffmpeg_patch")" != "$ffmpeg_patch_sha" ]; then
     echo "FFmpeg patch SHA-256 does not match PLAYER_PACKAGE_MANIFEST.json" >&2
