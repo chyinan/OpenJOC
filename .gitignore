@@ -7,3 +7,25 @@
 /real-census/
 /real-census-*/
 /crates/openjoc-eac3/tests/_real_debug.rs
+
+# Common toolchain and OS/editor detritus
+**/.DS_Store
+**/Thumbs.db
+**/*.swp
+**/*.swo
+**/*.swn
+**/*.tmp
+**/*.temp
+**/*.orig
+**/*.rej
+**/.vscode/
+**/.idea/
+**/.history/
+**/.vs/
+**/*.out
+**/*.log
+**/node_modules/
+**/dist/
+**/coverage/
+**/target/
+**/build/

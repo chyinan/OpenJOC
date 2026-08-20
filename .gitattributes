@@ -1,1 +1,33 @@
 integrations/ffmpeg/native/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
+* text=auto
+
+# Ensure consistent newline handling
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.py linguist-detectable=false
+*.sh linguist-detectable=false
+*.ps1 text eol=crlf
+
+# Binary files
+*.png -text -diff
+*.jpg -text -diff
+*.jpeg -text -diff
+*.gif -text -diff
+*.pdf -text -diff
+*.zip -text -diff
+*.gz -text -diff
+*.bz2 -text -diff
+*.xz -text -diff
+*.so -text -diff
+*.a -text -diff
+*.dylib -text -diff
+*.dll -text -diff
+*.exe -text -diff
+*.wasm -text -diff
+*.bin -text -diff
+*.wav -text -diff
