@@ -35,6 +35,7 @@ C_API_ARTIFACTS = {
 PUBLIC_PATHS = (
     "LICENSE",
     "README.md",
+    "docs/ADM_EXPORT.md",
     "docs/ARCHITECTURE.md",
     "docs/CAPABILITIES.md",
     "docs/KNOWN_LIMITATIONS.md",
@@ -43,6 +44,8 @@ PUBLIC_PATHS = (
     "docs/C_API.md",
     "docs/FUTURE_PLAYER_ADAPTERS.md",
     "docs/README.md",
+    "docs/PUBLIC_SMOKE_FIXTURE.md",
+    "docs/integration/ECOSYSTEM_PACKAGING.md",
 )
 
 
