@@ -313,7 +313,7 @@ jobs:
           mkdir -p "$ecosystem"
           patch_sha=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["patch_sha256"])')
           ffmpeg_revision=$(python3 -c 'import json; print(json.load(open("packaging/player/PLAYER_PACKAGE_MANIFEST.json"))["pinned_stack"]["ffmpeg"]["commit"])')
-          python3 scripts/package-ecosystem.py sdk --platform windows-x64 --target-dir "$root/target/x86_64-pc-windows-gnu/release" --output "$root/openjoc-ecosystem-sdk"
+          python3 scripts/package-ecosystem.py sdk --platform windows-x64 --target-dir "$PWD/target/x86_64-pc-windows-gnu/release" --output "$root/openjoc-ecosystem-sdk"
           python3 scripts/package-ecosystem.py gstreamer --platform windows-x64 --plugin "$gst_target/x86_64-pc-windows-gnu/release/gstopenjoc.dll" --output "$root/openjoc-ecosystem-gstreamer"
           python3 scripts/package-ecosystem.py ffmpeg --platform windows-x64 --ffmpeg "$root/openjoc-player-work-windows/prefix/ffmpeg/bin/ffmpeg.exe" --ffprobe "$root/openjoc-player-work-windows/prefix/ffmpeg/bin/ffprobe.exe" --openjoc-prefix "$root/openjoc-player-work-windows/prefix/openjoc" --ffmpeg-source "$root/openjoc-player-work-windows/src/ffmpeg" --ffmpeg-revision "$ffmpeg_revision" --openjoc-patch-sha256 "$patch_sha" --output "$root/openjoc-ecosystem-ffmpeg"
           cp "$root"/openjoc-ecosystem-{sdk,gstreamer,ffmpeg}/* "$ecosystem/"
