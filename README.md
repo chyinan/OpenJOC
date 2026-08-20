@@ -9,6 +9,17 @@ and reconstruction-basis decoder. It implements behavior from public ETSI
 specifications and controlled, permitted evidence; it does not copy Dolby
 private implementations.
 
+OpenJOC is an independent clean-room implementation, but it is not a
+public-document-only implementation. Most behavior is derived directly from
+public normative specifications and public technical sources. Where those
+sources are insufficient to establish interoperability behavior, the project
+may use a separated traditional clean-room process: authorized contaminated
+analysis is sanitized into a behavioral specification and then implemented
+independently. Proprietary implementation code, decompiler output, assembly,
+private symbols or addresses, proprietary structure layouts, and copied
+implementation expressions are not implementation inputs; see
+[the provenance policy](docs/PROVENANCE.md).
+
 OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby
 Laboratories. Dolby, Dolby Atmos, and related marks are trademarks of their
 respective owners.

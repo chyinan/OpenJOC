@@ -17,7 +17,7 @@ Use the document that owns the question:
 | How do I build or verify the OpenJOC Player Bundle? | [integration/PLAYER_PACKAGING.md](integration/PLAYER_PACKAGING.md) |
 | Which player adapter comes next? | [integration/FFMPEG_NATIVE_FUTURE.md](integration/FFMPEG_NATIVE_FUTURE.md) |
 | What is planned next? | [ROADMAP.md](ROADMAP.md) |
-| What provenance policy governs implementation claims? | source-only `docs/PROVENANCE.md` |
+| What clean-room policy and evidence classes govern implementation claims? | [PROVENANCE.md](PROVENANCE.md) |
 
 Contributor rules and verification commands live in
 [CONTRIBUTING.md](../CONTRIBUTING.md). Architecture and renderer behavior are

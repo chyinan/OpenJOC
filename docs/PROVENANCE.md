@@ -4,20 +4,36 @@
 > claim-admission provenance. Current capability status belongs in
 > `CAPABILITIES.md`; future work belongs in `ROADMAP.md`.
 
-OpenJOC is a clean-room implementation. Production behavior is derived only
-from the public normative specifications listed below, the official ETSI
-companion archive, and public mathematical/DSP literature where explicitly
-recorded. No existing JOC decoder source code is an implementation reference.
+OpenJOC is an independent clean-room implementation, but it is not a
+public-document-only implementation. Most production behavior is derived
+directly from public normative specifications, official public companion
+material, and public mathematical/DSP literature where explicitly recorded.
+Where public evidence is insufficient to establish interoperability behavior,
+the project may use a separated traditional clean-room process:
 
-The project separates `NORMATIVE / PUBLIC SPECIFICATION` from
-`BEHAVIORAL CLEAN-ROOM SPECIFICATION`. A behavioral clean-room specification
-may define observable interoperability behavior, numerical contracts, and
-functional constants through a separated analysis → sanitized specification →
-independent implementation process. It does not transfer implementation code,
-decompiler output, private symbols, addresses, or internal proprietary
-structures. This provenance record is source-repository history; the binary
-release bundle intentionally excludes this file, `REQUIREMENTS_MATRIX.md`, and
-the research chronology.
+```text
+authorized contaminated analysis
+            ↓
+governance / sanitization
+            ↓
+behavioral clean-room specification
+            ↓
+independent implementation
+```
+
+Analysis evidence provenance is not implementation provenance. Controlled
+contaminated analysis may, where explicitly authorized and necessary, inspect
+black-box behavior, private controlled fixtures, or reverse-engineering
+evidence in an isolated Analyst environment. The implementer may receive only
+the sanitized implementation-necessary behavioral rules, numerical contracts,
+minimal functional constants, state-machine behavior, input/output
+relationships, and acceptance tests. Proprietary source code, decompiler
+output, assembly, private symbols, addresses or offsets, proprietary structure
+layouts, and copied implementation expressions never cross that boundary.
+
+This provenance record is source-repository history; the binary release bundle
+intentionally excludes this file, `REQUIREMENTS_MATRIX.md`, and the research
+chronology.
 
 OpenJOC is an independent project and is not affiliated with, endorsed by, or
 sponsored by Dolby Laboratories. References to Dolby, Dolby Atmos, E-AC-3 and
@@ -74,13 +90,47 @@ metadata. On the controlled raw Logic stream, candidate counts 1, 2, 3, 4, 5,
 This downstream syntax result is kept separate from the accepted-with-deviation
 JOC profile.
 
-## Forbidden-source policy
+## Forbidden implementation sources
 
-Cavern source code, forks, mirrors, and all other existing JOC decoders are
-excluded. Decompiled or disassembled Dolby software and historical proprietary
-Dolby, MediaTek, or Broadcom implementation code are excluded. Cavern may be
-used only later as a separately executed black-box comparator after normative
-implementation is complete.
+Cavern source code, forks, mirrors, and all other existing JOC decoder source
+implementations remain forbidden as implementation references. Decompiled or
+disassembled proprietary implementation material, assembly, private symbols,
+addresses, proprietary structure layouts, and copied implementation expressions
+are also forbidden as implementer-visible sources. This prohibition does not
+claim that authorized contaminated analysis can never inspect controlled
+evidence in its isolated environment; it means that such evidence cannot flow
+directly into production implementation. Only a governed, sanitized behavioral
+clean-room specification may cross into the independent implementation.
+
+Cavern may be used only later as a separately executed black-box comparator
+after normative implementation is complete; its source remains outside the
+implementation provenance boundary.
+
+## Evidence classes and policy history
+
+The public record uses three evidence classes:
+
+1. `NORMATIVE / PUBLIC EVIDENCE` — ETSI specifications, official public
+   companion tables, public layouts/API specifications, and public
+   mathematics/DSP literature. These may directly support implementation.
+2. `CONTROLLED / CONTAMINATED ANALYSIS EVIDENCE` — authorized black-box
+   observations, controlled private fixtures, or isolated reverse-engineering
+   observations used to determine behavior that public sources do not settle.
+   These are analysis inputs and do not directly enter implementation.
+3. `BEHAVIORAL CLEAN-ROOM SPECIFICATION` — the sanitized output of governance
+   and analysis, containing only the functional behavior, contracts, minimal
+   constants, and tests needed for independent implementation.
+
+Earlier OpenJOC research operated under a stricter public-source-only policy.
+As some interoperability gaps could not be closed from public normative
+evidence alone, the project later adopted the separated traditional clean-room
+process for specifically authorized cases. Historical component records retain
+the evidence policy and classification in effect during their implementation
+phase. Components genuinely implemented from public normative material remain
+`NORMATIVE / PUBLIC`; components implemented from sanitized behavioral material
+remain `BEHAVIORAL CLEAN-ROOM SPECIFICATION`. This distinction does not claim
+that every component is behavioral or reverse-engineered, and clean-room status
+is an engineering provenance description, not a legal-safety guarantee.
 
 ## Component record
 

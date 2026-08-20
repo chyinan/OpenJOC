@@ -29,9 +29,15 @@ The stable JOC spatial function name is `JocSpatialBridge`; its experimental
 maturity and unresolved semantic state remain separate from that name.
 
 Codec changes must remain explainable from permitted public normative sources,
-public mathematics, or explicitly authorized controlled evidence. Do not use
-proprietary/decompiled decoder sources or private research material as
-implementation provenance.
+public mathematics, or an explicitly admitted behavioral clean-room
+specification. Authorized contaminated analysis may inspect controlled
+reverse-engineering or proprietary evidence only inside the separated Analyst
+environment when public evidence is insufficient; that material is analysis
+evidence, not implementation provenance. Implementers must not receive or use
+proprietary/decompiled decoder sources, assembly, private symbols or addresses,
+private research artifacts, copied implementation expressions, or proprietary
+structure layouts. Only the sanitized implementation-necessary behavioral
+rules, contracts, constants, and acceptance tests may cross the boundary.
 
 Before a change is committed, run:
 
