@@ -72,6 +72,23 @@ def copy_tree_files(source: pathlib.Path, destination: pathlib.Path, suffixes: t
     return copied
 
 
+def copy_runtime_tree(source: pathlib.Path, destination: pathlib.Path) -> list[str]:
+    """Copy runtime files and materialize symlink targets for extraction safety."""
+    if not source.is_dir():
+        raise SystemExit(f"package input directory is missing: {source}")
+    copied: list[str] = []
+    for path in sorted(source.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        source_file = path.resolve() if path.is_symlink() else path
+        if not source_file.is_file():
+            raise SystemExit(f"runtime symlink target is missing: {path}")
+        copy_file(source_file, destination / relative)
+        copied.append(relative.as_posix())
+    return copied
+
+
 def write_json(path: pathlib.Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -290,8 +307,8 @@ def package_ffmpeg(args: argparse.Namespace) -> None:
         copy_file(pathlib.Path(args.ffprobe).resolve(), stage / f"bin/openjoc-ffprobe{executable_suffix}")
         if args.openjoc_prefix:
             prefix = pathlib.Path(args.openjoc_prefix).resolve()
-            copy_tree_files(prefix / "lib", stage / "lib")
-            copy_tree_files(prefix / "bin", stage / "bin")
+            copy_runtime_tree(prefix / "lib", stage / "lib")
+            copy_runtime_tree(prefix / "bin", stage / "bin")
         ffmpeg_source = pathlib.Path(args.ffmpeg_source).resolve()
         license_file = ffmpeg_source / "LICENSE.md"
         if not license_file.is_file():

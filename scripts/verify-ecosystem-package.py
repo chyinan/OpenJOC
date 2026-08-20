@@ -66,7 +66,10 @@ def run_binary(path: pathlib.Path, root: pathlib.Path) -> None:
         environment["PATH"] = f"{root / 'bin'}:{environment.get('PATH', '')}"
         environment["LD_LIBRARY_PATH"] = f"{library}:{environment.get('LD_LIBRARY_PATH', '')}"
         environment["DYLD_LIBRARY_PATH"] = f"{library}:{environment.get('DYLD_LIBRARY_PATH', '')}"
-    subprocess.run([str(path), "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
+    completed = subprocess.run([str(path), "-version"], check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
+    if completed.returncode != 0:
+        output = completed.stdout.decode("utf-8", errors="replace")
+        raise SystemExit(f"FFmpeg runtime smoke failed for {path.name} (exit {completed.returncode}): {output}")
 
 
 def main() -> int:
