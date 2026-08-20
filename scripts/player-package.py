@@ -820,11 +820,17 @@ def bundle(arguments: argparse.Namespace) -> int:
         })
         evidence = copy_license_evidence(root / "licenses", pathlib.Path(arguments.ffmpeg_source).resolve() if arguments.ffmpeg_source else None, pathlib.Path(arguments.mpv_source).resolve() if arguments.mpv_source else None)
         write_notices(root / "THIRD_PARTY_NOTICES.txt", dependencies, evidence)
+        unresolved_license_components = [
+            str(item["path"])
+            for item in dependencies
+            if item["license"] == "REQUIRES_RELEASE_LICENSE_REVIEW"
+        ]
         dependency_manifest = {
             "schema": "openjoc.player-dependencies.v1",
             "bundled": dependencies,
             "external": [{"name": name, "kind": "external-runtime"} for name in external],
-            "license_review_required": any(item["license"] == "REQUIRES_RELEASE_LICENSE_REVIEW" for item in dependencies),
+            "license_review_required": bool(unresolved_license_components),
+            "unresolved_license_components": unresolved_license_components,
         }
         write_json(root / "DEPENDENCIES.json", dependency_manifest)
         build_info = {
@@ -903,7 +909,7 @@ def bundle(arguments: argparse.Namespace) -> int:
             f"{sha256(archive_path)}  {archive_name}\n{sha256(manifest_path)}  {manifest_path.name}\n",
             encoding="utf-8",
         )
-    print(json.dumps({"archive": str(archive_path), "manifest": str(manifest_path), "checksums": str(checksum_path), "license_review_required": dependency_manifest["license_review_required"]}, indent=2, sort_keys=True))
+    print(json.dumps({"archive": str(archive_path), "manifest": str(manifest_path), "checksums": str(checksum_path), "license_review_required": dependency_manifest["license_review_required"], "unresolved_license_components": dependency_manifest["unresolved_license_components"]}, indent=2, sort_keys=True))
     return 0
 
 
