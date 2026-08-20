@@ -59,7 +59,14 @@ fetch_checkout() {
     mkdir -p "$destination"
     git -C "$destination" init -q
     git -C "$destination" remote add origin "$url" 2>/dev/null || true
-    git -C "$destination" fetch --depth=1 origin "$commit"
+    local attempt=1
+    while ! git -C "$destination" fetch --depth=1 origin "$commit"; do
+        if [[ "$attempt" -ge 3 ]]; then
+            echo "failed to fetch pinned source after $attempt attempts: $url @ $commit" >&2
+            exit 1
+        fi
+        attempt=$((attempt + 1))
+    done
     git -C "$destination" checkout --detach --quiet FETCH_HEAD
     [[ "$(git -C "$destination" rev-parse HEAD)" == "$commit" ]]
     [[ -z "$(git -C "$destination" status --porcelain)" ]]
