@@ -147,8 +147,10 @@ mpv_prefix="$work/prefix/mpv"
     meson setup "$work/build/mpv" "$mpv_source" --prefix=/usr --buildtype=release \
         -Dtests=false -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled
 )
-meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
-DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
+PATH="$openjoc_prefix/bin:$ffmpeg_prefix/bin:/mingw64/bin:$PATH" \
+    meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
+PATH="$openjoc_prefix/bin:$ffmpeg_prefix/bin:/mingw64/bin:$PATH" \
+    DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
 cp "$mpv_prefix/usr/bin/mpv.exe" "$work/stage/bin/mpv.exe"
 echo '::endgroup::'
 

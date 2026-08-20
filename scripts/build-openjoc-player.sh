@@ -192,8 +192,10 @@ case "$platform" in
             meson setup "$work/build/mpv" "$mpv_source" \
             --prefix=/usr --buildtype=release -Dtests=false \
             -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled)
-        meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
-        DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
+        LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
+        LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
         cp "$mpv_prefix/usr/bin/mpv" "$work/stage/bin/mpv"
         echo '::endgroup::'
         echo '::group::macOS package assembly and dependency audit'
@@ -252,8 +254,10 @@ case "$platform" in
             meson setup "$work/build/mpv" "$mpv_source" \
             --prefix=/usr --buildtype=release -Dtests=false \
             -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled)
-        meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
-        DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
+        LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
+        LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
         cp "$mpv_prefix/usr/bin/mpv" "$work/stage/bin/mpv"
         echo '::endgroup::'
         echo '::group::Linux package assembly and dependency audit'
