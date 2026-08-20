@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.9.0] — 2026-08-21
+
+OpenJOC 0.9.0 — Interchange & Ecosystem adds reconstructed ADM/BW64 export,
+qualified ecosystem package surfaces, and a public self-test workflow around
+the existing decoder, renderer, and player integrations.
+
+### Reconstructed ADM/BW64
+
+- Added `openjoc export-adm` and `openjoc validate-adm` with deterministic
+  `ds64`, `fmt `, `data`, `axml`, and `chna` output plus an adjacent
+  `*.adm-report.json` loss/provenance report.
+- Kept the renderer-independent boundary honest: `ReconstructionBasis` rows
+  are exported as neutral reconstructed signals while the unresolved
+  audio-to-spatial-metadata binding is reported as `UNRESOLVED`; strict policy
+  rejects it rather than guessing.
+- Documented ITU-R BS.2076-3, ITU-R BS.2088-2, EBU `chna` semantics, generated
+  names, loss boundaries, deterministic timing, and deferred DAW testing.
+
+### Ecosystem and self-test
+
+- Added deterministic SDK, custom FFmpeg, and GStreamer plugin pack builders
+  with package manifests, dependency/license inventories, checksums, private
+  path scans, extraction verification, and target runtime smoke gates.
+- Added `openjoc self-test` and a project-owned public synthetic JOC fixture
+  generation/qualification procedure.
+- Preserved the experimental C ABI at 1.3; the package version does not imply
+  permanent ABI stability during 0.x.
+
+### Release limitations
+
+- The ADM output is reconstructed interoperability metadata, not original ADM
+  master recovery or a lossless JOC round trip.
+- The FFmpeg archives are custom OpenJOC builds, not official upstream FFmpeg
+  releases; GStreamer packs require the recorded matching runtime.
+- Real DAW import testing and physical Linux/Windows multichannel hardware
+  playback remain outside the automated 0.9 acceptance boundary.
+
 ## [0.8.0] — 2026-08-20
 
 OpenJOC 0.8.0 — Cross-Platform Player Integration extends the shared OpenJOC
