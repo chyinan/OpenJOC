@@ -627,6 +627,10 @@ def sanitize_private_strings(root: pathlib.Path, extra_prefixes: list[pathlib.Pa
     prefixes.extend([
         b"/private/tmp/openjoc-player-",
         b"/tmp/openjoc-player-",
+        b"C:/Users/runneradmin",
+        b"C:\\Users\\runneradmin",
+        b"D:/a",
+        b"D:\\a",
         b"/opt/homebrew",
         b"/usr/local/Cellar",
     ])
