@@ -81,6 +81,31 @@
       ]
     }
   },
+  "qualification": {
+    "workflow": ".github/workflows/player-packaging.yml",
+    "package_verifier": "scripts/player-package.py verify",
+    "native_runner_required": true,
+    "fixture_policy": "project-owned synthetic JOC plus deterministic lavfi codec/video controls; no private media",
+    "report_schema": "openjoc.player-qualification.v1",
+    "status_fields": [
+      "BUILD",
+      "PACKAGE",
+      "DEPENDENCIES",
+      "LICENSE",
+      "RUNTIME",
+      "DECODER_SELECTION",
+      "JOC",
+      "ORDINARY_EAC3",
+      "BINAURAL",
+      "2_0",
+      "5_1",
+      "7_1_4",
+      "9_1_6",
+      "22_2",
+      "EOS",
+      "PRIVATE_PATH_SCAN"
+    ]
+  },
   "profiles": {
     "openjoc-headphones": {
       "render_mode": "binaural",

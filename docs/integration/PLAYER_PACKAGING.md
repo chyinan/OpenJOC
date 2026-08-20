@@ -33,11 +33,11 @@ It pins FFmpeg `n9.0.1` at
 
 ## Qualified artifact surface
 
-The first fully qualified local surface is macOS arm64. The package is a
-portable `.tar.gz`; it is not a `.app`, DMG, installer, signed distribution,
-or notarized release. The Linux x86_64 and Windows x64 routes are isolated in
-the dedicated `player-packaging.yml` workflow and are not release claims until
-their jobs pass on their target runners.
+The macOS arm64 package is the already-qualified development surface. The
+package is a portable `.tar.gz`; it is not a `.app`, DMG, installer, signed
+distribution, or notarized release. Linux x86_64 and Windows x64 are qualified
+only by the dedicated `player-packaging.yml` jobs on their native runners; a
+local macOS cross-toolchain is not Windows evidence.
 
 The maintainer entry point is:
 
@@ -56,7 +56,11 @@ outside the repository.
 For Windows CI, the equivalent MSYS2/MinGW-w64 entry point is
 `scripts/build-openjoc-player-windows.sh`. It builds the GNU Rust target,
 patched FFmpeg, and patched mpv, then places all non-system DLLs beside
-`mpv.exe`. It does not require Rust, FFmpeg, or MSYS2 on an end-user machine.
+`mpv.exe`. The canonical job uses a GitHub `windows-2025` runner, the MSYS2
+`MINGW64` shell, `x86_64-pc-windows-gnu`, `x86_64-w64-mingw32-gcc`, and
+`pkg-config` with the staged OpenJOC/FFmpeg prefixes first. `pacman -Q` is
+retained as a workflow artifact so the actual MSYS2 package set is recorded.
+It does not require Rust, FFmpeg, or MSYS2 on an end-user machine.
 
 ## Runtime layout
 
@@ -89,7 +93,9 @@ On Linux, `patchelf` sets `$ORIGIN/../lib` on the player and `$ORIGIN` on
 bundled libraries. `ldd` and `readelf -d` audit the result. The initial
 compatibility baseline is the CI runner’s Ubuntu 24.04/glibc floor; glibc,
 libstdc++, compiler runtimes, device backends, and GPU drivers remain explicit
-external requirements unless `DEPENDENCIES.json` says otherwise.
+external requirements unless `DEPENDENCIES.json` says otherwise. The exact
+glibc symbol floor and compiler/runtime strings are recorded in `BUILD_INFO.json`
+for each Linux artifact; this is not a universal-Linux compatibility claim.
 
 ## End-user behavior and profiles
 
@@ -125,7 +131,7 @@ to binaural if the device rejects its channel map.
 
 ## Verification
 
-The verifier is:
+The package verifier is:
 
 ```sh
 scripts/verify-player-package.sh \
@@ -134,9 +140,30 @@ scripts/verify-player-package.sh \
 ```
 
 It checks required files, inner checksums, target architecture, loader paths,
-decoder visibility (`--ad=help`), ABI metadata, license-review status, and
-private/local path leaks. The missing-dependency smoke temporarily removes the
-OpenJOC runtime from a copy and requires a clear loader failure.
+the extracted ELF/PE dependency closure, decoder visibility (`--ad=help`), ABI
+metadata, license-review status, and private/local path leaks. The
+missing-dependency smoke temporarily removes the OpenJOC runtime from a copy
+and requires a clear loader failure.
+
+The native-runner qualification wrapper is:
+
+```sh
+scripts/generate-player-fixtures.sh /absolute/temporary/fixtures
+python3 scripts/qualify-player-package.py \
+  --archive /absolute/output/openjoc-mpv-...-linux-x86_64.tar.gz \
+  --platform linux-x86_64 \
+  --fixtures /absolute/temporary/fixtures \
+  --report /absolute/output/qualification/linux-x86_64.json
+```
+
+`generate-player-fixtures.sh` uses the project-owned synthetic JOC exporter
+and deterministic lavfi codec/video controls. The fixture directory is
+temporary and is never packaged or uploaded. The qualification wrapper
+extracts into a fresh directory away from source/build trees, disables network
+access for runtime checks, runs the package verifier, invokes the full mpv
+selection/layout/codec harness, and writes machine-readable JSON plus a
+human-readable text report. Each report field is `PASS`, `FAIL`, or
+`NOT_APPLICABLE`.
 
 The existing mpv harness remains the media acceptance gate:
 
@@ -145,13 +172,16 @@ integrations/mpv/verify-player.sh /absolute/extracted/.../bin/mpv /path/to/exter
 ```
 
 Its qualified fixture run covers ordinary E-AC-3 → `eac3`, confirmed JOC →
-`libopenjoc` without `--ad=libopenjoc`, binaural null output, exact 7.1.4 and
-22.2 null-output channel counts, explicit overrides, and passthrough. Pause,
-seek, EOS, and real CoreAudio playback remain the existing local acceptance
-scope; programme media and derived PCM never enter the archive.
+`libopenjoc` without `--ad=libopenjoc`, binaural null output, exact 2.0, 5.1,
+7.1.4, 9.1.6, and 22.2 null-output channel counts, ordinary AAC/FLAC/MP3/AC-3
+and video smoke, seek/flush, EOS, and passthrough. Real physical speaker
+playback remains a hardware-only acceptance item; programme media and derived
+PCM never enter the archive.
 
 The embedded SADIE II D1 KU100 resource is compiled into `libopenjoc_capi` and
 is exercised without `--sofa`, repository-relative paths, or network access.
+`BUILD_INFO.json` records the source resource SHA-256 so macOS, Linux, and
+Windows bundles can prove that the same HRTF bytes were used.
 
 ## Licensing and notices
 

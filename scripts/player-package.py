@@ -32,7 +32,31 @@ QUICKSTART_PATH = REPOSITORY / "packaging/player/QUICKSTART.md"
 PROFILES_PATH = REPOSITORY / "packaging/player/profiles.conf"
 OPENJOC_LICENSE = REPOSITORY / "LICENSE"
 OPENJOC_NOTICES = REPOSITORY / "THIRD_PARTY_NOTICES.md"
-PRIVATE_MARKERS = ("/Users/", "/opt/homebrew/", "/usr/local/Cellar/", "/tmp/")
+BUILTIN_HRTF = REPOSITORY / "crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa"
+PRIVATE_MARKERS = (
+    "/Users/",
+    "\\Users\\",
+    "C:/Users/",
+    "C:\\Users\\",
+    "D:/a/",
+    "D:\\a\\",
+    "/opt/homebrew/",
+    "/usr/local/Cellar/",
+    "/home/runner/",
+    "\\home\\runner\\",
+    "/tmp/",
+)
+WINDOWS_SYSTEM_DLLS = {
+    "ADVAPI32.DLL", "API-MS-WIN-CORE-", "API-MS-WIN-CRT-", "AVRT.DLL",
+    "BCRYPT.DLL", "CFGMGR32.DLL", "COMBASE.DLL", "COMDLG32.DLL",
+    "CRYPT32.DLL", "D3D11.DLL", "D3D12.DLL", "DINPUT8.DLL", "DNSAPI.DLL",
+    "DXGI.DLL", "GDI32.DLL", "IMM32.DLL", "IPHLPAPI.DLL", "KERNEL32.DLL",
+    "KERNELBASE.DLL", "MF.DLL", "MFPLAT.DLL", "MFREADWRITE.DLL", "MSVCRT.DLL",
+    "NTDLL.DLL", "OLE32.DLL", "OLEAUT32.DLL", "POWRPROF.DLL", "RPCRT4.DLL",
+    "SCHANNEL.DLL", "SECUR32.DLL", "SETUPAPI.DLL", "SHELL32.DLL", "SHLWAPI.DLL",
+    "USER32.DLL", "USERENV.DLL", "UXTHEME.DLL", "UCRTBASE.DLL", "VERSION.DLL",
+    "WINHTTP.DLL", "WINMM.DLL", "WINSPOOL.DRV", "WS2_32.DLL", "WSOCK32.DLL",
+}
 
 
 def run(command: list[str], *, check: bool = True, cwd: pathlib.Path | None = None) -> str:
@@ -92,6 +116,16 @@ def development_id() -> str:
     version = manifest["openjoc"]["version"]
     commit = git_value("rev-parse", "HEAD")
     return f"{version}-git{commit[:12]}"
+
+
+def builtin_hrtf_evidence() -> dict[str, str]:
+    if not BUILTIN_HRTF.is_file():
+        raise SystemExit(f"built-in HRTF resource is missing: {BUILTIN_HRTF}")
+    return {
+        "dataset": "SADIE II D1 (KU100), v2-2",
+        "source": "crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa",
+        "sha256": sha256(BUILTIN_HRTF),
+    }
 
 
 def parse_macho_dependencies(path: pathlib.Path) -> list[str]:
@@ -298,15 +332,13 @@ def collect_windows(
     copied: dict[str, pathlib.Path] = {}
     external: set[str] = set()
     queue = [executable.resolve()]
-    system_dlls = {"KERNEL32.dll", "USER32.dll", "ADVAPI32.dll", "SHELL32.dll", "ole32.dll", "OLEAUT32.dll", "WS2_32.dll", "GDI32.dll", "COMDLG32.dll", "IMM32.dll", "VERSION.dll", "WINMM.dll", "BCRYPT.dll", "NTDLL.dll", "ucrtbase.dll", "msvcrt.dll"}
     while queue:
         source = queue.pop(0)
         for name in pe_imports(source):
-            upper_name = name.upper()
-            if upper_name in {value.upper() for value in system_dlls} or upper_name.startswith(("API-MS-WIN-", "EXT-MS-WIN-", "VCRUNTIME")):
+            if windows_system_dependency(name):
                 external.add(name)
                 continue
-            dependency = next((path / name for path in search_dirs if (path / name).exists()), None)
+            dependency = find_case_insensitive(search_dirs, name)
             if dependency is None:
                 raise RuntimeError(f"unresolved PE dependency {name!r} from {source}")
             if name.lower() not in {key.lower() for key in copied}:
@@ -327,13 +359,38 @@ def collect_windows(
     return records, sorted(external)
 
 
+def find_case_insensitive(search_dirs: list[pathlib.Path], name: str) -> pathlib.Path | None:
+    for directory in search_dirs:
+        direct = directory / name
+        if direct.is_file():
+            return direct
+        lowered = name.lower()
+        for candidate in directory.iterdir() if directory.is_dir() else ():
+            if candidate.is_file() and candidate.name.lower() == lowered:
+                return candidate
+    return None
+
+
+def windows_system_dependency(name: str) -> bool:
+    upper = name.upper()
+    if upper.startswith(("API-MS-WIN-", "EXT-MS-WIN-", "VCRUNTIME")):
+        return True
+    if upper in WINDOWS_SYSTEM_DLLS:
+        return True
+    windir = os.environ.get("WINDIR")
+    if windir and (pathlib.Path(windir) / "System32" / name).is_file():
+        return True
+    system32 = pathlib.Path("/c/Windows/System32") / name
+    return system32.is_file()
+
+
 def component_for_library(name: str) -> tuple[str, str]:
     lower = name.lower()
     if lower == "mpv":
         return "mpv", "GPL-2.0-or-later"
     if lower.startswith("libav") or lower.startswith("libsw"):
         return "FFmpeg", "LGPL-3.0-or-later (configured with --enable-version3 and without --enable-gpl)"
-    if lower.startswith("libopenjoc"):
+    if lower.startswith(("libopenjoc", "openjoc_capi")):
         return "OpenJOC", "Apache-2.0"
     known = {
         "libx11": ("libX11", "MIT"),
@@ -366,11 +423,76 @@ def component_for_library(name: str) -> tuple[str, str]:
         "libstdc++": ("GNU libstdc++ runtime", "GPL-3.0-or-later WITH GCC-exception-3.1"),
         "libwinpthread": ("winpthreads", "MIT"),
         "libsdl2": ("SDL2", "Zlib"),
+        "sdl2": ("SDL2", "Zlib"),
+        "libzstd": ("Zstandard", "BSD-3-Clause"),
+        "libbrotli": ("Brotli", "MIT"),
+        "libtiff": ("libtiff", "libtiff license"),
+        "libxml2": ("libxml2", "MIT"),
+        "libgobject": ("GLib", "LGPL-2.1-or-later"),
+        "libgio": ("GLib", "LGPL-2.1-or-later"),
+        "libffi": ("libffi", "MIT"),
+        "libmount": ("util-linux", "LGPL-2.1-or-later"),
+        "libselinux": ("SELinux", "Public Domain AND MIT"),
+        "libp11-kit": ("p11-kit", "MIT"),
+        "libgnutls": ("GnuTLS", "LGPL-2.1-or-later"),
+        "libnettle": ("Nettle", "LGPL-2.1-or-later"),
+        "libhogweed": ("Nettle", "LGPL-2.1-or-later"),
+        "libgmp": ("GMP", "LGPL-3.0-or-later"),
+        "libatomic": ("GCC runtime", "GPL-3.0-or-later WITH GCC-exception-3.1"),
+        "libgomp": ("GCC runtime", "GPL-3.0-or-later WITH GCC-exception-3.1"),
+        "libwayland": ("Wayland", "MIT"),
+        "libdecor": ("libdecor", "MIT"),
+        "libdrm": ("libdrm", "MIT"),
+        "libgbm": ("Mesa", "MIT"),
+        "libpipewire": ("PipeWire", "MIT"),
+        "libpulse": ("PulseAudio", "LGPL-2.1-or-later"),
+        "libxkbcommon": ("xkbcommon", "MIT"),
+        "libxinerama": ("libXinerama", "MIT"),
+        "libxrandr": ("libXrandr", "MIT"),
+        "libxrender": ("libXrender", "MIT"),
+        "libxext": ("libXext", "MIT"),
+        "libxss": ("libXss", "MIT"),
+        "libxv": ("libXv", "MIT"),
+        "libxxf86vm": ("libXxf86vm", "MIT"),
+        "libvulkan": ("Vulkan-Loader", "Apache-2.0"),
+        "vulkan-1": ("Vulkan-Loader", "Apache-2.0"),
     }
     for prefix, value in known.items():
         if lower.startswith(prefix):
             return value
     return name, "REQUIRES_RELEASE_LICENSE_REVIEW"
+
+
+def verify_linux_dependency_closure(root: pathlib.Path, executable: pathlib.Path) -> None:
+    owners = [executable, *sorted((root / "lib").iterdir())]
+    for owner in owners:
+        if not owner.is_file() or owner.is_symlink():
+            continue
+        if owner.suffix not in {"", ".so", ".dylib"} and ".so." not in owner.name:
+            continue
+        dynamic = run(["readelf", "-d", str(owner)])
+        if "$ORIGIN" not in dynamic:
+            raise SystemExit(f"package verification: bundled ELF lacks $ORIGIN RUNPATH: {owner.name}")
+        for name, resolved in parse_ldd(owner):
+            if linux_system_dependency(name):
+                continue
+            if resolved is None or not resolved.is_file():
+                raise SystemExit(f"package verification: unresolved ELF dependency {name} from {owner.name}")
+            resolved = resolved.resolve()
+            if root not in resolved.parents:
+                raise SystemExit(
+                    f"package verification: non-system ELF dependency escapes bundle: {name} -> {resolved}"
+                )
+
+
+def verify_windows_dependency_closure(root: pathlib.Path, executable: pathlib.Path) -> None:
+    owners = [executable, *sorted((root / "bin").glob("*.dll"))]
+    for owner in owners:
+        for name in pe_imports(owner):
+            if windows_system_dependency(name):
+                continue
+            if find_case_insensitive([root / "bin"], name) is None:
+                raise SystemExit(f"package verification: missing bundled PE dependency {name} from {owner.name}")
 
 
 def homebrew_license_evidence(licenses: pathlib.Path) -> pathlib.Path | None:
@@ -442,7 +564,7 @@ def copy_license_evidence(
     return evidence
 
 
-def sanitize_private_strings(root: pathlib.Path) -> None:
+def sanitize_private_strings(root: pathlib.Path, extra_prefixes: list[pathlib.Path]) -> None:
     """Remap compiler/package-manager path strings without changing binary size.
 
     Release binaries are built from external temporary prefixes and may carry
@@ -450,13 +572,17 @@ def sanitize_private_strings(root: pathlib.Path) -> None:
     local prefixes with the stable `/build` marker, preserving Mach-O/ELF/PE
     offsets. Loader paths are handled separately by the dependency rewriter.
     """
-    prefixes = [
-        str(REPOSITORY).encode(),
+    prefixes: list[bytes] = []
+    for value in [REPOSITORY, *extra_prefixes]:
+        text = str(value)
+        for spelling in {text, text.replace("/", "\\"), text.replace("\\", "/")}:
+            prefixes.append(spelling.encode())
+    prefixes.extend([
         b"/private/tmp/openjoc-player-",
         b"/tmp/openjoc-player-",
         b"/opt/homebrew",
         b"/usr/local/Cellar",
-    ]
+    ])
     for path in [p for p in root.rglob("*") if p.is_file() and (p.name == "mpv" or p.name == "mpv.exe" or p.suffix in {".dylib", ".so", ".dll"})]:
         data = path.read_bytes()
         for prefix in prefixes:
@@ -468,6 +594,14 @@ def sanitize_private_strings(root: pathlib.Path) -> None:
             replacement += b"\0" * (len(prefix) - len(replacement))
             data = data.replace(prefix, replacement)
         path.write_bytes(data)
+
+
+def refresh_dependency_records(root: pathlib.Path, records: list[dict[str, object]]) -> None:
+    for item in records:
+        path = root / str(item["path"])
+        if path.is_file():
+            item["sha256"] = sha256(path)
+            item["size"] = path.stat().st_size
 
 
 def sign_macos_runtime(root: pathlib.Path) -> bool:
@@ -603,8 +737,9 @@ def bundle(arguments: argparse.Namespace) -> int:
             records, external = collect_linux(root / "bin/mpv", root / "lib")
         else:
             records, external = collect_windows(root / "bin/mpv.exe", root / "bin", source_dirs)
-        sanitize_private_strings(root)
+        sanitize_private_strings(root, [pathlib.Path(value) for value in arguments.private_prefix])
         ad_hoc_signed = sign_macos_runtime(root) if platform_name == "macos-arm64" else False
+        refresh_dependency_records(root, records)
         for item in records:
             # Absolute build/prefix paths are maintainer-local evidence and must
             # never become public-facing bundle metadata. The actual file hash,
@@ -658,7 +793,12 @@ def bundle(arguments: argparse.Namespace) -> int:
             "runtime_dependency_inventory": dependency_manifest,
             "configure": {"ffmpeg": manifest["pinned_stack"]["ffmpeg"]["configure_flags"], "mpv": ["-Dtests=false", "-Dmanpage-build=disabled", "-Dhtml-build=disabled", "-Dpdf-build=disabled"]},
             "signing": {"developer_id_signed": False, "notarized": False, "ad_hoc_only_if_required": True, "ad_hoc_signed": ad_hoc_signed},
-            "verification": {"network_required_at_runtime": False, "source_repository_required_at_runtime": False, "built_in_hrtf": "embedded in libopenjoc_capi"},
+            "verification": {
+                "network_required_at_runtime": False,
+                "source_repository_required_at_runtime": False,
+                "built_in_hrtf": "embedded in libopenjoc_capi",
+                "built_in_hrtf_resource": builtin_hrtf_evidence(),
+            },
         }
         write_json(root / "BUILD_INFO.json", build_info)
         (root / "BUILD_INFO.txt").write_text(
@@ -710,7 +850,13 @@ def bundle(arguments: argparse.Namespace) -> int:
 
 def verify(arguments: argparse.Namespace) -> int:
     root = arguments.root.resolve()
-    required = ["BUILD_INFO.json", "BUILD_INFO.txt", "DEPENDENCIES.json", "THIRD_PARTY_NOTICES.txt", "SHA256SUMS", "QUICKSTART.md", "config/profiles.conf"]
+    launcher = "bin/openjoc-mpv.cmd" if arguments.platform == "windows-x64" else "bin/openjoc-mpv"
+    required = [
+        "BUILD_INFO.json", "BUILD_INFO.txt", "DEPENDENCIES.json",
+        "THIRD_PARTY_NOTICES.txt", "SHA256SUMS", "QUICKSTART.md",
+        "config/mpv.conf", "config/profiles.conf", launcher,
+        "licenses/openjoc/LICENSE.txt", "licenses/openjoc/THIRD_PARTY_NOTICES.md",
+    ]
     executable = root / ("bin/mpv.exe" if arguments.platform == "windows-x64" else "bin/mpv")
     required.append(executable.relative_to(root).as_posix())
     for relative in required:
@@ -725,6 +871,14 @@ def verify(arguments: argparse.Namespace) -> int:
     build_info = json.loads((root / "BUILD_INFO.json").read_text(encoding="utf-8"))
     if build_info["source"]["openjoc_c_abi"]["packed_hex"] != "0x00010003":
         raise SystemExit("package verification: OpenJOC C ABI is not 1.3")
+    if build_info.get("target") != arguments.platform:
+        raise SystemExit("package verification: BUILD_INFO target does not match verifier platform")
+    if not build_info.get("pinned_stack", {}).get("ffmpeg", {}).get("commit"):
+        raise SystemExit("package verification: pinned FFmpeg commit is missing from BUILD_INFO")
+    if not build_info.get("pinned_stack", {}).get("mpv", {}).get("commit"):
+        raise SystemExit("package verification: pinned mpv commit is missing from BUILD_INFO")
+    if build_info.get("verification", {}).get("built_in_hrtf_resource") != builtin_hrtf_evidence():
+        raise SystemExit("package verification: built-in SADIE HRTF resource identity mismatch")
     dependencies = json.loads((root / "DEPENDENCIES.json").read_text(encoding="utf-8"))
     if dependencies["license_review_required"]:
         raise SystemExit("package verification: unresolved dependency license review")
@@ -744,10 +898,16 @@ def verify(arguments: argparse.Namespace) -> int:
         dynamic = run(["readelf", "-d", str(executable)])
         if "$ORIGIN" not in dynamic:
             raise SystemExit("package verification: executable lacks $ORIGIN RUNPATH")
+        verify_linux_dependency_closure(root, executable)
     else:
-        if shutil.which("objdump"):
-            run(["objdump", "-f", str(executable)])
-    forbidden = [str(root), str(REPOSITORY), "/Users/chyinan", "/opt/homebrew", "/usr/local/Cellar", "target/debug"]
+        if not shutil.which("objdump"):
+            raise SystemExit("package verification: Windows PE audit requires MinGW objdump")
+        output = run(["objdump", "-f", str(executable)])
+        if "pei-x86-64" not in output.lower():
+            raise SystemExit(f"package verification: unexpected PE architecture: {output.strip()}")
+        verify_windows_dependency_closure(root, executable)
+    forbidden = [str(root), str(REPOSITORY), *PRIVATE_MARKERS, "target/debug", "target\\debug"]
+    forbidden.extend([str(root).replace("/", "\\"), str(REPOSITORY).replace("/", "\\")])
     for path in [p for p in root.rglob("*") if p.is_file()]:
         if path.stat().st_size > 32 * 1024 * 1024:
             continue
@@ -767,14 +927,17 @@ def verify(arguments: argparse.Namespace) -> int:
         with tempfile.TemporaryDirectory(prefix="openjoc-player-missing-dependency-") as temporary:
             isolated = pathlib.Path(temporary) / root.name
             shutil.copytree(root, isolated)
-            candidates = sorted((isolated / "lib").glob("libopenjoc_capi.*"))
+            candidate_root = isolated / ("bin" if arguments.platform == "windows-x64" else "lib")
+            candidates = sorted(candidate_root.glob("libopenjoc_capi.*"))
+            if arguments.platform == "windows-x64":
+                candidates = sorted(candidate_root.glob("openjoc_capi.dll"))
             if not candidates:
                 raise SystemExit("package verification: no OpenJOC library available for missing-dependency smoke")
             missing = candidates[0]
             missing.rename(missing.with_suffix(missing.suffix + ".missing"))
             isolated_executable = isolated / executable.relative_to(root)
             failure = subprocess.run([str(isolated_executable), "--version"], cwd=isolated, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-            if failure.returncode == 0 or not re.search(r"(not loaded|cannot open|missing|no such file)", failure.stdout, re.IGNORECASE):
+            if failure.returncode == 0 or not re.search(r"(not loaded|cannot open|missing|no such file|loadlibrary|dll)", failure.stdout, re.IGNORECASE):
                 raise SystemExit(f"package verification: missing-dependency smoke was not understandable\n{failure.stdout}")
     print(f"player package verification: PASS platform={arguments.platform} root={root}")
     return 0
@@ -791,6 +954,7 @@ def main() -> int:
     bundle_parser.add_argument("--ffmpeg-source")
     bundle_parser.add_argument("--mpv-source")
     bundle_parser.add_argument("--toolchain", default="not supplied")
+    bundle_parser.add_argument("--private-prefix", action="append", default=[])
     bundle_parser.add_argument("--build-timestamp", default=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     bundle_parser.set_defaults(function=bundle)
     verify_parser = subparsers.add_parser("verify")

@@ -42,8 +42,27 @@ PY
 
 ffmpeg_commit=$(json_value pinned_stack.ffmpeg.commit)
 ffmpeg_patch="$repo_root/$(json_value pinned_stack.ffmpeg.patch_path)"
+ffmpeg_patch_sha=$(json_value pinned_stack.ffmpeg.patch_sha256)
 mpv_commit=$(json_value pinned_stack.mpv.commit)
 mpv_patch="$repo_root/$(json_value pinned_stack.mpv.patch_path)"
+mpv_patch_sha=$(json_value pinned_stack.mpv.patch_sha256)
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+[[ "$(sha256_file "$ffmpeg_patch")" == "$ffmpeg_patch_sha" ]] || {
+    echo "FFmpeg patch SHA-256 does not match PLAYER_PACKAGE_MANIFEST.json" >&2
+    exit 1
+}
+[[ "$(sha256_file "$mpv_patch")" == "$mpv_patch_sha" ]] || {
+    echo "mpv patch SHA-256 does not match PLAYER_PACKAGE_MANIFEST.json" >&2
+    exit 1
+}
 
 for command in cargo rustc git make pkg-config meson ninja x86_64-w64-mingw32-gcc objdump python3; do
     command -v "$command" >/dev/null || { echo "missing MSYS2 command: $command" >&2; exit 1; }
@@ -81,10 +100,11 @@ git -C "$ffmpeg_source" apply "$ffmpeg_patch"
 git -C "$mpv_source" apply --check "$mpv_patch"
 git -C "$mpv_source" apply "$mpv_patch"
 
-rustup target add x86_64-pc-windows-gnu
-cargo build --manifest-path "$repo_root/Cargo.toml" -p openjoc-capi --release --target x86_64-pc-windows-gnu --locked
+rust_target=x86_64-pc-windows-gnu
+rustup target add "$rust_target"
+cargo build --manifest-path "$repo_root/Cargo.toml" -p openjoc-capi --release --target "$rust_target" --locked
 openjoc_prefix="$work/prefix/openjoc"
-"$repo_root/integrations/ffmpeg/native/stage-openjoc.sh" "$openjoc_prefix"
+"$repo_root/integrations/ffmpeg/native/stage-openjoc.sh" "$openjoc_prefix" "$rust_target"
 ffmpeg_prefix="$work/prefix/ffmpeg"
 (
     cd "$work/build"
@@ -117,7 +137,8 @@ python3 "$repo_root/scripts/player-package.py" bundle \
     --stage-root "$work/stage" --output "$output" --platform windows-x64 \
     --search-dir "$ffmpeg_prefix/bin" --search-dir "$openjoc_prefix/bin" \
     --search-dir /mingw64/bin --ffmpeg-source "$ffmpeg_source" \
-    --mpv-source "$mpv_source" --toolchain "$(rustc -vV | tr '\n' '; ')"
+    --mpv-source "$mpv_source" --private-prefix "$work" \
+    --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(x86_64-w64-mingw32-gcc --version | head -n 1); msys2=$(uname -srv)"
 
 archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-windows-x64.zip' -type f -print | head -n 1)
 extract="$work/extracted"

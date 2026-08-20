@@ -190,13 +190,14 @@ case "$platform" in
             --stage-root "$work/stage" --output "$output" --platform macos-arm64 \
             --search-dir "$ffmpeg_prefix/lib" --search-dir "$openjoc_prefix/lib" \
             --search-dir "$brew_prefix/lib" --ffmpeg-source "$ffmpeg_source" \
-            --mpv-source "$mpv_source" --toolchain "$(rustc -vV | tr '\n' '; ')"
+            --mpv-source "$mpv_source" --private-prefix "$work" \
+            --toolchain "$(rustc -vV | tr '\n' '; ')"
         archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-macos-arm64.tar.gz' -type f -print | head -n 1)
         extract="$work/extracted"
         mkdir -p "$extract"
         tar -xzf "$archive" -C "$extract"
         root=$(find "$extract" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)
-        python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform macos-arm64 --run-smoke
+        python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform macos-arm64 --run-smoke --missing-dependency-smoke
         ;;
     linux-x86_64)
         test "$(uname -s)" = Linux || { echo "linux-x86_64 must be built on a Linux runner" >&2; exit 1; }
@@ -237,13 +238,14 @@ case "$platform" in
         python3 "$repo_root/scripts/player-package.py" bundle \
             --stage-root "$work/stage" --output "$output" --platform linux-x86_64 \
             --ffmpeg-source "$ffmpeg_source" --mpv-source "$mpv_source" \
-            --toolchain "$(rustc -vV | tr '\n' '; ')"
+            --private-prefix "$work" \
+            --toolchain "$(rustc -vV | tr '\n' '; '); compiler=$(gcc --version | head -n 1); glibc=$(ldd --version | head -n 1); kernel=$(uname -sr)"
         archive=$(find "$output" -maxdepth 1 -name 'openjoc-mpv-*-linux-x86_64.tar.gz' -type f -print | head -n 1)
         extract="$work/extracted"
         mkdir -p "$extract"
         tar -xzf "$archive" -C "$extract"
         root=$(find "$extract" -mindepth 1 -maxdepth 1 -type d -print | head -n 1)
-        python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform linux-x86_64 --run-smoke
+        python3 "$repo_root/scripts/player-package.py" verify --root "$root" --platform linux-x86_64 --run-smoke --missing-dependency-smoke
         ;;
     windows-x64)
         if [ -n "$work" ]; then
