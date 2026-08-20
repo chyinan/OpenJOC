@@ -144,7 +144,7 @@ mpv_prefix="$work/prefix/mpv"
 (
     cd "$work"
     PKG_CONFIG_PATH="$ffmpeg_prefix/lib/pkgconfig:$openjoc_prefix/lib/pkgconfig:/mingw64/lib/pkgconfig" \
-    MSYS_NO_PATHCONV=1 meson setup "$work/build/mpv" "$mpv_source" --prefix=/usr --buildtype=release \
+    MSYS2_ARG_CONV_EXCL='--prefix=' meson setup "$work/build/mpv" "$mpv_source" --prefix=/usr --buildtype=release \
         -Dtests=false -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled
 )
 PATH="$openjoc_prefix/bin:$ffmpeg_prefix/bin:/mingw64/bin:$PATH" \
