@@ -37,7 +37,10 @@
         "--disable-static",
         "--enable-shared",
         "--enable-version3",
-        "--enable-libopenjoc"
+        "--enable-libopenjoc",
+        "--disable-ffplay",
+        "--enable-ffmpeg",
+        "--enable-ffprobe"
       ]
     },
     "mpv": {
