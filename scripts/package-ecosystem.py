@@ -333,7 +333,12 @@ def package_sdk(args: argparse.Namespace) -> None:
             "endif()\n"
             "if(NOT TARGET OpenJOC::openjoc_capi)\n"
             "  add_library(OpenJOC::openjoc_capi UNKNOWN IMPORTED)\n"
-            "  set_target_properties(OpenJOC::openjoc_capi PROPERTIES IMPORTED_LOCATION \"${OpenJOC_CAPI_LIBRARY}\" INTERFACE_INCLUDE_DIRECTORIES \"${OpenJOC_INCLUDE_DIR}\")\n"
+            "  if(WIN32)\n"
+            "    set_target_properties(OpenJOC::openjoc_capi PROPERTIES IMPORTED_IMPLIB \"${OpenJOC_CAPI_LIBRARY}\")\n"
+            "  else()\n"
+            "    set_target_properties(OpenJOC::openjoc_capi PROPERTIES IMPORTED_LOCATION \"${OpenJOC_CAPI_LIBRARY}\")\n"
+            "  endif()\n"
+            "  set_target_properties(OpenJOC::openjoc_capi PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"${OpenJOC_INCLUDE_DIR}\")\n"
             "endif()\n",
         )
         copy_file(REPOSITORY / "crates/openjoc-capi/examples/c_api_example.c", stage / "examples/c_api_example.c")
