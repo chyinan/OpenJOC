@@ -8,11 +8,12 @@ fi
 
 mpv=$1
 fixtures=$2
+raw_single=$fixtures/joc.single.ec3
+raw_multi=$fixtures/joc.multi.ec3
 joc=$fixtures/joc.mp4
 ordinary=$fixtures/ordinary.eac3
-[ -f "$joc" ] || joc=$fixtures/joc.ec3
 
-for input in "$mpv" "$joc" "$ordinary"; do
+for input in "$mpv" "$raw_single" "$raw_multi" "$joc" "$ordinary"; do
     if [ ! -e "$input" ]; then
         echo "missing verification input: $input" >&2
         exit 2
@@ -27,7 +28,7 @@ run() {
     input=$1
     shift
     "$mpv" "$input" --no-config --no-video --ao=null --ao-null-untimed=yes \
-        --end=1 --msg-level=all=debug "$@" 2>&1
+        --end=1 --msg-level=all=debug,ffmpeg/audio=trace "$@" 2>&1
 }
 
 run_video() {
@@ -49,6 +50,41 @@ joc_log=$(run "$joc" --ad-lavc-o=render_mode=binaural)
 printf '%s\n' "$joc_log" | grep -Fq 'OpenJOC classifier: CONFIRMED_JOC'
 printf '%s\n' "$joc_log" | grep -Fq 'Selected decoder: libopenjoc '
 printf '%s\n' "$joc_log" | grep -Fq 'AO: [null] 48000Hz stereo 2ch'
+
+raw_single_log=$(run "$raw_single")
+printf '%s\n' "$raw_single_log" | grep -Fq 'OpenJOC raw pre-admission: CONFIRMED_JOC'
+printf '%s\n' "$raw_single_log" | grep -Fq 'OpenJOC raw demux policy: parser=normal probe-info=no seekable=no'
+printf '%s\n' "$raw_single_log" | grep -Fq 'Using pre-confirmed raw OpenJOC admission'
+printf '%s\n' "$raw_single_log" | grep -Fq 'Selected decoder: libopenjoc '
+printf '%s\n' "$raw_single_log" | grep -Fq 'OpenJOC consumed compressed chunk size=4096'
+
+raw_multi_log=$(run "$raw_multi")
+printf '%s\n' "$raw_multi_log" | grep -Fq 'OpenJOC raw pre-admission: CONFIRMED_JOC'
+printf '%s\n' "$raw_multi_log" | grep -Fq 'Selected decoder: libopenjoc '
+multi_chunks=$(printf '%s\n' "$raw_multi_log" | grep -Fc 'OpenJOC consumed compressed chunk size=4096')
+[ "$multi_chunks" -ge 2 ]
+
+# The MP4 control wraps the exact single raw AU. Identical renderer-visible
+# WAVE bytes prove the raw path neither drops nor duplicates that first AU.
+raw_pcm=openjoc-first-au-raw-$$.wav
+mp4_pcm=openjoc-first-au-mp4-$$.wav
+trap 'rm -f "$raw_pcm" "$mp4_pcm"' EXIT HUP INT TERM
+run "$raw_single" --ao=pcm --ao-pcm-waveheader=yes \
+    --ao-pcm-file="$raw_pcm" --audio-format=float \
+    '--audio-channels=5.1(side)' \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=5.1 >/dev/null
+run "$joc" --ao=pcm --ao-pcm-waveheader=yes \
+    --ao-pcm-file="$mp4_pcm" --audio-format=float \
+    '--audio-channels=5.1(side)' \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=5.1 >/dev/null
+cmp "$raw_pcm" "$mp4_pcm"
+
+explicit_log=$(run "$raw_single" --ad=eac3)
+printf '%s\n' "$explicit_log" | grep -Fq 'Selected decoder: eac3 '
+if printf '%s\n' "$explicit_log" | grep -Fq 'Selected decoder: libopenjoc '; then
+    echo "explicit E-AC-3 decoder override selected libopenjoc" >&2
+    exit 1
+fi
 
 # No --sofa option is supplied: successful binaural decode exercises the
 # embedded SADIE resource. The qualification wrapper disables networking and
@@ -91,10 +127,10 @@ if [ -f "$fixtures/video.mp4" ]; then
     run_video "$fixtures/video.mp4" >/dev/null
 fi
 
-passthrough_log=$(run "$joc" --audio-spdif=eac3)
+passthrough_log=$(run "$raw_single" --audio-spdif=eac3)
 printf '%s\n' "$passthrough_log" | grep -Fq 'Selected decoder: spdif_eac3'
-if printf '%s\n' "$passthrough_log" | grep -Fq 'OpenJOC classifier:'; then
-    echo "passthrough path ran the OpenJOC classifier" >&2
+if printf '%s\n' "$passthrough_log" | grep -Fq 'Selected decoder: libopenjoc '; then
+    echo "passthrough path selected libopenjoc" >&2
     exit 1
 fi
 

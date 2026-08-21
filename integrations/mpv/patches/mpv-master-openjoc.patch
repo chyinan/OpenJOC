@@ -1,7 +1,7 @@
-From a7f69ac5c882e74e2ddcb7cdae1e126e7f36088a Mon Sep 17 00:00:00 2001
+From 0dadeacc00710a81b14a7f3afdf7b09c6cd151e7 Mon Sep 17 00:00:00 2001
 From: chyinan <chyinan2015@gmail.com>
 Date: Thu, 20 Aug 2026 16:02:54 +0800
-Subject: [PATCH 1/2] audio: add optional OpenJOC JOC selection and transport
+Subject: [PATCH 1/3] audio: add optional OpenJOC JOC selection and transport
 
 ---
  audio/aframe.c              |  10 ++
@@ -14,7 +14,7 @@ Subject: [PATCH 1/2] audio: add optional OpenJOC JOC selection and transport
  7 files changed, 287 insertions(+), 6 deletions(-)
 
 diff --git a/audio/aframe.c b/audio/aframe.c
-index fbba7a3b10..1f6e6d83cb 100644
+index fbba7a3..1f6e6d8 100644
 --- a/audio/aframe.c
 +++ b/audio/aframe.c
 @@ -131,6 +131,16 @@ struct mp_aframe *mp_aframe_from_avframe(struct AVFrame *av_frame)
@@ -35,7 +35,7 @@ index fbba7a3b10..1f6e6d83cb 100644
      if (!format && av_frame->format != AV_SAMPLE_FMT_NONE)
          return NULL;
 diff --git a/audio/chmap.c b/audio/chmap.c
-index 79ae2d74d6..d58b01f57e 100644
+index 79ae2d7..d58b01f 100644
 --- a/audio/chmap.c
 +++ b/audio/chmap.c
 @@ -57,6 +57,8 @@ static const char *const speaker_names[MP_SPEAKER_ID_COUNT][2] = {
@@ -48,7 +48,7 @@ index 79ae2d74d6..d58b01f57e 100644
  };
  
 diff --git a/audio/chmap.h b/audio/chmap.h
-index 6f1f538da4..9caa59fc11 100644
+index 6f1f538..9caa59f 100644
 --- a/audio/chmap.h
 +++ b/audio/chmap.h
 @@ -61,6 +61,11 @@ enum mp_speaker_id {
@@ -64,7 +64,7 @@ index 6f1f538da4..9caa59fc11 100644
  
      // "Silent" channels. These are sometimes used to insert padding for
 diff --git a/audio/chmap_avchannel.c b/audio/chmap_avchannel.c
-index ebf33bd233..00b54efd5c 100644
+index ebf33bd..00b54ef 100644
 --- a/audio/chmap_avchannel.c
 +++ b/audio/chmap_avchannel.c
 @@ -33,8 +33,18 @@ bool mp_chmap_from_av_layout(struct mp_chmap *dst, const AVChannelLayout *src)
@@ -104,7 +104,7 @@ index ebf33bd233..00b54efd5c 100644
  }
  
 diff --git a/audio/decode/ad_lavc.c b/audio/decode/ad_lavc.c
-index 9c83892afd..945e394322 100644
+index 9c83892..945e394 100644
 --- a/audio/decode/ad_lavc.c
 +++ b/audio/decode/ad_lavc.c
 @@ -110,6 +110,13 @@ static bool init(struct mp_filter *da, struct mp_codec_params *codec,
@@ -122,7 +122,7 @@ index 9c83892afd..945e394322 100644
          const struct mp_chmap *requested_layout =
              &mpopts->audio_output_channels.chmaps[0];
 diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
-index 2137b4b0d2..80e64b4bf4 100644
+index 2137b4b..80e64b4 100644
 --- a/filters/f_decoder_wrapper.c
 +++ b/filters/f_decoder_wrapper.c
 @@ -26,6 +26,12 @@
@@ -444,7 +444,7 @@ index 2137b4b0d2..80e64b4bf4 100644
      if (p->decoder->control) {
          double start_pts = p->start_pts;
 diff --git a/meson.build b/meson.build
-index e571904378..0ee09501e3 100644
+index e571904..94944c3 100644
 --- a/meson.build
 +++ b/meson.build
 @@ -52,6 +52,15 @@ features = {
@@ -463,18 +463,21 @@ index e571904378..0ee09501e3 100644
  
  # generic sources
  sources = files(
+-- 
+2.47.1
 
-From 0be7e69ecd3d6a03457a6d14562e7894fde42d5f Mon Sep 17 00:00:00 2001
+
+From fc9b2f5a9c7f222b9a7c12cad8553b7b8ae17c64 Mon Sep 17 00:00:00 2001
 From: chyinan <chyinan2015@gmail.com>
 Date: Thu, 20 Aug 2026 16:11:07 +0800
-Subject: [PATCH 2/2] audio: reset OpenJOC classification at segment boundaries
+Subject: [PATCH 2/3] audio: reset OpenJOC classification at segment boundaries
 
 ---
  filters/f_decoder_wrapper.c | 7 +++++++
  1 file changed, 7 insertions(+)
 
 diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
-index 80e64b4bf4..9580c5def1 100644
+index 80e64b4..9580c5d 100644
 --- a/filters/f_decoder_wrapper.c
 +++ b/filters/f_decoder_wrapper.c
 @@ -1343,6 +1343,13 @@ static void read_frame(struct priv *p)
@@ -491,3 +494,278 @@ index 80e64b4bf4..9580c5def1 100644
          if (new_segment->segmented) {
              if (p->codec != new_segment->codec) {
                  p->codec = new_segment->codec;
+-- 
+2.47.1
+
+
+From a4a910ecd7f09c12eeffcdc7db891a38bc9c00cb Mon Sep 17 00:00:00 2001
+From: OpenJOC Maintainers <maintainers@openjoc.invalid>
+Date: Fri, 21 Aug 2026 15:08:55 +0800
+Subject: [PATCH 3/3] demux: pre-admit confirmed raw OpenJOC streams
+
+---
+ demux/demux_lavf.c          | 119 +++++++++++++++++++++++++++++++++++-
+ demux/stheader.h            |   9 +++
+ filters/f_decoder_wrapper.c |   7 ++-
+ 3 files changed, 133 insertions(+), 2 deletions(-)
+
+diff --git a/demux/demux_lavf.c b/demux/demux_lavf.c
+index 35f3a7b..de0bb0a 100644
+--- a/demux/demux_lavf.c
++++ b/demux/demux_lavf.c
+@@ -38,6 +38,10 @@
+ #include <libavutil/pixdesc.h>
+ #include <libavutil/replaygain.h>
+ 
++#if HAVE_OPENJOC
++#include <openjoc.h>
++#endif
++
+ #include "audio/chmap_avchannel.h"
+ 
+ #include "common/common.h"
+@@ -61,6 +65,7 @@
+ 
+ #define INITIAL_PROBE_SIZE STREAM_BUFFER_SIZE
+ #define PROBE_BUF_SIZE (10 * 1024 * 1024)
++#define OPENJOC_PROBE_SIZE (128 * 1024)
+ 
+ 
+ // Should correspond to IO_BUFFER_SIZE in libavformat/aviobuf.c (not public)
+@@ -255,6 +260,8 @@ typedef struct lavf_priv {
+ 
+     int retry_counter;
+ 
++    enum mp_openjoc_admission openjoc_admission;
++
+     struct demux_packet *pending_pkt;
+ 
+     AVDictionary *av_opts;
+@@ -267,6 +274,21 @@ typedef struct lavf_priv {
+     int (*default_io_close2)(struct AVFormatContext *s, AVIOContext *pb);
+ } lavf_priv_t;
+ 
++#if HAVE_OPENJOC
++static const char *openjoc_classification_name(openjoc_classification value)
++{
++    switch (value) {
++    case OPENJOC_CLASSIFICATION_UNKNOWN: return "UNKNOWN";
++    case OPENJOC_CLASSIFICATION_CONFIRMED_JOC: return "CONFIRMED_JOC";
++    case OPENJOC_CLASSIFICATION_CONFIRMED_NON_JOC:
++        return "CONFIRMED_NON_JOC";
++    case OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED:
++        return "INVALID_OR_UNSUPPORTED";
++    }
++    return "INVALID_OR_UNSUPPORTED";
++}
++#endif
++
+ static void update_read_stats(struct demuxer *demuxer)
+ {
+     lavf_priv_t *priv = demuxer->priv;
+@@ -483,6 +505,16 @@ static int lavf_check_file(demuxer_t *demuxer, enum demux_check check)
+     if (!avpd.buf)
+         return -1;
+ 
++#if HAVE_OPENJOC
++    openjoc_classifier *joc_classifier = NULL;
++    openjoc_classification joc_classification = OPENJOC_CLASSIFICATION_UNKNOWN;
++    size_t joc_probe_bytes = 0;
++    bool joc_classifier_active = false;
++    if (!forced_format &&
++        openjoc_classifier_create(&joc_classifier) == OPENJOC_STATUS_OK)
++        joc_classifier_active = true;
++#endif
++
+     bool final_probe = false;
+     do {
+         int score = 0;
+@@ -498,6 +530,40 @@ static int lavf_check_file(demuxer_t *demuxer, enum demux_check check)
+                 final_probe = true;
+             avpd.buf_size = nsize;
+ 
++#if HAVE_OPENJOC
++            if (joc_classifier_active) {
++                size_t available = MPMIN((size_t)nsize, OPENJOC_PROBE_SIZE);
++                if (available > joc_probe_bytes) {
++                    openjoc_status status = openjoc_classifier_send_chunk(
++                        joc_classifier, avpd.buf + joc_probe_bytes,
++                        available - joc_probe_bytes, &joc_classification);
++                    joc_probe_bytes = available;
++                    if (status != OPENJOC_STATUS_OK) {
++                        const char *detail =
++                            openjoc_classifier_last_error(joc_classifier);
++                        MP_TRACE(demuxer,
++                                 "OpenJOC raw pre-admission not applicable (%s)\n",
++                                 detail && detail[0] ? detail : "classifier error");
++                        joc_classification =
++                            OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED;
++                    }
++                }
++
++                if (joc_classification == OPENJOC_CLASSIFICATION_UNKNOWN &&
++                    (final_probe || joc_probe_bytes == OPENJOC_PROBE_SIZE))
++                {
++                    openjoc_status status = openjoc_classifier_finish(
++                        joc_classifier, &joc_classification);
++                    if (status != OPENJOC_STATUS_OK)
++                        joc_classification =
++                            OPENJOC_CLASSIFICATION_INVALID_OR_UNSUPPORTED;
++                }
++
++                if (joc_classification != OPENJOC_CLASSIFICATION_UNKNOWN)
++                    joc_classifier_active = false;
++            }
++#endif
++
+             priv->avif = av_probe_input_format2(&avpd, avpd.buf_size > 0, &score);
+         }
+ 
+@@ -520,7 +586,14 @@ static int lavf_check_file(demuxer_t *demuxer, enum demux_check check)
+             if (bstrcasecmp0(ext, "avif") == 0)
+                 priv->format_hack.skipinfo = false;
+ 
+-            if (score >= lavfdopts->probescore)
++            bool delay_eac3_for_openjoc = false;
++#if HAVE_OPENJOC
++            delay_eac3_for_openjoc =
++                matches_avinputformat_name(priv, "eac3") &&
++                (joc_classifier_active || joc_classification ==
++                    OPENJOC_CLASSIFICATION_CONFIRMED_JOC);
++#endif
++            if (score >= lavfdopts->probescore && !delay_eac3_for_openjoc)
+                 break;
+ 
+             if (priv->format_hack.probescore &&
+@@ -529,10 +602,36 @@ static int lavf_check_file(demuxer_t *demuxer, enum demux_check check)
+                 break;
+         }
+ 
++#if HAVE_OPENJOC
++        if (joc_classification == OPENJOC_CLASSIFICATION_CONFIRMED_JOC &&
++            (!priv->avif || matches_avinputformat_name(priv, "eac3")))
++        {
++            if (!priv->avif)
++                priv->avif = av_find_input_format("eac3");
++            if (priv->avif) {
++                priv->openjoc_admission =
++                    MP_OPENJOC_ADMISSION_CONFIRMED_JOC;
++                break;
++            }
++        }
++#endif
++
+         priv->avif = NULL;
+         priv->format_hack = (struct format_hack){0};
+     } while (!final_probe);
+ 
++#if HAVE_OPENJOC
++    if (priv->openjoc_admission == MP_OPENJOC_ADMISSION_CONFIRMED_JOC) {
++        MP_VERBOSE(demuxer,
++                   "OpenJOC raw pre-admission: %s (inspected=%zu bytes, staged=%zu bytes)\n",
++                   openjoc_classification_name(joc_classification),
++                   openjoc_classifier_get_inspected_bytes(joc_classifier),
++                   openjoc_classifier_get_staged_bytes(joc_classifier));
++    }
++    if (joc_classifier)
++        openjoc_classifier_destroy(joc_classifier);
++#endif
++
+     av_free(avpd.buf);
+ 
+     if (priv->avif && !forced_format && priv->format_hack.ignore) {
+@@ -545,6 +644,14 @@ static int lavf_check_file(demuxer_t *demuxer, enum demux_check check)
+         return -1;
+     }
+ 
++    if (priv->openjoc_admission == MP_OPENJOC_ADMISSION_CONFIRMED_JOC) {
++        // Keep FFmpeg's normal E-AC-3 parser, but avoid stream analysis and
++        // timestamp seeking: either can consume this bounded raw source before
++        // its complete parsed access unit reaches the selected decoder.
++        priv->format_hack.skipinfo = true;
++        priv->format_hack.no_seek = true;
++    }
++
+     if (lavfdopts->hacks)
+         priv->avif_flags = priv->avif->flags | priv->format_hack.if_flags;
+ 
+@@ -837,6 +944,8 @@ static void handle_new_stream(demuxer_t *demuxer, int i)
+     if (sh) {
+         sh->ff_index = st->index;
+         mp_codec_info_from_avcodecpar(codec, sh->codec);
++        if (codec->codec_id == AV_CODEC_ID_EAC3)
++            sh->codec->openjoc_admission = priv->openjoc_admission;
+         sh->codec->codec_tag = codec->codec_tag;
+         sh->codec->lav_codecpar = avcodec_parameters_alloc();
+         if (sh->codec->lav_codecpar)
+@@ -1401,6 +1510,12 @@ static int demux_open_lavf(demuxer_t *demuxer, enum demux_check check)
+     if (demuxer->opts->index_mode != 1)
+         avfc->flags |= AVFMT_FLAG_IGNIDX;
+ 
++    if (priv->openjoc_admission == MP_OPENJOC_ADMISSION_CONFIRMED_JOC) {
++        demuxer->seekable = false;
++        MP_VERBOSE(demuxer,
++                   "OpenJOC raw demux policy: parser=normal probe-info=no seekable=no\n");
++    }
++
+     if (lavfdopts->probesize) {
+         if (av_opt_set_int(avfc, "probesize", lavfdopts->probesize, 0) < 0)
+             MP_ERR(demuxer, "couldn't set option probesize to %"PRId64"\n",
+@@ -1536,6 +1651,8 @@ static int demux_open_lavf(demuxer_t *demuxer, enum demux_check check)
+     }
+     if (demuxer->params && demuxer->params->skip_lavf_probing)
+         probeinfo = false;
++    if (priv->openjoc_admission == MP_OPENJOC_ADMISSION_CONFIRMED_JOC)
++        probeinfo = false;
+     if (probeinfo) {
+         if (avformat_find_stream_info(avfc, NULL) < 0) {
+             MP_ERR(demuxer, "av_find_stream_info() failed\n");
+diff --git a/demux/stheader.h b/demux/stheader.h
+index 0175474..7adcb65 100644
+--- a/demux/stheader.h
++++ b/demux/stheader.h
+@@ -29,6 +29,11 @@ struct MPOpts;
+ struct demuxer;
+ struct sh_stream;
+ 
++enum mp_openjoc_admission {
++    MP_OPENJOC_ADMISSION_NONE = 0,
++    MP_OPENJOC_ADMISSION_CONFIRMED_JOC,
++};
++
+ // Container-level stream groups (e.g. AVStreamGroup from libavformat).
+ // A group bundles multiple real streams that the user should normally see as
+ // a single logical track.
+@@ -119,6 +124,10 @@ static inline struct sh_stream *sh_stream_dependent_sibling(struct sh_stream *bl
+ struct mp_codec_params {
+     enum stream_type type;
+ 
++    // Positive semantic admission established before raw E-AC-3 demuxing.
++    // This is deliberately independent of codec_tag and filename metadata.
++    enum mp_openjoc_admission openjoc_admission;
++
+     // E.g. "h264" (usually corresponds to AVCodecDescriptor.name)
+     const char *_Atomic codec;
+ 
+diff --git a/filters/f_decoder_wrapper.c b/filters/f_decoder_wrapper.c
+index 9580c5d..058214f 100644
+--- a/filters/f_decoder_wrapper.c
++++ b/filters/f_decoder_wrapper.c
+@@ -657,8 +657,13 @@ static bool reinit_decoder(struct priv *p)
+         driver->add_decoders(full);
+         bool has_openjoc = joc_probe_has_decoder(full);
+         talloc_free(full);
+-        if (has_openjoc)
++        if (has_openjoc && p->codec->openjoc_admission ==
++                           MP_OPENJOC_ADMISSION_CONFIRMED_JOC) {
++            MP_VERBOSE(p, "Using pre-confirmed raw OpenJOC admission\n");
++            user_list = "libopenjoc";
++        } else if (has_openjoc) {
+             joc_probe_start(p);
++        }
+     }
+ 
+     if (probe_decision && probe_use_libopenjoc && (!user_list || !user_list[0]))
+-- 
+2.47.1
+

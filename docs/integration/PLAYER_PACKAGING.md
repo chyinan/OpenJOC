@@ -90,11 +90,10 @@ SHA256SUMS              inner bundle checksum manifest
 Windows keeps runtime DLLs in `bin/` because the Windows loader naturally
 searches the executable directory. `mpv.exe` remains the GUI/Explorer entry;
 `mpv.com` is the upstream console entry, and `openjoc-mpv.cmd` injects the
-portable config/profile paths before forwarding the child exit status. For a
-raw `.ec3` input it also selects FFmpeg's `eac3` demuxer explicitly, because
-raw JOC metadata is not guaranteed to pass content-only probing, and disables
-the preliminary stream-info read so the bounded OpenJOC classifier receives
-the compressed packet. No registry or global `PATH` change is performed.
+portable config/profile paths before forwarding the child exit status. The
+launcher has no filename-extension or demux policy. Positive raw-JOC admission
+is implemented inside the patched lavf demux path from the non-destructive
+probe buffer. No registry or global `PATH` change is performed.
 
 The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 `openjoc-mpv.cmd --version`, `openjoc-mpv.cmd --ad=help` with `eac3` and
@@ -178,8 +177,10 @@ python3 scripts/qualify-player-package.py \
 ```
 
 `generate-player-fixtures.sh` uses the project-owned synthetic JOC exporter
-and deterministic lavfi codec/video controls. The fixture directory is
-temporary and is never packaged or uploaded. The qualification wrapper
+and deterministic lavfi codec/video controls. It retains an exact one-AU raw
+regression, an eight-AU raw control, and an MP4 wrapper around the exact one-AU
+bytes. The fixture directory is temporary and is never packaged or uploaded.
+The qualification wrapper
 extracts into a fresh directory away from source/build trees, disables network
 access for runtime checks, runs the package verifier, invokes the full mpv
 selection/layout/codec harness, and writes machine-readable JSON plus a
@@ -192,10 +193,12 @@ The existing mpv harness remains the media acceptance gate:
 integrations/mpv/verify-player.sh /absolute/extracted/.../bin/mpv /path/to/external-fixtures
 ```
 
-Its qualified fixture run covers ordinary E-AC-3 → `eac3`, confirmed JOC →
-`libopenjoc` without `--ad=libopenjoc`, binaural null output, exact 2.0, 5.1,
-7.1.4, 9.1.6, and 22.2 null-output channel counts, ordinary AAC/FLAC/MP3/AC-3
-and video smoke, seek/flush, EOS, and passthrough. Multichannel PCM generation
+Its qualified fixture run covers ordinary E-AC-3 → `eac3`, raw single- and
+multi-AU JOC → pre-confirmed `libopenjoc`, MP4 JOC → packet-classified
+`libopenjoc`, exact raw-versus-MP4 first-AU PCM identity, explicit stock
+decoder override, binaural null output, exact 2.0, 5.1, 7.1.4, 9.1.6, and 22.2
+null-output channel counts, ordinary AAC/FLAC/MP3/AC-3 and video smoke,
+seek/flush, EOS, and passthrough. Multichannel PCM generation
 and transport are qualified in CI; physical speaker-system playback has not
 been separately validated on Linux/Windows hardware. Programme media and
 derived PCM never enter the archive.

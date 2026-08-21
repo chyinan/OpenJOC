@@ -870,9 +870,7 @@ def bundle(arguments: argparse.Namespace) -> int:
             (root / "bin/openjoc-mpv.cmd").write_text(
                 "@echo off\r\n"
                 "set \"OPENJOC_PLAYER_ROOT=%~dp0..\"\r\n"
-                "set \"OPENJOC_EC3_FORMAT=\"\r\n"
-                "if /I \"%~x1\"==\".ec3\" set \"OPENJOC_EC3_FORMAT=--demuxer-lavf-format=eac3 --demuxer-lavf-probe-info=no\"\r\n"
-                "\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.com\" %OPENJOC_EC3_FORMAT% \"--config-dir=%OPENJOC_PLAYER_ROOT%\\config\" \"--include=%OPENJOC_PLAYER_ROOT%\\config\\profiles.conf\" %*\r\n"
+                "\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.com\" \"--config-dir=%OPENJOC_PLAYER_ROOT%\\config\" \"--include=%OPENJOC_PLAYER_ROOT%\\config\\profiles.conf\" %*\r\n"
                 "exit /b %ERRORLEVEL%\r\n",
                 encoding="utf-8",
             )
@@ -1125,8 +1123,16 @@ def verify(arguments: argparse.Namespace) -> int:
         if arguments.platform == "windows-x64" and arguments.fixture:
             fixture = arguments.fixture
             fixture_argument = native_windows_path(fixture)
-            playback = subprocess.run([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--no-video", "--ao-null-untimed=yes", "--end=1", "--msg-level=all=debug"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-            if playback.returncode != 0 or not playback.stdout.strip():
+            playback = subprocess.run([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--no-video", "--ao-null-untimed=yes", "--end=1", "--msg-level=all=debug,ffmpeg/audio=trace"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            playback_markers = (
+                "OpenJOC raw pre-admission: CONFIRMED_JOC",
+                "OpenJOC raw demux policy: parser=normal probe-info=no seekable=no",
+                "Selected decoder: libopenjoc ",
+                "OpenJOC consumed compressed chunk size=4096",
+                "AO: [null]",
+                "Exiting... (End of file)",
+            )
+            if playback.returncode != 0 or any(marker not in playback.stdout for marker in playback_markers):
                 raise SystemExit(f"package verification: Windows console JOC playback failed for {fixture_argument}\n{playback.stdout}")
             print("openjoc-mpv.cmd synthetic JOC console playback: PASS")
             if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):

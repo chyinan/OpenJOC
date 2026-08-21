@@ -9,7 +9,7 @@ mpv does not officially support OpenJOC and no upstream submission is implied.
 The verified baselines are mpv 0.41.0 (`41f6a645...`) and current master
 (`e7191f2...` on 2026-08-20). mpv's official architecture uses demux packets,
 an audio decoder wrapper, FFmpeg/libavcodec's `ad_lavc` frontend, audio channel
-maps, an audio filter/output chain, and an AO. The integration follows that
+maps, an audio filter/output chain, and an AO. Containerized inputs follow that
 boundary:
 
 ```text
@@ -27,6 +27,15 @@ The packets used for classification are retained as owned mpv frames and
 replayed to the selected decoder in their original order. Decoder-failure
 fallback is not used to identify JOC.
 
+Raw E-AC-3 has an earlier positive-only path. The lavf format probe's
+non-destructive bytes are fed incrementally to the same classifier, without
+repeating prefixes and with the same 131,072-byte ceiling. Only
+`CONFIRMED_JOC` can admit a raw stream whose FFmpeg probe score is otherwise
+too low. That admission is carried in a dedicated codec-parameter field; it is
+not inferred from a filename or hidden in `codec_tag`. The raw path retains
+FFmpeg's normal E-AC-3 parser, skips `avformat_find_stream_info`, and prevents
+timestamp seeking from consuming a bounded one-AU input before delivery.
+
 The player patch is optional. If `pkg-config` cannot find `openjoc`, mpv builds
 with its normal decoder-selection behavior and no OpenJOC source dependency.
 The native FFmpeg decoder remains explicitly named `libopenjoc`; mpv does not
@@ -37,7 +46,8 @@ globally reorder it ahead of `eac3`.
 | Stream/request | Result |
 | --- | --- |
 | ordinary E-AC-3, no override | positive classifier rejects JOC; stock `eac3` |
-| confirmed JOC, no override | positive classifier admits JOC; `libopenjoc` |
+| confirmed raw JOC, no override | pre-demux positive admission; `libopenjoc` |
+| confirmed container JOC, no override | packet classifier admits JOC; `libopenjoc` |
 | `--ad=libopenjoc` | normal mpv explicit override; useful for debugging |
 | `--ad=eac3` | normal mpv explicit stock-decoder override |
 | `--audio-spdif=eac3` | mpv compressed passthrough; OpenJOC is bypassed |
@@ -109,8 +119,10 @@ The local harness verifies:
 
 - `--ad=help` exposes both `eac3` and `libopenjoc` with the patched FFmpeg;
 - ordinary E-AC-3 positive non-JOC classification and stock decoder selection;
-- positive JOC classification and automatic `libopenjoc` selection;
-- explicit `--ad=libopenjoc`;
+- raw single- and multi-AU positive pre-admission and automatic `libopenjoc`;
+- MP4 packet classification/replay and automatic `libopenjoc`;
+- byte-identical rendered WAVE output for the raw and MP4 one-AU controls;
+- explicit `--ad=eac3` selection on positively identified raw JOC;
 - binaural stereo transport;
 - physical 7.1.4/22.2 channel counts without an output Remix;
 - explicit E-AC-3 passthrough.
@@ -127,6 +139,9 @@ repository.
 ## Known constraints
 
 - A custom FFmpeg build and OpenJOC C ABI are required for the feature.
+- Positively admitted raw JOC is exposed as forward-only because raw E-AC-3
+  has no reliable timestamp seek surface; containerized JOC retains normal
+  container seeking.
 - No device-name heuristic infers headphones. Binaural is explicit through
   `render_mode=binaural`.
 - Physical multichannel playback requires an AO/device that genuinely accepts

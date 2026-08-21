@@ -1,6 +1,6 @@
 # OpenJOC 0.9.1 — Post-release Hotfix
 
-OpenJOC 0.9.1 fixes two real user-facing issues discovered immediately after
+OpenJOC 0.9.1 fixes user-facing issues discovered immediately after
 the 0.9.0 Interchange & Ecosystem release.
 
 ## ADM compressed-input export
@@ -46,10 +46,18 @@ content for deterministic inputs.
 
 The Windows player ZIP now ships the upstream `mpv.com` console wrapper beside
 the GUI `mpv.exe`. `openjoc-mpv.cmd` invokes `mpv.com`, propagates its exit
-status, preserves the bundled config/profile injection, and explicitly selects
-the raw E-AC-3 demuxer without consuming the packet before OpenJOC admission for
-`.ec3` inputs. Extracted-package qualification checks the wrapper’s
-version/help/playback paths and records the GUI executable separately.
+status, and preserves the bundled config/profile injection. It contains no
+filename-based demux policy.
+
+The patched player now classifies at most 128 KiB from lavf's non-destructive
+probe buffer. A positive JOC result can admit a low-score raw E-AC-3 stream,
+including the one-access-unit synthetic regression, and is carried explicitly
+to the decoder wrapper. The raw path keeps FFmpeg's normal E-AC-3 parser but
+skips the stream-info scan and unsafe timestamp seek that could consume the
+only AU. MP4 JOC retains packet classification/replay, ordinary E-AC-3 retains
+the stock decoder, and explicit decoder and passthrough requests still win.
+Extracted-package qualification covers single- and multi-AU raw JOC, MP4 JOC,
+ordinary E-AC-3, and exact raw-versus-MP4 PCM identity for the first AU.
 
 ## SDK first-use qualification
 

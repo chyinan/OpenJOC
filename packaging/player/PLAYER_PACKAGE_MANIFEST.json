@@ -47,7 +47,7 @@
       "tag": "v0.41.0",
       "commit": "41f6a645068483470267271e1d09966ca3b9f413",
       "patch_path": "integrations/mpv/patches/mpv-0.41.0-openjoc.patch",
-      "patch_sha256": "68fc87275d06d7cd0d512908378e1125491c8e40653ff5b151ca99c1a2776e11"
+      "patch_sha256": "49c8478083bbe6c4c9d2ddac0135f47d097acbd91a45518a9e72be6989caf9ca"
     },
     "rust": {
       "minimum": "1.85",
@@ -104,6 +104,12 @@
       "CONSOLE_ENTRYPOINT",
       "CONSOLE_INTERRUPT",
       "JOC",
+      "RAW_SINGLE_AU_JOC",
+      "RAW_MULTI_AU_JOC",
+      "MP4_JOC",
+      "FIRST_AU_INTEGRITY",
+      "EXPLICIT_OVERRIDE",
+      "PASSTHROUGH",
       "ORDINARY_EAC3",
       "BINAURAL",
       "2_0",

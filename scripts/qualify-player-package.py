@@ -19,11 +19,16 @@ import zipfile
 REPOSITORY = pathlib.Path(__file__).resolve().parent.parent
 PACKAGE_VERIFIER = REPOSITORY / "scripts/player-package.py"
 PLAYER_HARNESS = REPOSITORY / "integrations/mpv/verify-player.sh"
+HARNESS_FIELDS = (
+    "JOC", "RAW_SINGLE_AU_JOC", "RAW_MULTI_AU_JOC", "MP4_JOC",
+    "FIRST_AU_INTEGRITY", "EXPLICIT_OVERRIDE", "PASSTHROUGH",
+    "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6",
+    "22_2", "EOS",
+)
 FIELDS = [
     "BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME",
     "DECODER_SELECTION", "GUI_EXECUTABLE", "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
-    "JOC", "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6",
-    "22_2", "EOS", "PRIVATE_PATH_SCAN",
+    *HARNESS_FIELDS, "PRIVATE_PATH_SCAN",
 ]
 
 
@@ -134,7 +139,7 @@ def main() -> int:
             "--platform", args.platform, "--run-smoke", "--missing-dependency-smoke",
         ]
         if args.platform == "windows-x64":
-            verifier.extend(["--fixture", str(fixtures / "joc.ec3")])
+            verifier.extend(["--fixture", str(fixtures / "joc.single.ec3")])
         code, output = run(verifier, cwd=root, env=env)
         evidence["package_verifier"] = clean_output(output, temporary, fixtures)
         if code == 0:
@@ -160,10 +165,10 @@ def main() -> int:
             evidence["player_harness"] = clean_output(output, temporary, fixtures)
             if code == 0:
                 harness_ok = True
-                for field in ("JOC", "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6", "22_2", "EOS"):
+                for field in HARNESS_FIELDS:
                     statuses[field] = "PASS"
             else:
-                for field in ("JOC", "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6", "22_2", "EOS"):
+                for field in HARNESS_FIELDS:
                     statuses[field] = "FAIL"
 
         build_info = {}

@@ -7,12 +7,13 @@ The patchset was developed and built against:
 
 | Baseline | Source commit | Patch |
 | --- | --- | --- |
-| mpv 0.41.0 | `41f6a645068483470267271e1d09966ca3b9f413` → `c78b53e3bc` | `patches/mpv-0.41.0-openjoc.patch` |
-| mpv master | `e7191f2a65d64af266c5c80793e79d2f4b92b789` → `0be7e69ecd` | `patches/mpv-master-openjoc.patch` |
+| mpv 0.41.0 | `41f6a645068483470267271e1d09966ca3b9f413` | `patches/mpv-0.41.0-openjoc.patch` |
+| mpv master | `e7191f2a65d64af266c5c80793e79d2f4b92b789` | `patches/mpv-master-openjoc.patch` |
 
-Both patch files contain the same two-commit source series: the optional
-OpenJOC integration and the segment-boundary classification reset. The stable
-and master patches are kept separately so upstream source drift is visible.
+Both patch files contain the same three-part architecture: the optional
+OpenJOC integration, the segment-boundary classification reset, and bounded
+positive pre-demux admission for raw JOC. The stable and master patches are
+kept separately so upstream source drift is visible.
 
 ## Build boundary
 
