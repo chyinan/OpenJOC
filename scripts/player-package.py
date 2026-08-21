@@ -1136,7 +1136,10 @@ def verify(arguments: argparse.Namespace) -> int:
                 raise SystemExit(f"package verification: Windows console JOC playback failed for {fixture_argument}\n{playback.stdout}")
             print("openjoc-mpv.cmd synthetic JOC console playback: PASS")
             if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
-                process = subprocess.Popen([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--no-video", "--ao-null-untimed=yes", "--loop=inf", "--msg-level=all=debug"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True, encoding="utf-8", errors="replace")
+                # Do not connect an infinite debug stream to an unread pipe:
+                # once the pipe fills, the child blocks before CTRL_BREAK can
+                # exercise normal foreground termination.
+                process = subprocess.Popen([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--no-video", "--ao-null-untimed=yes", "--loop=inf", "--msg-level=all=debug"], cwd=root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
                 try:
                     time.sleep(1)
                     process.send_signal(signal.CTRL_BREAK_EVENT)
