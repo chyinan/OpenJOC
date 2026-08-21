@@ -158,6 +158,7 @@ PATH="$openjoc_prefix/bin:$ffmpeg_prefix/bin:/mingw64/bin:$PATH" \
 PATH="$openjoc_prefix/bin:$ffmpeg_prefix/bin:/mingw64/bin:$PATH" \
     DESTDIR="$mpv_prefix" meson install -C "$work/build/mpv"
 cp "$mpv_prefix/usr/bin/mpv.exe" "$work/stage/bin/mpv.exe"
+cp "$mpv_prefix/usr/bin/mpv.com" "$work/stage/bin/mpv.com"
 echo '::endgroup::'
 
 echo '::group::Windows package assembly and dependency audit'

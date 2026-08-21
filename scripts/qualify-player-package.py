@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -20,8 +21,9 @@ PACKAGE_VERIFIER = REPOSITORY / "scripts/player-package.py"
 PLAYER_HARNESS = REPOSITORY / "integrations/mpv/verify-player.sh"
 FIELDS = [
     "BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME",
-    "DECODER_SELECTION", "JOC", "ORDINARY_EAC3", "BINAURAL", "2_0",
-    "5_1", "7_1_4", "9_1_6", "22_2", "EOS", "PRIVATE_PATH_SCAN",
+    "DECODER_SELECTION", "GUI_EXECUTABLE", "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
+    "JOC", "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6",
+    "22_2", "EOS", "PRIVATE_PATH_SCAN",
 ]
 
 
@@ -112,23 +114,48 @@ def main() -> int:
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
             env.pop(key, None)
         (temporary / "home").mkdir()
+        if args.platform == "windows-x64":
+            system_root = env.get("SystemRoot") or env.get("WINDIR") or r"C:\Windows"
+            sh_path = shutil.which("sh")
+            tool_entries = [str(root / "bin")]
+            if sh_path:
+                tool_entries.append(str(pathlib.Path(sh_path).resolve().parent))
+            tool_entries.extend([f"{system_root}\\System32", f"{system_root}\\System32\\Wbem"])
+            env["PATH"] = ";".join(dict.fromkeys(tool_entries))
+            env["SystemRoot"] = system_root
+            env["WINDIR"] = system_root
+        else:
+            env["PATH"] = f"{root / 'bin'}:/usr/bin:/bin"
+            env["LD_LIBRARY_PATH"] = str(root / "lib")
+            env["DYLD_LIBRARY_PATH"] = str(root / "lib")
 
         verifier = [
             sys.executable, str(PACKAGE_VERIFIER), "verify", "--root", str(root),
             "--platform", args.platform, "--run-smoke", "--missing-dependency-smoke",
         ]
+        if args.platform == "windows-x64":
+            verifier.extend(["--fixture", str(fixtures / "joc.ec3")])
         code, output = run(verifier, cwd=root, env=env)
         evidence["package_verifier"] = clean_output(output, temporary, fixtures)
         if code == 0:
             package_ok = True
             for field in ("BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME", "DECODER_SELECTION", "PRIVATE_PATH_SCAN"):
                 statuses[field] = "PASS"
+            if args.platform == "windows-x64":
+                statuses["GUI_EXECUTABLE"] = "PASS"
+                statuses["CONSOLE_ENTRYPOINT"] = "PASS"
+                statuses["CONSOLE_INTERRUPT"] = "PASS" if "mpv.com console interrupt smoke: PASS" in output else "NOT_APPLICABLE"
         else:
             for field in ("BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME", "DECODER_SELECTION", "PRIVATE_PATH_SCAN"):
                 statuses[field] = "FAIL"
+            if args.platform == "windows-x64":
+                statuses["GUI_EXECUTABLE"] = "FAIL"
+                statuses["CONSOLE_ENTRYPOINT"] = "FAIL"
+                statuses["CONSOLE_INTERRUPT"] = "FAIL"
 
         if package_ok:
-            harness = ["sh", str(PLAYER_HARNESS), str(root / "bin" / ("mpv.exe" if args.platform == "windows-x64" else "mpv")), str(fixtures)]
+            harness_executable = "mpv.com" if args.platform == "windows-x64" else "mpv"
+            harness = [shutil.which("sh") or "sh", str(PLAYER_HARNESS), str(root / "bin" / harness_executable), str(fixtures)]
             code, output = run(harness, cwd=root, env=env)
             evidence["player_harness"] = clean_output(output, temporary, fixtures)
             if code == 0:

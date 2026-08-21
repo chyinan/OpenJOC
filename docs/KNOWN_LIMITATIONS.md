@@ -1,9 +1,9 @@
-# OpenJOC 0.9.0 known limitations
+# OpenJOC 0.9.1 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.9.0 is an independent, experimental interoperability project. It
+OpenJOC 0.9.1 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 

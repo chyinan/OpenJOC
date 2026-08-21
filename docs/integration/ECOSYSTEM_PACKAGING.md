@@ -1,6 +1,6 @@
 # OpenJOC ecosystem packages
 
-OpenJOC 0.9 package categories are built from the exact release commit with
+OpenJOC 0.9.1 package categories are built from the exact release commit with
 `scripts/package-ecosystem.py`:
 
 ```sh
@@ -42,9 +42,11 @@ on their target CI runner before publication.
 ## FFmpeg
 
 An OpenJOC-enabled FFmpeg bundle contains custom `openjoc-ffmpeg` and
-`openjoc-ffprobe` launchers plus the runtime libraries required by the selected
-build. It is not an official upstream FFmpeg distribution. The pinned FFmpeg
-revision and OpenJOC integration patch hash are mandatory manifest fields.
+`openjoc-ffprobe` launchers plus the complete recursive non-system PE DLL
+closure on Windows (and the selected shared-library runtime on Unix). It is
+not an official upstream FFmpeg distribution. The pinned FFmpeg revision and
+OpenJOC integration patch hash are mandatory manifest fields; Windows
+`BUILD_INFO` records the closure with `missing: 0`.
 
 ## GStreamer
 
@@ -55,7 +57,9 @@ activate the extracted plugin directory with `activate.sh` or `activate.ps1`.
 
 ## SDK
 
-The SDK contains `include/openjoc.h`, the C ABI libraries, Unix pkg-config
-metadata, a small CMake configuration, and a C example. The ABI remains
-experimental 1.3 during the 0.x release line; the package version does not
-change the ABI.
+The SDK contains `include/openjoc.h`, the C ABI libraries, pkg-config metadata,
+a CMake CONFIG package, and a C example. Fresh extraction is qualified through
+direct compiler, pkg-config, and `find_package(OpenJOC CONFIG)` consumers; on
+Windows the C ABI and each compiled consumer receive a recursive PE closure
+audit and hermetic runtime smoke. The ABI remains experimental 1.3 during the
+0.x release line; the package version does not change the ABI.

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.1] — 2026-08-21
+
+OpenJOC 0.9.1 is a focused post-release hotfix for real compressed-input ADM
+export and Windows ecosystem runtime qualification.
+
+### Hotfixes
+
+- Fixed `export-adm` compressed-input staging so the decoder receives an
+  uncreated `root/scene` beneath an owned temporary root; decode failures and
+  successful exports both clean the root without weakening overwrite safety.
+- Added end-to-end compressed-input ADM export coverage, adjacent report and
+  validator checks, and success/failure staging-cleanup regressions.
+- Fixed Windows SDK and custom FFmpeg ecosystem packages to ship the complete
+  recursive non-system PE DLL closure for their runtime roots.
+- Made ecosystem verification hermetic, added Windows negative missing-DLL
+  smoke coverage, recursive zero-missing closure audits, and isolated
+  Linux/macOS loader-path verification.
+
 ## [0.9.0] — 2026-08-21
 
 OpenJOC 0.9.0 — Interchange & Ecosystem adds reconstructed ADM/BW64 export,

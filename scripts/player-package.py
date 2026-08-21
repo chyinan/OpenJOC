@@ -16,6 +16,7 @@ import os
 import pathlib
 import platform
 import re
+import signal
 import shutil
 import stat
 import subprocess
@@ -127,6 +128,29 @@ def builtin_hrtf_evidence() -> dict[str, str]:
         "dataset": "SADIE II D1 (KU100), v2-2",
         "source": "crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa",
         "sha256": sha256(BUILTIN_HRTF),
+    }
+
+
+def portable_runtime_environment(root: pathlib.Path, platform_name: str) -> dict[str, str]:
+    """Build a package-only runtime environment for extracted-bundle tests."""
+    if platform_name == "windows-x64":
+        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+        return {
+            "PATH": ";".join(
+                [str(root / "bin"), f"{system_root}\\System32", f"{system_root}\\System32\\Wbem"]
+            ),
+            "SystemRoot": system_root,
+            "WINDIR": system_root,
+            "TEMP": str(root.parent),
+            "TMP": str(root.parent),
+            "LC_ALL": "C",
+        }
+    return {
+        "PATH": f"{root / 'bin'}:/usr/bin:/bin",
+        "HOME": str(root.parent),
+        "LC_ALL": "C",
+        "LD_LIBRARY_PATH": str(root / "lib"),
+        "DYLD_LIBRARY_PATH": str(root / "lib"),
     }
 
 
@@ -340,12 +364,25 @@ def collect_windows(
     destination: pathlib.Path,
     search_dirs: list[pathlib.Path],
 ) -> tuple[list[dict[str, object]], list[str]]:
+    return collect_windows_closure([executable], destination, search_dirs)
+
+
+def collect_windows_closure(
+    roots: list[pathlib.Path],
+    destination: pathlib.Path,
+    search_dirs: list[pathlib.Path],
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Copy the complete non-system PE DLL closure from explicit roots."""
     destination.mkdir(parents=True, exist_ok=True)
     copied: dict[str, pathlib.Path] = {}
     external: set[str] = set()
-    queue = [executable.resolve()]
+    queue = [root.resolve() for root in roots]
+    seen: set[pathlib.Path] = set()
     while queue:
         source = queue.pop(0)
+        if source in seen:
+            continue
+        seen.add(source)
         for name in pe_imports(source):
             if windows_system_dependency(name):
                 external.add(name)
@@ -535,13 +572,38 @@ def verify_linux_dependency_closure(root: pathlib.Path, executable: pathlib.Path
 
 
 def verify_windows_dependency_closure(root: pathlib.Path, executable: pathlib.Path) -> None:
-    owners = [executable, *sorted((root / "bin").glob("*.dll"))]
-    for owner in owners:
+    verify_windows_dependency_closure_from_roots(root, [executable])
+
+
+def verify_windows_dependency_closure_from_roots(
+    root: pathlib.Path,
+    roots: list[pathlib.Path],
+) -> tuple[list[str], list[str]]:
+    """Audit every reachable non-system PE import using only root/bin."""
+    bundled: set[str] = set()
+    external: set[str] = set()
+    queue = [path.resolve() for path in roots]
+    seen: set[pathlib.Path] = set()
+    while queue:
+        owner = queue.pop(0)
+        if owner in seen:
+            continue
+        seen.add(owner)
+        if owner.suffix.lower() == ".dll":
+            bundled.add(owner.name)
         for name in pe_imports(owner):
             if windows_system_dependency(name):
+                external.add(name)
                 continue
-            if find_case_insensitive([root / "bin"], name) is None:
-                raise SystemExit(f"package verification: missing bundled PE dependency {name} from {owner.name}")
+            dependency = find_case_insensitive([root / "bin"], name)
+            if dependency is None:
+                raise SystemExit(
+                    f"package verification: missing bundled PE dependency {name} from {owner.name}"
+                )
+            key = dependency.resolve()
+            bundled.add(dependency.name)
+            queue.append(key)
+    return sorted(bundled, key=str.lower), sorted(external, key=str.lower)
 
 
 def homebrew_license_evidence(licenses: pathlib.Path) -> pathlib.Path | None:
@@ -769,6 +831,13 @@ def bundle(arguments: argparse.Namespace) -> int:
         (root / "licenses").mkdir(parents=True)
         copy_file(staged_executable, root / "bin" / executable_name)
         (root / "bin" / executable_name).chmod(0o755)
+        console_executable = None
+        if platform_name == "windows-x64":
+            console_executable = stage / "bin/mpv.com"
+            if not console_executable.is_file():
+                raise SystemExit(f"staged Windows console wrapper missing: {console_executable}")
+            copy_file(console_executable, root / "bin/mpv.com")
+            (root / "bin/mpv.com").chmod(0o755)
         copy_file(QUICKSTART_PATH, root / "QUICKSTART.md")
         copy_file(PROFILES_PATH, root / "config/profiles.conf")
         (root / "config/mpv.conf").write_text(
@@ -777,7 +846,7 @@ def bundle(arguments: argparse.Namespace) -> int:
         )
         if platform_name == "windows-x64":
             (root / "bin/openjoc-mpv.cmd").write_text(
-                "@echo off\r\nset \"OPENJOC_PLAYER_ROOT=%~dp0..\"\r\n\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.exe\" \"--config-dir=%OPENJOC_PLAYER_ROOT%\\config\" \"--include=%OPENJOC_PLAYER_ROOT%\\config\\profiles.conf\" %*\r\n",
+                "@echo off\r\nset \"OPENJOC_PLAYER_ROOT=%~dp0..\"\r\n\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.com\" \"--config-dir=%OPENJOC_PLAYER_ROOT%\\config\" \"--include=%OPENJOC_PLAYER_ROOT%\\config\\profiles.conf\" %*\r\nexit /b %ERRORLEVEL%\r\n",
                 encoding="utf-8",
             )
         else:
@@ -794,7 +863,9 @@ def bundle(arguments: argparse.Namespace) -> int:
         elif platform_name == "linux-x86_64":
             records, external = collect_linux(root / "bin/mpv", root / "lib")
         else:
-            records, external = collect_windows(root / "bin/mpv.exe", root / "bin", source_dirs)
+            records, external = collect_windows_closure(
+                [root / "bin/mpv.exe", root / "bin/mpv.com"], root / "bin", source_dirs
+            )
         sanitize_private_strings(root, [pathlib.Path(value) for value in arguments.private_prefix])
         ad_hoc_signed = sign_macos_runtime(root) if platform_name == "macos-arm64" else False
         refresh_dependency_records(root, records)
@@ -820,6 +891,15 @@ def bundle(arguments: argparse.Namespace) -> int:
             "component": "mpv",
             "license": "GPL-2.0-or-later",
         })
+        if platform_name == "windows-x64":
+            dependencies.insert(1, {
+                "path": "bin/mpv.com",
+                "sha256": sha256(root / "bin/mpv.com"),
+                "size": (root / "bin/mpv.com").stat().st_size,
+                "kind": "bundled",
+                "component": "mpv-console-wrapper",
+                "license": "GPL-2.0-or-later",
+            })
         evidence = copy_license_evidence(root / "licenses", pathlib.Path(arguments.ffmpeg_source).resolve() if arguments.ffmpeg_source else None, pathlib.Path(arguments.mpv_source).resolve() if arguments.mpv_source else None)
         write_notices(root / "THIRD_PARTY_NOTICES.txt", dependencies, evidence)
         unresolved_license_components = [
@@ -855,6 +935,11 @@ def bundle(arguments: argparse.Namespace) -> int:
             "enabled_openjoc_features": manifest["openjoc"]["features"],
             "profiles": manifest["profiles"],
             "runtime_dependency_inventory": dependency_manifest,
+            "entrypoints": {
+                "gui": "bin/mpv.exe" if platform_name == "windows-x64" else "bin/mpv",
+                "console": "bin/mpv.com" if platform_name == "windows-x64" else "bin/mpv",
+                "launcher": "bin/openjoc-mpv.cmd" if platform_name == "windows-x64" else "bin/openjoc-mpv",
+            },
             "configure": {"ffmpeg": manifest["pinned_stack"]["ffmpeg"]["configure_flags"], "mpv": ["-Dtests=false", "-Dmanpage-build=disabled", "-Dhtml-build=disabled", "-Dpdf-build=disabled"]},
             "signing": {"developer_id_signed": False, "notarized": False, "ad_hoc_only_if_required": True, "ad_hoc_signed": ad_hoc_signed},
             "verification": {
@@ -926,6 +1011,10 @@ def verify(arguments: argparse.Namespace) -> int:
     ]
     executable = root / ("bin/mpv.exe" if arguments.platform == "windows-x64" else "bin/mpv")
     required.append(executable.relative_to(root).as_posix())
+    console_executable = None
+    if arguments.platform == "windows-x64":
+        console_executable = root / "bin/mpv.com"
+        required.append("bin/mpv.com")
     for relative in required:
         path = root / relative
         if not path.is_file() or path.is_symlink():
@@ -969,10 +1058,12 @@ def verify(arguments: argparse.Namespace) -> int:
     else:
         if not shutil.which("objdump"):
             raise SystemExit("package verification: Windows PE audit requires MinGW objdump")
-        output = run(["objdump", "-f", str(executable)])
-        if "pei-x86-64" not in output.lower():
-            raise SystemExit(f"package verification: unexpected PE architecture: {output.strip()}")
-        verify_windows_dependency_closure(root, executable)
+        for pe in (executable, console_executable):
+            output = run(["objdump", "-f", str(pe)])
+            if "pei-x86-64" not in output.lower():
+                raise SystemExit(f"package verification: unexpected PE architecture: {output.strip()}")
+        verify_windows_dependency_closure_from_roots(root, [executable, console_executable])
+        print("Windows GUI executable mpv.exe and console wrapper mpv.com: present and PE-audited")
     forbidden = [str(root), str(REPOSITORY), *PRIVATE_MARKERS, "target/debug", "target\\debug"]
     forbidden.extend([str(root).replace("/", "\\"), str(REPOSITORY).replace("/", "\\")])
     for path in [p for p in root.rglob("*") if p.is_file()]:
@@ -982,14 +1073,45 @@ def verify(arguments: argparse.Namespace) -> int:
         for marker in forbidden:
             if marker.encode() in data:
                 raise SystemExit(f"package verification: private/build path leak {marker} in {path.relative_to(root)}")
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": tempfile.gettempdir(), "LC_ALL": "C"}
+    env = portable_runtime_environment(root, arguments.platform)
     if arguments.run_smoke:
-        version = subprocess.run([str(executable), "--version"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+        smoke_executable = console_executable or executable
+        version = subprocess.run([str(smoke_executable), "--version"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         if version.returncode != 0:
             raise SystemExit(f"package verification: packaged mpv --version failed\n{version.stdout}")
-        help_result = subprocess.run([str(executable), f"--config-dir={root / 'config'}", "--ad=help"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+        if not version.stdout.strip():
+            raise SystemExit("package verification: packaged mpv --version produced no console output")
+        if arguments.platform == "windows-x64":
+            wrapper = root / "bin/openjoc-mpv.cmd"
+            comspec = os.environ.get("COMSPEC", "cmd.exe")
+            wrapper_version = subprocess.run([comspec, "/d", "/c", str(wrapper), "--version"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            if wrapper_version.returncode != 0 or not wrapper_version.stdout.strip():
+                raise SystemExit(f"package verification: openjoc-mpv.cmd --version failed\n{wrapper_version.stdout}")
+            help_command = [comspec, "/d", "/c", str(wrapper), "--ad=help"]
+        else:
+            help_command = [str(smoke_executable), f"--config-dir={root / 'config'}", "--ad=help"]
+        help_result = subprocess.run(help_command, cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         if help_result.returncode != 0 or "libopenjoc" not in help_result.stdout or "eac3" not in help_result.stdout:
             raise SystemExit(f"package verification: decoder visibility failed\n{help_result.stdout}")
+        print(f"mpv console --version: {version.stdout.splitlines()[0]}")
+        print("mpv decoder inventory: eac3=PASS libopenjoc=PASS")
+        if arguments.platform == "windows-x64" and arguments.fixture:
+            fixture = arguments.fixture.resolve()
+            playback = subprocess.run([str(smoke_executable), str(fixture), "--ao=null", "--vo=null"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            if playback.returncode != 0 or not playback.stdout.strip():
+                raise SystemExit(f"package verification: Windows console JOC playback failed\n{playback.stdout}")
+            print("mpv.com synthetic JOC console playback: PASS")
+            if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
+                process = subprocess.Popen([str(smoke_executable), str(fixture), "--ao=null", "--vo=null", "--loop=inf"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True)
+                try:
+                    time.sleep(1)
+                    process.send_signal(signal.CTRL_BREAK_EVENT)
+                    process.wait(timeout=10)
+                finally:
+                    if process.poll() is None:
+                        process.terminate()
+                        process.wait(timeout=10)
+                print("mpv.com console interrupt smoke: PASS")
     if arguments.missing_dependency_smoke:
         with tempfile.TemporaryDirectory(prefix="openjoc-player-missing-dependency-") as temporary:
             isolated = pathlib.Path(temporary) / root.name
@@ -1004,7 +1126,8 @@ def verify(arguments: argparse.Namespace) -> int:
             missing_name = missing.name
             missing.rename(missing.with_suffix(missing.suffix + ".missing"))
             isolated_executable = isolated / executable.relative_to(root)
-            failure = subprocess.run([str(isolated_executable), "--version"], cwd=isolated, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            isolated_env = portable_runtime_environment(isolated, arguments.platform)
+            failure = subprocess.run([str(isolated_executable), "--version"], cwd=isolated, env=isolated_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             if arguments.platform == "windows-x64":
                 owners = [isolated_executable, *sorted((isolated / "bin").glob("*.dll"))]
                 imported = any(
@@ -1044,6 +1167,7 @@ def main() -> int:
     verify_parser.add_argument("--platform", choices=["macos-arm64", "linux-x86_64", "windows-x64"], required=True)
     verify_parser.add_argument("--run-smoke", action="store_true")
     verify_parser.add_argument("--missing-dependency-smoke", action="store_true")
+    verify_parser.add_argument("--fixture", type=pathlib.Path)
     verify_parser.set_defaults(function=verify)
     arguments = parser.parse_args()
     try:

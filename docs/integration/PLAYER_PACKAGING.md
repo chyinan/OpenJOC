@@ -33,7 +33,7 @@ It pins FFmpeg `n9.0.1` at
 
 ## Qualified artifact surface
 
-The qualified player surface is a portable OpenJOC 0.9.0 package for macOS
+The qualified player surface is a portable OpenJOC 0.9.1 package for macOS
 arm64, Linux x86_64, and Windows x64. The package is not a `.app`, DMG,
 installer, or official mpv/FFmpeg distribution. Linux x86_64 and Windows x64
 are qualified by the dedicated `player-packaging.yml` jobs on native runners;
@@ -55,13 +55,15 @@ packages an extracted runtime closure. Build worktrees and prefixes stay
 outside the repository.
 
 `--release` is required for final archive names such as
-`openjoc-mpv-0.9.0-macos-arm64.tar.gz`. Without it, the same build machinery
-uses a development `0.9.0-git<commit>` name. Neither mode publishes anything.
+`openjoc-mpv-0.9.1-macos-arm64.tar.gz`. Without it, the same build machinery
+uses a development `0.9.1-git<commit>` name. Neither mode publishes anything.
 
 For Windows CI, the equivalent MSYS2/MinGW-w64 entry point is
 `scripts/build-openjoc-player-windows.sh`. It builds the GNU Rust target,
 patched FFmpeg, and patched mpv, then places all non-system DLLs beside
-`mpv.exe`. The canonical job uses a GitHub `windows-2025` runner, the MSYS2
+`mpv.exe`. It also preserves the upstream `mpv.com` console wrapper beside the
+GUI executable; `openjoc-mpv.cmd` invokes `mpv.com` so console attachment and
+exit-status propagation follow upstream Windows behavior. The canonical job uses a GitHub `windows-2025` runner, the MSYS2
 `MINGW64` shell, `x86_64-pc-windows-gnu`, `x86_64-w64-mingw32-gcc`, and
 `pkg-config` with the staged OpenJOC/FFmpeg prefixes first. `pacman -Q` is
 retained as a workflow artifact so the actual MSYS2 package set is recorded.
@@ -70,8 +72,11 @@ It does not require Rust, FFmpeg, or MSYS2 on an end-user machine.
 ## Runtime layout
 
 ```text
-bin/mpv                 patched player executable
-bin/openjoc-mpv         relocatable launcher with bundle config/profile include
+bin/mpv.exe             patched GUI player executable (Windows)
+bin/mpv.com             upstream console wrapper (Windows)
+bin/openjoc-mpv.cmd     Windows console launcher with bundle config/profile include
+bin/mpv                 patched player executable (macOS/Linux)
+bin/openjoc-mpv         relocatable launcher with bundle config/profile include (macOS/Linux)
 lib/                    macOS/Linux private shared-library closure
 config/mpv.conf         neutral portable config
 config/profiles.conf    opt-in OpenJOC output profiles
@@ -83,9 +88,17 @@ SHA256SUMS              inner bundle checksum manifest
 ```
 
 Windows keeps runtime DLLs in `bin/` because the Windows loader naturally
-searches the executable directory. The launcher is only a small config/path
-helper; mpv remains the primary player and no registry or global `PATH` change
-is performed.
+searches the executable directory. `mpv.exe` remains the GUI/Explorer entry;
+`mpv.com` is the upstream console entry, and `openjoc-mpv.cmd` injects the
+portable config/profile paths before forwarding the child exit status. No
+registry or global `PATH` change is performed.
+
+The extracted Windows acceptance matrix checks direct `mpv.com --version`,
+`openjoc-mpv.cmd --version`, `openjoc-mpv.cmd --ad=help` with `eac3` and
+`libopenjoc`, synthetic JOC null-output playback, package checksums, and the
+presence/PE audit of both GUI and console executables. Native Windows runners
+also attempt a console interrupt smoke where the platform exposes
+`CTRL_BREAK_EVENT`.
 
 On macOS, `install_name_tool` rewrites private dependencies to `@rpath` and
 adds `@loader_path/../lib` to the executable and `@loader_path` to bundled
@@ -208,14 +221,14 @@ redistributed component. No package job uploads or publishes an artifact.
 
 No source tree, Cargo target directory, compiler cache, private media, test
 PCM, commercial HRTF data, credentials, cookies, or user configuration is
-copied. Development artifacts use `0.9.0-git<commit>` identifiers; final
-release candidates use the exact `0.9.0` project version and record the full
+copied. Development artifacts use `0.9.1-git<commit>` identifiers; final
+release candidates use the exact `0.9.1` project version and record the full
 OpenJOC commit in `BUILD_INFO`. macOS packages are ad-hoc signed where
 required, not Developer-ID signed, and not notarized. Tagging, GitHub Release
 creation, installer formats, auto-update, and upstream submission remain
 explicitly outside this hardening phase.
 
-The 0.9.0 release theme is the accumulated cross-platform player surface:
+The 0.9.1 release theme is the accumulated cross-platform player surface:
 22.2 rendering, the built-in HRTF, GStreamer integration, the external FFmpeg
 bridge, the native FFmpeg `libopenjoc` wrapper, mpv player integration, and
 reproducible player packaging. The custom FFmpeg/mpv integrations are

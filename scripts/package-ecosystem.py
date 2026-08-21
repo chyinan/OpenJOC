@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -20,6 +21,15 @@ import subprocess
 import tarfile
 import tempfile
 import zipfile
+
+_PLAYER_PACKAGE_SPEC = importlib.util.spec_from_file_location(
+    "openjoc_player_package", pathlib.Path(__file__).with_name("player-package.py")
+)
+if _PLAYER_PACKAGE_SPEC is None or _PLAYER_PACKAGE_SPEC.loader is None:
+    raise RuntimeError("unable to load shared player package closure implementation")
+_PLAYER_PACKAGE = importlib.util.module_from_spec(_PLAYER_PACKAGE_SPEC)
+_PLAYER_PACKAGE_SPEC.loader.exec_module(_PLAYER_PACKAGE)
+collect_windows_closure = _PLAYER_PACKAGE.collect_windows_closure
 
 
 REPOSITORY = pathlib.Path(__file__).resolve().parent.parent
@@ -170,6 +180,26 @@ def write_build_info(root: pathlib.Path, kind: str, platform: str, extra: dict[s
     )
 
 
+def windows_runtime_closure(
+    roots: list[pathlib.Path],
+    destination: pathlib.Path,
+    search_dirs: list[pathlib.Path],
+) -> dict[str, object]:
+    records, external = collect_windows_closure(roots, destination, search_dirs)
+    return {
+        "roots": [path.name for path in roots],
+        "non_system_dlls": sorted(
+            {
+                *(path.name for path in roots if path.suffix.lower() == ".dll"),
+                *(pathlib.Path(str(record["path"])).name for record in records),
+            },
+        ),
+        "external_system_dlls": external,
+        "missing": 0,
+        "search_dirs": [path.name for path in search_dirs],
+    }
+
+
 def write_sha256sums(root: pathlib.Path) -> None:
     records = [
         f"{sha256(path)}  {path.relative_to(root).as_posix()}"
@@ -253,6 +283,8 @@ def package_sdk(args: argparse.Namespace) -> None:
     with tempfile.TemporaryDirectory(prefix="openjoc-sdk-") as temporary:
         stage = pathlib.Path(temporary) / f"openjoc-sdk-{version()}-{platform}"
         (stage / "include").mkdir(parents=True)
+        if platform == "windows-x64":
+            (stage / "bin").mkdir(parents=True)
         (stage / "lib/pkgconfig").mkdir(parents=True)
         (stage / "lib/cmake/OpenJOC").mkdir(parents=True)
         (stage / "examples").mkdir(parents=True)
@@ -269,11 +301,44 @@ def package_sdk(args: argparse.Namespace) -> None:
                 copy_file(path, destination)
                 if platform == "macos-arm64" and path.suffix.lower() == ".dylib" and shutil.which("install_name_tool"):
                     subprocess.run(["install_name_tool", "-id", f"@rpath/{path.name}", str(destination)], check=True)
-        write_text(stage / "lib/pkgconfig/openjoc.pc", "prefix=${pcfiledir}/../..\n includedir=${prefix}/include\n libdir=${prefix}/lib\n Name: openjoc\n Version: " + version() + "\n Cflags: -I${includedir}\n Libs: -L${libdir} -lopenjoc_capi")
-        write_text(stage / "lib/cmake/OpenJOC/OpenJOCConfig.cmake", "set(OpenJOC_VERSION \"" + version() + "\")\nset(OpenJOC_INCLUDE_DIR \"${CMAKE_CURRENT_LIST_DIR}/../../include\")\nset(OpenJOC_LIBRARY_DIR \"${CMAKE_CURRENT_LIST_DIR}/../../lib\")\n")
+        runtime_closure: dict[str, object] = {"missing": 0, "non_system_dlls": []}
+        if platform == "windows-x64":
+            roots = sorted((stage / "bin").glob("openjoc_capi.dll"))
+            if len(roots) != 1:
+                raise SystemExit("Windows SDK package requires openjoc_capi.dll")
+            runtime_closure = windows_runtime_closure(
+                roots,
+                stage / "bin",
+                [library_root, *[pathlib.Path(value).resolve() for value in args.windows_runtime_dir]],
+            )
+        write_text(
+            stage / "lib/pkgconfig/openjoc.pc",
+            "prefix=${pcfiledir}/../..\n"
+            "includedir=${prefix}/include\n"
+            "libdir=${prefix}/lib\n"
+            "Name: openjoc\n"
+            "Description: OpenJOC experimental C ABI SDK\n"
+            "Version: " + version() + "\n"
+            "Cflags: -I${includedir}\n"
+            "Libs: -L${libdir} -lopenjoc_capi",
+        )
+        write_text(
+            stage / "lib/cmake/OpenJOC/OpenJOCConfig.cmake",
+            "set(OpenJOC_VERSION \"" + version() + "\")\n"
+            "set(OpenJOC_INCLUDE_DIR \"${CMAKE_CURRENT_LIST_DIR}/../../../include\")\n"
+            "set(OpenJOC_LIBRARY_DIR \"${CMAKE_CURRENT_LIST_DIR}/../../../lib\")\n"
+            "find_library(OpenJOC_CAPI_LIBRARY NAMES openjoc_capi PATHS \"${OpenJOC_LIBRARY_DIR}\" NO_DEFAULT_PATH)\n"
+            "if(NOT OpenJOC_CAPI_LIBRARY)\n"
+            "  message(FATAL_ERROR \"OpenJOC C ABI library was not found in ${OpenJOC_LIBRARY_DIR}\")\n"
+            "endif()\n"
+            "if(NOT TARGET OpenJOC::openjoc_capi)\n"
+            "  add_library(OpenJOC::openjoc_capi UNKNOWN IMPORTED)\n"
+            "  set_target_properties(OpenJOC::openjoc_capi PROPERTIES IMPORTED_LOCATION \"${OpenJOC_CAPI_LIBRARY}\" INTERFACE_INCLUDE_DIRECTORIES \"${OpenJOC_INCLUDE_DIR}\")\n"
+            "endif()\n",
+        )
         copy_file(REPOSITORY / "crates/openjoc-capi/examples/c_api_example.c", stage / "examples/c_api_example.c")
         package_notices(stage, "sdk", [{"name": "OpenJOC", "license": "Apache-2.0"}])
-        write_build_info(stage, "sdk", platform, {"c_abi": "1.3-experimental", "runtime_model": "consumer links the packaged C ABI library"})
+        write_build_info(stage, "sdk", platform, {"c_abi": "1.3-experimental", "runtime_model": "consumer links the packaged C ABI library", "runtime_dependency_closure": runtime_closure})
         write_text(stage / "QUICKSTART.md", "Build the example with the package include and lib directories; the C ABI remains experimental during OpenJOC 0.x.\n")
         finish_package(stage, output, f"openjoc-sdk-{version()}-{platform}", platform, "sdk")
 
@@ -312,17 +377,36 @@ def package_ffmpeg(args: argparse.Namespace) -> None:
         copy_file(pathlib.Path(args.ffprobe).resolve(), stage / f"bin/openjoc-ffprobe{executable_suffix}")
         ffmpeg_prefix = pathlib.Path(args.ffmpeg).resolve().parent.parent
         copy_runtime_tree(ffmpeg_prefix / "lib", stage / "lib")
+        runtime_closure: dict[str, object] = {"missing": 0, "non_system_dlls": []}
         if args.openjoc_prefix:
             prefix = pathlib.Path(args.openjoc_prefix).resolve()
             copy_runtime_tree(prefix / "lib", stage / "lib")
-            copy_runtime_tree(prefix / "bin", stage / "bin")
+            if args.platform == "windows-x64":
+                capi = prefix / "bin/openjoc_capi.dll"
+                copy_file(capi, stage / "bin/openjoc_capi.dll")
+                roots = [
+                    stage / f"bin/openjoc-ffmpeg{executable_suffix}",
+                    stage / f"bin/openjoc-ffprobe{executable_suffix}",
+                    stage / "bin/openjoc_capi.dll",
+                ]
+                runtime_closure = windows_runtime_closure(
+                    roots,
+                    stage / "bin",
+                    [
+                        ffmpeg_prefix / "bin",
+                        prefix / "bin",
+                        *[pathlib.Path(value).resolve() for value in args.windows_runtime_dir],
+                    ],
+                )
+            else:
+                copy_runtime_tree(prefix / "bin", stage / "bin")
         ffmpeg_source = pathlib.Path(args.ffmpeg_source).resolve()
         license_file = ffmpeg_source / "LICENSE.md"
         if not license_file.is_file():
             license_file = ffmpeg_source / "LICENSE"
         copy_file(license_file, stage / "THIRD_PARTY_NOTICES_FFMPEG.md")
         package_notices(stage, "ffmpeg", [{"name": "OpenJOC", "license": "Apache-2.0"}, {"name": "FFmpeg", "license": "see shipped third-party notices and pinned source license"}])
-        write_build_info(stage, "ffmpeg", args.platform, {"ffmpeg_revision": args.ffmpeg_revision, "openjoc_patch_sha256": args.openjoc_patch_sha256, "identity": "OpenJOC-provided custom FFmpeg build; not an official upstream FFmpeg release"})
+        write_build_info(stage, "ffmpeg", args.platform, {"ffmpeg_revision": args.ffmpeg_revision, "openjoc_patch_sha256": args.openjoc_patch_sha256, "identity": "OpenJOC-provided custom FFmpeg build; not an official upstream FFmpeg release", "runtime_dependency_closure": runtime_closure})
         write_text(stage / "QUICKSTART.md", "Use bin/openjoc-ffmpeg and bin/openjoc-ffprobe from this extracted bundle. The binaries are custom FFmpeg builds containing the OpenJOC integration patch.\n")
         finish_package(stage, output, f"openjoc-ffmpeg-{version()}-{args.platform}", args.platform, "ffmpeg")
 
@@ -334,6 +418,7 @@ def main() -> int:
     sdk = subparsers.add_parser("sdk")
     sdk.add_argument("--platform", choices=("macos-arm64", "linux-x86_64", "windows-x64"), required=True)
     sdk.add_argument("--target-dir", required=True)
+    sdk.add_argument("--windows-runtime-dir", action="append", default=[])
     sdk.add_argument("--output", required=True, type=pathlib.Path)
 
     gst = subparsers.add_parser("gstreamer")
@@ -351,6 +436,7 @@ def main() -> int:
     ffmpeg.add_argument("--ffmpeg-source", required=True)
     ffmpeg.add_argument("--ffmpeg-revision", required=True)
     ffmpeg.add_argument("--openjoc-patch-sha256", required=True)
+    ffmpeg.add_argument("--windows-runtime-dir", action="append", default=[])
     ffmpeg.add_argument("--output", required=True, type=pathlib.Path)
 
     args = parser.parse_args()

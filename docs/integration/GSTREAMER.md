@@ -388,7 +388,7 @@ GStreamer development/runtime set; no Windows-specific decoder code is used.
 The feature-enabled `gst-plugin-openjoc` build is the authoritative plugin
 artifact surface. It is built with `--features gstreamer` and validated with
 `gst-inspect-1.0`; the feature-disabled workspace stub is never a release
-plugin. OpenJOC 0.9.0 provides a separate cross-platform plugin pack built by
+plugin. OpenJOC 0.9.1 provides a separate cross-platform plugin pack built by
 `scripts/package-ecosystem.py`; users still provide the matching host GStreamer
 runtime and its component-specific notices.
 
