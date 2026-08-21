@@ -5,7 +5,7 @@ the 0.9.0 Interchange & Ecosystem release.
 
 ## ADM compressed-input export
 
-`openjoc export-adm INPUT.ec3 -o OUTPUT.bw64` now allocates an existing,
+`openjoc export-adm INPUT.ec3 -o OUTPUT.wav` now allocates an existing,
 owned temporary root and passes an uncreated `root/scene` directory to the
 decoder. The decoder retains its refusal to overwrite any existing output
 directory. Both successful export and decode failure clean the owned root.
@@ -28,6 +28,19 @@ fail, restores it, and requires the smoke to pass again. FFmpeg and FFprobe
 version banners plus `eac3` and `libopenjoc` decoder inventory are checked.
 
 The 0.9.0 tag and release remain immutable.
+
+## ADM BWF filename convention
+
+The recommended command is now:
+
+```sh
+openjoc export-adm INPUT.ec3 -o reconstructed.wav
+```
+
+The `.wav` name matches common ADM/BWF workflow expectations, while the file
+itself remains a `BW64` WAVE-family container with `ds64`, `fmt `, `data`,
+`axml`, and `chna`. `.bw64` remains accepted and produces byte-equivalent
+content for deterministic inputs.
 
 ## Windows player console entrypoint
 

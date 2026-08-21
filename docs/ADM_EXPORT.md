@@ -3,8 +3,8 @@
 OpenJOC 0.9 adds a standards-based reconstructed interchange export:
 
 ```sh
-openjoc export-adm INPUT.ec3 -o OUTPUT.bw64
-openjoc validate-adm OUTPUT.bw64
+openjoc export-adm INPUT.ec3 -o OUTPUT.wav
+openjoc validate-adm OUTPUT.wav
 ```
 
 `INPUT` may also be a captured OpenJOC scene directory or a complete
@@ -54,6 +54,11 @@ chunk, `data`, uncompressed `axml`, and `chna`. Audio is signed 24-bit
 little-endian PCM. The writer rejects non-finite or out-of-range samples and
 does not normalize, limit, compress, or apply loudness processing.
 
+The recommended `.wav` extension is the user-facing BWF/ADM convention used
+by common Atmos workflows. The generated file remains the BW64 WAVE-family
+container internally; `.bw64` is also accepted when the underlying container
+name should be explicit. The extension never changes the emitted container.
+
 ## Supported ADM subset
 
 The deterministic XML contains the minimum relationships needed for the
@@ -94,7 +99,7 @@ The same table is used by the writer and the reconstruction report.
 Best-effort is the default:
 
 ```sh
-openjoc export-adm INPUT.ec3 -o OUTPUT.bw64 --adm-policy best-effort
+openjoc export-adm INPUT.ec3 -o OUTPUT.wav --adm-policy best-effort
 ```
 
 It emits the recoverable reconstruction signals and writes every unresolved or
@@ -103,7 +108,7 @@ omitted semantic to `OUTPUT.adm-report.json`.
 Strict mode rejects the current unresolved audio-to-spatial-metadata boundary:
 
 ```sh
-openjoc export-adm INPUT.ec3 -o OUTPUT.bw64 --adm-policy strict
+openjoc export-adm INPUT.ec3 -o OUTPUT.wav --adm-policy strict
 ```
 
 This is intentional. Strict mode must not turn an unproven row/object

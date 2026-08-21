@@ -57,7 +57,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.bw64 [--adm-policy best-effort|strict] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -202,7 +202,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base] [--streaming]\n",
-        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.bw64> [--adm-policy best-effort|strict]\n",
+        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict]\n",
         "  openjoc validate-adm <FILE> [--json]\n",
         "  openjoc self-test [--fixture <JOC.ec3>]\n",
         "  openjoc census [MANIFEST] -o <DIR>\n",
@@ -226,7 +226,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  openjoc inspect <FILE> [--trim-config-count N]\n",
         "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
-        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n",
+        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n",
         "  openjoc validate-adm <FILE> [--json]\n",
         "  openjoc self-test [--fixture <JOC.ec3>]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
@@ -319,7 +319,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Rows are not authored-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
         ),
         "export-adm" => concat!(
-            "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n\n",
+            "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n\n",
             "Exports a reconstructed ADM/BW64 interoperability representation. It does not and cannot recover the original ADM master.\n",
             "When the scene's audio-to-spatial-metadata binding is unresolved, best-effort emits neutral reconstructed signals and records the omission; strict rejects.\n",
         ),

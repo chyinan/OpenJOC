@@ -463,30 +463,37 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
     fs::create_dir_all(&root).expect("test directory");
     let input = root.join("input.ec3");
     fs::write(&input, synthetic_joc_compressed_input()).expect("synthetic compressed input");
-    let output = root.join("reconstructed.bw64");
+    let wav_output = root.join("reconstructed.wav");
+    let bw64_output = root.join("reconstructed.bw64");
     let report = root.join("reconstructed.adm-report.json");
     let before = adm_temp_roots();
 
-    let export = Command::new(env!("CARGO_BIN_EXE_openjoc"))
-        .args([
-            "export-adm",
-            input.to_str().expect("input path"),
-            "-o",
-            output.to_str().expect("output path"),
-        ])
-        .output()
-        .expect("run compressed ADM export");
+    let run_export = |output: &PathBuf| {
+        Command::new(env!("CARGO_BIN_EXE_openjoc"))
+            .args([
+                "export-adm",
+                input.to_str().expect("input path"),
+                "-o",
+                output.to_str().expect("output path"),
+            ])
+            .output()
+            .expect("run compressed ADM export")
+    };
+    let export = run_export(&wav_output);
     assert!(
         export.status.success(),
         "stdout={} stderr={}",
         String::from_utf8_lossy(&export.stdout),
         String::from_utf8_lossy(&export.stderr)
     );
-    assert!(output.is_file(), "BW64 output was not written");
+    assert!(
+        wav_output.is_file(),
+        "WAV-named BW64 output was not written"
+    );
     assert!(report.is_file(), "adjacent ADM report was not written");
 
     let validation = Command::new(env!("CARGO_BIN_EXE_openjoc"))
-        .args(["validate-adm", output.to_str().expect("output path")])
+        .args(["validate-adm", wav_output.to_str().expect("output path")])
         .output()
         .expect("run ADM validation");
     assert!(
@@ -496,6 +503,32 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
         String::from_utf8_lossy(&validation.stderr)
     );
     assert!(String::from_utf8_lossy(&validation.stdout).contains("BW64 PASS"));
+    let wav_bytes = fs::read(&wav_output).expect("read WAV-named BW64 output");
+    assert_eq!(&wav_bytes[0..4], b"BW64");
+    assert_eq!(&wav_bytes[8..12], b"WAVE");
+    for chunk in [b"ds64".as_slice(), b"fmt ", b"data", b"axml", b"chna"] {
+        assert!(
+            wav_bytes
+                .windows(chunk.len())
+                .any(|candidate| candidate == chunk),
+            "required BW64 chunk missing: {:?}",
+            std::str::from_utf8(chunk).expect("chunk name")
+        );
+    }
+
+    let bw64_export = run_export(&bw64_output);
+    assert!(
+        bw64_export.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&bw64_export.stdout),
+        String::from_utf8_lossy(&bw64_export.stderr)
+    );
+    let bw64_validation = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["validate-adm", bw64_output.to_str().expect("output path")])
+        .output()
+        .expect("validate BW64-named output");
+    assert!(bw64_validation.status.success());
+    assert_eq!(wav_bytes, fs::read(&bw64_output).expect("read BW64 output"));
     assert_eq!(
         before,
         adm_temp_roots(),

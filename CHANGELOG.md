@@ -17,6 +17,9 @@ export and Windows ecosystem runtime qualification.
 - Made ecosystem verification hermetic, added Windows negative missing-DLL
   smoke coverage, recursive zero-missing closure audits, and isolated
   Linux/macOS loader-path verification.
+- Made `reconstructed.wav` the primary ADM BWF filename convention while
+  retaining `.bw64`; both extensions emit and validate the same BW64 WAVE-family
+  container.
 
 ## [0.9.0] — 2026-08-21
 

@@ -47,9 +47,10 @@ Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
 The 0.9.1 release adds these interchange and ecosystem surfaces:
 Reconstructed ADM/BW64 export, OpenJOC-enabled FFmpeg bundles, feature-enabled
 GStreamer plugin packs, a portable C SDK, and a public self-test. Use
-`openjoc export-adm INPUT -o OUTPUT.bw64` for a standards-based reconstructed
-interchange file and `openjoc validate-adm OUTPUT.bw64` for the supported
-structural validator. This is not original ADM master recovery: the current
+`openjoc export-adm INPUT -o reconstructed.wav` for the ecosystem-compatible
+Reconstructed ADM BWF output and `openjoc validate-adm reconstructed.wav` for
+the supported structural validator. The `.bw64` extension remains accepted;
+both names contain the same BW64 WAVE-family container. This is not original ADM master recovery: the current
 audio-to-spatial-metadata binding remains unresolved, so best-effort exports
 neutral reconstructed signals and records the omission in an adjacent JSON
 report. See [ADM export](docs/ADM_EXPORT.md) and [ecosystem packaging](docs/integration/ECOSYSTEM_PACKAGING.md).
