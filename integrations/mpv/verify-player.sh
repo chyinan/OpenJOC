@@ -77,7 +77,8 @@ run "$joc" --ao=pcm --ao-pcm-waveheader=yes \
     --ao-pcm-file="$mp4_pcm" --audio-format=float \
     '--audio-channels=5.1(side)' \
     --ad-lavc-o=render_mode=speaker,speaker_layout=5.1 >/dev/null
-cmp "$raw_pcm" "$mp4_pcm"
+python3 -c 'import pathlib, sys; sys.exit(pathlib.Path(sys.argv[1]).read_bytes() != pathlib.Path(sys.argv[2]).read_bytes())' \
+    "$raw_pcm" "$mp4_pcm"
 
 explicit_log=$(run "$raw_single" --ad=eac3)
 printf '%s\n' "$explicit_log" | grep -Fq 'Selected decoder: eac3 '
