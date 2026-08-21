@@ -1432,10 +1432,10 @@ pub fn validate_reader<R: Read + Seek>(reader: &mut R) -> Result<AdmValidationSu
     let fmt_block_align = read_u16_at(&fmt, 12)?;
     let bits_per_sample = read_u16_at(&fmt, 14)?;
     let data_bytes = data_bytes.ok_or(AdmError::InvalidAdmBwf("missing data chunk"))?;
-    if let Some(ds64) = &ds64
-        && data_bytes != ds64.data_size
-    {
-        return Err(AdmError::InvalidAdmBwf("ds64 data size mismatch"));
+    if let Some(ds64) = &ds64 {
+        if data_bytes != ds64.data_size {
+            return Err(AdmError::InvalidAdmBwf("ds64 data size mismatch"));
+        }
     }
     let block_align = u16::try_from(channels)
         .ok()
@@ -1459,10 +1459,10 @@ pub fn validate_reader<R: Read + Seek>(reader: &mut R) -> Result<AdmValidationSu
         return Err(AdmError::InvalidAdmBwf("PCM data is not frame-aligned"));
     }
     let sample_count = data_bytes / block_align_u64;
-    if let Some(ds64) = &ds64
-        && sample_count != ds64.sample_count
-    {
-        return Err(AdmError::InvalidAdmBwf("ds64 sample count mismatch"));
+    if let Some(ds64) = &ds64 {
+        if sample_count != ds64.sample_count {
+            return Err(AdmError::InvalidAdmBwf("ds64 sample count mismatch"));
+        }
     }
     let axml = axml.ok_or(AdmError::InvalidAdmBwf("missing axml chunk"))?;
     let chna = chna.ok_or(AdmError::InvalidAdmBwf("missing chna chunk"))?;

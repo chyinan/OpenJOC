@@ -82,8 +82,8 @@ run_with_libraries "$build_dir/ffmpeg" -hide_banner -h decoder=libopenjoc \
 
 cc "$script_dir/verify-decoder-selection.c" \
     -I"$ffmpeg_source" -I"$build_dir" \
-    -L"$build_dir/libavcodec" -L"$build_dir/libavutil" \
-    -lavcodec -lavutil -o "$build_dir/verify-decoder-selection"
+    -L"$build_dir/libavcodec" -L"$build_dir/libswresample" -L"$build_dir/libavutil" \
+    -lavcodec -lswresample -lavutil -o "$build_dir/verify-decoder-selection"
 run_with_libraries "$build_dir/verify-decoder-selection"
 
 if [ -n "$positive_fixture" ]; then
