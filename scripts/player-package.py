@@ -871,7 +871,7 @@ def bundle(arguments: argparse.Namespace) -> int:
                 "@echo off\r\n"
                 "set \"OPENJOC_PLAYER_ROOT=%~dp0..\"\r\n"
                 "set \"OPENJOC_EC3_FORMAT=\"\r\n"
-                "if /I \"%~x1\"==\".ec3\" set \"OPENJOC_EC3_FORMAT=--demuxer-lavf-format=eac3\"\r\n"
+                "if /I \"%~x1\"==\".ec3\" set \"OPENJOC_EC3_FORMAT=--demuxer-lavf-format=eac3 --demuxer-lavf-probe-info=no\"\r\n"
                 "\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.com\" %OPENJOC_EC3_FORMAT% \"--config-dir=%OPENJOC_PLAYER_ROOT%\\config\" \"--include=%OPENJOC_PLAYER_ROOT%\\config\\profiles.conf\" %*\r\n"
                 "exit /b %ERRORLEVEL%\r\n",
                 encoding="utf-8",

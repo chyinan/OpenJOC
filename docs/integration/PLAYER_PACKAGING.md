@@ -92,8 +92,9 @@ searches the executable directory. `mpv.exe` remains the GUI/Explorer entry;
 `mpv.com` is the upstream console entry, and `openjoc-mpv.cmd` injects the
 portable config/profile paths before forwarding the child exit status. For a
 raw `.ec3` input it also selects FFmpeg's `eac3` demuxer explicitly, because
-raw JOC metadata is not guaranteed to pass content-only probing. No registry
-or global `PATH` change is performed.
+raw JOC metadata is not guaranteed to pass content-only probing, and disables
+the preliminary stream-info read so the bounded OpenJOC classifier receives
+the compressed packet. No registry or global `PATH` change is performed.
 
 The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 `openjoc-mpv.cmd --version`, `openjoc-mpv.cmd --ad=help` with `eac3` and

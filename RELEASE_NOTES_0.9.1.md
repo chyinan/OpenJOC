@@ -47,9 +47,9 @@ content for deterministic inputs.
 The Windows player ZIP now ships the upstream `mpv.com` console wrapper beside
 the GUI `mpv.exe`. `openjoc-mpv.cmd` invokes `mpv.com`, propagates its exit
 status, preserves the bundled config/profile injection, and explicitly selects
-the raw E-AC-3 demuxer for `.ec3` inputs. Extracted-package qualification
-checks the wrapper’s version/help/playback paths and records the GUI executable
-separately.
+the raw E-AC-3 demuxer without consuming the packet before OpenJOC admission for
+`.ec3` inputs. Extracted-package qualification checks the wrapper’s
+version/help/playback paths and records the GUI executable separately.
 
 ## SDK first-use qualification
 
