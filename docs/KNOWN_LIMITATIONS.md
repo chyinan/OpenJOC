@@ -11,11 +11,23 @@ bit-identical Reference Player output.
   objects. `SemanticBindingState` remains `Unresolved`, and
   `ReconstructionBasis` rows are diagnostic reconstruction coordinates rather
   than verified authored-object PCM.
-- `export-adm` writes a reconstructed ADM/BW64 interoperability representation,
+- `export-adm` writes a reconstructed RIFF/RF64 ADM BWF interoperability representation,
   not the original ADM/BWF master. Best-effort output keeps reconstruction
   signals neutral and reports the unresolved audio-to-spatial-metadata binding;
   strict mode rejects it. Original names, hierarchy, UIDs, and discarded source
   information cannot be recovered.
+- The Dolby Atmos master profile has no mono LFE bed. When Base LFE is present,
+  `export-adm` creates the minimum legal 5.1 transport bed: only LFE contains
+  recovered PCM; L, R, C, Ls, and Rs are deterministic silence placeholders
+  explicitly identified in the report. They are not recovered authored bed
+  content. The generated `dbmd` contains only the public EBU Supplement 6
+  envelope, not reserved Atmos-specific segment payloads.
+- R2 imports successfully in Logic Pro, but Dolby Encoding Engine rejects the
+  byte-exact OpenJOC file after parsing with `Content was not authored with
+  Dolby tools.` OpenJOC does not forge Dolby authoring provenance. A re-export
+  from an authorized Atmos authoring tool is a separate derived workflow. The
+  maintainer verified that Logic's re-export is accepted by DEE; direct DEE
+  ingest of OpenJOC output remains unsupported and unclaimed.
 - Compressed `export-adm` uses bounded-memory production streaming. Explicit
   `ObjectScene` JSON and scene-directory inputs remain diagnostic formats and
   may already materialize programme-duration PCM before the ADM writer sees

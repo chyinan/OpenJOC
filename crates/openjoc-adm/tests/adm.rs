@@ -1,5 +1,6 @@
 use openjoc_adm::{
-    AdmError, AdmExportPlan, AdmPolicy, StreamingAdmWriter, build_export, validate_bw64, write_bw64,
+    AdmError, AdmExportPlan, AdmPolicy, StreamingAdmWriter, build_export, validate_adm_bwf,
+    write_adm_bwf,
 };
 use openjoc_joc::ReconstructionBasis;
 use openjoc_scene::{ObjectClass, ObjectScene, SemanticBindingState};
@@ -33,16 +34,40 @@ fn best_effort_export_is_deterministic_and_structurally_valid() {
         second.report.generated_signal_identities
     );
     assert_eq!(first.report.dynamic_objects_with_bound_pcm, 0);
+    assert_eq!(first.report.reconstructed_signal_count, 1);
+    assert_eq!(first.report.bed_direct_speaker_count, 6);
+    assert_eq!(first.report.generated_silent_bed_placeholder_count, 5);
     assert!(first.xml.contains("OpenJOC Reconstructed Signal 01"));
-    assert!(first.xml.contains("<speakerLabel>LFE1</speakerLabel>"));
+    assert!(first.xml.contains("<speakerLabel>RC_LFE</speakerLabel>"));
+    assert!(
+        first
+            .xml
+            .contains("xmlns=\"urn:ebu:metadata-schema:ebuCore_2016\"")
+    );
+    assert!(first.xml.contains("audioProgrammeID=\"APR_1001\""));
+    assert!(
+        first
+            .xml
+            .contains("audioBlockFormatID=\"AB_00031007_00000001\"")
+    );
+    assert!(
+        first
+            .xml
+            .contains("<audioTrackFormatIDRef>AT_00031007_01</audioTrackFormatIDRef>")
+    );
+    assert!(!first.xml.contains("trackIndex="));
 
     let path = temp_path("best-effort");
-    write_bw64(&path, &scene(), AdmPolicy::BestEffort).expect("write BW64");
-    let summary = validate_bw64(&path).expect("validate BW64");
-    assert_eq!(summary.container, "BW64");
-    assert_eq!(summary.channels, 2);
-    assert_eq!(summary.chna_tracks, 2);
-    assert_eq!(summary.data_bytes, 24);
+    write_adm_bwf(&path, &scene(), AdmPolicy::BestEffort).expect("write ADM BWF");
+    let summary = validate_adm_bwf(&path).expect("validate ADM BWF");
+    assert_eq!(summary.container, "RIFF");
+    assert_eq!(
+        summary.chunks,
+        ["JUNK", "fmt ", "data", "axml", "chna", "dbmd"]
+    );
+    assert_eq!(summary.channels, 7);
+    assert_eq!(summary.chna_tracks, 7);
+    assert_eq!(summary.data_bytes, 84);
     fs::remove_file(path).expect("remove test artifact");
 }
 
@@ -86,15 +111,15 @@ fn streaming_writer_handles_file_backed_multimegabyte_output() {
     file.sync_all().expect("sync output");
     assert_eq!(stats.max_chunk_frames, 1536);
     assert!(fs::metadata(&path).expect("metadata").len() > 3_600_000);
-    let summary = validate_bw64(&path).expect("validate file-backed output");
-    assert_eq!(summary.data_bytes, 3_600_000);
-    assert_eq!(summary.channels, 3);
+    let summary = validate_adm_bwf(&path).expect("validate file-backed output");
+    assert_eq!(summary.data_bytes, 9_600_000);
+    assert_eq!(summary.channels, 8);
     fs::remove_file(path).expect("remove test artifact");
 }
 
 fn temp_path(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "openjoc-adm-test-{label}-{}-{}.bw64",
+        "openjoc-adm-test-{label}-{}-{}.wav",
         std::process::id(),
         std::thread::current().name().unwrap_or("thread")
     ))

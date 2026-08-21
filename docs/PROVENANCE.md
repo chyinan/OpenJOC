@@ -35,18 +35,28 @@ This provenance record is source-repository history; the binary release bundle
 intentionally excludes this file, `REQUIREMENTS_MATRIX.md`, and the research
 chronology.
 
-### Reconstructed ADM/BW64 export provenance
+### Reconstructed ADM BWF export provenance
 
-The ADM/BW64 exporter is implemented from the public ITU-R BS.2076-3 and
-BS.2088-2 specifications, EBU Tech 3285 Supplement 7 `chna` semantics, and
-ordinary public XML/container rules. It does not use competitor source code,
-private vendor extensions, decompiler output, or contaminated implementation
-material. The exporter consumes the existing renderer-independent
+The RIFF/RF64 ADM BWF exporter is implemented from the public ITU-R BS.2076-3
+and BS.2088-2 specifications, the publicly distributed Dolby Atmos Master ADM
+profile, EBU Tech 3285 Supplement 7 `chna` semantics, Supplement 6's public
+`dbmd` envelope, and ordinary public XML/container rules. It does not use
+competitor source code, private vendor extensions, decompiler output, or
+contaminated implementation material. A self-authored Logic Pro export was
+used only as a read-only black-box structural interoperability oracle; no media
+or opaque reserved DBMD segment payload is included in the repository. The
+exporter consumes the existing renderer-independent
 `ObjectScene`/`ReconstructionBasis` boundary. Because that boundary records
 audio-to-spatial-metadata binding as `Unresolved`, the exporter deliberately
 does not infer a row-to-object relationship; its report records the relation
 as `UNRESOLVED` and its strict policy rejects it. This component provenance is
 evidence-specific and does not alter the project-wide clean-room policy.
+R2 demonstrates that this public-only structure imports in Logic Pro, while
+DEE rejects the byte-exact OpenJOC file as not authored with Dolby tools.
+Logic's ADM re-export is accepted by DEE, establishing the verified authoring
+workflow. Reserved DBMD segment contents are treated as authoring provenance
+outside OpenJOC's admissible evidence and are not synthesized, cloned, or
+claimed.
 
 OpenJOC is an independent project and is not affiliated with, endorsed by, or
 sponsored by Dolby Laboratories. References to Dolby, Dolby Atmos, E-AC-3 and

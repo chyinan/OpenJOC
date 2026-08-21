@@ -15,8 +15,8 @@ mod terminal;
 use banner::{package_metadata, render_banner};
 use eac3_decode::ValidationProfileRequest;
 use openjoc_adm::{
-    AdmError, AdmExportPlan, AdmPolicy, AdmStreamingStats, StreamingAdmWriter, validate_bw64,
-    write_bw64,
+    AdmError, AdmExportPlan, AdmPolicy, AdmStreamingStats, StreamingAdmWriter, validate_adm_bwf,
+    write_adm_bwf,
 };
 use openjoc_api::{
     BinauralConfig, BinauralLfePolicy as ApiBinauralLfePolicy, DownmixPolicy as ApiDownmixPolicy,
@@ -259,8 +259,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  inspect         Inspect E-AC-3 access units and JOC metadata\n",
         "  decode          Decode metadata plus diagnostic ReconstructionBasis rows\n",
-        "  export-adm      Export reconstructed ADM/BW64; it is not the original ADM master\n",
-        "  validate-adm    Validate the OpenJOC BW64/ADM structural subset\n",
+        "  export-adm      Export reconstructed interoperable ADM BWF; it is not the original ADM master\n",
+        "  validate-adm    Validate supported RIFF/RF64 ADM BWF structure and relationships\n",
         "  self-test       Run a bounded installation/fixture health report\n",
         "  diagnose-tools  Emit diagnostic-only E-AC-3 coding-tool inventory JSON\n",
         "  census          Census bounded metadata carriers from external fixtures\n",
@@ -323,13 +323,13 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         ),
         "export-adm" => concat!(
             "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n\n",
-            "Exports a reconstructed ADM/BW64 interoperability representation. It does not and cannot recover the original ADM master.\n",
+            "Exports a reconstructed RIFF/RF64 ADM BWF interoperability representation. It does not and cannot recover the original ADM master.\n",
             "Compressed EC3/MP4 input uses production-scale bounded-memory streaming; explicit JSON/scene-directory inputs retain their diagnostic in-memory model.\n",
             "When the scene's audio-to-spatial-metadata binding is unresolved, best-effort emits neutral reconstructed signals and records the omission; strict rejects.\n",
         ),
         "validate-adm" => concat!(
             "usage: openjoc validate-adm <FILE> [--json]\n\n",
-            "Validates BW64 ds64/fmt/data/axml/chna structure and identifier relationships within OpenJOC's supported subset.\n",
+            "Validates RIFF/RF64 WAVE sizes, ds64 when applicable, fmt/data/axml/chna structure, and ADM/CHNA identifier relationships.\n",
         ),
         "self-test" => concat!(
             "usage: openjoc self-test [--fixture <JOC.ec3>]\n\n",
@@ -474,7 +474,7 @@ fn export_adm(arguments: &[String], terminal: TerminalCapabilities) -> Result<()
         {
             let (scene, cleanup) = load_scene_for_adm(&input)?;
             debug_assert!(cleanup.is_none());
-            (write_bw64(&output_stage, &scene, policy)?, None)
+            (write_adm_bwf(&output_stage, &scene, policy)?, None)
         } else {
             let kind = compressed_input_kind(&input)?;
             let result = stream_compressed_adm(
@@ -488,9 +488,9 @@ fn export_adm(arguments: &[String], terminal: TerminalCapabilities) -> Result<()
             (result.0, Some(result.1))
         };
         if progress_enabled {
-            eprintln!("Validating BW64...");
+            eprintln!("Validating ADM BWF...");
         }
-        let validation = validate_bw64(&output_stage)?;
+        let validation = validate_adm_bwf(&output_stage)?;
         fs::write(&report_stage, serde_json::to_vec_pretty(&report)?)?;
         commit_adm_pair(
             &output_stage,
@@ -510,7 +510,8 @@ fn export_adm(arguments: &[String], terminal: TerminalCapabilities) -> Result<()
         }
     };
     println!(
-        "Reconstructed ADM/BW64 written to {}\nReport written to {}\nValidated: {} tracks, {} bytes of PCM\nOriginal ADM master recovered: NO",
+        "Reconstructed {} ADM BWF written to {}\nReport written to {}\nValidated: {} tracks, {} bytes of PCM\nOriginal ADM master recovered: NO",
+        validation.container,
         output.display(),
         report_path.display(),
         validation.chna_tracks,
@@ -648,7 +649,7 @@ fn stream_compressed_adm(
         .into());
     }
     if progress_enabled {
-        eprintln!("Finalizing BW64...");
+        eprintln!("Finalizing ADM BWF...");
     }
     let (file, report, stats) = writer.finish()?;
     file.sync_all()?;
@@ -770,17 +771,19 @@ fn validate_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         }
     }
     let input = input.ok_or_else(usage_error)?;
-    let summary = validate_bw64(&input)?;
+    let summary = validate_adm_bwf(&input)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&summary)?);
     } else {
         println!(
-            "BW64 PASS: {} tracks, {} Hz, {} PCM bytes, {} axml bytes, unique CHNA IDs: {}",
+            "{} ADM BWF STRUCTURE PASS: {} tracks, {} Hz, {} PCM bytes, {} axml bytes, unique CHNA IDs: {}, reserved Dolby DBMD segments present: {}",
+            summary.container,
             summary.chna_tracks,
             summary.sample_rate,
             summary.data_bytes,
             summary.axml_bytes,
-            summary.identifiers_unique
+            summary.identifiers_unique,
+            summary.dolby_reserved_dbmd_segments_present
         );
     }
     Ok(())
@@ -802,11 +805,11 @@ fn self_test(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     println!("C_ABI        PASS (1.3-experimental)");
 
     let stage_root = create_adm_temp_root()?;
-    let adm_path = stage_root.join("self-test.bw64");
+    let adm_path = stage_root.join("self-test.wav");
     match load_scene_for_adm(Path::new("fixtures/adm/reconstructed-scene.json")).and_then(
         |(scene, _)| {
-            write_bw64(&adm_path, &scene, AdmPolicy::BestEffort)?;
-            validate_bw64(&adm_path)?;
+            write_adm_bwf(&adm_path, &scene, AdmPolicy::BestEffort)?;
+            validate_adm_bwf(&adm_path)?;
             Ok(())
         },
     ) {
@@ -4861,7 +4864,7 @@ const fn classify_adm_error(error: &AdmError) -> CliErrorCategory {
         | AdmError::SampleOutOfRange { .. } => CliErrorCategory::DecodeFailure,
         AdmError::SizeOverflow => CliErrorCategory::UnsupportedFeature,
         AdmError::Io(_) => CliErrorCategory::IoFailure,
-        AdmError::InvalidBw64(_) => CliErrorCategory::MalformedInput,
+        AdmError::InvalidAdmBwf(_) => CliErrorCategory::MalformedInput,
     }
 }
 

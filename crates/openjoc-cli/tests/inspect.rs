@@ -497,12 +497,17 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
     assert!(!String::from_utf8_lossy(&export.stderr).contains("Exporting reconstructed ADM"));
     assert!(
         wav_output.is_file(),
-        "WAV-named BW64 output was not written"
+        "WAV-named ADM BWF output was not written"
     );
     assert!(report.is_file(), "adjacent ADM report was not written");
     let report_value: serde_json::Value =
         serde_json::from_slice(&fs::read(&report).expect("read report")).expect("parse report");
     assert_eq!(report_value["source_is_lossy_e_ac_3_joc"], true);
+    assert_eq!(report_value["adm_bwf_container"], "RIFF");
+    assert_eq!(
+        report_value["dolby_authorship_metadata_state"],
+        "not-generated"
+    );
     assert_eq!(report_value["original_adm_master_recovered"], false);
     assert_eq!(report_value["lossless_round_trip"], false);
     assert_eq!(report_value["semantic_binding_state"], "unresolved");
@@ -518,16 +523,23 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
         String::from_utf8_lossy(&validation.stdout),
         String::from_utf8_lossy(&validation.stderr)
     );
-    assert!(String::from_utf8_lossy(&validation.stdout).contains("BW64 PASS"));
-    let wav_bytes = fs::read(&wav_output).expect("read WAV-named BW64 output");
-    assert_eq!(&wav_bytes[0..4], b"BW64");
+    assert!(String::from_utf8_lossy(&validation.stdout).contains("RIFF ADM BWF STRUCTURE PASS"));
+    let wav_bytes = fs::read(&wav_output).expect("read WAV-named ADM BWF output");
+    assert_eq!(&wav_bytes[0..4], b"RIFF");
     assert_eq!(&wav_bytes[8..12], b"WAVE");
-    for chunk in [b"ds64".as_slice(), b"fmt ", b"data", b"axml", b"chna"] {
+    for chunk in [
+        b"JUNK".as_slice(),
+        b"fmt ",
+        b"data",
+        b"axml",
+        b"chna",
+        b"dbmd",
+    ] {
         assert!(
             wav_bytes
                 .windows(chunk.len())
                 .any(|candidate| candidate == chunk),
-            "required BW64 chunk missing: {:?}",
+            "required ADM BWF chunk missing: {:?}",
             std::str::from_utf8(chunk).expect("chunk name")
         );
     }
@@ -542,9 +554,12 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
     let bw64_validation = Command::new(env!("CARGO_BIN_EXE_openjoc"))
         .args(["validate-adm", bw64_output.to_str().expect("output path")])
         .output()
-        .expect("validate BW64-named output");
+        .expect("validate .bw64-named ADM BWF output");
     assert!(bw64_validation.status.success());
-    assert_eq!(wav_bytes, fs::read(&bw64_output).expect("read BW64 output"));
+    assert_eq!(
+        wav_bytes,
+        fs::read(&bw64_output).expect("read .bw64-named output")
+    );
     assert_eq!(
         before,
         adm_temp_roots(),

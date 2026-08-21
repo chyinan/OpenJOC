@@ -6,8 +6,8 @@ Use the document that owns the question:
 |---|---|
 | What is OpenJOC and how do I run it? | [root README](../README.md) |
 | What changed in each release? | root `CHANGELOG.md` |
-| What does the 0.9.2 candidate support? | [CAPABILITIES.md](CAPABILITIES.md) |
-| How do I export reconstructed ADM/BW64? | [ADM_EXPORT.md](ADM_EXPORT.md) |
+| What does OpenJOC 0.9.2 support? | [CAPABILITIES.md](CAPABILITIES.md) |
+| How do I export reconstructed ADM BWF? | [ADM_EXPORT.md](ADM_EXPORT.md) |
 | How are ecosystem packages built? | [integration/ECOSYSTEM_PACKAGING.md](integration/ECOSYSTEM_PACKAGING.md) |
 | What is the public smoke fixture? | [PUBLIC_SMOKE_FIXTURE.md](PUBLIC_SMOKE_FIXTURE.md) |
 | What does it not support? | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |

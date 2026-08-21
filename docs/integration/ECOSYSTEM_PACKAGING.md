@@ -1,6 +1,6 @@
 # OpenJOC ecosystem packages
 
-OpenJOC 0.9.1 package categories are built from the exact release commit with
+OpenJOC 0.9.2 package categories are built from the exact release commit with
 `scripts/package-ecosystem.py`:
 
 ```sh

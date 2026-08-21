@@ -2,30 +2,50 @@
 
 ## [0.9.2] — 2026-08-21
 
-OpenJOC 0.9.2 prepares production-scale streaming reconstructed ADM/BW64
-export. OpenJOC 0.9.1 remains the current public release until the 0.9.2
-candidate passes the maintainer's real-programme acceptance gate.
+OpenJOC 0.9.2 delivers production-scale streaming reconstructed ADM BWF export
+and closes the maintainer's real-programme acceptance gate.
 
 ### Hotfixes
 
 - Replaced compressed-input `export-adm` scene capture with a bounded-memory
   preflight plus one sequential PCM decode that writes ReconstructionBasis rows
-  and Base LFE directly into signed 24-bit interleaved BW64.
+  and Base LFE directly into signed 24-bit interleaved PCM.
 - Kept diagnostic capture limits unchanged; production ADM export no longer
   retains full-duration internal Base, JOC-input Base, LFE, reconstruction-row
   vectors, or reconstruction JSON.
 - Added deterministic ADM planning, duration/track/size overflow checks,
   exact per-track sample-count enforcement, and one-AU PCM staging
   high-watermark evidence.
-- Made BW64 validation seek across `data` using `ds64` while bounding `axml`
-  and `chna` allocations, so validation RAM use is independent of programme
-  duration.
+- Replaced the private `BW64`-only output contract after real Logic/Dolby
+  interoperability rejection. Files whose sizes fit use exact `RIFF/WAVE`
+  accounting and a leading 64-byte `JUNK` reserve; oversized files use
+  `RF64/WAVE` with a validated first `ds64` and 64-bit size/sample semantics.
+- Matched the interoperable chunk layout `JUNK|ds64`, `fmt `, `data`, `axml`,
+  `chna`, `dbmd`; the generated DBMD contains only the public EBU Supplement 6
+  envelope and never copies or invents reserved Atmos segment payloads.
+- Rebuilt generated ADM XML with EBUCore 2016 placement, standard element ID
+  syntax, audioStream/audioTrack layers, child-element IDRefs, timed neutral
+  object blocks, and exact AXML↔CHNA UID/track-format/pack-format links.
+- Made ADM BWF validation independent of the writer: it parses RIFF, RF64, and
+  legacy BW64, seeks across `data`, bounds `axml`/`chna`, validates `ds64`, PCM
+  arithmetic, chunk accounting, ADM XML IDs/IDRefs, and CHNA relationships.
+- After R1 reached Atmos parsing but failed with `unsupported bed ID: 1`, added
+  Dolby Atmos master profile validation and corrected object IDs to start at
+  `AO_100B`. Base LFE now occupies a legal generated 5.1 bed; the other five
+  channels are deterministic silence and explicitly reported as transport
+  placeholders rather than recovered authored PCM.
 - Made output/report publication transactional, including rollback-safe
   replacement behavior on Windows, and added interactive throttled progress
   with quiet non-TTY and `--no-progress` behavior.
-- Preserved byte-identical short-fixture output, `.wav`/`.bw64` compatibility,
-  fail-closed out-of-range PCM rejection, and the unresolved semantic/report
-  boundary. This is not original ADM recovery or a lossless conversion.
+- Added a project-owned synthetic interoperability-fixture generator and
+  reference-independent regressions. `.wav` is the recommended name;
+  `.bw64` remains a legacy filename alias and does not force a BW64 signature.
+- Preserved fail-closed out-of-range PCM rejection and the unresolved
+  semantic/report boundary. This is not original ADM recovery or a lossless
+  conversion. R2 imports correctly in Logic as one bed plus two Objects, while
+  DEE parses it and then rejects non-Dolby authoring provenance. Direct DEE
+  interoperability remains unsupported and unclaimed. The verified production
+  workflow is OpenJOC ADM → Logic import/re-export → Dolby Encoding Engine.
 
 ## [0.9.1] — 2026-08-21
 

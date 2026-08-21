@@ -210,6 +210,6 @@ configuration rather than offering a legal conclusion; redistribution still
 requires a separate license/packaging review.
 
 No standalone FFmpeg distribution is released and no patch is submitted
-upstream. The 0.9.1 OpenJOC Player Bundles contain project-provided custom
+upstream. The 0.9.2 OpenJOC Player Bundles contain project-provided custom
 FFmpeg/mpv integration runtimes for the qualified platforms. The separate
 source-only mpv patchset is documented in `docs/integration/MPV.md`.
