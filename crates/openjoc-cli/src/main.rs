@@ -511,8 +511,8 @@ fn self_test(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     println!("VERSION      PASS ({})", package_metadata().version);
     println!("C_ABI        PASS (1.3-experimental)");
 
-    let stage = create_adm_decode_stage()?;
-    let adm_path = stage.join("self-test.bw64");
+    let stage_root = create_adm_temp_root()?;
+    let adm_path = stage_root.join("self-test.bw64");
     match load_scene_for_adm(Path::new("fixtures/adm/reconstructed-scene.json")).and_then(
         |(scene, _)| {
             write_bw64(&adm_path, &scene, AdmPolicy::BestEffort)?;
@@ -538,7 +538,7 @@ fn self_test(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         ] {
             println!("{label:<12} NOT_APPLICABLE");
         }
-        let _ = fs::remove_dir_all(&stage);
+        let _ = fs::remove_dir_all(&stage_root);
         return if failed {
             Err(io::Error::other("OpenJOC self-test failed").into())
         } else {
@@ -603,7 +603,7 @@ fn self_test(arguments: &[String]) -> Result<(), Box<dyn Error>> {
             println!("HRTF         FAIL");
         }
     }
-    let _ = fs::remove_dir_all(&stage);
+    let _ = fs::remove_dir_all(&stage_root);
     if failed {
         Err(io::Error::other("OpenJOC self-test failed").into())
     } else {
@@ -675,11 +675,14 @@ fn load_scene_for_adm(input: &Path) -> Result<(ObjectScene, Option<PathBuf>), Bo
         let scene = ObjectScene::from_json(&fs::read_to_string(input)?)?;
         return Ok((scene, None));
     }
-    let stage = create_adm_decode_stage()?;
+    let (stage_root, stage) = create_adm_decode_stage()?;
     let arguments = DecodeEac3Args {
         input: input.to_owned(),
         downmix: None,
-        internal_base: false,
+        // ADM consumes the renderer-independent scene boundary.  Keep base
+        // PCM on the same bounded decoder path as ReconstructionBasis rather
+        // than importing a compatibility render from external FFmpeg.
+        internal_base: true,
         output: stage.clone(),
         output_format: SampleFormat::F32,
         validation_profile: ValidationProfileRequest::Auto,
@@ -688,11 +691,17 @@ fn load_scene_for_adm(input: &Path) -> Result<(ObjectScene, Option<PathBuf>), Bo
         streaming: false,
     };
     if let Err(error) = decode_eac3(&arguments) {
-        let _ = fs::remove_dir_all(&stage);
+        let _ = fs::remove_dir_all(&stage_root);
         return Err(error);
     }
-    let scene = load_scene_directory(&stage)?;
-    Ok((scene, Some(stage)))
+    let scene = match load_scene_directory(&stage) {
+        Ok(scene) => scene,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&stage_root);
+            return Err(error);
+        }
+    };
+    Ok((scene, Some(stage_root)))
 }
 
 fn load_scene_directory(directory: &Path) -> Result<ObjectScene, Box<dyn Error>> {
@@ -746,14 +755,19 @@ fn load_scene_directory(directory: &Path) -> Result<ObjectScene, Box<dyn Error>>
     Ok(scene)
 }
 
-fn create_adm_decode_stage() -> Result<PathBuf, Box<dyn Error>> {
+fn create_adm_temp_root() -> Result<PathBuf, Box<dyn Error>> {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| io::Error::other("system clock is before UNIX epoch"))?
         .as_nanos();
-    let stage = env::temp_dir().join(format!("openjoc-adm-{}-{stamp}", std::process::id()));
-    fs::create_dir(&stage)?;
-    Ok(stage)
+    let root = env::temp_dir().join(format!("openjoc-adm-{}-{stamp}", std::process::id()));
+    fs::create_dir(&root)?;
+    Ok(root)
+}
+
+fn create_adm_decode_stage() -> Result<(PathBuf, PathBuf), Box<dyn Error>> {
+    let root = create_adm_temp_root()?;
+    Ok((root.clone(), root.join("scene")))
 }
 
 fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(), std::fmt::Error> {

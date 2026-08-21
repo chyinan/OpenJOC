@@ -4,7 +4,11 @@ use openjoc_api::{
 };
 use openjoc_joc::all_huffman_tables;
 use openjoc_wave::{decode, encode_f64_channels};
-use std::{fs, process::Command, time::SystemTime};
+use std::{
+    collections::BTreeSet, fs, path::PathBuf, process::Command, sync::Mutex, time::SystemTime,
+};
+
+static ADM_EXPORT_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Default)]
 struct Bits(Vec<bool>);
@@ -263,6 +267,14 @@ fn huffman_codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {
 }
 
 fn one_object_joc() -> Vec<u8> {
+    one_object_joc_with_huffman_value(48)
+}
+
+fn bounded_one_object_joc() -> Vec<u8> {
+    one_object_joc_with_huffman_value(0)
+}
+
+fn one_object_joc_with_huffman_value(value: u16) -> Vec<u8> {
     let mut bits = Vec::new();
     for (value, width) in [(0, 3), (0, 6), (0, 3), (2, 3), (17, 5), (42, 10)] {
         push(&mut bits, value, width);
@@ -273,7 +285,7 @@ fn one_object_joc() -> Vec<u8> {
     push(&mut bits, 0, 1); // 96 steps
     push(&mut bits, 0, 1); // smooth
     push(&mut bits, 0, 1); // one data point
-    let codeword = huffman_codeword_for(all_huffman_tables()[0].nodes, 48);
+    let codeword = huffman_codeword_for(all_huffman_tables()[0].nodes, value);
     for _ in 0..5 {
         bits.extend_from_slice(&codeword);
     }
@@ -366,6 +378,27 @@ fn five_channel_audio_frame(emdf: &[u8]) -> Vec<u8> {
     bits.bytes(size)
 }
 
+fn adm_temp_roots() -> BTreeSet<PathBuf> {
+    fs::read_dir(std::env::temp_dir())
+        .expect("read temporary directory")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("openjoc-adm-")
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
+fn synthetic_joc_compressed_input() -> Vec<u8> {
+    let emdf = joc_emdf(&inactive_oamd(), &bounded_one_object_joc());
+    (0..8)
+        .flat_map(|_| five_channel_audio_frame(&emdf))
+        .collect()
+}
+
 fn collect_binaural_session_frames(
     stream: &[u8],
     receive_before_push: bool,
@@ -410,6 +443,103 @@ fn collect_binaural_session_frames(
         output.push(frame);
     }
     output
+}
+
+#[test]
+fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() {
+    let _lock = ADM_EXPORT_TEST_LOCK.lock().expect("ADM export test lock");
+    if Command::new("ffmpeg").arg("-version").output().is_err() {
+        eprintln!("skipping compressed ADM export test: ffmpeg is required");
+        return;
+    }
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-adm-export-e2e-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("input.ec3");
+    fs::write(&input, synthetic_joc_compressed_input()).expect("synthetic compressed input");
+    let output = root.join("reconstructed.bw64");
+    let report = root.join("reconstructed.adm-report.json");
+    let before = adm_temp_roots();
+
+    let export = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "export-adm",
+            input.to_str().expect("input path"),
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run compressed ADM export");
+    assert!(
+        export.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&export.stdout),
+        String::from_utf8_lossy(&export.stderr)
+    );
+    assert!(output.is_file(), "BW64 output was not written");
+    assert!(report.is_file(), "adjacent ADM report was not written");
+
+    let validation = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["validate-adm", output.to_str().expect("output path")])
+        .output()
+        .expect("run ADM validation");
+    assert!(
+        validation.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&validation.stdout),
+        String::from_utf8_lossy(&validation.stderr)
+    );
+    assert!(String::from_utf8_lossy(&validation.stdout).contains("BW64 PASS"));
+    assert_eq!(
+        before,
+        adm_temp_roots(),
+        "ADM decode root leaked after success"
+    );
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn export_adm_decode_failure_cleans_decode_root_without_overwrite_bypass() {
+    let _lock = ADM_EXPORT_TEST_LOCK.lock().expect("ADM export test lock");
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-adm-export-failure-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("invalid.ec3");
+    fs::write(&input, b"not a compressed JOC input").expect("invalid input");
+    let output = root.join("reconstructed.bw64");
+    let before = adm_temp_roots();
+
+    let export = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "export-adm",
+            input.to_str().expect("input path"),
+            "-o",
+            output.to_str().expect("output path"),
+        ])
+        .output()
+        .expect("run failing compressed ADM export");
+    assert!(!export.status.success());
+    let stderr = String::from_utf8_lossy(&export.stderr);
+    assert!(!stderr.contains("refusing to overwrite output directory"));
+    assert!(!output.exists());
+    assert_eq!(
+        before,
+        adm_temp_roots(),
+        "ADM decode root leaked after decode failure"
+    );
+    fs::remove_dir_all(&root).expect("remove test directory");
 }
 
 #[test]
