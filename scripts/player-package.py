@@ -77,6 +77,26 @@ def run(command: list[str], *, check: bool = True, cwd: pathlib.Path | None = No
     return result.stdout
 
 
+def native_windows_path(path: pathlib.Path) -> str:
+    """Convert an MSYS POSIX path before passing it to a native Windows binary."""
+    value = str(path)
+    if os.name != "nt":
+        return value
+    converter = shutil.which("cygpath")
+    if converter is None:
+        return value
+    result = subprocess.run(
+        [converter, "-w", value],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+    )
+    converted = result.stdout.strip()
+    return converted if result.returncode == 0 and converted else value
+
+
 def sha256(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -1098,13 +1118,14 @@ def verify(arguments: argparse.Namespace) -> int:
         print(f"mpv console --version: {version.stdout.splitlines()[0]}")
         print("mpv decoder inventory: eac3=PASS libopenjoc=PASS")
         if arguments.platform == "windows-x64" and arguments.fixture:
-            fixture = arguments.fixture.resolve()
-            playback = subprocess.run([str(smoke_executable), str(fixture), "--ao=null", "--vo=null"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            fixture = arguments.fixture
+            fixture_argument = native_windows_path(fixture)
+            playback = subprocess.run([str(smoke_executable), fixture_argument, "--ao=null", "--vo=null"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             if playback.returncode != 0 or not playback.stdout.strip():
-                raise SystemExit(f"package verification: Windows console JOC playback failed\n{playback.stdout}")
+                raise SystemExit(f"package verification: Windows console JOC playback failed for {fixture_argument}\n{playback.stdout}")
             print("mpv.com synthetic JOC console playback: PASS")
             if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
-                process = subprocess.Popen([str(smoke_executable), str(fixture), "--ao=null", "--vo=null", "--loop=inf"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True)
+                process = subprocess.Popen([str(smoke_executable), fixture_argument, "--ao=null", "--vo=null", "--loop=inf"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True)
                 try:
                     time.sleep(1)
                     process.send_signal(signal.CTRL_BREAK_EVENT)

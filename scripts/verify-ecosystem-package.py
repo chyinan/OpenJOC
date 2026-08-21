@@ -114,6 +114,7 @@ def run_binary(
 ) -> tuple[int, str]:
     completed = subprocess.run(
         [str(path), *arguments],
+        cwd=root,
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

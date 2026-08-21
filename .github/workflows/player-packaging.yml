@@ -9,7 +9,7 @@ on:
         default: master
         type: string
       release_candidate:
-        description: Use final 0.9.0 archive names and release metadata
+        description: Use final release archive names and release metadata
         required: false
         default: false
         type: boolean
