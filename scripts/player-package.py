@@ -1125,12 +1125,12 @@ def verify(arguments: argparse.Namespace) -> int:
         if arguments.platform == "windows-x64" and arguments.fixture:
             fixture = arguments.fixture
             fixture_argument = native_windows_path(fixture)
-            playback = subprocess.run([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            playback = subprocess.run([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--no-video", "--ao-null-untimed=yes", "--end=1", "--msg-level=all=debug"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             if playback.returncode != 0 or not playback.stdout.strip():
                 raise SystemExit(f"package verification: Windows console JOC playback failed for {fixture_argument}\n{playback.stdout}")
             print("openjoc-mpv.cmd synthetic JOC console playback: PASS")
             if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
-                process = subprocess.Popen([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--loop=inf"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True, encoding="utf-8", errors="replace")
+                process = subprocess.Popen([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--no-video", "--ao-null-untimed=yes", "--loop=inf", "--msg-level=all=debug"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True, encoding="utf-8", errors="replace")
                 try:
                     time.sleep(1)
                     process.send_signal(signal.CTRL_BREAK_EVENT)
