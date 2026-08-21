@@ -90,8 +90,10 @@ SHA256SUMS              inner bundle checksum manifest
 Windows keeps runtime DLLs in `bin/` because the Windows loader naturally
 searches the executable directory. `mpv.exe` remains the GUI/Explorer entry;
 `mpv.com` is the upstream console entry, and `openjoc-mpv.cmd` injects the
-portable config/profile paths before forwarding the child exit status. No
-registry or global `PATH` change is performed.
+portable config/profile paths before forwarding the child exit status. For a
+raw `.ec3` input it also selects FFmpeg's `eac3` demuxer explicitly, because
+raw JOC metadata is not guaranteed to pass content-only probing. No registry
+or global `PATH` change is performed.
 
 The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 `openjoc-mpv.cmd --version`, `openjoc-mpv.cmd --ad=help` with `eac3` and
