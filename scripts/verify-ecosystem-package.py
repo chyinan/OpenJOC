@@ -310,7 +310,19 @@ def verify_sdk_consumers(root: pathlib.Path, platform_name: str) -> None:
         f"-DCMAKE_C_COMPILER={compiler}",
     ]
     subprocess.run(configure, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cmake_env)
-    subprocess.run([str(cmake), "--build", str(cmake_build)], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cmake_env)
+    build = subprocess.run(
+        [str(cmake), "--build", str(cmake_build)],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=cmake_env,
+    )
+    if build.returncode != 0:
+        raise SystemExit(
+            "CMake CONFIG consumer build failed "
+            f"(exit {build.returncode}):\n{build.stdout}"
+        )
     cmake_consumer = cmake_build / ("cmake-consumer.exe" if platform_name == "windows-x64" else "cmake-consumer")
     run_consumer(cmake_consumer, root, platform_name, "CMake CONFIG")
 
