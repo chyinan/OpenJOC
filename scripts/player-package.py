@@ -442,6 +442,8 @@ def component_for_library(name: str) -> tuple[str, str]:
     if lower.startswith(("libopenjoc", "openjoc_capi")):
         return "OpenJOC", "Apache-2.0"
     known = {
+        "libarchive": ("libarchive", "BSD-2-Clause"),
+        "libb2": ("BLAKE2", "CC0-1.0"),
         "libx11": ("libX11", "MIT"),
         "libxau": ("libXau", "MIT"),
         "libxdmcp": ("libXdmcp", "MIT"),
