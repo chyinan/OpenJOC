@@ -1103,7 +1103,7 @@ def verify(arguments: argparse.Namespace) -> int:
     env = portable_runtime_environment(root, arguments.platform)
     if arguments.run_smoke:
         smoke_executable = console_executable or executable
-        version = subprocess.run([str(smoke_executable), "--version"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+        version = subprocess.run([str(smoke_executable), "--version"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         if version.returncode != 0:
             raise SystemExit(f"package verification: packaged mpv --version failed\n{version.stdout}")
         if not version.stdout.strip():
@@ -1111,13 +1111,13 @@ def verify(arguments: argparse.Namespace) -> int:
         if arguments.platform == "windows-x64":
             wrapper = root / "bin/openjoc-mpv.cmd"
             comspec = os.environ.get("COMSPEC", "cmd.exe")
-            wrapper_version = subprocess.run([comspec, "/d", "/c", str(wrapper), "--version"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            wrapper_version = subprocess.run([comspec, "/d", "/c", str(wrapper), "--version"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             if wrapper_version.returncode != 0 or not wrapper_version.stdout.strip():
                 raise SystemExit(f"package verification: openjoc-mpv.cmd --version failed\n{wrapper_version.stdout}")
             help_command = [comspec, "/d", "/c", str(wrapper), "--ad=help"]
         else:
             help_command = [str(smoke_executable), f"--config-dir={root / 'config'}", "--ad=help"]
-        help_result = subprocess.run(help_command, cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+        help_result = subprocess.run(help_command, cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         if help_result.returncode != 0 or "libopenjoc" not in help_result.stdout or "eac3" not in help_result.stdout:
             raise SystemExit(f"package verification: decoder visibility failed\n{help_result.stdout}")
         print(f"mpv console --version: {version.stdout.splitlines()[0]}")
@@ -1125,12 +1125,12 @@ def verify(arguments: argparse.Namespace) -> int:
         if arguments.platform == "windows-x64" and arguments.fixture:
             fixture = arguments.fixture
             fixture_argument = native_windows_path(fixture)
-            playback = subprocess.run([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            playback = subprocess.run([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null"], cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             if playback.returncode != 0 or not playback.stdout.strip():
                 raise SystemExit(f"package verification: Windows console JOC playback failed for {fixture_argument}\n{playback.stdout}")
             print("openjoc-mpv.cmd synthetic JOC console playback: PASS")
             if os.name == "nt" and hasattr(signal, "CTRL_BREAK_EVENT"):
-                process = subprocess.Popen([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--loop=inf"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True)
+                process = subprocess.Popen([comspec, "/d", "/c", str(wrapper), fixture_argument, "--ao=null", "--vo=null", "--loop=inf"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, text=True, encoding="utf-8", errors="replace")
                 try:
                     time.sleep(1)
                     process.send_signal(signal.CTRL_BREAK_EVENT)
@@ -1155,7 +1155,7 @@ def verify(arguments: argparse.Namespace) -> int:
             missing.rename(missing.with_suffix(missing.suffix + ".missing"))
             isolated_executable = isolated / executable.relative_to(root)
             isolated_env = portable_runtime_environment(isolated, arguments.platform)
-            failure = subprocess.run([str(isolated_executable), "--version"], cwd=isolated, env=isolated_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+            failure = subprocess.run([str(isolated_executable), "--version"], cwd=isolated, env=isolated_env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
             if arguments.platform == "windows-x64":
                 owners = [isolated_executable, *sorted((isolated / "bin").glob("*.dll"))]
                 imported = any(
