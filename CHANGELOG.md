@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.9.2] — 2026-08-21
+
+OpenJOC 0.9.2 prepares production-scale streaming reconstructed ADM/BW64
+export. OpenJOC 0.9.1 remains the current public release until the 0.9.2
+candidate passes the maintainer's real-programme acceptance gate.
+
+### Hotfixes
+
+- Replaced compressed-input `export-adm` scene capture with a bounded-memory
+  preflight plus one sequential PCM decode that writes ReconstructionBasis rows
+  and Base LFE directly into signed 24-bit interleaved BW64.
+- Kept diagnostic capture limits unchanged; production ADM export no longer
+  retains full-duration internal Base, JOC-input Base, LFE, reconstruction-row
+  vectors, or reconstruction JSON.
+- Added deterministic ADM planning, duration/track/size overflow checks,
+  exact per-track sample-count enforcement, and one-AU PCM staging
+  high-watermark evidence.
+- Made BW64 validation seek across `data` using `ds64` while bounding `axml`
+  and `chna` allocations, so validation RAM use is independent of programme
+  duration.
+- Made output/report publication transactional, including rollback-safe
+  replacement behavior on Windows, and added interactive throttled progress
+  with quiet non-TTY and `--no-progress` behavior.
+- Preserved byte-identical short-fixture output, `.wav`/`.bw64` compatibility,
+  fail-closed out-of-range PCM rejection, and the unresolved semantic/report
+  boundary. This is not original ADM recovery or a lossless conversion.
+
 ## [0.9.1] — 2026-08-21
 
 OpenJOC 0.9.1 is a focused post-release hotfix for real compressed-input ADM

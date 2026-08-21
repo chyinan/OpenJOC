@@ -1,4 +1,6 @@
-use openjoc_adm::{AdmError, AdmPolicy, build_export, validate_bw64, write_bw64};
+use openjoc_adm::{
+    AdmError, AdmExportPlan, AdmPolicy, StreamingAdmWriter, build_export, validate_bw64, write_bw64,
+};
 use openjoc_joc::ReconstructionBasis;
 use openjoc_scene::{ObjectClass, ObjectScene, SemanticBindingState};
 use std::{fs, path::PathBuf};
@@ -50,6 +52,44 @@ fn strict_export_rejects_unresolved_binding() {
         build_export(&scene(), AdmPolicy::Strict),
         Err(AdmError::StrictUnresolvedBinding)
     ));
+}
+
+#[test]
+fn streaming_writer_handles_file_backed_multimegabyte_output() {
+    let duration = 400_000_u64;
+    let plan = AdmExportPlan::new(
+        48_000,
+        duration,
+        2,
+        true,
+        2,
+        3,
+        SemanticBindingState::Unresolved,
+        AdmPolicy::BestEffort,
+    )
+    .expect("plan");
+    let path = temp_path("file-backed-streaming");
+    let file = fs::File::create(&path).expect("create output");
+    let mut writer = StreamingAdmWriter::new(file, plan).expect("writer");
+    let mut remaining = duration;
+    while remaining > 0 {
+        let frames = usize::try_from(remaining.min(1536)).expect("bounded frames");
+        writer
+            .write_pcm(
+                &[vec![0.125; frames], vec![-0.125; frames]],
+                Some(&vec![0.0; frames]),
+            )
+            .expect("bounded chunk");
+        remaining -= u64::try_from(frames).expect("bounded frames");
+    }
+    let (file, _, stats) = writer.finish().expect("finish");
+    file.sync_all().expect("sync output");
+    assert_eq!(stats.max_chunk_frames, 1536);
+    assert!(fs::metadata(&path).expect("metadata").len() > 3_600_000);
+    let summary = validate_bw64(&path).expect("validate file-backed output");
+    assert_eq!(summary.data_bytes, 3_600_000);
+    assert_eq!(summary.channels, 3);
+    fs::remove_file(path).expect("remove test artifact");
 }
 
 fn temp_path(label: &str) -> PathBuf {

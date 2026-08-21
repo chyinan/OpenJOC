@@ -1,9 +1,9 @@
-# OpenJOC 0.9.1 known limitations
+# OpenJOC 0.9.2 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.9.1 is an independent, experimental interoperability project. It
+OpenJOC 0.9.2 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 
@@ -16,6 +16,10 @@ bit-identical Reference Player output.
   signals neutral and reports the unresolved audio-to-spatial-metadata binding;
   strict mode rejects it. Original names, hierarchy, UIDs, and discarded source
   information cannot be recovered.
+- Compressed `export-adm` uses bounded-memory production streaming. Explicit
+  `ObjectScene` JSON and scene-directory inputs remain diagnostic formats and
+  may already materialize programme-duration PCM before the ADM writer sees
+  them.
 - The embeddable packet API accepts exactly one complete E-AC-3 JOC access unit
   per push. Arbitrary byte fragmentation, multiple AUs in one push, demuxing,
   CLI parsing, and filesystem output remain outside `OpenJocSession`.

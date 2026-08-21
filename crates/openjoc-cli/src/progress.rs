@@ -8,6 +8,7 @@ const DEFAULT_TERMINAL_WIDTH: usize = 80;
 
 pub(crate) struct ProgressReporter {
     enabled: bool,
+    action: String,
     layout: String,
     total_frames: u64,
     total_samples: u64,
@@ -29,8 +30,29 @@ impl ProgressReporter {
         sample_rate: u32,
         terminal_width: Option<u16>,
     ) -> Self {
+        Self::new_named(
+            enabled,
+            "Rendering",
+            layout,
+            total_frames,
+            total_samples,
+            sample_rate,
+            terminal_width,
+        )
+    }
+
+    pub(crate) fn new_named(
+        enabled: bool,
+        action: &str,
+        layout: &str,
+        total_frames: u64,
+        total_samples: u64,
+        sample_rate: u32,
+        terminal_width: Option<u16>,
+    ) -> Self {
         Self {
             enabled,
+            action: action.to_owned(),
             layout: layout.to_owned(),
             total_frames,
             total_samples,
@@ -95,40 +117,40 @@ impl ProgressReporter {
         };
         let line = if self.total_samples > 0 {
             let detailed = format!(
-                "Rendering {} [{:>5.1}%] {} / {} audio  {:.2}x realtime  elapsed {}  ETA {}",
-                self.layout, percentage, audio, total_audio, speed, elapsed_text, eta
+                "{} {} [{:>5.1}%] {} / {} audio  {:.2}x realtime  elapsed {}  ETA {}",
+                self.action, self.layout, percentage, audio, total_audio, speed, elapsed_text, eta
             );
             select_progress_line(
                 detailed,
                 self.max_width,
                 || {
                     format!(
-                        "Rendering {} [{:>5.1}%] {} / {}  {:.2}x ETA {}",
-                        self.layout, percentage, audio, total_audio, speed, eta
+                        "{} {} [{:>5.1}%] {} / {}  {:.2}x ETA {}",
+                        self.action, self.layout, percentage, audio, total_audio, speed, eta
                     )
                 },
                 || {
                     format!(
-                        "Rendering {} [{:>5.1}%] {:.2}x",
-                        self.layout, percentage, speed
+                        "{} {} [{:>5.1}%] {:.2}x",
+                        self.action, self.layout, percentage, speed
                     )
                 },
             )
         } else {
             let detailed = format!(
-                "Rendering {}  frame {} / {}  {} audio  {:.2}x realtime  elapsed {}",
-                self.layout, frame, self.total_frames, audio, speed, elapsed_text
+                "{} {}  frame {} / {}  {} audio  {:.2}x realtime  elapsed {}",
+                self.action, self.layout, frame, self.total_frames, audio, speed, elapsed_text
             );
             select_progress_line(
                 detailed,
                 self.max_width,
                 || {
                     format!(
-                        "Rendering {} frame {}/{} {:.2}x",
-                        self.layout, frame, self.total_frames, speed
+                        "{} {} frame {}/{} {:.2}x",
+                        self.action, self.layout, frame, self.total_frames, speed
                     )
                 },
-                || format!("Rendering {} {:.2}x", self.layout, speed),
+                || format!("{} {} {:.2}x", self.action, self.layout, speed),
             )
         };
         let mut stderr = io::stderr().lock();

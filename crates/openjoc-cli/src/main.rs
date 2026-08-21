@@ -14,7 +14,10 @@ mod terminal;
 
 use banner::{package_metadata, render_banner};
 use eac3_decode::ValidationProfileRequest;
-use openjoc_adm::{AdmPolicy, validate_bw64, write_bw64};
+use openjoc_adm::{
+    AdmError, AdmExportPlan, AdmPolicy, AdmStreamingStats, StreamingAdmWriter, validate_bw64,
+    write_bw64,
+};
 use openjoc_api::{
     BinauralConfig, BinauralLfePolicy as ApiBinauralLfePolicy, DownmixPolicy as ApiDownmixPolicy,
     DrcPolicy as ApiDrcPolicy, OpenJocConfig, OpenJocPacket, OpenJocSession, OpenJocStatus,
@@ -57,7 +60,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE [--topology TOPOLOGY.json] --layout LAYOUT --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -152,7 +155,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let (input, trim_configuration_count) = parse_inspect(&arguments[1..])?;
             inspect(&input, trim_configuration_count)
         }
-        Some("export-adm") => export_adm(&arguments[1..]),
+        Some("export-adm") => export_adm(&arguments[1..], terminal),
         Some("validate-adm") => validate_adm(&arguments[1..]),
         Some("self-test") => self_test(&arguments[1..]),
         Some("sofa") => render_scene::run_sofa(&arguments[1..]),
@@ -319,8 +322,9 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "Rows are not authored-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
         ),
         "export-adm" => concat!(
-            "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n\n",
+            "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n\n",
             "Exports a reconstructed ADM/BW64 interoperability representation. It does not and cannot recover the original ADM master.\n",
+            "Compressed EC3/MP4 input uses production-scale bounded-memory streaming; explicit JSON/scene-directory inputs retain their diagnostic in-memory model.\n",
             "When the scene's audio-to-spatial-metadata binding is unresolved, best-effort emits neutral reconstructed signals and records the omission; strict rejects.\n",
         ),
         "validate-adm" => concat!(
@@ -404,11 +408,12 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn export_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
+fn export_adm(arguments: &[String], terminal: TerminalCapabilities) -> Result<(), Box<dyn Error>> {
     let mut input = None;
     let mut output = None;
     let mut policy = AdmPolicy::BestEffort;
     let mut overwrite = false;
+    let mut no_progress = false;
     let mut index = 0;
     while index < arguments.len() {
         match arguments[index].as_str() {
@@ -421,6 +426,7 @@ fn export_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
                 policy = arguments.get(index).ok_or_else(usage_error)?.parse()?;
             }
             "--overwrite" => overwrite = true,
+            "--no-progress" => no_progress = true,
             value if value.starts_with('-') => return Err(usage_error().into()),
             value => {
                 if input.is_some() {
@@ -433,6 +439,7 @@ fn export_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
     }
     let input = input.ok_or_else(usage_error)?;
     let output = output.ok_or_else(usage_error)?;
+    let report_path = output.with_extension("adm-report.json");
     if output.exists() && !overwrite {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
@@ -443,21 +450,65 @@ fn export_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         )
         .into());
     }
+    if paths_alias(&input, &output)? || paths_alias(&input, &report_path)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "ADM output/report must not alias the input",
+        )
+        .into());
+    }
     if let Some(parent) = output
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
         fs::create_dir_all(parent)?;
     }
-    let (scene, cleanup) = load_scene_for_adm(&input)?;
-    let result = write_bw64(&output, &scene, policy);
-    if let Some(stage) = cleanup {
-        let _ = fs::remove_dir_all(stage);
-    }
-    let report = result?;
-    let report_path = output.with_extension("adm-report.json");
-    fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
-    let validation = validate_bw64(&output)?;
+    let output_stage = unique_adm_sibling(&output, "partial")?;
+    let report_stage = unique_adm_sibling(&report_path, "partial")?;
+    let progress_enabled = terminal.progress_is_tty() && !no_progress;
+    let result = (|| -> Result<_, Box<dyn Error>> {
+        let (report, streaming_stats) = if input.is_dir()
+            || input
+                .extension()
+                .is_some_and(|extension| extension == "json")
+        {
+            let (scene, cleanup) = load_scene_for_adm(&input)?;
+            debug_assert!(cleanup.is_none());
+            (write_bw64(&output_stage, &scene, policy)?, None)
+        } else {
+            let kind = compressed_input_kind(&input)?;
+            let result = stream_compressed_adm(
+                &input,
+                kind,
+                &output_stage,
+                policy,
+                progress_enabled,
+                terminal.width,
+            )?;
+            (result.0, Some(result.1))
+        };
+        if progress_enabled {
+            eprintln!("Validating BW64...");
+        }
+        let validation = validate_bw64(&output_stage)?;
+        fs::write(&report_stage, serde_json::to_vec_pretty(&report)?)?;
+        commit_adm_pair(
+            &output_stage,
+            &output,
+            &report_stage,
+            &report_path,
+            overwrite,
+        )?;
+        Ok((validation, streaming_stats))
+    })();
+    let (validation, streaming_stats) = match result {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = fs::remove_file(&output_stage);
+            let _ = fs::remove_file(&report_stage);
+            return Err(error);
+        }
+    };
     println!(
         "Reconstructed ADM/BW64 written to {}\nReport written to {}\nValidated: {} tracks, {} bytes of PCM\nOriginal ADM master recovered: NO",
         output.display(),
@@ -465,7 +516,246 @@ fn export_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
         validation.chna_tracks,
         validation.data_bytes
     );
+    if let Some(stats) = streaming_stats {
+        println!(
+            "Streaming retention: max {} PCM samples + {} interleaved bytes in one bounded chunk",
+            stats.max_live_input_samples, stats.max_interleaved_bytes
+        );
+    }
     Ok(())
+}
+
+fn compressed_input_kind(input: &Path) -> Result<InputMediaKind, Box<dyn Error>> {
+    let mut file = fs::File::open(input)?;
+    let mut prefix = [0_u8; 12];
+    let length = file.read(&mut prefix)?;
+    match detect_media(&prefix[..length]) {
+        kind @ (InputMediaKind::RawEac3 | InputMediaKind::IsoBmff) => Ok(kind),
+        InputMediaKind::Unknown => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "export-adm requires raw E-AC-3, seekable ISO BMFF, JSON, or a scene directory",
+        )
+        .into()),
+    }
+}
+
+fn open_compressed_adm_reader(
+    input: &Path,
+    kind: InputMediaKind,
+) -> Result<Box<dyn Read>, Box<dyn Error>> {
+    match kind {
+        InputMediaKind::RawEac3 => Ok(Box::new(fs::File::open(input)?)),
+        InputMediaKind::IsoBmff => Ok(Box::new(open_seekable_iso_bmff(
+            input,
+            Path::new("ffprobe"),
+            DEFAULT_MAX_EAC3_BYTES,
+        )?)),
+        InputMediaKind::Unknown => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unsupported compressed ADM input",
+        )
+        .into()),
+    }
+}
+
+fn stream_compressed_adm(
+    input: &Path,
+    kind: InputMediaKind,
+    output_stage: &Path,
+    policy: AdmPolicy,
+    progress_enabled: bool,
+    terminal_width: Option<u16>,
+) -> Result<(openjoc_adm::AdmExportReport, AdmStreamingStats), Box<dyn Error>> {
+    if policy == AdmPolicy::Strict {
+        return Err(AdmError::StrictUnresolvedBinding.into());
+    }
+    if progress_enabled {
+        eprintln!("Analyzing JOC stream...");
+    }
+    let config = PayloadDecoderConfig {
+        reference_screen: None,
+        oamd: OamdDecoderConfig::with_trim_configuration_count(None),
+    };
+    let dither = deterministic_dither_values();
+    let base_policy = InternalBasePolicy::CurrentDefault;
+    let preflight = eac3_decode::preflight_adm_reader(
+        open_compressed_adm_reader(input, kind)?,
+        DEFAULT_MAX_EAC3_BYTES,
+        config,
+        ValidationProfileRequest::Auto,
+        &dither,
+        base_policy,
+    )?;
+    let plan = AdmExportPlan::new(
+        preflight.sample_rate,
+        preflight.duration_samples,
+        preflight.reconstruction_signal_count,
+        preflight.base_lfe_present,
+        preflight.dynamic_object_count,
+        preflight.metadata_object_count,
+        SemanticBindingState::Unresolved,
+        policy,
+    )?;
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output_stage)?;
+    let mut writer = StreamingAdmWriter::new(file, plan)?;
+    let mut progress = progress::ProgressReporter::new_named(
+        progress_enabled,
+        "Exporting",
+        "reconstructed ADM",
+        preflight.access_units,
+        preflight.duration_samples,
+        preflight.sample_rate,
+        terminal_width,
+    );
+    let mut adm_error = None;
+    let decode_result = eac3_decode::decode_internal_eac3_reader_with_combined_sink(
+        open_compressed_adm_reader(input, kind)?,
+        DEFAULT_MAX_EAC3_BYTES,
+        config,
+        ValidationProfileRequest::Auto,
+        &dither,
+        base_policy,
+        |access_unit, _metadata, frame, pcm| {
+            progress.update(access_unit.saturating_add(1), frame.sample_range.end_sample);
+            if let Err(error) =
+                writer.write_pcm(&frame.decoded.reconstruction_basis.rows, pcm.lfe.as_deref())
+            {
+                let message = error.to_string();
+                adm_error = Some(error);
+                return Err(eac3_decode::DecodeEac3Error::Sink(message));
+            }
+            Ok(())
+        },
+    );
+    progress.finish();
+    if let Some(error) = adm_error {
+        return Err(error.into());
+    }
+    let summary = decode_result?;
+    if summary.sample_rate != preflight.sample_rate
+        || summary.duration_samples != preflight.duration_samples
+        || summary.frames != preflight.access_units
+        || summary.max_reconstruction_rows != preflight.reconstruction_signal_count
+        || summary.object_count != preflight.metadata_object_count
+        || summary.max_frame_samples > preflight.max_frame_samples
+    {
+        return Err(io::Error::other(
+            "streaming decode summary disagrees with the ADM preflight plan",
+        )
+        .into());
+    }
+    if progress_enabled {
+        eprintln!("Finalizing BW64...");
+    }
+    let (file, report, stats) = writer.finish()?;
+    file.sync_all()?;
+    debug_assert!(preflight.max_au_bytes > 0);
+    Ok((report, stats))
+}
+
+fn unique_adm_sibling(path: &Path, role: &str) -> Result<PathBuf, Box<dyn Error>> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "ADM path has no filename"))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| io::Error::other("system clock is before UNIX epoch"))?
+        .as_nanos();
+    for attempt in 0..100_u32 {
+        let candidate = parent.join(format!(
+            ".{name}.{role}-{}-{}",
+            std::process::id(),
+            stamp + u128::from(attempt)
+        ));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate unique ADM staging path",
+    )
+    .into())
+}
+
+fn commit_adm_pair(
+    staged_output: &Path,
+    output: &Path,
+    staged_report: &Path,
+    report: &Path,
+    overwrite: bool,
+) -> Result<(), Box<dyn Error>> {
+    if !overwrite && output.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "ADM output appeared while export was running",
+        )
+        .into());
+    }
+    let output_backup = output
+        .exists()
+        .then(|| unique_adm_sibling(output, "backup"))
+        .transpose()?;
+    let report_backup = report
+        .exists()
+        .then(|| unique_adm_sibling(report, "backup"))
+        .transpose()?;
+    if let Some(backup) = &output_backup {
+        fs::rename(output, backup)?;
+    }
+    if let Some(backup) = &report_backup {
+        if let Err(error) = fs::rename(report, backup) {
+            if let Some(output_backup) = &output_backup {
+                let _ = fs::rename(output_backup, output);
+            }
+            return Err(error.into());
+        }
+    }
+    if let Err(error) = fs::rename(staged_output, output) {
+        restore_adm_backups(
+            output,
+            output_backup.as_deref(),
+            report,
+            report_backup.as_deref(),
+        );
+        return Err(error.into());
+    }
+    if let Err(error) = fs::rename(staged_report, report) {
+        let _ = fs::rename(output, staged_output);
+        restore_adm_backups(
+            output,
+            output_backup.as_deref(),
+            report,
+            report_backup.as_deref(),
+        );
+        return Err(error.into());
+    }
+    if let Some(backup) = output_backup {
+        let _ = fs::remove_file(backup);
+    }
+    if let Some(backup) = report_backup {
+        let _ = fs::remove_file(backup);
+    }
+    Ok(())
+}
+
+fn restore_adm_backups(
+    output: &Path,
+    output_backup: Option<&Path>,
+    report: &Path,
+    report_backup: Option<&Path>,
+) {
+    if let Some(backup) = output_backup {
+        let _ = fs::rename(backup, output);
+    }
+    if let Some(backup) = report_backup {
+        let _ = fs::rename(backup, report);
+    }
 }
 
 fn validate_adm(arguments: &[String]) -> Result<(), Box<dyn Error>> {
@@ -675,33 +965,11 @@ fn load_scene_for_adm(input: &Path) -> Result<(ObjectScene, Option<PathBuf>), Bo
         let scene = ObjectScene::from_json(&fs::read_to_string(input)?)?;
         return Ok((scene, None));
     }
-    let (stage_root, stage) = create_adm_decode_stage()?;
-    let arguments = DecodeEac3Args {
-        input: input.to_owned(),
-        downmix: None,
-        // ADM consumes the renderer-independent scene boundary.  Keep base
-        // PCM on the same bounded decoder path as ReconstructionBasis rather
-        // than importing a compatibility render from external FFmpeg.
-        internal_base: true,
-        output: stage.clone(),
-        output_format: SampleFormat::F32,
-        validation_profile: ValidationProfileRequest::Auto,
-        trim_configuration_count: None,
-        internal_base_policy: InternalBasePolicy::CurrentDefault,
-        streaming: false,
-    };
-    if let Err(error) = decode_eac3(&arguments) {
-        let _ = fs::remove_dir_all(&stage_root);
-        return Err(error);
-    }
-    let scene = match load_scene_directory(&stage) {
-        Ok(scene) => scene,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&stage_root);
-            return Err(error);
-        }
-    };
-    Ok((scene, Some(stage_root)))
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "compressed ADM inputs must use the production streaming path",
+    )
+    .into())
 }
 
 fn load_scene_directory(directory: &Path) -> Result<ObjectScene, Box<dyn Error>> {
@@ -763,11 +1031,6 @@ fn create_adm_temp_root() -> Result<PathBuf, Box<dyn Error>> {
     let root = env::temp_dir().join(format!("openjoc-adm-{}-{stamp}", std::process::id()));
     fs::create_dir(&root)?;
     Ok(root)
-}
-
-fn create_adm_decode_stage() -> Result<(PathBuf, PathBuf), Box<dyn Error>> {
-    let root = create_adm_temp_root()?;
-    Ok((root.clone(), root.join("scene")))
 }
 
 fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(), std::fmt::Error> {
@@ -4566,6 +4829,9 @@ fn classify_cli_error(error: &(dyn Error + 'static)) -> CliErrorCategory {
     if let Some(error) = error.downcast_ref::<joc_render::JocRenderError>() {
         return classify_joc_render_error(error);
     }
+    if let Some(error) = error.downcast_ref::<AdmError>() {
+        return classify_adm_error(error);
+    }
     if error.downcast_ref::<WaveError>().is_some() {
         return CliErrorCategory::OutputFailure;
     }
@@ -4582,6 +4848,21 @@ fn classify_cli_error(error: &(dyn Error + 'static)) -> CliErrorCategory {
         };
     }
     CliErrorCategory::DecodeFailure
+}
+
+const fn classify_adm_error(error: &AdmError) -> CliErrorCategory {
+    match error {
+        AdmError::InvalidPolicy(_) => CliErrorCategory::InvalidArgument,
+        AdmError::StrictUnresolvedBinding | AdmError::NoReconstructionSignals => {
+            CliErrorCategory::UnsupportedFeature
+        }
+        AdmError::InvalidScene(_)
+        | AdmError::NonFiniteSample { .. }
+        | AdmError::SampleOutOfRange { .. } => CliErrorCategory::DecodeFailure,
+        AdmError::SizeOverflow => CliErrorCategory::UnsupportedFeature,
+        AdmError::Io(_) => CliErrorCategory::IoFailure,
+        AdmError::InvalidBw64(_) => CliErrorCategory::MalformedInput,
+    }
 }
 
 const fn classify_joc_render_error(error: &joc_render::JocRenderError) -> CliErrorCategory {
@@ -4706,7 +4987,8 @@ const fn classify_decode_error(error: &eac3_decode::DecodeEac3Error) -> CliError
             CliErrorCategory::UnsupportedFeature
         }
         eac3_decode::DecodeEac3Error::Sink(_) => CliErrorCategory::OutputFailure,
-        eac3_decode::DecodeEac3Error::SampleCountOverflow
+        eac3_decode::DecodeEac3Error::JocPayload(_)
+        | eac3_decode::DecodeEac3Error::SampleCountOverflow
         | eac3_decode::DecodeEac3Error::InvalidPcmLength { .. }
         | eac3_decode::DecodeEac3Error::SampleRateMismatch { .. }
         | eac3_decode::DecodeEac3Error::FrameIndexOverflow => CliErrorCategory::DecodeFailure,
@@ -5306,5 +5588,75 @@ mod internal_base_tests {
         assert!(capture.append(1, &changed).is_err());
         assert_eq!(capture.joc_input, before);
         assert_eq!(capture.access_units, 1);
+    }
+}
+
+#[cfg(test)]
+mod adm_transaction_tests {
+    use super::commit_adm_pair;
+    use std::{fs, path::PathBuf, time::SystemTime};
+
+    fn root(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-adm-transaction-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).expect("test root");
+        root
+    }
+
+    #[test]
+    fn replacement_commit_swaps_output_and_report_as_a_pair() {
+        let root = root("success");
+        let output = root.join("reconstructed.wav");
+        let report = root.join("reconstructed.adm-report.json");
+        let staged_output = root.join(".reconstructed.wav.partial-test");
+        let staged_report = root.join(".reconstructed.adm-report.json.partial-test");
+        fs::write(&output, b"old output").expect("old output");
+        fs::write(&report, b"old report").expect("old report");
+        fs::write(&staged_output, b"new output").expect("new output");
+        fs::write(&staged_report, b"new report").expect("new report");
+
+        commit_adm_pair(&staged_output, &output, &staged_report, &report, true)
+            .expect("commit pair");
+        assert_eq!(fs::read(&output).expect("output"), b"new output");
+        assert_eq!(fs::read(&report).expect("report"), b"new report");
+        assert_eq!(fs::read_dir(&root).expect("entries").count(), 2);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn report_commit_failure_rolls_back_an_authorized_replacement() {
+        let root = root("rollback");
+        let output = root.join("reconstructed.wav");
+        let report = root.join("reconstructed.adm-report.json");
+        let staged_output = root.join(".reconstructed.wav.partial-test");
+        let missing_staged_report = root.join(".missing-report.partial-test");
+        fs::write(&output, b"old output").expect("old output");
+        fs::write(&report, b"old report").expect("old report");
+        fs::write(&staged_output, b"new output").expect("new output");
+
+        assert!(
+            commit_adm_pair(
+                &staged_output,
+                &output,
+                &missing_staged_report,
+                &report,
+                true,
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&output).expect("output"), b"old output");
+        assert_eq!(fs::read(&report).expect("report"), b"old report");
+        assert_eq!(
+            fs::read(&staged_output).expect("recoverable staged output"),
+            b"new output"
+        );
+        assert_eq!(fs::read_dir(&root).expect("entries").count(), 3);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 }

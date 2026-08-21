@@ -399,6 +399,13 @@ fn synthetic_joc_compressed_input() -> Vec<u8> {
         .collect()
 }
 
+fn out_of_range_joc_compressed_input() -> Vec<u8> {
+    let emdf = joc_emdf(&inactive_oamd(), &one_object_joc());
+    (0..2)
+        .flat_map(|_| five_channel_audio_frame(&emdf))
+        .collect()
+}
+
 fn collect_binaural_session_frames(
     stream: &[u8],
     receive_before_push: bool,
@@ -486,11 +493,20 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
         String::from_utf8_lossy(&export.stdout),
         String::from_utf8_lossy(&export.stderr)
     );
+    assert!(!String::from_utf8_lossy(&export.stderr).contains("Analyzing JOC stream"));
+    assert!(!String::from_utf8_lossy(&export.stderr).contains("Exporting reconstructed ADM"));
     assert!(
         wav_output.is_file(),
         "WAV-named BW64 output was not written"
     );
     assert!(report.is_file(), "adjacent ADM report was not written");
+    let report_value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&report).expect("read report")).expect("parse report");
+    assert_eq!(report_value["source_is_lossy_e_ac_3_joc"], true);
+    assert_eq!(report_value["original_adm_master_recovered"], false);
+    assert_eq!(report_value["lossless_round_trip"], false);
+    assert_eq!(report_value["semantic_binding_state"], "unresolved");
+    assert_eq!(report_value["dynamic_objects_with_bound_pcm"], 0);
 
     let validation = Command::new(env!("CARGO_BIN_EXE_openjoc"))
         .args(["validate-adm", wav_output.to_str().expect("output path")])
@@ -538,6 +554,62 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
 }
 
 #[test]
+fn export_adm_out_of_range_failure_preserves_existing_outputs_and_cleans_staging() {
+    let _lock = ADM_EXPORT_TEST_LOCK.lock().expect("ADM export test lock");
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-adm-range-failure-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("out-of-range.ec3");
+    fs::write(&input, out_of_range_joc_compressed_input()).expect("synthetic compressed input");
+    let output = root.join("reconstructed.wav");
+    let report = root.join("reconstructed.adm-report.json");
+    fs::write(&output, b"previous output").expect("prior output");
+    fs::write(&report, b"previous report").expect("prior report");
+
+    let export = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args([
+            "export-adm",
+            input.to_str().expect("input path"),
+            "-o",
+            output.to_str().expect("output path"),
+            "--overwrite",
+        ])
+        .output()
+        .expect("run failing compressed ADM export");
+    assert!(!export.status.success());
+    assert!(
+        String::from_utf8_lossy(&export.stderr).contains("requires [-1, 1]"),
+        "stderr={}",
+        String::from_utf8_lossy(&export.stderr)
+    );
+    assert_eq!(
+        fs::read(&output).expect("preserved output"),
+        b"previous output"
+    );
+    assert_eq!(
+        fs::read(&report).expect("preserved report"),
+        b"previous report"
+    );
+    assert!(
+        fs::read_dir(&root)
+            .expect("read test directory")
+            .all(|entry| !entry
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".partial-")),
+        "partial ADM artifact leaked"
+    );
+    fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
 fn export_adm_decode_failure_cleans_decode_root_without_overwrite_bypass() {
     let _lock = ADM_EXPORT_TEST_LOCK.lock().expect("ADM export test lock");
     let nonce = SystemTime::now()
@@ -567,6 +639,17 @@ fn export_adm_decode_failure_cleans_decode_root_without_overwrite_bypass() {
     let stderr = String::from_utf8_lossy(&export.stderr);
     assert!(!stderr.contains("refusing to overwrite output directory"));
     assert!(!output.exists());
+    assert!(!output.with_extension("adm-report.json").exists());
+    assert!(
+        fs::read_dir(&root)
+            .expect("read test directory")
+            .all(|entry| !entry
+                .expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".partial-")),
+        "partial ADM artifact leaked"
+    );
     assert_eq!(
         before,
         adm_temp_roots(),

@@ -1,22 +1,22 @@
 // pattern: Functional Core
 
 use crate::performance::DecodeStageTiming;
-use openjoc_container::{InputMediaError, RawEac3AccessUnitReader};
+use openjoc_container::{InputMediaError, RawEac3AccessUnit, RawEac3AccessUnitReader};
 use openjoc_eac3::{
     DecodedAccessUnitPcm, DialnormMode, Eac3Error, InternalBasePolicy, JocAccessUnitPcmDecoder,
     JocMetadataFrame, extract_joc_access_unit_for_profile, extract_joc_addbsi_access_unit,
-    group_access_units, index_syncframes, parse_joc_access_unit, validate_complexity_index,
-    validate_joc_access_unit,
+    group_access_units, index_syncframes, parse_bsi, parse_joc_access_unit,
+    validate_complexity_index, validate_joc_access_unit,
 };
 use openjoc_emdf::JocValidationProfile;
-use openjoc_joc::ReconstructionBasis;
+use openjoc_joc::{JocParseError, ReconstructionBasis, parse_joc_payload};
 use openjoc_oamd::{
-    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile,
+    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, ObjectAnchor,
     parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use openjoc_scene::{
     DecodedPayloadFrame, JocFrameInput, ObjectScene, PayloadDecodeError, PayloadDecoder,
-    PayloadDecoderConfig, StreamingSceneSummary,
+    PayloadDecoderConfig, ProgrammeLayout, StreamingSceneSummary,
 };
 use openjoc_wave::WavePcm;
 use std::{fmt, io::Read, time::Instant};
@@ -46,6 +46,19 @@ pub(crate) struct StreamTiming {
     pub(crate) access_units: u64,
     pub(crate) samples: u64,
     pub(crate) sample_rate: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AdmStreamPreflight {
+    pub(crate) access_units: u64,
+    pub(crate) duration_samples: u64,
+    pub(crate) sample_rate: u32,
+    pub(crate) reconstruction_signal_count: usize,
+    pub(crate) base_lfe_present: bool,
+    pub(crate) dynamic_object_count: usize,
+    pub(crate) metadata_object_count: usize,
+    pub(crate) max_frame_samples: usize,
+    pub(crate) max_au_bytes: usize,
 }
 
 pub(crate) fn stream_timing(stream: &[u8]) -> Result<StreamTiming, DecodeEac3Error> {
@@ -162,6 +175,7 @@ pub enum DecodeEac3Error {
     Eac3(Eac3Error),
     Oamd(OamdError),
     Payload(PayloadDecodeError),
+    JocPayload(JocParseError),
     EmptyStream,
     SampleCountOverflow,
     InvalidPcmLength {
@@ -193,6 +207,7 @@ impl fmt::Display for DecodeEac3Error {
             Self::Payload(error) => {
                 write!(formatter, "failed to reconstruct JOC basis frame: {error}")
             }
+            Self::JocPayload(error) => write!(formatter, "failed to parse JOC payload: {error}"),
             Self::EmptyStream => formatter.write_str("empty E-AC-3 stream"),
             Self::SampleCountOverflow => formatter.write_str("E-AC-3 sample count overflow"),
             Self::InvalidPcmLength { expected } => write!(
@@ -234,6 +249,7 @@ impl std::error::Error for DecodeEac3Error {
             Self::Eac3(error) => Some(error),
             Self::Oamd(error) => Some(error),
             Self::Payload(error) => Some(error),
+            Self::JocPayload(error) => Some(error),
             _ => None,
         }
     }
@@ -260,6 +276,12 @@ impl From<OamdError> for DecodeEac3Error {
 impl From<PayloadDecodeError> for DecodeEac3Error {
     fn from(value: PayloadDecodeError) -> Self {
         Self::Payload(value)
+    }
+}
+
+impl From<JocParseError> for DecodeEac3Error {
+    fn from(value: JocParseError) -> Self {
+        Self::JocPayload(value)
     }
 }
 
@@ -690,6 +712,160 @@ where
     )
 }
 
+/// Sequential metadata/topology pass for a production ADM export.
+///
+/// Every AU is framed and its JOC/OAMD syntax is validated, but only the first
+/// AU is decoded to PCM to establish the actual admitted Base/LFE topology.
+/// Retention is bounded to one AU and the returned counters.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn preflight_adm_reader<R: Read>(
+    reader: R,
+    max_frame_bytes: usize,
+    config: PayloadDecoderConfig,
+    validation_profile: ValidationProfileRequest,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+) -> Result<AdmStreamPreflight, DecodeEac3Error> {
+    let mut access_units = RawEac3AccessUnitReader::new(reader, max_frame_bytes);
+    let mut audio_decoder = JocAccessUnitPcmDecoder::new();
+    let mut count = 0_u64;
+    let mut duration_samples = 0_u64;
+    let mut sample_rate = None;
+    let mut reconstruction_signal_count = None;
+    let mut base_lfe_present = None;
+    let mut anchors = None;
+    let mut topology = None;
+    let mut max_frame_samples = 0_usize;
+    let mut max_au_bytes = 0_usize;
+
+    while let Some(access_unit) = access_units.next_access_unit()? {
+        if sample_rate.is_some_and(|expected| expected != access_unit.unit.sample_rate) {
+            return Err(DecodeEac3Error::Payload(
+                PayloadDecodeError::SampleRateChanged {
+                    expected: sample_rate.unwrap_or_default(),
+                    actual: access_unit.unit.sample_rate,
+                },
+            ));
+        }
+        sample_rate.get_or_insert(access_unit.unit.sample_rate);
+        duration_samples = duration_samples
+            .checked_add(u64::from(access_unit.unit.samples))
+            .ok_or(DecodeEac3Error::SampleCountOverflow)?;
+        count = count
+            .checked_add(1)
+            .ok_or(DecodeEac3Error::FrameIndexOverflow)?;
+        max_frame_samples = max_frame_samples.max(usize::from(access_unit.unit.samples));
+        max_au_bytes = max_au_bytes.max(access_unit.bytes.len());
+
+        let unit_topology = access_unit_topology(&access_unit)?;
+        if topology
+            .as_ref()
+            .is_some_and(|expected| expected != &unit_topology)
+        {
+            return Err(DecodeEac3Error::Sink(
+                "E-AC-3 channel topology changed during ADM preflight".to_owned(),
+            ));
+        }
+        topology.get_or_insert(unit_topology);
+
+        let unit_index =
+            usize::try_from(count - 1).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
+        let (metadata, joc_profile) = select_metadata_for_request(
+            &access_unit.bytes,
+            &access_unit.frames,
+            access_unit.unit,
+            unit_index,
+            validation_profile,
+        )?;
+        let oamd_profile =
+            resolve_profile_for_oamd(&metadata.oamd, config.oamd, validation_profile)?;
+        let selected_profile = if joc_profile == JocValidationProfile::ObservedVendorCompat
+            || oamd_profile == OamdParseProfile::ObservedVendorCompat
+        {
+            JocValidationProfile::ObservedVendorCompat
+        } else {
+            JocValidationProfile::EtsiStrict
+        };
+        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, selected_profile)?;
+        validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let parsed_joc = parse_joc_payload(&metadata.joc)?;
+        let rows = usize::from(parsed_joc.header.object_count);
+        ProgrammeLayout::from_prefix(&parsed_oamd.prefix)
+            .map_err(PayloadDecodeError::from)?
+            .validate_reconstruction_basis(rows)
+            .map_err(PayloadDecodeError::from)?;
+        if reconstruction_signal_count.is_some_and(|expected| expected != rows) {
+            return Err(DecodeEac3Error::Sink(
+                "reconstruction-basis row count changed during ADM preflight".to_owned(),
+            ));
+        }
+        reconstruction_signal_count.get_or_insert(rows);
+        let unit_anchors = parsed_oamd.prefix.object_anchors()?;
+        if anchors
+            .as_ref()
+            .is_some_and(|expected| expected != &unit_anchors)
+        {
+            return Err(DecodeEac3Error::Sink(
+                "OAMD content description changed during ADM preflight".to_owned(),
+            ));
+        }
+        anchors.get_or_insert(unit_anchors);
+
+        if base_lfe_present.is_none() {
+            let pcm = audio_decoder.decode_with_policy(
+                &access_unit.bytes,
+                &access_unit.frames,
+                access_unit.unit,
+                dither_values,
+                base_policy,
+            )?;
+            pcm.validate_joc_topology()?;
+            base_lfe_present = Some(pcm.lfe.is_some());
+        }
+    }
+    if count == 0 {
+        return Err(DecodeEac3Error::EmptyStream);
+    }
+    let anchors = anchors.ok_or(DecodeEac3Error::EmptyStream)?;
+    Ok(AdmStreamPreflight {
+        access_units: count,
+        duration_samples,
+        sample_rate: sample_rate.ok_or(DecodeEac3Error::EmptyStream)?,
+        reconstruction_signal_count: reconstruction_signal_count
+            .ok_or(DecodeEac3Error::EmptyStream)?,
+        base_lfe_present: base_lfe_present.ok_or(DecodeEac3Error::EmptyStream)?,
+        dynamic_object_count: anchors
+            .iter()
+            .filter(|anchor| **anchor == ObjectAnchor::Dynamic)
+            .count(),
+        metadata_object_count: anchors.len(),
+        max_frame_samples,
+        max_au_bytes,
+    })
+}
+
+fn access_unit_topology(
+    access_unit: &RawEac3AccessUnit,
+) -> Result<Vec<(u8, bool, Option<u16>)>, DecodeEac3Error> {
+    access_unit
+        .frames
+        .iter()
+        .map(|frame| {
+            let end = frame
+                .offset
+                .checked_add(frame.header.frame_size)
+                .ok_or(DecodeEac3Error::SampleCountOverflow)?;
+            let bytes = access_unit.bytes.get(frame.offset..end).ok_or(
+                DecodeEac3Error::InvalidPcmLength {
+                    expected: frame.header.frame_size,
+                },
+            )?;
+            let bsi = parse_bsi(bytes)?;
+            Ok((bsi.audio_coding_mode, bsi.lfe_on, bsi.channel_map))
+        })
+        .collect()
+}
+
 /// Direct sequential raw-E-AC-3 decode path with user-facing profile
 /// selection. The existing public function above remains an explicit-profile
 /// compatibility entry point.
@@ -708,6 +884,71 @@ where
     R: Read,
     S: FnMut(usize, &JocMetadataFrame, &DecodedPayloadFrame) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
+{
+    decode_internal_eac3_reader_combined(
+        reader,
+        max_frame_bytes,
+        config,
+        validation_profile,
+        dither_values,
+        base_policy,
+        |unit_index, metadata, frame, pcm| {
+            sink(unit_index, metadata, frame)?;
+            base_sink(unit_index, pcm)
+        },
+    )
+}
+
+/// Direct sequential decode with matching ReconstructionBasis and Base/LFE
+/// exposed together while both belong to the current bounded AU.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn decode_internal_eac3_reader_with_combined_sink<R, S>(
+    reader: R,
+    max_frame_bytes: usize,
+    config: PayloadDecoderConfig,
+    validation_profile: ValidationProfileRequest,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    sink: S,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    R: Read,
+    S: FnMut(
+        usize,
+        &JocMetadataFrame,
+        &DecodedPayloadFrame,
+        &DecodedAccessUnitPcm,
+    ) -> Result<(), DecodeEac3Error>,
+{
+    decode_internal_eac3_reader_combined(
+        reader,
+        max_frame_bytes,
+        config,
+        validation_profile,
+        dither_values,
+        base_policy,
+        sink,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_internal_eac3_reader_combined<R, S>(
+    reader: R,
+    max_frame_bytes: usize,
+    config: PayloadDecoderConfig,
+    validation_profile: ValidationProfileRequest,
+    dither_values: &[f64],
+    base_policy: InternalBasePolicy,
+    mut sink: S,
+) -> Result<StreamingSceneSummary, DecodeEac3Error>
+where
+    R: Read,
+    S: FnMut(
+        usize,
+        &JocMetadataFrame,
+        &DecodedPayloadFrame,
+        &DecodedAccessUnitPcm,
+    ) -> Result<(), DecodeEac3Error>,
 {
     let mut decoder =
         PayloadDecoder::streaming_with_oamd_profile(config, OamdParseProfile::EtsiStrict);
@@ -767,10 +1008,7 @@ where
                 frame_index: frame_number,
             },
             oamd_profile,
-            |frame| {
-                sink(unit_index, &metadata, frame)?;
-                base_sink(unit_index, &pcm)
-            },
+            |frame| sink(unit_index, &metadata, frame, &pcm),
         )?;
         unit_index = unit_index
             .checked_add(1)

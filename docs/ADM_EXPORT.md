@@ -1,6 +1,7 @@
 # Reconstructed ADM/BW64 export
 
-OpenJOC 0.9 adds a standards-based reconstructed interchange export:
+OpenJOC 0.9 adds a standards-based reconstructed interchange export. The
+0.9.2 candidate makes compressed-media export production-scale and streaming:
 
 ```sh
 openjoc export-adm INPUT.ec3 -o OUTPUT.wav
@@ -8,9 +9,36 @@ openjoc validate-adm OUTPUT.wav
 ```
 
 `INPUT` may also be a captured OpenJOC scene directory or a complete
-`ObjectScene` JSON document. For an E-AC-3 input, the CLI performs a bounded
-temporary decode and exports from the renderer-independent reconstruction
-boundary.
+`ObjectScene` JSON document. For raw E-AC-3 or seekable ordinary ISO BMFF, the
+CLI performs a lightweight sequential preflight, reopens the input once, and
+writes each bounded decoder AU directly from the renderer-independent
+reconstruction boundary into BW64. It does not create a captured scene or
+full-duration diagnostic row WAVs first. Explicit JSON and scene-directory
+inputs retain their existing diagnostic in-memory model.
+
+## Production streaming and failure behavior
+
+Compressed-media preflight establishes the sample rate, exact sample duration,
+JOC/profile eligibility, stable ReconstructionBasis cardinality, Base LFE
+presence, metadata counts, final track order, and checked `u64` PCM size. A
+bounded first-AU PCM decode verifies the admitted Base topology; the PCM pass
+then occurs exactly once after reopening the seekable input.
+
+The streaming writer retains one decoded AU and one interleaving buffer. Its
+PCM retention is proportional to track count times maximum AU samples, not to
+programme duration. The 128 MiB diagnostic capture limit remains unchanged and
+continues to apply to explicit capture products, not production ADM export.
+
+Output is first written to a hidden sibling `partial` file. After exact sample
+count finalization, the CLI validates BW64 by seeking across `data`, writes the
+adjacent report to staging, and commits both paths with rollback-safe
+replacement. Decode, range, validation, or I/O failure removes new staging and
+does not publish a successful-looking output/report. Existing files are
+preserved when an authorized replacement fails.
+
+Interactive stderr shows throttled analysis, export, finalization, and
+validation progress. Redirected/non-TTY execution is quiet apart from the final
+summary or error; `--no-progress` disables interactive updates explicitly.
 
 An OpenJOC-generated ADM/BW64 file is a reconstructed representation of the
 scene carried by an E-AC-3 JOC programme. It is not the ADM/BWF source master
@@ -132,6 +160,8 @@ The adjacent JSON report includes:
 
 `openjoc validate-adm` checks the BW64 header, first `ds64`, required chunks,
 PCM format, `chna` sizes and track order, UID uniqueness, and ADM XML markers.
+It uses `ds64`'s 64-bit data size and seeks over PCM rather than loading the
+complete file; `axml` and `chna` are read only under explicit bounded limits.
 It is an internal structural validator for this supported subset, not a claim
 of certification by a DAW, renderer, or vendor.
 
