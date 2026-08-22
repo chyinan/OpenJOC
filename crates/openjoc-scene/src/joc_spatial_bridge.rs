@@ -1507,16 +1507,21 @@ impl SpatialLayout {
         let is_inactive = matches!(descriptor.source_class, SpatialSourceClass::Inactive);
         let mut vector = match &descriptor.source_class {
             SpatialSourceClass::Inactive => vec![0.0; self.active_channel_count()],
-            SpatialSourceClass::ExplicitChannel => self
-                .active_channel_index(&descriptor.identity)
-                .map_or_else(
-                    || self.point_vector(&descriptor.coordinates),
-                    |index| {
-                        let mut vector = vec![0.0; self.active_channel_count()];
-                        vector[index] = 1.0;
-                        Ok(vector)
-                    },
-                )?,
+            SpatialSourceClass::ExplicitChannel => {
+                if let Some(index) = self.active_channel_index(&descriptor.identity) {
+                    let mut vector = vec![0.0; self.active_channel_count()];
+                    vector[index] = 1.0;
+                    vector
+                } else if let Some(route) = self
+                    .route_vectors
+                    .iter()
+                    .find(|route| route.identity == format!("explicit/{}", descriptor.identity))
+                {
+                    route.vector.clone()
+                } else {
+                    self.point_vector(&descriptor.coordinates)?
+                }
+            }
             SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion => {
                 self.point_vector(&descriptor.coordinates)?
             }
