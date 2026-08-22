@@ -9,8 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 num-complex = "0.4"
-openjoc-bitio = { version = "0.9.2", path = "../openjoc-bitio" }
-openjoc-qmf = { version = "0.9.2", path = "../openjoc-qmf" }
+openjoc-bitio = { version = "0.10.0", path = "../openjoc-bitio" }
+openjoc-qmf = { version = "0.10.0", path = "../openjoc-qmf" }
 serde = { version = "1", features = ["derive"] }
 
 [lints]

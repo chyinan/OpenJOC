@@ -1,9 +1,9 @@
-# OpenJOC 0.9.2 known limitations
+# OpenJOC 0.10.0 known limitations
 
 > Canonical owner: current user-visible limitations and non-claims. Historical
 > research and implementation chronology belong in the source-only documents.
 
-OpenJOC 0.9.2 is an independent, experimental interoperability project. It
+OpenJOC 0.10.0 is an independent, experimental interoperability project. It
 does not claim Dolby endorsement, certification, a licensed implementation, or
 bit-identical Reference Player output.
 
@@ -44,6 +44,12 @@ bit-identical Reference Player output.
   publicly released as upstream mpv/FFmpeg products. Reproducible OpenJOC
   Player Bundle release candidates exist for the qualified macOS arm64, Linux
   x86_64, and Windows x64 surfaces; they are not official mpv/FFmpeg releases.
+- The Windows DirectShow/LAV Filters integration is a separate downstream host
+  integration. Ordinary E-AC-3 stays on stock LAV/FFmpeg, confirmed JOC is
+  admitted to OpenJOC, and passthrough stays on the existing LAV bitstream
+  path. The validated host is PotPlayer, and the current OpenJOC DirectShow
+  output is stereo float PCM. The standalone renderer's 5.1.2, 5.1.4, 7.1.x,
+  9.1.x, and 22.2 capabilities are not LAV DirectShow output claims.
 - The codec-domain JOC operator `T(t)` remains unresolved. The separate
   `render-joc` path is an experimental ordinary-domain speaker projection that
   assembles control from decoded JOC/OAMD state; it does not infer authored

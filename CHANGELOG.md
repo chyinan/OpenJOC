@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.0] — 2026-08-22
+
+OpenJOC 0.10.0 — Windows DirectShow / LAV Filters Integration adds an
+OpenJOC-enabled LAV Audio Decoder for the Windows DirectShow ecosystem.
+
+### Windows integration
+
+- Added the public [LAVFilters-OpenJOC downstream fork](https://github.com/chyinan/LAVFilters-OpenJOC), based on LAV Filters 0.83 and tagged `openjoc-0.10.0`.
+- Confirmed E-AC-3 JOC is positively admitted to OpenJOC while ordinary E-AC-3 remains on the stock LAV/FFmpeg path.
+- Kept E-AC-3 passthrough authoritative on the existing LAV bitstream path.
+- Validated raw E-AC-3 JOC and MP4 E-AC-3 JOC in PotPlayer, including seek, EOS, reopen, stop/reopen, side-by-side installation, uninstall, and stock LAV rollback.
+- The OpenJOC-enabled DirectShow filter uses a separate COM identity and currently delivers stereo float PCM.
+
+### Source and distribution
+
+- The frozen LAV binary is `openjoc-lav-0.10.0-windows-x64.zip`.
+- The corresponding-source asset is `openjoc-lav-0.10.0-corresponding-source.zip` and includes the recursive source/license closure.
+- OpenJOC standalone core, CLI, SDK, and C ABI remain Apache-2.0; the downstream LAV integration follows the applicable GPL-compatible upstream terms, with the combined LAV distribution classified as GPL-3.0-only.
+- This integration is not endorsed by LAV Filters, FFmpeg, PotPlayer, Dolby, Microsoft, or SADIE.
+
+### Scope boundary
+
+The validated DirectShow/LAV output is stereo float PCM. The standalone
+OpenJOC renderer's multichannel capabilities are not claims about LAV
+DirectShow output in this release.
+
 ## [0.9.2] — 2026-08-21
 
 OpenJOC 0.9.2 delivers production-scale streaming reconstructed ADM BWF export
