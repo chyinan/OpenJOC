@@ -37,7 +37,7 @@ The repository already has a bounded, sequential raw E-AC-3 input path:
 | Base PCM | `JocAccessUnitPcmDecoder` | Owned transiently for one AU, then copied only into bounded timeline state |
 | JOC/OAMD state | `PayloadDecoder` / `JocDecoderState` | Session-owned, serially accessed |
 | QMF/Base-RB delay | `ReconstructionOutputTimeline` | 577 samples for binaural; speaker output reports 609 samples including the admitted 32-sample final linked speaker stage; logical PTS is not shifted |
-| Speaker output | `JocSpatialBridge` + canonical `SpeakerLayoutPreset` | Session-owned automatic-control renderer |
+| Speaker output | `JocSpatialBridge` + canonical `SpeakerLayout` (presets or validated custom geometry) | Session-owned automatic-control renderer; downstream hosts may expose fewer channel-layout forms |
 | Stereo | Existing E-AC-3 downmix metadata and policy equations | Shared policy mapping in the high-level API |
 | SOFA | `openjoc-sofa::parse_simple_free_field_hrir` | Memory-buffer configuration supported; no path retained |
 | Output | CLI WAV/CAF writers | API returns owned interleaved `f32` PCM frames |

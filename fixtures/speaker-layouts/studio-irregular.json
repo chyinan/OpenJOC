@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "studio-irregular",
+  "speakers": [
+    {"name": "FL", "azimuth": -35.0, "elevation": 0.0, "role": "full_range"},
+    {"name": "FC", "azimuth": 0.0, "elevation": 5.0, "role": "full_range"},
+    {"name": "FR", "azimuth": 32.0, "elevation": 0.0, "role": "full_range"},
+    {"name": "LFE-A", "azimuth": 0.0, "elevation": -20.0, "role": "lfe"}
+  ]
+}

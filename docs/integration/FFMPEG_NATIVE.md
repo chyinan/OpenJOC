@@ -19,7 +19,7 @@ decoder is neither modified nor replaced.
 ```text
 AVPacket / ff_decode_get_packet
   -> libavcodec/libopenjocdec.c
-  -> openjoc_stream_decoder (C ABI 1.3)
+  -> openjoc_stream_decoder (C ABI 1.4)
   -> the shared bounded packet/AU bridge
   -> OpenJocSession
   -> semantic channel permutation

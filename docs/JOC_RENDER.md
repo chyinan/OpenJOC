@@ -42,6 +42,13 @@ The semantic speaker output contract is explicit and stable. The following
 channel order is used for PCM planes and CAF descriptions; the LFE index is
 zero-based and LFE is not a geometric projection anchor.
 
+The preset names above remain the recommended ordinary-user interface. Advanced
+callers may instead use `--layout-file CUSTOM.json`; see
+[`CUSTOM_SPEAKER_LAYOUTS.md`](CUSTOM_SPEAKER_LAYOUTS.md) for the versioned
+spherical schema, validation rules, channel ordering, LFE policy, and truthful
+WAV/CAF metadata behavior. Presets and custom layouts converge on the same
+canonical `SpeakerLayout` and generic `JocSpatialBridge` projector.
+
 | Preset | Channel sequence | Count | LFE index | WAVEFORMATEXTENSIBLE mask |
 | --- | --- | ---: | ---: | ---: |
 | `2.0` | `FL, FR` | 2 | none | `0x00000003` |
@@ -198,7 +205,7 @@ The public library layer is broader than this CLI preset list. Callers can
 construct a validated `openjoc_scene::SpatialLayout` with arbitrary enabled
 channels, LFE designation, knot axes, node vectors, and route vectors, then
 pass it to the public `JocSpatialBridge::render_coordinates` API. The CLI
-does not introduce a custom-layout file format; its stable user-facing names
+does not replace the custom-layout file format; its stable user-facing names
 are convenience presets over that generic layout engine.
 
 Dynamic Region/Zone metadata is honored for ordinary point sources in the

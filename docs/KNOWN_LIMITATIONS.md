@@ -35,7 +35,7 @@ bit-identical Reference Player output.
 - The embeddable packet API accepts exactly one complete E-AC-3 JOC access unit
   per push. Arbitrary byte fragmentation, multiple AUs in one push, demuxing,
   CLI parsing, and filesystem output remain outside `OpenJocSession`.
-- The C ABI is experimental ABI 1.3. It is intended for integration during the
+- The C ABI is experimental ABI 1.4. It is intended for integration during the
   OpenJOC 0.x series; layout and compatibility details may evolve. The
   published header and platform libraries are the supported C consumer
   surface. The repository provides GStreamer integration, an external FFmpeg
@@ -79,10 +79,13 @@ bit-identical Reference Player output.
   for full 2.0 output because the public 6.8 matrix does not define their
   reduction. No crossover, subwoofer redirect, or other bass-management DSP is
   performed.
-- The generic `SpatialLayout`/`JocSpatialBridge` library API accepts caller-
-  defined layouts, but the CLI has no custom-layout file format. The public
-  22.2 contract is renderer/container-specific and does not imply third-party
-  DAW interoperability.
+- The canonical `SpeakerLayout`/`JocSpatialBridge` path accepts validated
+  caller-defined geometry directly from Rust, the C ABI, or the advanced CLI
+  `--layout-file` JSON path. Preset names remain the ordinary-user workflow.
+  Custom physical layouts use ordered unmasked WAV or coordinate-described CAF
+  metadata; this does not imply that third-party DAWs, FFmpeg channel-layout
+  negotiation, GStreamer, DirectShow/LAV, or physical devices can preserve the
+  geometry.
 - The admitted Dynamic Region/Zone contract is limited to six horizontal
   states (`NoConstraints`, `BackExcluded`, `SideExcluded`, `CentreAndBack`,
   `ScreenOnly`, and `SurroundOnly`) plus independent Top-Bottom
