@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define OPENJOC_ABI_VERSION_MAJOR 1u
-#define OPENJOC_ABI_VERSION_MINOR 3u
+#define OPENJOC_ABI_VERSION_MINOR 4u
 #define OPENJOC_NO_PTS INT64_MIN
 
 typedef struct openjoc_decoder openjoc_decoder;
@@ -76,8 +76,29 @@ typedef enum openjoc_lfe_policy {
     OPENJOC_LFE_EQUAL_POWER_DUAL_MONO = 1
 } openjoc_lfe_policy;
 
+typedef enum openjoc_speaker_role {
+    OPENJOC_SPEAKER_FULL_RANGE = 0,
+    OPENJOC_SPEAKER_LFE = 1
+} openjoc_speaker_role;
+
 #define OPENJOC_PACKET_FLAG_DISCONTINUITY 1u
 #define OPENJOC_PACKET_FLAG_PREROLL 2u
+
+typedef struct openjoc_custom_speaker {
+    uint32_t struct_size;
+    const char *name;
+    double azimuth;
+    double elevation;
+    uint32_t role;
+} openjoc_custom_speaker;
+
+typedef struct openjoc_custom_speaker_layout {
+    uint32_t struct_size;
+    uint32_t version;
+    const char *name;
+    const openjoc_custom_speaker *speakers;
+    size_t speaker_count;
+} openjoc_custom_speaker_layout;
 
 typedef struct openjoc_decoder_config {
     uint32_t struct_size;
@@ -94,6 +115,8 @@ typedef struct openjoc_decoder_config {
     uint32_t lfe_policy;
     /* Appended in ABI minor 1; older struct_size callers use DEFAULT. */
     uint32_t dialnorm_mode;
+    /* Appended in ABI minor 4; NULL retains preset-name behavior. */
+    const openjoc_custom_speaker_layout *custom_speaker_layout;
 } openjoc_decoder_config;
 
 typedef struct openjoc_pcm_frame {

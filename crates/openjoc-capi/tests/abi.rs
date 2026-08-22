@@ -6,7 +6,7 @@ use std::ptr;
 
 #[test]
 fn version_and_struct_initialization_are_stable() {
-    assert_eq!(openjoc_get_abi_version(), 0x0001_0003);
+    assert_eq!(openjoc_get_abi_version(), 0x0001_0004);
     assert_eq!(std::mem::size_of::<openjoc_decoder_config>() as u32, {
         let mut config = std::mem::MaybeUninit::uninit();
         assert_eq!(
@@ -16,6 +16,77 @@ fn version_and_struct_initialization_are_stable() {
         // The public init call writes the complete descriptor, including its size.
         unsafe { config.assume_init().struct_size }
     });
+}
+
+#[test]
+fn custom_geometry_descriptor_is_owned_and_exposes_ordered_semantics() {
+    let names = [
+        std::ffi::CString::new("Left").unwrap(),
+        std::ffi::CString::new("Right").unwrap(),
+        std::ffi::CString::new("Subwoofer").unwrap(),
+    ];
+    let speakers = [
+        openjoc_custom_speaker {
+            struct_size: std::mem::size_of::<openjoc_custom_speaker>() as u32,
+            name: names[0].as_ptr(),
+            azimuth: -35.0,
+            elevation: 0.0,
+            role: openjoc_speaker_role::OPENJOC_SPEAKER_FULL_RANGE as u32,
+        },
+        openjoc_custom_speaker {
+            struct_size: std::mem::size_of::<openjoc_custom_speaker>() as u32,
+            name: names[1].as_ptr(),
+            azimuth: 35.0,
+            elevation: 0.0,
+            role: openjoc_speaker_role::OPENJOC_SPEAKER_FULL_RANGE as u32,
+        },
+        openjoc_custom_speaker {
+            struct_size: std::mem::size_of::<openjoc_custom_speaker>() as u32,
+            name: names[2].as_ptr(),
+            azimuth: 0.0,
+            elevation: -20.0,
+            role: openjoc_speaker_role::OPENJOC_SPEAKER_LFE as u32,
+        },
+    ];
+    let layout_name = std::ffi::CString::new("c-api-studio").unwrap();
+    let layout = openjoc_custom_speaker_layout {
+        struct_size: std::mem::size_of::<openjoc_custom_speaker_layout>() as u32,
+        version: openjoc_scene::SPEAKER_LAYOUT_JSON_VERSION,
+        name: layout_name.as_ptr(),
+        speakers: speakers.as_ptr(),
+        speaker_count: speakers.len(),
+    };
+    let mut config = std::mem::MaybeUninit::uninit();
+    assert_eq!(
+        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let mut config = unsafe { config.assume_init() };
+    config.custom_speaker_layout = &layout;
+    let mut decoder = ptr::null_mut();
+    assert_eq!(
+        openjoc_decoder_create(&config, &mut decoder),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let mut info = std::mem::MaybeUninit::uninit();
+    openjoc_output_info_init(info.as_mut_ptr());
+    assert_eq!(
+        openjoc_decoder_get_output_info(decoder, info.as_mut_ptr()),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let info = unsafe { info.assume_init() };
+    assert_eq!(
+        unsafe { std::ffi::CStr::from_ptr(info.layout_name) },
+        layout_name.as_c_str()
+    );
+    assert_eq!(info.channel_count, 3);
+    for (index, name) in names.iter().enumerate() {
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(openjoc_decoder_get_channel_label(decoder, index)) },
+            name.as_c_str()
+        );
+    }
+    openjoc_decoder_destroy(decoder);
 }
 
 #[test]
@@ -90,7 +161,9 @@ fn pre_dialnorm_config_size_keeps_the_calibrated_default() {
         openjoc_status::OPENJOC_STATUS_OK
     );
     let mut config = unsafe { config.assume_init() };
-    config.struct_size = std::mem::size_of::<openjoc_decoder_config>() as u32 - 4;
+    config.struct_size = std::mem::size_of::<openjoc_decoder_config>() as u32
+        - std::mem::size_of::<*const openjoc_custom_speaker_layout>() as u32
+        - 4;
     let mut decoder = ptr::null_mut();
     assert_eq!(
         openjoc_decoder_create(&config, &mut decoder),

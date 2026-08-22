@@ -36,7 +36,7 @@ use std::{
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 3;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 4;
 const NO_PTS: i64 = i64::MIN;
 
 #[repr(C)]
@@ -150,9 +150,41 @@ pub enum openjoc_lfe_policy {
     OPENJOC_LFE_EQUAL_POWER_DUAL_MONO = 1,
 }
 
+/// Role values for [`openjoc_custom_speaker`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum openjoc_speaker_role {
+    OPENJOC_SPEAKER_FULL_RANGE = 0,
+    OPENJOC_SPEAKER_LFE = 1,
+}
+
 pub const OPENJOC_PACKET_FLAG_DISCONTINUITY: u32 = 1;
 pub const OPENJOC_PACKET_FLAG_PREROLL: u32 = 2;
 pub const OPENJOC_NO_PTS: i64 = NO_PTS;
+
+/// One caller-owned custom speaker geometry entry. The strings and array are
+/// borrowed only during decoder creation; the validated Rust layout owns its
+/// copies after creation returns.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct openjoc_custom_speaker {
+    pub struct_size: u32,
+    pub name: *const c_char,
+    pub azimuth: f64,
+    pub elevation: f64,
+    pub role: u32,
+}
+
+/// Caller-owned ordered custom speaker layout descriptor.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct openjoc_custom_speaker_layout {
+    pub struct_size: u32,
+    pub version: u32,
+    pub name: *const c_char,
+    pub speakers: *const openjoc_custom_speaker,
+    pub speaker_count: usize,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -171,6 +203,8 @@ pub struct openjoc_decoder_config {
     pub lfe_policy: u32,
     /// Appended in ABI minor 1; older `struct_size` callers use Default.
     pub dialnorm_mode: u32,
+    /// Appended in ABI minor 4; null retains preset-name behavior.
+    pub custom_speaker_layout: *const openjoc_custom_speaker_layout,
 }
 
 #[repr(C)]
@@ -203,9 +237,13 @@ pub struct openjoc_output_info {
 }
 
 const CONFIG_SIZE: u32 = std::mem::size_of::<openjoc_decoder_config>() as u32;
-const CONFIG_SIZE_BEFORE_DIALNORM: u32 = CONFIG_SIZE - std::mem::size_of::<u32>() as u32;
+const CONFIG_SIZE_BEFORE_CUSTOM: u32 = CONFIG_SIZE - std::mem::size_of::<*const u8>() as u32;
+const CONFIG_SIZE_BEFORE_DIALNORM: u32 =
+    CONFIG_SIZE_BEFORE_CUSTOM - std::mem::size_of::<u32>() as u32;
 const FRAME_SIZE: u32 = std::mem::size_of::<openjoc_pcm_frame>() as u32;
 const INFO_SIZE: u32 = std::mem::size_of::<openjoc_output_info>() as u32;
+const CUSTOM_LAYOUT_SIZE: u32 = std::mem::size_of::<openjoc_custom_speaker_layout>() as u32;
+const CUSTOM_SPEAKER_SIZE: u32 = std::mem::size_of::<openjoc_custom_speaker>() as u32;
 
 fn status(status: OpenJocStatus) -> openjoc_status {
     match status {
@@ -274,12 +312,90 @@ fn config_from_c(config: *const openjoc_decoder_config) -> Result<OpenJocConfig,
             (&raw mut owned).cast::<u8>(),
             CONFIG_SIZE_BEFORE_DIALNORM as usize,
         );
-        if struct_size >= CONFIG_SIZE {
+        if struct_size >= CONFIG_SIZE_BEFORE_CUSTOM {
             owned.dialnorm_mode = ptr::read_unaligned(ptr::addr_of!((*config).dialnorm_mode));
+        }
+        if struct_size >= CONFIG_SIZE {
+            owned.custom_speaker_layout =
+                ptr::read_unaligned(ptr::addr_of!((*config).custom_speaker_layout));
         }
     }
     owned.struct_size = struct_size;
     config_from_c_fields(&owned)
+}
+
+fn custom_layout_from_c(
+    descriptor: *const openjoc_custom_speaker_layout,
+) -> Result<openjoc_scene::SpeakerLayout, OpenJocError> {
+    if descriptor.is_null() {
+        return Err(OpenJocError::InvalidConfig(
+            "custom_speaker_layout is null".to_owned(),
+        ));
+    }
+    let descriptor_size = unsafe { ptr::read_unaligned(ptr::addr_of!((*descriptor).struct_size)) };
+    if descriptor_size < CUSTOM_LAYOUT_SIZE {
+        return Err(OpenJocError::InvalidConfig(
+            "custom speaker layout struct_size is too small".to_owned(),
+        ));
+    }
+    let descriptor = unsafe { ptr::read_unaligned(descriptor) };
+    if descriptor.version != openjoc_scene::SPEAKER_LAYOUT_JSON_VERSION {
+        return Err(OpenJocError::InvalidConfig(format!(
+            "unsupported custom speaker layout version {}; expected {}",
+            descriptor.version,
+            openjoc_scene::SPEAKER_LAYOUT_JSON_VERSION
+        )));
+    }
+    let name = c_string(descriptor.name, "custom_speaker_layout.name")?;
+    if descriptor.speaker_count > openjoc_scene::MAX_CUSTOM_SPEAKERS {
+        return Err(OpenJocError::InvalidConfig(format!(
+            "custom speaker layout contains {}; maximum is {}",
+            descriptor.speaker_count,
+            openjoc_scene::MAX_CUSTOM_SPEAKERS
+        )));
+    }
+    if descriptor.speaker_count > 0 && descriptor.speakers.is_null() {
+        return Err(OpenJocError::InvalidConfig(
+            "custom_speaker_layout.speakers is null".to_owned(),
+        ));
+    }
+    let entries = if descriptor.speaker_count == 0 {
+        Vec::new()
+    } else {
+        // SAFETY: the caller promises a readable array for the duration of
+        // create; the count is bounded before constructing the slice.
+        unsafe { slice::from_raw_parts(descriptor.speakers, descriptor.speaker_count) }
+            .iter()
+            .map(|entry| {
+                if entry.struct_size < CUSTOM_SPEAKER_SIZE {
+                    return Err(OpenJocError::InvalidConfig(
+                        "custom speaker struct_size is too small".to_owned(),
+                    ));
+                }
+                let role = match entry.role {
+                    value if value == openjoc_speaker_role::OPENJOC_SPEAKER_FULL_RANGE as u32 => {
+                        openjoc_scene::SpeakerRole::FullRange
+                    }
+                    value if value == openjoc_speaker_role::OPENJOC_SPEAKER_LFE as u32 => {
+                        openjoc_scene::SpeakerRole::Lfe
+                    }
+                    _ => {
+                        return Err(OpenJocError::InvalidConfig(
+                            "unknown custom speaker role".to_owned(),
+                        ));
+                    }
+                };
+                Ok(openjoc_scene::SpeakerGeometry {
+                    name: c_string(entry.name, "custom_speaker.name")?,
+                    azimuth: entry.azimuth,
+                    elevation: entry.elevation,
+                    role,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    openjoc_scene::SpeakerLayout::custom(name, entries)
+        .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))
 }
 
 fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig, OpenJocError> {
@@ -308,7 +424,15 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
     } else {
         DialnormMode::Default
     };
-    let speaker_layout = if config.speaker_layout.is_null() {
+    let custom_layout =
+        if config.struct_size >= CONFIG_SIZE && !config.custom_speaker_layout.is_null() {
+            Some(custom_layout_from_c(config.custom_speaker_layout)?)
+        } else {
+            None
+        };
+    let speaker_layout = if let Some(layout) = &custom_layout {
+        layout.name().to_owned()
+    } else if config.speaker_layout.is_null() {
         "5.1".to_owned()
     } else {
         c_string(config.speaker_layout, "speaker_layout")?
@@ -403,6 +527,7 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
     Ok(OpenJocConfig {
         render_mode,
         speaker_layout,
+        speaker_layout_definition: custom_layout,
         downmix,
         drc,
         dialnorm,
@@ -533,6 +658,7 @@ pub extern "C" fn openjoc_decoder_config_init(
             virtual_layout: ptr::null(),
             lfe_policy: openjoc_lfe_policy::OPENJOC_LFE_EXCLUDE as u32,
             dialnorm_mode: openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32,
+            custom_speaker_layout: ptr::null(),
         };
     }
     openjoc_status::OPENJOC_STATUS_OK
