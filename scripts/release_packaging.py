@@ -179,7 +179,9 @@ def _collect_reproducibility_metadata(
         "lav_upstream_base": lav_parent_revision,
         "ffmpeg_revision": _git_output(git, lav / "ffmpeg", ("rev-parse", "HEAD")).strip(),
         "ffmpeg_libbluray_revision": submodules.get("libbluray", "unknown"),
-        "ffmpeg_libudfread_revision": submodules.get("libudfread", "unknown"),
+        "ffmpeg_libudfread_revision": submodules.get(
+            "libbluray/contrib/libudfread", "unknown"
+        ),
         "ffmpeg_qsdecoder_revision": submodules.get("qsdecoder", "unknown"),
     }
 
