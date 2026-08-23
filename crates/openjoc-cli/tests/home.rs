@@ -30,7 +30,7 @@ fn redirected_root_help_is_plain_and_lists_real_commands() {
 fn version_is_a_script_safe_stdout_only_contract() {
     let result = openjoc().arg("--version").output().expect("run openjoc");
     assert!(result.status.success());
-    assert_eq!(env!("CARGO_PKG_VERSION"), "0.10.0");
+    assert_eq!(env!("CARGO_PKG_VERSION"), "0.11.0");
     assert_eq!(
         String::from_utf8(result.stdout).expect("UTF-8 version"),
         format!("OpenJOC {}\n", env!("CARGO_PKG_VERSION"))

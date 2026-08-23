@@ -61,5 +61,5 @@ The SDK contains `include/openjoc.h`, the C ABI libraries, pkg-config metadata,
 a CMake CONFIG package, and a C example. Fresh extraction is qualified through
 direct compiler, pkg-config, and `find_package(OpenJOC CONFIG)` consumers; on
 Windows the C ABI and each compiled consumer receive a recursive PE closure
-audit and hermetic runtime smoke. The ABI remains experimental 1.3 during the
+audit and hermetic runtime smoke. The ABI is experimental 1.4 during the
 0.x release line; the package version does not change the ABI.

@@ -1,10 +1,9 @@
 # Changelog
 
-## [Unreleased — v0.11.0 integration candidate]
+## [0.11.0] — 2026-08-23
 
-This integration candidate combines the accepted arbitrary-speaker-geometry
-renderer work with the accepted Windows zero-friction onboarding surface. It is
-not a published release and has no v0.11.0 tag or release assets.
+OpenJOC 0.11.0 combines the accepted arbitrary-speaker-geometry renderer with
+the accepted Windows zero-friction onboarding surface.
 
 ### Renderer geometry
 
@@ -21,6 +20,9 @@ not a published release and has no v0.11.0 tag or release assets.
   rollback, and PotPlayer quick-start documentation.
 - The validated DirectShow/LAV host output remains stereo float PCM; arbitrary
   renderer geometry does not imply arbitrary DirectShow or PotPlayer output.
+- The frozen Windows LAV asset is `openjoc-lav-0.11.0-windows-x64.zip`.
+- The corresponding-source asset is `openjoc-lav-0.11.0-corresponding-source.zip`.
+- The OpenJOC C ABI is version 1.4; ABI 1.3 callers remain compatible.
 
 ## [0.10.0] — 2026-08-22
 

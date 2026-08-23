@@ -35,7 +35,7 @@ The immutable v0.2.0 release contract is deliberately narrow:
 - `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
   continuation without assigning vendor semantics.
 
-OpenJOC 0.10.0 is the current release line: **Windows DirectShow / LAV Filters
+OpenJOC 0.11.0 is the current release line: **Windows DirectShow / LAV Filters
 Integration**. It
 retains the Cross-Platform Player Integration surface and extends the
 embeddable decode/render engine with native
@@ -50,7 +50,7 @@ Reconstructed ADM BWF export, OpenJOC-enabled FFmpeg bundles, feature-enabled
 GStreamer plugin packs, a portable C SDK, and a public self-test. Use
 `openjoc export-adm INPUT -o reconstructed.wav` for the ecosystem-compatible
 Reconstructed ADM BWF output and `openjoc validate-adm reconstructed.wav` for
-the supported structural validator. OpenJOC 0.10.0 retains `RIFF` when
+the supported structural validator. OpenJOC 0.11.0 retains `RIFF` when
 32-bit sizes fit and `RF64` otherwise; `.bw64` remains only a legacy filename
 alias. This is not original ADM master recovery: the current
 audio-to-spatial-metadata binding remains unresolved, so best-effort exports
@@ -101,8 +101,8 @@ name.
 
 Read the canonical documentation:
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.10.0 capability status.
-- [Windows DirectShow / LAV Filters integration](docs/integration/LAV_FILTERS_OPENJOC.md) — v0.10.0 PotPlayer-validated host integration and its stereo-float DirectShow scope.
+- [Capabilities](docs/CAPABILITIES.md) — current 0.11.0 capability status.
+- [Windows DirectShow / LAV Filters integration](docs/integration/LAV_FILTERS_OPENJOC.md) — v0.11.0 PotPlayer-validated host integration and its stereo-float DirectShow scope.
 - [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.9 real-input workflow.
 - [Reconstructed ADM BWF export](docs/ADM_EXPORT.md) — the 0.9 interchange boundary and report contract.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
@@ -153,7 +153,7 @@ version but does not pin one exact compiler release.
 
 ## Embed the decode/render engine
 
-OpenJOC 0.10.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
+OpenJOC 0.11.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
 integration. A push supplies one complete E-AC-3 JOC access unit; receive returns
 owned interleaved `f32` PCM with sample-domain timestamps and semantic channel
 labels. Sessions support push/receive, drain, flush, reset/discontinuity, and

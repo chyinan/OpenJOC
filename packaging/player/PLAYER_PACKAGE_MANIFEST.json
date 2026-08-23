@@ -9,11 +9,11 @@
     "version_policy": "release archives use the project version; development archives append git<short-commit>; release naming is explicit"
   },
   "openjoc": {
-    "version": "0.10.0",
+    "version": "0.11.0",
     "c_abi": {
       "major": 1,
-      "minor": 3,
-      "packed_hex": "0x00010003"
+      "minor": 4,
+      "packed_hex": "0x00010004"
     },
     "license": "Apache-2.0",
     "dsp_renderer": "OpenJOC shared renderer; platform-neutral",
@@ -56,8 +56,8 @@
   },
   "platforms": {
     "macos-arm64": {
-      "archive": "openjoc-mpv-0.10.0-macos-arm64.tar.gz",
-      "development_archive": "openjoc-mpv-0.10.0-git<short-commit>-macos-arm64.tar.gz",
+      "archive": "openjoc-mpv-0.11.0-macos-arm64.tar.gz",
+      "development_archive": "openjoc-mpv-0.11.0-git<short-commit>-macos-arm64.tar.gz",
       "loader": "Mach-O @rpath with @loader_path-relative library closure",
       "signing": "ad-hoc signed where required; no Developer ID or notarization claim",
       "system_external": [
@@ -67,8 +67,8 @@
       ]
     },
     "linux-x86_64": {
-      "archive": "openjoc-mpv-0.10.0-linux-x86_64.tar.gz",
-      "development_archive": "openjoc-mpv-0.10.0-git<short-commit>-linux-x86_64.tar.gz",
+      "archive": "openjoc-mpv-0.11.0-linux-x86_64.tar.gz",
+      "development_archive": "openjoc-mpv-0.11.0-git<short-commit>-linux-x86_64.tar.gz",
       "loader": "ELF $ORIGIN RUNPATH for bundled libraries",
       "glibc_baseline": "Ubuntu 24.04 runner baseline; record actual glibc symbol floor",
       "system_external": [
@@ -78,8 +78,8 @@
       ]
     },
     "windows-x64": {
-      "archive": "openjoc-mpv-0.10.0-windows-x64.zip",
-      "development_archive": "openjoc-mpv-0.10.0-git<short-commit>-windows-x64.zip",
+      "archive": "openjoc-mpv-0.11.0-windows-x64.zip",
+      "development_archive": "openjoc-mpv-0.11.0-git<short-commit>-windows-x64.zip",
       "loader": "adjacent DLL closure; no global PATH or MSYS2 requirement",
       "toolchain": "MSYS2 MinGW-w64",
       "system_external": [

@@ -1,6 +1,6 @@
 # GCC runtime corresponding source
 
-Release: openjoc-0.10.0  
+Release: openjoc-0.11.0
 Evidence date: 2026-08-22
 
 ## Result

@@ -13,7 +13,7 @@ repository:
   intended_tag: openjoc-0.11.0-remediation
   intended_public_revision: b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27
 openjoc:
-  revision: see REPRODUCIBILITY-MANIFEST.txt (exact remediation branch HEAD)
+  revision: 2b616c69a7bd10a58cb30881db4d62b5eb4788ad
   license: Apache-2.0
 lav:
   revision: b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27
@@ -27,7 +27,7 @@ ffmpeg:
   nonfree: false
   configure_evidence: ffbuild/config.h and ffbuild/config.log
 publication:
-  upload: not authorized (local remediation candidate)
+  upload: public GitHub Release v0.11.0
   push: true
-  tag: true
-  distribution_gate: PASS_LOCAL_CANDIDATE
+  tag: v0.11.0
+  distribution_gate: PASS_PUBLIC_RELEASE
