@@ -350,7 +350,7 @@ def package_sdk(args: argparse.Namespace) -> None:
         )
         copy_file(REPOSITORY / "crates/openjoc-capi/examples/c_api_example.c", stage / "examples/c_api_example.c")
         package_notices(stage, "sdk", [{"name": "OpenJOC", "license": "Apache-2.0"}])
-        write_build_info(stage, "sdk", platform, {"c_abi": "1.3-experimental", "runtime_model": "consumer links the packaged C ABI library", "runtime_dependency_closure": runtime_closure})
+        write_build_info(stage, "sdk", platform, {"c_abi": "1.4-experimental", "runtime_model": "consumer links the packaged C ABI library", "runtime_dependency_closure": runtime_closure})
         write_text(stage / "QUICKSTART.md", "Build the example with the package include and lib directories; the C ABI remains experimental during OpenJOC 0.x.\n")
         finish_package(stage, output, f"openjoc-sdk-{version()}-{platform}", platform, "sdk")
 

@@ -21,7 +21,7 @@ The build needs:
 
 - FFmpeg with the native `libopenjoc` decoder patch from
   `integrations/ffmpeg/native/patches/`;
-- OpenJOC C ABI 1.3 or newer, discoverable through `pkg-config` as `openjoc`;
+- OpenJOC C ABI 1.4, discoverable through `pkg-config` as `openjoc`;
 - normal mpv dependencies, including Meson, Ninja, libass, and libplacebo.
 
 Without the `openjoc` pkg-config module, mpv builds normally and does not add

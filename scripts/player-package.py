@@ -1050,8 +1050,8 @@ def verify(arguments: argparse.Namespace) -> int:
         if not path.is_file() or sha256(path) != digest:
             raise SystemExit(f"package verification: checksum mismatch {relative}")
     build_info = json.loads((root / "BUILD_INFO.json").read_text(encoding="utf-8"))
-    if build_info["source"]["openjoc_c_abi"]["packed_hex"] != "0x00010003":
-        raise SystemExit("package verification: OpenJOC C ABI is not 1.3")
+    if build_info["source"]["openjoc_c_abi"]["packed_hex"] != "0x00010004":
+        raise SystemExit("package verification: OpenJOC C ABI is not 1.4")
     if build_info.get("target") != arguments.platform:
         raise SystemExit("package verification: BUILD_INFO target does not match verifier platform")
     if not build_info.get("pinned_stack", {}).get("ffmpeg", {}).get("commit"):
