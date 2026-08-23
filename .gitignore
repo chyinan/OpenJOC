@@ -29,3 +29,11 @@
 **/coverage/
 **/target/
 **/build/
+
+# Local release-audit outputs and temporary native probe objects
+/audit/
+/artifacts/
+/PROGRESS-openjoc-*.md
+/OPENJOC_0_10_*_HANDOFF.md
+/OPENJOC_0_10_STAGE2_5_WINDOWS_BASELINE.md
+/*.obj
