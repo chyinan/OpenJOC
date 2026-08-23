@@ -2,7 +2,7 @@
 
 ## Summary
 
-OpenJOC-LAV adds an OpenJOC-only output policy backed by immutable layout contracts. Each contract binds a preset to its exact channel count, PCM order, FFmpeg layout and Windows speaker mask. Confirmed JOC buffers carry this semantic identity through processing and delivery, while ordinary E-AC-3 and passthrough remain on stock LAV paths. These contracts describe logical PCM channels: each listed layout has one logical LFE channel, regardless of how many physical subwoofers downstream hardware drives.
+OpenJOC-LAV adds an OpenJOC-only output policy backed by immutable layout contracts. Each contract binds a render target to its exact channel count, PCM order, FFmpeg layout and Windows speaker mask. Confirmed JOC buffers carry this semantic identity through processing and delivery, while ordinary E-AC-3 and passthrough remain on stock LAV paths. These contracts describe logical PCM channels: Stereo has no logical LFE, while each listed multichannel layout has exactly one, regardless of how many physical subwoofers downstream hardware drives.
 
 Delivery offers one exact float32/48 kHz `WAVEFORMATEXTENSIBLE` type and fails if downstream changes or rejects it; it never negotiates an alternative layout or format. A valid mask makes a layout representable, not supported. Support requires exact connection, matching `ConnectionMediaType`, graph execution and delivered samples in the named host/renderer environment.
 
@@ -115,7 +115,7 @@ Production negotiation and test evidence are separate. Production uses the norma
 | 7.1.2 | 10 | FL FR FC LFE Lb Rb Ls Rs TFL TFR | `0x0000563f` |
 | 7.1.4 | 12 | FL FR FC LFE Lb Rb Ls Rs TFL TFR TBL TBR | `0x0002d63f` |
 
-Each contract has one logical LFE because its PCM/media format defines one LFE bit. Multiple downstream physical subwoofers are outside this contract. OpenJOC's separate 22.2 renderer model may retain multiple semantic LFE channels, but it is not a DirectShow preset unless a truthful media format exists and is accepted.
+Stereo has zero logical LFE because its PCM/media format is `FL FR`. Each of the six listed multichannel contracts has exactly one logical LFE because its format defines one LFE bit. Multiple downstream physical subwoofers are outside this contract. OpenJOC's separate 22.2 renderer model may retain multiple semantic LFE channels, but it is not a DirectShow preset unless a truthful media format exists and is accepted.
 
 ## Existing patterns
 

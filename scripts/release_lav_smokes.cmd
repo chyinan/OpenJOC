@@ -21,6 +21,13 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:OpenJocAdmissionTests.exe
 if errorlevel 1 exit /b %errorlevel%
 
+call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+  "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\ffmpeg" ^
+  "%~2\decoder\LAVAudio\OpenJocOutputTests.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
+  /Fe:OpenJocOutputTests.exe
+if errorlevel 1 exit /b %errorlevel%
+
 call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
   "/I%~2\common\baseclasses" "/I%~2\ffmpeg" "/I%~2\libbluray\src" ^

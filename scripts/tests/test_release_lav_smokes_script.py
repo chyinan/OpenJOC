@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "release_lav_smokes.cmd"
+NOOP_LIFECYCLE_SOURCE = ROOT / "scripts" / "tests" / "LavSmokeNoopLifecycle.cpp"
 
 
 class ReleaseLavSmokesScriptTests(unittest.TestCase):
@@ -24,7 +25,18 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("OpenJocDecoderSmoke.cpp", text)
         self.assertIn("LAVAudioIdentitySmoke.cpp", text)
         self.assertIn("OpenJocDirectShowLifecycle.exe", text)
+        self.assertIn("OpenJocOutputTests.cpp", text)
+        self.assertIn("OpenJocOutput.cpp", text)
+        self.assertIn("OpenJocOutputTests.exe", text)
         self.assertIn("LAV_ENABLE_OPENJOC", text)
+        self.assertGreaterEqual(text.count("call cl"), 5)
+
+    def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:
+        text = NOOP_LIFECYCLE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("SPDX-License-Identifier: GPL-2.0-or-later", text)
+        self.assertIn("pattern: Imperative Shell", text)
+        self.assertIn("int wmain()", text)
 
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(

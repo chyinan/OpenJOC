@@ -100,12 +100,12 @@ NO_GAPS
 - **Phase/task:** Phase 1 Task 1–2；Phase 2 Task 2；Phase 3 Task 1。
 - **关键禁止性断言:** “Windows 能表示该 count”或“mask 合法”不等于该布局已 canonicalized 或受支持。
 
-### AC2.4 — 每个 candidate 只有一个 logical LFE
+### AC2.4 — logical LFE 数量精确且不受物理低音炮数量影响
 
-- **Requirement:** 七个 contract 均恰有一个 LFE bit；5.1.2/7.1.2 的 `.2` 表示 TFL/TFR，不表示第二个 subwoofer。
+- **Requirement:** Stereo 为 `FL FR`，恰有零个 LFE bit；其余六个 multichannel contract 各恰有一个。5.1.2/7.1.2 的 `.2` 表示 TFL/TFR，不表示第二个 subwoofer。
 - **Test level:** unit、integration、manual evidence。
-- **RED expectation:** 任一 contract/evidence 行出现两个 LFE、`physical_subwoofer_count` 字段，或 consumer `.2` 被解析为第二 LFE。
-- **GREEN/pass evidence:** contract tests 逐行统计 `LFE == 1`；evidence validator 要求 `logical_lfe_channels: 1`；文档 hygiene 验证 logical/physical subwoofer 分离。
+- **RED expectation:** Stereo 出现 LFE、任一 multichannel contract/evidence 行不是恰好一个 LFE、出现 `physical_subwoofer_count` 字段，或 consumer `.2` 被解析为第二 LFE。
+- **GREEN/pass evidence:** contract tests 逐行统计 Stereo `LFE == 0`、其余六行 `LFE == 1`；evidence validator 要求对应的 `logical_lfe_channels`；文档 hygiene 验证 logical/physical subwoofer 分离。
 - **Phase/task:** Phase 1 Task 1–2；Phase 6 Task 1、Task 3。
 - **关键禁止性断言:** 不得从 AVR/endpoint 的物理 subwoofer 数推导 PCM channel 或 mask。
 
@@ -272,12 +272,12 @@ NO_GAPS
 - **Fail if:** 出现名称解析入口，或同一 policy 因名称/filename/count 改变 contract。
 - **Pass evidence:** Phase 1 contract tests、Phase 4 property-page tests、Phase 5 raw/MP4 matrix、Phase 6 validator/hygiene。
 
-### GATE-02 — One logical LFE
+### GATE-02 — Exact logical LFE count
 
-- 七个 canonical mask 每行恰有一个 LFE bit。
-- evidence 固定 `logical_lfe_channels: 1`，不得含 `physical_subwoofer_count`。
+- Stereo canonical mask 恰有零个 LFE bit；其余六行各恰有一个。
+- evidence 对 Stereo 固定 `logical_lfe_channels: 0`、对六个 multichannel rows 固定为 `1`，不得含 `physical_subwoofer_count`。
 - `.2` height suffix 必须解析为 TFL/TFR。
-- **Fail if:** 任一 row 有多个 logical LFE，或物理 subwoofer 数影响 PCM contract。
+- **Fail if:** Stereo 有 LFE、任一 multichannel row 不是恰好一个 logical LFE，或物理 subwoofer 数影响 PCM contract。
 - **Pass evidence:** Phase 1 unit tests和Phase 6 schema/documentation tests。
 
 ### GATE-03 — No fallback

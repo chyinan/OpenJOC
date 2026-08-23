@@ -47,13 +47,13 @@
 3. Define `enum class LAVOpenJocOutputPolicy : uint32_t` with fixed wire values `Stereo = 0`, `Layout51 = 1`, `Layout71 = 2`, `Layout512 = 3`, `Layout514 = 4`, `Layout712 = 5`, and `Layout714 = 6`; there is no Auto value. Add `LAV_OPENJOC_OUTPUT_POLICY_SCHEMA_VERSION = 1`, `static_assert(sizeof(LAVOpenJocOutputPolicy) == sizeof(uint32_t))`, and tests that pin every numeric value so persistence/COM ABI cannot drift silently. Define `LAVOpenJocOutputContract` with policy, ABI preset name, OpenJOC layout name, FFmpeg standard layout name, OpenJOC semantic labels, ordered `AVChannel` values, channel count, FFmpeg mask, and Windows mask.
 4. Implement a static immutable table and enum-only lookup. Returned pointers must remain stable for the process lifetime. Mark both runtime-bearing headers and sources with `// pattern: Functional Core`.
 5. Preserve the verified naming distinction: OpenJOC `5.1` means `FL FR FC LFE Ls Rs`, while the FFmpeg standard name is `5.1(side)`; map `Ls/Rs` to `AV_CHAN_SIDE_LEFT/RIGHT` and `Lb/Rb` to `AV_CHAN_BACK_LEFT/RIGHT` instead of comparing label spellings.
-6. Pin the Stereo row explicitly: property-page display label `Stereo`, OpenJOC semantic/ABI layout name `2.0`, FFmpeg standard layout name `stereo`, order `FL FR`, and mask `0x3`. Display text is never reused as a semantic identifier.
+6. Pin the Stereo row explicitly: property-page display label `Stereo`, no speaker ABI preset (`nullptr` because it uses `OPENJOC_RENDER_STEREO`), returned OpenJOC semantic layout name `2.0`, FFmpeg standard layout name `stereo`, order `FL FR`, and mask `0x3`. Display text is never reused as a semantic identifier.
 
 **Testing:**
 
 - Verify every exact count/order/mask listed in the design.
 - Verify FFmpeg mask equals Windows mask, mask popcount equals count, and ordered channels equal ascending set bits.
-- Verify every candidate has exactly one logical LFE; `.2` in 5.1.2/7.1.2 is TFL/TFR, not a second LFE.
+- Verify Stereo has zero logical LFE and each of the six multichannel candidates has exactly one; `.2` in 5.1.2/7.1.2 is TFL/TFR, not a second LFE.
 - Verify zero masks, reserved/unmapped bits, count-only defaults, and unknown policies produce no contract.
 - Verify no parsing API exists for endpoint names, consumer notation, carrier count, or filenames.
 - Verify the schema version, fixed enum values, and `uint32_t` representation with compile-time and executable assertions.
