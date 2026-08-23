@@ -158,7 +158,7 @@ int main(int argc, char **argv)
         offsets[i + 1] = offsets[i] + sizes[i];
     }
 
-    openjoc_decoder_config_init(&bridge_config);
+    openjoc_decoder_config_init_v1_4(&bridge_config);
     bridge_config.speaker_layout = "2.0";
     if (openjoc_stream_decoder_create(&bridge_config, &bridge) !=
         OPENJOC_STATUS_OK)

@@ -13,7 +13,17 @@ fn version_and_struct_initialization_are_stable() {
             openjoc_decoder_config_init(config.as_mut_ptr()),
             openjoc_status::OPENJOC_STATUS_OK
         );
-        // The public init call writes the complete descriptor, including its size.
+        // The legacy initializer writes only the ABI 1.3-sized prefix.
+        assert_eq!(
+            unsafe { config.assume_init().struct_size },
+            std::mem::size_of::<openjoc_decoder_config>() as u32
+                - std::mem::size_of::<*const openjoc_custom_speaker_layout>() as u32
+        );
+        let mut config = std::mem::MaybeUninit::uninit();
+        assert_eq!(
+            openjoc_decoder_config_init_v1_4(config.as_mut_ptr()),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
         unsafe { config.assume_init().struct_size }
     });
 }
@@ -58,7 +68,7 @@ fn custom_geometry_descriptor_is_owned_and_exposes_ordered_semantics() {
     };
     let mut config = std::mem::MaybeUninit::uninit();
     assert_eq!(
-        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_decoder_config_init_v1_4(config.as_mut_ptr()),
         openjoc_status::OPENJOC_STATUS_OK
     );
     let mut config = unsafe { config.assume_init() };

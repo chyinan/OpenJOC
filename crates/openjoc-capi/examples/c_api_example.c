@@ -12,7 +12,7 @@
 
 int main(void) {
     openjoc_decoder_config config;
-    assert(openjoc_decoder_config_init(&config) == OPENJOC_STATUS_OK);
+    assert(openjoc_decoder_config_init_v1_4(&config) == OPENJOC_STATUS_OK);
 
     openjoc_decoder *decoder = NULL;
     assert(openjoc_decoder_create(&config, &decoder) == OPENJOC_STATUS_OK);

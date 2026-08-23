@@ -634,7 +634,31 @@ pub extern "C" fn openjoc_get_abi_version() -> u32 {
     (OPENJOC_ABI_VERSION_MAJOR << 16) | OPENJOC_ABI_VERSION_MINOR
 }
 
-/// Initializes a forward-compatible configuration structure.
+fn default_decoder_config(struct_size: u32) -> openjoc_decoder_config {
+    openjoc_decoder_config {
+        struct_size,
+        render_mode: openjoc_render_mode::OPENJOC_RENDER_SPEAKER as u32,
+        speaker_layout: ptr::null(),
+        downmix: openjoc_downmix_policy::OPENJOC_DOWNMIX_AUTO as u32,
+        drc: openjoc_drc_mode::OPENJOC_DRC_LINE as u32,
+        drc_boost_percent: 100,
+        drc_cut_percent: 100,
+        validation_profile: openjoc_validation_profile::OPENJOC_VALIDATION_AUTO as u32,
+        sofa_data: ptr::null(),
+        sofa_size: 0,
+        virtual_layout: ptr::null(),
+        lfe_policy: openjoc_lfe_policy::OPENJOC_LFE_EXCLUDE as u32,
+        dialnorm_mode: openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32,
+        custom_speaker_layout: ptr::null(),
+    }
+}
+
+/// Initializes only the ABI 1.3 configuration prefix.
+///
+/// This symbol is intentionally safe for a caller compiled against the old
+/// ABI 1.3 header: that caller allocated only the prefix-sized struct, so the
+/// function never writes the ABI 1.4 appended field. ABI 1.4 callers that
+/// need the complete descriptor should use [`openjoc_decoder_config_init_v1_4`].
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_decoder_config_init(
     config: *mut openjoc_decoder_config,
@@ -642,24 +666,32 @@ pub extern "C" fn openjoc_decoder_config_init(
     if config.is_null() {
         return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
     }
-    // SAFETY: null was checked and the caller supplied writable config storage.
+    let defaults = default_decoder_config(CONFIG_SIZE_BEFORE_CUSTOM);
+    // SAFETY: the legacy ABI 1.3 prefix is the largest allocation that this
+    // symbol is permitted to touch. ABI 1.4 callers use the full initializer.
     unsafe {
-        *config = openjoc_decoder_config {
-            struct_size: CONFIG_SIZE,
-            render_mode: openjoc_render_mode::OPENJOC_RENDER_SPEAKER as u32,
-            speaker_layout: ptr::null(),
-            downmix: openjoc_downmix_policy::OPENJOC_DOWNMIX_AUTO as u32,
-            drc: openjoc_drc_mode::OPENJOC_DRC_LINE as u32,
-            drc_boost_percent: 100,
-            drc_cut_percent: 100,
-            validation_profile: openjoc_validation_profile::OPENJOC_VALIDATION_AUTO as u32,
-            sofa_data: ptr::null(),
-            sofa_size: 0,
-            virtual_layout: ptr::null(),
-            lfe_policy: openjoc_lfe_policy::OPENJOC_LFE_EXCLUDE as u32,
-            dialnorm_mode: openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32,
-            custom_speaker_layout: ptr::null(),
-        };
+        ptr::copy_nonoverlapping(
+            (&raw const defaults).cast::<u8>(),
+            config.cast::<u8>(),
+            CONFIG_SIZE_BEFORE_CUSTOM as usize,
+        );
+    }
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Initializes the complete ABI 1.4 configuration structure, including the
+/// appended in-memory custom speaker-layout field.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_decoder_config_init_v1_4(
+    config: *mut openjoc_decoder_config,
+) -> openjoc_status {
+    if config.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: null was checked and the ABI 1.4 caller supplied full writable
+    // storage for the current configuration structure.
+    unsafe {
+        *config = default_decoder_config(CONFIG_SIZE);
     }
     openjoc_status::OPENJOC_STATUS_OK
 }

@@ -145,7 +145,10 @@ typedef struct openjoc_output_info {
 } openjoc_output_info;
 
 uint32_t openjoc_get_abi_version(void);
+/* Legacy-safe ABI 1.3 prefix initializer. ABI 1.4 callers that need the
+ * appended custom_speaker_layout field must use openjoc_decoder_config_init_v1_4. */
 openjoc_status openjoc_decoder_config_init(openjoc_decoder_config *config);
+openjoc_status openjoc_decoder_config_init_v1_4(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_create(const openjoc_decoder_config *config, openjoc_decoder **output);
 void openjoc_decoder_destroy(openjoc_decoder *decoder);
 openjoc_status openjoc_decoder_send_packet(openjoc_decoder *decoder, const uint8_t *data, size_t data_len, int64_t pts_samples, uint32_t flags);

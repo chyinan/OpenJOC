@@ -35,6 +35,12 @@ layout contract, coordinate convention, validation limits, and WAV/CAF
 metadata boundary are documented in
 [`CUSTOM_SPEAKER_LAYOUTS.md`](CUSTOM_SPEAKER_LAYOUTS.md).
 
+`openjoc_decoder_config_init()` remains the legacy-safe ABI 1.3 prefix
+initializer: it never writes the ABI 1.4 appended field, so a real ABI 1.3
+caller may link it against the ABI 1.4 library without a struct over-write.
+ABI 1.4 callers should use `openjoc_decoder_config_init_v1_4()` when they need
+the complete current struct or custom geometry.
+
 Experimental means the C surface may evolve during OpenJOC 0.x integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
 
@@ -42,7 +48,7 @@ does not mean that existing decoder correctness claims are withdrawn.
 
 ```c
 openjoc_decoder_config config;
-openjoc_decoder_config_init(&config);
+openjoc_decoder_config_init_v1_4(&config);
 
 openjoc_decoder *decoder = NULL;
 openjoc_decoder_create(&config, &decoder);
