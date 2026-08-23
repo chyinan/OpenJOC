@@ -204,21 +204,21 @@ fn print_root_page(terminal: TerminalCapabilities, help: bool) -> Result<(), Box
 fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
-        "  openjoc inspect <FILE> [--trim-config-count N]\n",
-        "  openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base] [--streaming]\n",
-        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict]\n",
-        "  openjoc validate-adm <FILE> [--json]\n",
-        "  openjoc self-test [--fixture <JOC.ec3>]\n",
-        "  openjoc census [MANIFEST] -o <DIR>\n",
-        "  openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
-        "  openjoc decode-payload [OPTIONS]\n",
-        "  openjoc sofa inspect <FILE> [--json]\n",
-        "  openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
-        "  openjoc render-joc <FILE> --binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] --output <OUTPUT.wav|OUTPUT.caf>\n",
-        "  render-joc supported presets: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, 22.2\n",
-        "  openjoc --help\n",
-        "  openjoc --version\n",
+        "    openjoc inspect <FILE> [--trim-config-count N]\n",
+        "    openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base] [--streaming]\n",
+        "    openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict]\n",
+        "    openjoc validate-adm <FILE> [--json]\n",
+        "    openjoc self-test [--fixture <JOC.ec3>]\n",
+        "    openjoc census [MANIFEST] -o <DIR>\n",
+        "    openjoc diagnose-oamd <FILE> -o <DIR> [--access-unit N | --all-access-units] [--trim-config-count N]\n",
+        "    openjoc decode-payload [OPTIONS]\n",
+        "    openjoc sofa inspect <FILE> [--json]\n",
+        "    openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR> --backend direct|partitioned\n",
+        "    openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
+        "    openjoc render-joc <FILE> --binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] --output <OUTPUT.wav|OUTPUT.caf>\n",
+        "    render-joc supported presets: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, 22.2\n",
+        "    openjoc --help\n",
+        "    openjoc --version\n",
         "\n",
         "Run 'openjoc --help' for all commands and options.\n",
     ));
@@ -228,22 +228,22 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
 fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
-        "  openjoc inspect <FILE> [--trim-config-count N]\n",
-        "  openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
-        "  openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n",
-        "  openjoc validate-adm <FILE> [--json]\n",
-        "  openjoc self-test [--fixture <JOC.ec3>]\n",
+        "    openjoc inspect <FILE> [--trim-config-count N]\n",
+        "    openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
+        "    openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n",
+        "    openjoc validate-adm <FILE> [--json]\n",
+        "    openjoc self-test [--fixture <JOC.ec3>]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
         "                         [--trim-config-count N]\n",
         "                         [--reference-f64]\n",
-        "  openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n",
-        "  openjoc census [MANIFEST] -o <DIR>\n",
-        "  openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
+        "    openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n",
+        "    openjoc census [MANIFEST] -o <DIR>\n",
+        "    openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
-        "  openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
+        "    openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
         "                         [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>] [--backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
@@ -251,7 +251,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
         "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
         "                         [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
-        "  openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
+        "    openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [OPTIONS]\n",
         "\n",
@@ -287,12 +287,16 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --trim-config-count Override the normative OAMD trim configuration count (default: 9)\n",
         "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
         "\n",
-        "OUTPUT CONTRACT\n",
+    ));
+    append_heading(output, "OUTPUT CONTRACT", color)?;
+    output.push_str(concat!(
         "  capture decode writes a metadata-only scene manifest, a truthful decoded-component manifest, and diagnostic ReconstructionBasis row WAVs\n",
         "  streaming decode writes bounded component WAVs, internal-base diagnostics, and a summary; it does not capture ObjectScene\n",
         "  ReconstructionBasis rows are not authored-object PCM; semantic binding remains unresolved\n",
         "\n",
-        "PROFILE / CONTAINER BOUNDARIES\n",
+    ));
+    append_heading(output, "PROFILE / CONTAINER BOUNDARIES", color)?;
+    output.push_str(concat!(
         "  ETSI strict is never auto-downgraded; explicit ETSI_STRICT is never downgraded; reserved syntax is an expected non-zero profile rejection\n",
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
@@ -1042,6 +1046,33 @@ fn append_heading(output: &mut String, heading: &str, color: bool) -> Result<(),
         writeln!(output, "\x1b[38;2;32;214;181m{heading}\x1b[0m")
     } else {
         writeln!(output, "{heading}")
+    }
+}
+
+#[cfg(test)]
+mod help_tests {
+    use super::{append_help, append_home};
+
+    #[test]
+    fn lower_help_sections_use_the_same_cyan_heading_style() {
+        let mut output = String::new();
+        append_help(&mut output, true).expect("help renders");
+
+        let cyan = "\x1b[38;2;32;214;181m";
+        let reset = "\x1b[0m";
+        assert!(output.contains(&format!("{cyan}OUTPUT CONTRACT{reset}\n")));
+        assert!(output.contains(&format!("{cyan}PROFILE / CONTAINER BOUNDARIES{reset}\n")));
+    }
+
+    #[test]
+    fn root_and_full_help_indent_usage_entries_consistently() {
+        let mut home = String::new();
+        append_home(&mut home, false).expect("home renders");
+        let mut help = String::new();
+        append_help(&mut help, false).expect("help renders");
+
+        assert!(home.contains("USAGE\n    openjoc inspect"));
+        assert!(help.contains("USAGE\n    openjoc inspect"));
     }
 }
 
