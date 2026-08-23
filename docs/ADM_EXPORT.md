@@ -60,6 +60,48 @@ discarded, quantized, merged, transformed, or never transmitted by the lossy
 encoding process. Multiple different source ADM masters can produce identical
 or observationally equivalent JOC data, so JOC → original ADM is not a unique
 inverse.
+## Why exported ADM objects may not move
+
+If you open an exported ADM file in a DAW and some objects look still, this does
+not mean OpenJOC failed to decode movement or that direct JOC rendering is static.
+
+OpenJOC often recovers two separate things:
+
+- the decoded audio signals from the JOC programme, and
+- the time-varying JOC/OAMD movement and position information.
+
+What it still cannot do reliably today is proving which decoded signal belongs to
+which originally authored object identity. Instead of attaching wrong movement
+information, the exporter takes a conservative path: it keeps reconstructed
+signals at a neutral/static position when exporting ADM. This is intentional
+because guessing would make the output look confident while being potentially
+incorrect.
+
+So “objects in exported ADM do not move” is usually a limitation of the export
+representation, not a sign that direct JOC decoding cannot recover movement.
+
+Direct JOC rendering is a different pipeline from ADM export:
+
+`JOC decode → direct playback renderer`
+
+while export is:
+
+`JOC decode → reconstructed signals → reconstructed ADM export`
+
+Because the export path intentionally refuses to invent unproven signal↔object
+bindings, static objects in exported ADM do not prove static movement in the
+direct JOC renderer. For now, OpenJOC does not recover the original authored ADM
+master, original object names/IDs, or a proven PCM-to-object pairing.
+
+The generated 5.1 bed can also look like “conversion to 5.1,” but it is mainly a
+minimum legal transport shape:
+
+- if Base LFE is recovered, it goes to the LFE channel,
+- the other five 5.1 bed channels are generated silence placeholders to complete a
+  valid 5.1 DirectSpeakers structure.
+
+These placeholder channels are there so downstream tools can accept a standard
+container; they are not extra authored object content.
 
 ## Scope and semantic boundary
 
