@@ -25,9 +25,10 @@
 - Independent closure: IN PROGRESS. `266a2bf..c85df64` is report/documentation-only; the 13-preset START-vs-FINAL oracle is bit-identical for every preset. See `OPENJOC_ARBITRARY_LAYOUT_PRESET_ORACLE.md`.
 - Partial geometry policy: PASS. Finite out-of-bound x/y source coordinates clamp to edge anchors/rows; z clamps to outer layers; adjacent layers use existing equal-power cosine/sine blending; dynamic targets normalize and remain finite/bounded.
 - ABI compatibility: PASS. A real ABI 1.3 declaration/header caller links to the ABI 1.4 library, uses preset 5.1 decode/render, flush/reset/destroy, and preserves a canary around the old config allocation. The legacy initializer now writes only the ABI 1.3 prefix; ABI 1.4 callers use `openjoc_decoder_config_init_v1_4`.
+- Closure acceptance: PASS. `OPENJOC_ARBITRARY_LAYOUT_PRESET_ORACLE.md` records 13/13 bit-identical presets; `OPENJOC_ARBITRARY_LAYOUT_INDEPENDENT_REVIEW_CLOSURE.md` records `material_blocker_remaining=NO` and `ready_to_integrate=YES`.
 - Quality gates: PASS. `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo clippy --workspace --all-targets --all-features`, `cargo test --workspace`, `scripts/test-c-api.sh`, and the public-fixture `self-test` pass.
 
 ## Next actions
 
-1. Finish the independent closure report with the post-closure HEAD.
-2. Run the complete workspace quality gates after the ABI initializer change.
+1. Integrate with the independent Windows onboarding branch only after its branch is available.
+2. Re-run combined integration/release gates before any v0.11 decision.

@@ -1,7 +1,7 @@
 # OpenJOC arbitrary-layout preset cross-version oracle
 
 - `START_HEAD`: `33ef4bc47531b32f302443c0225b328070b9d79c`
-- `FINAL_HEAD`: `c85df64f21cedc783be26a84cf20f55c3fde6bb8`
+- `FINAL_HEAD`: `c40c986` (closure implementation/test tip; subsequent report-only documentation does not alter renderer output)
 - Input: generated public `joc.ec3`
 - Input SHA-256: `54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4`
 - Output: deterministic CAF, default float32, no normalization

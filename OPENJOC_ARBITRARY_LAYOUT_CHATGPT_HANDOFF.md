@@ -52,3 +52,11 @@ remaining_uncertainties = External player/device behavior for arbitrary geometry
 candidate_complete = YES
 recommended_next_action = Merge with the independent Windows onboarding branch, rerun the combined integration/release gates, and defer any v0.11 version/tag decision until that revalidation.
 ```
+
+## Closure result
+
+The targeted closure report is
+[`OPENJOC_ARBITRARY_LAYOUT_INDEPENDENT_REVIEW_CLOSURE.md`](OPENJOC_ARBITRARY_LAYOUT_INDEPENDENT_REVIEW_CLOSURE.md).
+Its final acceptance is `material_blocker_remaining = NO` and
+`ready_to_integrate = YES` after the 13-preset oracle, partial-geometry sweep,
+and real ABI 1.3-on-1.4 caller evidence passed.

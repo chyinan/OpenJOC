@@ -39,3 +39,11 @@ remaining_uncertainties = External player/device behavior for arbitrary geometry
 
 candidate_complete = YES
 recommended_next_action = Merge with the independent Windows onboarding branch, rerun the combined integration/release gates, and defer any v0.11 version/tag decision until that revalidation.
+
+## Closure addendum
+
+The independent targeted closure is recorded in
+[`OPENJOC_ARBITRARY_LAYOUT_INDEPENDENT_REVIEW_CLOSURE.md`](OPENJOC_ARBITRARY_LAYOUT_INDEPENDENT_REVIEW_CLOSURE.md).
+It confirms the report-only classification of `c85df64`, bit-identical output
+for all 13 presets, defined partial-geometry projection behavior, and a real
+ABI 1.3 caller running against the ABI 1.4 library.
