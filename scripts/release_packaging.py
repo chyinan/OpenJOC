@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
+from collections.abc import Mapping
 
 from release_packaging_core import (
     archive_files,
@@ -140,6 +141,47 @@ def _git_output(git: pathlib.Path, repository: pathlib.Path, arguments: Iterable
         errors="strict",
     )
     return completed.stdout
+
+
+def _tool_output(arguments: Iterable[str]) -> str:
+    completed = subprocess.run(
+        list(arguments),
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+    )
+    return completed.stdout.strip()
+
+
+def _collect_reproducibility_metadata(
+    *, workspace: pathlib.Path, lav: pathlib.Path, git: pathlib.Path
+) -> dict[str, str]:
+    """Derive release identity from the exact repositories being staged."""
+
+    lav_parent = _git_output(git, lav, ("rev-list", "--parents", "-n", "1", "HEAD"))
+    lav_parent_revision = lav_parent.split()[1] if len(lav_parent.split()) > 1 else "unknown"
+    submodules = {}
+    for line in _git_output(git, lav, ("submodule", "status", "--recursive")).splitlines():
+        fields = line.strip().lstrip("+-").split()
+        if len(fields) >= 2:
+            submodules[fields[1]] = fields[0]
+    rustc = _tool_output(("rustc", "-Vv"))
+    rustc_version = rustc.splitlines()[0] if rustc else "unavailable"
+    return {
+        "openjoc_revision": _git_output(git, workspace, ("rev-parse", "HEAD")).strip(),
+        "openjoc_branch": _git_output(git, workspace, ("branch", "--show-current")).strip(),
+        "openjoc_capi_abi": "1.4",
+        "openjoc_rustc": rustc_version,
+        "lav_revision": _git_output(git, lav, ("rev-parse", "HEAD")).strip(),
+        "lav_branch": _git_output(git, lav, ("branch", "--show-current")).strip(),
+        "lav_upstream_base": lav_parent_revision,
+        "ffmpeg_revision": _git_output(git, lav / "ffmpeg", ("rev-parse", "HEAD")).strip(),
+        "ffmpeg_libbluray_revision": submodules.get("libbluray", "unknown"),
+        "ffmpeg_libudfread_revision": submodules.get("libudfread", "unknown"),
+        "ffmpeg_qsdecoder_revision": submodules.get("qsdecoder", "unknown"),
+    }
 
 
 def _copy_release_documents(
@@ -280,6 +322,16 @@ def stage_candidates(arguments: argparse.Namespace) -> int:
         source / "third_party_sources" / "msys2" / "GCC_RUNTIME_SOURCE.md",
     )
 
+    metadata = _collect_reproducibility_metadata(workspace=workspace, lav=lav, git=git)
+    manifest = _render_reproducibility_manifest(
+        binary,
+        release_version,
+        metadata,
+        runtime_stage=binary,
+    )
+    _write_text(source / "REPRODUCIBILITY-MANIFEST.txt", manifest)
+    _write_text(binary / "REPRODUCIBILITY-MANIFEST.txt", manifest)
+
     print(f"binary_staging={binary}")
     print(f"source_staging={source}")
     print(f"release_version={release_version}")
@@ -332,8 +384,14 @@ def _pe_audit(runtime: pathlib.Path, release_version: str) -> tuple[str, tuple[s
     return "\n".join(lines) + "\n", tuple(missing)
 
 
-def _render_reproducibility_manifest(stage: pathlib.Path, release_version: str) -> str:
-    runtime = stage / "runtime"
+def _render_reproducibility_manifest(
+    stage: pathlib.Path,
+    release_version: str,
+    metadata: Mapping[str, str],
+    *,
+    runtime_stage: pathlib.Path | None = None,
+) -> str:
+    runtime = (runtime_stage or stage) / "runtime"
     names = (*RUNTIME_REPLACEMENTS, "openjoc_capi.dll", "libgcc_s_seh-1.dll")
     lines = [
         "# SPDX-FileCopyrightText: 2026 OpenJOC contributors",
@@ -341,14 +399,20 @@ def _render_reproducibility_manifest(stage: pathlib.Path, release_version: str) 
         f"OPENJOC_LAV_{release_version.replace('.', '_')}_REPRODUCIBILITY_MANIFEST",
         f"artifact_name = openjoc-lav-{release_version}-windows-x64.zip",
         "artifact_status = unpublished local candidate",
-        "openjoc_revision = a4e5964eec42eb41b9e7ca0ffd82c03903bfe4be",
-        "openjoc_capi_abi = 1.3-experimental",
-        "openjoc_rustc = 1.90.0 (1159e78c4 2025-09-14)",
+        f"openjoc_revision = {metadata['openjoc_revision']}",
+        f"openjoc_branch = {metadata['openjoc_branch']}",
+        f"openjoc_capi_abi = {metadata['openjoc_capi_abi']}",
+        f"openjoc_rustc = {metadata['openjoc_rustc']}",
         "openjoc_path_remap = release roots mapped to /openjoc, /cargo, and /rust",
-        "lav_revision = fefb6987994ed56e4525e8a125f5fbb53707bc52",
+        f"lav_revision = {metadata['lav_revision']}",
+        f"lav_branch = {metadata['lav_branch']}",
+        f"lav_upstream_base = {metadata['lav_upstream_base']}",
         "lav_build = LAVAudio Rebuild; Release|x64; OpenJOC=true; side-by-side=true",
         "lav_effective_combined_license = GPL-3.0-only",
-        "ffmpeg_revision = 599d3a140460e1b57c234fe064db5185fb76ee5b",
+        f"ffmpeg_revision = {metadata['ffmpeg_revision']}",
+        f"ffmpeg_libbluray_revision = {metadata['ffmpeg_libbluray_revision']}",
+        f"ffmpeg_libudfread_revision = {metadata['ffmpeg_libudfread_revision']}",
+        f"ffmpeg_qsdecoder_revision = {metadata['ffmpeg_qsdecoder_revision']}",
         "ffmpeg_configuration = GPL=1; VERSION3=1; NONFREE=0; sanitized authentic log retained",
         "gcc_runtime_package = mingw-w64-x86_64-gcc-libs 16.2.0-3",
         "gcc_source_archive = mingw-w64-gcc-16.2.0-3.src.tar.zst",
@@ -356,7 +420,9 @@ def _render_reproducibility_manifest(stage: pathlib.Path, release_version: str) 
         "",
     ]
     for name in names:
-        lines.append(f"sha256.runtime/{name} = {sha256_file(runtime / name)}")
+        runtime_path = runtime / name
+        if runtime_path.is_file():
+            lines.append(f"sha256.runtime/{name} = {sha256_file(runtime_path)}")
     return "\n".join(lines) + "\n"
 
 
@@ -417,10 +483,8 @@ def finalize_binary(arguments: argparse.Namespace) -> int:
         stage / "SOURCE-AVAILABILITY.md",
         _source_availability_text(release_version, source_hash),
     )
-    _write_text(
-        stage / "REPRODUCIBILITY-MANIFEST.txt",
-        _render_reproducibility_manifest(stage, release_version),
-    )
+    if not (stage / "REPRODUCIBILITY-MANIFEST.txt").is_file():
+        raise FileNotFoundError("staging reproducibility manifest is missing")
     _write_text(
         stage / "tools" / "SHA256SUMS.txt",
         render_sha256_manifest(stage, excluded={"tools/SHA256SUMS.txt"}),

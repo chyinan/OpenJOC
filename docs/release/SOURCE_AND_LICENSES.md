@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 OpenJOC contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenJOC LAV 0.10.0 source and license boundaries
+# OpenJOC LAV 0.11.0 source and license boundaries
 
 OpenJOC core and `openjoc_capi.dll` remain Apache-2.0. The downstream LAV
 integration code is separately marked GPL-2.0-or-later and does not copy the
@@ -11,8 +11,8 @@ OpenJOC Apache header into the LAV license boundary.
 
 The public source is the downstream fork
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC),
-branch `openjoc-main`, immutable tag
-[`openjoc-0.10.0`](https://github.com/chyinan/LAVFilters-OpenJOC/releases/tag/openjoc-0.10.0),
+branch `openjoc-main`, downstream revision
+`b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27`,
 based on LAV Filters 0.83. The corresponding-source ZIP remains attached to
 the OpenJOC release because it contains the full recursive closure, including
 components outside the public LAV fork.
@@ -32,7 +32,7 @@ version 3 or later`.
 The matching source archive contains:
 
 - the complete OpenJOC Cargo workspace at
-  `a4e5964eec42eb41b9e7ca0ffd82c03903bfe4be`, including
+  the exact remediation branch HEAD recorded in `REPRODUCIBILITY-MANIFEST.txt`, including
   `tools/import-etsi-tables`, `Cargo.lock`, build scripts, generated table
   inputs/outputs, and the embedded SADIE resource provenance;
 - the exact LAV source state, recursive FFmpeg/libbluray/libudfread/qsdecoder

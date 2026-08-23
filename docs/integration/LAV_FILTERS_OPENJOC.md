@@ -1,6 +1,6 @@
 # Windows DirectShow / LAV Filters integration
 
-OpenJOC v0.10.0 publishes an optional downstream LAV Audio Decoder for the
+OpenJOC v0.11.0 publishes an optional downstream LAV Audio Decoder for the
 Windows DirectShow ecosystem. The primary validated host is PotPlayer.
 
 ## Public source
@@ -8,11 +8,11 @@ Windows DirectShow ecosystem. The primary validated host is PotPlayer.
 The source is published as [LAVFilters-OpenJOC](https://github.com/chyinan/LAVFilters-OpenJOC),
 a downstream fork of [Nevcairiel/LAVFilters](https://github.com/Nevcairiel/LAVFilters).
 The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
-`fefb6987994ed56e4525e8a125f5fbb53707bc52`. The immutable integration tag is
-[`openjoc-0.10.0`](https://github.com/chyinan/LAVFilters-OpenJOC/releases/tag/openjoc-0.10.0).
+`fefb6987994ed56e4525e8a125f5fbb53707bc52`; the downstream integration
+revision is `b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27`.
 
 The public release also includes the
-`openjoc-lav-0.10.0-corresponding-source.zip` asset, which carries the full
+`openjoc-lav-0.11.0-corresponding-source.zip` asset, which carries the full
 recursive corresponding-source and third-party license closure.
 
 ## Routing behavior
@@ -34,12 +34,12 @@ endorsement by PotPlayer, LAV Filters, FFmpeg, Dolby, Microsoft, or SADIE.
 The current OpenJOC output through this DirectShow/LAV integration is 48 kHz
 stereo float PCM. The standalone OpenJOC renderer supports additional
 multichannel and binaural workflows, but those renderer capabilities are not
-claims about DirectShow/LAV output in v0.10.0.
+claims about DirectShow/LAV output in v0.11.0.
 
 ## Installation and rollback
 
 Use the `install.ps1`, `verify.ps1`, and `uninstall.ps1` scripts in the
-`openjoc-lav-0.10.0-windows-x64.zip` asset from an elevated PowerShell prompt.
+`openjoc-lav-0.11.0-windows-x64.zip` asset from the included onboarding batch file.
 The package installs under an isolated OpenJOC version directory, registers a
 separate filter identity, and provides an uninstall path that restores the
 stock LAV arrangement.

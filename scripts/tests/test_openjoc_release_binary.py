@@ -14,6 +14,8 @@ EXPORT_LINE = re.compile(
     r"(openjoc_[A-Za-z0-9_]+)(?:\s+=\s+openjoc_[A-Za-z0-9_]+)?\s*$"
 )
 
+ABI_1_4_ADDITIONAL_EXPORTS = {"openjoc_decoder_config_init_v1_4"}
+
 
 def exports(path: Path, dumpbin: Path) -> set[str]:
     output = subprocess.run(
@@ -42,8 +44,14 @@ class OpenJocReleaseBinaryTests(unittest.TestCase):
 
     def test_c_abi_exports_are_unchanged(self) -> None:
         old, new, dumpbin = self.paths()
-        self.assertEqual(exports(new, dumpbin), exports(old, dumpbin))
-        self.assertEqual(len(exports(new, dumpbin)), 35)
+        previous_abi_exports = exports(old, dumpbin)
+        final_abi_exports = exports(new, dumpbin)
+        self.assertTrue(previous_abi_exports <= final_abi_exports)
+        self.assertEqual(
+            final_abi_exports,
+            previous_abi_exports | ABI_1_4_ADDITIONAL_EXPORTS,
+        )
+        self.assertIn("openjoc_decoder_config_init_v1_4", final_abi_exports)
 
     def test_private_source_prefixes_are_absent_and_generic_prefix_is_present(self) -> None:
         _, new, _ = self.paths()

@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 OpenJOC contributors
 # SPDX-License-Identifier: Apache-2.0
 schema: openjoc.lav.distribution.v2
-binary_asset: openjoc-lav-0.10.0-windows-x64.zip
-corresponding_source_asset: openjoc-lav-0.10.0-corresponding-source.zip
+binary_asset: openjoc-lav-0.11.0-windows-x64.zip
+corresponding_source_asset: openjoc-lav-0.11.0-corresponding-source.zip
 repository:
   name: LAVFilters-OpenJOC
   public: true
@@ -10,13 +10,13 @@ repository:
   upstream: Nevcairiel/LAVFilters
   upstream_base: fefb6987994ed56e4525e8a125f5fbb53707bc52
   branch: openjoc-main
-  intended_tag: openjoc-0.10.0
+  intended_tag: openjoc-0.11.0-remediation
   intended_public_revision: b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27
 openjoc:
-  revision: a4e5964eec42eb41b9e7ca0ffd82c03903bfe4be
+  revision: see REPRODUCIBILITY-MANIFEST.txt (exact remediation branch HEAD)
   license: Apache-2.0
 lav:
-  revision: fefb6987994ed56e4525e8a125f5fbb53707bc52
+  revision: b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27
   integration_license: GPL-2.0-or-later
   effective_combined_distribution_license: GPL-3.0-only
   gpl2_only_component_present: false
@@ -27,7 +27,7 @@ ffmpeg:
   nonfree: false
   configure_evidence: ffbuild/config.h and ffbuild/config.log
 publication:
-  upload: pending-main-release
+  upload: not authorized (local remediation candidate)
   push: true
   tag: true
   distribution_gate: PASS_LOCAL_CANDIDATE

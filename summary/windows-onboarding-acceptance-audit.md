@@ -4,7 +4,7 @@ Date: 2026-08-23 (Asia/Shanghai)
 
 ## Final artifact and frozen boundary
 
-- Final onboarding QA ZIP: `C:\Users\chyin\AppData\Local\Temp\OpenJOC-onboarding-QA-20260823-013324\OpenJOC-LAV-0.11.0-onboarding-QA.zip`
+- Final onboarding QA ZIP: `<local-audit-path>\OpenJOC-LAV-0.11.0-onboarding-QA.zip`
 - ZIP SHA-256: `DEDE4E4CEA8AD4BF3FEA7C50519C631EB6F7CEC4D88EB891B46A351097A3767D`
 - Canonical onboarding surface: 10/10 files hash-identical between `packaging\windows-lav` and the fresh ZIP extraction.
 - Published v0.10 ZIP SHA-256 remains `68150AB6A2C4494AD82A5AF9CF1445EC057E815EE646140B5C54DE6FC9EB9B4A`.
