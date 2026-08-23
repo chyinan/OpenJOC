@@ -287,6 +287,10 @@ def stage_candidates(arguments: argparse.Namespace) -> int:
     )
     for test in sorted((workspace / "scripts" / "tests").glob("test_*.py")):
         _copy(test, openjoc_source / "scripts" / "tests" / test.name)
+    _copy(
+        workspace / "summary" / "windows-onboarding-acceptance-audit.md",
+        openjoc_source / "summary" / "windows-onboarding-acceptance-audit.md",
+    )
 
     lav_source = source / "LAVFilters-OpenJOC"
     for relative in (*LAV_MODIFIED_FILES, *LAV_NEW_FILES):
