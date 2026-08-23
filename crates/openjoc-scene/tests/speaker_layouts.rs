@@ -1,5 +1,6 @@
 use openjoc_scene::{
-    SPEAKER_LAYOUT_PRESET_NAMES, SpatialDescriptor, SpatialSourceClass, SpeakerLayoutPreset,
+    SPEAKER_LAYOUT_PRESET_NAMES, SpatialDescriptor, SpatialSourceClass, SpeakerGeometry,
+    SpeakerLayout, SpeakerLayoutError, SpeakerLayoutPreset, SpeakerRole,
     speaker_channel_mask_for_labels, speaker_layout_5_1_4, speaker_layout_7_1_2,
     speaker_layout_7_1_6,
 };
@@ -528,6 +529,303 @@ fn five_one_four_uses_clean_two_row_upper_topology_and_generic_xyz_projection() 
     assert!(z_composed[active_index(&preset, "TFL")] > 0.0);
     assert_unit_l2(&z_composed);
     assert_eq!(preset.layout.active_channel_count(), 9);
+}
+
+#[test]
+fn canonical_layout_wraps_every_preset_without_changing_projection_or_metadata() {
+    for name in SPEAKER_LAYOUT_PRESET_NAMES {
+        let preset = SpeakerLayoutPreset::for_name(name).expect("preset");
+        let canonical = SpeakerLayout::preset(name).expect("canonical preset");
+        assert_eq!(canonical.name(), name);
+        assert_eq!(canonical.channel_count(), preset.channel_count());
+        assert_eq!(
+            canonical.channel_labels(),
+            &preset
+                .labels
+                .iter()
+                .map(|label| (*label).to_owned())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(canonical.spatial(), &preset.layout);
+        assert_eq!(
+            canonical.semantic_channel_layout(),
+            preset.semantic_channel_layout()
+        );
+        assert_eq!(canonical.lfe_indices(), preset.lfe_indices().as_slice());
+    }
+}
+
+#[test]
+fn custom_layout_supports_irregular_geometry_and_explicit_lfe_roles() {
+    let layout = SpeakerLayout::custom(
+        "irregular-studio",
+        vec![
+            SpeakerGeometry::full_range("Left", -67.0, -4.0),
+            SpeakerGeometry::full_range("Centre", 3.0, 1.0),
+            SpeakerGeometry::full_range("Right", 49.0, 7.0),
+            SpeakerGeometry::lfe("SubA", 0.0, -20.0),
+            SpeakerGeometry::lfe("SubB", 180.0, -20.0),
+        ],
+    )
+    .expect("valid custom geometry");
+    assert_eq!(
+        layout.channel_labels(),
+        ["Left", "Centre", "Right", "SubA", "SubB"]
+    );
+    assert_eq!(layout.lfe_indices(), [3, 4]);
+    assert_eq!(layout.spatial().active_channel_count(), 3);
+    assert_eq!(layout.lfe_indices().len(), 2);
+    assert!(layout.unmasked_wav_allowed());
+    assert_eq!(layout.channel_coordinates().len(), 5);
+
+    for row in &layout.spatial().topology().layers[0].rows {
+        for anchor in &row.anchors {
+            let projected = layout
+                .spatial()
+                .project(&point(anchor.x, anchor.y, anchor.z))
+                .expect("custom anchor projects");
+            let index = layout
+                .spatial()
+                .channels()
+                .iter()
+                .filter(|channel| !channel.lfe)
+                .position(|channel| channel.identity == anchor.identity)
+                .expect("custom active anchor");
+            assert_eq!(projected[index], 1.0);
+        }
+    }
+}
+
+#[test]
+fn custom_layout_json_is_versioned_ordered_and_strict() {
+    let json = r#"{
+        "version": 1,
+        "name": "three-channel-irregular",
+        "speakers": [
+            {"name": "A", "azimuth": -40.0, "elevation": 0.0},
+            {"name": "B", "azimuth": 5.0, "elevation": 12.0, "role": "full_range"},
+            {"name": "C", "azimuth": 48.0, "elevation": -8.0}
+        ]
+    }"#;
+    let layout = SpeakerLayout::from_json_str(json).expect("custom JSON");
+    assert_eq!(layout.channel_labels(), ["A", "B", "C"]);
+    assert_eq!(layout.name(), "three-channel-irregular");
+
+    assert!(matches!(
+        SpeakerLayout::from_json_str(&json.replace("\"version\": 1", "\"version\": 2")),
+        Err(SpeakerLayoutError::UnsupportedVersion { .. })
+    ));
+    assert!(matches!(
+        SpeakerLayout::from_json_str(
+            &json.replace("\"version\": 1", "\"critical\": true, \"version\": 1")
+        ),
+        Err(SpeakerLayoutError::Json(_))
+    ));
+    assert!(matches!(
+        SpeakerLayout::from_json_str("{"),
+        Err(SpeakerLayoutError::Json(_))
+    ));
+}
+
+#[test]
+fn custom_layout_rejects_unsafe_geometry_before_projection() {
+    let duplicate = vec![
+        SpeakerGeometry::full_range("A", 0.0, 0.0),
+        SpeakerGeometry::full_range("B", 0.0, 0.0),
+    ];
+    assert!(matches!(
+        SpeakerLayout::custom("duplicate", duplicate),
+        Err(SpeakerLayoutError::DuplicateGeometry { .. })
+    ));
+
+    let near_degenerate = vec![
+        SpeakerGeometry::full_range("A", 0.0, 0.0),
+        SpeakerGeometry::full_range("B", 0.00001, 0.0),
+    ];
+    assert!(matches!(
+        SpeakerLayout::custom("near", near_degenerate),
+        Err(SpeakerLayoutError::NearDegenerateGeometry { .. })
+    ));
+    assert!(matches!(
+        SpeakerLayout::custom(
+            "bad",
+            vec![
+                SpeakerGeometry::full_range("A", -181.0, 0.0),
+                SpeakerGeometry::full_range("B", 20.0, 0.0),
+            ]
+        ),
+        Err(SpeakerLayoutError::CoordinateOutOfRange { .. })
+    ));
+    assert!(matches!(
+        SpeakerLayout::custom(
+            "no-full-range",
+            vec![
+                SpeakerGeometry {
+                    name: "SubA".to_owned(),
+                    azimuth: 0.0,
+                    elevation: 0.0,
+                    role: SpeakerRole::Lfe,
+                },
+                SpeakerGeometry::lfe("SubB", 180.0, 0.0),
+            ]
+        ),
+        Err(SpeakerLayoutError::TooFewFullRangeSpeakers)
+    ));
+    assert!(matches!(
+        SpeakerLayout::custom("empty", Vec::new()),
+        Err(SpeakerLayoutError::EmptyLayout)
+    ));
+    let too_many = (0..65)
+        .map(|index| {
+            SpeakerGeometry::full_range(format!("S{index:02}"), -90.0 + f64::from(index) * 2.0, 0.0)
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        SpeakerLayout::custom("too-many", too_many),
+        Err(SpeakerLayoutError::TooManySpeakers { .. })
+    ));
+}
+
+#[test]
+fn custom_layout_supports_irregular_channel_count_corpus() {
+    for count in [3_usize, 4, 7, 11, 13, 17, 31] {
+        let speakers = (0..count)
+            .map(|index| {
+                SpeakerGeometry::full_range(
+                    format!("S{index:02}"),
+                    -75.0 + f64::from(u32::try_from(index).expect("small corpus index")) * 5.0,
+                    if index % 3 == 0 { -4.0 } else { 0.0 },
+                )
+            })
+            .collect::<Vec<_>>();
+        let layout =
+            SpeakerLayout::custom(format!("custom-{count}"), speakers).expect("valid corpus");
+        assert_eq!(layout.channel_count(), count);
+        assert_eq!(layout.spatial().active_channel_count(), count);
+        assert!(
+            layout
+                .spatial()
+                .project(&point(0.5, 0.5, 0.0))
+                .expect("center projection")
+                .iter()
+                .all(|gain| gain.is_finite())
+        );
+    }
+}
+
+#[test]
+fn custom_layout_projection_policy_is_finite_deterministic_and_bounded() {
+    let layouts = [
+        SpeakerLayout::custom(
+            "strongly-asymmetric",
+            vec![
+                SpeakerGeometry::full_range("A", -82.0, -18.0),
+                SpeakerGeometry::full_range("B", -21.0, 4.0),
+                SpeakerGeometry::full_range("C", 37.0, 31.0),
+                SpeakerGeometry::full_range("D", 126.0, -7.0),
+            ],
+        )
+        .expect("asymmetric layout"),
+        SpeakerLayout::custom(
+            "front-heavy",
+            vec![
+                SpeakerGeometry::full_range("FL", -38.0, 0.0),
+                SpeakerGeometry::full_range("FC", -4.0, 0.0),
+                SpeakerGeometry::full_range("FR", 29.0, 0.0),
+                SpeakerGeometry::full_range("FTop", 8.0, 38.0),
+            ],
+        )
+        .expect("front-heavy layout"),
+        SpeakerLayout::custom(
+            "height-heavy",
+            vec![
+                SpeakerGeometry::full_range("LowerLeft", -58.0, -42.0),
+                SpeakerGeometry::full_range("Mid", 4.0, 7.0),
+                SpeakerGeometry::full_range("UpperRight", 61.0, 53.0),
+            ],
+        )
+        .expect("height-heavy layout"),
+        SpeakerLayout::custom(
+            "sparse",
+            vec![
+                SpeakerGeometry::full_range("Left", -24.0, 0.0),
+                SpeakerGeometry::full_range("Right", 42.0, 0.0),
+            ],
+        )
+        .expect("sparse layout"),
+    ];
+    let sweep = [-0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25];
+    for layout in &layouts {
+        for &x in &sweep {
+            for &y in &sweep {
+                for &z in &[-1.25, -0.25, 0.25, 1.25] {
+                    let descriptor = point(x, y, z);
+                    let first = layout.spatial().project(&descriptor).expect("finite sweep");
+                    let second = layout.spatial().project(&descriptor).expect("repeat sweep");
+                    assert_eq!(
+                        first,
+                        second,
+                        "non-deterministic sweep for {}",
+                        layout.name()
+                    );
+                    assert!(
+                        first
+                            .iter()
+                            .all(|gain| gain.is_finite() && gain.abs() <= 1.0)
+                    );
+                    assert_unit_l2(&first);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn custom_layout_uses_existing_boundary_clamping_and_equal_power_layer_blending() {
+    let horizontal = SpeakerLayout::custom(
+        "horizontal-boundary",
+        vec![
+            SpeakerGeometry::full_range("Left", 30.0, 0.0),
+            SpeakerGeometry::full_range("Right", -30.0, 0.0),
+        ],
+    )
+    .expect("horizontal boundary layout");
+    let left = horizontal
+        .spatial()
+        .project(&point(-2.0, 0.5, 0.0))
+        .expect("left boundary");
+    let right = horizontal
+        .spatial()
+        .project(&point(2.0, 0.5, 0.0))
+        .expect("right boundary");
+    assert_eq!(left, [1.0, 0.0]);
+    assert_eq!(right, [0.0, 1.0]);
+
+    let vertical = SpeakerLayout::custom(
+        "vertical-boundary",
+        vec![
+            SpeakerGeometry::full_range("Lower", 0.0, -35.0),
+            SpeakerGeometry::full_range("Upper", 0.0, 35.0),
+        ],
+    )
+    .expect("vertical boundary layout");
+    let lower = vertical
+        .spatial()
+        .project(&point(0.5, 0.5, -2.0))
+        .expect("lower boundary");
+    let upper = vertical
+        .spatial()
+        .project(&point(0.5, 0.5, 2.0))
+        .expect("upper boundary");
+    assert_eq!(lower, [1.0, 0.0]);
+    assert_eq!(upper, [0.0, 1.0]);
+    let layer_transition = vertical
+        .spatial()
+        .project(&point(0.5, 0.5, 0.5))
+        .expect("layer transition");
+    assert!(layer_transition.iter().all(|gain| gain.is_finite()));
+    assert!(layer_transition.iter().all(|gain| *gain > 0.0));
+    assert_unit_l2(&layer_transition);
 }
 
 #[test]

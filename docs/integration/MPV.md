@@ -20,7 +20,7 @@ demux packet
     -> normal mpv AO
 ```
 
-The classifier is the new framework-neutral ABI 1.3 entry point. It shares the
+The classifier is the framework-neutral ABI 1.4 entry point. It shares the
 existing OpenJOC E-AC-3 AU parser and positive admission rules, retains at
 most 131,072 compressed bytes, and never creates an OpenJOC render session.
 The packets used for classification are retained as owned mpv frames and

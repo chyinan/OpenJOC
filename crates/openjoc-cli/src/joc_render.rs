@@ -24,7 +24,7 @@ use openjoc_scene::{
     BridgeError, DecodedPayloadFrame, JocSpatialBridge, JocSpatialFrameBridge,
     SPEAKER_LAYOUT_PRESET_NAMES, SemanticChannelLayout, SpatialBridgeError,
     SpatialContributionMode, SpatialCoordinateUpdate, SpatialRouteVector, SpatialTopologySnapshot,
-    SpeakerLayoutPreset, SpeakerLayoutPresetError,
+    SpeakerLayout, SpeakerLayoutPreset, SpeakerLayoutPresetError,
 };
 #[cfg(test)]
 use openjoc_scene::{SPEAKER_LAYOUT_5_1_CHANNELS, SpatialLayout};
@@ -304,6 +304,12 @@ impl From<SpeakerLayoutPresetError> for JocRenderError {
             SpeakerLayoutPresetError::Projection(error) => Self::InvalidControl(error.to_string()),
             SpeakerLayoutPresetError::ChannelMask(error) => Self::InvalidControl(error.to_string()),
         }
+    }
+}
+
+impl From<openjoc_scene::SpeakerLayoutError> for JocRenderError {
+    fn from(value: openjoc_scene::SpeakerLayoutError) -> Self {
+        Self::InvalidControl(value.to_string())
     }
 }
 
@@ -749,7 +755,7 @@ struct PendingRenderFrame {
 pub struct JocSpeakerRenderer {
     frame_bridge: JocSpatialFrameBridge,
     bridge: JocSpatialBridge,
-    preset: SpeakerLayoutPreset,
+    layout: SpeakerLayout,
     control: Option<RenderControl>,
     assembler: Option<BridgeControlAssembler>,
     expected_coordinates: Option<usize>,
@@ -774,11 +780,20 @@ impl JocSpeakerRenderer {
         Self::new_with_contribution(layout, control, SpatialContributionMode::Full)
     }
 
+    /// Creates a renderer from the shared canonical layout object.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new_with_layout(
+        layout: SpeakerLayout,
+        control: RenderControl,
+    ) -> Result<Self, JocRenderError> {
+        Self::new_with_layout_and_contribution(layout, control, SpatialContributionMode::Full)
+    }
+
     /// Returns the renderer-owned semantic channel identity and order for the
     /// selected canonical layout. Containers consume this record without
     /// changing renderer behavior.
     pub(crate) fn semantic_channel_layout(&self) -> SemanticChannelLayout {
-        self.preset.semantic_channel_layout()
+        self.layout.semantic_channel_layout()
     }
 
     /// Creates a renderer with an expert-only PCM contribution diagnostic.
@@ -796,9 +811,37 @@ impl JocSpeakerRenderer {
         contribution_mode: SpatialContributionMode,
         linked_gain_enabled: bool,
     ) -> Result<Self, JocRenderError> {
-        let mut preset = SpeakerLayoutPreset::for_name(layout)?;
-        preset.layout = preset
-            .layout
+        let canonical = SpeakerLayout::from_preset(SpeakerLayoutPreset::for_name(layout)?);
+        Self::new_with_layout_and_contribution_and_linked_gain(
+            canonical,
+            control,
+            contribution_mode,
+            linked_gain_enabled,
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new_with_layout_and_contribution(
+        layout: SpeakerLayout,
+        control: RenderControl,
+        contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
+        Self::new_with_layout_and_contribution_and_linked_gain(
+            layout,
+            control,
+            contribution_mode,
+            true,
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn new_with_layout_and_contribution_and_linked_gain(
+        layout: SpeakerLayout,
+        control: RenderControl,
+        contribution_mode: SpatialContributionMode,
+        linked_gain_enabled: bool,
+    ) -> Result<Self, JocRenderError> {
+        let layout = layout
             .with_route_vectors(control.route_vectors.clone())
             .map_err(|error| JocRenderError::InvalidControl(error.to_string()))?;
         let expected_coordinates = control.topology.flatten().len();
@@ -808,7 +851,7 @@ impl JocSpeakerRenderer {
         Ok(Self {
             frame_bridge: JocSpatialFrameBridge,
             bridge: JocSpatialBridge::new(),
-            preset,
+            layout,
             control: Some(control),
             assembler: None,
             expected_coordinates: Some(expected_coordinates),
@@ -844,18 +887,54 @@ impl JocSpeakerRenderer {
         Self::new_automatic_with_contribution_and_linked_gain(layout, contribution_mode, true)
     }
 
+    /// Creates an automatic-control renderer from the shared canonical layout.
+    pub fn new_automatic_with_layout(layout: SpeakerLayout) -> Self {
+        Self::new_automatic_with_layout_and_contribution_and_linked_gain(
+            layout,
+            SpatialContributionMode::Full,
+            true,
+        )
+    }
+
+    /// Creates an automatic canonical-layout renderer with contribution
+    /// diagnostics enabled.
+    pub fn new_automatic_with_layout_and_contribution(
+        layout: SpeakerLayout,
+        contribution_mode: SpatialContributionMode,
+    ) -> Self {
+        Self::new_automatic_with_layout_and_contribution_and_linked_gain(
+            layout,
+            contribution_mode,
+            true,
+        )
+    }
+
     fn new_automatic_with_contribution_and_linked_gain(
         layout: &str,
         contribution_mode: SpatialContributionMode,
         linked_gain_enabled: bool,
     ) -> Result<Self, JocRenderError> {
-        let preset = SpeakerLayoutPreset::for_name(layout)?;
-        let dimensions = preset.layout.coordinate_dimension_count();
-        let base_projection_enabled = preset.name != "2.0";
-        Ok(Self {
+        let layout = SpeakerLayout::from_preset(SpeakerLayoutPreset::for_name(layout)?);
+        Ok(
+            Self::new_automatic_with_layout_and_contribution_and_linked_gain(
+                layout,
+                contribution_mode,
+                linked_gain_enabled,
+            ),
+        )
+    }
+
+    fn new_automatic_with_layout_and_contribution_and_linked_gain(
+        layout: SpeakerLayout,
+        contribution_mode: SpatialContributionMode,
+        linked_gain_enabled: bool,
+    ) -> Self {
+        let dimensions = layout.spatial().coordinate_dimension_count();
+        let base_projection_enabled = !layout.is_stereo();
+        Self {
             frame_bridge: JocSpatialFrameBridge,
             bridge: JocSpatialBridge::new(),
-            preset,
+            layout,
             control: None,
             assembler: Some(BridgeControlAssembler::new_with_base_projection(
                 64,
@@ -877,7 +956,7 @@ impl JocSpeakerRenderer {
             stage_timing_enabled: false,
             final_linked_gain: None,
             linked_gain_enabled,
-        })
+        }
     }
 
     /// Selects the channel-based stereo policy for the 2.0 speaker preset.
@@ -886,7 +965,7 @@ impl JocSpeakerRenderer {
         &mut self,
         policy: StereoDownmixPolicy,
     ) -> Result<(), JocRenderError> {
-        if self.preset.name != "2.0" && policy != StereoDownmixPolicy::Auto {
+        if !self.layout.is_stereo() && policy != StereoDownmixPolicy::Auto {
             return Err(JocRenderError::InvalidControl(
                 "--downmix is only meaningful with --layout 2.0".to_owned(),
             ));
@@ -1032,8 +1111,9 @@ impl JocSpeakerRenderer {
         if usize::from(base.samples) != sample_count {
             return Err(JocRenderError::FrameSampleCount);
         }
-        let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
-        let stereo_speaker = self.preset.name == "2.0";
+        let mut active =
+            vec![vec![0.0; sample_count]; self.layout.spatial().active_channel_count()];
+        let stereo_speaker = self.layout.is_stereo();
         let automatic_frame = if let Some(assembler) = self.assembler.as_mut() {
             let start = self.stage_timing_enabled.then(Instant::now);
             let frame = assembler.assemble_frame(&calibrated_frame, &base_coordinates, None)?;
@@ -1078,7 +1158,7 @@ impl JocSpeakerRenderer {
                     bridge_contribution,
                     topology,
                     updates,
-                    &self.preset.layout,
+                    self.layout.spatial(),
                     u64::try_from(sample_count).map_err(|_| JocRenderError::FrameSampleCount)?,
                     &mut output_planes,
                 )?;
@@ -1091,9 +1171,9 @@ impl JocSpeakerRenderer {
             }
         }
 
-        let mut channels = vec![vec![0.0; sample_count]; self.preset.channel_count()];
+        let mut channels = vec![vec![0.0; sample_count]; self.layout.channel_count()];
         let mut active_index = 0;
-        for (output_index, channel) in self.preset.layout.channels().iter().enumerate() {
+        for (output_index, channel) in self.layout.spatial().channels().iter().enumerate() {
             if channel.lfe {
                 if self.contribution_mode.includes_base() {
                     if let Some(lfe) = calibrated_base.lfe.as_deref() {
@@ -1147,8 +1227,8 @@ impl JocSpeakerRenderer {
         }
         let active_lfe = lfe.is_some_and(|samples| !samples.is_empty());
         let active_channels = self
-            .preset
             .layout
+            .spatial()
             .channels()
             .iter()
             .map(|channel| if channel.lfe { active_lfe } else { true })
@@ -1283,7 +1363,7 @@ impl JocSpeakerRenderer {
                 &sliced_coordinates,
                 topology,
                 updates,
-                &self.preset.layout,
+                self.layout.spatial(),
                 ramp_duration,
                 bridge_frame.sample_rate,
                 &mut output_planes,
@@ -1429,14 +1509,15 @@ impl JocSpeakerRenderer {
                 self.contribution_mode.as_str()
             ));
         }
-        let channel_count = self.preset.channel_count();
+        let channel_count = self.layout.channel_count();
+        let presentation_layout = speaker_output_presentation_layout(&self.layout);
         let presentation = RenderSummaryPresentation {
             requested_layout: requested_layout.to_owned(),
-            selected_layout: self.preset.name.to_owned(),
-            output_layout: speaker_output_presentation(&self.preset).0,
+            selected_layout: self.layout.name().to_owned(),
+            output_layout: presentation_layout.0.clone(),
             channel_count,
-            lfe_index: self.preset.lfe_index(),
-            lfe_count: self.preset.lfe_count(),
+            lfe_index: self.layout.lfe_index(),
+            lfe_count: self.layout.lfe_indices().len(),
             dialnorm_policy: dialnorm_policy_name(dialnorm).to_owned(),
             downmix_policy: self.downmix_policy.as_str().to_owned(),
             requested_profile: requested_profile.as_str().to_owned(),
@@ -1449,8 +1530,8 @@ impl JocSpeakerRenderer {
             sample_rate: summary.sample_rate,
             output_frames,
             output_samples: output_frames.saturating_mul(channel_count as u64),
-            output_channel_order: speaker_output_presentation(&self.preset).1,
-            speaker_identities: speaker_output_presentation(&self.preset).2,
+            output_channel_order: presentation_layout.1,
+            speaker_identities: presentation_layout.2,
             output_container: output_container_for_path(output)
                 .map_or("unknown", OutputContainer::name)
                 .to_owned(),
@@ -2362,19 +2443,31 @@ pub fn validate_speaker_output(
     output: &Path,
 ) -> Result<OutputContainer, JocRenderError> {
     let preset = SpeakerLayoutPreset::for_name(layout)?;
-    let semantic = preset.semantic_channel_layout();
+    validate_speaker_output_layout(&SpeakerLayout::from_preset(preset), output)
+}
+
+/// Validates the selected output container against a canonical physical
+/// speaker layout. Custom layouts use unmasked WAV or CAF coordinates; no
+/// standard speaker identity is fabricated.
+pub fn validate_speaker_output_layout(
+    layout: &SpeakerLayout,
+    output: &Path,
+) -> Result<OutputContainer, JocRenderError> {
+    let semantic = layout.semantic_channel_layout();
     let container = output_container_for_path(output)?;
     match container {
         OutputContainer::Wav
-            if semantic.wav_channel_mask().is_none() && semantic.name != "22.2" =>
+            if semantic.wav_channel_mask().is_none()
+                && semantic.name != "22.2"
+                && !layout.unmasked_wav_allowed() =>
         {
             Err(JocRenderError::WavLayoutNotExactlyRepresentable {
-                layout: layout.to_owned(),
+                layout: semantic.name,
             })
         }
         OutputContainer::Caf => {
-            for label in &semantic.labels {
-                caf_description(&semantic, label)?;
+            for (index, label) in semantic.labels.iter().enumerate() {
+                caf_description_at_canonical(layout, index, label)?;
             }
             Ok(container)
         }
@@ -2459,9 +2552,9 @@ fn drain_partitioned_tail(
     Ok(())
 }
 
-fn speaker_output_presentation(preset: &SpeakerLayoutPreset) -> (String, String, String) {
-    let identities = preset.channel_labels().join(", ");
-    if preset.name == "2.0" {
+fn speaker_output_presentation_layout(layout: &SpeakerLayout) -> (String, String, String) {
+    let identities = layout.channel_labels().join(", ");
+    if layout.is_stereo() {
         (
             "Stereo speakers (2.0)".to_owned(),
             "Left, Right".to_owned(),
@@ -2469,7 +2562,7 @@ fn speaker_output_presentation(preset: &SpeakerLayoutPreset) -> (String, String,
         )
     } else {
         (
-            format!("Speaker layout ({})", preset.name),
+            format!("Speaker layout ({})", layout.name()),
             identities.clone(),
             identities,
         )
@@ -2774,6 +2867,25 @@ impl JocWavOutput {
         Self::new_with_mask(output, format, overwrite, speaker_mask)
     }
 
+    pub fn new_for_canonical_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &SpeakerLayout,
+    ) -> Result<Self, JocRenderError> {
+        let semantic = layout.semantic_channel_layout();
+        let speaker_mask = match semantic.wav_channel_mask() {
+            Some(mask) => Some(mask),
+            None if semantic.name == "22.2" || layout.unmasked_wav_allowed() => None,
+            None => {
+                return Err(JocRenderError::WavLayoutNotExactlyRepresentable {
+                    layout: semantic.name,
+                });
+            }
+        };
+        Self::new_with_mask(output, format, overwrite, speaker_mask)
+    }
+
     fn new_with_mask(
         output: &Path,
         format: SampleFormat,
@@ -2872,7 +2984,8 @@ impl JocCafOutput {
         let descriptions = layout
             .labels
             .iter()
-            .map(|label| caf_description(layout, label))
+            .enumerate()
+            .map(|(index, label)| caf_description_at(layout, index, label))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             transaction: StagedOutput::new(output, overwrite)?,
@@ -2880,6 +2993,29 @@ impl JocCafOutput {
             writer: None,
             sample_rate: None,
             channels: layout.channel_count(),
+            descriptions,
+        })
+    }
+
+    pub fn new_for_canonical_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &SpeakerLayout,
+    ) -> Result<Self, JocRenderError> {
+        let semantic = layout.semantic_channel_layout();
+        let descriptions = semantic
+            .labels
+            .iter()
+            .enumerate()
+            .map(|(index, label)| caf_description_at_canonical(layout, index, label))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            transaction: StagedOutput::new(output, overwrite)?,
+            format,
+            writer: None,
+            sample_rate: None,
+            channels: semantic.channel_count(),
             descriptions,
         })
     }
@@ -3000,6 +3136,22 @@ impl JocPcmOutput {
         }
     }
 
+    pub(crate) fn new_for_canonical_layout(
+        output: &Path,
+        format: SampleFormat,
+        overwrite: bool,
+        layout: &SpeakerLayout,
+    ) -> Result<Self, JocRenderError> {
+        match output_container_for_path(output)? {
+            OutputContainer::Wav => Ok(Self::Wav(JocWavOutput::new_for_canonical_layout(
+                output, format, overwrite, layout,
+            )?)),
+            OutputContainer::Caf => Ok(Self::Caf(JocCafOutput::new_for_canonical_layout(
+                output, format, overwrite, layout,
+            )?)),
+        }
+    }
+
     pub fn write_block(&mut self, block: &RenderedBlock) -> Result<(), JocRenderError> {
         match self {
             Self::Wav(output) => output.write_block(block),
@@ -3041,6 +3193,7 @@ const CAF_FLAG_RECTANGULAR_COORDINATES: u32 = 1;
 const TOP_MIDDLE_X_LEFT: f64 = 7_928.0 / 32_768.0;
 const TOP_MIDDLE_X_RIGHT: f64 = 24_840.0 / 32_768.0;
 const TOP_MIDDLE_Z: f64 = 32_767.0 / 32_768.0;
+const OPENJOC_QMAX: f64 = 32_767.0 / 32_768.0;
 
 fn caf_description(
     layout: &SemanticChannelLayout,
@@ -3083,6 +3236,37 @@ fn caf_description(
         }
     };
     Ok(description)
+}
+
+fn caf_description_at(
+    layout: &SemanticChannelLayout,
+    _index: usize,
+    label: &str,
+) -> Result<CafChannelDescription, JocRenderError> {
+    caf_description(layout, label)
+}
+
+fn caf_description_at_canonical(
+    layout: &SpeakerLayout,
+    index: usize,
+    label: &str,
+) -> Result<CafChannelDescription, JocRenderError> {
+    if layout.lfe_indices().contains(&index) {
+        let lfe_ordinal = layout
+            .lfe_indices()
+            .iter()
+            .position(|candidate| *candidate == index)
+            .unwrap_or(0);
+        return Ok(caf_label(if lfe_ordinal == 0 { 4 } else { 37 }));
+    }
+    if let Some(coordinates) = layout.channel_coordinates().get(index) {
+        return Ok(caf_coordinate_xyz(
+            f64::from(coordinates[0]) * 2.0 - 1.0,
+            f64::from(coordinates[1]) * 2.0 - 1.0,
+            f64::from(coordinates[2]) / OPENJOC_QMAX,
+        ));
+    }
+    caf_description(&layout.semantic_channel_layout(), label)
 }
 
 const fn caf_label(label: u32) -> CafChannelDescription {

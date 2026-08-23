@@ -664,6 +664,7 @@ version = "0.10.0"
 dependencies = [
  "openjoc-api",
  "openjoc-ffmpeg",
+ "openjoc-scene",
 ]
 
 [[package]]

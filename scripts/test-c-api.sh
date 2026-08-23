@@ -17,3 +17,14 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -Icrates/openjoc-capi/include \
   -c crates/openjoc-capi/examples/c_api_header.cpp \
   -o target/openjoc-c-api-header.o
+
+fixture_dir=$(mktemp -d /tmp/openjoc-c-api-fixture.XXXXXX)
+trap 'rm -rf "$fixture_dir"' EXIT
+scripts/generate-player-fixtures.sh "$fixture_dir"
+
+cc -std=c11 -Wall -Wextra -Werror \
+  -Icrates/openjoc-capi/tests/fixtures \
+  crates/openjoc-capi/tests/abi13_caller.c \
+  target/debug/libopenjoc_capi.a -ldl -lm \
+  -o target/openjoc-abi13-caller
+target/openjoc-abi13-caller "$fixture_dir/joc.ec3"

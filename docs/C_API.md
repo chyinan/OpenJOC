@@ -13,7 +13,7 @@ artifact, not the primary C consumer library.
 
 ## ABI policy
 
-The ABI is `1.3-experimental`, independent of the OpenJOC package version.
+The ABI is `1.4-experimental`, independent of the OpenJOC package version.
 Major changes may break layout or ownership rules and require an ABI-major
 increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
@@ -24,6 +24,23 @@ presenting the ABI 1.0 configuration size is accepted and receives
 changing any existing structure layout. `openjoc_get_abi_version()` returns
 `(major << 16) | minor`.
 
+ABI 1.4 appends `custom_speaker_layout` to `openjoc_decoder_config`. Set it to
+an in-memory `openjoc_custom_speaker_layout` whose ordered
+`openjoc_custom_speaker` array contains finite azimuth/elevation degrees and a
+`OPENJOC_SPEAKER_FULL_RANGE` or `OPENJOC_SPEAKER_LFE` role. The descriptor and
+all strings are borrowed only during `openjoc_decoder_create`; the decoder
+copies the validated layout and reports the same order through output labels.
+Existing callers leave the field null and retain preset behavior. The custom
+layout contract, coordinate convention, validation limits, and WAV/CAF
+metadata boundary are documented in
+[`CUSTOM_SPEAKER_LAYOUTS.md`](CUSTOM_SPEAKER_LAYOUTS.md).
+
+`openjoc_decoder_config_init()` remains the legacy-safe ABI 1.3 prefix
+initializer: it never writes the ABI 1.4 appended field, so a real ABI 1.3
+caller may link it against the ABI 1.4 library without a struct over-write.
+ABI 1.4 callers should use `openjoc_decoder_config_init_v1_4()` when they need
+the complete current struct or custom geometry.
+
 Experimental means the C surface may evolve during OpenJOC 0.x integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
 
@@ -31,7 +48,7 @@ does not mean that existing decoder correctness claims are withdrawn.
 
 ```c
 openjoc_decoder_config config;
-openjoc_decoder_config_init(&config);
+openjoc_decoder_config_init_v1_4(&config);
 
 openjoc_decoder *decoder = NULL;
 openjoc_decoder_create(&config, &decoder);

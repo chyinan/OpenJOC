@@ -4,10 +4,20 @@
 //! not contain a renderer or a layout-specific projection law.
 
 use crate::{
-    SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel, SpatialLayoutLayer, SpatialLayoutRow,
-    SpatialLayoutTopology, SpatialProjectionError,
+    SpatialDescriptor, SpatialLayout, SpatialLayoutAnchor, SpatialLayoutChannel,
+    SpatialLayoutLayer, SpatialLayoutRow, SpatialLayoutTopology, SpatialProjectionError,
+    SpatialRouteVector, SpatialSourceClass,
 };
-use std::fmt;
+use serde::{Deserialize, Serialize};
+use std::{fmt, fs, path::Path};
+
+/// Version of the hand-editable custom speaker-layout JSON format.
+pub const SPEAKER_LAYOUT_JSON_VERSION: u32 = 1;
+/// Maximum number of custom output speakers admitted by the canonical layout.
+/// This is a safety bound for allocations, not a DSP-specific channel limit.
+pub const MAX_CUSTOM_SPEAKERS: usize = 64;
+const MIN_CUSTOM_SPEAKERS: usize = 2;
+const MIN_GEOMETRY_SEPARATION_RADIANS: f64 = 1.0e-6;
 
 /// Public speaker presets exposed by the JOC speaker-rendering workflow.
 pub const SPEAKER_LAYOUT_PRESET_NAMES: [&str; 13] = [
@@ -211,6 +221,554 @@ impl SemanticChannelLayout {
             .iter()
             .filter(|label| matches!(label.as_str(), "LFE" | "LFE1" | "LFE2" | "low-frequency"))
             .count()
+    }
+}
+
+/// Logical role of a custom speaker. LFE is kept outside the spatial panner.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerRole {
+    #[default]
+    FullRange,
+    Lfe,
+}
+
+/// Public spherical geometry for one ordered output speaker.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpeakerGeometry {
+    pub name: String,
+    pub azimuth: f64,
+    pub elevation: f64,
+    #[serde(default)]
+    pub role: SpeakerRole,
+}
+
+impl SpeakerGeometry {
+    /// Creates a full-range speaker using the canonical spherical convention.
+    #[must_use]
+    pub fn full_range(name: impl Into<String>, azimuth: f64, elevation: f64) -> Self {
+        Self {
+            name: name.into(),
+            azimuth,
+            elevation,
+            role: SpeakerRole::FullRange,
+        }
+    }
+
+    /// Creates a logical LFE output. Its coordinates are retained for metadata
+    /// but it is never fed to the full-range spatial projector.
+    #[must_use]
+    pub fn lfe(name: impl Into<String>, azimuth: f64, elevation: f64) -> Self {
+        Self {
+            name: name.into(),
+            azimuth,
+            elevation,
+            role: SpeakerRole::Lfe,
+        }
+    }
+}
+
+/// Failure while parsing or validating a custom speaker layout.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SpeakerLayoutError {
+    Json(String),
+    UnsupportedLayout(String),
+    UnsupportedVersion {
+        expected: u32,
+        actual: u32,
+    },
+    InvalidName,
+    EmptyLayout,
+    TooManySpeakers {
+        maximum: usize,
+        actual: usize,
+    },
+    TooFewFullRangeSpeakers,
+    InvalidSpeakerName(String),
+    DuplicateSpeakerName(String),
+    NonFiniteCoordinate {
+        speaker: String,
+        field: &'static str,
+    },
+    CoordinateOutOfRange {
+        speaker: String,
+        field: &'static str,
+        value: String,
+    },
+    DuplicateGeometry {
+        first: String,
+        second: String,
+    },
+    NearDegenerateGeometry {
+        first: String,
+        second: String,
+    },
+    Projection(SpatialProjectionError),
+    Io(String),
+}
+
+impl fmt::Display for SpeakerLayoutError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Json(error) => write!(formatter, "invalid speaker layout JSON: {error}"),
+            Self::UnsupportedLayout(layout) => {
+                write!(formatter, "unsupported speaker layout {layout}")
+            }
+            Self::UnsupportedVersion { expected, actual } => write!(
+                formatter,
+                "unsupported speaker layout JSON version {actual}; expected {expected}"
+            ),
+            Self::InvalidName => formatter.write_str("speaker layout name must not be empty"),
+            Self::EmptyLayout => formatter.write_str("speaker layout must contain speakers"),
+            Self::TooManySpeakers { maximum, actual } => write!(
+                formatter,
+                "speaker layout contains {actual} speakers; maximum supported is {maximum}"
+            ),
+            Self::TooFewFullRangeSpeakers => {
+                formatter.write_str("speaker layout needs at least two full-range speakers")
+            }
+            Self::InvalidSpeakerName(name) => {
+                write!(formatter, "speaker name {name:?} must not be empty")
+            }
+            Self::DuplicateSpeakerName(name) => {
+                write!(formatter, "duplicate speaker name {name:?}")
+            }
+            Self::NonFiniteCoordinate { speaker, field } => {
+                write!(formatter, "speaker {speaker:?} has non-finite {field}")
+            }
+            Self::CoordinateOutOfRange {
+                speaker,
+                field,
+                value,
+            } => write!(
+                formatter,
+                "speaker {speaker:?} has {field}={value}, outside the supported range"
+            ),
+            Self::DuplicateGeometry { first, second } => write!(
+                formatter,
+                "speakers {first:?} and {second:?} have duplicate geometry"
+            ),
+            Self::NearDegenerateGeometry { first, second } => write!(
+                formatter,
+                "speakers {first:?} and {second:?} are too close for a stable panner basis"
+            ),
+            Self::Projection(error) => error.fmt(formatter),
+            Self::Io(error) => write!(formatter, "could not read speaker layout file: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for SpeakerLayoutError {}
+
+impl From<SpatialProjectionError> for SpeakerLayoutError {
+    fn from(value: SpatialProjectionError) -> Self {
+        Self::Projection(value)
+    }
+}
+
+/// Canonical renderer layout shared by built-in presets, JSON, Rust callers,
+/// and the C ABI. `spatial` is the only representation consumed by DSP.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpeakerLayout {
+    name: String,
+    labels: Vec<String>,
+    lfe_indices: Vec<usize>,
+    spatial: SpatialLayout,
+    semantic: SemanticChannelLayout,
+    channel_coordinates: Vec<[f32; 3]>,
+    unmasked_wav_allowed: bool,
+}
+
+impl SpeakerLayout {
+    /// Converts an existing preset into the canonical dynamic layout object.
+    pub fn preset(name: &str) -> Result<Self, SpeakerLayoutError> {
+        let preset = SpeakerLayoutPreset::for_name(name).map_err(|error| match error {
+            SpeakerLayoutPresetError::UnsupportedLayout(layout) => {
+                SpeakerLayoutError::UnsupportedLayout(layout)
+            }
+            other => SpeakerLayoutError::Json(other.to_string()),
+        })?;
+        Ok(Self::from_preset(preset))
+    }
+
+    /// Wraps an already validated preset without changing its topology.
+    #[must_use]
+    pub fn from_preset(preset: SpeakerLayoutPreset) -> Self {
+        let labels = preset
+            .labels
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect();
+        let lfe_indices = preset.lfe_indices();
+        let semantic = preset.semantic_channel_layout();
+        Self {
+            name: preset.name.to_owned(),
+            labels,
+            lfe_indices,
+            spatial: preset.layout,
+            semantic,
+            channel_coordinates: Vec::new(),
+            unmasked_wav_allowed: false,
+        }
+    }
+
+    /// Creates and validates a custom layout in canonical channel order.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn custom(
+        name: impl Into<String>,
+        speakers: Vec<SpeakerGeometry>,
+    ) -> Result<Self, SpeakerLayoutError> {
+        let name = name.into();
+        validate_custom_name(&name)?;
+        if speakers.is_empty() {
+            return Err(SpeakerLayoutError::EmptyLayout);
+        }
+        if speakers.len() > MAX_CUSTOM_SPEAKERS {
+            return Err(SpeakerLayoutError::TooManySpeakers {
+                maximum: MAX_CUSTOM_SPEAKERS,
+                actual: speakers.len(),
+            });
+        }
+        let mut names = std::collections::HashSet::with_capacity(speakers.len());
+        let mut full_range = Vec::new();
+        let mut positions = Vec::with_capacity(speakers.len());
+        for speaker in &speakers {
+            if speaker.name.trim().is_empty() {
+                return Err(SpeakerLayoutError::InvalidSpeakerName(speaker.name.clone()));
+            }
+            if speaker.name.len() > 128 || speaker.name.chars().any(char::is_control) {
+                return Err(SpeakerLayoutError::InvalidSpeakerName(speaker.name.clone()));
+            }
+            if !names.insert(speaker.name.as_str()) {
+                return Err(SpeakerLayoutError::DuplicateSpeakerName(
+                    speaker.name.clone(),
+                ));
+            }
+            validate_spherical_coordinate(speaker)?;
+            let position = spherical_position(speaker.azimuth, speaker.elevation);
+            if matches!(speaker.role, SpeakerRole::FullRange) {
+                full_range.push((
+                    speaker.name.as_str(),
+                    spherical_direction(speaker.azimuth, speaker.elevation),
+                ));
+            }
+            positions.push(position);
+        }
+        if full_range.len() < MIN_CUSTOM_SPEAKERS {
+            return Err(SpeakerLayoutError::TooFewFullRangeSpeakers);
+        }
+        for (index, (first, first_position)) in full_range.iter().enumerate() {
+            for (second, second_position) in full_range.iter().skip(index + 1) {
+                let dot = first_position
+                    .iter()
+                    .zip(second_position)
+                    .map(|(a, b)| a * b)
+                    .sum::<f64>()
+                    .clamp(-1.0, 1.0);
+                let angle = dot.acos();
+                if angle == 0.0 {
+                    return Err(SpeakerLayoutError::DuplicateGeometry {
+                        first: (*first).to_owned(),
+                        second: (*second).to_owned(),
+                    });
+                }
+                if angle < MIN_GEOMETRY_SEPARATION_RADIANS {
+                    return Err(SpeakerLayoutError::NearDegenerateGeometry {
+                        first: (*first).to_owned(),
+                        second: (*second).to_owned(),
+                    });
+                }
+            }
+        }
+
+        let channels = speakers
+            .iter()
+            .map(|speaker| SpatialLayoutChannel {
+                identity: speaker.name.clone(),
+                enabled: true,
+                lfe: speaker.role == SpeakerRole::Lfe,
+            })
+            .collect::<Vec<_>>();
+        let topology = topology_from_positions(&speakers, &positions);
+        let spatial = SpatialLayout::from_topology(channels, topology, Vec::new())?;
+        let explicit_routes = custom_base_routes(&spatial)?;
+        let spatial = spatial.with_route_vectors(explicit_routes)?;
+        let labels = speakers
+            .iter()
+            .map(|speaker| speaker.name.clone())
+            .collect::<Vec<_>>();
+        let lfe_indices = speakers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, speaker)| (speaker.role == SpeakerRole::Lfe).then_some(index))
+            .collect::<Vec<_>>();
+        let coordinates = positions
+            .iter()
+            .map(|position| [position[0] as f32, position[1] as f32, position[2] as f32])
+            .collect::<Vec<_>>();
+        let semantic = SemanticChannelLayout::without_wav_mapping(
+            name.clone(),
+            labels.clone(),
+            lfe_indices.first().copied(),
+        );
+        Ok(Self {
+            name,
+            labels,
+            lfe_indices,
+            spatial,
+            semantic,
+            channel_coordinates: coordinates,
+            unmasked_wav_allowed: true,
+        })
+    }
+
+    /// Parses the versioned custom JSON format.
+    pub fn from_json_str(json: &str) -> Result<Self, SpeakerLayoutError> {
+        let document: SpeakerLayoutDocument = serde_json::from_str(json)
+            .map_err(|error| SpeakerLayoutError::Json(error.to_string()))?;
+        if document.version != SPEAKER_LAYOUT_JSON_VERSION {
+            return Err(SpeakerLayoutError::UnsupportedVersion {
+                expected: SPEAKER_LAYOUT_JSON_VERSION,
+                actual: document.version,
+            });
+        }
+        Self::custom(document.name, document.speakers)
+    }
+
+    /// Reads and parses a custom layout file without retaining the path.
+    pub fn from_json_file(path: impl AsRef<Path>) -> Result<Self, SpeakerLayoutError> {
+        let json =
+            fs::read_to_string(path).map_err(|error| SpeakerLayoutError::Io(error.to_string()))?;
+        Self::from_json_str(&json)
+    }
+
+    /// Returns the stable display/name identity.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns output labels in exactly the interleaved PCM order.
+    #[must_use]
+    pub fn channel_labels(&self) -> &[String] {
+        &self.labels
+    }
+
+    /// Returns the canonical spatial projector input.
+    #[must_use]
+    pub fn spatial(&self) -> &SpatialLayout {
+        &self.spatial
+    }
+
+    /// Returns the same canonical layout with caller-supplied fixed/named
+    /// routes installed in the shared spatial projector.
+    pub fn with_route_vectors(
+        &self,
+        route_vectors: Vec<crate::SpatialRouteVector>,
+    ) -> Result<Self, SpeakerLayoutError> {
+        let mut layout = self.clone();
+        layout.spatial = self.spatial.with_route_vectors(route_vectors)?;
+        Ok(layout)
+    }
+
+    /// Returns the container-independent output semantic record.
+    #[must_use]
+    pub fn semantic_channel_layout(&self) -> SemanticChannelLayout {
+        self.semantic.clone()
+    }
+
+    /// Returns normalized Cartesian channel coordinates for custom layouts.
+    /// Built-in presets return an empty slice because their established CAF
+    /// label mappings remain the authoritative metadata.
+    #[must_use]
+    pub fn channel_coordinates(&self) -> &[[f32; 3]] {
+        &self.channel_coordinates
+    }
+
+    /// Returns whether an unmasked WAV is a truthful representation.
+    #[must_use]
+    pub const fn unmasked_wav_allowed(&self) -> bool {
+        self.unmasked_wav_allowed
+    }
+
+    /// Returns every logical LFE output index.
+    #[must_use]
+    pub fn lfe_indices(&self) -> &[usize] {
+        &self.lfe_indices
+    }
+
+    /// Returns the first logical LFE output index, if present.
+    #[must_use]
+    pub fn lfe_index(&self) -> Option<usize> {
+        self.lfe_indices.first().copied()
+    }
+
+    /// Returns the number of output channels, including LFE.
+    #[must_use]
+    pub fn channel_count(&self) -> usize {
+        self.labels.len()
+    }
+
+    /// Returns whether this layout is the ordinary physical stereo preset.
+    #[must_use]
+    pub fn is_stereo(&self) -> bool {
+        self.name == "2.0"
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SpeakerLayoutDocument {
+    version: u32,
+    name: String,
+    speakers: Vec<SpeakerGeometry>,
+}
+
+fn validate_custom_name(name: &str) -> Result<(), SpeakerLayoutError> {
+    if name.trim().is_empty() || name.len() > 128 || name.chars().any(char::is_control) {
+        Err(SpeakerLayoutError::InvalidName)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_spherical_coordinate(speaker: &SpeakerGeometry) -> Result<(), SpeakerLayoutError> {
+    for (field, value) in [
+        ("azimuth", speaker.azimuth),
+        ("elevation", speaker.elevation),
+    ] {
+        if !value.is_finite() {
+            return Err(SpeakerLayoutError::NonFiniteCoordinate {
+                speaker: speaker.name.clone(),
+                field,
+            });
+        }
+    }
+    if !(-180.0..=180.0).contains(&speaker.azimuth) {
+        return Err(SpeakerLayoutError::CoordinateOutOfRange {
+            speaker: speaker.name.clone(),
+            field: "azimuth",
+            value: speaker.azimuth.to_string(),
+        });
+    }
+    if !(-90.0..=90.0).contains(&speaker.elevation) {
+        return Err(SpeakerLayoutError::CoordinateOutOfRange {
+            speaker: speaker.name.clone(),
+            field: "elevation",
+            value: speaker.elevation.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn spherical_position(azimuth_degrees: f64, elevation_degrees: f64) -> [f64; 3] {
+    let azimuth = azimuth_degrees.to_radians();
+    let elevation = elevation_degrees.to_radians();
+    let horizontal = elevation.cos();
+    [
+        0.5 - 0.5 * azimuth.sin() * horizontal,
+        0.5 * (1.0 - azimuth.cos() * horizontal),
+        elevation.sin() * QMAX,
+    ]
+}
+
+fn spherical_direction(azimuth_degrees: f64, elevation_degrees: f64) -> [f64; 3] {
+    let azimuth = azimuth_degrees.to_radians();
+    let elevation = elevation_degrees.to_radians();
+    let horizontal = elevation.cos();
+    [
+        azimuth.sin() * horizontal,
+        azimuth.cos() * horizontal,
+        elevation.sin(),
+    ]
+}
+
+fn custom_base_routes(
+    spatial: &SpatialLayout,
+) -> Result<Vec<SpatialRouteVector>, SpeakerLayoutError> {
+    let routes = [
+        ("FL", [0.0, 0.0, 0.0]),
+        ("FR", [QMAX, 0.0, 0.0]),
+        ("FC", [0.5, 0.0, 0.0]),
+        ("Ls", [0.0, 0.5, 0.0]),
+        ("Rs", [QMAX, 0.5, 0.0]),
+        ("Lb", [0.0, QMAX, 0.0]),
+        ("Rb", [QMAX, QMAX, 0.0]),
+        ("TFL", [TOP_INNER_LEFT, 0.5, QMAX]),
+        ("TFR", [TOP_INNER_RIGHT, 0.5, QMAX]),
+    ];
+    routes
+        .into_iter()
+        .map(|(identity, coordinates)| {
+            let descriptor = SpatialDescriptor::new(
+                SpatialSourceClass::DynamicPoint,
+                "custom-base-route",
+                coordinates.into_iter().collect(),
+            );
+            let vector = spatial.project(&descriptor)?;
+            Ok(SpatialRouteVector {
+                identity: format!("explicit/{identity}"),
+                vector,
+            })
+        })
+        .collect()
+}
+
+fn topology_from_positions(
+    speakers: &[SpeakerGeometry],
+    positions: &[[f64; 3]],
+) -> SpatialLayoutTopology {
+    let mut layer_indices = (0..speakers.len())
+        .filter(|index| speakers[*index].role == SpeakerRole::FullRange)
+        .collect::<Vec<_>>();
+    layer_indices.sort_by(|left, right| positions[*left][2].total_cmp(&positions[*right][2]));
+    let mut layers = Vec::new();
+    for index in layer_indices {
+        let z = positions[index][2];
+        if layers
+            .last()
+            .is_none_or(|layer: &SpatialLayoutLayer| layer.z != z)
+        {
+            layers.push(SpatialLayoutLayer {
+                z,
+                rows: Vec::new(),
+            });
+        }
+        let layer = layers.last_mut().expect("layer was just created");
+        let mut row_index = layer
+            .rows
+            .iter()
+            .position(|row| row.y == positions[index][1]);
+        if row_index.is_none() {
+            layer.rows.push(SpatialLayoutRow {
+                y: positions[index][1],
+                anchors: Vec::new(),
+            });
+            layer.rows.sort_by(|left, right| left.y.total_cmp(&right.y));
+            row_index = layer
+                .rows
+                .iter()
+                .position(|row| row.y == positions[index][1]);
+        }
+        layer.rows[row_index.expect("row was just created")]
+            .anchors
+            .push(crate::SpatialLayoutAnchor {
+                identity: speakers[index].name.clone(),
+                x: positions[index][0],
+                y: positions[index][1],
+                z,
+            });
+    }
+    for layer in &mut layers {
+        for row in &mut layer.rows {
+            row.anchors
+                .sort_by(|left, right| left.x.total_cmp(&right.x));
+        }
+    }
+    SpatialLayoutTopology {
+        layers,
+        aliases: Vec::new(),
     }
 }
 

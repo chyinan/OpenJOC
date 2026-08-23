@@ -76,7 +76,11 @@ or a user-supplied strict SOFA HRIR bank when directions are exact or safely
 interpolatable. The default virtual layout is `7.1.4`.
 The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
 generic N-channel library interface for caller-defined layouts; the CLI names
-are convenience presets, not the renderer's fundamental maximum.
+are convenience presets, not the renderer's fundamental maximum. Advanced
+users can load the same canonical geometry through
+[custom speaker layouts](docs/CUSTOM_SPEAKER_LAYOUTS.md) with `--layout-file`;
+presets remain the simple ordinary-user workflow. Custom layouts support up to
+64 output channels.
 
 OpenJOC 0.3.0 was the local release candidate. It added an explicit
 spatial-rendering foundation for caller-supplied mono sources: validated 2D and
@@ -160,10 +164,10 @@ decoder state.
 The experimental C ABI is distributed with the platform archives as
 `include/openjoc.h` plus static/shared libraries. It uses opaque handles,
 numeric statuses, `struct_size` forward compatibility, instance-owned errors,
-and panic containment. ABI 1.3 adds a decode-free classifier and retains the
-framework-neutral bounded compressed-stream handle used by native media
-adapters while preserving the complete-AU decoder API. The C surface is
-ABI 1.3-experimental; compatibility may
+and panic containment. ABI 1.4 adds in-memory custom speaker geometry while
+retaining the decode-free classifier, framework-neutral bounded compressed-
+stream handle, and complete-AU decoder API. The C surface is ABI
+1.4-experimental; compatibility may
 evolve during OpenJOC 0.x; framework adapters are documented separately.
 
 OpenJOC also provides an experimental FFmpeg-facing libavformat/AVFrame bridge
@@ -207,6 +211,9 @@ openjoc render-joc input.m4a \
 # Convenient offline file level (static post-render sample peak)
 openjoc render-joc input.m4a \
   --layout 7.1.4 --normalize-peak -0.1 -o output-loud.wav
+# Advanced custom geometry; the speakers array defines PCM/channel order.
+openjoc render-joc input.m4a \
+  --layout-file fixtures/speaker-layouts/studio-irregular.json -o studio.caf
 # Binaural with the same optional offline file-level step
 openjoc render-joc input.m4a \
   --binaural --sofa listener.sofa --normalize-peak -0.1 -o headphones.wav

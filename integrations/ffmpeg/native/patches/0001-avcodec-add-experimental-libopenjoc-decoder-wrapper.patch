@@ -332,7 +332,7 @@ index 0000000000..3bf536b515
 +        return AVERROR(ENOSYS);
 +    }
 +
-+    status = openjoc_decoder_config_init(&config);
++    status = openjoc_decoder_config_init_v1_4(&config);
 +    if (status != OPENJOC_STATUS_OK)
 +        return libopenjoc_error(avctx, status, "configuration initialization");
 +
@@ -612,4 +612,3 @@ index 0000000000..3bf536b515
 +};
 -- 
 2.47.1
-

@@ -51,6 +51,14 @@ channel labels. Speaker layouts use the repository's canonical public presets;
 24-channel `FL, FR, FC, LFE1, ... , BtFR` order, and binaural is physical
 stereo `Left, Right` even when its virtual layout is multichannel.
 
+Physical speaker sessions may also use `SpeakerLayout::custom(...)` and
+`OpenJocConfig::with_speaker_layout(...)`. The custom layout keeps the caller's
+speaker array order as PCM/channel order, validates finite spherical geometry,
+and keeps LFE channels outside the spatial projector. The JSON/CLI form is
+documented in [`CUSTOM_SPEAKER_LAYOUTS.md`](CUSTOM_SPEAKER_LAYOUTS.md); it is
+advanced functionality and does not widen downstream host/device channel
+layout support.
+
 For binaural sessions, `BinauralConfig::builtin_generic("7.1.4")` selects the
 offline bundled SADIE II generic HRTF without a filesystem path. Use
 `BinauralConfig::from_sofa_bytes(...)` for an explicit user SOFA; strict SOFA

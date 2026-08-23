@@ -33,7 +33,7 @@ use openjoc_render::{
 use openjoc_scene::{
     BaseFullBandCoordinate, BridgeControlAssembler, DecodedPayloadFrame, JocFrameInput,
     JocSpatialBridge, JocSpatialFrameBridge, PayloadDecoder, PayloadDecoderConfig,
-    SemanticChannelLayout, SpeakerLayoutPreset,
+    SemanticChannelLayout, SpeakerLayout, SpeakerLayoutPreset,
 };
 use openjoc_sofa::{
     SofaLoadLimits, load_builtin_generic_hrir, parse_simple_free_field_hrir, resolve_hrir,
@@ -201,6 +201,9 @@ pub struct OpenJocConfig {
     pub render_mode: RenderMode,
     /// Speaker layout or virtual speaker layout. Stereo always uses `2.0`.
     pub speaker_layout: String,
+    /// Optional validated custom physical speaker layout. When present in
+    /// speaker mode it takes precedence over `speaker_layout`.
+    pub speaker_layout_definition: Option<SpeakerLayout>,
     pub downmix: DownmixPolicy,
     pub drc: DrcPolicy,
     pub dialnorm: DialnormMode,
@@ -214,6 +217,7 @@ impl Default for OpenJocConfig {
         Self {
             render_mode: RenderMode::Speaker,
             speaker_layout: "5.1".to_owned(),
+            speaker_layout_definition: None,
             downmix: DownmixPolicy::Auto,
             drc: DrcPolicy::Line,
             dialnorm: DialnormMode::Default,
@@ -234,9 +238,45 @@ impl OpenJocConfig {
                 .map_or(self.speaker_layout.as_str(), |binaural| {
                     binaural.virtual_layout.as_str()
                 })
+        } else if let Some(layout) = &self.speaker_layout_definition {
+            layout.name()
         } else {
             self.speaker_layout.as_str()
         }
+    }
+
+    fn effective_speaker_layout(&self) -> Result<SpeakerLayout, OpenJocError> {
+        if self.render_mode == RenderMode::Speaker {
+            if let Some(layout) = &self.speaker_layout_definition {
+                return Ok(layout.clone());
+            }
+            return SpeakerLayout::preset(&self.speaker_layout)
+                .map_err(|error| OpenJocError::InvalidConfig(error.to_string()));
+        }
+        if self.speaker_layout_definition.is_some() {
+            return Err(OpenJocError::InvalidConfig(
+                "custom speaker geometry is only valid for speaker render mode".to_owned(),
+            ));
+        }
+        let layout = if self.render_mode == RenderMode::Stereo {
+            "2.0"
+        } else {
+            self.binaural
+                .as_ref()
+                .map_or(self.speaker_layout.as_str(), |binaural| {
+                    binaural.virtual_layout.as_str()
+                })
+        };
+        SpeakerLayout::preset(layout)
+            .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))
+    }
+
+    /// Selects a validated custom speaker layout for physical speaker output.
+    #[must_use]
+    pub fn with_speaker_layout(mut self, layout: SpeakerLayout) -> Self {
+        layout.name().clone_into(&mut self.speaker_layout);
+        self.speaker_layout_definition = Some(layout);
+        self
     }
 
     /// Returns the stable, field-by-field representation of the settings that
@@ -271,6 +311,17 @@ impl OpenJocConfig {
                 .trim_configuration_count
                 .map_or_else(|| "none".to_owned(), |value| value.get().to_string()),
         );
+        if let Some(layout) = &self.speaker_layout_definition {
+            descriptor.push_str("\ncustom_layout_channels=");
+            descriptor.push_str(&layout.channel_labels().join(","));
+            for (index, coordinate) in layout.channel_coordinates().iter().enumerate() {
+                let _ = write!(
+                    descriptor,
+                    "\ncustom_layout_coordinate_{index}={:.9},{:.9},{:.9}",
+                    coordinate[0], coordinate[1], coordinate[2]
+                );
+            }
+        }
         if let Some(binaural) = &self.binaural {
             let (hrtf_source, hrtf_sha256) = if binaural.is_builtin_generic() {
                 (
@@ -305,8 +356,7 @@ impl OpenJocConfig {
     /// Validates the effective session configuration without allocating any
     /// decoder, renderer, or HRTF stream state.
     pub fn validate(&self) -> Result<(), OpenJocError> {
-        SpeakerLayoutPreset::for_name(self.effective_layout())
-            .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
+        self.effective_speaker_layout()?;
         if self.render_mode == RenderMode::Binaural && self.binaural.is_none() {
             return Err(OpenJocError::InvalidConfig(
                 "binaural mode requires BinauralConfig (built-in generic or explicit SOFA)"
@@ -604,12 +654,12 @@ impl OpenJocSession {
     /// touched; separate sessions can run concurrently on separate threads.
     pub fn new(config: OpenJocConfig) -> Result<Self, OpenJocError> {
         config.validate()?;
-        let layout = config.effective_layout().to_owned();
+        let speaker_layout = config.effective_speaker_layout()?;
         let speaker = SpeakerRenderer::new_with_linked_gain(
-            &layout,
+            speaker_layout,
             config.downmix,
             config.render_mode != RenderMode::Binaural,
-        )?;
+        );
         let binaural = config
             .binaural
             .as_ref()
@@ -1045,7 +1095,7 @@ struct PendingRenderFrame {
 struct SpeakerRenderer {
     frame_bridge: JocSpatialFrameBridge,
     bridge: JocSpatialBridge,
-    preset: SpeakerLayoutPreset,
+    layout: SpeakerLayout,
     assembler: BridgeControlAssembler,
     expected_coordinates: Option<usize>,
     next_input_frame: u64,
@@ -1061,22 +1111,20 @@ struct SpeakerRenderer {
 
 impl SpeakerRenderer {
     fn new_with_linked_gain(
-        layout: &str,
+        layout: SpeakerLayout,
         downmix_policy: DownmixPolicy,
         linked_gain_enabled: bool,
-    ) -> Result<Self, OpenJocError> {
-        let preset = SpeakerLayoutPreset::for_name(layout)
-            .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
-        let dimensions = preset.layout.coordinate_dimension_count();
-        Ok(Self {
+    ) -> Self {
+        let dimensions = layout.spatial().coordinate_dimension_count();
+        Self {
             assembler: BridgeControlAssembler::new_with_base_projection(
                 64,
                 dimensions,
-                preset.name != "2.0",
+                !layout.is_stereo(),
             ),
             frame_bridge: JocSpatialFrameBridge,
             bridge: JocSpatialBridge::new(),
-            preset,
+            layout,
             expected_coordinates: None,
             next_input_frame: 0,
             expected_frame: 0,
@@ -1087,11 +1135,11 @@ impl SpeakerRenderer {
             downmix_policy,
             final_linked_gain: None,
             linked_gain_enabled,
-        })
+        }
     }
 
     fn layout_info(&self) -> SemanticChannelLayout {
-        self.preset.semantic_channel_layout()
+        self.layout.semantic_channel_layout()
     }
 
     fn render_frame_aligned(
@@ -1228,7 +1276,8 @@ impl SpeakerRenderer {
         )?;
         let sample_count = usize::try_from(bridge_frame.sample_range.len())
             .map_err(|_| OpenJocError::Render("sample count overflow".to_owned()))?;
-        let mut active = vec![vec![0.0; sample_count]; self.preset.layout.active_channel_count()];
+        let mut active =
+            vec![vec![0.0; sample_count]; self.layout.spatial().active_channel_count()];
         let control = self
             .assembler
             .assemble_frame(&calibrated_frame, base_coordinates, None)?;
@@ -1241,7 +1290,7 @@ impl SpeakerRenderer {
         }
         boundaries.sort_unstable();
         boundaries.dedup();
-        let stereo = self.preset.name == "2.0";
+        let stereo = self.layout.is_stereo();
         let zero = vec![0.0; sample_count];
         let mut coordinates = Vec::with_capacity(coordinate_count);
         for pcm in bridge_frame.basis.base_full_band_pcm {
@@ -1285,7 +1334,7 @@ impl SpeakerRenderer {
                 &sliced,
                 topology,
                 updates,
-                &self.preset.layout,
+                self.layout.spatial(),
                 ramp_duration,
                 frame.sample_rate,
                 &mut outputs,
@@ -1294,9 +1343,9 @@ impl SpeakerRenderer {
         if stereo {
             add_stereo_base_downmix(&mut active, &calibrated_base, self.downmix_policy)?;
         }
-        let mut channels = vec![vec![0.0; sample_count]; self.preset.channel_count()];
+        let mut channels = vec![vec![0.0; sample_count]; self.layout.channel_count()];
         let mut active_index = 0;
-        for (output_index, channel) in self.preset.layout.channels().iter().enumerate() {
+        for (output_index, channel) in self.layout.spatial().channels().iter().enumerate() {
             if channel.lfe {
                 if let Some(lfe) = calibrated_base.lfe.as_deref() {
                     channels[output_index].copy_from_slice(lfe);
@@ -1342,8 +1391,8 @@ impl SpeakerRenderer {
         }
         let active_lfe = lfe.is_some_and(|samples| !samples.is_empty());
         let active_channels = self
-            .preset
             .layout
+            .spatial()
             .channels()
             .iter()
             .map(|channel| if channel.lfe { active_lfe } else { true })
@@ -1685,6 +1734,7 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openjoc_scene::SpeakerGeometry;
 
     fn push_bits(bytes: &mut [u8], cursor: &mut usize, value: u64, width: usize) {
         for shift in (0..width).rev() {
@@ -1739,6 +1789,28 @@ mod tests {
         assert_eq!(info.channel_labels.len(), 24);
         assert_eq!(info.channel_labels[3], "LFE1");
         assert_eq!(info.channel_labels[9], "LFE2");
+    }
+
+    #[test]
+    fn rust_session_accepts_custom_layout_without_json_or_cli() {
+        let layout = SpeakerLayout::custom(
+            "rust-studio",
+            vec![
+                SpeakerGeometry::full_range("A", -42.0, 0.0),
+                SpeakerGeometry::full_range("B", 7.0, 9.0),
+                SpeakerGeometry::full_range("C", 51.0, -3.0),
+                SpeakerGeometry::lfe("Sub", 0.0, -20.0),
+            ],
+        )
+        .expect("custom layout");
+        let config = OpenJocConfig::default().with_speaker_layout(layout);
+        let descriptor = config.effective_config_descriptor();
+        assert!(descriptor.contains("custom_layout_channels=A,B,C,Sub"));
+        let session = OpenJocSession::new(config).expect("custom session");
+        let info = session.output_info();
+        assert_eq!(info.layout_name, "rust-studio");
+        assert_eq!(info.channel_count, 4);
+        assert_eq!(info.channel_labels, ["A", "B", "C", "Sub"]);
     }
 
     #[test]
