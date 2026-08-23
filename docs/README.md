@@ -1,36 +1,76 @@
 # OpenJOC documentation
 
-Use the document that owns the question:
+Each current technical fact has one canonical owner. Secondary documents
+summarize host- or workflow-specific implications and link back to that owner.
 
-| Question | Canonical document |
-|---|---|
-| What is OpenJOC and how do I run it? | [root README](../README.md) |
-| What changed in each release? | root `CHANGELOG.md` |
-| What does OpenJOC 0.9.2 support? | [CAPABILITIES.md](CAPABILITIES.md) |
-| How do I export reconstructed ADM BWF? | [ADM_EXPORT.md](ADM_EXPORT.md) |
-| How are ecosystem packages built? | [integration/ECOSYSTEM_PACKAGING.md](integration/ECOSYSTEM_PACKAGING.md) |
-| What is the public smoke fixture? | [PUBLIC_SMOKE_FIXTURE.md](PUBLIC_SMOKE_FIXTURE.md) |
-| What does it not support? | [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) |
-| How do I render a supported JOC stream to speakers? | [JOC_RENDER.md](JOC_RENDER.md) |
-| How is production code structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| How do I embed the streaming decoder? | [LIBRARY_API.md](LIBRARY_API.md) |
-| How do I call it from C/C++? | [C_API.md](C_API.md) |
-| How do I use the native GStreamer decoder? | [integration/GSTREAMER.md](integration/GSTREAMER.md) |
-| How do I embed the FFmpeg-facing bridge? | [integration/FFMPEG.md](integration/FFMPEG.md) |
-| How do I build or verify the OpenJOC Player Bundle? | [integration/PLAYER_PACKAGING.md](integration/PLAYER_PACKAGING.md) |
-| Which player adapter comes next? | [integration/FFMPEG_NATIVE_FUTURE.md](integration/FFMPEG_NATIVE_FUTURE.md) |
-| What is planned next? | [ROADMAP.md](ROADMAP.md) |
-| What clean-room policy and evidence classes govern implementation claims? | [PROVENANCE.md](PROVENANCE.md) |
+## Getting started
 
-Contributor rules and verification commands live in
-[CONTRIBUTING.md](../CONTRIBUTING.md). Architecture and renderer behavior are
-owned by the technical documents above; current status and limitations always
-belong in the current snapshot documents.
+- [Project README](../README.md) — product overview, CLI and PotPlayer quick
+  starts, build instructions, and navigation.
+- [Capabilities](CAPABILITIES.md) — canonical current support/status matrix.
+- [Known limitations](KNOWN_LIMITATIONS.md) — canonical current user-visible
+  limitations and non-claims.
+- [Public smoke fixture](PUBLIC_SMOKE_FIXTURE.md) — installation and bounded
+  synthetic health checks.
 
-Current snapshot documents own current truth. Internal research chronology and
-workspace-specific provenance are retained in the source repository, not in
-the standalone release documentation bundle. `CHANGELOG.md` owns versioned
-release history; `KNOWN_LIMITATIONS.md` owns current user-facing limitations;
-technical renderer behavior belongs in `JOC_RENDER.md` and
-`JOC_SPATIAL_BRIDGE.md`. Historical design notes that are no longer suitable
-for the public repository are intentionally not part of the current tree.
+## Renderer and output
+
+- [JOC speaker and binaural rendering](JOC_RENDER.md) — canonical
+  `render-joc` contract, preset/output behavior, latency, and level policies.
+- [Custom speaker layouts](CUSTOM_SPEAKER_LAYOUTS.md) — versioned JSON, Rust,
+  and C geometry contract up to 64 ordered output channels.
+- [Spatial portability](SPATIAL_PORTABILITY.md) — 22.2 and binaural portability
+  boundaries.
+- [JOC spatial bridge](JOC_SPATIAL_BRIDGE.md) — supporting bridge activation
+  and unresolved semantic boundary.
+- [Explicit render-scene workflow](RENDER_SCENE.md) — caller-bound sources;
+  separate from JOC authored-object semantics.
+
+## Developer APIs
+
+- [Rust library API](LIBRARY_API.md) — `OpenJocSession`, packet ownership,
+  output frames, latency, lifecycle, and policies.
+- [C ABI](C_API.md) — current ABI 1.4, opaque handles, stream/classifier
+  surfaces, ownership, custom geometry, and failure containment.
+- [Production architecture](ARCHITECTURE.md) — canonical data flow and
+  component ownership.
+
+## Integrations
+
+- [Windows DirectShow / LAV / PotPlayer](integration/LAV_FILTERS_OPENJOC.md)
+- [FFmpeg external bridge](integration/FFMPEG.md)
+- [Native FFmpeg `libopenjoc` wrapper](integration/FFMPEG_NATIVE.md)
+- [GStreamer](integration/GSTREAMER.md)
+- [mpv](integration/MPV.md)
+- [OpenJOC Player Bundle packaging](integration/PLAYER_PACKAGING.md)
+- [Ecosystem packages](integration/ECOSYSTEM_PACKAGING.md)
+
+Integration documents own only their framework transport, lifecycle,
+selection, and host/output boundaries. Renderer capabilities remain owned by
+[JOC_RENDER.md](JOC_RENDER.md) and [CAPABILITIES.md](CAPABILITIES.md).
+
+## ADM and interchange
+
+- [Reconstructed ADM BWF export](ADM_EXPORT.md) — current export, validation,
+  and semantic boundary.
+
+## Architecture, provenance, and planning
+
+- [Architecture](ARCHITECTURE.md) — current production ownership.
+- [Provenance](PROVENANCE.md) — clean-room/evidence policy and retained
+  provenance chronology.
+- [Roadmap](ROADMAP.md) — future or explicitly deferred work only.
+- [Research history](research/README.md) — dated experiments and negative
+  results; never the current capability owner.
+
+## Release and historical material
+
+- [CHANGELOG](../CHANGELOG.md) owns release-by-release chronology.
+- [`docs/release/`](release/) contains current release packaging,
+  corresponding-source, and distribution evidence.
+- [Historical archive](archive/README.md) contains retained release contracts
+  and requirement/evidence documents that no longer describe current
+  behavior.
+
+Contributor verification and repository-documentation hygiene rules are in
+[CONTRIBUTING.md](../CONTRIBUTING.md).

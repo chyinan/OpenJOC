@@ -1,390 +1,214 @@
 <p align="center">
-  <img src="docs/assets/openjoc-header.png" alt="OpenJOC — open-source Dolby JOC decoder" width="100%">
+  <img src="docs/assets/openjoc-header.png" alt="OpenJOC — open-source E-AC-3 JOC decoder and renderer" width="100%">
 </p>
 
 # OpenJOC
 
-OpenJOC is an independent, clean-room, research-grade E-AC-3 JOC metadata
-and reconstruction-basis decoder. It implements behavior from public ETSI
-specifications and controlled, permitted evidence; it does not copy Dolby
-private implementations.
+OpenJOC is an independent, clean-room E-AC-3 JOC decoder and spatial renderer.
+It decodes the E-AC-3 base programme, OAMD metadata, and JOC reconstruction
+data, then renders admitted speaker or binaural outputs through one
+platform-neutral engine. OpenJOC is not affiliated with, endorsed by, or
+sponsored by Dolby Laboratories.
 
-OpenJOC is an independent clean-room implementation, but it is not a
-public-document-only implementation. Most behavior is derived directly from
-public normative specifications and public technical sources. Where those
-sources are insufficient to establish interoperability behavior, the project
-may use a separated traditional clean-room process: authorized contaminated
-analysis is sanitized into a behavioral specification and then implemented
-independently. Proprietary implementation code, decompiler output, assembly,
-private symbols or addresses, proprietary structure layouts, and copied
-implementation expressions are not implementation inputs; see
-[the provenance policy](docs/PROVENANCE.md).
+The current release includes:
 
-OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby
-Laboratories. Dolby, Dolby Atmos, and related marks are trademarks of their
-respective owners.
+- E-AC-3 JOC decoding and bounded reconstruction;
+- automatic OAMD/JOC bridge control within the documented unresolved semantic
+  boundary;
+- speaker presets `2.0`, `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`,
+  `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`;
+- custom speaker geometry with up to 64 output channels in caller-defined order;
+- truthful WAV/CAF output, built-in SADIE II binaural rendering, and custom
+  SOFA input;
+- reconstructed ADM BWF interoperability output;
+- Rust and versioned C ABI embedding surfaces;
+- FFmpeg, GStreamer, mpv, and Windows DirectShow/LAV/PotPlayer integrations.
 
-The immutable v0.2.0 release contract is deliberately narrow:
+The detailed status and evidence boundary for every claim is in the
+[capability matrix](docs/CAPABILITIES.md).
 
-- `scene.json` is metadata-only;
-- `diagnostics/reconstruction_rows/row_NNN.wav` contains diagnostic
-  `ReconstructionBasis` rows, not verified authored-object PCM;
-- `SemanticBindingState` remains `Unresolved`;
-- `ETSI_STRICT` was the historical no-profile default and is never silently
-  downgraded;
-- `OBSERVED_VENDOR_COMPAT` is explicit, partial, and preserves opaque observed
-  continuation without assigning vendor semantics.
+## Quick start: CLI
 
-OpenJOC 0.11.0 is the current release line: **Windows DirectShow / LAV Filters
-Integration**. It
-retains the Cross-Platform Player Integration surface and extends the
-embeddable decode/render engine with native
-22.2 speaker rendering, built-in zero-configuration binaural HRTF, GStreamer
-integration, FFmpeg-facing integrations, and reproducible OpenJOC-enabled mpv
-bundles for qualified macOS arm64, Linux x86_64, and Windows x64 surfaces.
-Ordinary rendering assembles bridge control from decoded JOC/OAMD state;
-`--topology` remains an optional complete override/test input.
+Build or download OpenJOC, then render a JOC programme to 7.1.4:
 
-The 0.9 line added these interchange and ecosystem surfaces:
-Reconstructed ADM BWF export, OpenJOC-enabled FFmpeg bundles, feature-enabled
-GStreamer plugin packs, a portable C SDK, and a public self-test. Use
-`openjoc export-adm INPUT -o reconstructed.wav` for the ecosystem-compatible
-Reconstructed ADM BWF output and `openjoc validate-adm reconstructed.wav` for
-the supported structural validator. OpenJOC 0.11.0 retains `RIFF` when
-32-bit sizes fit and `RF64` otherwise; `.bw64` remains only a legacy filename
-alias. This is not original ADM master recovery: the current
-audio-to-spatial-metadata binding remains unresolved, so best-effort exports
-neutral reconstructed signals and records the omission in an adjacent JSON
-report. See [ADM export](docs/ADM_EXPORT.md) and [ecosystem packaging](docs/integration/ECOSYSTEM_PACKAGING.md).
+```sh
+openjoc render-joc input.m4a --layout 7.1.4 -o output.wav
+```
 
-Real workflow acceptance confirms that OpenJOC ADM imports into Logic Pro,
-Logic can re-export it, and Dolby Encoding Engine accepts that Logic-authored
-re-export. Direct DEE ingestion of the byte-exact OpenJOC-authored file is not
-claimed: OpenJOC does not generate Dolby-tool authoring provenance metadata.
+Useful first commands:
 
-One renderer. Same spatial semantics across platforms. OpenJOC implements the
-spatial rendering DSP directly; frameworks and operating systems provide
-packet/timestamp transport, PCM transport, and normal device I/O, but do not
-define the OpenJOC spatial rendering result. OpenJOC is not a zero-dependency
-distribution: integrations use their host framework and runtime dependencies.
+```sh
+openjoc inspect input.ec3
+openjoc render-joc input.m4a --layout 2.0 -o stereo.wav
+openjoc render-joc input.m4a --binaural -o headphones.wav
+openjoc export-adm input.m4a -o reconstructed.wav
+openjoc validate-adm reconstructed.wav
+```
 
-The selectable `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`,
-`9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and native `22.2` workflows are documented in
-[JOC speaker rendering](docs/JOC_RENDER.md). The same workflow can virtualize
-all public virtual binaural layouts through the built-in SADIE II generic HRIR
-or a user-supplied strict SOFA HRIR bank when directions are exact or safely
-interpolatable. The default virtual layout is `7.1.4`.
-The underlying public `SpatialLayout` plus `JocSpatialBridge` API remains a
-generic N-channel library interface for caller-defined layouts; the CLI names
-are convenience presets, not the renderer's fundamental maximum. Advanced
-users can load the same canonical geometry through
-[custom speaker layouts](docs/CUSTOM_SPEAKER_LAYOUTS.md) with `--layout-file`;
-presets remain the simple ordinary-user workflow. Custom layouts support up to
-64 output channels.
+OpenJOC uses calibrated default dialnorm behavior. For a convenient offline
+file level, add `--normalize-peak -0.1`; this applies one static sample-peak
+gain after rendering and is not DRC, loudness normalization, limiting, or
+true-peak processing. See [JOC rendering](docs/JOC_RENDER.md) for the complete
+output and level contract.
 
-OpenJOC 0.3.0 was the local release candidate. It added an explicit
-spatial-rendering foundation for caller-supplied mono sources: validated 2D and
-3D speaker layouts, sample-accurate trajectories, direct-FIR and uniform
-partitioned binaural rendering, and a strict supported SOFA import path. These
-renderer workflows are independent of unresolved JOC authored-object binding.
+## Quick start: PotPlayer on Windows
 
-User-facing `decode` and `decode-payload` commands default to observable `AUTO`
-profile selection. `AUTO` tries `ETSI_STRICT` first and can select only the
-existing whitelisted `OBSERVED_VENDOR_COMPAT` policy when every blocking
-deviation is admitted. Explicit `ETSI_STRICT` never falls back.
+The current Windows package provides an isolated OpenJOC-enabled LAV Audio
+Decoder. It does not replace stock LAV or change PotPlayer automatically.
 
-The opt-in `JocSpatialBridge` provides the codec-coordinate spatial projection
-function. Its current maturity is experimental, its semantic binding remains
-unresolved, and its official runtime validation oracle is not independently
-confirmed. These states are documented separately from the stable function
-name.
+1. Download the Windows LAV package from the
+   [latest OpenJOC release](https://github.com/chyinan/OpenJOC/releases/latest).
+2. Extract the complete ZIP.
+3. Double-click `install.bat` and accept the Windows UAC prompt.
+4. Double-click `verify.bat` and require **PASS**.
+5. Follow the included `POTPLAYER-QUICKSTART.md` to add
+   **LAV Audio Decoder (OpenJOC)** at **Prefer** priority.
 
-Read the canonical documentation:
+Double-click `uninstall.bat` to remove only the OpenJOC-owned filter and files.
+The validated PotPlayer/DirectShow output boundary is **48 kHz stereo float
+PCM**. Standalone OpenJOC multichannel and custom-geometry capabilities do not
+imply arbitrary LAV output. See the
+[Windows integration contract](docs/integration/LAV_FILTERS_OPENJOC.md).
 
-- [Capabilities](docs/CAPABILITIES.md) — current 0.11.0 capability status.
-- [Windows DirectShow / LAV Filters integration](docs/integration/LAV_FILTERS_OPENJOC.md) — v0.11.0 PotPlayer-validated host integration and its stereo-float DirectShow scope.
-- [JOC speaker rendering](docs/JOC_RENDER.md) — the 0.9 real-input workflow.
-- [Reconstructed ADM BWF export](docs/ADM_EXPORT.md) — the 0.9 interchange boundary and report contract.
-- [Known limitations](docs/KNOWN_LIMITATIONS.md) — what remains out of scope.
-- [Architecture](docs/ARCHITECTURE.md) — production data flow and boundaries.
-- [Spatial portability](docs/SPATIAL_PORTABILITY.md) — 22.2 geometry, built-in HRTF, and platform-independence policy.
-- [Third-party data notices](THIRD_PARTY_NOTICES.md) — SADIE II license, attribution, and citation.
-- [Library API](docs/LIBRARY_API.md) — headless Rust packet/session contract.
-- [C API](docs/C_API.md) — versioned C/C++ ABI and ownership rules.
-- [GStreamer integration](docs/integration/GSTREAMER.md) — experimental
-  automatic selection for admitted E-AC-3 JOC while ordinary E-AC-3 stays on
-  the normal decoder path; applications can select binaural or native
-  multichannel speaker rendering while OpenJOC retains the spatial DSP.
-- [FFmpeg-facing external bridge](docs/integration/FFMPEG.md) — experimental
-  libavformat/AVFrame integration for applications embedding FFmpeg. It does
-  not modify stock FFmpeg binaries or register an out-of-tree decoder plugin.
-- [Native FFmpeg libavcodec wrapper](docs/integration/FFMPEG_NATIVE.md) — an
-  experimental `libopenjoc` named decoder for custom FFmpeg source builds;
-  stock FFmpeg binaries remain unchanged and ordinary E-AC-3 stays on `eac3`.
-- [mpv player integration](docs/integration/MPV.md) — OpenJOC can be used as
-  the JOC decoder in custom mpv builds linked against the `libopenjoc`-enabled
-  FFmpeg integration; ordinary E-AC-3 remains on `eac3`.
-- [Player packaging](docs/integration/PLAYER_PACKAGING.md) — reproducible,
-  auditable OpenJOC Player Bundle tooling for macOS arm64, Linux x86_64, and
-  Windows x64; this is not an official mpv or FFmpeg distribution.
-- [Future player adapters](docs/FUTURE_PLAYER_ADAPTERS.md) — next integration assessment.
-- [Roadmap](docs/ROADMAP.md) — future priorities only.
+## Speaker rendering
+
+Presets are the ordinary path:
+
+```sh
+openjoc render-joc input.m4a --layout 5.1.4 -o output.wav
+openjoc render-joc input.m4a --layout 9.1.6 -o output.caf
+openjoc render-joc input.m4a --layout 22.2 -o output.wav
+```
+
+Advanced users can provide versioned JSON geometry. The `speakers` array
+defines semantic labels and interleaved PCM order:
+
+```sh
+openjoc render-joc input.m4a \
+  --layout-file studio-layout.json \
+  -o studio.caf
+```
+
+Custom layouts support up to 64 output channels in declared order. Custom WAV output is deliberately
+unmasked because a standard speaker mask would misrepresent arbitrary
+geometry; CAF preserves coordinate descriptions. Preset-specific WAV/CAF
+rules, channel order, latency, DRC, dialnorm, normalization, and optional
+`--topology` override behavior belong to [JOC rendering](docs/JOC_RENDER.md).
+The JSON schema and coordinate convention belong to
+[custom speaker layouts](docs/CUSTOM_SPEAKER_LAYOUTS.md).
+
+## Binaural and SOFA
+
+`--binaural` virtualizes a speaker field to two-channel headphone output. The
+default virtual layout is 7.1.4 and the default HRTF is the bundled offline
+SADIE II D1 dataset:
+
+```sh
+openjoc render-joc input.m4a --binaural -o headphones.wav
+openjoc render-joc input.m4a \
+  --binaural --virtual-layout 9.1.6 --sofa listener.sofa \
+  -o custom-headphones.wav
+```
+
+Custom SOFA input is fail-closed and limited to the documented local
+`SimpleFreeFieldHRIR` subset. It must match the input sample rate and cover
+every requested non-LFE direction exactly or through admitted interpolation.
+Physical `2.0` and binaural are different renders even though both transport
+two PCM channels.
+
+## Reconstructed ADM interoperability
+
+`export-adm` writes a reconstructed RIFF/RF64 ADM BWF representation and an
+adjacent semantic report. It is not recovery of the original ADM master.
+Authored-object audio binding remains unresolved, so OpenJOC does not invent
+object identities, discarded source information, or Dolby authoring
+provenance.
+
+The validated workflow is OpenJOC ADM import into Logic Pro followed by a
+Logic-authored re-export accepted by Dolby Encoding Engine. Direct DEE ingest
+of the byte-exact OpenJOC-authored file is not claimed. See
+[ADM export](docs/ADM_EXPORT.md).
+
+## Ecosystem integrations
+
+- [Rust API](docs/LIBRARY_API.md) — serial `OpenJocSession` lifecycle,
+  complete-access-unit input, owned interleaved `f32` output, and explicit
+  latency/reset/drain behavior.
+- [C ABI](docs/C_API.md) — opaque handles, complete-AU and bounded stream
+  decoders, positive JOC classifier, custom in-memory speaker geometry, and
+  panic containment.
+- [FFmpeg external bridge](docs/integration/FFMPEG.md) — libavformat transport
+  for embedding applications; it does not modify an installed FFmpeg.
+- [Native FFmpeg wrapper](docs/integration/FFMPEG_NATIVE.md) — explicit
+  `libopenjoc` decoder for patched custom FFmpeg builds; ordinary E-AC-3 stays
+  on `eac3`.
+- [GStreamer](docs/integration/GSTREAMER.md) — JOC-aware classification and a
+  native `GstAudioDecoder`; ordinary E-AC-3 remains on the normal path.
+- [mpv](docs/integration/MPV.md) — source patch and qualified OpenJOC Player
+  Bundles with positive JOC selection and passthrough isolation.
+- [Windows LAV/DirectShow](docs/integration/LAV_FILTERS_OPENJOC.md) — isolated
+  PotPlayer-validated stereo-float host integration and onboarding.
+
+These adapters own transport and host lifecycle. OpenJOC owns E-AC-3/JOC
+decode, spatial rendering, output semantics, and renderer state.
+
+## Important boundaries
+
+- `ReconstructionBasis` rows are decoder coordinates, not verified
+  authored-object stems. `SemanticBindingState` remains `Unresolved`.
+- OpenJOC does not claim Dolby renderer fidelity, bit-identical reference
+  output, certification, or endorsement.
+- Ordinary E-AC-3 isolation and compressed passthrough remain explicit in
+  player integrations.
+- Custom renderer geometry does not widen the layout capabilities of FFmpeg,
+  GStreamer, mpv, DirectShow/LAV, an audio device, or an output container.
+- The implementation follows the project's public-evidence and separated
+  clean-room policy. Proprietary implementation code, decompiler output,
+  assembly, private symbols or layouts, and copied expressions are forbidden
+  implementation inputs.
+
+Read [known limitations](docs/KNOWN_LIMITATIONS.md) before treating any output
+as an interchange, monitoring, or production deliverable, and see
+[provenance](docs/PROVENANCE.md) for the evidence policy and history.
+
+## Documentation
+
+The [documentation index](docs/README.md) maps each topic to its canonical
+owner. In particular:
+
+- [Capabilities](docs/CAPABILITIES.md) owns current support status.
+- [Known limitations](docs/KNOWN_LIMITATIONS.md) owns current user-visible
+  boundaries and non-claims.
+- [Architecture](docs/ARCHITECTURE.md) owns the production data flow.
+- [JOC rendering](docs/JOC_RENDER.md) owns renderer and output behavior.
+- [CHANGELOG](CHANGELOG.md) owns release chronology.
+- [Roadmap](docs/ROADMAP.md) contains future work only.
+- [`docs/archive/`](docs/archive/README.md) contains retained historical
+  contracts that are not current documentation.
 
 ## Build from source
 
-OpenJOC requires Rust 1.85 or newer. The application dependency graph is
-recorded in `Cargo.lock`.
+Use the Rust toolchain requirement declared in `Cargo.toml`. From a clean
+checkout:
 
 ```sh
 cargo build -p openjoc-cli --release --locked
 ./target/release/openjoc --help
 ```
 
-An offline build is supported when all locked registry dependencies are
-already present in the selected Cargo cache:
-
-```sh
-cargo build -p openjoc-cli --release --locked --offline
-```
-
-This is not a claim that a brand-new machine can build without first obtaining
-the Rust toolchain and dependencies. The repository declares a minimum Rust
-version but does not pin one exact compiler release.
-
-## Embed the decode/render engine
-
-OpenJOC 0.11.0 provides `OpenJocSession` and `OpenJocConfig` for headless Rust
-integration. A push supplies one complete E-AC-3 JOC access unit; receive returns
-owned interleaved `f32` PCM with sample-domain timestamps and semantic channel
-labels. Sessions support push/receive, drain, flush, reset/discontinuity, and
-report the public output delay (609 samples for speaker output, 577 for
-binaural). The API does not parse CLI arguments, open files, or use global
-decoder state.
-
-The experimental C ABI is distributed with the platform archives as
-`include/openjoc.h` plus static/shared libraries. It uses opaque handles,
-numeric statuses, `struct_size` forward compatibility, instance-owned errors,
-and panic containment. ABI 1.4 adds in-memory custom speaker geometry while
-retaining the decode-free classifier, framework-neutral bounded compressed-
-stream handle, and complete-AU decoder API. The C surface is ABI
-1.4-experimental; compatibility may
-evolve during OpenJOC 0.x; framework adapters are documented separately.
-
-OpenJOC also provides an experimental FFmpeg-facing libavformat/AVFrame bridge
-for applications embedding FFmpeg. It uses FFmpeg for demux and packet
-transport, while the same `OpenJocSession` owns JOC decode and spatial
-rendering. Build it explicitly with `-p openjoc-ffmpeg --features ffmpeg`; see
-the focused integration document for the FFmpeg 9 development dependencies
-and proof executable.
-
-OpenJOC additionally provides an experimental native libavcodec wrapper for
-custom FFmpeg builds configured with `--enable-version3 --enable-libopenjoc`.
-It registers the explicit named decoder `libopenjoc`; it does not alter stock
-FFmpeg installations or replace the ordinary `eac3` decoder. The focused
-native integration document contains the reproducible patch and build flow.
-
-## Install into a prefix
-
-From a clean source checkout or source archive:
+Install into a chosen prefix with:
 
 ```sh
 cargo install --path crates/openjoc-cli --locked --root /path/to/prefix
-/path/to/prefix/bin/openjoc --help
 ```
 
-Binary distribution is handled by the human-created GitHub Release workflow
-after a stable version tag. The historical [OpenJOC 0.2.0 release](https://github.com/chyinan/OpenJOC/releases/tag/v0.2.0)
-contains the prior published assets; this source tree does not advertise a
-Homebrew formula or crates.io installation. The source installation path
-remains the workspace source tree.
+Contributors should follow [CONTRIBUTING.md](CONTRIBUTING.md) and run the full
+workspace and repository-hygiene gates before committing.
 
-## Basic CLI
+## License and notices
 
-```sh
-openjoc inspect input.ec3
-openjoc decode input.ec3 -o output/ --internal-base
-openjoc decode input.mp4 -o output/ --internal-base --streaming
-openjoc decode input.ec3 -o output/ --internal-base --validation-profile etsi-strict
-# Calibrated speaker render (Default dialnorm is implicit)
-openjoc render-joc input.m4a \
-  --layout 7.1.4 -o output.wav
-# Convenient offline file level (static post-render sample peak)
-openjoc render-joc input.m4a \
-  --layout 7.1.4 --normalize-peak -0.1 -o output-loud.wav
-# Advanced custom geometry; the speakers array defines PCM/channel order.
-openjoc render-joc input.m4a \
-  --layout-file fixtures/speaker-layouts/studio-irregular.json -o studio.caf
-# Binaural with the same optional offline file-level step
-openjoc render-joc input.m4a \
-  --binaural --sofa listener.sofa --normalize-peak -0.1 -o headphones.wav
-# Semantic CAF output for the 9.1.6 speaker layout
-openjoc render-joc input.m4a \
-  --layout 9.1.6 -o render-9.1.6.caf
-openjoc render-joc input.m4a --binaural --sofa listener.sofa \
-  --virtual-layout 9.1.6 -o binaural-9.1.6.wav
-# Optional complete explicit override/test input:
-openjoc render-joc input.m4a --topology bridge-control.json --layout 7.1.4 --output render.wav
-openjoc diagnose-tools input.ec3 --vector-id ID --json tools.json
-```
-
-For normal decoding and playback, OpenJOC's default calibrated dialnorm policy
-is recommended; basic examples intentionally omit `--dialnorm default` because
-it is already the engine default. For an offline file that should be
-conveniently loud, add `--normalize-peak -0.1` (or another chosen dBFS target).
-This does not change decoder dynamics.
-
-`2.0` is speaker stereo and is separate from binaural output. Select the
-standards-based stereo policy with `--downmix auto`, `--downmix loro`, or
-`--downmix ltrt`.
-
-## Advanced decoder/output policies
-
-`--drc disabled|line|rf|custom` controls encoded E-AC-3 dynamic-range metadata;
-custom mode accepts `--drc-boost` and `--drc-cut` percentages from `0` through
-`100`. DRC changes program dynamics; it is not a generic compressor or volume
-normalization.
-
-`--dialnorm default` uses calibrated default behavior and is recommended for
-normal playback/decoding. `--dialnorm digital` explicitly selects encoded
-digital program-level calibration. `--dialnorm analog` uses unity dialnorm
-gain; it is an advanced compatibility/diagnostic policy. On hot material,
-unity dialnorm can present a substantially hotter level to downstream
-headroom processing, so it may make FinalLinkedGain engage more heavily. Do
-not choose Analog merely because it is louder; it is not a higher-quality,
-uncompressed, lossless, raw, or mastering mode.
-
-`--normalize-peak TARGET_DBFS` is an optional file-export transform. It performs
-one canonical render while spooling bounded, renderer-native PCM and measuring
-the sample peak, then sequentially applies one common scalar after
-FinalLinkedGain (and after binaural convolution when selected) before WAV/CAF
-conversion. It is disabled by default, supports both boost and attenuation, and
-is sample-peak based and post-render. It is not dialnorm, DRC, a limiter, a
-compressor, LUFS normalization, or true-peak normalization; an inter-sample
-true peak may exceed the sample-peak target.
-
-Recommended offline signal flow:
-
-```text
-DRC -> calibrated dialnorm -> JOC rendering -> FinalLinkedGain
-    -> optional static sample-peak normalization -> file
-```
-
-Analog instead uses unity dialnorm before JOC rendering and FinalLinkedGain.
-Post-render normalization is applied after FinalLinkedGain, so it preserves the
-already-rendered dynamic shape with one static linked scalar. Analog changes the
-level entering FinalLinkedGain and may therefore change its gain-reduction
-behavior. FinalLinkedGain is internal renderer headroom behavior, not a user
-mastering control.
-For 2.0 JOC rendering, Base channels use the selected stereo downmix while
-reconstructed JOC objects use generic spatial projection to physical `FL`/`FR`.
-
-`render-joc` selects the output container from the destination extension:
-`.wav` uses WAVEFORMATEXTENSIBLE where the semantic layout is exactly
-representable, and `.caf` uses Core Audio Format channel-layout metadata. The
-9.1 family is semantic-CAF-only: its Wide identities are not exactly
-representable by standard WAVEFORMATEXTENSIBLE and WAV requests fail closed.
-The renderer’s semantic channel order is independent of that container choice.
-
-`decode` and `decode-payload` use `AUTO` when no profile is supplied: they
-evaluate `ETSI_STRICT` first and select `OBSERVED_VENDOR_COMPAT` only when the
-existing compatibility validator admits the complete deviation set. An
-explicit `--validation-profile etsi-strict` never falls back. The selected
-profile and reason are written to the bounded validation diagnostics.
-
-Interactive `render-joc` progress is written to stderr and is automatically
-disabled for non-TTY output; use `--no-progress` to opt out. Add
-`--performance-report FILE.json` to capture versioned stage timings and
-realtime diagnostics. Use `--overwrite` for authorized replacement of existing
-render outputs in scripts or other non-interactive runs. See [Experimental JOC speaker rendering](docs/JOC_RENDER.md)
-for the report schema, synthetic harness, and real-media qualification
-boundary.
-
-Raw EC3 parsing and internal-base decoding run in-process. Some seekable
-MP4/M4A and compatible-base paths use `ffprobe` and/or `ffmpeg`; see the
-[capability matrix](docs/CAPABILITIES.md) for the exact boundary.
-
-## Assemble the 0.9.2 Apple-Silicon release bundle
-
-On an Apple-silicon macOS host with Python 3.12+, Rust, and the locked Cargo
-dependencies already cached, a clean committed tree can assemble the release
-bundle locally before publication:
-
-```sh
-python3 scripts/build-local-release.py --output /path/to/empty/output
-cd /path/to/empty/output
-shasum -a 256 -c openjoc-0.9.2-aarch64-apple-darwin.SHA256SUMS
-tar -xzf openjoc-0.9.2-aarch64-apple-darwin.tar.gz
-cd openjoc-0.9.2-aarch64-apple-darwin
-./verify.sh
-```
-
-The bundle includes the canonical `docs/` tree, uses `git archive HEAD`, builds
-with the locked dependency set, includes `openjoc.h` and the macOS C ABI
-static/shared libraries, and refuses tracked worktree/index changes. It is
-ad-hoc signed, not Developer-ID signed, and not notarized. The script derives
-the artifact version from the workspace package metadata.
-
-## Quickstart: OpenJOC-enabled mpv
-
-Download the qualified `openjoc-mpv-0.9.2-<platform>` bundle, extract it, and
-run the included launcher:
-
-```sh
-bin/openjoc-mpv path/to/media
-bin/openjoc-mpv --profile=openjoc-headphones path/to/joc-media
-```
-
-Ordinary E-AC-3 stays on the normal `eac3` decoder. Confirmed JOC is routed
-automatically to `libopenjoc`. `openjoc-headphones` is binaural output from a
-virtual 7.1.4 field through the built-in generic SADIE II HRTF; the
-`openjoc-stereo`, `openjoc-51`, `openjoc-714`, `openjoc-916`, and `openjoc-222`
-profiles are physical 2.0, 5.1, 7.1.4, 9.1.6, and 22.2 rendering. Binaural
-and physical 2.0 both produce two-channel PCM, but they are different renders.
-Explicit `--audio-spdif=eac3` requests compressed passthrough and bypasses
-OpenJOC software rendering.
-
-## CI and tagged releases
-
-Pull requests and pushes to `master` run the public GitHub Actions CI matrix.
-It checks the documented Rust 1.85 MSRV, Linux quality gates, and
-platform-neutral builds/tests on Windows x64 and macOS arm64. CI results are
-build/test evidence; a CI result alone does not admit a published binary
-release for a platform.
-
-Only a human-created stable tag can start release automation (the historical
-`v0.1.0` tag is preserved). The workflow requires the tag to match the Cargo
-package version exactly, then
-builds and verifies macOS arm64, Windows x86_64, and GNU/Linux x86_64 release
-archives. Each archive carries the CLI, public docs, `openjoc.h`, and the
-platform C ABI static/shared libraries (including the Windows import library).
-Per-platform manifests remain internal workflow artifacts. The aggregation job
-recomputes archive hashes and publishes the three CLI/library archives, the
-three OpenJOC Player Bundles, and one unified `SHA256SUMS` file. The workflow
-never creates or pushes tags, and
-refuses to overwrite an existing GitHub Release. Artifact attestation is not
-currently enabled; aggregate SHA-256, per-platform manifest checks, and the
-macOS bundle's `verify.sh` remain release verification surfaces.
-
-## Platform scope
-
-The 0.9.2 release workflow targets Apple-silicon macOS
-(`aarch64-apple-darwin`), Windows x86_64 (`x86_64-pc-windows-msvc`), and
-GNU/Linux x86_64 (`x86_64-unknown-linux-gnu`). The OpenJOC Player Bundle
-workflow additionally qualifies macOS arm64, Linux x86_64, and Windows x64
-extract-and-run packages. Multichannel PCM generation and transport are
-qualified in CI; physical speaker-system playback has not been separately
-validated on Linux/Windows hardware. The macOS bundle is ad-hoc signed and is
-not Developer-ID signed or notarized.
-
-## Contributing and provenance
-
-Before changing codec behavior, read [CONTRIBUTING.md](CONTRIBUTING.md) and the
-release-facing capability and limitation documents. The project treats public
-normative sources and behavioral clean-room specifications as separate claim
-classes; neither is a claim of Dolby endorsement, certification, or
-bit-identical Reference Player output.
-
-## License
-
-Licensed under [Apache-2.0](LICENSE). The source archive includes the complete
-license text, and Cargo package metadata carries the SPDX license identifier.
+OpenJOC core code is licensed under [Apache-2.0](LICENSE). Integration bundles
+may include components under additional terms; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the package-specific
+notices. Dolby, Dolby Atmos, SADIE, FFmpeg, GStreamer, mpv, LAV Filters,
+PotPlayer, Windows, and related names are marks of their respective owners.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pattern: Imperative Shell
 """Package a checked-out OpenJOC platform build for release aggregation."""
 
 from __future__ import annotations
@@ -38,11 +39,11 @@ PUBLIC_PATHS = (
     "docs/ADM_EXPORT.md",
     "docs/ARCHITECTURE.md",
     "docs/CAPABILITIES.md",
+    "docs/CUSTOM_SPEAKER_LAYOUTS.md",
     "docs/KNOWN_LIMITATIONS.md",
     "docs/JOC_RENDER.md",
     "docs/LIBRARY_API.md",
     "docs/C_API.md",
-    "docs/FUTURE_PLAYER_ADAPTERS.md",
     "docs/README.md",
     "docs/PUBLIC_SMOKE_FIXTURE.md",
     "docs/integration/ECOSYSTEM_PACKAGING.md",

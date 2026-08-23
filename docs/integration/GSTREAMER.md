@@ -388,12 +388,13 @@ GStreamer development/runtime set; no Windows-specific decoder code is used.
 The feature-enabled `gst-plugin-openjoc` build is the authoritative plugin
 artifact surface. It is built with `--features gstreamer` and validated with
 `gst-inspect-1.0`; the feature-disabled workspace stub is never a release
-plugin. OpenJOC 0.9.2 provides a separate cross-platform plugin pack built by
+plugin. The current ecosystem pack is built by
 `scripts/package-ecosystem.py`; users still provide the matching host GStreamer
 runtime and its component-specific notices.
 
-The autoplug phase does not claim support for any specific commercial player.
-Player-specific acceptance and an FFmpeg wrapper remain later phases.
+The autoplug contract does not claim support for a specific commercial player.
+FFmpeg, mpv, and DirectShow/LAV are implemented through their separate adapter
+contracts and do not share GStreamer caps or lifecycle state.
 
 OpenJOC remains Apache-2.0. The GStreamer Rust bindings are MIT or
 Apache-2.0; the host GStreamer libraries retain their upstream LGPL licensing.

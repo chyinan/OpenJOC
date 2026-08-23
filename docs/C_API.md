@@ -97,14 +97,6 @@ output is one of `UNKNOWN`, `CONFIRMED_JOC`, `CONFIRMED_NON_JOC`, or
 bounded probe accounting. This is intended for players that must choose a
 decoder before sending the first packet to a renderer.
 
-ABI 1.3 adds `openjoc_classifier`, a decode-free, framework-neutral compressed
-stream probe. `openjoc_classifier_send_chunk()` shares the bounded access-unit
-parser and positive JOC admission rules but never creates an OpenJOC render
-session or emits PCM. Its output is one of `UNKNOWN`, `CONFIRMED_JOC`,
-`CONFIRMED_NON_JOC`, or `INVALID_OR_UNSUPPORTED`; the staged and inspected-byte
-accessors expose bounded probe accounting. This is intended for players that
-must choose a decoder before sending the first packet to a renderer.
-
 Semantic labels are available through `openjoc_decoder_get_channel_label` and
 the output/frame descriptors. The canonical PCM sample format value is `1`
 (interleaved float32).

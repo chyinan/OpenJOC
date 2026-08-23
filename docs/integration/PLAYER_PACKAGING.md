@@ -29,11 +29,11 @@ The canonical contract is
 It pins FFmpeg `n9.0.1` at
 `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa`, mpv `v0.41.0` at
 `41f6a645068483470267271e1d09966ca3b9f413`, both OpenJOC patch hashes, ABI
-1.3, archive names, profiles, loader policy, and external-runtime policy.
+1.4, archive names, profiles, loader policy, and external-runtime policy.
 
 ## Qualified artifact surface
 
-The qualified player surface is a portable OpenJOC 0.9.2 package for macOS
+The qualified player surface is a portable current OpenJOC package for macOS
 arm64, Linux x86_64, and Windows x64. The package is not a `.app`, DMG,
 installer, or official mpv/FFmpeg distribution. Linux x86_64 and Windows x64
 are qualified by the dedicated `player-packaging.yml` jobs on native runners;
@@ -55,8 +55,9 @@ packages an extracted runtime closure. Build worktrees and prefixes stay
 outside the repository.
 
 `--release` is required for final archive names such as
-`openjoc-mpv-0.9.2-macos-arm64.tar.gz`. Without it, the same build machinery
-uses a development `0.9.2-git<commit>` name. Neither mode publishes anything.
+`openjoc-mpv-<version>-macos-arm64.tar.gz`. Without it, the same build
+machinery uses a development `<version>-git<commit>` name. Neither mode
+publishes anything.
 
 For Windows CI, the equivalent MSYS2/MinGW-w64 entry point is
 `scripts/build-openjoc-player-windows.sh`. It builds the GNU Rust target,
@@ -227,14 +228,14 @@ redistributed component. No package job uploads or publishes an artifact.
 
 No source tree, Cargo target directory, compiler cache, private media, test
 PCM, commercial HRTF data, credentials, cookies, or user configuration is
-copied. Development artifacts use `0.9.2-git<commit>` identifiers; final
-release candidates use the exact `0.9.2` project version and record the full
+copied. Development artifacts use `<version>-git<commit>` identifiers; release
+archives use the exact project version and record the full
 OpenJOC commit in `BUILD_INFO`. macOS packages are ad-hoc signed where
 required, not Developer-ID signed, and not notarized. Tagging, GitHub Release
 creation, installer formats, auto-update, and upstream submission remain
 explicitly outside this hardening phase.
 
-The 0.9.2 release retains the accumulated cross-platform player surface:
+The current release retains the accumulated cross-platform player surface:
 22.2 rendering, the built-in HRTF, GStreamer integration, the external FFmpeg
 bridge, the native FFmpeg `libopenjoc` wrapper, mpv player integration, and
 reproducible player packaging. The custom FFmpeg/mpv integrations are

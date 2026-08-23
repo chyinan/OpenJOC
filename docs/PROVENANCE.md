@@ -32,8 +32,9 @@ output, assembly, private symbols, addresses or offsets, proprietary structure
 layouts, and copied implementation expressions never cross that boundary.
 
 This provenance record is source-repository history; the binary release bundle
-intentionally excludes this file, `REQUIREMENTS_MATRIX.md`, and the research
-chronology.
+intentionally excludes this file, the historical
+[`REQUIREMENTS_MATRIX.md`](archive/requirements/REQUIREMENTS_MATRIX.md), and
+the research chronology.
 
 ### Reconstructed ADM BWF export provenance
 
@@ -2793,8 +2794,9 @@ is not claimed. No media was created, semantic binding remains unresolved,
 and strict raw warp 3 remains reserved.
 ## J1R31 capability-contract provenance
 
-The canonical v0.1.0 matrix in `REQUIREMENTS_MATRIX.md` is a consolidation of
-existing frozen evidence, not a new semantic experiment. Coding-tool claims are
+The historical v0.1.0 matrix in
+[`REQUIREMENTS_MATRIX.md`](archive/requirements/REQUIREMENTS_MATRIX.md) is a
+consolidation of existing frozen evidence, not a new semantic experiment. Coding-tool claims are
 bounded by the J1R23–J1R30 evidence freezes: coupling has the public normative
 coordinate/state admission; SPX has public-syntax numerical, state,
 multichannel, and partial error/substream scope; AHT has bounded independent

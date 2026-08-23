@@ -128,9 +128,10 @@ Explicit selection on ordinary E-AC-3 returns `AVERROR_INVALIDDATA`, logs a
 concise positive-admission rejection, and emits no PCM. Ordinary E-AC-3 without
 explicit selection continues through stock `eac3`.
 
-JOC autoselection is intentionally not implemented. A future player must
-positively probe JOC and then choose the decoder by name; codec-ID lookup alone
-must never hijack ordinary E-AC-3.
+JOC autoselection is intentionally not implemented inside FFmpeg. A player
+must positively probe JOC and then choose the decoder by name; the current mpv
+integration does this through the C ABI classifier. Codec-ID lookup alone must
+never hijack ordinary E-AC-3.
 
 ## Options and defaults
 
@@ -210,6 +211,6 @@ configuration rather than offering a legal conclusion; redistribution still
 requires a separate license/packaging review.
 
 No standalone FFmpeg distribution is released and no patch is submitted
-upstream. The 0.9.2 OpenJOC Player Bundles contain project-provided custom
-FFmpeg/mpv integration runtimes for the qualified platforms. The separate
-source-only mpv patchset is documented in `docs/integration/MPV.md`.
+upstream. OpenJOC Player Bundles contain project-provided custom FFmpeg/mpv
+integration runtimes for the qualified platforms. The separate source-only
+mpv patchset is documented in [MPV.md](MPV.md).

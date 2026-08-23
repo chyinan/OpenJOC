@@ -1,6 +1,6 @@
 # Windows DirectShow / LAV Filters integration
 
-OpenJOC v0.11.0 publishes an optional downstream LAV Audio Decoder for the
+Current OpenJOC publishes an optional downstream LAV Audio Decoder for the
 Windows DirectShow ecosystem. The primary validated host is PotPlayer.
 
 ## Public source
@@ -34,15 +34,17 @@ endorsement by PotPlayer, LAV Filters, FFmpeg, Dolby, Microsoft, or SADIE.
 The current OpenJOC output through this DirectShow/LAV integration is 48 kHz
 stereo float PCM. The standalone OpenJOC renderer supports additional
 multichannel and binaural workflows, but those renderer capabilities are not
-claims about DirectShow/LAV output in v0.11.0.
+claims about DirectShow/LAV output.
 
 ## Installation and rollback
 
-Use the `install.ps1`, `verify.ps1`, and `uninstall.ps1` scripts in the
-`openjoc-lav-0.11.0-windows-x64.zip` asset from the included onboarding batch file.
-The package installs under an isolated OpenJOC version directory, registers a
-separate filter identity, and provides an uninstall path that restores the
-stock LAV arrangement.
+Extract the complete Windows LAV package, double-click `install.bat`, accept
+UAC, and require `verify.bat` to report **PASS**. Follow the included PotPlayer
+quick start, and use `uninstall.bat` to remove only OpenJOC-owned registration
+and files. The package installs under an isolated OpenJOC version directory,
+registers a separate filter identity, and restores the stock LAV arrangement
+on uninstall. Direct PowerShell entry points remain available for automation,
+but elevated-PowerShell-only onboarding is not required.
 
 ## License boundary
 

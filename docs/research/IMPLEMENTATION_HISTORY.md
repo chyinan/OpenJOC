@@ -1705,8 +1705,9 @@ public syntax. Real controlled-corpus activation and full real-stream fidelity
 remain unavailable.
 ## J1R31 — OpenJOC 0.x capability and CLI contract
 
-J1R31 consolidates the current evidence boundary into the canonical
-`REQUIREMENTS_MATRIX.md` capability table. The table separates production
+J1R31 consolidated the then-current evidence boundary into the now-archived
+[`REQUIREMENTS_MATRIX.md`](../archive/requirements/REQUIREMENTS_MATRIX.md)
+capability table. The table separates production
 status from evidence class and explicitly covers raw/ISO-BMFF input, base
 E-AC-3 tools, OAMD/JOC profiles, ReconstructionBasis, metadata-only scenes,
 and capture/streaming output. It does not promote public-syntax tests to

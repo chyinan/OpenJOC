@@ -1,5 +1,10 @@
 # OpenJOC Requirements Matrix
 
+> **Archived historical evidence.** This matrix no longer owns current
+> capability or planning status. Use [Capabilities](../../CAPABILITIES.md),
+> [Known limitations](../../KNOWN_LIMITATIONS.md), and the
+> [Roadmap](../../ROADMAP.md) for the current contract.
+
 > Canonical owner: the engineering requirement/status truth table. This file
 > does not own onboarding, future roadmap, or research chronology.
 

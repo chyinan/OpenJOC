@@ -1,12 +1,11 @@
-# OpenJOC 0.11.0 capabilities
+# Capabilities
 
-This is the canonical capability status for OpenJOC 0.11.0. Real-media
-acceptance is complete: Logic imports OpenJOC ADM, and a Logic-authored
-re-export is accepted by Dolby Encoding Engine. The
-historical v0.3.0 release baseline remains separately
-documented by its changelog entry. This is a release-facing snapshot, not a
-research journal. Detailed engineering and historical evidence remain outside
-the standalone release documentation set.
+This is the canonical current capability status. Real-media acceptance confirms
+that Logic imports OpenJOC reconstructed ADM and that a Logic-authored re-export
+is accepted by Dolby Encoding Engine. Direct ingestion of the byte-exact
+OpenJOC-authored file is not claimed. Historical release state belongs to the
+[CHANGELOG](../CHANGELOG.md) and [archive](archive/README.md); dated engineering
+evidence belongs to the research and provenance records.
 
 ## Status vocabulary
 
@@ -40,7 +39,7 @@ renderer.
 | Components | Typed decoded-component manifest | `ADMITTED` | `diagnostics/components.json` separates Base, Base LFE, indexed RB coordinates, RcLfe boundary and unresolved binding | PCM-free layout; no authored-object identity |
 | JOC bridge | Codec-domain streaming reconstruction input and readiness gate | `ADMITTED_WITH_SCOPE` | `JocSpatialFrameBridge`, absolute `SampleRange`, finite/dimension checks, synthetic linearity/partition tests, readiness census | `T(t)` remains unresolved; no authored-object semantic binding |
 | JOC bridge | Opt-in codec-coordinate spatial projection and accumulation | `ADMITTED_WITH_SCOPE` | `JocSpatialBridge`, topology binding, spatial projection, Q32 gain scheduling, linear accumulation, raw3 preservation, and partition tests | Experimental maturity; `SemanticBindingState::Unresolved`; official runtime oracle not independently confirmed |
-| JOC rendering | Real supported E-AC-3 JOC to preset speaker WAV/CAF workflow | `ADMITTED_WITH_SCOPE` | `render-joc` decoder/bridge/output integration tests, automatic bridge-control assembly tests, 2.0 topology and Lo/Ro/Lt/Rt numeric tests, preset geometry, topology/count/LFE/order/mask/semantic-CAF checks, synthetic arbitrary-layout and 24-channel bridge tests | Experimental 2.0 plus 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, and 22.2 paths; all use one generic full-XYZ/N-layer data-driven projector and separate LFE ownership; 7.1.6 and the 9.1 family are semantic CAF-only, while 22.2 writes explicit unmasked 24-channel WAV or richer CAF metadata; `CONTROL.json` is optional and remains a complete explicit override/test input; generic library layouts remain supported; no authored-object binding or vendor-fidelity claim |
+| JOC rendering | Real supported E-AC-3 JOC to preset speaker WAV/CAF workflow | `ADMITTED_WITH_SCOPE` | `render-joc` decoder/bridge/output integration tests, automatic bridge-control assembly tests, 2.0 topology and Lo/Ro/Lt/Rt numeric tests, preset geometry, topology/count/LFE/order/mask/semantic-CAF checks, synthetic arbitrary-layout and 24-channel bridge tests | Experimental 2.0 plus 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, and 22.2 paths; all use one generic full-XYZ/N-layer data-driven projector and separate LFE ownership; 7.1.6 and the 9.1 family are semantic CAF-only, while 22.2 writes explicit unmasked 24-channel WAV or richer CAF metadata; `--topology` is optional and remains a complete explicit override/test input; generic library layouts remain supported; no authored-object binding or vendor-fidelity claim |
 | JOC rendering | Real supported E-AC-3 JOC to stereo generic/user-SOFA binaural WAV | `ADMITTED_WITH_SCOPE` | Virtual-speaker integration tests, bundled SADIE II resource round-trip/coverage, exact HRIR identity, delay-aligned spherical interpolation, azimuth-wrap and sparse-data tests, sample-rate preflight, direct-reference equivalence, partitioned equivalence, LFE policy, reset, and tail tests | Uses the default virtual field `7.1.4` unless `--virtual-layout` is supplied; `--binaural` uses the offline bundled SADIE II D1 resource and `--sofa` overrides it; selected HRTF data must provide exact or safely interpolatable directions for every non-LFE virtual speaker; CLI defaults LFE to `exclude`, with explicit `equal-power-dual-mono` available; output is always two-channel OpenJOC speaker virtualization, not a vendor/direct-object binaural claim |
 | JOC layout engine | Canonical preset and arbitrary user-defined geometry up to 64 output channels | `ADMITTED_WITH_SCOPE` | Public `SpeakerLayout`/`SpatialLayout` plus `JocSpatialBridge`, versioned custom JSON, irregular 3/4/7/11/13/17/31-channel geometry, validation rejects, arbitrary-order and 24-channel tests | Preset names remain the ordinary CLI path; `--layout-file` is advanced; custom WAV is intentionally unmasked and CAF carries coordinates; downstream host/device geometry remains separate |
 | Integration | Headless Rust `OpenJocSession` / `OpenJocConfig` | `ADMITTED_WITH_SCOPE` | Session lifecycle, complete-AU packet validation, owned interleaved `f32` PCM, timestamps, reset/flush/drain, multi-instance, and latency tests | One serial caller per session; arbitrary byte fragmentation, multi-AU pushes, file I/O, and CLI parsing are outside the packet API |
@@ -75,7 +74,7 @@ openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR
 openjoc diagnose-tools FILE --vector-id ID --json OUTPUT
 openjoc census [MANIFEST] -o DIR
 openjoc diagnose-oamd FILE [OPTIONS]
-openjoc render-joc FILE [--topology TOPOLOGY.json] [--layout LAYOUT | --binaural [--sofa HRTF.sofa] [--virtual-layout LAYOUT]] --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--lfe-policy exclude|equal-power-dual-mono]
+openjoc render-joc FILE [--topology TOPOLOGY.json] [--layout LAYOUT | --layout-file LAYOUT.json | --binaural [--sofa HRTF.sofa] [--virtual-layout LAYOUT]] --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--lfe-policy exclude|equal-power-dual-mono]
 openjoc --version
 ```
 

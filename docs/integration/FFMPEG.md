@@ -9,8 +9,8 @@ This is not a decoder plugin for an installed `ffmpeg` executable. FFmpeg has
 no documented stable out-of-tree decoder-plugin ABI comparable to GStreamer's
 loadable element model. Stock FFmpeg therefore does not gain
 `-c:a openjoc`; no FFmpeg source, registration table, parser, demuxer, or
-configure script is patched here. A native libavcodec wrapper is a separate
-future source-integration project.
+configure script is patched here. The implemented native libavcodec source
+wrapper is documented separately in [FFMPEG_NATIVE.md](FFMPEG_NATIVE.md).
 
 ## Supported FFmpeg baseline
 
@@ -228,10 +228,10 @@ packets as preroll, and discard preroll output according to its own seek
 policy. The bridge decodes preroll normally and does not fabricate or silently
 trim samples.
 
-For a future native decoder, current FFmpeg `AVCodecContext.delay` audio
-semantics match this sample count: it is the number of samples a decoder must
-output before output is valid and the amount to decode before a seek target.
-The external wrapper does not create a fake `AVCodecContext` merely to store it.
+The native decoder uses FFmpeg `AVCodecContext.delay` for this sample count:
+it is the number of samples a decoder must output before output is valid and
+the amount to decode before a seek target. The external wrapper does not create
+a fake `AVCodecContext` merely to store it.
 
 ## Proof executable
 
@@ -263,8 +263,9 @@ The wrapper and C shim contain no CoreAudio, AudioToolbox, WASAPI, ALSA,
 PipeWire, Media Foundation, DirectShow, or platform spatial renderer. macOS
 and Linux feature builds use pkg-config. CI installs FFmpeg development
 packages on Ubuntu and Homebrew FFmpeg on macOS. Windows core code builds
-without FFmpeg; a future feature job should use one pinned shared-development
-SDK exposing compatible headers, import libraries/DLLs, and pkg-config metadata.
+without FFmpeg. A native Windows feature job for this external bridge is not
+qualified; it would require one pinned shared-development SDK exposing
+compatible headers, import libraries/DLLs, and pkg-config metadata.
 The reproducible audited route is the official FFmpeg 9.0.1 source under
 MSYS2/MinGW-w64 with `--enable-shared`, following FFmpeg's
 [Windows platform guide](https://ffmpeg.org/platform.html). The current vcpkg
@@ -289,7 +290,8 @@ not legal advice.
 - The wrapper selects the first E-AC-3 audio stream; richer stream selection
   belongs in an embedding application.
 - It does not enumerate audio devices or infer headphones from two channels.
-- It does not implement mpv integration.
+- mpv integration uses the native `libopenjoc` wrapper rather than this
+  external embedding bridge.
 
 The bridge proves packet assembly, timing, output ownership, and channel
 semantics and remains the embedding/reference frontend. The additional
