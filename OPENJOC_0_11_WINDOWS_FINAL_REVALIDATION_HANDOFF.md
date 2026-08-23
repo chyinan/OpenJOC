@@ -4,6 +4,7 @@
 
 - Branch: `codex/openjoc-0.11-integration`
 - Integration source head before this handoff artifact: `224c459`
+- Handoff artifact commit: `8b55d6f`
 - Integration base: `33ef4bc47531b32f302443c0225b328070b9d79c`
 - Arbitrary geometry source head: `3fd2c42`
 - Windows onboarding source head: `a081385`
