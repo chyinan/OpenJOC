@@ -70,6 +70,11 @@ jobs:
           echo "PKG_CONFIG_PATH=$RUNNER_TEMP/ffmpeg9/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg9/lib" >> "$GITHUB_ENV"
 
+      - name: Repository documentation and hygiene
+        run: |
+          python3 -m unittest scripts.tests.test_repository_hygiene
+          python3 scripts/check_repository_hygiene.py
+
       - name: Format check
         run: cargo fmt --all -- --check
 

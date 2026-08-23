@@ -15,7 +15,7 @@ The generator uses the existing public-syntax synthetic JOC builder in the
 creates a temporary MP4 wrapper plus ordinary codec controls for integration
 qualification. Temporary PCM and media controls are not release inputs.
 
-For the current 0.9 development commit, the deterministic raw fixture hash is:
+For this frozen public fixture, the deterministic raw fixture hash is:
 
 ```text
 SHA-256 54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4  joc.ec3

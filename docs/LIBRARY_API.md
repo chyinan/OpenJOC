@@ -1,8 +1,8 @@
 # Headless Rust streaming API
 
-`openjoc-api` provides the high-level embeddable interface introduced in
-OpenJOC 0.9.1. It is experimental, while the decoder and renderer semantics
-remain bounded by the documented 0.x contracts.
+`openjoc-api` provides the current high-level embeddable interface. It remains
+experimental, with decoder and renderer semantics bounded by the current
+capability and limitation contracts.
 
 ## Lifecycle
 
@@ -48,8 +48,8 @@ owns its vector and may be retained by a Rust caller. It reports sample rate,
 sample count, sample-domain PTS, render mode, layout name, and ordered semantic
 channel labels. Speaker layouts use the repository's canonical public presets;
 2.0 is `FL, FR`, 5.1 is `FL, FR, FC, LFE, Ls, Rs`, 22.2 is the canonical
-24-channel `FL, FR, FC, LFE1, ... , BtFR` order, and binaural is physical
-stereo `Left, Right` even when its virtual layout is multichannel.
+24-channel `FL, FR, FC, LFE1, ... , BtFR` order, and binaural reports
+`Left Ear, Right Ear` even when its virtual layout is multichannel.
 
 Physical speaker sessions may also use `SpeakerLayout::custom(...)` and
 `OpenJocConfig::with_speaker_layout(...)`. The custom layout keeps the caller's
@@ -71,8 +71,8 @@ until the first AU establishes the stream format.
 
 PTS uses the decoded sample domain. If a first packet has PTS `P`, output for
 logical sample `n` reports `P + n`; the PTS is not silently moved by the
-filterbank or final linked-gain delay. Speaker output reports the deterministic
-Speaker output reports a 609-sample delay: the 577-sample QMF/Base-RB delay
+filterbank or final linked-gain delay. Speaker output reports a 609-sample
+delay: the 577-sample QMF/Base-RB delay
 plus the admitted 32-sample causal speaker-stage block. Binaural output reports
 577 samples because it does not use the speaker FinalLinkedGain stage. These
 are public synchronization contracts; dialnorm and offline static

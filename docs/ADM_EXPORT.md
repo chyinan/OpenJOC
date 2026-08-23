@@ -1,7 +1,7 @@
 # Reconstructed interoperable ADM BWF export
 
-OpenJOC 0.9 adds a standards-based reconstructed interchange export. The
-OpenJOC 0.9.2 makes compressed-media export production-scale and streaming:
+OpenJOC provides a standards-based reconstructed interchange export with a
+bounded compressed-media streaming path:
 
 ```sh
 openjoc export-adm INPUT.ec3 -o OUTPUT.wav
@@ -61,7 +61,7 @@ encoding process. Multiple different source ADM masters can produce identical
 or observationally equivalent JOC data, so JOC → original ADM is not a unique
 inverse.
 
-## 0.9 scope and boundary
+## Scope and semantic boundary
 
 The exporter consumes `ObjectScene` and `ReconstructionBasis` directly. It does
 not consume a 7.1.4/22.2 speaker render, FinalLinkedGain output, or HRTF
@@ -69,7 +69,7 @@ output. Those are renderer-domain results and are not reconstructed scene
 signals.
 
 The current OpenJOC scene contract deliberately keeps the association between
-reconstruction rows and OAMD metadata `Unresolved`. Therefore 0.9 exports each
+reconstruction rows and OAMD metadata `Unresolved`. Therefore OpenJOC exports each
 reconstruction row as a deterministic neutral reconstructed signal and reports
 the recovered metadata as unbound. A row index that happens to equal an OAMD
 index is not evidence of object identity and is never serialized as an ADM
@@ -141,7 +141,7 @@ Generated identities are stable and neutral, for example
 
 The same table is used by the writer and the reconstruction report.
 
-| Semantic | Status | 0.9 treatment |
+| Semantic | Status | Current treatment |
 |---|---|---|
 | Reconstruction signal identity | `EXACT` | Local ReconstructionBasis row identity only. |
 | Audio ↔ spatial metadata binding | `UNRESOLVED` | No row is bound to an OAMD object. |

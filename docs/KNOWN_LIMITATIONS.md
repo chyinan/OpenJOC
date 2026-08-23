@@ -1,169 +1,128 @@
-# OpenJOC 0.10.0 known limitations
+# Known limitations
 
-> Canonical owner: current user-visible limitations and non-claims. Historical
-> research and implementation chronology belong in the source-only documents.
+This is the canonical current list of user-visible limitations and non-claims.
+Positive support status belongs to [CAPABILITIES.md](CAPABILITIES.md).
+Historical limitations remain in the changelog, research record, and archive.
 
-OpenJOC 0.10.0 is an independent, experimental interoperability project. It
-does not claim Dolby endorsement, certification, a licensed implementation, or
-bit-identical Reference Player output.
+OpenJOC is an independent experimental interoperability project. It does not
+claim Dolby endorsement, certification, a licensed implementation,
+bit-identical Reference Player output, or proprietary renderer fidelity.
 
-- `scene.json` is metadata-only. It does not bind decoded audio to authored
-  objects. `SemanticBindingState` remains `Unresolved`, and
-  `ReconstructionBasis` rows are diagnostic reconstruction coordinates rather
-  than verified authored-object PCM.
-- `export-adm` writes a reconstructed RIFF/RF64 ADM BWF interoperability representation,
-  not the original ADM/BWF master. Best-effort output keeps reconstruction
-  signals neutral and reports the unresolved audio-to-spatial-metadata binding;
-  strict mode rejects it. Original names, hierarchy, UIDs, and discarded source
-  information cannot be recovered.
-- The Dolby Atmos master profile has no mono LFE bed. When Base LFE is present,
-  `export-adm` creates the minimum legal 5.1 transport bed: only LFE contains
-  recovered PCM; L, R, C, Ls, and Rs are deterministic silence placeholders
-  explicitly identified in the report. They are not recovered authored bed
-  content. The generated `dbmd` contains only the public EBU Supplement 6
-  envelope, not reserved Atmos-specific segment payloads.
-- R2 imports successfully in Logic Pro, but Dolby Encoding Engine rejects the
-  byte-exact OpenJOC file after parsing with `Content was not authored with
-  Dolby tools.` OpenJOC does not forge Dolby authoring provenance. A re-export
-  from an authorized Atmos authoring tool is a separate derived workflow. The
-  maintainer verified that Logic's re-export is accepted by DEE; direct DEE
-  ingest of OpenJOC output remains unsupported and unclaimed.
-- Compressed `export-adm` uses bounded-memory production streaming. Explicit
-  `ObjectScene` JSON and scene-directory inputs remain diagnostic formats and
-  may already materialize programme-duration PCM before the ADM writer sees
-  them.
-- The embeddable packet API accepts exactly one complete E-AC-3 JOC access unit
-  per push. Arbitrary byte fragmentation, multiple AUs in one push, demuxing,
-  CLI parsing, and filesystem output remain outside `OpenJocSession`.
-- The C ABI is experimental ABI 1.4. It is intended for integration during the
-  OpenJOC 0.x series; layout and compatibility details may evolve. The
-  published header and platform libraries are the supported C consumer
-  surface. The repository provides GStreamer integration, an external FFmpeg
-  bridge, a native `libopenjoc` source patch, and a source-only mpv patchset;
-  stock FFmpeg binaries do not contain it, and no custom player binary is
-  publicly released as upstream mpv/FFmpeg products. Reproducible OpenJOC
-  Player Bundle release candidates exist for the qualified macOS arm64, Linux
-  x86_64, and Windows x64 surfaces; they are not official mpv/FFmpeg releases.
-- The Windows DirectShow/LAV Filters integration is a separate downstream host
-  integration. Ordinary E-AC-3 stays on stock LAV/FFmpeg, confirmed JOC is
-  admitted to OpenJOC, and passthrough stays on the existing LAV bitstream
-  path. The validated host is PotPlayer, and the current OpenJOC DirectShow
-  output is stereo float PCM. The standalone renderer's 5.1.2, 5.1.4, 7.1.x,
-  9.1.x, and 22.2 capabilities are not LAV DirectShow output claims.
-- The codec-domain JOC operator `T(t)` remains unresolved. The separate
-  `render-joc` path is an experimental ordinary-domain speaker projection that
-  assembles control from decoded JOC/OAMD state; it does not infer authored
-  object identity or resolve the codec-domain operator.
-- The public `render-joc` presets are `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`,
-  `7.1.4`, `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`. `7.1.6` and the
-  `9.1` family require semantic CAF output. WAV requests for layouts without
-  an exact WAVEFORMATEXTENSIBLE mask fail closed; no identity substitution or
-  fabricated mask is used. `2.0` and the current `5.1`-through-`9.1.6` family
-  are public CLI presets; `22.2` uses explicit unmasked WAV or rich CAF
-  metadata because no complete standard WAVEFORMATEXTENSIBLE mask exists.
-- E-AC-3 dynamic-range control is metadata-driven. `--drc` selects Disabled,
-  Line, RF, or Custom signed-fraction scaling; it remains separate from
-  dialnorm. OpenJOC's automatic Default dialnorm policy applies the supported
-  E-AC-3 metadata-derived calibrated program scalar; this is not content-
-  dependent LUFS/peak normalization, a signal-level compressor, or a limiter.
-- Calibrated dialnorm can request substantial attenuation for some programs;
-  a lower absolute offline file level is not by itself a decoder bug. When a
-  conveniently loud offline file is wanted, use optional post-render
-  `--normalize-peak TARGET_DBFS`. `--dialnorm analog` remains available as an
-  advanced unity-dialnorm compatibility/diagnostic policy, not as the default
-  louder-output workflow.
-- The admitted `2.0` speaker output uses the generic two-speaker projector for
-  reconstructed/object coordinates and public ETSI Lo/Ro/Lt/Rt matrices for
-  supported 5.1 Base channels. Optional E-AC-3 LFE metadata may fold LFE into
-  stereo; absent metadata excludes LFE. Base back/height channels are rejected
-  for full 2.0 output because the public 6.8 matrix does not define their
-  reduction. No crossover, subwoofer redirect, or other bass-management DSP is
-  performed.
-- The canonical `SpeakerLayout`/`JocSpatialBridge` path accepts validated
-  caller-defined geometry directly from Rust, the C ABI, or the advanced CLI
-  `--layout-file` JSON path. Preset names remain the ordinary-user workflow.
-  Custom physical layouts use ordered unmasked WAV or coordinate-described CAF
-  metadata; this does not imply that third-party DAWs, FFmpeg channel-layout
-  negotiation, GStreamer, DirectShow/LAV, or physical devices can preserve the
-  geometry.
-- The admitted Dynamic Region/Zone contract is limited to six horizontal
-  states (`NoConstraints`, `BackExcluded`, `SideExcluded`, `CentreAndBack`,
-  `ScreenOnly`, and `SurroundOnly`) plus independent Top-Bottom
-  include/exclude on validated one- or two-plane layouts. Region selects a
-  constrained topology before projection, and points outside selected support
-  clamp to its endpoints.
-- Ordinary Dynamic Extent is supported on the admitted 5.1-through-22.2 layouts. It
-  reduces the three size components to one isotropic scalar, preserves the
-  point target at zero, and uses the existing Q32 target scheduler. Region ×
-  Extent uses the Region-first effective topology and retains the authored
-  center for the Extent path.
-- Ordinary point Dynamic ChannelLock is supported across the current one- and
-  two-layer topology family. Region is applied first; an active ChannelLock
-  owns current target generation and bypasses the Extent target branch while
-  retaining Extent state. When ChannelLock is released, inherited Extent
-  behavior resumes. Non-point ChannelLock, selector-6 special behavior, rare
-  Region fallback/tie cases, arbitrary region algebra, and unadmitted
-  layer/fallback combinations remain withheld and fail closed.
-- Fixed routing is supported when a validated neutral family/member key and an
-  exact current-layout route row are supplied; authored coordinates do not
-  participate and missing rows fail closed. Named routing accepts neutral
-  `named/<0..15>` identities on the public layouts, including the admitted 22.2
-  topology. Supplied direct
-  rows are copied unchanged; authorized fallback families derive semantic
-  non-LFE vectors from the current layout and use the existing Q32 scheduler.
-  The explicit LFE-target cells, zero-survivor fallback families, and
-  malformed or out-of-domain identities remain fail closed. Friendly Named
-  display names are intentionally not exposed.
-- Real-JOC binaural output uses the bundled SADIE II D1 generic HRTF by
-  default, or a user-provided compatible SOFA override. It is speaker
-  virtualization through a strict `SimpleFreeFieldHRIR` SOFA bank. The default
-  virtual field is `7.1.4`; the
-  public `5.1`/`7.1`/`9.1`/`22.2` families are eligible when every non-LFE direction is
-  exact or safely interpolatable from the selected dataset. Interpolation is a
-  bounded spherical-local segment/triangle method with shared ear weights and
-  separate integer delay alignment; sparse or outside-domain requests fail
-  closed. HRIR resampling and omitted-channel fallback are not used, and a
-  SOFA/input sample-rate mismatch is rejected rather than silently converted.
-  An
-  explicit `exclude` or `equal-power-dual-mono` LFE policy is required.
-- The strict `openjoc-sofa` loader accepts only the tested local
-  `SimpleFreeFieldHRIR` NetCDF classic CDF-1 subset: fixed listener pose,
-  spherical metre/degree coordinates, two receivers, common sample rate, and
-  integer nonnegative delays. HDF5/NetCDF-4, other conventions, writing,
-  downloads, moving sources, and resampling are not supported. Dataset support
-  remains capability-dependent; the loader does not claim universal coverage.
-- The independent `openjoc-render` foundation remains caller-bound. It
-  supports explicit mono-source 2D/3D rendering and static exact-direction
-  binaural reference paths, but does not provide JOC semantic binding, room or
-  distance modeling, Doppler, head tracking, or a vendor renderer.
-- JOC clip-gain fields are parsed as part of the public syntax boundary, but
-  clip-gain rendering semantics are not applied by the public renderer.
-- `ETSI_STRICT` rejects the observed reserved OAMD warp value `raw=3`.
-  `OBSERVED_VENDOR_COMPAT` is explicit and partial; opaque continuation is
-  retained without assigning vendor semantics. Malformed, unsafe, unknown, or
-  non-whitelisted metadata remains a failure.
-- Raw E-AC-3 streaming and seekable ordinary ISO BMFF input are supported
-  within the documented boundaries. Non-seekable and fragmented MP4 are not
-  admitted. Some capture/demux and compatible-base paths require `ffmpeg` or
-  `ffprobe`.
-- Public syntax coding-tool support has bounded synthetic/numerical coverage;
-  full real-world activation and fidelity for every E-AC-3 coding-tool
-  combination are not claimed.
-- The QMF and reconstruction diagnostics establish the 577-sample round-trip
-  and zero Base/RB bridge lag contracts. They are engineering regressions, not
-  a subjective real-media or realtime qualification. Real-media listening and
-  long-render acceptance remain manual release steps.
-- Decode output directories are create-once destinations. Render replacement
-  requires interactive confirmation or `--overwrite`, and transactional output
-  and input/output alias protection remain in force.
-- The release workflow targets macOS arm64, Windows x86_64, and GNU/Linux
-  x86_64, while the player packaging workflow qualifies macOS arm64, Linux
-  x86_64, and Windows x64. Multichannel PCM generation and transport are
-  qualified in CI; physical speaker-system playback has not been separately
-  validated on Linux/Windows hardware. The macOS artifact is ad-hoc signed,
-  not Developer-ID signed, and not notarized. Linux compatibility is bounded
-  by the Ubuntu 24.04/glibc baseline recorded in each package's `BUILD_INFO`;
-  Windows uses the qualified MSYS2 MinGW-w64 extract-and-run DLL model.
+## Decoder and semantic boundary
 
-See the [capability matrix](CAPABILITIES.md) and [JOC rendering contract](JOC_RENDER.md)
-for the corresponding positive support claims.
+- `ObjectScene` is metadata-only. `SemanticBindingState` remains
+  `Unresolved`, and `ReconstructionBasis` rows are diagnostic decoder
+  coordinates rather than verified authored-object PCM or stems.
+- The ordinary-domain `JocSpatialBridge` renders decoded Base/RB contributions
+  with OAMD-derived control, but it does not resolve authored-object identity
+  or the codec-domain operator `T(t)`.
+- `ETSI_STRICT` rejects syntax outside the published profile, including the
+  observed reserved OAMD warp value `raw=3`. `OBSERVED_VENDOR_COMPAT` is an
+  explicit, partial policy that preserves opaque continuation without
+  assigning vendor semantics.
+- Public-syntax coding-tool support has bounded numerical and state coverage.
+  Full fidelity for every producer, carrier, coding-tool combination, and
+  malformed-input interaction is not claimed.
+
+## Input and streaming
+
+- JOC rendering is 48 kHz. Raw E-AC-3 and seekable ordinary ISO BMFF input
+  are admitted within the documented topology and access-unit boundaries.
+  Non-seekable or fragmented MP4 is not admitted.
+- The Rust `OpenJocSession` packet API accepts one complete E-AC-3 JOC access
+  unit per push: I0 plus optional D0. Demuxing, arbitrary byte fragmentation,
+  and multiple AUs per call belong to the bounded C stream decoder or
+  framework adapters, not that Rust packet contract.
+- Only one I0 plus optional D0 dependent topology is admitted. Additional
+  dependent-substream shapes are rejected.
+- Some seekable container and compatible-base workflows require `ffprobe` or
+  `ffmpeg`; OpenJOC is not a zero-dependency distribution.
+
+## Speaker and binaural rendering
+
+- Presets and custom layouts share one generic renderer. Custom geometry is
+  limited to 64 ordered output channels and at least two usable full-range
+  directions. Renderer admission does not prove that a host, device, or
+  container can transport the same geometry.
+- `7.1.6` and the `9.1` family require semantic CAF output because their
+  identities cannot be represented truthfully by a standard
+  WAVEFORMATEXTENSIBLE mask. `22.2` and custom WAV use explicit unmasked PCM;
+  CAF is preferred when coordinates must be preserved.
+- OpenJOC performs no crossover, bass management, room correction, speaker
+  calibration, head tracking, distance model, Doppler, or device discovery.
+  LFE ownership is explicit and no physical device is inferred from a channel
+  count.
+- Binaural output is virtual-speaker rendering, not proprietary direct-object
+  binaural parity. The bundled SADIE II dataset is generic; a custom SOFA may
+  be more appropriate for a listener.
+- Custom SOFA support is a strict local `SimpleFreeFieldHRIR` NetCDF classic
+  CDF-1 subset with fixed listener pose, two receivers, common sample rate,
+  and bounded exact/interpolated directional coverage. HDF5/NetCDF-4,
+  resampling, downloads, writing, moving sources, and universal dataset
+  coverage are not supported.
+
+## Output level and synchronization
+
+- DRC applies encoded E-AC-3 dynamic-range metadata. Dialnorm controls
+  programme calibration. They are separate from each other and from
+  file-export normalization.
+- `DialnormMode::Default` is the recommended calibrated behavior. `Digital`
+  explicitly selects encoded digital calibration; `Analog` is an advanced
+  unity-gain compatibility/diagnostic policy, not a higher-quality or
+  mastering mode.
+- `--normalize-peak` applies one static post-render sample-peak scalar. It is
+  not LUFS or true-peak normalization, a limiter, compressor, or DRC, and an
+  inter-sample peak may exceed the requested value.
+- Speaker output reports 609 samples of availability delay (577 QMF/Base-RB
+  plus 32 FinalLinkedGain). Binaural reports 577 samples, excluding its finite
+  FIR tail. Logical PTS is not shifted to hide this delay.
+
+## ADM interoperability
+
+- `export-adm` writes a reconstructed RIFF/RF64 ADM BWF representation, not
+  the original ADM/BWF master. Original names, hierarchy, UIDs, authored
+  binding, and discarded source information cannot be recovered.
+- When Base LFE exists, the exporter creates the minimum legal 5.1 transport
+  bed. Only LFE carries recovered Base LFE PCM; L, R, C, Ls, and Rs are
+  deterministic silence placeholders reported as generated structure.
+- The generated `dbmd` contains the public EBU Supplement 6 envelope only.
+  Reserved Atmos-specific segment payloads and Dolby authoring provenance are
+  not copied, guessed, or forged.
+- Logic Pro imports the reconstructed file, and a Logic-authored re-export is
+  accepted by Dolby Encoding Engine. Direct DEE ingest of the byte-exact
+  OpenJOC-authored file remains unsupported and unclaimed.
+
+## APIs and integrations
+
+- C ABI 1.4 is experimental during the OpenJOC 0.x line. The public header,
+  structure sizes, ownership rules, numeric statuses, and compatibility
+  initializers are the contract; ABI evolution remains possible.
+- The external FFmpeg bridge is an embedding surface, not an out-of-tree
+  plugin for an installed `ffmpeg` executable. The native `libopenjoc`
+  decoder requires a patched custom FFmpeg build and explicit positive JOC
+  selection.
+- GStreamer uses an OpenJOC-specific experimental caps feature and requires a
+  matching host runtime. It does not change an installed GStreamer globally.
+- mpv and OpenJOC Player Bundles are project-provided custom builds, not
+  official upstream mpv or FFmpeg releases. Physical multichannel playback
+  still requires an audio output and device that accepts the requested map.
+- The Windows DirectShow/LAV integration positively admits JOC, leaves
+  ordinary E-AC-3 on stock LAV/FFmpeg, and preserves passthrough precedence.
+  Its validated PotPlayer output is 48 kHz stereo float PCM. Standalone
+  5.1.x/7.1.x/9.1.x/22.2 or custom renderer support is not a LAV output claim.
+
+## Platform and release scope
+
+- Platform packages cover the targets recorded in the current release
+  metadata. Multichannel PCM generation and transport are qualified; physical
+  speaker-system playback has not been independently validated on every
+  Linux or Windows device.
+- macOS artifacts are ad-hoc signed where required, not Developer-ID signed
+  or notarized. Linux compatibility is bounded by the recorded glibc/runtime
+  baseline. Windows bundles use their documented adjacent-DLL or isolated LAV
+  installation models.
+- Private/commercial programme fixtures and derived PCM are not distributed.
+  Some real-media acceptance therefore remains a maintainer release gate.
+
+For the corresponding positive claims and evidence boundaries, see
+[CAPABILITIES.md](CAPABILITIES.md) and [JOC_RENDER.md](JOC_RENDER.md).

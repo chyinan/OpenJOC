@@ -41,9 +41,10 @@ input/container ownership and access-unit delivery
                                        │
                                        ▼
                               metadata-only ObjectScene
+```
 
-The 0.9.1 `render-joc` workflow adds an explicit experimental speaker
-branch after the decoded component boundary:
+The `render-joc` workflow adds an explicit experimental speaker branch after
+the decoded component boundary:
 
 ```text
 raw EC-3 / seekable ISO BMFF
@@ -62,8 +63,8 @@ persistent JocSpatialBridge → active N-channel speaker planes
 The CLI presets are data-only registrations over the generic `SpatialLayout`
 and `JocSpatialBridge` projection path. The public library can consume a
 caller-defined channel registry, geometry, and output order without a
-preset-specific projection algorithm; the CLI does not currently serialize
-that custom layout as a file format.
+preset-specific projection algorithm; the CLI accepts the same versioned
+geometry through `--layout-file`.
 
 The `22.2` preset is ITU-R BS.2051-3 Sound System H (9+10+3): a four-layer
 bottom/middle/upper/top topology with 22 spatial speakers and two semantic
@@ -79,7 +80,6 @@ and Base topology changes are validated at the integration boundary; no
 guessed row/object renderer is constructed. The public semantic PCM order is
 selected by the explicit preset; exact speaker WAV masks remain backend
 specific. `5.1` remains `FL, FR, FC, LFE, Ls, Rs`.
-```
 
 The parser reads what is present in the carrier. Validation then applies an
 explicit profile. The decoder consumes an accepted representation; it does
@@ -91,7 +91,7 @@ not hide vendor compatibility decisions.
 
 Raw E-AC-3 uses the in-process incremental reader. Ordinary seekable ISO BMFF
 uses a sample cursor with container ownership kept separate from the AU
-consumer. Non-seekable and fragmented MP4 are outside the 0.9.1 contract.
+consumer. Non-seekable and fragmented MP4 are outside the current contract.
 
 ### E-AC-3 base
 

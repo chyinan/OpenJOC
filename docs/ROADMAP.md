@@ -1,74 +1,50 @@
-# OpenJOC roadmap
+# Roadmap
 
-This is the canonical future-work list. It is intentionally not a copy of the
-current capability matrix or a historical milestone log.
+This document contains future or explicitly deferred work only. It is not a
+commitment or schedule. Implemented capability status belongs to
+[CAPABILITIES.md](CAPABILITIES.md), and release chronology belongs to the
+[CHANGELOG](../CHANGELOG.md).
 
-## Near-term engineering priorities
+## Active engineering priorities
 
-- Consider a separately bounded automatic topology-generator module only if a
-  future maintainer explicitly wants it; `LayoutRenderer3d` intentionally
-  keeps caller-declared speaker triplets and performs no triangulation. Do not
-  infer 3D rendering from the unresolved JOC semantic bridge.
-- Keep the admitted 3D trajectory contract stable: shortest great-circle
-  segments, explicit intermediate keyframes, and absolute-sample partition
-  invariance. Optimization requires measured byte-identical regressions.
-- Keep J5R6 direct-FIR binaural rendering as the compact numerical oracle:
-  exact caller-supplied HRIR lookup, static source registration, bounded
-  history, and complete tail draining remain the reference contract. Any
-  future optimization must preserve byte-identical direct-path regressions.
-- Uniform partitioned binaural convolution is now an explicit opt-in backend
-  alongside the J5R6 Direct FIR oracle. It uses one fixed power-of-two input
-  partition and a `2P` FFT, exposes one-partition scheduling latency, and
-  preserves exact final partial-input and `M-1` tail semantics. It must not
-  silently add SOFA parsing, interpolation, moving sources, or listener pose
-  semantics; backend selection remains caller-owned.
-- Keep the admitted user-supplied HRTF path separately bounded; the current
-  contract provides strict local `SimpleFreeFieldHRIR` SOFA loading plus
-  deterministic exact-or-safely-interpolated direction resolution. Future
-  work may add broader SOFA conventions or robust resampling, but must preserve
-  the fail-closed dataset capability model.
-- Extend public-syntax and malformed-input hardening, including fuzz coverage.
-- Keep container and output streaming contracts explicit as new input forms are
-  considered.
-- Improve cross-platform CI before making Linux, Windows, or Intel-macOS
-  release claims.
-- Add release automation only when signing, notarization, and publication policy
-  are explicitly decided by a human maintainer.
+- Extend malformed-input hardening and fuzz coverage without weakening
+  fail-closed profile, size, topology, and output rules.
+- Expand controlled real-producer coverage for E-AC-3 coding-tool combinations
+  whose public-syntax admission currently exceeds the available real-corpus
+  activation evidence.
+- Keep input/container and incremental output ownership explicit if new
+  container forms are considered. Non-seekable and fragmented MP4 remain
+  outside the current contract unless separately designed and admitted.
+- Improve cross-platform hardware and long-run acceptance where current CI
+  proves PCM generation/transport but not every physical speaker device or
+  audio-output stack.
+- Decide signing, notarization, attestation, and publication-policy changes
+  explicitly before making broader distribution claims.
 
 ## Research priorities
 
-- Resolve the single JOC spatial bridge blocker: the independently testable
-  time-varying operator `T(t)` and its complete state inputs. The codec-domain
-  bridge is now explicit. J5R11 narrowed the next question to the temporal
-  class of one companion-induced forward column. J5R12 then rejected both
-  authorized AU-synchronous and 256-sample codec-block-synchronous
-  source-locked models; do not bypass this blocker with a finer ad-hoc model
-  or a fixed RB-row/object assumption. J5R13 additionally rejected the only
-  authorized global 256-phase and 1536-phase cyclostationary templates, so
-  the single-tone corpus is exhausted for this temporal-class question.
+- Resolve the remaining codec-domain JOC spatial operator `T(t)` from
+  independently testable, admissible evidence. Existing negative results rule
+  out fixed row/object and tested source-locked/cyclostationary models; do not
+  bypass that boundary with an ad hoc mapping.
 - Obtain admissible evidence for unresolved vendor OAMD continuation without
-  weakening `ETSI_STRICT`.
-- Separate metadata understanding from any future authored-object binding
-  claim; require independent identity, timing, negative-control and repeatability
-  evidence.
-- Evaluate real-producer coding-tool combinations where public-syntax admission
-  currently exceeds controlled real-corpus activation.
+  weakening `ETSI_STRICT` or assigning semantics to opaque fields.
+- Keep metadata understanding separate from authored-object binding. Any
+  future binding claim requires independent identity, timing, negative-control,
+  and repeatability evidence.
 
-## Candidates after 0.6.0
+## Deferred candidates
 
-- Selector-6 behavior, rare Region fallback/tie handling, and broader Region
-  algebra.
-- Friendly Named display names, more than two-layer semantics, 22.2, broader
-  SOFA conventions, and additional player/integration validation.
+These items are speculative and have no committed schedule:
 
-These items remain backlog only; they are not part of the 0.6.0 release
-contract.
+- broader SOFA convention/container support and sample-rate conversion;
+- additional Region fallback/tie behavior and richer presentation names;
+- live integration target/layout switching with explicit renderer-state
+  transitions;
+- additional player, device, and platform qualification;
+- an automatic 3D topology generator, but only as a separately bounded module
+  that does not change caller-declared `LayoutRenderer3d` topology semantics.
 
-## Historical non-goals for the OpenJOC 0.3.0 release
-
-- No implicit authored-object PCM claim.
-- No audio-bound ObjectScene or proprietary renderer-fidelity claim. The
-  post-release development line may expose only the separately scoped
-  explicit-scene renderer contract.
-- No raw warp-3 alias or guessed Dolby semantic rule.
-- No public release action without an explicit human decision.
+Completed speaker presets, custom 64-channel geometry, C ABI 1.4, FFmpeg,
+GStreamer, mpv/player packaging, DirectShow/LAV/PotPlayer onboarding, and
+release automation are intentionally absent from this future-work list.

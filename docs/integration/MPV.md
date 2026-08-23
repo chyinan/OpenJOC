@@ -146,7 +146,7 @@ repository.
   `render_mode=binaural`.
 - Physical multichannel playback requires an AO/device that genuinely accepts
   the requested map. `--ao=null` is the deterministic non-hardware check.
-- Standalone FFmpeg and mpv builds remain source integrations. The 0.9.2
+- Standalone FFmpeg and mpv builds remain source integrations. Current
   OpenJOC Player Bundles contain project-provided custom builds for the
   qualified platforms, but are not official upstream mpv/FFmpeg releases and
   no upstream mpv change has been submitted.

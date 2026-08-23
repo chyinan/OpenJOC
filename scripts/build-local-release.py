@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pattern: Imperative Shell
 """Build a deterministic local OpenJOC macOS-arm64 candidate."""
 
 from __future__ import annotations
@@ -190,7 +191,7 @@ def main() -> int:
                     "--",
                     ".",
                     ":(exclude)docs/PROVENANCE.md",
-                    ":(exclude)docs/REQUIREMENTS_MATRIX.md",
+                    ":(exclude)docs/archive",
                     ":(exclude)docs/research",
                 ],
                 cwd=REPOSITORY,
