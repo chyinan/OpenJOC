@@ -79,7 +79,8 @@ generic N-channel library interface for caller-defined layouts; the CLI names
 are convenience presets, not the renderer's fundamental maximum. Advanced
 users can load the same canonical geometry through
 [custom speaker layouts](docs/CUSTOM_SPEAKER_LAYOUTS.md) with `--layout-file`;
-presets remain the simple ordinary-user workflow.
+presets remain the simple ordinary-user workflow. Custom layouts support up to
+64 output channels.
 
 OpenJOC 0.3.0 was the local release candidate. It added an explicit
 spatial-rendering foundation for caller-supplied mono sources: validated 2D and

@@ -714,6 +714,121 @@ fn custom_layout_supports_irregular_channel_count_corpus() {
 }
 
 #[test]
+fn custom_layout_projection_policy_is_finite_deterministic_and_bounded() {
+    let layouts = [
+        SpeakerLayout::custom(
+            "strongly-asymmetric",
+            vec![
+                SpeakerGeometry::full_range("A", -82.0, -18.0),
+                SpeakerGeometry::full_range("B", -21.0, 4.0),
+                SpeakerGeometry::full_range("C", 37.0, 31.0),
+                SpeakerGeometry::full_range("D", 126.0, -7.0),
+            ],
+        )
+        .expect("asymmetric layout"),
+        SpeakerLayout::custom(
+            "front-heavy",
+            vec![
+                SpeakerGeometry::full_range("FL", -38.0, 0.0),
+                SpeakerGeometry::full_range("FC", -4.0, 0.0),
+                SpeakerGeometry::full_range("FR", 29.0, 0.0),
+                SpeakerGeometry::full_range("FTop", 8.0, 38.0),
+            ],
+        )
+        .expect("front-heavy layout"),
+        SpeakerLayout::custom(
+            "height-heavy",
+            vec![
+                SpeakerGeometry::full_range("LowerLeft", -58.0, -42.0),
+                SpeakerGeometry::full_range("Mid", 4.0, 7.0),
+                SpeakerGeometry::full_range("UpperRight", 61.0, 53.0),
+            ],
+        )
+        .expect("height-heavy layout"),
+        SpeakerLayout::custom(
+            "sparse",
+            vec![
+                SpeakerGeometry::full_range("Left", -24.0, 0.0),
+                SpeakerGeometry::full_range("Right", 42.0, 0.0),
+            ],
+        )
+        .expect("sparse layout"),
+    ];
+    let sweep = [-0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25];
+    for layout in &layouts {
+        for &x in &sweep {
+            for &y in &sweep {
+                for &z in &[-1.25, -0.25, 0.25, 1.25] {
+                    let descriptor = point(x, y, z);
+                    let first = layout.spatial().project(&descriptor).expect("finite sweep");
+                    let second = layout.spatial().project(&descriptor).expect("repeat sweep");
+                    assert_eq!(
+                        first,
+                        second,
+                        "non-deterministic sweep for {}",
+                        layout.name()
+                    );
+                    assert!(
+                        first
+                            .iter()
+                            .all(|gain| gain.is_finite() && gain.abs() <= 1.0)
+                    );
+                    assert_unit_l2(&first);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn custom_layout_uses_existing_boundary_clamping_and_equal_power_layer_blending() {
+    let horizontal = SpeakerLayout::custom(
+        "horizontal-boundary",
+        vec![
+            SpeakerGeometry::full_range("Left", 30.0, 0.0),
+            SpeakerGeometry::full_range("Right", -30.0, 0.0),
+        ],
+    )
+    .expect("horizontal boundary layout");
+    let left = horizontal
+        .spatial()
+        .project(&point(-2.0, 0.5, 0.0))
+        .expect("left boundary");
+    let right = horizontal
+        .spatial()
+        .project(&point(2.0, 0.5, 0.0))
+        .expect("right boundary");
+    assert_eq!(left, [1.0, 0.0]);
+    assert_eq!(right, [0.0, 1.0]);
+
+    let vertical = SpeakerLayout::custom(
+        "vertical-boundary",
+        vec![
+            SpeakerGeometry::full_range("Lower", 0.0, -35.0),
+            SpeakerGeometry::full_range("Upper", 0.0, 35.0),
+        ],
+    )
+    .expect("vertical boundary layout");
+    let lower = vertical
+        .spatial()
+        .project(&point(0.5, 0.5, -2.0))
+        .expect("lower boundary");
+    let upper = vertical
+        .spatial()
+        .project(&point(0.5, 0.5, 2.0))
+        .expect("upper boundary");
+    assert_eq!(lower, [1.0, 0.0]);
+    assert_eq!(upper, [0.0, 1.0]);
+    let layer_transition = vertical
+        .spatial()
+        .project(&point(0.5, 0.5, 0.5))
+        .expect("layer transition");
+    assert!(layer_transition.iter().all(|gain| gain.is_finite()));
+    assert!(layer_transition.iter().all(|gain| *gain > 0.0));
+    assert_unit_l2(&layer_transition);
+}
+
+#[test]
 fn seven_one_two_has_complete_bed_and_one_row_upper_y_degeneration() {
     let preset = SpeakerLayoutPreset::for_name("7.1.2").expect("7.1.2 preset");
     assert_eq!(preset.layout.topology().layers[0].rows.len(), 3);

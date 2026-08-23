@@ -49,12 +49,26 @@ panned. The decoded base LFE is copied to each declared logical LFE output,
 matching the existing multiple-LFE preset behavior. This feature does not
 add crossover, bass management, delay, gain calibration, or room correction.
 
-The implementation admits up to 64 output speakers and requires at least two
+The implementation admits up to 64 output channels and requires at least two
 full-range speakers. Names must be unique and non-empty. Coordinates must be
 finite and in range; duplicate or near-degenerate full-range directions,
 empty layouts, malformed JSON, unknown fields, and unknown versions are
 rejected before rendering. JSON numbers are never allowed to become NaN or
 Infinity PCM.
+
+## Projection coverage policy
+
+The existing generic projector defines coverage for structurally valid custom
+layouts; it does not add a second fallback renderer. For finite source
+coordinates outside a layout's rectangular support, `x` is clamped to the
+first/last anchor in the selected row and `y` is clamped to the first/last row.
+For multi-layer layouts, `z` is clamped to the lowest/highest layer. Between
+adjacent layers, target vectors are blended with the existing equal-power
+cosine/sine law. The resulting dynamic target is normalized by the existing
+projector, so supported finite sweeps remain deterministic, finite, and
+bounded. Structurally unusable layouts are rejected during construction;
+finite out-of-bound source positions are defined boundary projections rather
+than undefined behavior.
 
 ## API and container boundary
 
@@ -81,9 +95,11 @@ The C ABI 1.4 appends `custom_speaker_layout` to
 creation. Existing preset callers can leave it null. The ABI does not require
 temporary JSON files.
 
-For custom physical layouts, WAV is written as truthful unmasked PCM; a
+For custom physical layouts, WAV is written as deterministic, truthful
+unmasked PCM in the declared channel order; a
 standard WAVEFORMATEXTENSIBLE speaker mask would falsely claim standard
-identities. CAF is preferred because OpenJOC writes coordinate channel
-descriptions there. Downstream players, FFmpeg channel-layout negotiation,
+identities. CAF is recommended when downstream interchange must preserve
+geometry because OpenJOC writes coordinate channel descriptions there.
+Downstream players, FFmpeg channel-layout negotiation,
 GStreamer, DirectShow/LAV, and physical devices may still have narrower
 geometry contracts; renderer support does not imply host/device support.

@@ -22,9 +22,12 @@
 - Custom JSON/CLI/Rust API/C ABI: PASS. `--layout-file`, `OpenJocConfig::with_speaker_layout`, and ABI 1.4 in-memory geometry descriptors are covered by focused tests.
 - Custom Base handling: PASS. Standard codec Base identities are precomputed as explicit route vectors into arbitrary target geometry; LFE remains separate and can be repeated for multiple logical LFE outputs.
 - Real JOC preset/custom renders: PASS. Public generated `joc.ec3` rendered as preset 5.1 WAV and custom `studio-irregular` CAF/WAV. Custom WAV was checked with ffprobe and reports `channel_layout=unknown` rather than a false standard mask.
+- Independent closure: IN PROGRESS. `266a2bf..c85df64` is report/documentation-only; the 13-preset START-vs-FINAL oracle is bit-identical for every preset. See `OPENJOC_ARBITRARY_LAYOUT_PRESET_ORACLE.md`.
+- Partial geometry policy: PASS. Finite out-of-bound x/y source coordinates clamp to edge anchors/rows; z clamps to outer layers; adjacent layers use existing equal-power cosine/sine blending; dynamic targets normalize and remain finite/bounded.
+- ABI compatibility: PASS. A real ABI 1.3 declaration/header caller links to the ABI 1.4 library, uses preset 5.1 decode/render, flush/reset/destroy, and preserves a canary around the old config allocation. The legacy initializer now writes only the ABI 1.3 prefix; ABI 1.4 callers use `openjoc_decoder_config_init_v1_4`.
 - Quality gates: PASS. `cargo fmt --all -- --check`, `cargo check --workspace`, `cargo clippy --workspace --all-targets --all-features`, `cargo test --workspace`, `scripts/test-c-api.sh`, and the public-fixture `self-test` pass.
 
 ## Next actions
 
-1. Write the completion/reviewer handoff report.
-2. Inspect final diff and create coherent feature commits.
+1. Finish the independent closure report with the post-closure HEAD.
+2. Run the complete workspace quality gates after the ABI initializer change.
