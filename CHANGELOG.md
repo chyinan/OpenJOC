@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased — v0.11.0 integration candidate]
+
+This integration candidate combines the accepted arbitrary-speaker-geometry
+renderer work with the accepted Windows zero-friction onboarding surface. It is
+not a published release and has no v0.11.0 tag or release assets.
+
+### Renderer geometry
+
+- Added additive arbitrary user-defined speaker geometry through
+  `--layout-file`, the canonical Rust `SpeakerLayout` API, and C ABI 1.4.
+- Custom layouts support up to 64 output channels, deterministic declared
+  channel order, logical LFE isolation, truthful unmasked WAV, and coordinate-
+  preserving CAF metadata.
+
+### Windows onboarding
+
+- Added the accepted OpenJOC LAV 0.11 onboarding surface with Explorer-first
+  `install.bat`, `verify.bat`, `uninstall.bat`, automatic UAC handling,
+  rollback, and PotPlayer quick-start documentation.
+- The validated DirectShow/LAV host output remains stereo float PCM; arbitrary
+  renderer geometry does not imply arbitrary DirectShow or PotPlayer output.
+
 ## [0.10.0] — 2026-08-22
 
 OpenJOC 0.10.0 — Windows DirectShow / LAV Filters Integration adds an
