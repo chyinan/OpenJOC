@@ -16,7 +16,13 @@ import unittest
 
 WORKSPACE = pathlib.Path(__file__).resolve().parents[2]
 TEMPLATE = WORKSPACE / "packaging" / "windows-lav"
-V010_RUNTIME = WORKSPACE / "audit" / "remediation-candidates-20260822-retry3" / "fresh-extract" / "binary" / "runtime"
+V010_RUNTIME_ENV = "OPENJOC_WINDOWS_ONBOARDING_TEST_RUNTIME"
+_v010_runtime_value = os.environ.get(V010_RUNTIME_ENV)
+V010_RUNTIME = pathlib.Path(_v010_runtime_value) if _v010_runtime_value else pathlib.Path()
+REQUIRES_PRIVATE_RUNTIME = unittest.skipUnless(
+    bool(_v010_runtime_value) and V010_RUNTIME.is_dir(),
+    f"set {V010_RUNTIME_ENV} to a private qualified Windows LAV runtime",
+)
 ROOT_FILES = (
     "install.bat", "verify.bat", "uninstall.bat", "README.md", "POTPLAYER-QUICKSTART.md",
 )
@@ -384,6 +390,7 @@ try {
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertEqual(unexpected.read_text(encoding="utf-8"), "do not delete")
 
+    @REQUIRES_PRIVATE_RUNTIME
     def test_post_commit_log_failure_never_rolls_back_verified_install(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -431,6 +438,7 @@ if($result.Warning -notlike '*post-commit*'){exit 4}
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    @REQUIRES_PRIVATE_RUNTIME
     def test_log_write_failure_cannot_block_precommit_rollback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
@@ -505,6 +513,7 @@ if(-not (Test-Path -LiteralPath $env:OPENJOC_TEST_RESTORED)){exit 4}
             self.assertEqual(completed.returncode, 20)
             self.assertIn("PowerShell could not start", output)
 
+    @REQUIRES_PRIVATE_RUNTIME
     def test_package_preflight_rejects_corrupted_critical_pe_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             package = pathlib.Path(temporary) / "OpenJOC corrupted package"
@@ -523,6 +532,7 @@ if(-not (Test-Path -LiteralPath $env:OPENJOC_TEST_RESTORED)){exit 4}
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("invalid", completed.stdout.casefold())
 
+    @REQUIRES_PRIVATE_RUNTIME
     def test_package_preflight_load_tests_non_root_runtime_dlls(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             package = pathlib.Path(temporary) / "OpenJOC unloadable non-root DLL"
@@ -542,6 +552,7 @@ if(-not (Test-Path -LiteralPath $env:OPENJOC_TEST_RESTORED)){exit 4}
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("loadability failed for avfilter-lav-12.dll", completed.stdout.casefold())
 
+    @REQUIRES_PRIVATE_RUNTIME
     def test_registration_failure_rolls_back_new_install_with_stable_exit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)

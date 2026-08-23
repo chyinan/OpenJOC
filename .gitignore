@@ -24,6 +24,8 @@
 **/.vs/
 **/*.out
 **/*.log
+**/__pycache__/
+**/*.py[cod]
 **/node_modules/
 **/dist/
 **/coverage/
@@ -33,7 +35,11 @@
 # Local release-audit outputs and temporary native probe objects
 /audit/
 /artifacts/
-/PROGRESS-openjoc-*.md
-/OPENJOC_0_10_*_HANDOFF.md
-/OPENJOC_0_10_STAGE2_5_WINDOWS_BASELINE.md
+/summary/
+/PROGRESS-*.md
+/OPENJOC_*_HANDOFF.md
+/OPENJOC_*_BASELINE.md
+/OPENJOC_*_REVIEW*.md
+/OPENJOC_*_RESULT*.md
+/*_AUDIT.md
 /*.obj

@@ -6,13 +6,41 @@ Keep each project fact in its canonical documentation owner:
 - current support: `docs/CAPABILITIES.md`;
 - current boundaries: `docs/KNOWN_LIMITATIONS.md`;
 - architecture: `docs/ARCHITECTURE.md`;
-- requirements and status: `docs/REQUIREMENTS_MATRIX.md`;
+- renderer/output behavior: `docs/JOC_RENDER.md`;
+- historical requirements/evidence: `docs/archive/requirements/`;
 - provenance and clean-room rules: `docs/PROVENANCE.md`;
 - future work: `docs/ROADMAP.md`;
 - dated research and implementation history: `docs/research/`.
 
 Do not copy a full current status table into a historical report. Summarize and
 link to the canonical owner instead.
+
+## Repository and documentation hygiene
+
+Temporary Codex handoffs, audit/review reports, progress files, local QA
+evidence, machine-specific paths, and task-result summaries must not be
+committed to the repository root. Durable technical facts belong in the
+canonical owner document. `CHANGELOG.md` owns release chronology; retained
+version-specific acceptance or provenance evidence belongs under
+`docs/archive/` only when it has ongoing public value.
+
+Use short-lived branches:
+
+```text
+create feature branch
+  -> implement and verify
+  -> integrate through the repository workflow
+  -> prove the work exists in master
+  -> delete the completed branch
+```
+
+Do not retain completed branches as evidence; commits, tags, releases, and the
+archive already provide history. Deliberate long-lived maintenance, upstream
+tracking, or release branches are exceptions and should state their purpose.
+
+Before adding a current technical claim, identify its owner. Secondary
+documents may summarize and link, but must not create an independently
+maintained duplicate specification.
 
 ## Public naming
 
@@ -46,6 +74,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 CARGO_BUILD_JOBS=1 cargo test --workspace --all-features -- --test-threads=1
 CARGO_BUILD_JOBS=1 cargo build --workspace --release --offline
+python scripts/check_repository_hygiene.py
 git diff --check
 ```
 
@@ -64,9 +93,9 @@ files are used by CI.
 
 Releases are human-authorized by pushing a stable `vMAJOR.MINOR.PATCH` tag.
 The release workflow validates the tag against Cargo metadata, checks the tag
-commit and `Cargo.lock`, reuses the canonical macOS-arm64 release builder, runs
-the bundle verifier, and publishes only the generated artifact set. It does
-not create tags, publish Linux/Windows binaries, sign, notarize, or overwrite
-an existing GitHub Release. Configure branch protection only after hosted CI
-job names have stabilized; recommended required checks are `quality`,
-`msrv-1.85`, `platform-windows`, and `platform-macos-arm64`.
+commit and `Cargo.lock`, runs the configured platform/package verification,
+and publishes only the generated artifact set. It does not create tags,
+rewrite an existing release, or imply signing/notarization that was not
+performed. Configure branch protection only after hosted CI job names have
+stabilized; recommended required checks are `quality`, `msrv-1.85`,
+`platform-windows`, and `platform-macos-arm64`.
