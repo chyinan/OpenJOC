@@ -292,7 +292,8 @@ NO_GAPS
 ### GATE-04 — Pristine stock control
 
 - pristine 必须来自冻结的 start-HEAD `b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27` 或已验证等价 tree。
-- target/pristine 使用分离 build/runtime 目录和 private activation。
+- pristine 必须验证 exact HEAD/tree、三个 gitlink OID 和 fail-closed archive provenance sidecar；不得以不完整 submodule metadata 的 clean status 代替来源证明。
+- target/pristine 使用分离 build/runtime 目录、lane-specific CLSID、private activation 和不同 worker process。
 - ordinary E-AC-3 与 passthrough 均比较完整 media type、bytes、sample/EOS 行为。
 - 在同一真实 connected target graph 中，从同一 LAV Audio filter 实例取得 OpenJOC settings/status 与 hidden status page：JOC 必须显示 requested policy、`OpenJoc` admission 和实际 exact 输出；重建为普通 E-AC-3 后必须显示 stock E-AC-3 path。mock/disconnected page、第二实例或仅 registry/getter 均不合格。
 - **Fail if:** 使用修改后 build 加 feature flag 作为 control，或 target/pristine artifacts 相互覆盖。
@@ -307,6 +308,8 @@ Native harness 必须验证恰好一个运行时实例及 manifest-matching path
 - `openjoc_capi.dll`
 - 每个实际加载的 `*-lav-*.dll`
 - `libbluray.dll`
+
+每个 runtime 还必须包含并校验 external `LAVFilters.Dependencies.manifest`；模块路径比较使用 handle-resolved final path，不接受仅 lexical `GetFullPathName`。staged manifest 必须在 worker 启动前独立生成，禁止把运行时文件 hash 与自身再次计算值比较形成自证循环。
 
 PotPlayer 必须在 graph 创建后记录相同组件的 in-process path/hash。
 
