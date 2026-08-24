@@ -68,6 +68,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   "%~2\decoder\LAVAudio\OpenJocAdmission.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocStrictNegotiation.cpp" ^
   /Fe:OpenJocDirectShowNegotiationSmoke.exe ^
   /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%

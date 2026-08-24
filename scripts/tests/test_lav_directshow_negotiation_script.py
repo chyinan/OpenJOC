@@ -369,6 +369,148 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertLess(connect, exact_graph)
         self.assertNotIn("graph->Connect(", probe)
 
+    def test_task4_boundary_probe_uses_phase3_delivery_and_queue_seams(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        self.assertIn("bool TestTask4AllocatorBoundaries", harness_text)
+        self.assertIn("HRESULT RunOneTask4GraphCycle", harness_text)
+        begin = harness_text.index("bool TestTask4AllocatorBoundaries")
+        end = harness_text.index("HRESULT RunOneTask4GraphCycle", begin)
+        probe = harness_text[begin:end]
+
+        self.assertGreaterEqual(probe.count("DeliverLAVOpenJocStrictMediaType"), 2)
+        for required in (
+            "LAVOpenJocOutputPolicy::Layout714",
+            "required_bytes - 1",
+            "VFW_E_BUFFER_UNDERFLOW",
+            "canary",
+            "short_counters.set_actual_length_count != 0",
+            "short_counters.copy_count != 0",
+            "short_counters.deliver_count != 0",
+            "exact_counters.set_actual_length_count != 1",
+            "exact_counters.copy_count != 1",
+            "exact_counters.deliver_count != 1",
+            "payload",
+            "CheckedLAVOpenJocPcmByteCount",
+            "CheckedLAVOpenJocLongNarrow",
+            "CheckedLAVOpenJocAllocatorGrowth",
+            "ExecuteLAVOpenJocQueueTransaction",
+            "(std::numeric_limits<std::uint32_t>::max)()",
+            "(std::numeric_limits<std::size_t>::max)()",
+            "ERROR_ARITHMETIC_OVERFLOW",
+            "sentinel",
+            "flush_count != 0",
+            "metadata_count != 0",
+            "swap_count != 0",
+            "append_count != 0",
+            "TASK4_ALLOCATOR_BOUNDARY",
+            "TASK4_QUEUE_OVERFLOW",
+            "TASK4_SAMPLE_OVERFLOW",
+        ):
+            self.assertIn(required, probe)
+        self.assertNotIn("CheckedTask4ByteCount", probe)
+
+    def test_task4_performance_probe_runs_real_graph_cycles_and_page_trends(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        self.assertIn("bool TestTask4WorkingSetTrends", harness_text)
+        self.assertIn("bool Task4CycleEvidenceIsValid", harness_text)
+        self.assertIn("bool Task4CycleMatchesBaseline", harness_text)
+        self.assertIn("bool TestTask4CycleEvidence", harness_text)
+        self.assertIn("GetProcessMemoryInfo", harness_text)
+        self.assertIn("PROCESS_MEMORY_COUNTERS_EX", harness_text)
+        self.assertIn("HRESULT RunOneTask4GraphCycle", harness_text)
+        self.assertIn("HRESULT RunTask4AllocatorPerformance", harness_text)
+        trend_begin = harness_text.index("bool TestTask4WorkingSetTrends")
+        trend_end = harness_text.index("HRESULT RunOneTask4GraphCycle", trend_begin)
+        trend_probe = harness_text[trend_begin:trend_end]
+        self.assertGreaterEqual(trend_probe.count("WorkingSetTrendIsBounded"), 6)
+        for required in (
+            "flat",
+            "noise",
+            "linear",
+            "quartile_steps",
+            "tail_linear",
+            "incomplete",
+        ):
+            self.assertIn(required, trend_probe)
+        cycle_begin = harness_text.index("HRESULT RunOneTask4GraphCycle")
+        cycle_end = harness_text.index("HRESULT RunTask4AllocatorPerformance", cycle_begin)
+        cycle = harness_text[cycle_begin:cycle_end]
+        for required in (
+            "CreateGraphForFixture",
+            "AttachCaptureSink",
+            "GraphContainsExactly(graph.get(), 3)",
+            "control->Pause()",
+            "control->Run()",
+            "end_of_stream_event()",
+            "control->Stop()",
+            "ExactConnectionTypes",
+            "GetOutputPolicy",
+            "CheckedLAVOpenJocPcmByteCount",
+            "sample.capacity",
+            "sample.length",
+        ):
+            self.assertIn(required, cycle)
+
+        begin = cycle_end
+        end = harness_text.index("} // namespace openjoc_harness_shell", begin)
+        probe = harness_text[begin:end]
+        for required in (
+            "kTask4WarmupCycles = 16",
+            "kTask4MeasuredCycles = 128",
+            "LAVOpenJocOutputPolicy::Stereo",
+            "LAVOpenJocOutputPolicy::Layout51",
+            "LAVOpenJocOutputPolicy::Layout714",
+            "RunOneTask4GraphCycle",
+            "ReadTask4ProcessMemory",
+            "WorkingSetSize",
+            "PrivateUsage",
+            "working_set.size() == kTask4MeasuredCycles",
+            "private_usage.size() == kTask4MeasuredCycles",
+            "WorkingSetTrendIsBounded",
+            "dwPageSize",
+            "TASK4_PERFORMANCE_ROW",
+            "TASK4_CONTROL_COMPLETE",
+            "controlled_sink=1",
+            "renderer_state=UNVERIFIED",
+            "support_inference=none",
+            "TestTask4WorkingSetTrends",
+            "TestTask4CycleEvidence",
+            "TestTask4AllocatorBoundaries",
+            "Task4CycleEvidenceIsValid",
+            "Task4CycleMatchesBaseline",
+        ):
+            self.assertIn(required, probe)
+        self.assertNotIn("EmptyWorkingSet", probe)
+        self.assertNotIn("SetProcessWorkingSetSize", probe)
+        self.assertNotIn("STREAM_PROVEN", probe)
+        self.assertIn("values.size() != 128", harness_text)
+        self.assertIn('L"INCOMPLETE"', harness_text)
+        self.assertIn('L"GROWTH_DETECTED"', harness_text)
+        self.assertNotIn('L"LINEAR_GROWTH"', harness_text)
+
+    def test_task4_worker_is_compiled_and_run_once_after_lifecycle(self) -> None:
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        release_text = RELEASE_SMOKES.read_text(encoding="utf-8")
+        invocation = (
+            'call "%TARGET_RUNTIME_DIR%\\OpenJocDirectShowNegotiationSmoke.exe" '
+            '--allocator-performance "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" '
+            '"%FIXTURE_DIR%\\joc.multi.ec3"'
+        )
+
+        self.assertEqual(script_text.count(invocation), 1)
+        lifecycle = script_text.index(
+            'call "%TARGET_RUNTIME_DIR%\\OpenJocDirectShowNegotiationSmoke.exe" '
+            '--openjoc-lifecycle'
+        )
+        lifecycle_gate = script_text.index("if errorlevel 1 exit /b 1", lifecycle)
+        task4 = script_text.index(invocation, lifecycle_gate)
+        task4_exit = script_text.index("exit /b %errorlevel%", task4)
+        self.assertLess(lifecycle, lifecycle_gate)
+        self.assertLess(lifecycle_gate, task4)
+        self.assertLess(task4, task4_exit)
+        self.assertIn("OpenJocStrictNegotiation.cpp", script_text)
+        self.assertIn("OpenJocStrictNegotiation.cpp", release_text)
+
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(
             ["cmd.exe", "/d", "/c", str(SCRIPT)],

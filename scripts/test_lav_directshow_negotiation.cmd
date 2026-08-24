@@ -331,6 +331,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocAdmission.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocOutput.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocStrictNegotiation.cpp" ^
   /Fe:OpenJocDirectShowNegotiationSmoke.exe ^
   /link "/LIBPATH:%TARGET_BUILD_DIR%" "/LIBPATH:%TARGET_LAV_ROOT%\bin_x64\lib" ^
   strmbase.lib strmiids.lib ole32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
@@ -405,6 +406,8 @@ for %%P in (0 1 2 3 4 5 6) do (
 )
 
 call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --openjoc-lifecycle "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" "%FIXTURE_DIR%"
+if errorlevel 1 exit /b 1
+call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --allocator-performance "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" "%FIXTURE_DIR%\joc.multi.ec3"
 exit /b %errorlevel%
 
 :build_lane
