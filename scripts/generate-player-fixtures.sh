@@ -18,7 +18,14 @@ command -v ffprobe >/dev/null 2>&1 || { echo "fixture generation requires ffprob
 command -v cmp >/dev/null 2>&1 || { echo "fixture generation requires cmp" >&2; exit 1; }
 command -v grep >/dev/null 2>&1 || { echo "fixture generation requires grep" >&2; exit 1; }
 command -v awk >/dev/null 2>&1 || { echo "fixture generation requires awk" >&2; exit 1; }
-command -v sha256sum >/dev/null 2>&1 || { echo "fixture generation requires sha256sum" >&2; exit 1; }
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256_files() { sha256sum "$@"; }
+elif command -v shasum >/dev/null 2>&1; then
+    sha256_files() { shasum -a 256 "$@"; }
+else
+    echo "fixture generation requires sha256sum or shasum" >&2
+    exit 1
+fi
 mkdir -p "$output"
 
 verify_exact_mp4_payload() {
@@ -30,7 +37,7 @@ verify_exact_mp4_payload() {
     ffmpeg -v error -i "$mp4" -map 0:a:0 -c:a copy -f eac3 -y "$demuxed"
     cmp "$raw" "$demuxed"
     echo "exact E-AC-3 wrapper payload: $raw == $mp4"
-    sha256sum "$raw" "$mp4" "$demuxed"
+    sha256_files "$raw" "$mp4" "$demuxed"
     rm -f "$demuxed"
 }
 
@@ -72,7 +79,7 @@ verify_seekable_eac3_timing() {
         END { if (count != expected_count) exit 1 }
     ' "$frame_rows"
     echo "seekable E-AC-3 timing: $mp4 packets=$expected_packets pts_dts_step=1536 frame_samples=1536 frame_duration=N/A duration_ts=196608 duration=$expected_duration"
-    sha256sum "$mp4" "$stream_rows" "$packet_pts" "$frame_rows"
+    sha256_files "$mp4" "$stream_rows" "$packet_pts" "$frame_rows"
 }
 
 # This test-only exporter is project-owned and contains no programme media. It

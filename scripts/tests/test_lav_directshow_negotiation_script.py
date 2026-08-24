@@ -197,6 +197,15 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("export_synthetic_joc_fingerprint_fixture_when_requested", rust_text)
         self.assertIn("assert_fingerprint_fixture_distinguishes_every_policy", rust_text)
 
+    def test_fixture_generation_supports_native_macos_sha256_tooling(self) -> None:
+        fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("sha256_files()", fixture_text)
+        self.assertIn("command -v sha256sum", fixture_text)
+        self.assertIn("command -v shasum", fixture_text)
+        self.assertIn("shasum -a 256", fixture_text)
+        self.assertNotIn('fixture generation requires sha256sum"', fixture_text)
+
     def test_task3_declares_live_diagnostics_and_nonsilent_stock_controls(self) -> None:
         fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
         harness_text = HARNESS.read_text(encoding="utf-8")
