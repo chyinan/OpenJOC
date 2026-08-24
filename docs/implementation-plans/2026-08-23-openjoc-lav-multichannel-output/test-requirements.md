@@ -294,8 +294,9 @@ NO_GAPS
 - pristine 必须来自冻结的 start-HEAD `b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27` 或已验证等价 tree。
 - target/pristine 使用分离 build/runtime 目录和 private activation。
 - ordinary E-AC-3 与 passthrough 均比较完整 media type、bytes、sample/EOS 行为。
+- 在同一真实 connected target graph 中，从同一 LAV Audio filter 实例取得 OpenJOC settings/status 与 hidden status page：JOC 必须显示 requested policy、`OpenJoc` admission 和实际 exact 输出；重建为普通 E-AC-3 后必须显示 stock E-AC-3 path。mock/disconnected page、第二实例或仅 registry/getter 均不合格。
 - **Fail if:** 使用修改后 build 加 feature flag 作为 control，或 target/pristine artifacts 相互覆盖。
-- **Pass evidence:** Phase 5 Task 1、Task 3 的独立 module path/hash 和行为对照。
+- **Pass evidence:** Phase 5 Task 1、Task 3 的独立 module path/hash、行为对照与 same-instance connected status observation。
 
 ### GATE-05 — Runtime module path/hash
 

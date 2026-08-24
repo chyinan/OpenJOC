@@ -102,8 +102,9 @@
 3. Enable `Bitstream_EAC3` for every policy and prove OpenJOC stream-input bytes remain zero while bitstream media type/bytes match the independently built pristine control.
 4. Run raw `joc.multi.ec3` and MP4 `joc.multi.mp4`: seek to 25% and 75%, observe BeginFlush/EndFlush/NewSegment, complete EOS, Stop→seek zero→Run, destroy/rebuild graph, and re-read exact `ConnectionMediaType` at each boundary.
 5. Use test-only volatile registry overrides for filter recreation and restore them with RAII. A policy change must recreate the decoder and renegotiate the exact new type.
+6. On one real connected target graph, obtain `ILAVOpenJocSettings`, `ILAVAudioStatus`, and the hidden status property page from the same LAV Audio filter instance. Feed JOC and require policy=`requested`, admission=`OpenJoc`, and the exact float32/48 kHz count/mask shown by that live instance. Rebuild the graph with ordinary E-AC-3 and require the same-instance status surface to report the stock E-AC-3 path. A disconnected mock page, a second filter instance, or registry/getter state without streamed graph evidence cannot satisfy this gate.
 
-**Verification:** All seven lifecycle rows pass for raw and MP4; ordinary and passthrough results match the frozen pristine control; private module-path/hash assertions and registry restoration are verified. Run the complete `release_lav_smokes.cmd`. Because target and pristine build roots are disjoint, the final target artifact is never overwritten.
+**Verification:** All seven lifecycle rows pass for raw and MP4; ordinary and passthrough results match the frozen pristine control; JOC and ordinary E-AC-3 status are observed from the same real connected target-filter/status-page instance; private module-path/hash assertions and registry restoration are verified. Run the complete `release_lav_smokes.cmd`. Because target and pristine build roots are disjoint, the final target artifact is never overwritten.
 
 **Commit:** `test: cover OpenJOC lifecycle and stock isolation`
 <!-- END_TASK_3 -->
