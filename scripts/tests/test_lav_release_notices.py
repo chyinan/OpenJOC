@@ -8,6 +8,7 @@ from xml.etree import ElementTree
 
 
 NEW_LAV_FILES = (
+    "decoder/LAVAudio/LAVOpenJocDiagnostics.h",
     "decoder/LAVAudio/AudioStatusCapacityTests.cpp",
     "decoder/LAVAudio/LAVAudioIdentitySmoke.cpp",
     "decoder/LAVAudio/LAVAudioResourceIdentitySmoke.cpp",
@@ -39,6 +40,7 @@ MODIFIED_UPSTREAM_FILES = (
     "decoder/LAVAudio/LAVAudio.cpp",
     "decoder/LAVAudio/LAVAudio.h",
     "decoder/LAVAudio/LAVAudio.vcxproj",
+    "decoder/LAVAudio/LAVAudio.vcxproj.filters",
     "decoder/LAVAudio/dllmain.cpp",
     "include/LAVAudioSettings.h",
 )
@@ -76,7 +78,7 @@ class LavReleaseNoticeTests(unittest.TestCase):
         source_files = tuple(
             relative
             for relative in MODIFIED_UPSTREAM_FILES
-            if not relative.endswith(".vcxproj")
+            if ".vcxproj" not in relative
         )
         for relative in source_files:
             with self.subTest(path=relative):

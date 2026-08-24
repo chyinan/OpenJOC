@@ -154,7 +154,7 @@ NO_GAPS
 - **Requirement:** 所有 policy 下，ordinary non-JOC E-AC-3 必须走 stock admission、decoder、postprocessor 和 delivery，并与独立 pristine start-HEAD control 的类型、PCM、samples 和 EOS 一致。
 - **Test level:** e2e。
 - **RED expectation:** 任一 policy 进入 OpenJOC、输出与 pristine 不同、使用 strict no-fallback lane，或所谓 control 实际来自修改后 build。
-- **GREEN/pass evidence:** 七个 policy 的 target-vs-pristine matrix 精确匹配；证据分别记录 target/pristine filter 和依赖模块路径/hash。
+- **GREEN/pass evidence:** 先证明新增 ordinary raw/MP4 stream-copy control 的 PCM 非零且逐声道 fingerprint 互异；随后七个 policy 的 separate-process target-vs-pristine matrix 对完整 media type、逐样本 bytes/timestamps/flags/attached type 与 EOS/event 精确匹配；证据分别记录并在流后复核 target/pristine filter 和依赖模块路径/hash。
 - **Phase/task:** Phase 5 Task 1、Task 3；Phase 6 Task 4。
 - **关键禁止性断言:** 不得用修改分支加 `EnableOpenJOC=false` 代替 pristine control。
 
@@ -163,7 +163,7 @@ NO_GAPS
 - **Requirement:** `Bitstream_EAC3` 启用时，七个 policy 均不得向 OpenJOC stream decoder 输入字节，bitstream media type/bytes 必须匹配 pristine。
 - **Test level:** e2e。
 - **RED expectation:** 任一 policy 的 OpenJOC stream-input byte count 非零，或 bitstream 输出与 pristine 不同。
-- **GREEN/pass evidence:** 七行均记录 OpenJOC input bytes `0`，且 bitstream media type/bytes 与独立 pristine control 一致。
+- **GREEN/pass evidence:** 独立 fixed-IID 只读 diagnostics 从同一 live target filter 在 receive lock 下读取真实 counters；target QI/same controlling `IUnknown`、pristine `E_NOINTERFACE`、JOC positive-control stream bytes `>0` 均先通过。七 policy × raw/MP4 passthrough 行在 Running EOS 后且 Stop 前均记录 classifier/stream bytes `0`，语义上确认为 IEC61937 Dolby Digital Plus，并与 separate-process pristine 的完整 media type、逐样本 bytes/timestamps/flags/EOS 一致。
 - **Phase/task:** Phase 5 Task 3；Phase 6 Task 4。
 - **关键禁止性断言:** 不得仅检查 UI passthrough checkbox 或最终有声音；必须证明 OpenJOC decoder 未进入。
 
@@ -192,7 +192,7 @@ NO_GAPS
 - **Requirement:** initial playback、forward/back seek、flush/new segment、EOS、stop/reopen、graph rebuild 和 media-type renegotiation 后保持所选 contract。
 - **Test level:** integration、e2e、manual evidence。
 - **RED expectation:** 任一边界后回到 Stereo、出现旧 policy frame、缺少 flush/new-segment/EOS、连接类型残留或 policy change 未重建 decoder。
-- **GREEN/pass evidence:** raw/MP4 七 policy lifecycle matrix 在每个边界重新读取完整 `ConnectionMediaType`；观察 BeginFlush/EndFlush/NewSegment、EOS、Stop→seek zero→Run 和 graph rebuild 成功。
+- **GREEN/pass evidence:** 使用独立 128-AU `joc.lifecycle` raw/timed-MP4 同 payload controls，先锁定 direct-session sample/PTS 守恒、raw↔MP4 demux bytes、MP4 stream/packet/frame 时间轴。七 policy 的 timed MP4 对 initial→25%→75%→25% backward→EOS→Stop/seek zero/Run→EOS 建立正样本独立 epoch；running seek 观察有序 BeginFlush→EndFlush→NewSegment，stopped seek-zero 观察 NewSegment/EOS。真实 LAV raw E-AC-3 三个非零 absolute seek 仅在 SetPositions/capabilities 成功、精确 flush/NewSegment/EOS、零 samples/bytes/counters、post-EOS `StockEac3` admission（空 classifier 的明确 EOF 终态，不能解释为 delivered fallback PCM）、类型不变时逐项记录 raw-container operation `UNSUPPORTED`；三项混合或签名偏差为 `UNVERIFIED`，不得 reopen、byte seek 或用 MP4 代替。raw initial/stopped-zero/rebuild/renegotiation仍为正样本 gate。每个边界重读两侧完整 `ConnectionMediaType`；policy renegotiation 有真实新 type/sample/EOS，完整 filter rebuild 从已验证可恢复的 volatile registry override 读取 policy。另由同一 CLAVAudio canonical identity 和同一 activated status page 完成 JOC→ordinary source/sink swap 的 live status 证明。
 - **Phase/task:** Phase 2 Task 1；Phase 5 Task 3；Phase 6 Task 2、Task 4。
 - **关键禁止性断言:** 不得只在 initial connect 读取一次 media type 后推定所有生命周期阶段正确。
 

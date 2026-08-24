@@ -19,6 +19,8 @@ set "PRISTINE_BUILD_DIR=%OUTPUT_DIR%\pristine-build"
 set "TARGET_RUNTIME_DIR=%OUTPUT_DIR%\target-runtime"
 set "PRISTINE_RUNTIME_DIR=%OUTPUT_DIR%\pristine-runtime"
 set "HARNESS_OUTPUT_DIR=%OUTPUT_DIR%\harness"
+set "TARGET_TASK3_EVIDENCE=%OUTPUT_DIR%\target-task3-evidence"
+set "PRISTINE_TASK3_EVIDENCE=%OUTPUT_DIR%\pristine-task3-evidence"
 set "PRISTINE_PROVENANCE=%PRISTINE_LAV_ROOT%\OPENJOC_PRISTINE_ARCHIVE_PROVENANCE.txt"
 set "TARGET_RUNTIME_MANIFEST=%TARGET_RUNTIME_DIR%\OpenJocRuntimeIdentity.tsv"
 set "PRISTINE_RUNTIME_MANIFEST=%PRISTINE_RUNTIME_DIR%\OpenJocRuntimeIdentity.tsv"
@@ -42,7 +44,7 @@ if /i "%TARGET_RUNTIME_DIR%"=="%PRISTINE_RUNTIME_DIR%" (
   exit /b 65
 )
 
-for %%P in ("%VSDEVCMD%" "%TARGET_LAV_ROOT%\LAVFilters.sln" "%PRISTINE_LAV_ROOT%\LAVFilters.sln" "%OPENJOC_INCLUDE%" "%OPENJOC_CAPI%" "%FIXTURE_DIR%\joc.fingerprint.ec3" "%FIXTURE_DIR%\joc.fingerprint.mp4" "%FIXTURE_DIR%\joc.multi.mp4") do (
+for %%P in ("%VSDEVCMD%" "%TARGET_LAV_ROOT%\LAVFilters.sln" "%PRISTINE_LAV_ROOT%\LAVFilters.sln" "%OPENJOC_INCLUDE%" "%OPENJOC_CAPI%" "%FIXTURE_DIR%\joc.fingerprint.ec3" "%FIXTURE_DIR%\joc.fingerprint.mp4" "%FIXTURE_DIR%\joc.multi.ec3" "%FIXTURE_DIR%\joc.multi.mp4" "%FIXTURE_DIR%\joc.lifecycle.ec3" "%FIXTURE_DIR%\joc.lifecycle.mp4" "%FIXTURE_DIR%\ordinary.fingerprint.eac3" "%FIXTURE_DIR%\ordinary.fingerprint.mp4") do (
   if not exist "%%~fP" (
     >&2 echo required input does not exist: %%~fP
     exit /b 66
@@ -53,6 +55,18 @@ set "PROVENANCE_GIT="
 for /f "delims=" %%G in ('where.exe git.exe 2^>nul') do if not defined PROVENANCE_GIT set "PROVENANCE_GIT=%%~fG"
 if not defined PROVENANCE_GIT (
   >&2 echo a real git.exe is required for frozen pristine provenance
+  exit /b 67
+)
+set "TASK3_FFMPEG="
+for /f "delims=" %%F in ('where.exe ffmpeg.exe 2^>nul') do if not defined TASK3_FFMPEG set "TASK3_FFMPEG=%%~fF"
+if not defined TASK3_FFMPEG (
+  >&2 echo a real ffmpeg.exe is required for Task3 fixture payload prequalification
+  exit /b 67
+)
+set "TASK3_FFPROBE="
+for /f "delims=" %%F in ('where.exe ffprobe.exe 2^>nul') do if not defined TASK3_FFPROBE set "TASK3_FFPROBE=%%~fF"
+if not defined TASK3_FFPROBE (
+  >&2 echo a real ffprobe.exe is required for Task3 fixture timing prequalification
   exit /b 67
 )
 set "PRISTINE_HEAD="
@@ -154,8 +168,75 @@ if exist "%OUTPUT_DIR%" (
   exit /b 69
 )
 mkdir "%OUTPUT_DIR%"
-mkdir "%TARGET_BUILD_DIR%" "%PRISTINE_BUILD_DIR%" "%TARGET_RUNTIME_DIR%" "%PRISTINE_RUNTIME_DIR%" "%HARNESS_OUTPUT_DIR%"
+mkdir "%TARGET_BUILD_DIR%" "%PRISTINE_BUILD_DIR%" "%TARGET_RUNTIME_DIR%" "%PRISTINE_RUNTIME_DIR%" "%HARNESS_OUTPUT_DIR%" "%TARGET_TASK3_EVIDENCE%" "%PRISTINE_TASK3_EVIDENCE%"
 if errorlevel 1 exit /b 1
+set "TASK3_ORDINARY_DEMUX=%OUTPUT_DIR%\ordinary.fingerprint.demux.eac3"
+call "%TASK3_FFMPEG%" -v error -i "%FIXTURE_DIR%\ordinary.fingerprint.mp4" -map 0:a:0 -c:a copy -f eac3 -y "%TASK3_ORDINARY_DEMUX%"
+if errorlevel 1 exit /b 1
+fc.exe /b "%FIXTURE_DIR%\ordinary.fingerprint.eac3" "%TASK3_ORDINARY_DEMUX%" >nul
+if errorlevel 1 (
+  >&2 echo ordinary raw and MP4 E-AC-3 payloads differ
+  exit /b 70
+)
+echo TASK3_FIXTURE_PREQUAL ordinary_raw="%FIXTURE_DIR%\ordinary.fingerprint.eac3" ordinary_mp4="%FIXTURE_DIR%\ordinary.fingerprint.mp4" demuxed="%TASK3_ORDINARY_DEMUX%"
+certutil.exe -hashfile "%FIXTURE_DIR%\ordinary.fingerprint.eac3" SHA256
+if errorlevel 1 exit /b 1
+certutil.exe -hashfile "%FIXTURE_DIR%\ordinary.fingerprint.mp4" SHA256
+if errorlevel 1 exit /b 1
+certutil.exe -hashfile "%TASK3_ORDINARY_DEMUX%" SHA256
+if errorlevel 1 exit /b 1
+attrib +R "%TASK3_ORDINARY_DEMUX%"
+if errorlevel 1 exit /b 1
+set "TASK3_JOC_DEMUX=%OUTPUT_DIR%\joc.multi.demux.ec3"
+call "%TASK3_FFMPEG%" -v error -i "%FIXTURE_DIR%\joc.multi.mp4" -map 0:a:0 -c:a copy -f eac3 -y "%TASK3_JOC_DEMUX%"
+if errorlevel 1 exit /b 1
+fc.exe /b "%FIXTURE_DIR%\joc.multi.ec3" "%TASK3_JOC_DEMUX%" >nul
+if errorlevel 1 (
+  >&2 echo JOC raw and MP4 E-AC-3 payloads differ
+  exit /b 70
+)
+echo TASK3_FIXTURE_PREQUAL joc_raw="%FIXTURE_DIR%\joc.multi.ec3" joc_mp4="%FIXTURE_DIR%\joc.multi.mp4" demuxed="%TASK3_JOC_DEMUX%"
+certutil.exe -hashfile "%FIXTURE_DIR%\joc.multi.ec3" SHA256
+if errorlevel 1 exit /b 1
+certutil.exe -hashfile "%FIXTURE_DIR%\joc.multi.mp4" SHA256
+if errorlevel 1 exit /b 1
+certutil.exe -hashfile "%TASK3_JOC_DEMUX%" SHA256
+if errorlevel 1 exit /b 1
+attrib +R "%TASK3_JOC_DEMUX%"
+if errorlevel 1 exit /b 1
+set "TASK3_LIFECYCLE_DEMUX=%OUTPUT_DIR%\joc.lifecycle.demux.ec3"
+set "TASK3_LIFECYCLE_STREAM_TIMING=%OUTPUT_DIR%\joc.lifecycle.stream-timing.txt"
+set "TASK3_LIFECYCLE_PACKET_PTS=%OUTPUT_DIR%\joc.lifecycle.packet-pts.txt"
+set "TASK3_LIFECYCLE_FRAME_TIMING=%OUTPUT_DIR%\joc.lifecycle.frame-timing.csv"
+call "%TASK3_FFMPEG%" -v error -i "%FIXTURE_DIR%\joc.lifecycle.mp4" -map 0:a:0 -c:a copy -f eac3 -y "%TASK3_LIFECYCLE_DEMUX%"
+if errorlevel 1 exit /b 1
+fc.exe /b "%FIXTURE_DIR%\joc.lifecycle.ec3" "%TASK3_LIFECYCLE_DEMUX%" >nul
+if errorlevel 1 (
+  >&2 echo lifecycle raw and MP4 E-AC-3 payloads differ
+  exit /b 70
+)
+call "%TASK3_FFPROBE%" -v error -select_streams a:0 -count_packets -show_entries stream=time_base,duration_ts,duration,nb_frames,nb_read_packets -of default=noprint_wrappers=1 "%FIXTURE_DIR%\joc.lifecycle.mp4" >"%TASK3_LIFECYCLE_STREAM_TIMING%"
+if errorlevel 1 exit /b 1
+call "%TASK3_FFPROBE%" -v error -select_streams a:0 -show_packets -show_entries packet=pts,dts -of csv=p=0 "%FIXTURE_DIR%\joc.lifecycle.mp4" >"%TASK3_LIFECYCLE_PACKET_PTS%"
+if errorlevel 1 exit /b 1
+call "%TASK3_FFPROBE%" -v error -select_streams a:0 -show_frames -show_entries frame=pts,pkt_dts,duration,nb_samples:frame_side_data= -of csv=p=0 "%FIXTURE_DIR%\joc.lifecycle.mp4" >"%TASK3_LIFECYCLE_FRAME_TIMING%"
+if errorlevel 1 exit /b 1
+powershell.exe -NoLogo -NoProfile -NonInteractive -Command "& { $stream = @(Get-Content -LiteralPath $args[0]); if ($stream.Count -ne 5 -or @($stream | Where-Object { $_ -ceq 'time_base=1/48000' }).Count -ne 1 -or @($stream | Where-Object { $_ -ceq 'duration_ts=196608' }).Count -ne 1 -or @($stream | Where-Object { $_ -ceq 'duration=4.096000' }).Count -ne 1 -or @($stream | Where-Object { $_ -ceq 'nb_frames=128' }).Count -ne 1 -or @($stream | Where-Object { $_ -ceq 'nb_read_packets=128' }).Count -ne 1) { exit 71 }; $packets = @(Import-Csv -LiteralPath $args[1] -Header pts,dts); if ($packets.Count -ne 128) { exit 71 }; for ($i = 0; $i -lt $packets.Count; ++$i) { $expected = [string]($i * 1536); if ($packets[$i].pts -cne $expected -or $packets[$i].dts -cne $expected) { exit 71 } }; $frames = @(Import-Csv -LiteralPath $args[2] -Header pts,pkt_dts,duration,nb_samples,empty); if ($frames.Count -ne 128) { exit 71 }; for ($i = 0; $i -lt $frames.Count; ++$i) { $expected = [string]($i * 1536); if ($frames[$i].pts -cne $expected -or $frames[$i].pkt_dts -cne $expected -or $frames[$i].duration -cne 'N/A' -or $frames[$i].nb_samples -cne '1536' -or $frames[$i].empty) { exit 71 } } }" "%TASK3_LIFECYCLE_STREAM_TIMING%" "%TASK3_LIFECYCLE_PACKET_PTS%" "%TASK3_LIFECYCLE_FRAME_TIMING%"
+if errorlevel 1 (
+  >&2 echo lifecycle MP4 timing prequalification failed
+  exit /b 71
+)
+echo TASK3_LIFECYCLE_TIMING_PREQUAL raw="%FIXTURE_DIR%\joc.lifecycle.ec3" mp4="%FIXTURE_DIR%\joc.lifecycle.mp4" demuxed="%TASK3_LIFECYCLE_DEMUX%" time_base=1/48000 duration_ts=196608 duration=4.096000 nb_frames=128 nb_read_packets=128 packet_pts_dts_step=1536 frame_pts_dts_step=1536 frame_samples=1536 frame_duration=N/A
+certutil.exe -hashfile "%FIXTURE_DIR%\joc.lifecycle.ec3" SHA256
+if errorlevel 1 exit /b 1
+certutil.exe -hashfile "%FIXTURE_DIR%\joc.lifecycle.mp4" SHA256
+if errorlevel 1 exit /b 1
+certutil.exe -hashfile "%TASK3_LIFECYCLE_DEMUX%" SHA256
+if errorlevel 1 exit /b 1
+for %%P in ("%TASK3_LIFECYCLE_DEMUX%" "%TASK3_LIFECYCLE_STREAM_TIMING%" "%TASK3_LIFECYCLE_PACKET_PTS%" "%TASK3_LIFECYCLE_FRAME_TIMING%") do (
+  attrib +R "%%~fP"
+  if errorlevel 1 exit /b 1
+)
 set "NOGIT_DIR=%OUTPUT_DIR%\no-git"
 set "SERIAL_BUILD_PROPS=%OUTPUT_DIR%\OpenJocSerialEvidenceBuild.props"
 mkdir "%NOGIT_DIR%"
@@ -252,7 +333,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
   /Fe:OpenJocDirectShowNegotiationSmoke.exe ^
   /link "/LIBPATH:%TARGET_BUILD_DIR%" "/LIBPATH:%TARGET_LAV_ROOT%\bin_x64\lib" ^
-  strmbase.lib strmiids.lib ole32.lib uuid.lib winmm.lib bcrypt.lib avutil-lav.lib
+  strmbase.lib strmiids.lib ole32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b 1
 
 copy /y "%HARNESS_OUTPUT_DIR%\OpenJocDirectShowNegotiationSmoke.exe" ^
@@ -276,6 +357,54 @@ if errorlevel 1 exit /b 1
 call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --self-test "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine
 if errorlevel 1 exit /b 1
 call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --controlled-sink "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" "%FIXTURE_DIR%"
+if errorlevel 1 exit /b 1
+
+call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --stock-eac3-worker "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine "%FIXTURE_DIR%\ordinary.fingerprint.eac3" "%PRISTINE_TASK3_EVIDENCE%\stock-eac3.tsv" 0
+if errorlevel 1 exit /b 1
+attrib +R "%PRISTINE_TASK3_EVIDENCE%\stock-eac3.tsv"
+if errorlevel 1 exit /b 1
+call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --eac3-passthrough-worker "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine "%FIXTURE_DIR%\joc.multi.ec3" "%PRISTINE_TASK3_EVIDENCE%\passthrough-ec3.tsv" 0
+if errorlevel 1 exit /b 1
+attrib +R "%PRISTINE_TASK3_EVIDENCE%\passthrough-ec3.tsv"
+if errorlevel 1 exit /b 1
+for %%P in (0 1 2 3 4 5 6) do (
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --stock-eac3-worker "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" target "%FIXTURE_DIR%\ordinary.fingerprint.eac3" "%TARGET_TASK3_EVIDENCE%\stock-eac3-%%P.tsv" %%P
+  if errorlevel 1 exit /b 1
+  attrib +R "%TARGET_TASK3_EVIDENCE%\stock-eac3-%%P.tsv"
+  if errorlevel 1 exit /b 1
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --compare-task3-evidence "%TARGET_TASK3_EVIDENCE%\stock-eac3-%%P.tsv" "%PRISTINE_TASK3_EVIDENCE%\stock-eac3.tsv" %%P stock
+  if errorlevel 1 exit /b 1
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --eac3-passthrough-worker "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" target "%FIXTURE_DIR%\joc.multi.ec3" "%TARGET_TASK3_EVIDENCE%\passthrough-ec3-%%P.tsv" %%P
+  if errorlevel 1 exit /b 1
+  attrib +R "%TARGET_TASK3_EVIDENCE%\passthrough-ec3-%%P.tsv"
+  if errorlevel 1 exit /b 1
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --compare-task3-evidence "%TARGET_TASK3_EVIDENCE%\passthrough-ec3-%%P.tsv" "%PRISTINE_TASK3_EVIDENCE%\passthrough-ec3.tsv" %%P passthrough
+  if errorlevel 1 exit /b 1
+)
+call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --stock-eac3-worker "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine "%FIXTURE_DIR%\ordinary.fingerprint.mp4" "%PRISTINE_TASK3_EVIDENCE%\stock-mp4.tsv" 0
+if errorlevel 1 exit /b 1
+attrib +R "%PRISTINE_TASK3_EVIDENCE%\stock-mp4.tsv"
+if errorlevel 1 exit /b 1
+call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --eac3-passthrough-worker "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine "%FIXTURE_DIR%\joc.multi.mp4" "%PRISTINE_TASK3_EVIDENCE%\passthrough-mp4.tsv" 0
+if errorlevel 1 exit /b 1
+attrib +R "%PRISTINE_TASK3_EVIDENCE%\passthrough-mp4.tsv"
+if errorlevel 1 exit /b 1
+for %%P in (0 1 2 3 4 5 6) do (
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --stock-eac3-worker "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" target "%FIXTURE_DIR%\ordinary.fingerprint.mp4" "%TARGET_TASK3_EVIDENCE%\stock-mp4-%%P.tsv" %%P
+  if errorlevel 1 exit /b 1
+  attrib +R "%TARGET_TASK3_EVIDENCE%\stock-mp4-%%P.tsv"
+  if errorlevel 1 exit /b 1
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --compare-task3-evidence "%TARGET_TASK3_EVIDENCE%\stock-mp4-%%P.tsv" "%PRISTINE_TASK3_EVIDENCE%\stock-mp4.tsv" %%P stock
+  if errorlevel 1 exit /b 1
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --eac3-passthrough-worker "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" target "%FIXTURE_DIR%\joc.multi.mp4" "%TARGET_TASK3_EVIDENCE%\passthrough-mp4-%%P.tsv" %%P
+  if errorlevel 1 exit /b 1
+  attrib +R "%TARGET_TASK3_EVIDENCE%\passthrough-mp4-%%P.tsv"
+  if errorlevel 1 exit /b 1
+  call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --compare-task3-evidence "%TARGET_TASK3_EVIDENCE%\passthrough-mp4-%%P.tsv" "%PRISTINE_TASK3_EVIDENCE%\passthrough-mp4.tsv" %%P passthrough
+  if errorlevel 1 exit /b 1
+)
+
+call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --openjoc-lifecycle "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" "%FIXTURE_DIR%"
 exit /b %errorlevel%
 
 :build_lane

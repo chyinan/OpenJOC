@@ -17,6 +17,9 @@ FIXTURE_SCRIPT = ROOT / "scripts" / "generate-player-fixtures.sh"
 RUST_BRIDGE = ROOT / "crates" / "openjoc-ffmpeg" / "src" / "lib.rs"
 LAV_ROOT = pathlib.Path(r"D:\Program\LAVFilters-OpenJOC")
 HARNESS = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocDirectShowNegotiationSmoke.cpp"
+DIAGNOSTICS = LAV_ROOT / "decoder" / "LAVAudio" / "LAVOpenJocDiagnostics.h"
+LAV_AUDIO_HEADER = LAV_ROOT / "decoder" / "LAVAudio" / "LAVAudio.h"
+LAV_AUDIO_SOURCE = LAV_ROOT / "decoder" / "LAVAudio" / "LAVAudio.cpp"
 
 
 class LavDirectShowNegotiationScriptTests(unittest.TestCase):
@@ -150,6 +153,66 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("export_synthetic_joc_fingerprint_fixture_when_requested", rust_text)
         self.assertIn("assert_fingerprint_fixture_distinguishes_every_policy", rust_text)
 
+    def test_task3_declares_live_diagnostics_and_nonsilent_stock_controls(self) -> None:
+        fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        audio_header = LAV_AUDIO_HEADER.read_text(encoding="utf-8")
+        audio_source = LAV_AUDIO_SOURCE.read_text(encoding="utf-8")
+
+        self.assertTrue(DIAGNOSTICS.is_file())
+        diagnostics_text = DIAGNOSTICS.read_text(encoding="utf-8")
+        self.assertIn("SPDX-License-Identifier: GPL-2.0-or-later", diagnostics_text)
+        self.assertIn("pattern: Imperative Shell", diagnostics_text)
+        self.assertIn("16C95FF3-9D9E-4282-AF61-E6C7AF32446B", diagnostics_text)
+        self.assertIn("ILAVOpenJocDiagnostics", diagnostics_text)
+        self.assertIn("GetOpenJocInputByteCounts", diagnostics_text)
+        self.assertIn("public ILAVOpenJocDiagnostics", audio_header)
+        self.assertIn("QI2(ILAVOpenJocDiagnostics)", audio_source)
+        self.assertIn("m_openJoc.ClassifierInputBytes()", audio_source)
+        self.assertIn("m_openJoc.StreamInputBytes()", audio_source)
+        self.assertIn("ILAVOpenJocDiagnostics", harness_text)
+        self.assertIn("GetOpenJocInputByteCounts", harness_text)
+
+        self.assertIn("ordinary.fingerprint.eac3", fixture_text)
+        self.assertIn("ordinary.fingerprint.mp4", fixture_text)
+        self.assertIn("-c:a copy", fixture_text)
+        self.assertIn("aevalsrc", fixture_text)
+
+    def test_task3_lifecycle_fixture_has_conserved_streaming_and_seekable_mp4_timing_gates(self) -> None:
+        fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
+        rust_text = RUST_BRIDGE.read_text(encoding="utf-8")
+        script_text = SCRIPT.read_text(encoding="utf-8")
+
+        for required in (
+            "OPENJOC_LIFECYCLE_JOC_PATH",
+            "joc.lifecycle.ec3",
+            "joc.lifecycle.mp4",
+            "export_synthetic_joc_lifecycle_fixture_when_requested",
+            "setts=time_base=1/48000:pts=N*1536:dts=N*1536:duration=1536",
+            "ffprobe",
+        ):
+            self.assertIn(required, fixture_text + rust_text)
+
+        self.assertIn("FINAL_LINKED_GAIN_LATENCY_SAMPLES", rust_text)
+        self.assertIn("one_object_joc_with_sequence", rust_text)
+        self.assertIn("SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT", rust_text)
+        self.assertIn("joc.lifecycle.ec3", script_text)
+        self.assertIn("joc.lifecycle.mp4", script_text)
+        self.assertIn("TASK3_LIFECYCLE_TIMING_PREQUAL", script_text)
+        self.assertIn("nb_read_packets=128", script_text)
+        self.assertIn("duration=4.096000", script_text)
+        self.assertIn("duration_ts=196608", script_text)
+        self.assertIn("packet_pts_dts_step=1536", script_text)
+        self.assertIn("frame_duration=N/A", script_text)
+        self.assertNotIn("$stream ^| Where-Object", script_text)
+
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        self.assertIn("TASK3_LIFECYCLE_UNSUPPORTED", harness_text)
+        self.assertIn("UNSUPPORTED_RAW_CONTAINER_OPERATION", harness_text)
+        self.assertIn("empty_eos_resolution=StockEac3", harness_text)
+        self.assertIn("stage=mixed-seek-outcomes", harness_text)
+        self.assertIn("AM_SEEKING_CanSeekAbsolute", harness_text)
+
     def test_harness_declares_private_module_and_no_support_claim_self_test(self) -> None:
         text = HARNESS.read_text(encoding="utf-8")
 
@@ -235,9 +298,76 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("BindToObject", harness_text)
         self.assertIn("CONTROLLED_SINK_COMPLETE", harness_text)
         self.assertIn("UNVERIFIED: controlled-sink matrix failed", harness_text)
-        self.assertNotIn("SUPPORTED", harness_text)
-        self.assertNotIn("UNSUPPORTED", harness_text)
+        controlled_begin = harness_text.index("HRESULT RunControlledSinkMatrix")
+        controlled_end = harness_text.index("bool TestExactMediaTypeComparison", controlled_begin)
+        controlled_matrix = harness_text[controlled_begin:controlled_end]
+        self.assertNotIn("SUPPORTED", controlled_matrix)
+        self.assertNotIn("UNSUPPORTED", controlled_matrix)
+        self.assertNotIn("STREAM_PROVEN", controlled_matrix)
+
+    def test_task3_requires_isolated_stock_passthrough_lifecycle_and_live_status_evidence(self) -> None:
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        harness_text = HARNESS.read_text(encoding="utf-8")
+
+        for required in (
+            "--stock-eac3-worker",
+            "--eac3-passthrough-worker",
+            "--openjoc-lifecycle",
+            "--compare-task3-evidence",
+            "TARGET_TASK3_EVIDENCE",
+            "PRISTINE_TASK3_EVIDENCE",
+        ):
+            self.assertIn(required, script_text + harness_text)
+
+        for required in (
+            "RegOverridePredefKey",
+            "REG_OPTION_VOLATILE",
+            "IMediaSeeking",
+            "SetPositions",
+            "AM_SEEKING_AbsolutePositioning",
+            "begin_flush_count",
+            "end_flush_count",
+            "new_segment_count",
+            "ConnectionMediaType",
+            "ISpecifyPropertyPages2",
+            "CreatePage",
+            "SetObjects",
+            "ILAVAudioStatus",
+            "ILAVOpenJocStatus",
+            "GetOpenJocAdmissionState",
+            "GetOutputDetails",
+            "TASK3_UNVERIFIED",
+        ):
+            self.assertIn(required, harness_text)
+
+        self.assertNotIn("EnableOpenJOC=false", script_text)
         self.assertNotIn("STREAM_PROVEN", harness_text)
+
+    def test_task3_same_filter_policy_probe_requires_explicit_exact_reconnection(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        begin = harness_text.index("HRESULT RunSameFilterPolicyRenegotiation")
+        end = harness_text.index("HRESULT ReturnInjectedFailureAfterLiveSettingsRead", begin)
+        probe = harness_text[begin:end]
+
+        stop = probe.index("control->Stop()")
+        set_policy = probe.index("settings->SetOutputPolicy(policy)", stop)
+        disconnect = probe.index("DisconnectPinPair(graph.get(), audio_output.get())", set_policy)
+        connect = probe.index(
+            "graph->ConnectDirect(audio_output.get(), sink->input(), &expected)",
+            disconnect,
+        )
+        exact_types = probe.index(
+            "ExactConnectionTypes(audio_output.get(), sink->input(), expected)",
+            connect,
+        )
+        exact_graph = probe.index("GraphContainsExactly(graph.get(), 3)", connect)
+
+        self.assertLess(stop, set_policy)
+        self.assertLess(set_policy, disconnect)
+        self.assertLess(disconnect, connect)
+        self.assertLess(connect, exact_types)
+        self.assertLess(connect, exact_graph)
+        self.assertNotIn("graph->Connect(", probe)
 
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(

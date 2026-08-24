@@ -1459,11 +1459,13 @@ mod tests {
         lfe_grouped_mantissa_codes: Option<[[u8; 3]; 6]>,
     ) -> Vec<u8> {
         assert!(exponent_delta_codes.iter().all(|code| *code < 125));
-        assert!(lfe_grouped_mantissa_codes
-            .iter()
-            .flatten()
-            .flatten()
-            .all(|code| *code < 27));
+        assert!(
+            lfe_grouped_mantissa_codes
+                .iter()
+                .flatten()
+                .flatten()
+                .all(|code| *code < 27)
+        );
         let lfe_on = lfe_grouped_mantissa_codes.is_some();
         let size = 4096;
         let mut bits = Bits::default();
@@ -1704,6 +1706,161 @@ mod tests {
         stream
     }
 
+    const SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT: usize = 128;
+
+    fn synthetic_joc_lifecycle_stream() -> Vec<u8> {
+        const JOC_SEQUENCE_MAX: usize = 1023;
+        const JOC_SEQUENCE_FIRST: usize = 1;
+        let frame_count = SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT;
+        let mut stream = Vec::with_capacity(frame_count * 4096);
+        for index in 0..frame_count {
+            let x = u8::try_from((index * 17 + 15) % 63).expect("bounded lifecycle x");
+            let y = u8::try_from((index * 29 + 4) % 63).expect("bounded lifecycle y");
+            let z = i8::try_from((index * 11) % 31).expect("bounded lifecycle z") - 15;
+            let lfe_codes = std::array::from_fn(|block| {
+                std::array::from_fn(|group| {
+                    u8::try_from((index * 13 + block * 5 + group * 3) % 27)
+                        .expect("bounded lifecycle LFE code")
+                })
+            });
+            let sequence_count = u16::try_from(index % JOC_SEQUENCE_MAX + JOC_SEQUENCE_FIRST)
+                .expect("bounded lifecycle JOC sequence count");
+            stream.extend_from_slice(&five_channel_audio_frame_with_exponent_codes(
+                &joc_emdf(
+                    &active_object_oamd(x, y, z),
+                    &one_object_joc_with_sequence(sequence_count),
+                ),
+                true,
+                [62, 82, 86, 102, 106],
+                Some(lfe_codes),
+            ));
+        }
+        stream
+    }
+
+    fn assert_lifecycle_payload_sequence_contract() {
+        use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
+
+        let mut decoder = PayloadDecoder::streaming(PayloadDecoderConfig {
+            reference_screen: None,
+            oamd: Default::default(),
+        });
+        let downmix = vec![vec![0.0_f64; 1536]; 5];
+        let mut callbacks = 0usize;
+        for index in 0..SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT {
+            let sequence_count = u16::try_from(index % 1023 + 1).expect("bounded JOC sequence");
+            let joc_payload = one_object_joc_with_sequence(sequence_count);
+            let parsed = openjoc_joc::parse_joc_payload(&joc_payload).expect("parse lifecycle JOC");
+            assert_eq!(parsed.sequence_count, sequence_count);
+            let oamd_payload = active_object_oamd(
+                u8::try_from((index * 17 + 15) % 63).expect("bounded lifecycle x"),
+                u8::try_from((index * 29 + 4) % 63).expect("bounded lifecycle y"),
+                i8::try_from((index * 11) % 31).expect("bounded lifecycle z") - 15,
+            );
+            decoder
+                .decode_frame_with(
+                    JocFrameInput {
+                        sample_rate: SAMPLE_RATE,
+                        downmix_pcm: &downmix,
+                        base_lfe_pcm: None,
+                        joc_payload: &joc_payload,
+                        oamd_payload: &oamd_payload,
+                        frame_index: u64::try_from(index).expect("bounded frame index"),
+                    },
+                    |frame| {
+                        callbacks += 1;
+                        assert_eq!(frame.frame_index, u64::try_from(index).unwrap());
+                        assert_eq!(frame.sample_range.start_sample, (index * 1536) as u64);
+                        assert_eq!(frame.sample_range.end_sample, ((index + 1) * 1536) as u64);
+                        assert!(!frame.decoded.state_reset);
+                        assert!(!frame.decoded.reconstruction_basis.rows.is_empty());
+                        assert!(
+                            frame
+                                .decoded
+                                .reconstruction_basis
+                                .rows
+                                .iter()
+                                .all(|row| row.len() == 1536
+                                    && row.iter().all(|value| value.is_finite()))
+                        );
+                        Ok::<(), openjoc_scene::PayloadDecodeError>(())
+                    },
+                )
+                .expect("decode lifecycle payload frame");
+        }
+        assert_eq!(callbacks, SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT);
+        decoder
+            .finish_streaming()
+            .expect("finish lifecycle payload stream");
+    }
+
+    fn assert_lifecycle_fixture_streaming_contract(stream: &[u8]) {
+        assert_lifecycle_payload_sequence_contract();
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Stereo,
+            speaker_layout: "2.0".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut session = OpenJocSession::new(config).expect("lifecycle fixture session");
+        let expected_access_units = SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT;
+        assert_eq!(stream.len(), expected_access_units * 4096);
+        let expected_samples = expected_access_units * 1536 + FINAL_LINKED_GAIN_LATENCY_SAMPLES;
+
+        for segment_origin in [0_i64, 480_000_i64] {
+            let mut output = Vec::new();
+            for (index, frame) in stream.chunks_exact(4096).enumerate() {
+                session
+                    .push_packet(OpenJocPacket {
+                        data: frame,
+                        pts_samples: Some(
+                            segment_origin + i64::try_from(index * 1536).expect("lifecycle PTS"),
+                        ),
+                        discontinuity: false,
+                        preroll: false,
+                    })
+                    .expect("decode lifecycle fixture access unit");
+                while let Some(frame) = session.receive_frame() {
+                    output.push(frame);
+                }
+            }
+            session.drain().expect("drain lifecycle fixture");
+            while let Some(frame) = session.receive_frame() {
+                output.push(frame);
+            }
+
+            assert!(!output.is_empty(), "lifecycle fixture produced no PCM");
+            assert!(output.iter().all(|frame| {
+                frame.sample_rate == SAMPLE_RATE
+                    && frame.channel_count == 2
+                    && frame.interleaved_f32.len() == frame.sample_count * frame.channel_count
+                    && frame.interleaved_f32.iter().all(|value| value.is_finite())
+            }));
+            assert_eq!(
+                output.iter().map(|frame| frame.sample_count).sum::<usize>(),
+                expected_samples,
+                "continuous lifecycle input must conserve programme samples plus the declared linked-gain tail"
+            );
+            let mut expected_pts = segment_origin;
+            for frame in &output {
+                assert_eq!(
+                    frame.pts_samples,
+                    Some(expected_pts),
+                    "lifecycle PCM PTS must be contiguous within a segment"
+                );
+                expected_pts += i64::try_from(frame.sample_count).expect("bounded PCM frame");
+            }
+            assert_eq!(
+                expected_pts,
+                segment_origin + i64::try_from(expected_samples).expect("bounded sample count")
+            );
+            assert!(session.is_drained());
+            assert!(session.receive_frame().is_none());
+
+            session.reset();
+        }
+    }
+
     fn decode_policy_channel_fingerprints(
         stream: &[u8],
         render_mode: RenderMode,
@@ -1722,7 +1879,9 @@ mod tests {
             session
                 .push_packet(OpenJocPacket {
                     data: frame,
-                    pts_samples: Some(i64::try_from(index * 1536).expect("fingerprint fixture PTS")),
+                    pts_samples: Some(
+                        i64::try_from(index * 1536).expect("fingerprint fixture PTS"),
+                    ),
                     discontinuity: false,
                     preroll: false,
                 })
@@ -1776,7 +1935,10 @@ mod tests {
         for (mode, layout, channel_count) in POLICIES {
             let first = decode_policy_channel_fingerprints(stream, mode, layout);
             let second = decode_policy_channel_fingerprints(stream, mode, layout);
-            assert_eq!(first, second, "{layout} channel fingerprints must be stable");
+            assert_eq!(
+                first, second,
+                "{layout} channel fingerprints must be stable"
+            );
             assert_eq!(first.len(), channel_count, "{layout} channel count");
             assert_eq!(
                 first.iter().collect::<HashSet<_>>().len(),
@@ -1805,10 +1967,9 @@ mod tests {
             .expect("bed BAP fixture");
             assert!(baps.iter().all(|bap| *bap == 0));
         }
-        let lfe_baps = openjoc_eac3::compute_element_bap(
-            &[0; 7], 0, 7, parameters, 4, 5, 15, 0, None, None,
-        )
-        .expect("LFE BAP fixture");
+        let lfe_baps =
+            openjoc_eac3::compute_element_bap(&[0; 7], 0, 7, parameters, 4, 5, 15, 0, None, None)
+                .expect("LFE BAP fixture");
         assert_eq!(lfe_baps, [1; 7]);
     }
 
@@ -1840,6 +2001,16 @@ mod tests {
         std::fs::write(path, stream).expect("write requested fingerprint JOC fixture");
     }
 
+    #[test]
+    fn export_synthetic_joc_lifecycle_fixture_when_requested() {
+        let Some(path) = std::env::var_os("OPENJOC_LIFECYCLE_JOC_PATH") else {
+            return;
+        };
+        let stream = synthetic_joc_lifecycle_stream();
+        assert_lifecycle_fixture_streaming_contract(&stream);
+        std::fs::write(path, stream).expect("write requested lifecycle JOC fixture");
+    }
+
     fn huffman_codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {
         fn visit(nodes: &[[i16; 2]], node: usize, wanted: u16, path: &mut Vec<bool>) -> bool {
             for branch in 0..2 {
@@ -1866,9 +2037,17 @@ mod tests {
         path
     }
 
-    fn one_object_joc() -> Vec<u8> {
+    fn one_object_joc_with_sequence(sequence_count: u16) -> Vec<u8> {
+        assert!(sequence_count <= 1023);
         let mut bits = Vec::new();
-        for (value, width) in [(0, 3), (0, 6), (0, 3), (2, 3), (17, 5), (42, 10)] {
+        for (value, width) in [
+            (0, 3),
+            (0, 6),
+            (0, 3),
+            (2, 3),
+            (17, 5),
+            (u64::from(sequence_count), 10),
+        ] {
             push(&mut bits, value, width);
         }
         push(&mut bits, 1, 1);
@@ -1882,6 +2061,10 @@ mod tests {
             bits.extend_from_slice(&codeword);
         }
         pack(bits)
+    }
+
+    fn one_object_joc() -> Vec<u8> {
+        one_object_joc_with_sequence(42)
     }
 
     fn ordinary_eac3_frame() -> Vec<u8> {
