@@ -17,6 +17,7 @@ FIXTURE_SCRIPT = ROOT / "scripts" / "generate-player-fixtures.sh"
 RUST_BRIDGE = ROOT / "crates" / "openjoc-ffmpeg" / "src" / "lib.rs"
 LAV_ROOT = pathlib.Path(r"D:\Program\LAVFilters-OpenJOC")
 HARNESS = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocDirectShowNegotiationSmoke.cpp"
+POLICY_CONTROL = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocPolicyControl.cpp"
 DIAGNOSTICS = LAV_ROOT / "decoder" / "LAVAudio" / "LAVOpenJocDiagnostics.h"
 LAV_AUDIO_HEADER = LAV_ROOT / "decoder" / "LAVAudio" / "LAVAudio.h"
 LAV_AUDIO_SOURCE = LAV_ROOT / "decoder" / "LAVAudio" / "LAVAudio.cpp"
@@ -137,6 +138,49 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertGreaterEqual(text.count("--self-test"), 2)
         self.assertGreaterEqual(text.count("OpenJocRuntimeIdentity.tsv"), 2)
         self.assertIn("attrib +R", text)
+
+    def test_builds_and_runs_isolated_persistent_policy_control(self) -> None:
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        release_text = RELEASE_SMOKES.read_text(encoding="utf-8")
+
+        self.assertTrue(POLICY_CONTROL.is_file())
+        source = POLICY_CONTROL.read_text(encoding="utf-8")
+        for required in (
+            "pattern: Imperative Shell",
+            "LAVOpenJocSettings.h",
+            "LAVAudioSettings.h",
+            "class PrivateComModule",
+            "LOAD_WITH_ALTERED_SEARCH_PATH",
+            "DllGetClassObject",
+            "kTargetLavAudio",
+            "SetRuntimeConfig(FALSE)",
+            "SetOutputPolicy",
+            "GetOutputPolicy",
+            "OpenJocOutputPolicyVersion",
+            "OpenJocOutputPolicy",
+            "REG_DWORD",
+            "--set-persistent",
+            "--get",
+            "--self-test",
+            "RegOverridePredefKey",
+            "PolicyStateMatchesExpected",
+            "temporary_tree_absent=1",
+            "real_policy_values_restored=1",
+        ):
+            self.assertIn(required, source)
+        self.assertNotIn("CoCreateInstance", source)
+        self.assertNotIn("friendly", source.lower())
+        self.assertNotIn("endpoint", source.lower())
+
+        for text in (script_text, release_text):
+            self.assertIn("OpenJocPolicyControl.cpp", text)
+            self.assertIn("OpenJocPolicyControl.exe", text)
+            self.assertIn("/W4 /WX", text)
+        self.assertIn(
+            'call "%TARGET_RUNTIME_DIR%\\OpenJocPolicyControl.exe" --self-test '
+            '"%TARGET_RUNTIME_DIR%\\LAVAudio.ax"',
+            script_text,
+        )
 
     def test_fixture_generation_exports_fingerprint_raw_and_mp4(self) -> None:
         fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
@@ -304,6 +348,99 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("SUPPORTED", controlled_matrix)
         self.assertNotIn("UNSUPPORTED", controlled_matrix)
         self.assertNotIn("STREAM_PROVEN", controlled_matrix)
+
+    def test_native_renderer_probe_runs_fail_closed_classifier_and_is_not_auto_run(self) -> None:
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        harness_text = HARNESS.read_text(encoding="utf-8")
+
+        self.assertIn("--native-renderer-probe", harness_text)
+        begin = harness_text.index("HRESULT RunNativeRendererProbe")
+        end = harness_text.index("HRESULT RunSelfTest", begin)
+        probe = harness_text[begin:end]
+        for required in (
+            "BuildStrictTarget",
+            "BuildNativeRendererGraph",
+            "RunNativeInitialPlayback",
+            "RunNativeSeekEpoch",
+            "RuntimeIdentityMatches",
+            "FixtureIdentityMatches",
+            "CREATE_NEW",
+            "NATIVE_RENDERER_PROBE_V1",
+            "ClassifyNativeProbe",
+            "pre_output_type_hr",
+            "pre_renderer_input_type_hr",
+            "post_output_type_hr",
+            "post_renderer_input_type_hr",
+            "proposal_count",
+            "operation\\t",
+            "type_observation_count",
+        ):
+            self.assertIn(required, probe)
+        for required in (
+            "pre_drain_terminal_hr",
+            "pre_drain_event_count",
+            "pre_drain_completion_count",
+            "classifier_bytes_before",
+            "classifier_bytes_after",
+            "classifier_bytes_delta",
+            "stream_bytes_before",
+            "stream_bytes_after",
+            "stream_bytes_delta",
+            "position_before_run_hr",
+            "position_after_completion_hr",
+            "renderer_discontinuities_before_hr",
+            "renderer_stats_qi_hr",
+            "renderer_discontinuities_before",
+            "renderer_discontinuities_before_aux",
+            "renderer_discontinuities_after_hr",
+            "renderer_discontinuities_after",
+            "renderer_discontinuities_after_aux",
+            "renderer_discontinuities_delta",
+        ):
+            self.assertIn(required, harness_text)
+        builder = harness_text[
+            harness_text.index("void BuildNativeRendererGraph") : harness_text.index(
+                "struct NativePlaybackEvidence"
+            )
+        ]
+        self.assertEqual(builder.count("ConnectDirect("), 1)
+        self.assertNotIn("->Connect(", builder)
+        self.assertNotIn("friendly", probe.lower())
+        self.assertNotIn("STREAM_PROVEN", probe)
+        self.assertNotIn("--native-renderer-probe", script_text)
+        classifier = harness_text[
+            harness_text.index("NativeProbeState ClassifyNativeProbe") : harness_text.index(
+                "struct Task4TrendEvidence"
+            )
+        ]
+        self.assertIn("VFW_E_TYPE_NOT_ACCEPTED", classifier)
+        self.assertIn("VFW_E_UNSUPPORTED_AUDIO", classifier)
+        self.assertNotIn("E_ACCESSDENIED", classifier)
+        self.assertNotIn("VFW_E_CANNOT_CONNECT", classifier)
+        self.assertNotIn("VFW_E_NO_ACCEPTABLE_TYPES", classifier)
+        pure_tests = harness_text[
+            harness_text.index("bool TestPureHelpers") : harness_text.index(
+                "bool TestStrictCaptureSinkPolicy"
+            )
+        ]
+        for expected_case in (
+            "NativeProbeState::Unverified",
+            "NativeProbeState::ExactRejection",
+            "NativeProbeState::TypeMutation",
+            "NativeProbeState::StreamObserved",
+            "VFW_E_TYPE_NOT_ACCEPTED",
+            "VFW_E_UNSUPPORTED_AUDIO",
+            "E_ACCESSDENIED",
+            "NativeTypeAggregateEvidence seek_mutation",
+            "NativeTypeAggregateEvidence reopen_mutation",
+            "NativeTypeAggregateEvidence query_failure",
+            "NativeTypeAggregateEvidence mixed_type_evidence",
+            "NativeSeekEpochWitness epoch",
+            "classifier_bytes_after = 11",
+            "stream_bytes_after = 21",
+            "runtime_identity = false",
+        ):
+            self.assertIn(expected_case, pure_tests)
 
     def test_task3_requires_isolated_stock_passthrough_lifecycle_and_live_status_evidence(self) -> None:
         script_text = SCRIPT.read_text(encoding="utf-8")

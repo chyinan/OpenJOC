@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "status": "HOST_AUDIT_NOT_SUPPORT_PROOF",
+  "host": {
+    "name": "PotPlayer",
+    "path": "C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe",
+    "version": "26.07.01.0",
+    "sha256": "6f0f63bee95d6715e0656f8b0bcbcce0cc3b27f03f012c8b8c4c34557a2e1cb7"
+  },
+  "policy": "Stereo",
+  "source_as_output": {
+    "confirmed_in_visible_ui": true,
+    "screenshot": "source-input-as-output.png"
+  },
+  "renderer_audit": {
+    "native_probe_moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+    "potplayer_visible_renderer_family": "WASAPI",
+    "same_renderer_identity_proven": false,
+    "display_name_inference_used": false
+  },
+  "same_process_modules": [
+    {
+      "basename": "LAVAudio.ax",
+      "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-discontinuity-staged-20260825-1\\target-runtime\\LAVAudio.ax",
+      "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+    },
+    {
+      "basename": "LAVSplitter.ax",
+      "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-discontinuity-staged-20260825-1\\target-runtime\\LAVSplitter.ax",
+      "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+    },
+    {
+      "basename": "openjoc_capi.dll",
+      "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-discontinuity-staged-20260825-1\\target-runtime\\openjoc_capi.dll",
+      "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+    }
+  ],
+  "playback": {
+    "visible_state": "AWAITING_PLAYBACK_00_00",
+    "progressed": false,
+    "screenshot": "stereo-raw-staged-identity-awaiting-playback.png"
+  },
+  "classification": {
+    "counts_as_stream_proof": false,
+    "counts_as_exact_renderer_rejection": false,
+    "reason": "The host renderer identity did not match the named DirectSound renderer; the native ConnectDirect evidence is authoritative."
+  },
+  "host_state_restoration": {
+    "registry_snapshots_exact": true,
+    "default_endpoints_unchanged": true,
+    "potplayer_stopped": true,
+    "supplemental_per_user_clsid_removed": true
+  }
+}

@@ -337,11 +337,20 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   strmbase.lib strmiids.lib ole32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b 1
 
+call cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX /DUNICODE /D_UNICODE ^
+  "/I%TARGET_LAV_ROOT%\include" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocPolicyControl.cpp" ^
+  /Fe:OpenJocPolicyControl.exe /link advapi32.lib ole32.lib strmiids.lib
+if errorlevel 1 exit /b 1
+
 copy /y "%HARNESS_OUTPUT_DIR%\OpenJocDirectShowNegotiationSmoke.exe" ^
   "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" >nul
 if errorlevel 1 exit /b 1
 copy /y "%HARNESS_OUTPUT_DIR%\OpenJocDirectShowNegotiationSmoke.exe" ^
   "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" >nul
+if errorlevel 1 exit /b 1
+copy /y "%HARNESS_OUTPUT_DIR%\OpenJocPolicyControl.exe" ^
+  "%TARGET_RUNTIME_DIR%\OpenJocPolicyControl.exe" >nul
 if errorlevel 1 exit /b 1
 
 call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --write-manifest "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%"
@@ -354,6 +363,8 @@ attrib +R "%PRISTINE_RUNTIME_MANIFEST%"
 if errorlevel 1 exit /b 1
 
 call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --self-test "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" target
+if errorlevel 1 exit /b 1
+call "%TARGET_RUNTIME_DIR%\OpenJocPolicyControl.exe" --self-test "%TARGET_RUNTIME_DIR%\LAVAudio.ax"
 if errorlevel 1 exit /b 1
 call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --self-test "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine
 if errorlevel 1 exit /b 1
