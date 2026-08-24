@@ -24,6 +24,20 @@ mkdir -p "$output"
 OPENJOC_SYNTHETIC_JOC_PATH="$output/joc.multi.ec3" \
     cargo test -p openjoc-ffmpeg --lib tests::export_synthetic_joc_fixture_when_requested \
     -- --exact --nocapture
+ffmpeg -v error -f eac3 -i "$output/joc.multi.ec3" -map 0:a:0 -c:a copy \
+    -f mp4 -y "$output/joc.multi.mp4"
+
+# The qualification probe uses distinct bed excitation paths (BAP-0 dither
+# driven by separate exponent paths), grouped LFE mantissas, and an asymmetric
+# object-position sweep. Its test-only exporter decodes the complete stream
+# through every representable policy and refuses to write it unless every
+# output channel has a stable, pairwise-distinct time-series fingerprint.
+OPENJOC_FINGERPRINT_JOC_PATH="$output/joc.fingerprint.ec3" \
+    cargo test -p openjoc-ffmpeg --lib \
+    tests::export_synthetic_joc_fingerprint_fixture_when_requested \
+    -- --exact --nocapture
+ffmpeg -v error -f eac3 -i "$output/joc.fingerprint.ec3" -map 0:a:0 -c:a copy \
+    -f mp4 -y "$output/joc.fingerprint.mp4"
 
 # The compatibility name remains the single-AU input used by older local
 # harnesses. New qualification names both raw controls explicitly.

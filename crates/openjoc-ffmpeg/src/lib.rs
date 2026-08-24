@@ -1325,6 +1325,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use openjoc_api::{BinauralConfig, ValidationProfile};
+    use std::collections::HashSet;
     use std::thread;
     #[cfg(feature = "ffmpeg")]
     use std::{fs, process::Command, time::SystemTime};
@@ -1451,7 +1452,19 @@ mod tests {
         pack(bits)
     }
 
-    fn five_channel_audio_frame(emdf: &[u8], joc_extension: bool) -> Vec<u8> {
+    fn five_channel_audio_frame_with_exponent_codes(
+        emdf: &[u8],
+        joc_extension: bool,
+        exponent_delta_codes: [u8; 5],
+        lfe_grouped_mantissa_codes: Option<[[u8; 3]; 6]>,
+    ) -> Vec<u8> {
+        assert!(exponent_delta_codes.iter().all(|code| *code < 125));
+        assert!(lfe_grouped_mantissa_codes
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|code| *code < 27));
+        let lfe_on = lfe_grouped_mantissa_codes.is_some();
         let size = 4096;
         let mut bits = Bits::default();
         for (value, width) in [
@@ -1462,7 +1475,7 @@ mod tests {
             (0, 2),
             (3, 2),
             (7, 3),
-            (0, 1),
+            (u64::from(lfe_on), 1),
             (16, 5),
             (31, 5),
             (0, 1),
@@ -1479,7 +1492,7 @@ mod tests {
         }
         bits.push(1, 1);
         bits.push(0, 1);
-        bits.push(0, 2);
+        bits.push(if lfe_on { 2 } else { 0 }, 2);
         bits.push(0, 1);
         bits.push(0, 7);
         bits.push(0, 1);
@@ -1491,29 +1504,61 @@ mod tests {
                 bits.push(u64::from(block == 0), 2);
             }
         }
+        if lfe_on {
+            bits.push(1, 1);
+            for _ in 1..6 {
+                bits.push(0, 1);
+            }
+        }
         for _ in 0..5 {
             bits.push(0, 5);
         }
-        bits.push(0, 6);
-        bits.push(0, 4);
+        if !lfe_on {
+            bits.push(0, 6);
+            bits.push(0, 4);
+        }
         bits.push(0, 1);
         bits.push(0, 1);
         bits.push(0, 1);
         for _ in 0..5 {
             bits.push(0, 6);
         }
-        for _ in 0..5 {
-            bits.push(0, 4);
+        for exponent_delta_code in exponent_delta_codes {
+            bits.push(if lfe_on { 15 } else { 0 }, 4);
             for _ in 0..24 {
-                bits.push(62, 7);
+                bits.push(u64::from(exponent_delta_code), 7);
             }
             bits.push(0, 2);
         }
-        bits.push(0, 1);
-        for _ in 1..6 {
+        if let Some(lfe_codes) = lfe_grouped_mantissa_codes {
+            bits.push(0, 4); // LFE initial exponent
+            bits.push(62, 7);
+            bits.push(62, 7);
+            bits.push(5, 6); // coarse SNR: beds BAP 0, LFE BAP 1
+            for _ in 0..5 {
+                bits.push(0, 4); // five bed fine SNR codes
+            }
+            bits.push(15, 4); // LFE fine SNR code
+            bits.push(0, 1); // converter SNR offset absent
+            for code in lfe_codes[0] {
+                bits.push(u64::from(code), 5);
+            }
+            for block_codes in &lfe_codes[1..] {
+                bits.push(0, 1); // dynamic range absent
+                bits.push(0, 1); // SPX strategy reused
+                bits.push(0, 1); // SNR offsets reused
+                bits.push(0, 1); // converter SNR offset absent
+                for code in block_codes {
+                    bits.push(u64::from(*code), 5);
+                }
+            }
+        } else {
             bits.push(0, 1);
-            bits.push(0, 1);
-            bits.push(0, 1);
+            for _ in 1..6 {
+                bits.push(0, 1);
+                bits.push(0, 1);
+                bits.push(0, 1);
+            }
         }
         bits.0.resize(size * 8, false);
         if joc_extension {
@@ -1533,8 +1578,238 @@ mod tests {
         bits.bytes(size)
     }
 
+    fn five_channel_audio_frame(emdf: &[u8], joc_extension: bool) -> Vec<u8> {
+        five_channel_audio_frame_with_exponent_codes(emdf, joc_extension, [62; 5], None)
+    }
+
     fn synthetic_joc_frame() -> Vec<u8> {
         five_channel_audio_frame(&joc_emdf(&inactive_oamd(), &one_object_joc()), true)
+    }
+
+    fn active_object_oamd(x: u8, y: u8, z: i8) -> Vec<u8> {
+        assert!(x <= 62 && y <= 62 && (-15..=15).contains(&z));
+        let positions = [
+            (x, y, z),
+            (15, 4, 15),
+            (47, 5, 12),
+            (13, 55, 10),
+            (50, 52, 14),
+        ];
+
+        let mut body = Bits::default();
+        body.push(0, 1); // discard_unknown
+        body.push(0, 2); // sample offset
+        body.push(
+            u64::try_from(positions.len() - 1).expect("OAMD block count"),
+            3,
+        );
+        for factor in [0, 9, 18, 27, 36] {
+            body.push(factor, 6);
+            body.push(0, 2); // zero ramp
+        }
+        body.push(1, 1); // no reserved object-element data
+        for (block, (x, y, z)) in positions.into_iter().enumerate() {
+            body.push(0, 1); // active object
+            if block == 0 {
+                body.push(0, 2); // 0 dB object gain
+                body.push(1, 1); // default priority
+            } else {
+                body.push(2, 2); // reuse basic information
+                body.push(3, 2); // update selected render information
+                body.push(8, 4); // position only
+                body.push(0, 1); // absolute position
+            }
+            body.push(u64::from(x), 6);
+            body.push(u64::from(y), 6);
+            body.push(u64::from(z >= 0), 1);
+            body.push(u64::from(z.unsigned_abs()), 4);
+            body.push(0, 1); // inside-room distance
+            if block == 0 {
+                body.push(0, 3); // include horizontal zones
+                body.push(1, 1); // include elevation zone
+                body.push(0, 2); // point object
+                body.push(0, 1); // room anchored
+            }
+            body.push(0, 1); // channel lock disabled
+            body.push(0, 1); // no additional table data
+        }
+        let body = body.padded_bytes();
+        assert!(!body.is_empty() && body.len() <= 31);
+
+        let mut payload = Bits::default();
+        payload.push(0, 2); // syntax version
+        payload.push(0, 5); // one object
+        payload.push(1, 1); // dynamic-only programme assignment
+        payload.push(0, 1); // no LFE object
+        payload.push(0, 1); // no alternate object data
+        payload.push(1, 4); // one element
+        payload.push(1, 4); // object element
+        let size_minus_one = body.len() - 1;
+        if size_minus_one < 16 {
+            payload.push(u64::try_from(size_minus_one).expect("OAMD body size"), 4);
+            payload.push(0, 1);
+        } else {
+            payload.push(0, 4);
+            payload.push(1, 1);
+            payload.push(
+                u64::try_from(size_minus_one - 16).expect("continued OAMD body size"),
+                4,
+            );
+            payload.push(0, 1);
+        }
+        for byte in body {
+            payload.push(u64::from(byte), 8);
+        }
+        payload.padded_bytes()
+    }
+
+    fn synthetic_joc_fingerprint_stream() -> Vec<u8> {
+        const POSITIONS: [(u8, u8, i8); 12] = [
+            (15, 4, 15),
+            (53, 7, 3),
+            (4, 11, -12),
+            (60, 39, -4),
+            (9, 26, 8),
+            (42, 61, -9),
+            (29, 4, 15),
+            (56, 20, 1),
+            (14, 47, -15),
+            (37, 15, 11),
+            (2, 33, -2),
+            (48, 52, 6),
+        ];
+        let mut stream = Vec::with_capacity(POSITIONS.len() * 4096);
+        for (index, (x, y, z)) in POSITIONS.into_iter().enumerate() {
+            let _index = u8::try_from(index).expect("bounded fingerprint frame index");
+            // Each base channel receives a distinct, valid grouped D15
+            // exponent path. Every non-zero path returns to exponent zero
+            // within one group, so all 24 groups remain in range. With the
+            // syntax's enabled zero-BAP dither this yields five distinct,
+            // bounded bed excitation time series without private media.
+            let exponent_delta_codes = [62, 82, 86, 102, 106];
+            let lfe_codes = std::array::from_fn(|block| {
+                std::array::from_fn(|group| {
+                    u8::try_from((index * 7 + block * 3 + group) % 27)
+                        .expect("bounded LFE grouped mantissa code")
+                })
+            });
+            let frame = five_channel_audio_frame_with_exponent_codes(
+                &joc_emdf(&active_object_oamd(x, y, z), &one_object_joc()),
+                true,
+                exponent_delta_codes,
+                Some(lfe_codes),
+            );
+            stream.extend_from_slice(&frame);
+        }
+        stream
+    }
+
+    fn decode_policy_channel_fingerprints(
+        stream: &[u8],
+        render_mode: RenderMode,
+        layout: &str,
+    ) -> Vec<String> {
+        assert_eq!(stream.len() % 4096, 0);
+        let config = OpenJocConfig {
+            render_mode,
+            speaker_layout: layout.to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut session = OpenJocSession::new(config).expect("fingerprint fixture policy session");
+        let mut channels: Option<Vec<Vec<u8>>> = None;
+        for (index, frame) in stream.chunks_exact(4096).enumerate() {
+            session
+                .push_packet(OpenJocPacket {
+                    data: frame,
+                    pts_samples: Some(i64::try_from(index * 1536).expect("fingerprint fixture PTS")),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .expect("decode fingerprint fixture access unit");
+            while let Some(frame) = session.receive_frame() {
+                let output = channels.get_or_insert_with(|| vec![Vec::new(); frame.channel_count]);
+                assert_eq!(output.len(), frame.channel_count);
+                assert_eq!(
+                    frame.interleaved_f32.len(),
+                    frame.sample_count * frame.channel_count
+                );
+                for sample in frame.interleaved_f32.chunks_exact(frame.channel_count) {
+                    for (channel, value) in sample.iter().enumerate() {
+                        assert!(value.is_finite());
+                        output[channel].extend_from_slice(&value.to_bits().to_le_bytes());
+                    }
+                }
+            }
+        }
+        session.drain().expect("drain fingerprint fixture");
+        while let Some(frame) = session.receive_frame() {
+            let output = channels.get_or_insert_with(|| vec![Vec::new(); frame.channel_count]);
+            assert_eq!(output.len(), frame.channel_count);
+            for sample in frame.interleaved_f32.chunks_exact(frame.channel_count) {
+                for (channel, value) in sample.iter().enumerate() {
+                    assert!(value.is_finite());
+                    output[channel].extend_from_slice(&value.to_bits().to_le_bytes());
+                }
+            }
+        }
+        channels
+            .expect("fingerprint fixture must produce PCM")
+            .into_iter()
+            .map(|bytes| {
+                assert!(!bytes.is_empty());
+                sha256_hex(&bytes)
+            })
+            .collect()
+    }
+
+    fn assert_fingerprint_fixture_distinguishes_every_policy(stream: &[u8]) {
+        const POLICIES: [(RenderMode, &str, usize); 7] = [
+            (RenderMode::Stereo, "2.0", 2),
+            (RenderMode::Speaker, "5.1", 6),
+            (RenderMode::Speaker, "7.1", 8),
+            (RenderMode::Speaker, "5.1.2", 8),
+            (RenderMode::Speaker, "5.1.4", 10),
+            (RenderMode::Speaker, "7.1.2", 10),
+            (RenderMode::Speaker, "7.1.4", 12),
+        ];
+        for (mode, layout, channel_count) in POLICIES {
+            let first = decode_policy_channel_fingerprints(stream, mode, layout);
+            let second = decode_policy_channel_fingerprints(stream, mode, layout);
+            assert_eq!(first, second, "{layout} channel fingerprints must be stable");
+            assert_eq!(first.len(), channel_count, "{layout} channel count");
+            assert_eq!(
+                first.iter().collect::<HashSet<_>>().len(),
+                channel_count,
+                "{layout} channel fingerprints must be pairwise distinct: {first:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fingerprint_fixture_snr_separates_bed_dither_from_lfe_mantissas() {
+        let parameters = openjoc_eac3::BitAllocationParameters {
+            slow_decay_code: 2,
+            fast_decay_code: 1,
+            slow_gain_code: 1,
+            db_per_bit_code: 2,
+            floor_code: 7,
+        };
+        const EXPONENT_CODES: [u8; 5] = [62, 82, 86, 102, 106];
+        for code in EXPONENT_CODES {
+            let exponents = openjoc_eac3::decode_exponents(15, &[code; 24], 1, 73)
+                .expect("bed exponent fixture");
+            let baps = openjoc_eac3::compute_element_bap(
+                &exponents, 0, 73, parameters, 4, 5, 0, 0, None, None,
+            )
+            .expect("bed BAP fixture");
+            assert!(baps.iter().all(|bap| *bap == 0));
+        }
+        let lfe_baps = openjoc_eac3::compute_element_bap(
+            &[0; 7], 0, 7, parameters, 4, 5, 15, 0, None, None,
+        )
+        .expect("LFE BAP fixture");
+        assert_eq!(lfe_baps, [1; 7]);
     }
 
     #[test]
@@ -1543,11 +1818,26 @@ mod tests {
             return;
         };
         let frame = synthetic_joc_frame();
+        assert_eq!(
+            sha256_hex(&frame),
+            "54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4",
+            "the established single-AU compatibility fixture must remain byte-stable"
+        );
         let mut stream = Vec::with_capacity(frame.len() * 8);
         for _ in 0..8 {
             stream.extend_from_slice(&frame);
         }
         std::fs::write(path, stream).expect("write requested synthetic JOC fixture");
+    }
+
+    #[test]
+    fn export_synthetic_joc_fingerprint_fixture_when_requested() {
+        let Some(path) = std::env::var_os("OPENJOC_FINGERPRINT_JOC_PATH") else {
+            return;
+        };
+        let stream = synthetic_joc_fingerprint_stream();
+        assert_fingerprint_fixture_distinguishes_every_policy(&stream);
+        std::fs::write(path, stream).expect("write requested fingerprint JOC fixture");
     }
 
     fn huffman_codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {

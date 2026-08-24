@@ -35,6 +35,9 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("OpenJocShippedLayoutsTests.cpp", text)
         self.assertIn("OpenJocShippedLayouts.cpp", text)
         self.assertIn("OpenJocShippedLayoutsTests.exe", text)
+        self.assertIn("OpenJocDirectShowNegotiationSmoke.cpp", text)
+        self.assertIn("OpenJocDirectShowNegotiationSmoke.exe", text)
+        self.assertIn("bcrypt.lib", text)
         self.assertIn("OpenJocDirectShowLifecycle.exe", text)
         self.assertIn("OpenJocOutputTests.cpp", text)
         self.assertIn("OpenJocOutput.cpp", text)
@@ -51,7 +54,7 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertGreaterEqual(text.count('"/I%~2\\common\\baseclasses"'), 2)
         self.assertGreaterEqual(text.count('"/I%~2\\common\\DSUtilLite"'), 2)
         self.assertGreaterEqual(text.count("strmiids.lib"), 3)
-        self.assertGreaterEqual(text.count("call cl"), 11)
+        self.assertGreaterEqual(text.count("call cl"), 12)
 
     def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:
         text = NOOP_LIFECYCLE_SOURCE.read_text(encoding="utf-8")
