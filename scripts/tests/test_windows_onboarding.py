@@ -50,6 +50,18 @@ def powershell_51() -> pathlib.Path:
 
 
 class WindowsOnboardingTemplateTests(unittest.TestCase):
+    def test_template_targets_current_v012_release(self) -> None:
+        current_files = (
+            TEMPLATE / "README.md",
+            TEMPLATE / "scripts" / "install.ps1",
+            TEMPLATE / "scripts" / "verify.ps1",
+            TEMPLATE / "scripts" / "uninstall.ps1",
+            TEMPLATE / "scripts" / "OpenJoc.Onboarding.Shell.psm1",
+        )
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in current_files)
+        self.assertIn("0.12.0", combined)
+        self.assertNotIn("0.11.0", combined)
+
     def test_template_exposes_obvious_root_launchers_and_script_core(self) -> None:
         for relative in ROOT_FILES:
             self.assertTrue((TEMPLATE / relative).is_file(), relative)

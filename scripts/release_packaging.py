@@ -24,6 +24,7 @@ from release_packaging_core import (
 )
 
 
+CANONICAL_RELEASE_VERSION = "0.12.0"
 LAV_MODIFIED_FILES = (
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
@@ -36,13 +37,30 @@ LAV_MODIFIED_FILES = (
 )
 LAV_NEW_FILES = (
     "decoder/LAVAudio/LAVOpenJocDiagnostics.h",
+    "decoder/LAVAudio/AudioStatusCapacityTests.cpp",
     "decoder/LAVAudio/LAVAudioIdentitySmoke.cpp",
+    "decoder/LAVAudio/LAVAudioResourceIdentitySmoke.cpp",
     "decoder/LAVAudio/OpenJocAdmission.cpp",
     "decoder/LAVAudio/OpenJocAdmission.h",
     "decoder/LAVAudio/OpenJocAdmissionTests.cpp",
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
+    "decoder/LAVAudio/OpenJocOutput.cpp",
+    "decoder/LAVAudio/OpenJocOutput.h",
+    "decoder/LAVAudio/OpenJocOutputTests.cpp",
+    "decoder/LAVAudio/OpenJocPropertyPageSmoke.cpp",
+    "decoder/LAVAudio/OpenJocSettingsSmoke.cpp",
+    "decoder/LAVAudio/OpenJocShippedLayouts.cpp",
+    "decoder/LAVAudio/OpenJocShippedLayouts.h",
+    "decoder/LAVAudio/OpenJocShippedLayoutsTests.cpp",
+    "decoder/LAVAudio/OpenJocStrictNegotiation.cpp",
+    "decoder/LAVAudio/OpenJocStrictNegotiation.h",
+    "decoder/LAVAudio/OpenJocStrictOutput.cpp",
+    "decoder/LAVAudio/OpenJocStrictOutput.h",
+    "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
+    "include/LAVOpenJocSettings.h",
 )
 FFMPEG_CONFIGURATION_FILES = (
     "config.h",
@@ -207,9 +225,9 @@ def stage_candidates(arguments: argparse.Namespace) -> int:
     onboarding_template = arguments.onboarding_template.resolve()
     release_version = arguments.release_version
 
-    if release_version != "0.11.0":
+    if release_version != CANONICAL_RELEASE_VERSION:
         raise ValueError(
-            "the current canonical onboarding template is for release 0.11.0; "
+            f"the current canonical onboarding template is for release {CANONICAL_RELEASE_VERSION}; "
             f"refusing mismatched version {release_version}"
         )
 
@@ -478,7 +496,7 @@ def finalize_binary(arguments: argparse.Namespace) -> int:
         raise FileNotFoundError(f"source archive is missing: {source_archive}")
 
     release_version = arguments.release_version
-    if release_version != "0.11.0":
+    if release_version != CANONICAL_RELEASE_VERSION:
         raise ValueError(f"unsupported release version: {release_version}")
     audit, missing = _pe_audit(stage / "runtime", release_version)
     _write_text(stage / "tools" / "PE-DEPENDENCY-AUDIT.txt", audit)

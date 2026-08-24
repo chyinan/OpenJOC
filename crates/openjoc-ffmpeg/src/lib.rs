@@ -1743,7 +1743,7 @@ mod tests {
 
         let mut decoder = PayloadDecoder::streaming(PayloadDecoderConfig {
             reference_screen: None,
-            oamd: Default::default(),
+            oamd: openjoc_oamd::OamdDecoderConfig::default(),
         });
         let downmix = vec![vec![0.0_f64; 1536]; 5];
         let mut callbacks = 0usize;
@@ -1950,6 +1950,8 @@ mod tests {
 
     #[test]
     fn fingerprint_fixture_snr_separates_bed_dither_from_lfe_mantissas() {
+        const EXPONENT_CODES: [u8; 5] = [62, 82, 86, 102, 106];
+
         let parameters = openjoc_eac3::BitAllocationParameters {
             slow_decay_code: 2,
             fast_decay_code: 1,
@@ -1957,7 +1959,6 @@ mod tests {
             db_per_bit_code: 2,
             floor_code: 7,
         };
-        const EXPONENT_CODES: [u8; 5] = [62, 82, 86, 102, 106];
         for code in EXPONENT_CODES {
             let exponents = openjoc_eac3::decode_exponents(15, &[code; 24], 1, 73)
                 .expect("bed exponent fixture");

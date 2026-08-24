@@ -271,8 +271,15 @@ def documentation_consistency_errors(files: Mapping[str, str]) -> list[str]:
         if path in files:
             errors.append(f"retired stale document still exists: {path}")
 
+    directshow_layouts = ("Stereo", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4")
     for path in ("docs/KNOWN_LIMITATIONS.md", "docs/integration/LAV_FILTERS_OPENJOC.md"):
-        if "stereo float PCM" not in files.get(path, ""):
-            errors.append(f"{path} does not preserve the LAV stereo-float boundary")
+        document = files.get(path, "")
+        normalized_document = " ".join(document.split())
+        if any(layout not in document for layout in directshow_layouts):
+            errors.append(f"{path} does not preserve the fixed DirectShow layout contract")
+        if "AUTO_NOT_RELIABLE" not in document:
+            errors.append(f"{path} does not preserve AUTO_NOT_RELIABLE")
+        if "Physical multichannel hardware is not verified" not in normalized_document:
+            errors.append(f"{path} does not preserve the physical hardware boundary")
 
     return errors

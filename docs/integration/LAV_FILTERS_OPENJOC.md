@@ -8,11 +8,11 @@ Windows DirectShow ecosystem. The primary validated host is PotPlayer.
 The source is published as [LAVFilters-OpenJOC](https://github.com/chyinan/LAVFilters-OpenJOC),
 a downstream fork of [Nevcairiel/LAVFilters](https://github.com/Nevcairiel/LAVFilters).
 The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
-`fefb6987994ed56e4525e8a125f5fbb53707bc52`; the downstream integration
-revision is `b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27`.
+`fefb6987994ed56e4525e8a125f5fbb53707bc52`. Release source is frozen by the
+immutable downstream tag `openjoc-0.12.0`.
 
 The public release also includes the
-`openjoc-lav-0.11.0-corresponding-source.zip` asset, which carries the full
+`openjoc-lav-0.12.0-corresponding-source.zip` asset, which carries the full
 recursive corresponding-source and third-party license closure.
 
 ## Routing behavior
@@ -31,10 +31,36 @@ endorsement by PotPlayer, LAV Filters, FFmpeg, Dolby, Microsoft, or SADIE.
 
 ## Output scope
 
-The current OpenJOC output through this DirectShow/LAV integration is 48 kHz
-stereo float PCM. The standalone OpenJOC renderer supports additional
-multichannel and binaural workflows, but those renderer capabilities are not
-claims about DirectShow/LAV output.
+The public DirectShow subset contains exactly seven explicit fixed 48 kHz
+IEEE-float PCM policies:
+
+- Stereo: 2 channels, mask `0x00000003`;
+- 5.1: 6 channels, mask `0x0000060f`;
+- 7.1: 8 channels, mask `0x0000063f`;
+- 5.1.2: 8 channels, mask `0x0000560f`;
+- 5.1.4: 10 channels, mask `0x0002d60f`;
+- 7.1.2: 10 channels, mask `0x0000563f`;
+- 7.1.4: 12 channels, mask `0x0002d63f`.
+
+Each policy makes one exact semantic `WAVEFORMATEXTENSIBLE` proposal. There is
+no fallback mask or alternate proposal. Raw and MP4 paths passed strict capture
+with actual sample delivery, exact channel order/mask/frame sizing, checked
+10/12-channel buffers, flush, seek, EOS, reopen, and policy switching.
+
+The endpoint evidence is intentionally separate: VB-Audio WaveOut and Realtek
+DirectSound delivered all 14 raw/MP4 attempts; VB-Audio DirectSound rejected
+all 14 with `0x8004025C`. A virtual driver or a stereo-configured physical
+endpoint does not prove physical multichannel reproduction. Physical
+multichannel hardware is not verified.
+
+Automatic downstream semantic layout discovery is `AUTO_NOT_RELIABLE`.
+Stereo remains the default and the other layouts require explicit selection.
+Production code does not infer semantics from endpoint/product names, perform
+Bass Management, or map physical subwoofer counts to logical LFE channels.
+Standalone 7.1.6, 9.1.x, 22.2, custom-geometry, and binaural support are not LAV
+output claims. The full matrix is in the
+[`windows-lav-multichannel-2026-08-25` result](evidence/windows-lav-multichannel-2026-08-25/OPENJOC_LAV_MULTICHANNEL_OUTPUT_RESULT.txt),
+beside the machine-readable JSON evidence.
 
 ## Installation and rollback
 

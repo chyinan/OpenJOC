@@ -79,12 +79,12 @@ class MarkdownLinkTests(unittest.TestCase):
 class DocumentationConsistencyTests(unittest.TestCase):
     def fixture_files(self) -> dict[str, str]:
         return {
-            "Cargo.toml": '[workspace.package]\nversion = "0.11.0"\nrust-version = "1.85"\n',
+            "Cargo.toml": '[workspace.package]\nversion = "0.12.0"\nrust-version = "1.85"\n',
             "README.md": (
                 "# OpenJOC\n[Latest](https://github.com/chyinan/OpenJOC/releases/latest)\n"
                 "install.bat --layout-file C ABI 64 output channels\n"
             ),
-            "CHANGELOG.md": "# Changelog\n## [0.11.0]\n",
+            "CHANGELOG.md": "# Changelog\n## [0.12.0]\n",
             "crates/openjoc-capi/include/openjoc.h": (
                 "#define OPENJOC_ABI_VERSION_MAJOR 1u\n"
                 "#define OPENJOC_ABI_VERSION_MINOR 4u\n"
@@ -93,7 +93,7 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 "pub const MAX_CUSTOM_SPEAKERS: usize = 64;\n"
             ),
             "packaging/player/PLAYER_PACKAGE_MANIFEST.json": (
-                '{"openjoc":{"version":"0.11.0","c_abi":{"major":1,"minor":4}}}'
+                '{"openjoc":{"version":"0.12.0","c_abi":{"major":1,"minor":4}}}'
             ),
             "docs/C_API.md": "The ABI is `1.4-experimental`.\n",
             "docs/CAPABILITIES.md": (
@@ -101,13 +101,41 @@ class DocumentationConsistencyTests(unittest.TestCase):
                 "openjoc render-joc FILE [--layout LAYOUT | --layout-file LAYOUT.json]\n"
             ),
             "docs/CUSTOM_SPEAKER_LAYOUTS.md": "admits up to 64 output channels\n",
-            "docs/KNOWN_LIMITATIONS.md": "DirectShow output is stereo float PCM.\n",
+            "docs/KNOWN_LIMITATIONS.md": (
+                "DirectShow fixed policies: Stereo, 5.1, 7.1, 5.1.2, 5.1.4, "
+                "7.1.2, and 7.1.4. AUTO_NOT_RELIABLE. No Bass Management. "
+                "Physical multichannel hardware is not verified.\n"
+            ),
             "docs/README.md": "# OpenJOC documentation\n",
-            "docs/integration/LAV_FILTERS_OPENJOC.md": "current stereo float PCM\n",
+            "docs/integration/LAV_FILTERS_OPENJOC.md": (
+                "DirectShow fixed policies: Stereo, 5.1, 7.1, 5.1.2, 5.1.4, "
+                "7.1.2, and 7.1.4. AUTO_NOT_RELIABLE. No Bass Management. "
+                "Physical multichannel hardware is not verified.\n"
+            ),
         }
 
     def test_accepts_consistent_current_contracts(self) -> None:
         self.assertEqual(documentation_consistency_errors(self.fixture_files()), [])
+
+    def test_rejects_missing_directshow_layout_or_evidence_boundaries(self) -> None:
+        files = self.fixture_files()
+        files["docs/KNOWN_LIMITATIONS.md"] = "DirectShow supports Stereo and 5.1.\n"
+
+        errors = documentation_consistency_errors(files)
+
+        self.assertIn(
+            "docs/KNOWN_LIMITATIONS.md does not preserve the fixed DirectShow layout contract",
+            errors,
+        )
+        self.assertIn(
+            "docs/KNOWN_LIMITATIONS.md does not preserve AUTO_NOT_RELIABLE",
+            errors,
+        )
+        self.assertIn(
+            "docs/KNOWN_LIMITATIONS.md does not preserve the physical hardware boundary",
+            errors,
+        )
+
 
     def test_rejects_readme_release_version_pins(self) -> None:
         files = self.fixture_files()

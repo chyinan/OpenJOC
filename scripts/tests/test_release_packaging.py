@@ -17,6 +17,8 @@ SCRIPT = SCRIPTS / "release_packaging.py"
 sys.path.insert(0, str(SCRIPTS))
 
 from release_packaging import (  # noqa: E402
+    CANONICAL_RELEASE_VERSION,
+    LAV_NEW_FILES,
     _copy_onboarding_source,
     _prepare_binary_base,
     _write_text,
@@ -24,7 +26,49 @@ from release_packaging import (  # noqa: E402
 )
 
 
+EXPECTED_LAV_NEW_FILES = {
+    "decoder/LAVAudio/LAVOpenJocDiagnostics.h",
+    "decoder/LAVAudio/AudioStatusCapacityTests.cpp",
+    "decoder/LAVAudio/LAVAudioIdentitySmoke.cpp",
+    "decoder/LAVAudio/LAVAudioResourceIdentitySmoke.cpp",
+    "decoder/LAVAudio/OpenJocAdmission.cpp",
+    "decoder/LAVAudio/OpenJocAdmission.h",
+    "decoder/LAVAudio/OpenJocAdmissionTests.cpp",
+    "decoder/LAVAudio/OpenJocDecoder.cpp",
+    "decoder/LAVAudio/OpenJocDecoder.h",
+    "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
+    "decoder/LAVAudio/OpenJocOutput.cpp",
+    "decoder/LAVAudio/OpenJocOutput.h",
+    "decoder/LAVAudio/OpenJocOutputTests.cpp",
+    "decoder/LAVAudio/OpenJocPropertyPageSmoke.cpp",
+    "decoder/LAVAudio/OpenJocSettingsSmoke.cpp",
+    "decoder/LAVAudio/OpenJocShippedLayouts.cpp",
+    "decoder/LAVAudio/OpenJocShippedLayouts.h",
+    "decoder/LAVAudio/OpenJocShippedLayoutsTests.cpp",
+    "decoder/LAVAudio/OpenJocStrictNegotiation.cpp",
+    "decoder/LAVAudio/OpenJocStrictNegotiation.h",
+    "decoder/LAVAudio/OpenJocStrictOutput.cpp",
+    "decoder/LAVAudio/OpenJocStrictOutput.h",
+    "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
+    "include/LAVOpenJocSettings.h",
+}
+
+
 class ReleasePackagingTests(unittest.TestCase):
+    def test_canonical_release_version_is_v012(self) -> None:
+        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.12.0")
+
+    def test_corresponding_source_tracks_every_new_openjoc_lav_file(self) -> None:
+        self.assertEqual(set(LAV_NEW_FILES), EXPECTED_LAV_NEW_FILES)
+
+    def test_release_workflow_uses_version_only_public_title(self) -> None:
+        workflow = (SCRIPTS.parent / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('--title "OpenJOC ${version}"', workflow)
+        self.assertNotIn("Windows DirectShow / LAV Filters Integration", workflow)
+
     def test_packager_has_stage_and_finalize_commands(self) -> None:
         completed = subprocess.run(
             [sys.executable, str(SCRIPT), "--help"],

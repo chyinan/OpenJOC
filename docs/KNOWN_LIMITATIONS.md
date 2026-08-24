@@ -108,8 +108,15 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   still requires an audio output and device that accepts the requested map.
 - The Windows DirectShow/LAV integration positively admits JOC, leaves
   ordinary E-AC-3 on stock LAV/FFmpeg, and preserves passthrough precedence.
-  Its validated PotPlayer output is 48 kHz stereo float PCM. Standalone
-  5.1.x/7.1.x/9.1.x/22.2 or custom renderer support is not a LAV output claim.
+  Its fixed 48 kHz IEEE-float PCM policies are Stereo, 5.1, 7.1, 5.1.2,
+  5.1.4, 7.1.2, and 7.1.4. Each makes one exact semantic
+  `WAVEFORMATEXTENSIBLE` proposal with no fallback. Automatic downstream
+  semantic layout discovery is `AUTO_NOT_RELIABLE`; Stereo is the default and
+  other layouts require explicit selection. Physical multichannel hardware is
+  not verified. OpenJOC does not infer layouts from endpoint names, perform
+  Bass Management, or translate physical subwoofer counts into logical LFE
+  channels. Standalone 7.1.6/9.1.x/22.2 or custom renderer support is not a LAV
+  output claim.
 
 ## Platform and release scope
 

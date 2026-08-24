@@ -484,7 +484,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               --draft \
-              --title "OpenJOC ${version} — Windows DirectShow / LAV Filters Integration" \
+              --title "OpenJOC ${version}" \
               --notes-file "$notes"
           fi
           version="${RELEASE_TAG#v}"

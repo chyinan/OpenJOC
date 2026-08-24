@@ -65,9 +65,14 @@ Decoder. It does not replace stock LAV or change PotPlayer automatically.
    **LAV Audio Decoder (OpenJOC)** at **Prefer** priority.
 
 Double-click `uninstall.bat` to remove only the OpenJOC-owned filter and files.
-The validated PotPlayer/DirectShow output boundary is **48 kHz stereo float
-PCM**. Standalone OpenJOC multichannel and custom-geometry capabilities do not
-imply arbitrary LAV output. See the
+The DirectShow/LAV integration exposes exactly seven fixed 48 kHz IEEE-float
+PCM policies: **Stereo, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, and 7.1.4**. Each uses
+one exact semantic `WAVEFORMATEXTENSIBLE` proposal with no fallback mask.
+Automatic downstream layout discovery is `AUTO_NOT_RELIABLE`; Stereo is the
+default and other layouts require explicit selection. OpenJOC does not infer
+layouts from endpoint names, perform Bass Management, or turn multiple
+physical subwoofers into multiple logical LFE channels. Physical multichannel
+hardware playback is not claimed. See the
 [Windows integration contract](docs/integration/LAV_FILTERS_OPENJOC.md).
 
 ## Speaker rendering
@@ -147,7 +152,7 @@ of the byte-exact OpenJOC-authored file is not claimed. See
 - [mpv](docs/integration/MPV.md) — source patch and qualified OpenJOC Player
   Bundles with positive JOC selection and passthrough isolation.
 - [Windows LAV/DirectShow](docs/integration/LAV_FILTERS_OPENJOC.md) — isolated
-  PotPlayer-validated stereo-float host integration and onboarding.
+  host integration with seven explicit fixed PCM policies and onboarding.
 
 These adapters own transport and host lifecycle. OpenJOC owns E-AC-3/JOC
 decode, spatial rendering, output semantics, and renderer state.

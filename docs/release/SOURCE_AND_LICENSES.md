@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 OpenJOC contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenJOC LAV 0.11.0 source and license boundaries
+# OpenJOC LAV 0.12.0 source and license boundaries
 
 OpenJOC core and `openjoc_capi.dll` remain Apache-2.0. The downstream LAV
 integration code is separately marked GPL-2.0-or-later and does not copy the
@@ -12,14 +12,14 @@ OpenJOC Apache header into the LAV license boundary.
 The public source is the downstream fork
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC),
 branch `openjoc-main`, downstream revision
-`b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27`,
+`ad7762c834672daa2bd624c8d9741cee1c96250a`,
 based on LAV Filters 0.83. The corresponding-source ZIP remains attached to
 the OpenJOC release because it contains the full recursive closure, including
 components outside the public LAV fork.
 
 `LAVAudio.ax` is based on LAV Filters 0.83 revision
-`fefb6987994ed56e4525e8a125f5fbb53707bc52`. Its exact 60 compiled units are
-listed in `LAV_SOURCE_LICENSE_CENSUS.json`: 12 GPL-2.0-or-later LAVAudio units,
+`fefb6987994ed56e4525e8a125f5fbb53707bc52`. Its exact 64 compiled units are
+listed in `LAV_SOURCE_LICENSE_CENSUS.json`: 16 GPL-2.0-or-later LAVAudio units,
 15 GPL-2.0-or-later and two GPL-3.0-only DSUtilLite units, 24 MIT DirectShow
 Base Classes units, and seven MIT plus GPL-2.0-or-later lineage-modified Base
 Classes units. The combined distribution classification is GPL-3.0-only.
@@ -32,7 +32,7 @@ version 3 or later`.
 The matching source archive contains:
 
 - the complete OpenJOC Cargo workspace at
-  the exact remediation branch HEAD recorded in `REPRODUCIBILITY-MANIFEST.txt`, including
+  the exact release branch HEAD recorded in `REPRODUCIBILITY-MANIFEST.txt`, including
   `tools/import-etsi-tables`, `Cargo.lock`, build scripts, generated table
   inputs/outputs, and the embedded SADIE resource provenance;
 - the exact LAV source state, recursive FFmpeg/libbluray/libudfread/qsdecoder

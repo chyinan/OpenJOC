@@ -22,13 +22,13 @@ public static class OpenJocNativeLibrary {
 }
 
 $script:ProductId = 'OpenJOC.LAV.Windows'
-$script:Version = '0.11.0'
+$script:Version = '0.12.0'
 $script:OpenJocClsid = '{27247580-C701-40CD-886D-E618FC8C9FFF}'
 $script:StockClsid = '{E8E73B6B-4CB3-44A4-BE99-4F7BCB96E491}'
 
 function Get-OpenJocDefaultInstallRoot {
     $programFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
-    Join-Path $programFiles 'OpenJOC\LAV\0.11.0'
+    Join-Path $programFiles 'OpenJOC\LAV\0.12.0'
 }
 
 function New-OpenJocSession {
@@ -608,7 +608,7 @@ function Invoke-OpenJocInstallTransaction {
         $ownershipToken = [Guid]::NewGuid().ToString('N')
         $state = [ordered]@{
             ProductId = $script:ProductId
-            Product = 'OpenJOC LAV 0.11.0'
+            Product = 'OpenJOC LAV 0.12.0'
             Version = $script:Version
             Architecture = 'x64'
             InstallRoot = $Session.InstallRoot

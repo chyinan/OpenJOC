@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.12.0] — 2026-08-25
+
+OpenJOC 0.12.0 adds truthfully negotiated multichannel PCM transport to the
+Windows DirectShow/LAV integration without widening the automatic or physical
+hardware claims.
+
+### Windows DirectShow / LAV
+
+- Added seven explicit fixed output policies: Stereo, 5.1, 7.1, 5.1.2,
+  5.1.4, 7.1.2, and 7.1.4. Each makes one exact 48 kHz
+  `WAVEFORMATEXTENSIBLE` IEEE-float proposal with its semantic channel order
+  and channel mask; there are no fallback masks or alternate proposals.
+- Verified raw and MP4 JOC transport with actual sample delivery through a
+  strict DirectShow capture sink, including exact frame sizing, checked
+  10/12-channel buffers, flush, seek, EOS, reopen, and policy switching.
+- Preserved ordinary E-AC-3 on the stock LAV/FFmpeg path and kept E-AC-3
+  passthrough authoritative.
+- Preserved lifecycle failure atomicity and reset diagnostics across decoder
+  recreation and policy changes.
+- Automatic downstream semantic layout discovery remains
+  `AUTO_NOT_RELIABLE`; Stereo remains the default and layouts must be selected
+  explicitly.
+- OpenJOC does not infer layouts from device names, perform Bass Management,
+  or route one logical LFE to physical subwoofers. Physical multichannel
+  hardware playback remains unverified on the release machine.
+- The OpenJOC C ABI remains 1.4.
+
 ## [0.11.0] — 2026-08-23
 
 OpenJOC 0.11.0 combines the accepted arbitrary-speaker-geometry renderer with

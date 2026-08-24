@@ -11,9 +11,9 @@ rust-version.workspace = true
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-openjoc-api = { version = "0.11.0", path = "../openjoc-api" }
-openjoc-ffmpeg = { version = "0.11.0", path = "../openjoc-ffmpeg" }
-openjoc-scene = { version = "0.11.0", path = "../openjoc-scene" }
+openjoc-api = { version = "0.12.0", path = "../openjoc-api" }
+openjoc-ffmpeg = { version = "0.12.0", path = "../openjoc-ffmpeg" }
+openjoc-scene = { version = "0.12.0", path = "../openjoc-scene" }
 
 [lints]
 workspace = true
