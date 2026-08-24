@@ -22,6 +22,7 @@ NEW_LAV_FILES = (
     "decoder/LAVAudio/OpenJocOutput.cpp",
     "decoder/LAVAudio/OpenJocOutput.h",
     "decoder/LAVAudio/OpenJocOutputTests.cpp",
+    "decoder/LAVAudio/OpenJocPolicyControl.cpp",
     "decoder/LAVAudio/OpenJocPropertyPageSmoke.cpp",
     "decoder/LAVAudio/OpenJocSettingsSmoke.cpp",
     "decoder/LAVAudio/OpenJocShippedLayouts.cpp",
@@ -35,15 +36,38 @@ NEW_LAV_FILES = (
     "include/LAVOpenJocSettings.h",
 )
 MODIFIED_UPSTREAM_FILES = (
+    "common/DSUtilLite/growarray.h",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
+    "decoder/LAVAudio/AudioSettingsProp.h",
     "decoder/LAVAudio/LAVAudio.cpp",
     "decoder/LAVAudio/LAVAudio.h",
+    "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/LAVAudio.vcxproj",
     "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+    "decoder/LAVAudio/PostProcessor.cpp",
     "decoder/LAVAudio/dllmain.cpp",
+    "decoder/LAVAudio/resource.h",
     "include/LAVAudioSettings.h",
 )
+MODIFIED_UPSTREAM_GPL_NOTICE_FILES = tuple(
+    relative
+    for relative in MODIFIED_UPSTREAM_FILES
+    if relative
+    not in {
+        "decoder/LAVAudio/LAVAudio.rc",
+        "decoder/LAVAudio/LAVAudio.vcxproj",
+        "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+        "decoder/LAVAudio/resource.h",
+    }
+)
+V012_MODIFIED_UPSTREAM_FILES = {
+    "common/DSUtilLite/growarray.h",
+    "decoder/LAVAudio/AudioSettingsProp.h",
+    "decoder/LAVAudio/LAVAudio.rc",
+    "decoder/LAVAudio/PostProcessor.cpp",
+    "decoder/LAVAudio/resource.h",
+}
 
 
 def lav_root() -> Path:
@@ -70,17 +94,15 @@ class LavReleaseNoticeTests(unittest.TestCase):
                 text = (root / relative).read_text(encoding="utf-8")
                 header = "\n".join(text.splitlines()[:45])
                 self.assertIn("OpenJOC downstream modification", header)
-                self.assertIn("openjoc-0.10.0", header)
-                self.assertIn("2026-08-22", header)
+                current = relative in V012_MODIFIED_UPSTREAM_FILES
+                release = "openjoc-0.12.0" if current else "openjoc-0.10.0"
+                date = "2026-08-25" if current else "2026-08-22"
+                self.assertIn(release, header)
+                self.assertIn(date, header)
 
     def test_modified_source_files_retain_upstream_gpl_notice(self) -> None:
         root = lav_root()
-        source_files = tuple(
-            relative
-            for relative in MODIFIED_UPSTREAM_FILES
-            if ".vcxproj" not in relative
-        )
-        for relative in source_files:
+        for relative in MODIFIED_UPSTREAM_GPL_NOTICE_FILES:
             with self.subTest(path=relative):
                 text = (root / relative).read_text(encoding="utf-8")
                 self.assertIn("either version 2 of the License", text)

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import sys
@@ -18,6 +19,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from release_packaging import (  # noqa: E402
     CANONICAL_RELEASE_VERSION,
+    LAV_METADATA_FILES,
+    LAV_MODIFIED_FILES,
     LAV_NEW_FILES,
     _copy_onboarding_source,
     _prepare_binary_base,
@@ -41,6 +44,7 @@ EXPECTED_LAV_NEW_FILES = {
     "decoder/LAVAudio/OpenJocOutput.cpp",
     "decoder/LAVAudio/OpenJocOutput.h",
     "decoder/LAVAudio/OpenJocOutputTests.cpp",
+    "decoder/LAVAudio/OpenJocPolicyControl.cpp",
     "decoder/LAVAudio/OpenJocPropertyPageSmoke.cpp",
     "decoder/LAVAudio/OpenJocSettingsSmoke.cpp",
     "decoder/LAVAudio/OpenJocShippedLayouts.cpp",
@@ -53,6 +57,21 @@ EXPECTED_LAV_NEW_FILES = {
     "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
     "include/LAVOpenJocSettings.h",
 }
+EXPECTED_LAV_MODIFIED_FILES = {
+    "common/DSUtilLite/growarray.h",
+    "common/includes/common_defines.h",
+    "decoder/LAVAudio/AudioSettingsProp.cpp",
+    "decoder/LAVAudio/AudioSettingsProp.h",
+    "decoder/LAVAudio/LAVAudio.cpp",
+    "decoder/LAVAudio/LAVAudio.h",
+    "decoder/LAVAudio/LAVAudio.rc",
+    "decoder/LAVAudio/LAVAudio.vcxproj",
+    "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+    "decoder/LAVAudio/PostProcessor.cpp",
+    "decoder/LAVAudio/dllmain.cpp",
+    "decoder/LAVAudio/resource.h",
+    "include/LAVAudioSettings.h",
+}
 
 
 class ReleasePackagingTests(unittest.TestCase):
@@ -61,6 +80,39 @@ class ReleasePackagingTests(unittest.TestCase):
 
     def test_corresponding_source_tracks_every_new_openjoc_lav_file(self) -> None:
         self.assertEqual(set(LAV_NEW_FILES), EXPECTED_LAV_NEW_FILES)
+
+    def test_corresponding_source_tracks_every_modified_upstream_lav_file(self) -> None:
+        self.assertEqual(set(LAV_MODIFIED_FILES), EXPECTED_LAV_MODIFIED_FILES)
+
+    @unittest.skipUnless(
+        os.environ.get("OPENJOC_LAV_SOURCE_ROOT"),
+        "set OPENJOC_LAV_SOURCE_ROOT to audit the public LAV fork",
+    )
+    def test_corresponding_source_overlay_covers_the_exact_lav_diff(self) -> None:
+        lav = pathlib.Path(os.environ["OPENJOC_LAV_SOURCE_ROOT"]).resolve()
+        completed = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-status",
+                "fefb6987994ed56e4525e8a125f5fbb53707bc52",
+                "HEAD",
+            ],
+            cwd=lav,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        changed = {
+            path
+            for line in completed.stdout.splitlines()
+            for _, path in [line.split("\t", maxsplit=1)]
+            if not path.startswith("docs/openjoc/")
+        }
+        handled = (
+            set(LAV_METADATA_FILES) | set(LAV_MODIFIED_FILES) | set(LAV_NEW_FILES)
+        )
+        self.assertEqual(handled, changed)
 
     def test_release_workflow_uses_version_only_public_title(self) -> None:
         workflow = (SCRIPTS.parent / ".github" / "workflows" / "release.yml").read_text(

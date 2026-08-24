@@ -11,7 +11,7 @@ The frozen local candidates completed the factual security, provenance,
 license-notice, corresponding-source, and technical gates. The accepted
 downstream source is now public at `chyinan/LAVFilters-OpenJOC`, branch
 `openjoc-main`, intended immutable tag `openjoc-0.12.0`. The exact downstream
-revision is `ad7762c834672daa2bd624c8d9741cee1c96250a`.
+revision is `fe8f36b49827dd0a253e8d0c45e95631cfed9c83`.
 
 The compiled `LAVAudio.ax` inputs are fully classified. The LAV/OpenJOC glue
 is GPL-2.0-or-later, two inherited MPC-HC CSS units are GPL-3.0-only, and the

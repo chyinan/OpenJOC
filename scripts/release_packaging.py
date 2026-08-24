@@ -26,13 +26,18 @@ from release_packaging_core import (
 
 CANONICAL_RELEASE_VERSION = "0.12.0"
 LAV_MODIFIED_FILES = (
+    "common/DSUtilLite/growarray.h",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
+    "decoder/LAVAudio/AudioSettingsProp.h",
     "decoder/LAVAudio/LAVAudio.cpp",
     "decoder/LAVAudio/LAVAudio.h",
+    "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/LAVAudio.vcxproj",
     "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+    "decoder/LAVAudio/PostProcessor.cpp",
     "decoder/LAVAudio/dllmain.cpp",
+    "decoder/LAVAudio/resource.h",
     "include/LAVAudioSettings.h",
 )
 LAV_NEW_FILES = (
@@ -50,6 +55,7 @@ LAV_NEW_FILES = (
     "decoder/LAVAudio/OpenJocOutput.cpp",
     "decoder/LAVAudio/OpenJocOutput.h",
     "decoder/LAVAudio/OpenJocOutputTests.cpp",
+    "decoder/LAVAudio/OpenJocPolicyControl.cpp",
     "decoder/LAVAudio/OpenJocPropertyPageSmoke.cpp",
     "decoder/LAVAudio/OpenJocSettingsSmoke.cpp",
     "decoder/LAVAudio/OpenJocShippedLayouts.cpp",
@@ -62,6 +68,7 @@ LAV_NEW_FILES = (
     "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
     "include/LAVOpenJocSettings.h",
 )
+LAV_METADATA_FILES = ("README.md",)
 FFMPEG_CONFIGURATION_FILES = (
     "config.h",
     "ffbuild/config.log",
@@ -313,7 +320,7 @@ def stage_candidates(arguments: argparse.Namespace) -> int:
     )
 
     lav_source = source / "LAVFilters-OpenJOC"
-    for relative in (*LAV_MODIFIED_FILES, *LAV_NEW_FILES):
+    for relative in (*LAV_METADATA_FILES, *LAV_MODIFIED_FILES, *LAV_NEW_FILES):
         _copy(lav / relative, lav_source / relative)
     _overlay_tree(lav / "docs" / "openjoc", lav_source / "docs" / "openjoc")
     for relative in FFMPEG_CONFIGURATION_FILES:
