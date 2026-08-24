@@ -11,12 +11,12 @@ repository:
   upstream_base: fefb6987994ed56e4525e8a125f5fbb53707bc52
   branch: openjoc-main
   intended_tag: openjoc-0.12.0
-  intended_public_revision: 724741d3ff1184cd0fd004d113362543c88d68ac
+  intended_public_revision: d80b2802d05577045426881716138791c18f7b3a
 openjoc:
   revision: recorded-in-REPRODUCIBILITY-MANIFEST.txt
   license: Apache-2.0
 lav:
-  revision: 724741d3ff1184cd0fd004d113362543c88d68ac
+  revision: d80b2802d05577045426881716138791c18f7b3a
   integration_license: GPL-2.0-or-later
   effective_combined_distribution_license: GPL-3.0-only
   gpl2_only_component_present: false
