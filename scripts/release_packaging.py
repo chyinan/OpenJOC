@@ -189,7 +189,7 @@ def _collect_reproducibility_metadata(
 ) -> dict[str, str]:
     """Derive release identity from the exact repositories being staged."""
 
-    _git_output(git, lav, ("merge-base", "--is-ancestor", LAV_UPSTREAM_BASE, "HEAD"))
+    _git_output(git, lav, ("cat-file", "-e", f"{LAV_UPSTREAM_BASE}^{{commit}}"))
     submodules = {}
     for line in _git_output(git, lav, ("submodule", "status", "--recursive")).splitlines():
         fields = line.strip().lstrip("+-").split()
