@@ -29,16 +29,16 @@ NO_GAPS
 - **Requirement:** 5.1、7.1、5.1.2、5.1.4、7.1.2、7.1.4 均使用 `OPENJOC_RENDER_SPEAKER` 和 canonical table 中精确的 built-in preset name。
 - **Test level:** unit、integration。
 - **RED expectation:** 缺少 policy API；任一 preset 使用 Stereo 模式、近似名称、UI display text 或由 channel count 推断名称。
-- **GREEN/pass evidence:** contract unit test 固定六个 preset 的 ABI 名称；decoder smoke 用真实 C API 对七个 policy 验证 count、layout name 和 channel labels。
+- **GREEN/pass evidence:** contract unit test 固定六个 renderer preset 的 ABI 名称；decoder smoke 用真实 C API 对七个 policy 验证 count，并通过显式 `AVChannel` 映射验证流式 ABI/FFmpeg 的 layout name 和 channel labels。测试必须区分 renderer 的 `2.0`/`5.1`、`Ls/Rs`、`Lb/Rb` 与流式 metadata 的 `stereo`/`5.1(side)`、`SL/SR`、`BL/BR`。
 - **Phase/task:** Phase 1 Task 1–2；Phase 2 Task 1–2。
 - **关键禁止性断言:** 不得通过 channel count、FFmpeg display name 或 property-page 文本证明 ABI preset 正确。
 
 ### AC1.3 — policy 变更先重建 decoder
 
-- **Requirement:** 实际 policy 变更必须销毁旧 stream decoder、丢弃 pending frames、重置 admission/counters，再用新 contract 创建 decoder；同值设置为 no-op。
+- **Requirement:** 实际 policy 变更必须先在局部资源中创建目标 contract 的新 classifier 与 stream decoder；全部成功后才提交新 contract、销毁旧资源、丢弃 pending frames并重置 admission/counters。任一步失败必须保留完整旧流状态；同值设置为 no-op。
 - **Test level:** integration、e2e。
-- **RED expectation:** 5.1→7.1.4 后仍可读到旧 frame、旧 counter 未清零、首个后续 frame 带旧 contract，或同值设置造成无意义重建。
-- **GREEN/pass evidence:** live decoder switch test 在 pending output 存在时切换，证明旧帧不可用、状态重置、所有后续 frame 仅携带新 contract；graph renegotiation 得到新精确 media type。
+- **RED expectation:** 5.1→7.1.4 后仍可读到旧 frame、旧 counter 未清零、首个后续 frame 带旧 contract、同值设置造成无意义重建，或 classifier/decoder 创建失败却破坏旧 contract、pending frames、admission/counters/resources。
+- **GREEN/pass evidence:** live decoder switch test 在 pending output 存在时切换，证明成功时旧帧不可用、状态重置、所有后续 frame 仅携带新 contract；故障注入分别证明 classifier/decoder 创建失败时旧流可继续使用；graph renegotiation 得到新精确 media type。
 - **Phase/task:** Phase 2 Task 1；Phase 4 Task 1；Phase 5 Task 3。
 - **关键禁止性断言:** 不得仅以 registry DWORD 已改变或 getter 返回新值证明 decoder 已重建。
 

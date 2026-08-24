@@ -29,6 +29,10 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("OpenJocOutput.cpp", text)
         self.assertIn("OpenJocOutputTests.exe", text)
         self.assertIn("LAV_ENABLE_OPENJOC", text)
+        self.assertIn("LAV_OPENJOC_TESTING", text)
+        self.assertGreaterEqual(text.count("OpenJocOutput.cpp"), 2)
+        self.assertGreaterEqual(text.count("avutil-lav.lib"), 2)
+        self.assertGreaterEqual(text.count('"/LIBPATH:%~2\\bin_x64\\lib"'), 2)
         self.assertGreaterEqual(text.count("call cl"), 5)
 
     def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:

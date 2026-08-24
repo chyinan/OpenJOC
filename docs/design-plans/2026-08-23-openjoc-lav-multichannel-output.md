@@ -95,9 +95,9 @@ An OpenJOC-specific output policy owns one of these values:
 
 Auto is omitted because DirectShow exposes accepted media types, not one unambiguous preferred semantic layout. Equal channel counts can represent different geometries. Endpoint display names and physical speaker properties do not resolve that ambiguity.
 
-The selected policy configures the OpenJOC C ABI. Stereo retains `OPENJOC_RENDER_STEREO`. A preset uses `OPENJOC_RENDER_SPEAKER` and the canonical built-in name. A policy change destroys and recreates the decoder; seek and flush continue using the existing reset path.
+The selected policy configures the OpenJOC C ABI. Stereo retains `OPENJOC_RENDER_STEREO`. A preset uses `OPENJOC_RENDER_SPEAKER` and the canonical built-in name. A policy change first prepares a fresh classifier and stream decoder for the target contract; it commits the new resources and discards old frames only after all fallible preparation succeeds. Failure preserves the previous contract, resources, frames, admission state and counters. Seek and flush continue using the existing reset path.
 
-The LAV bridge maps the policy to one immutable contract containing preset name, channel count, OpenJOC order, FFmpeg custom/native channel layout and Windows speaker mask. The bridge does not reconstruct that contract from a returned frame count. Confirmed OpenJOC buffers carry a strict-output marker through postprocessing and queuing.
+The LAV bridge maps the policy to one immutable contract containing preset name, channel count, OpenJOC semantic order, FFmpeg native channel layout and Windows speaker mask. Renderer-facing semantic spelling and stream metadata spelling are distinct fields: for example Stereo is OpenJOC `2.0` but FFmpeg `stereo`, OpenJOC `5.1` is FFmpeg `5.1(side)`, and OpenJOC `Ls/Rs` and `Lb/Rb` correspond to FFmpeg `SL/SR` and `BL/BR`. The bridge validates this through explicit semantic-label-to-`AVChannel` mapping; it never assumes those strings are interchangeable and does not reconstruct the contract from a returned frame count. Confirmed OpenJOC buffers carry a strict-output marker through postprocessing and queuing.
 
 For a strict buffer, stock operations that can remix, conform, replace, suppress or substitute its layout are bypassed. Sample framing and safe format conversion that preserve the exact contract may remain. Delivery creates one float32/48 kHz media type and asks downstream to accept that exact type. Failure returns as failure; no generic LAV fallback runs for that buffer.
 
@@ -152,6 +152,7 @@ The design diverges from generic LAV delivery only for strict OpenJOC buffers. G
 
 **Components:**
 - `decoder/LAVAudio/OpenJocDecoder.h/.cpp` decoder policy and recreation.
+- `decoder/LAVAudio/OpenJocOutput.h/.cpp` explicit semantic-to-FFmpeg validation and exact native layout construction.
 - `decoder/LAVAudio/LAVAudio.h/.cpp` policy state and exact FFmpeg channel layout construction.
 - Decoder smoke tests for 2, 6, 8, 10 and 12 channels.
 

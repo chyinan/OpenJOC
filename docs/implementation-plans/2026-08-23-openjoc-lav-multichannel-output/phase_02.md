@@ -2,7 +2,7 @@
 
 **Goal:** Configure OpenJOC for Stereo or an explicit built-in speaker preset and preserve that immutable semantic identity through LAV frame handoff.
 
-**Architecture:** `LAVOpenJocDecoder` owns the selected contract and destroys/recreates its stream decoder on policy changes. Returned frames are validated against OpenJOC layout metadata before copying, then LAV constructs the exact native FFmpeg mask from the contract rather than from channel count.
+**Architecture:** `LAVOpenJocDecoder` owns the selected contract and prepares replacement classifier/decoder resources before atomically committing a policy change. Returned frames are validated against stream C-ABI/FFmpeg metadata through an explicit mapping from OpenJOC semantic labels before copying, then LAV constructs the exact native FFmpeg mask from the contract rather than from channel count.
 
 **Tech Stack:** C++17, OpenJOC dynamic C ABI, FFmpeg `AVChannelLayout`, MSVC/v143, command-line decoder smoke tests.
 
@@ -50,14 +50,15 @@
 
 1. Extend tests first to require `SetOutputPolicy`, `OutputContract`, and an immutable `LAVOpenJocFrame::output_contract`. Expected RED: `C2039` for the missing members.
 2. Default a new decoder to the Stereo contract. For Stereo configure `OPENJOC_RENDER_STEREO` with no speaker preset; for every preset configure `OPENJOC_RENDER_SPEAKER` with the contract's exact ABI preset name.
-3. On an actual policy change, destroy the stream decoder, discard pending frames, reset admission/classifier state and counters, and create the next stream decoder with the new contract. A same-policy assignment is a no-op. `Reset()` retains policy while clearing seek/flush stream state.
-4. Dynamically load `openjoc_stream_decoder_get_channel_label`. Centralize both existing frame-copy paths in `ValidateAndCopyFrame`: require float output, 48 kHz, exact count, exact `layout_name`, exact label sequence after explicit semantic-to-FFmpeg mapping, checked element/byte multiplication, and valid source length before `vector::assign`; catch allocation failure.
+3. On an actual policy change, prepare a fresh classifier and stream decoder for the target contract in local resources. Only after both succeed, atomically commit the new contract/resources, destroy the old resources, discard pending frames and reset admission/counters. Any preparation failure returns failure while preserving the complete old stream state. A same-policy assignment is a no-op. `Reset()` retains policy while clearing seek/flush stream state and preserves a classifier-rebuild failure diagnostic.
+4. Dynamically load `openjoc_stream_decoder_get_channel_label`. Centralize both existing frame-copy paths in `ValidateAndCopyFrame`: require float output, 48 kHz, exact count, exact FFmpeg stream `layout_name`, exact FFmpeg label sequence after explicit OpenJOC-semantic-to-`AVChannel` mapping, checked element/byte multiplication, and valid source length before `vector::assign`; catch allocation failure. Do not compare renderer spelling (`2.0`, `5.1`, `Ls/Rs`, `Lb/Rb`) directly with the stream spelling (`stereo`, `5.1(side)`, `SL/SR`, `BL/BR`).
 5. Mark both the stateful decoder header and source with `// pattern: Imperative Shell`; keep validation/mapping in the Phase 1 functional core.
 
 **Testing:**
 
 - The real `openjoc_capi.dll` must produce 2/6/8/8/10/10/12 channels and exact layout metadata for all policies.
 - Switch a live decoder from 5.1 to 7.1.4 after pending output exists; old frames must be unavailable, counters must reset, and all subsequent frames must carry only the new contract.
+- Inject classifier-creation and decoder-creation failures during that switch; both must preserve the old contract, pending frames, admission/counters and live resources.
 - Invalid policy values must return failure and preserve the old contract.
 - Reject zero channels, count mismatch, label/layout mismatch, invalid data length, and overflow before copying.
 - Replace the old baseline smoke assertion that classification must consume an entire real JOC file; assert classification/streaming behavior instead.
