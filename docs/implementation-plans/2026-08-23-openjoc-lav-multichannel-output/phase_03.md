@@ -2,7 +2,7 @@
 
 **Goal:** Preserve a strict OpenJOC semantic contract through postprocessing and deliver exactly one float32/48 kHz WAVEFORMATEXTENSIBLE type, failing safely on any rejection or mutation.
 
-**Architecture:** Strict buffers carry the immutable Phase 1 contract pointer. A functional strict-output core builds and compares exact media types and performs checked arithmetic; the LAV imperative shell bypasses layout-changing postprocessing and uses a no-fallback delivery branch while stock buffers retain their existing behavior.
+**Architecture:** Strict buffers carry the immutable Phase 1 contract pointer. A functional strict-output core builds and compares every field and format byte of the exact media type and performs checked arithmetic. Executable delivery and queue transaction seams make ordering, ownership and failure atomicity testable; the LAV imperative shell calls those seams, bypasses layout-changing postprocessing and uses a no-fallback delivery branch while stock buffers retain their existing behavior. Strict equality never uses `CMediaType::operator==`, which omits flags and sample size.
 
 **Tech Stack:** C++17, DirectShow baseclasses, WAVEFORMATEXTENSIBLE, MSVC/v143, fake pin/sample/allocator unit integration tests.
 
@@ -42,6 +42,8 @@
 
 - Create: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictOutput.h` (`// pattern: Functional Core`)
 - Create: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictOutput.cpp`
+- Create: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictNegotiation.h` (`// pattern: Imperative Shell` executable delivery/queue seams)
+- Create: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictNegotiation.cpp`
 - Create/Test: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictOutputTests.cpp` (unit/integration)
 - Modify: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\LAVAudio.vcxproj`
 - Modify: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\LAVAudio.vcxproj.filters`
@@ -51,7 +53,7 @@
 **Implementation:**
 
 1. Write tests that reference a missing strict builder and checked-size helpers. Expected RED: missing header/symbol compilation failure.
-2. Add a `// pattern: Functional Core` header/source module that consumes only a validated contract. For every policy, including semantic ABI layout `2.0` / UI label `Stereo`, build float32/48 kHz `WAVE_FORMAT_EXTENSIBLE` with `cbSize=22`, 32 container/valid bits, IEEE-float subformat, exact count/mask, and checked `nBlockAlign`, `nAvgBytesPerSec`, and sample size.
+2. Add a `// pattern: Functional Core` header/source module that consumes only a validated contract. For every policy, including semantic ABI layout `2.0` / UI label `Stereo`, build float32/48 kHz `WAVE_FORMAT_EXTENSIBLE` with `cbSize=22`, 32 container/valid bits, IEEE-float subformat, exact count/mask, and checked `nBlockAlign`, `nAvgBytesPerSec`, and sample size. Compare complete `AM_MEDIA_TYPE` identity: major/subtype/formattype, fixed/temporal flags, sample size, null `pUnk`, format length and all format bytes.
 3. Add checked helpers for sample-count addition, `sample_count * block_align`, DWORD/LONG narrowing, and allocator 3/2 growth. Do not alter stock `CreateMediaType`; its non-extensible Stereo behavior remains stock-only.
 4. Add the files to the LAV project and command-line smoke build.
 
@@ -84,13 +86,14 @@
 1. RED tests must prove 7.1 and 5.1.2 never coalesce despite both having eight channels, strict and stock buffers never coalesce, mixer/layout options cannot change a strict buffer, and append/count overflow returns failure.
 2. Add a non-owning `const LAVOpenJocOutputContract *` to `BufferDetails`; Phase 1 static storage supplies its lifetime. Set it only in `DecodeOpenJoc` after the full Phase 2 contract checks.
 3. At the top of `PostProcess`, when the pointer is present, validate float32/48 kHz/native exact mask/non-planar/exact byte count and return immediately. Bypass mixer/resampler, standard-layout conformity, side/back replacement, current-layout retention, mono/6.1 expansion, volume-stat path, and sample-format fallback.
-4. Make the contract pointer part of `QueueOutput` compatibility. A different pointer or strict/null transition must flush first; propagate flush failure. Use checked sample addition, propagate append failure, and clear the marker in `FlushOutput`.
+4. Make the contract pointer part of `QueueOutput` compatibility. Route flush/metadata/buffer/commit ordering through the executable queue transaction seam. A different pointer or strict/null transition must flush first; propagate flush failure. Use checked sample addition, propagate append failure without partially committing timestamps or counts, and clear the marker in `FlushOutput`.
 5. In `GrowableArray`, check DWORD addition and byte multiplication, propagate `SetSize`/allocation HRESULT, preserve the old buffer on `realloc` failure, and stop returning unconditional `S_OK` from `Append`/`AppendZero`.
 6. Mark every modified runtime-bearing file deterministically: the stateful LAV headers/sources are `// pattern: Imperative Shell`, while `growarray.h` and strict checked arithmetic are `// pattern: Functional Core`.
 
 **Testing:**
 
 - Same-contract merge succeeds; different-contract and strict/stock transitions flush exactly once and never mix bytes.
+- Fake queue callbacks prove flush and append failures do not commit result counts/timestamps or consume the incoming buffer.
 - All LAV mixing/conformity settings preserve the exact strict contract.
 - Deterministic overflow and allocation-failure tests leave prior buffer contents and counts unchanged.
 - Stock buffers still take the existing postprocessor path.
@@ -107,13 +110,14 @@
 
 **Files:**
 
-- Modify: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\LAVAudio.cpp` (`ReconnectOutput`, `GetDeliveryBuffer`, `Deliver`)
+- Modify: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\LAVAudio.cpp` (`ReconnectOutput`, strict acquisition/completion, `Deliver`, EOS/resync propagation)
+- Extend: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictNegotiation.h/.cpp` (production callback orchestration)
 - Extend/Test: `D:\Program\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocStrictOutputTests.cpp` (integration)
 
 **Implementation:**
 
 1. RED fake downstream accepts int16, 5.1-back, 7.1, Stereo/current layout but rejects the exact strict type. Require one exact proposal, no sample, and no output-pin type mutation. Add RED cases for a sample-attached substitute type and undersized sample capacity.
-2. Add a strict branch before the generic fallback block. Validate the contract and checked byte count, issue at most one exact `QueryAccept`, convert `S_FALSE` to a real rejection such as `VFW_E_TYPE_NOT_ACCEPTED`, preserve a downstream failure HRESULT, and never enter the stock retry chain.
+2. Add a strict branch before the generic fallback block. Validate the contract and checked byte count, then call the same executable orchestration seam used by fake downstream tests: exact `QueryAccept` -> checked reconnect -> sample acquisition/validation -> media-type commit -> delivery. Issue at most one exact proposal, convert `S_FALSE` to `VFW_E_TYPE_NOT_ACCEPTED`, preserve a downstream failure HRESULT, release acquired resources on every exit, and never enter the stock retry chain.
 3. Check allocator growth arithmetic and actual capacity. After `GetDeliveryBuffer`, reject a sample-attached media type unless it exactly matches complete format bytes; reject `GetSize() < requiredBytes`. Only after every check succeeds may the code set media type/actual length or copy bytes.
 4. Leave generic stock `GetDeliveryBuffer` type adoption and fallback order unchanged.
 
@@ -122,6 +126,8 @@
 - Trap test proves no float-to-int16, side-to-back, >8-to-7.1, Stereo, or current-layout fallback.
 - Attached-type mismatch and undersized allocator fail before `SetActualDataLength` and `memcpy`.
 - Exact/no-attached type with sufficient capacity succeeds.
+- Failed acquisition that nevertheless returns an attached type or sample releases both resources.
+- Strict failures produced while draining EOS/resync propagate even when delivery already cleared the queue marker; stock failure-ignoring behavior remains unchanged.
 - Ordinary stock buffer control can still take the existing generic fallback.
 
 **Verification:** Run strict tests, the complete `release_lav_smokes.cmd`, all prior smokes, OpenJOC-enabled build, stock-control build, then rebuild OpenJOC target as the phase-ending artifact.
