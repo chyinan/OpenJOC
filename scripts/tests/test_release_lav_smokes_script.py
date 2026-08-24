@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "release_lav_smokes.cmd"
+NOOP_LIFECYCLE_SOURCE = ROOT / "scripts" / "tests" / "LavSmokeNoopLifecycle.cpp"
 
 
 class ReleaseLavSmokesScriptTests(unittest.TestCase):
@@ -23,8 +24,44 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("OpenJocAdmissionTests.cpp", text)
         self.assertIn("OpenJocDecoderSmoke.cpp", text)
         self.assertIn("LAVAudioIdentitySmoke.cpp", text)
+        self.assertIn("LAVAudioResourceIdentitySmoke.cpp", text)
+        self.assertIn("LAVAudioResourceIdentitySmoke.exe", text)
+        self.assertIn("OpenJocSettingsSmoke.cpp", text)
+        self.assertIn("OpenJocSettingsSmoke.exe", text)
+        self.assertIn("OpenJocPropertyPageSmoke.cpp", text)
+        self.assertIn("OpenJocPropertyPageSmoke.exe", text)
+        self.assertIn("AudioStatusCapacityTests.cpp", text)
+        self.assertIn("AudioStatusCapacityTests.exe", text)
+        self.assertIn("OpenJocShippedLayoutsTests.cpp", text)
+        self.assertIn("OpenJocShippedLayouts.cpp", text)
+        self.assertIn("OpenJocShippedLayoutsTests.exe", text)
+        self.assertIn("OpenJocDirectShowNegotiationSmoke.cpp", text)
+        self.assertIn("OpenJocDirectShowNegotiationSmoke.exe", text)
+        self.assertIn("bcrypt.lib", text)
         self.assertIn("OpenJocDirectShowLifecycle.exe", text)
+        self.assertIn("OpenJocOutputTests.cpp", text)
+        self.assertIn("OpenJocOutput.cpp", text)
+        self.assertIn("OpenJocOutputTests.exe", text)
+        self.assertIn("OpenJocStrictOutputTests.cpp", text)
+        self.assertIn("OpenJocStrictOutput.cpp", text)
+        self.assertIn("OpenJocStrictNegotiation.cpp", text)
+        self.assertIn("OpenJocStrictOutputTests.exe", text)
         self.assertIn("LAV_ENABLE_OPENJOC", text)
+        self.assertIn("LAV_OPENJOC_TESTING", text)
+        self.assertGreaterEqual(text.count("OpenJocOutput.cpp"), 2)
+        self.assertGreaterEqual(text.count("avutil-lav.lib"), 2)
+        self.assertGreaterEqual(text.count('"/LIBPATH:%~2\\bin_x64\\lib"'), 2)
+        self.assertGreaterEqual(text.count('"/I%~2\\common\\baseclasses"'), 2)
+        self.assertGreaterEqual(text.count('"/I%~2\\common\\DSUtilLite"'), 2)
+        self.assertGreaterEqual(text.count("strmiids.lib"), 3)
+        self.assertGreaterEqual(text.count("call cl"), 12)
+
+    def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:
+        text = NOOP_LIFECYCLE_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("SPDX-License-Identifier: GPL-2.0-or-later", text)
+        self.assertIn("pattern: Imperative Shell", text)
+        self.assertIn("int wmain()", text)
 
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(

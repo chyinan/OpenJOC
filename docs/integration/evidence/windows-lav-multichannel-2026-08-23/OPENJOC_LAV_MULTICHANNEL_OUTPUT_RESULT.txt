@@ -1,0 +1,134 @@
+OPENJOC_LAV_MULTICHANNEL_OUTPUT_RESULT
+
+start_openjoc_head =
+    53d27ff5b8db379089ed5e2fde50bcea1632fbfb
+
+start_lav_head =
+    b06ba2cbbd5c8806ca4423a8ff1527e4e2bd6a27
+
+feature_branch =
+    codex/openjoc-lav-multichannel-output
+
+end_openjoc_head =
+    c6429dd4bff50bc3afae85300ca6fdb970a3c600
+
+end_lav_head =
+    2ce1e36b76289d52a151c3f3d8574f1501d38ab2
+
+commits =
+    OpenJOC:
+        04f64f7 9fd0c7f 4267882 5748e9a 3a08a85 8040d95
+        8226c15 e12d078 18da01a 2824b1b 52f82c4 6d401e4
+        970000f c6429dd
+    LAVFilters-OpenJOC:
+        48c178a 2703f9a bee67e7 dcf67d1 e7fa078 76874f1
+        1029c79 e71e7be 94063eb 2ce1e36
+
+current_fixed_stereo_root_cause =
+    CONFIRMED
+
+directshow_negotiation_architecture =
+    A fixed output-policy enum selects one canonical OpenJOC SpeakerLayout.
+    OpenJOC renders interleaved float32/48 kHz PCM in canonical channel order.
+    LAV constructs one exact WAVEFORMATEXTENSIBLE media type with the canonical
+    channel count and mask, then makes one ConnectDirect proposal. Rejection
+    produces no alternate mask, format, layout, renderer, or host fallback.
+
+auto_mode =
+    AUTO_NOT_RELIABLE
+
+default_output_policy =
+    Stereo
+
+stereo =
+    FAIL
+
+5_1 =
+    UNSUPPORTED
+
+7_1 =
+    UNSUPPORTED
+
+5_1_2 =
+    UNSUPPORTED
+
+5_1_4 =
+    UNSUPPORTED
+
+7_1_2 =
+    UNSUPPORTED
+
+7_1_4 =
+    UNSUPPORTED
+
+per_layout_channel_masks =
+    Stereo: channels=2,  mask=0x00000003, logical_lfe_channels=0
+    5.1:    channels=6,  mask=0x0000060f, logical_lfe_channels=1
+    7.1:    channels=8,  mask=0x0000063f, logical_lfe_channels=1
+    5.1.2:  channels=8,  mask=0x0000560f, logical_lfe_channels=1
+    5.1.4:  channels=10, mask=0x0002d60f, logical_lfe_channels=1
+    7.1.2:  channels=10, mask=0x0000563f, logical_lfe_channels=1
+    7.1.4:  channels=12, mask=0x0002d63f, logical_lfe_channels=1
+
+potplayer_source_as_output_control =
+    PASS
+
+ordinary_eac3_stock_path =
+    PASS
+
+passthrough_precedence =
+    PASS
+
+raw_joc =
+    FAIL
+
+mp4_joc =
+    FAIL
+
+seek =
+    FAIL
+
+eos =
+    FAIL
+
+reopen =
+    FAIL
+
+buffer_allocator_safety =
+    PASS
+
+performance =
+    PASS
+
+stock_lav_behavior_changed =
+    NO
+
+openjoc_core_renderer_changed =
+    NO
+
+physical_hardware_claim =
+    NONE
+
+remaining_limitations =
+    The named DirectSound renderer rejected every exact float32/48 kHz
+    WAVEFORMATEXTENSIBLE proposal with HRESULT 0x8004025C
+    (VFW_E_UNSUPPORTED_AUDIO). Raw and MP4 produced the same result for all
+    seven policies: 14 exact rejections, one proposal per run, zero fallback.
+    No native real-renderer graph reached Pause, Run, sample delivery, seek,
+    EOS, or reopen, so those fields remain FAIL even though the controlled-sink
+    regression lanes pass. PotPlayer visibly used Source (Input) as Output, but
+    its selected renderer family was WASAPI rather than the named DirectSound
+    renderer; that audit is not support evidence. Performance PASS covers the
+    controlled delivery/allocator stress matrix only, not physical playback.
+    The end OpenJOC HEAD above is the validated implementation/evidence commit
+    immediately before this report-only artifact.
+
+material_blocker =
+    YES
+
+recommended_next_action =
+    Activate or provide a real DirectShow renderer/endpoint that accepts the
+    existing exact Stereo, 5.1, and 7.1 float32/48 kHz WAVEFORMATEXTENSIBLE
+    contracts, then rerun the same native raw/MP4 matrix and same-renderer
+    PotPlayer QA. Do not change masks, subtype, channel order, or add fallback
+    merely to make the current renderer accept a row.

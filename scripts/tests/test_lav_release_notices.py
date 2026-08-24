@@ -8,13 +8,31 @@ from xml.etree import ElementTree
 
 
 NEW_LAV_FILES = (
+    "decoder/LAVAudio/LAVOpenJocDiagnostics.h",
+    "decoder/LAVAudio/AudioStatusCapacityTests.cpp",
     "decoder/LAVAudio/LAVAudioIdentitySmoke.cpp",
+    "decoder/LAVAudio/LAVAudioResourceIdentitySmoke.cpp",
     "decoder/LAVAudio/OpenJocAdmission.cpp",
     "decoder/LAVAudio/OpenJocAdmission.h",
     "decoder/LAVAudio/OpenJocAdmissionTests.cpp",
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
+    "decoder/LAVAudio/OpenJocOutput.cpp",
+    "decoder/LAVAudio/OpenJocOutput.h",
+    "decoder/LAVAudio/OpenJocOutputTests.cpp",
+    "decoder/LAVAudio/OpenJocPropertyPageSmoke.cpp",
+    "decoder/LAVAudio/OpenJocSettingsSmoke.cpp",
+    "decoder/LAVAudio/OpenJocShippedLayouts.cpp",
+    "decoder/LAVAudio/OpenJocShippedLayouts.h",
+    "decoder/LAVAudio/OpenJocShippedLayoutsTests.cpp",
+    "decoder/LAVAudio/OpenJocStrictNegotiation.cpp",
+    "decoder/LAVAudio/OpenJocStrictNegotiation.h",
+    "decoder/LAVAudio/OpenJocStrictOutput.cpp",
+    "decoder/LAVAudio/OpenJocStrictOutput.h",
+    "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
+    "include/LAVOpenJocSettings.h",
 )
 MODIFIED_UPSTREAM_FILES = (
     "common/includes/common_defines.h",
@@ -22,6 +40,7 @@ MODIFIED_UPSTREAM_FILES = (
     "decoder/LAVAudio/LAVAudio.cpp",
     "decoder/LAVAudio/LAVAudio.h",
     "decoder/LAVAudio/LAVAudio.vcxproj",
+    "decoder/LAVAudio/LAVAudio.vcxproj.filters",
     "decoder/LAVAudio/dllmain.cpp",
     "include/LAVAudioSettings.h",
 )
@@ -59,7 +78,7 @@ class LavReleaseNoticeTests(unittest.TestCase):
         source_files = tuple(
             relative
             for relative in MODIFIED_UPSTREAM_FILES
-            if not relative.endswith(".vcxproj")
+            if ".vcxproj" not in relative
         )
         for relative in source_files:
             with self.subTest(path=relative):
@@ -112,7 +131,7 @@ class LavReleaseNoticeTests(unittest.TestCase):
         records = data["compiled_inputs"]
         actual_units = {record["source_path"] for record in records}
         self.assertEqual(actual_units, expected_units)
-        self.assertEqual(len(records), 60)
+        self.assertEqual(len(records), 64)
         required_fields = {
             "source_path",
             "origin",

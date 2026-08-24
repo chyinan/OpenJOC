@@ -30,10 +30,12 @@ LAV_MODIFIED_FILES = (
     "decoder/LAVAudio/LAVAudio.cpp",
     "decoder/LAVAudio/LAVAudio.h",
     "decoder/LAVAudio/LAVAudio.vcxproj",
+    "decoder/LAVAudio/LAVAudio.vcxproj.filters",
     "decoder/LAVAudio/dllmain.cpp",
     "include/LAVAudioSettings.h",
 )
 LAV_NEW_FILES = (
+    "decoder/LAVAudio/LAVOpenJocDiagnostics.h",
     "decoder/LAVAudio/LAVAudioIdentitySmoke.cpp",
     "decoder/LAVAudio/OpenJocAdmission.cpp",
     "decoder/LAVAudio/OpenJocAdmission.h",

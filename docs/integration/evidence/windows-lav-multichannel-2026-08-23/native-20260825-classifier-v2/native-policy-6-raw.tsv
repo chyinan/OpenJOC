@@ -1,0 +1,60 @@
+NATIVE_RENDERER_PROBE_V1
+result	EXACT_REJECTION
+renderer_moniker	@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}
+fixture_path	D:\Program\OpenJOC\.codex-tmp\phase5-task3-fresh-fixtures-20260824-1\joc.lifecycle.ec3
+fixture_sha256	B860509A1613134931E1E39B9D2B6D4D31687B1A6586D8E2BCF5FE99E7DA14F8
+policy	6
+connect_attempted	1
+proposal_count	1
+fallback_proposals	0
+requested_type	{73647561-0000-0010-8000-00AA00389B71}|{00000003-0000-0010-8000-00AA00389B71}|1|0|48|{05589F81-C356-11CE-BF01-00AA0055595A}|40|FEFF0C0080BB00000028230030002000160020003FD602000300000000001000800000AA00389B71
+create_graph_hr	0x00000000
+bind_renderer_hr	0x00000000
+add_renderer_hr	0x00000000
+find_renderer_pin_hr	0x00000000
+connect_direct_hr	0x8004025c
+control_qi_hr	0x8000ffff
+events_qi_hr	0x8000ffff
+seeking_qi_hr	0x8000ffff
+diagnostics_qi_hr	0x8000ffff
+graph_exactly_three_filters	0
+graph_setup_complete	0
+type_observation_count	0
+type_successful_observation_count	0
+type_query_failure	0
+type_mismatch_observed	0
+pre_output_type_hr	0x8000ffff
+pre_renderer_input_type_hr	0x8000ffff
+post_output_type_hr	0x8000ffff
+post_renderer_input_type_hr	0x8000ffff
+operation	1	initial_stream	stream_attempted=0	pause_call_hr=0x8000ffff	pause_state_hr=0x8000ffff	pause_state=0	run_call_hr=0x8000ffff	run_state_hr=0x8000ffff	run_state=0	wait_hr=0x8000ffff	completion_code=0	graph_error_hr=0x00000000	renderer_stats_hr=0x80004002	last_buffer_duration=0	diagnostics_hr=0x80004002	classifier_bytes=0	stream_bytes=0	eos_complete=0
+duration_hr	0x8000ffff
+duration	0
+type_observation	pre_stream	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+type_observation	post_stream	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+operation	2	seek-25	get_capabilities_hr=0x8000ffff	capabilities=0x00000000	check_capabilities_hr=0x8000ffff	checked=0x00000000	pre_drain_hr=0x8000ffff	pre_drain_terminal_hr=0x8000ffff	pre_drain_free_hr=0x00000000	pre_drain_event_count=0	pre_drain_completion_count=0	pre_drain_graph_error=0	pre_drain_first_error_hr=0x00000000	diagnostics_before_hr=0x8000ffff	classifier_bytes_before=0	stream_bytes_before=0	renderer_stats_qi_hr=0x80004002	renderer_discontinuities_before_hr=0x8000ffff	renderer_discontinuities_before=0	renderer_discontinuities_before_aux=0	set_positions_attempted=0	set_positions_hr=0x8000ffff	requested=0	actual=0	position_before_run_hr=0x8000ffff	position_before_run=0	run_hr=0x8000ffff	run_state_hr=0x8000ffff	run_state=0	wait_hr=0x8000ffff	completion_code=0	position_after_completion_hr=0x8000ffff	position_after_completion=0	renderer_discontinuities_after_hr=0x8000ffff	renderer_discontinuities_after=0	renderer_discontinuities_after_aux=0	renderer_discontinuities_delta=0	graph_error_hr=0x00000000	renderer_stats_hr=0x80004002	last_buffer_duration=0	diagnostics_hr=0x80004002	classifier_bytes_after=0	classifier_bytes_delta=0	stream_bytes_after=0	stream_bytes_delta=0	complete=0
+type_observation	seek-25	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+operation	3	seek-75-forward	get_capabilities_hr=0x8000ffff	capabilities=0x00000000	check_capabilities_hr=0x8000ffff	checked=0x00000000	pre_drain_hr=0x8000ffff	pre_drain_terminal_hr=0x8000ffff	pre_drain_free_hr=0x00000000	pre_drain_event_count=0	pre_drain_completion_count=0	pre_drain_graph_error=0	pre_drain_first_error_hr=0x00000000	diagnostics_before_hr=0x8000ffff	classifier_bytes_before=0	stream_bytes_before=0	renderer_stats_qi_hr=0x80004002	renderer_discontinuities_before_hr=0x8000ffff	renderer_discontinuities_before=0	renderer_discontinuities_before_aux=0	set_positions_attempted=0	set_positions_hr=0x8000ffff	requested=0	actual=0	position_before_run_hr=0x8000ffff	position_before_run=0	run_hr=0x8000ffff	run_state_hr=0x8000ffff	run_state=0	wait_hr=0x8000ffff	completion_code=0	position_after_completion_hr=0x8000ffff	position_after_completion=0	renderer_discontinuities_after_hr=0x8000ffff	renderer_discontinuities_after=0	renderer_discontinuities_after_aux=0	renderer_discontinuities_delta=0	graph_error_hr=0x00000000	renderer_stats_hr=0x80004002	last_buffer_duration=0	diagnostics_hr=0x80004002	classifier_bytes_after=0	classifier_bytes_delta=0	stream_bytes_after=0	stream_bytes_delta=0	complete=0
+type_observation	seek-75-forward	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+operation	4	seek-25-backward	get_capabilities_hr=0x8000ffff	capabilities=0x00000000	check_capabilities_hr=0x8000ffff	checked=0x00000000	pre_drain_hr=0x8000ffff	pre_drain_terminal_hr=0x8000ffff	pre_drain_free_hr=0x00000000	pre_drain_event_count=0	pre_drain_completion_count=0	pre_drain_graph_error=0	pre_drain_first_error_hr=0x00000000	diagnostics_before_hr=0x8000ffff	classifier_bytes_before=0	stream_bytes_before=0	renderer_stats_qi_hr=0x80004002	renderer_discontinuities_before_hr=0x8000ffff	renderer_discontinuities_before=0	renderer_discontinuities_before_aux=0	set_positions_attempted=0	set_positions_hr=0x8000ffff	requested=0	actual=0	position_before_run_hr=0x8000ffff	position_before_run=0	run_hr=0x8000ffff	run_state_hr=0x8000ffff	run_state=0	wait_hr=0x8000ffff	completion_code=0	position_after_completion_hr=0x8000ffff	position_after_completion=0	renderer_discontinuities_after_hr=0x8000ffff	renderer_discontinuities_after=0	renderer_discontinuities_after_aux=0	renderer_discontinuities_delta=0	graph_error_hr=0x00000000	renderer_stats_hr=0x80004002	last_buffer_duration=0	diagnostics_hr=0x80004002	classifier_bytes_after=0	classifier_bytes_delta=0	stream_bytes_after=0	stream_bytes_delta=0	complete=0
+type_observation	seek-25-backward	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+operation	5	stop	hr=0x8000ffff	complete=0
+operation	6	reopen_connect	create_graph_hr=0x8000ffff	bind_renderer_hr=0x8000ffff	add_renderer_hr=0x8000ffff	find_renderer_pin_hr=0x8000ffff	connect_attempted=0	proposal_count=0	connect_direct_hr=0x8000ffff
+operation	7	reopen_stream	stream_attempted=0	pause_call_hr=0x8000ffff	pause_state_hr=0x8000ffff	run_call_hr=0x8000ffff	run_state_hr=0x8000ffff	wait_hr=0x8000ffff	completion_code=0	renderer_stats_hr=0x80004002	last_buffer_duration=0	diagnostics_hr=0x80004002	classifier_bytes=0	stream_bytes=0	eos_complete=0
+type_observation	reopen_pre_stream	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+type_observation	reopen_post_stream	output_hr=0x8000ffff	renderer_input_hr=0x8000ffff	output_exact=0	renderer_input_exact=0	peer_equal=0	output_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|	renderer_input_type={00000000-0000-0000-0000-000000000000}|{00000000-0000-0000-0000-000000000000}|1|0|1|{00000000-0000-0000-0000-000000000000}|0|
+operation	8	reopen_stop	hr=0x8000ffff	complete=0
+reopen_complete	0
+runtime_identity	1
+fixture_identity	1
+private_module	LAVAudio.ax	7BD1C979E8C3EA1B344620E15D2D06600613EF155496B5BD385DBA4EDA01B629	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\LAVAudio.ax
+private_module	LAVSplitter.ax	41031ADBADC4725E81ACC824CFC4FAB4114D48CDD578CB7F42A6A981BD02D980	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\LAVSplitter.ax
+process_module	OpenJocDirectShowNegotiationSmoke.exe	32B31EF2E0DCB275A6234E22B5259541ADD25F85E6793F1C0E1C41F9FA2D8DC1	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\OpenJocDirectShowNegotiationSmoke.exe
+process_module	avutil-lav-61.dll	3B1334F09EF80EB48FC7C08719B3541FEE03CA8F0158AE2F0429A426B31C4E08	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\avutil-lav-61.dll
+process_module	LAVAudio.ax	7BD1C979E8C3EA1B344620E15D2D06600613EF155496B5BD385DBA4EDA01B629	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\LAVAudio.ax
+process_module	avformat-lav-63.dll	716BC572FDAE829ACEB3E456920EFE0145C76731F5D26008CE639FF87F7BB102	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\avformat-lav-63.dll
+process_module	avcodec-lav-63.dll	05E0A573570DEB6B4C1B9D17F6AB3EECE33A730DB189D2E366342FA3D5B0E29A	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\avcodec-lav-63.dll
+process_module	swresample-lav-7.dll	BB6BC1FD8814B49165DD6E9629F3A388B50666A8194667A2FCCFE35B856CF0E8	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\swresample-lav-7.dll
+process_module	LAVSplitter.ax	41031ADBADC4725E81ACC824CFC4FAB4114D48CDD578CB7F42A6A981BD02D980	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\LAVSplitter.ax
+process_module	libbluray.dll	B5BE7EF426D4548FADDB069AC03E5B090B214952BA2C65CBB39E39DD33063A86	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\libbluray.dll
+process_module	openjoc_capi.dll	C78AD8F6EDCE37848485CEF8CF3F094FFE3D71E81375A7ECF605C3B5445628C1	D:\Program\OpenJOC\.codex-tmp\phase6-task2-unsupported-audio-green-20260825-1\target-runtime\openjoc_capi.dll

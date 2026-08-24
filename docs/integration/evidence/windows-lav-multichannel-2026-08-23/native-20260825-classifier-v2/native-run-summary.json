@@ -1,0 +1,128 @@
+[
+  {
+    "Policy": 0,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-0-raw.tsv",
+    "Started": "2026-08-25T01:37:49.7212716+08:00",
+    "Ended": "2026-08-25T01:37:50.0816779+08:00",
+    "Seconds": 0.36
+  },
+  {
+    "Policy": 0,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-0-mp4.tsv",
+    "Started": "2026-08-25T01:37:50.1151008+08:00",
+    "Ended": "2026-08-25T01:37:50.4181415+08:00",
+    "Seconds": 0.303
+  },
+  {
+    "Policy": 1,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-1-raw.tsv",
+    "Started": "2026-08-25T01:37:50.4192364+08:00",
+    "Ended": "2026-08-25T01:37:50.7571411+08:00",
+    "Seconds": 0.338
+  },
+  {
+    "Policy": 1,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-1-mp4.tsv",
+    "Started": "2026-08-25T01:37:50.758696+08:00",
+    "Ended": "2026-08-25T01:37:51.0811625+08:00",
+    "Seconds": 0.322
+  },
+  {
+    "Policy": 2,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-2-raw.tsv",
+    "Started": "2026-08-25T01:37:51.0819169+08:00",
+    "Ended": "2026-08-25T01:37:51.3909994+08:00",
+    "Seconds": 0.309
+  },
+  {
+    "Policy": 2,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-2-mp4.tsv",
+    "Started": "2026-08-25T01:37:51.3917511+08:00",
+    "Ended": "2026-08-25T01:37:51.6738436+08:00",
+    "Seconds": 0.282
+  },
+  {
+    "Policy": 3,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-3-raw.tsv",
+    "Started": "2026-08-25T01:37:51.6746833+08:00",
+    "Ended": "2026-08-25T01:37:51.977012+08:00",
+    "Seconds": 0.302
+  },
+  {
+    "Policy": 3,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-3-mp4.tsv",
+    "Started": "2026-08-25T01:37:51.9777542+08:00",
+    "Ended": "2026-08-25T01:37:52.2891455+08:00",
+    "Seconds": 0.311
+  },
+  {
+    "Policy": 4,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-4-raw.tsv",
+    "Started": "2026-08-25T01:37:52.2898803+08:00",
+    "Ended": "2026-08-25T01:37:52.593528+08:00",
+    "Seconds": 0.304
+  },
+  {
+    "Policy": 4,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-4-mp4.tsv",
+    "Started": "2026-08-25T01:37:52.594266+08:00",
+    "Ended": "2026-08-25T01:37:52.8792819+08:00",
+    "Seconds": 0.285
+  },
+  {
+    "Policy": 5,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-5-raw.tsv",
+    "Started": "2026-08-25T01:37:52.8800139+08:00",
+    "Ended": "2026-08-25T01:37:53.186721+08:00",
+    "Seconds": 0.307
+  },
+  {
+    "Policy": 5,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-5-mp4.tsv",
+    "Started": "2026-08-25T01:37:53.1876831+08:00",
+    "Ended": "2026-08-25T01:37:53.4837102+08:00",
+    "Seconds": 0.296
+  },
+  {
+    "Policy": 6,
+    "Fixture": "raw",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-6-raw.tsv",
+    "Started": "2026-08-25T01:37:53.4844018+08:00",
+    "Ended": "2026-08-25T01:37:53.7993172+08:00",
+    "Seconds": 0.315
+  },
+  {
+    "Policy": 6,
+    "Fixture": "mp4",
+    "ExitCode": 0,
+    "Evidence": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-6-mp4.tsv",
+    "Started": "2026-08-25T01:37:53.7999753+08:00",
+    "Ended": "2026-08-25T01:37:54.0760792+08:00",
+    "Seconds": 0.276
+  }
+]

@@ -1,0 +1,130 @@
+OPENJOC_LAV_MULTICHANNEL_OUTPUT_RESULT
+
+validation_date =
+    2026-08-25
+
+feature_branch =
+    codex/openjoc-lav-multichannel-output
+
+validated_openjoc_head =
+    455fb4c07d75330967c92e66b2a3becc253319c9
+
+validated_lav_head =
+    f0774976df782e7f6878f8bd6a798124b6a785ba
+
+automatic_layout_selection =
+    AUTO_NOT_RELIABLE
+
+default_output_policy =
+    Stereo
+
+proposal_policy =
+    ONE_EXACT_WAVEFORMATEXTENSIBLE_IEEE_FLOAT_48000_PROPOSAL_NO_FALLBACK
+
+evidence_matrix =
+    layout | OpenJOC transport | VB-Audio virtual Windows endpoint | physical Realtek endpoint | physical multichannel hardware
+    Stereo | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | NOT_TESTED
+    5.1    | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | HARDWARE_NOT_AVAILABLE
+    7.1    | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | HARDWARE_NOT_AVAILABLE
+    5.1.2  | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | HARDWARE_NOT_AVAILABLE
+    5.1.4  | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | HARDWARE_NOT_AVAILABLE
+    7.1.2  | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | HARDWARE_NOT_AVAILABLE
+    7.1.4  | TRANSPORT_VERIFIED | VIRTUAL_WINDOWS_ENDPOINT_VERIFIED | REAL_ENDPOINT_VERIFIED | HARDWARE_NOT_AVAILABLE
+
+per_renderer_distinction =
+    VB-Audio DirectSound: 14/14 ENDPOINT_FORMAT_NOT_SUPPORTED,
+        ConnectDirect HRESULT 0x8004025C, no delivered samples.
+    VB-Audio WaveOut: 14/14 SAMPLE_DELIVERY_VERIFIED.
+    Realtek DirectSound: 14/14 SAMPLE_DELIVERY_VERIFIED.
+    A successful VB-Audio WaveOut result establishes a real third-party
+    virtual Windows driver path only. It is not DirectSound-driver proof and
+    is not physical multichannel hardware proof.
+
+vb_audio_endpoint =
+    friendly_name: CABLE In 16 Ch (VB-Audio Virtual Cable)
+    endpoint_id: {0.0.0.00000000}.{97ac8cb2-e6e9-41b4-adb2-6a23c785ebbe}
+    DirectSound moniker:
+        @device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}
+    WaveOut moniker:
+        @device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\wave:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}
+    observed device format: 12-channel 48 kHz PCM16, mask 0
+    observed mix format: 12-channel 48 kHz float32, mask 0
+    read-only WASAPI diagnostic: exact shared 7.1.4 returned S_OK; the other
+        six exact layouts returned S_FALSE with a closest 12-channel mask-0
+        format; exclusive mode rejected all seven. These diagnostics are not
+        substituted for the measured DirectShow results above.
+
+realtek_endpoint =
+    friendly_name: speakers (Realtek(R) Audio)
+    endpoint_id: {0.0.0.00000000}.{4515b70c-b427-451b-8434-be838ba66506}
+    DirectSound moniker:
+        @device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\DirectSound:{4515B70C-B427-451B-8434-BE838BA66506}
+    observed device format: 2-channel 48 kHz PCM, 24 valid bits, mask 0x3
+    observed mix format: 2-channel 48 kHz float32, mask 0x3
+    The 14/14 DirectSound result proves exact DirectShow media-type connection
+    and sample delivery into this Windows endpoint. Because the installed
+    physical endpoint is configured as stereo, it does not prove physical
+    reproduction, speaker routing, or AVR support for multichannel layouts.
+
+stereo_failure_diagnosis =
+    The former 14/14 rejection matrix targeted endpoint GUID {97AC...}, which
+    inventory now identifies as VB-Audio rather than Realtek. The same exact
+    Stereo proposal was delivered through VB-Audio WaveOut and Realtek
+    DirectSound. The remaining VB-Audio DirectSound rejection is therefore a
+    renderer/endpoint-format compatibility result, not an OpenJOC media-type
+    construction failure.
+
+per_layout_contracts =
+    Stereo: channels=2, mask=0x00000003, order=FL,FR, logical_lfe=0
+    5.1: channels=6, mask=0x0000060f, order=FL,FR,FC,LFE,Ls,Rs, logical_lfe=1
+    7.1: channels=8, mask=0x0000063f, order=FL,FR,FC,LFE,Lb,Rb,Ls,Rs, logical_lfe=1
+    5.1.2: channels=8, mask=0x0000560f, order=FL,FR,FC,LFE,Ls,Rs,TFL,TFR, logical_lfe=1
+    5.1.4: channels=10, mask=0x0002d60f, order=FL,FR,FC,LFE,Ls,Rs,TFL,TFR,TBL,TBR, logical_lfe=1
+    7.1.2: channels=10, mask=0x0000563f, order=FL,FR,FC,LFE,Lb,Rb,Ls,Rs,TFL,TFR, logical_lfe=1
+    7.1.4: channels=12, mask=0x0002d63f, order=FL,FR,FC,LFE,Lb,Rb,Ls,Rs,TFL,TFR,TBL,TBR, logical_lfe=1
+
+mandatory_transport_evidence =
+    PASS: 14/14 raw and MP4 StrictCaptureSink runs.
+    PASS: exact channel count, semantic order, mask, extensible IEEE float32,
+        48 kHz, block alignment, average bytes/second, checked buffer sizing,
+        actual frame size, per-channel and interleaved sample oracles.
+    PASS: flush, raw seek-to-zero, MP4 forward/backward seek, EOS, reopen,
+        policy switching, and 10/12-channel safety.
+    Raw nonzero absolute seek is truthfully reported as
+        UNSUPPORTED_RAW_CONTAINER_OPERATION rather than simulated.
+    The test sink accepts only the requested exact contract and performs no
+        mask repair, fallback, or type mutation.
+
+system_state_changed =
+    NO
+
+production_scope_boundaries =
+    No endpoint-name inference.
+    No product-display-name parsing.
+    No fallback masks or alternate proposals.
+    No bass management or physical-subwoofer routing.
+    No PotPlayer-specific private behavior.
+    No unconditional Auto support claim.
+
+physical_multichannel_gate =
+    HARDWARE_NOT_AVAILABLE on this machine. Another Windows user with a real
+    multichannel endpoint or AVR must run the self-contained endpoint QA
+    package and separately confirm physical speakers/routing. Until then no
+    row is PHYSICAL_MULTICHANNEL_HARDWARE_VERIFIED.
+
+machine_readable_evidence =
+    windows-lav-multichannel-layered-2026-08-25.json
+
+qa_package =
+    OpenJOC-LAV-Endpoint-QA-20260825.zip
+    The package produces renderer inventory, endpoint observations, 14 exact
+    raw TSV attempts, HRESULTs, accepted media types, sample-delivery status,
+    SHA-256 bindings, and report.json without requiring a development setup.
+
+final_conclusion =
+    The seven fixed policies are truthfully exposed and transported through
+    DirectShow. A real third-party virtual Windows endpoint and a physical
+    Realtek Windows endpoint both have independent sample-delivery evidence,
+    with renderer-family distinctions preserved. Physical multichannel
+    playback and automatic downstream semantic layout discovery remain
+    unproven and are not claimed.

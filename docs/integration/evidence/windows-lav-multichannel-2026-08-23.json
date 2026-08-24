@@ -1,0 +1,1182 @@
+{
+  "schema_version": 1,
+  "collection_state": "COLLECTED_EXACT_REJECTION",
+  "automatic_layout_selection": "AUTO_NOT_RELIABLE",
+  "builds": {
+    "openjoc": {
+      "head": "970000f0d21771d89bdedc003c0fd8c290c64527",
+      "binaries": [
+        {
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+          "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+        }
+      ]
+    },
+    "lav": {
+      "head": "2ce1e36b76289d52a151c3f3d8574f1501d38ab2",
+      "binaries": [
+        {
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+          "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+        },
+        {
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+          "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+        }
+      ]
+    }
+  },
+  "environment": {
+    "os": {
+      "name": "Microsoft Windows 11 Pro",
+      "version": "10.0.26200",
+      "build": "26200"
+    },
+    "host": {
+      "name": "PotPlayer",
+      "path": "C:\\Program Files\\DAUM\\PotPlayer\\PotPlayerMini64.exe",
+      "version": "26.07.01.0",
+      "sha256": "6f0f63bee95d6715e0656f8b0bcbcce0cc3b27f03f012c8b8c4c34557a2e1cb7"
+    }
+  },
+  "potplayer_audit": {
+    "status": "HOST_AUDIT_NOT_SUPPORT_PROOF",
+    "summary_path": "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\potplayer-20260825\\potplayer-audit-summary.json"
+  },
+  "candidates": [
+    {
+      "layout": "Stereo",
+      "channel_count": 2,
+      "channel_mask": "0x00000003",
+      "logical_lfe_channels": 0,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 2,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x00000003",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 8,
+          "avg_bytes_per_sec": 384000,
+          "sample_size": 8,
+          "cb_size": 22,
+          "format_bytes_sha256": "481563cc3d5ff86edd468590cb40a84f756bb38aded20f124cd95bb3d05f8aca"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-0-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-0-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    },
+    {
+      "layout": "5.1",
+      "channel_count": 6,
+      "channel_mask": "0x0000060f",
+      "logical_lfe_channels": 1,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 6,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x0000060f",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 24,
+          "avg_bytes_per_sec": 1152000,
+          "sample_size": 24,
+          "cb_size": 22,
+          "format_bytes_sha256": "ba3432ea77b6764e3a38efe44b01982ffec41f796c815a417704a4949fe8711a"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-1-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-1-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    },
+    {
+      "layout": "7.1",
+      "channel_count": 8,
+      "channel_mask": "0x0000063f",
+      "logical_lfe_channels": 1,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 8,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x0000063f",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 32,
+          "avg_bytes_per_sec": 1536000,
+          "sample_size": 32,
+          "cb_size": 22,
+          "format_bytes_sha256": "96646c2c1b89a092915d04e5deb377556116e83c8eba5fb47b4d9c36de2f50d1"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-2-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-2-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    },
+    {
+      "layout": "5.1.2",
+      "channel_count": 8,
+      "channel_mask": "0x0000560f",
+      "logical_lfe_channels": 1,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 8,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x0000560f",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 32,
+          "avg_bytes_per_sec": 1536000,
+          "sample_size": 32,
+          "cb_size": 22,
+          "format_bytes_sha256": "aa47e5669a01ddde5df9a4a8546a96631644e52207a1969ef839a15213330044"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-3-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-3-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    },
+    {
+      "layout": "5.1.4",
+      "channel_count": 10,
+      "channel_mask": "0x0002d60f",
+      "logical_lfe_channels": 1,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 10,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x0002d60f",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 40,
+          "avg_bytes_per_sec": 1920000,
+          "sample_size": 40,
+          "cb_size": 22,
+          "format_bytes_sha256": "89b8259df8e82db9aa7ff875914ac1d39fb1adf3e7d81660aa10bdeafe60bc3b"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-4-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-4-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    },
+    {
+      "layout": "7.1.2",
+      "channel_count": 10,
+      "channel_mask": "0x0000563f",
+      "logical_lfe_channels": 1,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 10,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x0000563f",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 40,
+          "avg_bytes_per_sec": 1920000,
+          "sample_size": 40,
+          "cb_size": 22,
+          "format_bytes_sha256": "27afe0cefeae31e8edf507240b6f29a65ace7e20e368eb57f9225755cb9c673a"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-5-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-5-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    },
+    {
+      "layout": "7.1.4",
+      "channel_count": 12,
+      "channel_mask": "0x0002d63f",
+      "logical_lfe_channels": 1,
+      "status": "UNSUPPORTED",
+      "reason": null,
+      "renderer": {
+        "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+        "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+      },
+      "failure": {
+        "kind": "EXACT_REJECTION",
+        "stage": "ConnectDirect",
+        "hresult": "0x8004025C",
+        "measured": true,
+        "requested_type": {
+          "major_type": "MEDIATYPE_Audio",
+          "subtype": "MEDIASUBTYPE_IEEE_FLOAT",
+          "format_type": "FORMAT_WaveFormatEx",
+          "format_tag": "WAVE_FORMAT_EXTENSIBLE",
+          "channels": 12,
+          "sample_rate": 48000,
+          "bits_per_sample": 32,
+          "valid_bits_per_sample": 32,
+          "channel_mask": "0x0002d63f",
+          "subformat": "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT",
+          "block_align": 48,
+          "avg_bytes_per_sec": 2304000,
+          "sample_size": 48,
+          "cb_size": 22,
+          "format_bytes_sha256": "d0864f5d824894e7853adeb9c3ba05c11032b330dc54b506b7b8cfa778749804"
+        },
+        "actual_type": null,
+        "proposal_count": 1,
+        "fallback_proposals": 0,
+        "fixture": {
+          "kind": "raw",
+          "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase5-task3-fresh-fixtures-20260824-1\\joc.lifecycle.ec3",
+          "sha256": "b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8"
+        },
+        "renderer": {
+          "moniker": "@device:cm:{E0F158E1-CB04-11D0-BD4E-00A0C911CE86}\\DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}",
+          "endpoint_id": "DirectSound:{97AC8CB2-E6E9-41B4-ADB2-6A23C785EBBE}"
+        },
+        "runtime_verification": {
+          "kind": "PRIVATE_COM_AND_PROCESS_ENUMERATION",
+          "manifest": {
+            "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVFilters.Dependencies.manifest",
+            "sha256": "93689540d24a110d630657dba6e18334144168c99a89bb96e27cfdf6590b02d3",
+            "modules": [
+              {
+                "basename": "LAVAudio.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+                "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+              },
+              {
+                "basename": "LAVSplitter.ax",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+                "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+              },
+              {
+                "basename": "openjoc_capi.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+                "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+              },
+              {
+                "basename": "avcodec-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+              },
+              {
+                "basename": "avutil-lav-61.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+                "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+              },
+              {
+                "basename": "avformat-lav-63.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+                "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+              },
+              {
+                "basename": "swresample-lav-7.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+                "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+              },
+              {
+                "basename": "libbluray.dll",
+                "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+                "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+              }
+            ]
+          },
+          "process_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            },
+            {
+              "basename": "openjoc_capi.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\openjoc_capi.dll",
+              "sha256": "c78ad8f6edce37848485cef8cf3f094ffe3d71e81375a7ecf605c3b5445628c1"
+            },
+            {
+              "basename": "avcodec-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avcodec-lav-63.dll",
+            "sha256": "05e0a573570deb1b4c1b9d17f6ab3eece33a730db189d2e366342fa3d5b0e29a"
+            },
+            {
+              "basename": "avutil-lav-61.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avutil-lav-61.dll",
+              "sha256": "3b1334f09ef80eb48fc7c08719b3541fee03ca8f0158ae2f0429a426b31c4e08"
+            },
+            {
+              "basename": "avformat-lav-63.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\avformat-lav-63.dll",
+              "sha256": "716bc572fdae829aceb3e456920efe0145c76731f5d26008ce639ff87f7bb102"
+            },
+            {
+              "basename": "swresample-lav-7.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\swresample-lav-7.dll",
+              "sha256": "bb6bc1fd8814b49165dd6e9629f3a388b50666a8194667a2fccfe35b856cf0e8"
+            },
+            {
+              "basename": "libbluray.dll",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\libbluray.dll",
+              "sha256": "b5be7ef426d4548faddb069ac03e5b090b214952ba2c65cbb39e39dd33063a86"
+            }
+          ],
+          "loaded_ffmpeg_lav_basenames": [
+            "avcodec-lav-63.dll",
+            "avutil-lav-61.dll",
+            "avformat-lav-63.dll",
+            "swresample-lav-7.dll"
+          ],
+          "private_com_modules": [
+            {
+              "basename": "LAVAudio.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVAudio.ax",
+              "sha256": "7bd1c979e8c3ea1b344620e15d2d06600613ef155496b5bd385dba4eda01b629"
+            },
+            {
+              "basename": "LAVSplitter.ax",
+              "path": "D:\\Program\\OpenJOC\\.codex-tmp\\phase6-task2-unsupported-audio-green-20260825-1\\target-runtime\\LAVSplitter.ax",
+              "sha256": "41031adbadc4725e81acc824cfc4fab4114d48cdd578cb7f42a6a981bd02d980"
+            }
+          ]
+        },
+        "evidence_files": [
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-6-raw.tsv",
+          "D:\\Program\\OpenJOC\\docs\\integration\\evidence\\windows-lav-multichannel-2026-08-23\\native-20260825-classifier-v2\\native-policy-6-mp4.tsv"
+        ]
+      },
+      "native_runs": [],
+      "potplayer_runs": []
+    }
+  ]
+}
