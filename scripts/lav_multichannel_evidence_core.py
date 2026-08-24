@@ -14,42 +14,67 @@ CANONICAL_LAYOUTS = {
     "Stereo": {
         "channel_count": 2,
         "channel_mask": "0x00000003",
+        "channel_order": ("FL", "FR"),
         "logical_lfe_channels": 0,
     },
     "5.1": {
         "channel_count": 6,
         "channel_mask": "0x0000060f",
+        "channel_order": ("FL", "FR", "FC", "LFE", "Ls", "Rs"),
         "logical_lfe_channels": 1,
     },
     "7.1": {
         "channel_count": 8,
         "channel_mask": "0x0000063f",
+        "channel_order": ("FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"),
         "logical_lfe_channels": 1,
     },
     "5.1.2": {
         "channel_count": 8,
         "channel_mask": "0x0000560f",
+        "channel_order": ("FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"),
         "logical_lfe_channels": 1,
     },
     "5.1.4": {
         "channel_count": 10,
         "channel_mask": "0x0002d60f",
+        "channel_order": (
+            "FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR"
+        ),
         "logical_lfe_channels": 1,
     },
     "7.1.2": {
         "channel_count": 10,
         "channel_mask": "0x0000563f",
+        "channel_order": (
+            "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR"
+        ),
         "logical_lfe_channels": 1,
     },
     "7.1.4": {
         "channel_count": 12,
         "channel_mask": "0x0002d63f",
+        "channel_order": (
+            "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR"
+        ),
         "logical_lfe_channels": 1,
     },
 }
 
 MANDATORY_LAYOUTS = ("Stereo", "5.1", "7.1")
 EVIDENCE_STATES = {"STREAM_PROVEN", "UNSUPPORTED", "UNVERIFIED"}
+LAYERED_EVIDENCE_STATES = {
+    "TRANSPORT_VERIFIED",
+    "REAL_ENDPOINT_VERIFIED",
+    "ENDPOINT_REJECTED",
+    "HARDWARE_NOT_AVAILABLE",
+    "NOT_TESTED",
+}
+REAL_ENDPOINT_STATES = LAYERED_EVIDENCE_STATES - {"TRANSPORT_VERIFIED"}
+VIRTUAL_ENDPOINT_STATES = REAL_ENDPOINT_STATES | {
+    "VIRTUAL_WINDOWS_ENDPOINT_VERIFIED",
+    "DIRECTSOUND_DRIVER_VERIFIED",
+}
 _FORBIDDEN_SEMANTIC_FIELDS = {
     "physical_subwoofer_count",
     "friendly_name",
@@ -615,6 +640,385 @@ def stream_proven_layouts(document: object) -> tuple[str, ...]:
     )
 
 
+def transport_verified_layouts(document: object) -> tuple[str, ...]:
+    if not isinstance(document, Mapping) or not isinstance(document.get("candidates"), list):
+        return ()
+    states = {
+        row.get("layout"): row.get("states", {}).get("transport")
+        for row in document["candidates"]
+        if isinstance(row, Mapping) and isinstance(row.get("states"), Mapping)
+    }
+    return tuple(
+        layout
+        for layout in CANONICAL_LAYOUTS
+        if states.get(layout) == "TRANSPORT_VERIFIED"
+    )
+
+
+def _validate_v2_media_type(
+    media_type: object,
+    contract: Mapping[str, object],
+    location: str,
+    errors: list[str],
+) -> None:
+    _validate_media_type(media_type, contract, location, errors)
+    if not isinstance(media_type, Mapping) or media_type.get("channel_order") != list(
+        contract["channel_order"]
+    ):
+        _error(errors, "CHANNEL_ORDER_MISMATCH", location)
+
+
+def _validate_v2_runtime(runtime: object, location: str, errors: list[str]) -> None:
+    if not isinstance(runtime, Mapping) or runtime.get("identity_verified") is not True:
+        _error(errors, "RUNTIME_IDENTITY_NOT_VERIFIED", location)
+        return
+    _validate_binary_identity(runtime.get("manifest"), f"{location}.manifest", errors)
+    _validate_binary_identity(runtime.get("harness"), f"{location}.harness", errors)
+
+
+def _validate_exact_connect(connect: object, location: str, errors: list[str]) -> bool:
+    if not isinstance(connect, Mapping):
+        _error(errors, "EXACT_CONNECT_DIRECT_REQUIRED", location)
+        return False
+    valid = all(
+        (
+            connect.get("attempted") is True,
+            connect.get("exact") is True,
+            connect.get("proposal_count") == 1,
+            connect.get("fallback_proposals") == 0,
+            _is_hresult(connect.get("hresult")),
+        )
+    )
+    if not valid:
+        _error(errors, "EXACT_CONNECT_DIRECT_REQUIRED", location)
+    return valid
+
+
+def _validate_transport_run_v2(
+    run: Mapping[str, object],
+    contract: Mapping[str, object],
+    location: str,
+    errors: list[str],
+) -> None:
+    _validate_fixture(run.get("fixture"), f"{location}.fixture", errors)
+    if run.get("policy_selection") != "FIXED_POLICY_ENUM":
+        _error(errors, "FIXED_POLICY_SELECTION_REQUIRED", location)
+    oracle = run.get("oracle")
+    if not isinstance(oracle, Mapping) or any(
+        (
+            oracle.get("kind") != "TEST_ONLY_DIRECTSHOW_STRICT_CAPTURE_SINK",
+            oracle.get("accepts_exact_type_only") is not True,
+            oracle.get("silently_repairs_media_type") is not False,
+        )
+    ):
+        _error(errors, "STRICT_TRANSPORT_ORACLE_REQUIRED", location)
+    connect = run.get("connect_direct")
+    if isinstance(connect, Mapping) and connect.get("fallback_proposals") != 0:
+        _error(errors, "TRANSPORT_FALLBACK_OBSERVED", location)
+    if _validate_exact_connect(connect, location, errors):
+        if connect.get("hresult") != "0x00000000":
+            _error(errors, "TRANSPORT_CONNECT_DIRECT_FAILED", location)
+
+    requested = run.get("requested_type")
+    pre_stream = run.get("pre_stream_connection_type")
+    post_stream = run.get("post_stream_connection_type")
+    _validate_v2_media_type(requested, contract, f"{location}.requested_type", errors)
+    _validate_v2_media_type(pre_stream, contract, f"{location}.pre_stream_type", errors)
+    _validate_v2_media_type(post_stream, contract, f"{location}.post_stream_type", errors)
+    if requested != pre_stream or requested != post_stream:
+        _error(errors, "TRANSPORT_CONNECTION_TYPE_CHANGED", location)
+
+    delivery = run.get("delivery")
+    expected_frame_size = int(contract["channel_count"]) * 4
+    if not isinstance(delivery, Mapping):
+        _error(errors, "TRANSPORT_DELIVERY_REQUIRED", location)
+    else:
+        if (
+            delivery.get("actual_frame_size") != expected_frame_size
+            or delivery.get("all_sample_lengths_frame_aligned") is not True
+            or delivery.get("checked_buffer_sizing") is not True
+            or delivery.get("allocator_contract_valid") is not True
+        ):
+            _error(errors, "TRANSPORT_FRAME_SIZE_INVALID", location)
+        if (
+            not isinstance(delivery.get("samples"), int)
+            or delivery["samples"] <= 0
+            or not isinstance(delivery.get("bytes"), int)
+            or delivery["bytes"] <= 0
+            or delivery.get("eos") is not True
+        ):
+            _error(errors, "TRANSPORT_SAMPLE_DELIVERY_NOT_PROVEN", location)
+        if any(
+            delivery.get(field) is not True
+            for field in (
+                "full_interleaved_oracle_equal",
+                "per_channel_oracle_equal",
+                "per_channel_digests_pairwise_distinct",
+            )
+        ):
+            _error(errors, "TRANSPORT_SAMPLE_ORACLE_MISMATCH", location)
+        if delivery.get("graph_errors") != 0:
+            _error(errors, "GRAPH_ERROR_OBSERVED", location)
+        if delivery.get("type_mutations") != 0:
+            _error(errors, "TRANSPORT_CONNECTION_TYPE_CHANGED", location)
+    _validate_v2_runtime(run.get("runtime_verification"), f"{location}.runtime", errors)
+
+
+def _validate_transport_evidence_v2(
+    evidence: object,
+    contract: Mapping[str, object],
+    location: str,
+    errors: list[str],
+) -> None:
+    if not isinstance(evidence, Mapping):
+        _error(errors, "TRANSPORT_EVIDENCE_REQUIRED", location)
+        return
+    if evidence.get("hardware_independent") is not True:
+        _error(errors, "HARDWARE_INDEPENDENT_TRANSPORT_REQUIRED", location)
+    runs = _runs_by_fixture_kind(evidence.get("runs"), f"{location}.runs", errors)
+    if len(runs) != 2:
+        _error(errors, "TRANSPORT_PATH_INCOMPLETE", location)
+    for kind in ("raw", "mp4"):
+        if kind in runs:
+            _validate_transport_run_v2(
+                runs[kind], contract, f"{location}.runs.{kind}", errors
+            )
+    lifecycle = evidence.get("lifecycle")
+    required_lifecycle = (
+        "flush",
+        "raw_seek_to_zero",
+        "mp4_forward_seek",
+        "mp4_backward_seek",
+        "eos",
+        "reopen",
+        "policy_switching",
+    )
+    if not isinstance(lifecycle, Mapping) or any(
+        lifecycle.get(field) is not True for field in required_lifecycle
+    ) or lifecycle.get("raw_nonzero_seek") != "UNSUPPORTED_RAW_CONTAINER_OPERATION":
+        _error(errors, "TRANSPORT_LIFECYCLE_INCOMPLETE", location)
+    if int(contract["channel_count"]) in (10, 12) and evidence.get(
+        "checked_10_12_channel_safety"
+    ) is not True:
+        _error(errors, "HIGH_CHANNEL_SAFETY_NOT_PROVEN", location)
+
+
+def _validate_endpoint_success_v2(
+    evidence: object,
+    contract: Mapping[str, object],
+    location: str,
+    errors: list[str],
+) -> bool:
+    if not isinstance(evidence, Mapping) or evidence.get(
+        "classification"
+    ) != "SAMPLE_DELIVERY_VERIFIED":
+        return False
+    _validate_renderer(evidence.get("renderer"), f"{location}.renderer", errors)
+    runs = _runs_by_fixture_kind(evidence.get("runs"), f"{location}.runs", errors)
+    if len(runs) != 2:
+        return False
+    valid = True
+    for kind in ("raw", "mp4"):
+        run = runs[kind]
+        _validate_fixture(run.get("fixture"), f"{location}.{kind}.fixture", errors)
+        connect = run.get("connect_direct")
+        if not _validate_exact_connect(connect, f"{location}.{kind}", errors) or connect.get(
+            "hresult"
+        ) != "0x00000000":
+            valid = False
+        requested = run.get("requested_type")
+        pre_stream = run.get("pre_stream_connection_type")
+        post_stream = run.get("post_stream_connection_type")
+        _validate_v2_media_type(requested, contract, f"{location}.{kind}.requested", errors)
+        _validate_v2_media_type(pre_stream, contract, f"{location}.{kind}.pre", errors)
+        _validate_v2_media_type(post_stream, contract, f"{location}.{kind}.post", errors)
+        if requested != pre_stream or requested != post_stream:
+            _error(errors, "ENDPOINT_CONNECTION_TYPE_CHANGED", f"{location}.{kind}")
+            valid = False
+        delivery = run.get("sample_delivery")
+        if not isinstance(delivery, Mapping) or any(
+            (
+                delivery.get("observed") is not True,
+                not isinstance(delivery.get("decoded_bytes"), int)
+                or delivery["decoded_bytes"] <= 0,
+                not isinstance(delivery.get("stream_bytes"), int)
+                or delivery["stream_bytes"] <= 0,
+                not isinstance(delivery.get("renderer_buffer_duration"), int)
+                or delivery["renderer_buffer_duration"] <= 0,
+                delivery.get("eos") is not True,
+                delivery.get("graph_errors") != 0,
+            )
+        ):
+            _error(errors, "ENDPOINT_SAMPLE_DELIVERY_NOT_PROVEN", f"{location}.{kind}")
+            valid = False
+    return valid
+
+
+def _validate_endpoint_rejection_v2(
+    evidence: object,
+    contract: Mapping[str, object],
+    location: str,
+    errors: list[str],
+) -> bool:
+    if not isinstance(evidence, Mapping) or evidence.get(
+        "classification"
+    ) != "ENDPOINT_FORMAT_NOT_SUPPORTED":
+        return False
+    _validate_renderer(evidence.get("renderer"), f"{location}.renderer", errors)
+    runs = _runs_by_fixture_kind(evidence.get("runs"), f"{location}.runs", errors)
+    if len(runs) != 2:
+        return False
+    valid = True
+    for kind, run in runs.items():
+        _validate_fixture(run.get("fixture"), f"{location}.{kind}.fixture", errors)
+        _validate_v2_media_type(
+            run.get("requested_type"), contract, f"{location}.{kind}.requested", errors
+        )
+        connect = run.get("connect_direct")
+        if not _validate_exact_connect(connect, f"{location}.{kind}", errors) or connect.get(
+            "hresult"
+        ) == "0x00000000":
+            valid = False
+    return valid
+
+
+def _validate_layered_candidate(
+    row: Mapping[str, object], location: str, errors: list[str]
+) -> Optional[str]:
+    layout = row.get("layout")
+    if layout not in CANONICAL_LAYOUTS:
+        _error(errors, "UNKNOWN_LAYOUT", f"{location}.{layout}")
+        return None
+    contract = CANONICAL_LAYOUTS[layout]
+    if row.get("channel_count") != contract["channel_count"]:
+        _error(errors, "CHANNEL_COUNT_MISMATCH", layout)
+    if row.get("channel_mask") != contract["channel_mask"]:
+        _error(errors, "CHANNEL_MASK_MISMATCH", layout)
+    if row.get("channel_order") != list(contract["channel_order"]):
+        _error(errors, "CHANNEL_ORDER_MISMATCH", layout)
+    if row.get("logical_lfe_channels") != contract["logical_lfe_channels"]:
+        _error(errors, "LOGICAL_LFE_MISMATCH", layout)
+
+    states = row.get("states")
+    if not isinstance(states, Mapping):
+        _error(errors, "LAYERED_STATES_REQUIRED", layout)
+        return layout
+    if states.get("transport") != "TRANSPORT_VERIFIED":
+        _error(errors, "TRANSPORT_NOT_VERIFIED", layout)
+    else:
+        _validate_transport_evidence_v2(
+            row.get("transport_evidence"), contract, f"{location}.transport", errors
+        )
+
+    virtual_state = states.get("virtual_windows_endpoint")
+    if virtual_state not in VIRTUAL_ENDPOINT_STATES:
+        _error(errors, "VIRTUAL_ENDPOINT_STATE_INVALID", layout)
+    else:
+        virtual_evidence = row.get("virtual_windows_endpoint_evidence")
+        directsound = (
+            virtual_evidence.get("directsound")
+            if isinstance(virtual_evidence, Mapping)
+            else None
+        )
+        waveout = (
+            virtual_evidence.get("waveout")
+            if isinstance(virtual_evidence, Mapping)
+            else None
+        )
+        directsound_success = _validate_endpoint_success_v2(
+            directsound, contract, f"{location}.virtual.directsound", errors
+        )
+        waveout_success = _validate_endpoint_success_v2(
+            waveout, contract, f"{location}.virtual.waveout", errors
+        )
+        if virtual_state == "VIRTUAL_WINDOWS_ENDPOINT_VERIFIED" and not (
+            directsound_success or waveout_success
+        ):
+            _error(errors, "VIRTUAL_ENDPOINT_DELIVERY_NOT_PROVEN", layout)
+        if virtual_state == "DIRECTSOUND_DRIVER_VERIFIED" and not directsound_success:
+            _error(errors, "DIRECTSOUND_DELIVERY_NOT_PROVEN", layout)
+        if isinstance(directsound, Mapping) and directsound.get(
+            "classification"
+        ) == "ENDPOINT_FORMAT_NOT_SUPPORTED":
+            _validate_endpoint_rejection_v2(
+                directsound, contract, f"{location}.virtual.directsound", errors
+            )
+
+    realtek_state = states.get("physical_realtek_endpoint")
+    realtek_evidence = row.get("physical_realtek_endpoint_evidence")
+    if realtek_state not in REAL_ENDPOINT_STATES:
+        _error(errors, "REALTEK_ENDPOINT_STATE_INVALID", layout)
+    elif realtek_state == "REAL_ENDPOINT_VERIFIED" and not _validate_endpoint_success_v2(
+        realtek_evidence, contract, f"{location}.realtek", errors
+    ):
+        _error(errors, "REAL_ENDPOINT_DELIVERY_NOT_PROVEN", layout)
+    elif realtek_state == "ENDPOINT_REJECTED":
+        _validate_endpoint_rejection_v2(
+            realtek_evidence, contract, f"{location}.realtek", errors
+        )
+    elif realtek_state == "HARDWARE_NOT_AVAILABLE":
+        if not isinstance(realtek_evidence, Mapping) or not isinstance(
+            realtek_evidence.get("reason"), str
+        ):
+            _error(errors, "HARDWARE_UNAVAILABLE_REASON_REQUIRED", layout)
+
+    physical_state = states.get("physical_multichannel_hardware")
+    physical_evidence = row.get("physical_multichannel_hardware_evidence")
+    if physical_state not in REAL_ENDPOINT_STATES:
+        _error(errors, "PHYSICAL_MULTICHANNEL_STATE_INVALID", layout)
+    elif physical_state == "REAL_ENDPOINT_VERIFIED":
+        if not isinstance(physical_evidence, Mapping) or physical_evidence.get(
+            "evidence_kind"
+        ) != "PHYSICAL_MULTICHANNEL_HARDWARE":
+            _error(errors, "PHYSICAL_MULTICHANNEL_HARDWARE_NOT_PROVEN", layout)
+    elif physical_state in {"HARDWARE_NOT_AVAILABLE", "NOT_TESTED"}:
+        if not isinstance(physical_evidence, Mapping) or not isinstance(
+            physical_evidence.get("reason"), str
+        ):
+            _error(errors, "PHYSICAL_MULTICHANNEL_REASON_REQUIRED", layout)
+    return layout
+
+
+def _validate_layered_evidence(
+    document: Mapping[str, object], shipped_layouts: Optional[Sequence[str]]
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    for forbidden_location in _find_forbidden_fields(document):
+        _error(errors, "FORBIDDEN_SEMANTIC_FIELD", forbidden_location)
+    if document.get("automatic_layout_selection") != "AUTO_NOT_RELIABLE":
+        _error(errors, "AUTO_RELIABILITY_MARKER_REQUIRED", "automatic_layout_selection")
+    _validate_builds(document, errors)
+    _validate_environment(document, errors)
+    rows_by_layout: dict[str, Mapping[str, object]] = {}
+    candidates = document.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        _error(errors, "EVIDENCE_ROWS_REQUIRED", "candidates")
+    else:
+        for index, row in enumerate(candidates):
+            if not isinstance(row, Mapping):
+                _error(errors, "EVIDENCE_ROW_INVALID", f"candidates[{index}]")
+                continue
+            layout = _validate_layered_candidate(row, f"candidates[{index}]", errors)
+            if layout is None:
+                continue
+            if layout in rows_by_layout:
+                _error(errors, "DUPLICATE_LAYOUT_ROW", layout)
+            rows_by_layout[layout] = row
+    for layout in CANONICAL_LAYOUTS:
+        if layout not in rows_by_layout:
+            _error(errors, "LAYOUT_ROW_MISSING", layout)
+    if shipped_layouts is not None:
+        verified = transport_verified_layouts(document)
+        shipped = tuple(shipped_layouts)
+        if shipped != verified:
+            _error(
+                errors,
+                "SHIPPED_LAYOUT_MISMATCH",
+                f"shipped={list(shipped)!r} transport_verified={list(verified)!r}",
+            )
+    return tuple(errors)
+
+
 def validate_evidence(
     document: object, shipped_layouts: Optional[Sequence[str]] = None
 ) -> tuple[str, ...]:
@@ -622,6 +1026,8 @@ def validate_evidence(
     errors: list[str] = []
     if not isinstance(document, Mapping) or not document:
         return ("EVIDENCE_DOCUMENT_REQUIRED: expected a non-empty JSON object",)
+    if document.get("schema_version") == 2:
+        return _validate_layered_evidence(document, shipped_layouts)
     for forbidden_location in _find_forbidden_fields(document):
         _error(errors, "FORBIDDEN_SEMANTIC_FIELD", forbidden_location)
     if document.get("schema_version") != 1:

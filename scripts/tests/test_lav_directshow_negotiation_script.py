@@ -442,6 +442,135 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         ):
             self.assertIn(expected_case, pure_tests)
 
+    def test_harness_can_inventory_exact_directshow_audio_renderer_monikers(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+
+        self.assertIn("--list-audio-renderers", harness_text)
+        for required in (
+            "ICreateDevEnum",
+            "CLSID_SystemDeviceEnum",
+            "CLSID_AudioRendererCategory",
+            "CreateClassEnumerator",
+            "IEnumMoniker",
+            "GetDisplayName",
+            "IPropertyBag",
+            "FriendlyName",
+            "RENDERER_INVENTORY_V1",
+            "CREATE_NEW",
+        ):
+            self.assertIn(required, harness_text)
+        begin = harness_text.index("HRESULT WriteAudioRendererInventory")
+        end = harness_text.index("HRESULT RunNativeRendererProbe", begin)
+        inventory = harness_text[begin:end]
+        self.assertNotIn("CABLE In", inventory)
+        self.assertNotIn("Realtek", inventory)
+        self.assertNotIn("infer", inventory.lower())
+
+    def test_harness_can_read_endpoint_formats_without_reconfiguration(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+
+        self.assertIn("--inspect-audio-endpoint", harness_text)
+        for required in (
+            "IMMDeviceEnumerator",
+            "MMDeviceEnumerator",
+            "IAudioClient",
+            "GetMixFormat",
+            "IsFormatSupported",
+            "AUDCLNT_SHAREMODE_SHARED",
+            "AUDCLNT_SHAREMODE_EXCLUSIVE",
+            "STGM_READ",
+            "AUDIO_ENDPOINT_CAPABILITIES_V1",
+            "CREATE_NEW",
+        ):
+            self.assertIn(required, harness_text)
+        begin = harness_text.index("HRESULT WriteAudioEndpointCapabilities")
+        end = harness_text.index("HRESULT RunNativeRendererProbe", begin)
+        inspection = harness_text[begin:end]
+        self.assertNotIn("SetDefault", inspection)
+        self.assertNotIn("SetValue", inspection)
+        self.assertNotIn("PropertyStore::Commit", inspection)
+
+    def test_endpoint_format_blob_is_bounds_checked_before_serialization(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        serializer = harness_text[
+            harness_text.index("std::string SerializeWaveFormat") : harness_text.index(
+                "HRESULT WriteAudioEndpointCapabilities"
+            )
+        ]
+        inspection = harness_text[
+            harness_text.index("HRESULT WriteAudioEndpointCapabilities") : harness_text.index(
+                "HRESULT RunNativeRendererProbe"
+            )
+        ]
+
+        self.assertIn("available_bytes", serializer)
+        self.assertIn("available_bytes - sizeof(WAVEFORMATEX)", serializer)
+        self.assertIn("device_format.blob.cbSize", inspection)
+        self.assertIn("SerializeWaveFormat(", inspection)
+
+    def test_native_probe_accepts_directshow_intermediate_success_before_get_state(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        classifier = harness_text[
+            harness_text.index("NativeProbeState ClassifyNativeProbe") : harness_text.index(
+                "struct Task4TrendEvidence"
+            )
+        ]
+        playback = harness_text[
+            harness_text.index("void RunNativeInitialPlayback") : harness_text.index(
+                "struct NativeSeekEvidence"
+            )
+        ]
+
+        self.assertIn("SUCCEEDED(value.pause_call_status)", classifier)
+        self.assertIn("SUCCEEDED(value.run_call_status)", classifier)
+        self.assertIn("SUCCEEDED(result->pause_call_status)", playback)
+        self.assertIn("SUCCEEDED(result->run_call_status)", playback)
+
+    def test_native_probe_records_midstream_renderer_delivery_witness(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        playback = harness_text[
+            harness_text.index("struct NativePlaybackEvidence") : harness_text.index(
+                "struct NativeSeekEvidence"
+            )
+        ]
+        classifier = harness_text[
+            harness_text.index("NativeProbeState ClassifyNativeProbe") : harness_text.index(
+                "struct Task4TrendEvidence"
+            )
+        ]
+
+        for required in (
+            "midstream_renderer_stats_status",
+            "midstream_last_buffer_duration",
+            "WaitForCompletion(100",
+            "INITIAL_STREAM_OBSERVED",
+        ):
+            self.assertIn(required, harness_text)
+        self.assertIn("NativeProbeState::InitialStreamObserved", classifier)
+        self.assertIn("CaptureNativeRendererStats", playback)
+
+    def test_controlled_sink_emits_complete_exact_transport_contract(self) -> None:
+        harness_text = HARNESS.read_text(encoding="utf-8")
+        controlled = harness_text[
+            harness_text.index("HRESULT RunPositiveControlledCase") : harness_text.index(
+                "HRESULT RunDynamicRejectionTrap"
+            )
+        ]
+
+        for required in (
+            "channel_order=%hs",
+            "sample_rate=%lu",
+            "block_align=%u",
+            "avg_bytes_per_sec=%lu",
+            "actual_frame_size=%u",
+            "checked_buffer_sizing=1",
+            "full_interleaved_oracle_equal=1",
+            "per_channel_oracle_equal=1",
+            "fallback_proposals=0",
+            "type_mutations=0",
+        ):
+            self.assertIn(required, controlled)
+
     def test_task3_requires_isolated_stock_passthrough_lifecycle_and_live_status_evidence(self) -> None:
         script_text = SCRIPT.read_text(encoding="utf-8")
         harness_text = HARNESS.read_text(encoding="utf-8")
