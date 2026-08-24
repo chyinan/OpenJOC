@@ -54,6 +54,37 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:LAVAudioIdentitySmoke.exe /link ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
+call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+  "%~2\decoder\LAVAudio\LAVAudioResourceIdentitySmoke.cpp" ^
+  /Fe:LAVAudioResourceIdentitySmoke.exe /link user32.lib
+if errorlevel 1 exit /b %errorlevel%
+
+call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
+  "%~2\decoder\LAVAudio\OpenJocSettingsSmoke.cpp" ^
+  /Fe:OpenJocSettingsSmoke.exe /link advapi32.lib ole32.lib strmiids.lib
+if errorlevel 1 exit /b %errorlevel%
+
+call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
+  "%~2\decoder\LAVAudio\OpenJocPropertyPageSmoke.cpp" ^
+  /Fe:OpenJocPropertyPageSmoke.exe /link comctl32.lib ole32.lib oleaut32.lib strmiids.lib user32.lib
+if errorlevel 1 exit /b %errorlevel%
+
+call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+  "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
+  "/I%~2\common\baseclasses" "/I%~2\ffmpeg" "/I%~2\libbluray\src" ^
+  "/I%~2\common\DSUtilLite" ^
+  "%~2\decoder\LAVAudio\AudioStatusCapacityTests.cpp" ^
+  /Fe:AudioStatusCapacityTests.exe
+if errorlevel 1 exit /b %errorlevel%
+
+call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+  "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\ffmpeg" ^
+  "%~2\decoder\LAVAudio\OpenJocShippedLayoutsTests.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocShippedLayouts.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
+  /Fe:OpenJocShippedLayoutsTests.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib
+if errorlevel 1 exit /b %errorlevel%
+
 call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
   "%~4" /Fe:OpenJocDirectShowLifecycle.exe /link ole32.lib strmiids.lib
 exit /b %errorlevel%
