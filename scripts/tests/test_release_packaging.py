@@ -22,6 +22,7 @@ from release_packaging import (  # noqa: E402
     LAV_METADATA_FILES,
     LAV_MODIFIED_FILES,
     LAV_NEW_FILES,
+    LAV_UPSTREAM_BASE,
     _copy_onboarding_source,
     _prepare_binary_base,
     _write_text,
@@ -78,6 +79,14 @@ EXPECTED_LAV_MODIFIED_FILES = {
 class ReleasePackagingTests(unittest.TestCase):
     def test_canonical_release_version_is_v012(self) -> None:
         self.assertEqual(CANONICAL_RELEASE_VERSION, "0.12.0")
+
+    def test_reproducibility_manifest_uses_frozen_lav_upstream_base(self) -> None:
+        self.assertEqual(
+            LAV_UPSTREAM_BASE,
+            "fefb6987994ed56e4525e8a125f5fbb53707bc52",
+        )
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"lav_upstream_base": LAV_UPSTREAM_BASE', source)
 
     def test_corresponding_source_tracks_every_new_openjoc_lav_file(self) -> None:
         self.assertEqual(set(LAV_NEW_FILES), EXPECTED_LAV_NEW_FILES)

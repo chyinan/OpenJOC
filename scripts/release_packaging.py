@@ -25,6 +25,7 @@ from release_packaging_core import (
 
 
 CANONICAL_RELEASE_VERSION = "0.12.0"
+LAV_UPSTREAM_BASE = "fefb6987994ed56e4525e8a125f5fbb53707bc52"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",
     "common/genversion.bat",
@@ -188,8 +189,7 @@ def _collect_reproducibility_metadata(
 ) -> dict[str, str]:
     """Derive release identity from the exact repositories being staged."""
 
-    lav_parent = _git_output(git, lav, ("rev-list", "--parents", "-n", "1", "HEAD"))
-    lav_parent_revision = lav_parent.split()[1] if len(lav_parent.split()) > 1 else "unknown"
+    _git_output(git, lav, ("merge-base", "--is-ancestor", LAV_UPSTREAM_BASE, "HEAD"))
     submodules = {}
     for line in _git_output(git, lav, ("submodule", "status", "--recursive")).splitlines():
         fields = line.strip().lstrip("+-").split()
@@ -204,7 +204,7 @@ def _collect_reproducibility_metadata(
         "openjoc_rustc": rustc_version,
         "lav_revision": _git_output(git, lav, ("rev-parse", "HEAD")).strip(),
         "lav_branch": _git_output(git, lav, ("branch", "--show-current")).strip(),
-        "lav_upstream_base": lav_parent_revision,
+        "lav_upstream_base": LAV_UPSTREAM_BASE,
         "ffmpeg_revision": _git_output(git, lav / "ffmpeg", ("rev-parse", "HEAD")).strip(),
         "ffmpeg_libbluray_revision": submodules.get("libbluray", "unknown"),
         "ffmpeg_libudfread_revision": submodules.get(
