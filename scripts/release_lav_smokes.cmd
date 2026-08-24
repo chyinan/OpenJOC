@@ -59,11 +59,17 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:LAVAudioResourceIdentitySmoke.exe /link user32.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /DPSAPI_VERSION=2 ^
-  "/I%~2\common\baseclasses" ^
+call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
+  /DUNICODE /D_UNICODE /DLAV_ENABLE_OPENJOC ^
+  "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
+  "/I%~2\common\baseclasses" "/I%~2\common\DSUtilLite" "/I%~2\ffmpeg" "/I%~3" ^
   "%~2\decoder\LAVAudio\OpenJocDirectShowNegotiationSmoke.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocDecoder.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocAdmission.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
   /Fe:OpenJocDirectShowNegotiationSmoke.exe ^
-  /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib uuid.lib winmm.lib bcrypt.lib
+  /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib uuid.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
 call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^

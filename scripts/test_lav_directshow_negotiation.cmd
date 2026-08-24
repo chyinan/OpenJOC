@@ -236,11 +236,23 @@ if "%PRISTINE_FFMPEG_COUNT%"=="0" (
 
 pushd "%HARNESS_OUTPUT_DIR%"
 if errorlevel 1 exit /b 1
-call cl /nologo /EHsc /std:c++17 /O2 /MT /DPSAPI_VERSION=2 ^
+call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
+  /DUNICODE /D_UNICODE /DLAV_ENABLE_OPENJOC ^
+  "/I%TARGET_LAV_ROOT%\decoder\LAVAudio" ^
+  "/I%TARGET_LAV_ROOT%\include" ^
+  "/I%TARGET_LAV_ROOT%\common\includes" ^
   "/I%TARGET_LAV_ROOT%\common\baseclasses" ^
+  "/I%TARGET_LAV_ROOT%\common\DSUtilLite" ^
+  "/I%TARGET_LAV_ROOT%\ffmpeg" ^
+  "/I%OPENJOC_INCLUDE%" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocDirectShowNegotiationSmoke.cpp" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocDecoder.cpp" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocAdmission.cpp" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocOutput.cpp" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
   /Fe:OpenJocDirectShowNegotiationSmoke.exe ^
-  /link "/LIBPATH:%TARGET_BUILD_DIR%" strmbase.lib strmiids.lib ole32.lib uuid.lib winmm.lib bcrypt.lib
+  /link "/LIBPATH:%TARGET_BUILD_DIR%" "/LIBPATH:%TARGET_LAV_ROOT%\bin_x64\lib" ^
+  strmbase.lib strmiids.lib ole32.lib uuid.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b 1
 
 copy /y "%HARNESS_OUTPUT_DIR%\OpenJocDirectShowNegotiationSmoke.exe" ^
@@ -262,6 +274,8 @@ if errorlevel 1 exit /b 1
 call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --self-test "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" target
 if errorlevel 1 exit /b 1
 call "%PRISTINE_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --self-test "%PRISTINE_RUNTIME_DIR%" "%PRISTINE_RUNTIME_MANIFEST%" pristine
+if errorlevel 1 exit /b 1
+call "%TARGET_RUNTIME_DIR%\OpenJocDirectShowNegotiationSmoke.exe" --controlled-sink "%TARGET_RUNTIME_DIR%" "%TARGET_RUNTIME_MANIFEST%" "%FIXTURE_DIR%"
 exit /b %errorlevel%
 
 :build_lane

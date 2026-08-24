@@ -12,6 +12,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "test_lav_directshow_negotiation.cmd"
+RELEASE_SMOKES = ROOT / "scripts" / "release_lav_smokes.cmd"
 FIXTURE_SCRIPT = ROOT / "scripts" / "generate-player-fixtures.sh"
 RUST_BRIDGE = ROOT / "crates" / "openjoc-ffmpeg" / "src" / "lib.rs"
 LAV_ROOT = pathlib.Path(r"D:\Program\LAVFilters-OpenJOC")
@@ -19,6 +20,12 @@ HARNESS = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocDirectShowNegotiationSmoke
 
 
 class LavDirectShowNegotiationScriptTests(unittest.TestCase):
+    def test_batch_entrypoints_use_crlf_for_cmd_label_dispatch(self) -> None:
+        for script in (SCRIPT, RELEASE_SMOKES):
+            data = script.read_bytes()
+            self.assertIn(b"\r\n", data, script)
+            self.assertNotIn(b"\n", data.replace(b"\r\n", b""), script)
+
     def test_declares_exact_seven_argument_contract_and_frozen_pristine_identity(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
 
@@ -170,6 +177,67 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("STREAM_PROVEN", text)
         self.assertNotIn("physical_subwoofer_count", text)
         self.assertNotIn("SetDllDirectory", text)
+
+    def test_harness_runs_exact_controlled_sink_matrix_with_compiled_oracle(self) -> None:
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        release_text = RELEASE_SMOKES.read_text(encoding="utf-8")
+        harness_text = HARNESS.read_text(encoding="utf-8")
+
+        self.assertIn("--controlled-sink", script_text)
+        self.assertIn("OpenJocDecoder.cpp", script_text)
+        self.assertIn("OpenJocAdmission.cpp", script_text)
+        self.assertIn("OpenJocOutput.cpp", script_text)
+        self.assertIn("OpenJocStrictOutput.cpp", script_text)
+        self.assertIn("avutil-lav.lib", script_text)
+        self.assertIn("joc.fingerprint.ec3", script_text)
+        self.assertIn("joc.fingerprint.mp4", script_text)
+        for required in (
+            "OpenJocDirectShowNegotiationSmoke.cpp",
+            "OpenJocDecoder.cpp",
+            "OpenJocAdmission.cpp",
+            "OpenJocOutput.cpp",
+            "OpenJocStrictOutput.cpp",
+            "avutil-lav.lib",
+        ):
+            self.assertIn(required, release_text)
+
+        self.assertIn("class StrictCaptureSink", harness_text)
+        self.assertIn("ReceiveConnection", harness_text)
+        self.assertIn("QueryAccept", harness_text)
+        self.assertIn("GetAllocatorRequirements", harness_text)
+        self.assertIn("NotifyAllocator", harness_text)
+        self.assertIn("GetMediaType", harness_text)
+        self.assertIn("LAVOpenJocDecoder", harness_text)
+        self.assertIn("ConnectDirect", harness_text)
+        self.assertIn("IFileSourceFilter", harness_text)
+        self.assertIn("ILAVFSettings", harness_text)
+        self.assertIn("ILAVAudioSettings", harness_text)
+        self.assertIn("SetRuntimeConfig(TRUE)", harness_text)
+        self.assertIn("MEDIASUBTYPE_DOLBY_DDPLUS", harness_text)
+        self.assertIn("GraphContainsExactly(graph.get(), 3)", harness_text)
+        self.assertIn("WaitForSinkQuiescence", harness_text)
+        self.assertIn("kQuietWindowMs = 3000", harness_text)
+        self.assertIn("running_after_quiescence", harness_text)
+        self.assertNotIn("WaitForTerminalGraphFailure", harness_text)
+        self.assertIn("GetActualDataLength", harness_text)
+        self.assertIn("GetSize()", harness_text)
+        self.assertIn("sample_contracts_valid", harness_text)
+        self.assertIn("allocator_contract_valid", harness_text)
+        self.assertIn("FIXTURE_IDENTITY", harness_text)
+        self.assertIn("fixture_sha256", harness_text)
+        strict_builder_begin = harness_text.index("CMediaType BuildStrictTarget")
+        strict_builder_end = harness_text.index("CMediaType BuildPcmType", strict_builder_begin)
+        self.assertNotIn(
+            "BuildLAVOpenJocStrictMediaType",
+            harness_text[strict_builder_begin:strict_builder_end],
+        )
+        self.assertIn("MkParseDisplayName", harness_text)
+        self.assertIn("BindToObject", harness_text)
+        self.assertIn("CONTROLLED_SINK_COMPLETE", harness_text)
+        self.assertIn("UNVERIFIED: controlled-sink matrix failed", harness_text)
+        self.assertNotIn("SUPPORTED", harness_text)
+        self.assertNotIn("UNSUPPORTED", harness_text)
+        self.assertNotIn("STREAM_PROVEN", harness_text)
 
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(
