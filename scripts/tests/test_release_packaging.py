@@ -59,6 +59,7 @@ EXPECTED_LAV_NEW_FILES = {
 }
 EXPECTED_LAV_MODIFIED_FILES = {
     "common/DSUtilLite/growarray.h",
+    "common/genversion.bat",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
     "decoder/LAVAudio/AudioSettingsProp.h",
@@ -95,8 +96,8 @@ class ReleasePackagingTests(unittest.TestCase):
                 "git",
                 "diff",
                 "--name-status",
+                "--ignore-submodules=all",
                 "fefb6987994ed56e4525e8a125f5fbb53707bc52",
-                "HEAD",
             ],
             cwd=lav,
             check=True,

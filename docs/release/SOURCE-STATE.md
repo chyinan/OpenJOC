@@ -12,7 +12,7 @@ SPDX-License-Identifier: Apache-2.0
 - libudfread revision: `139a2194525f2745b98a98e4d8fa627d07440176`
 - qsdecoder revision: `72e6b6a944460d3cbeffe13e78b88dd773a85602`
 
-The source candidate includes all 13 modified upstream LAV files, all 26 new
+The source candidate includes all 14 modified upstream LAV files, all 26 new
 OpenJOC LAV integration/contract/test/smoke source files, the three provenance
 and census resources, and a generated tracked-change patch. It also includes
 the complete OpenJOC Cargo workspace, including `tools/import-etsi-tables`.
@@ -20,7 +20,7 @@ the complete OpenJOC Cargo workspace, including `tools/import-etsi-tables`.
 The public downstream repository is
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC)
 with branch `openjoc-main`, downstream commit
-`fe8f36b49827dd0a253e8d0c45e95631cfed9c83`, and upstream base
+`724741d3ff1184cd0fd004d113362543c88d68ac`, and upstream base
 `fefb6987994ed56e4525e8a125f5fbb53707bc52`.
 The corresponding-source archive remains the authoritative full closure,
 including source components not represented by the public LAV fork.

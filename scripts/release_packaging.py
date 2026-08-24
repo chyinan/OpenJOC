@@ -27,6 +27,7 @@ from release_packaging_core import (
 CANONICAL_RELEASE_VERSION = "0.12.0"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",
+    "common/genversion.bat",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
     "decoder/LAVAudio/AudioSettingsProp.h",

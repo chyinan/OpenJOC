@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import unittest
 from pathlib import Path
 from xml.etree import ElementTree
@@ -37,6 +38,7 @@ NEW_LAV_FILES = (
 )
 MODIFIED_UPSTREAM_FILES = (
     "common/DSUtilLite/growarray.h",
+    "common/genversion.bat",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
     "decoder/LAVAudio/AudioSettingsProp.h",
@@ -55,6 +57,7 @@ MODIFIED_UPSTREAM_GPL_NOTICE_FILES = tuple(
     for relative in MODIFIED_UPSTREAM_FILES
     if relative
     not in {
+        "common/genversion.bat",
         "decoder/LAVAudio/LAVAudio.rc",
         "decoder/LAVAudio/LAVAudio.vcxproj",
         "decoder/LAVAudio/LAVAudio.vcxproj.filters",
@@ -63,6 +66,7 @@ MODIFIED_UPSTREAM_GPL_NOTICE_FILES = tuple(
 )
 V012_MODIFIED_UPSTREAM_FILES = {
     "common/DSUtilLite/growarray.h",
+    "common/genversion.bat",
     "decoder/LAVAudio/AudioSettingsProp.h",
     "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/PostProcessor.cpp",
@@ -78,6 +82,46 @@ def lav_root() -> Path:
 
 
 class LavReleaseNoticeTests(unittest.TestCase):
+    def test_genversion_handles_hyphenated_downstream_tags(self) -> None:
+        root = lav_root()
+        script_path = root / "common" / "genversion.bat"
+        script = script_path.read_text(encoding="utf-8")
+        self.assertIn("git describe --tags --abbrev^=0 HEAD", script)
+        self.assertIn("git rev-list --count", script)
+        self.assertNotIn("delims=-", script)
+
+        generated = root / "common" / "includes" / "version_rev.h"
+        previous = generated.read_bytes() if generated.exists() else None
+        try:
+            completed = subprocess.run(
+                ["cmd.exe", "/d", "/c", str(script_path)],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stderr.strip(), "")
+            tag = subprocess.check_output(
+                ["git", "describe", "--tags", "--abbrev=0", "HEAD"],
+                cwd=root,
+                text=True,
+            ).strip()
+            expected = subprocess.check_output(
+                ["git", "rev-list", "--count", f"{tag}..HEAD"],
+                cwd=root,
+                text=True,
+            ).strip()
+            self.assertEqual(
+                generated.read_text(encoding="ascii").strip(),
+                f"#define LAV_VERSION_BUILD {expected}",
+            )
+        finally:
+            if previous is None:
+                generated.unlink(missing_ok=True)
+            else:
+                generated.write_bytes(previous)
+
     def test_new_files_have_openjoc_copyright_and_gpl2_or_later_spdx(self) -> None:
         root = lav_root()
         for relative in NEW_LAV_FILES:
