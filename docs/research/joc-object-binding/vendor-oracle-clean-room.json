@@ -1,0 +1,16 @@
+{
+  "schema": "openjoc.joc-object-binding.vendor-oracle-clean-room.v1",
+  "provenance": "CLEAN_ROOM_VENDOR_ORACLE",
+  "barrier": "PASS",
+  "analyst_role": "CONTAMINATED_ANALYST",
+  "scope": "Only the missing decoded-JOC-output-ordinal to OAMD-object-ordinal edge.",
+  "observations": [
+    "The exact user-specified installation D:\\Software\\ghidra_12.1.2_PUBLIC exists; related historical project material was checked read-only and yielded no independently expressible binding rule.",
+    "Ordinary documented DRP metadata output exposes program/frame-level fields, not per-object PCM labels or OAMD slot IDs.",
+    "Documented WAV output is rendered speaker-feed audio; channel mapping does not expose object-slot identity.",
+    "Two controlled executions were byte-identical.",
+    "No candidate identity, permutation, skip, offset, reset, or selective-update rule was falsified or fitted."
+  ],
+  "negative_conclusion": "No lawful ordinary interface distinguished the required cross-domain edge; rendered WAV correlation would be after-the-fact fitting, not semantic proof.",
+  "repository_safety": "No reverse-engineered code, decompiled tables, addresses, symbols, or proprietary implementation details entered the repository."
+}

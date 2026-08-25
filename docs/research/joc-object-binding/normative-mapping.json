@@ -1,0 +1,49 @@
+{
+  "schema": "openjoc.joc-object-binding.normative-mapping.v1",
+  "research_branch": "codex/joc-decoded-object-binding",
+  "sources": [
+    {
+      "id": "TS103420-v1.2.1",
+      "title": "ETSI TS 103 420 V1.2.1",
+      "url": "https://www.etsi.org/deliver/etsi_ts/103400_103499/103420/01.02.01_60/ts_103420v010201p.pdf",
+      "sha256": "E532BFC4F8BE4A97C7C9CDD9F6BCC40634ECF8EF93A1DC490FCB15C16265DAA7",
+      "local_reference": "references/etsi/ts_103420v010201p.pdf"
+    },
+    {
+      "id": "TS103420-v1.1.1",
+      "title": "ETSI TS 103 420 V1.1.1",
+      "url": "https://www.etsi.org/deliver/etsi_TS/103400_103499/103420/01.01.01_60/ts_103420v010101p.pdf",
+      "sha256": "5E3F31E604A9CADCA79E7E8FEA2189CC570693BEA0742F3522943AB0E36FF738"
+    },
+    {
+      "id": "TS102366-v1.4.1",
+      "title": "ETSI TS 102 366 V1.4.1",
+      "url": "https://www.etsi.org/deliver/etsi_ts/102300_102399/102366/01.04.01_60/ts_102366v010401p.pdf",
+      "sha256": "0229E151DFD9F8CEC427F234798CAC679A66FDEC096FEECC4D5CE455BBE3CADF"
+    },
+    {
+      "id": "ITU-BS2076-3",
+      "title": "ITU-R BS.2076-3 (2025)",
+      "url": "https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.2076-3-202502-I!!PDF-E.pdf",
+      "sha256": "337E78D026331DD8A5CC89F2E87E32B1EF31AC2443A6D21D3B849E847A0C79A1"
+    }
+  ],
+  "findings": [
+    {"id":"N1.1","source":"TS103420-v1.2.1","clauses":["3.1"],"claim":"An audio object consists of object essence plus corresponding object properties.","answer":"SUPPORTS_DECODED_OBJECT_ESSENCE","classification":"EXPLICIT"},
+    {"id":"N1.2","source":"TS103420-v1.2.1","clauses":["4.3","4.4"],"claim":"The decoder interface pairs decoded object essence audio with timestamped updates for corresponding properties.","answer":"SUPPORTS_SEMANTIC_OBJECT_OUTPUT","classification":"EXPLICIT"},
+    {"id":"N1.3","source":"TS103420-v1.2.1","clauses":["6.1","6.4.2"],"claim":"JOC reconstructs an ordered set of output objects and exposes one matrix domain per output object.","answer":"SUPPORTS_ORDERED_JOC_DOMAIN","classification":"EXPLICIT"},
+    {"id":"N1.4","source":"TS103420-v1.2.1","clauses":["6.6.2","6.6.6"],"claim":"Object processing iterates declared output-object slots and matrix reconstruction emits those slots.","answer":"SUPPORTS_ORDINAL_PRESERVATION","classification":"EXPLICIT"},
+    {"id":"N1.5","source":"TS103420-v1.2.1","clauses":["6.3.3.3"],"claim":"Presence and sequence side information controls decoding state, not authored cross-payload identity.","answer":"NO_CROSS_DOMAIN_ID","classification":"PARTIAL"},
+    {"id":"N1.6","source":"TS103420-v1.2.1","clauses":["6.3.2.2","Table 47"],"claim":"LFE is bypassed rather than processed by JOC.","answer":"LFE_BYPASS_ONLY","classification":"EXPLICIT"},
+    {"id":"N1.7","source":"TS103420-v1.2.1","clauses":["5.5.5","5.6.4.8"],"claim":"OAMD retains object entries and defines bed, ISF, then dynamic ordering locally.","answer":"SUPPORTS_LOCAL_OAMD_ORDER","classification":"EXPLICIT"},
+    {"id":"N1.8","source":"TS103420-v1.2.1","clauses":["5.3"],"claim":"Metadata updates use shared frame/sample timing and sample offsets.","answer":"SUPPORTS_TIMELINE_ALIGNMENT","classification":"EXPLICIT"},
+    {"id":"N1.9","source":"TS102366-v1.4.1","clauses":["H.2.2.3"],"claim":"The companion timing description aligns metadata updates with PCM sample timing.","answer":"SUPPORTS_TIMELINE_ALIGNMENT","classification":"EXPLICIT"},
+    {"id":"N1.10","source":"TS103420-v1.2.1","clauses":["5.6.4.8","6.3.2.2"],"claim":"No clause equates JOC output count with OAMD count after any LFE offset.","answer":"NO_COUNT_OR_OFFSET_RULE","classification":"ABSENT"},
+    {"id":"N1.11","source":"TS103420-v1.2.1","clauses":["5.6.4.8","6.4.2"],"claim":"No numeric permutation, skip, or identifier maps an OAMD entry to a JOC output slot.","answer":"NO_CROSS_PAYLOAD_BINDING_RULE","classification":"ABSENT"},
+    {"id":"N1.12","source":"TS103420-v1.2.1","clauses":["6.3.3.3","6.6.5"],"claim":"Reset/splice handling initializes state but does not define persistent authored object identity.","answer":"NO_RESET_IDENTITY_RULE","classification":"ABSENT"},
+    {"id":"N1.13","source":"TS103420-v1.2.1","clauses":["Annex B"],"claim":"The informative ADM guidance explains metadata timing and coordinate conversion, not a JOC PCM row identity map.","answer":"GUIDANCE_NOT_BINDING","classification":"PARTIAL"},
+    {"id":"N1.14","source":"TS103420-v1.2.1","clauses":["8.2","Tables 55-56"],"claim":"OAMD and JOC payloads share an EMDF configuration context and frame cadence.","answer":"SHARED_PAYLOAD_CONTEXT_ONLY","classification":"EXPLICIT"},
+    {"id":"N1.15","source":"TS103420-v1.2.1","clauses":["all reviewed"],"claim":"The reviewed normative material does not state the required JOC-output-to-OAMD-object identity operation.","answer":"BINDING_UNSPECIFIED","classification":"AMBIGUOUS"}
+  ],
+  "conclusion": "Public semantics are partial: decoded JOC output is object essence and each domain preserves order, but the cross-domain object identity edge is unspecified."
+}

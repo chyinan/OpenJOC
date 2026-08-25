@@ -1,0 +1,28 @@
+{
+  "schema": "openjoc.joc-object-binding.binding-decision.v1",
+  "classification": "BINDING_BLOCKED_BY_PROPRIETARY_IMPLEMENTATION",
+  "public_mapping": "PARTIAL",
+  "semantic_class": "DECODED_OBJECT_ESSENCE",
+  "hypotheses": [
+    {"id":"H0","claim":"identity is ordinal n -> n after any documented LFE handling","status":"ALIVE"},
+    {"id":"H1","claim":"a fixed permutation maps JOC rows to OAMD entries","status":"ALIVE"},
+    {"id":"H2","claim":"LFE or bed entries introduce a skip/offset","status":"ALIVE"},
+    {"id":"H3","claim":"identity changes at splice/reset or topology transitions","status":"ALIVE"},
+    {"id":"H4","claim":"identity requires a proprietary implementation contract","status":"ALIVE"},
+    {"id":"H5","claim":"no cross-payload identity is exposed by the public contract","status":"ALIVE"}
+  ],
+  "gates": {
+    "A_public_normative": "FAIL_FOR_EXACT_EDGE",
+    "B_source_and_existing_corpus": "PASS_FOR_STRUCTURAL_ORDER_ONLY",
+    "C_bounded_vendor_oracle": "PASS_FOR_NON_OBSERVABILITY; DOES_NOT_DISTINGUISH_H0_H5"
+  },
+  "blocker": "JOC_OUTPUT_INDEX_TO_OAMD_INDEX_UNSPECIFIED",
+  "binding_rule": null,
+  "required_to_reopen": [
+    "a public or sanitized reproducible per-object association",
+    "explicit LFE/bed handling and count-mismatch policy",
+    "reset/splice and absent-entry identity behavior",
+    "metadata-to-PCM timeline ownership"
+  ],
+  "implementation_decision": "Do not enable dynamic reconstructed ADM; retain strict fail-closed unresolved semantic state."
+}

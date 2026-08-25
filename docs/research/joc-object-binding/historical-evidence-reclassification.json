@@ -1,0 +1,11 @@
+{
+  "schema": "openjoc.joc-object-binding.historical-evidence.v1",
+  "items": [
+    {"source":"J2R1 authored fixed-row falsification","classification":"IRRELEVANT_TO_WITHIN_CARRIER_BINDING","reason":"Tests a fixed row occupancy hypothesis, not decoded-row identity against an OAMD trajectory."},
+    {"source":"J2R1 FL/FR occupancy swap","classification":"AMBIGUOUS","reason":"A channel-row swap is compatible with multiple joint-coding interpretations."},
+    {"source":"J2R1 context-conditioned support","classification":"CONSISTENT_WITH_JOINT_CODING","reason":"Context behavior does not supply a cross-payload identifier."},
+    {"source":"J2R4 corpus slot census","classification":"AMBIGUOUS","reason":"Observes 13 slots across 9 carriers without causal identity evidence."},
+    {"source":"Existing ADM bridge reports","classification":"DOES_NOT_CLOSE_GATE","reason":"The bridge deliberately reports unresolved semantic binding and emits no verified dynamic association."}
+  ],
+  "negative_result": "No historical report demonstrates a trajectory continuing on a known JOC row through OAMD reordering, absence/compaction, or reset."
+}

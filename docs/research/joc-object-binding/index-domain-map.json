@@ -1,0 +1,23 @@
+{
+  "schema": "openjoc.joc-object-binding.index-domain-map.v1",
+  "domains": [
+    {"name":"JocSyntaxObjectOrdinal","path":"crates/openjoc-joc/src/parser.rs","relation":"EXACT_BY_CODE","detail":"Declared object slots are iterated and retained, including absent entries."},
+    {"name":"JocFrame.objects","path":"crates/openjoc-joc/src/parser.rs","relation":"EXACT_BY_CODE","detail":"Parser output preserves syntax ordinal."},
+    {"name":"DecoderState.previous_matrices","path":"crates/openjoc-joc/src/decoder.rs","relation":"EXACT_BY_CODE","detail":"State vectors are indexed by decoded object slot and reset without permutation."},
+    {"name":"ReconstructionOutput.rows","path":"crates/openjoc-joc/src/decoder.rs","relation":"EXACT_BY_CODE","detail":"Matrix/reconstruction rows are emitted in decoded-object order."},
+    {"name":"ReconstructionOutputTimeline.reconstruction_rows","path":"crates/openjoc-joc/src/timeline.rs","relation":"EXACT_BY_CODE","detail":"Rows remain ordered while frame latency and tail are applied."},
+    {"name":"ObjectScene.reconstruction_basis.rows","path":"crates/openjoc-scene/src/assembly.rs","relation":"EXACT_BY_CODE","detail":"Scene assembly zips rows by row index and does not claim authored identity."},
+    {"name":"Adm TrackKind::Reconstruction(index)","path":"crates/openjoc-adm/src/lib.rs","relation":"EXACT_BY_CODE","detail":"ADM track construction retains reconstruction row order."},
+    {"name":"OamdPayload.object_classes","path":"crates/openjoc-oamd/src/lib.rs","relation":"EXACT_BY_CODE","detail":"OAMD object entries retain local payload ordinal, including inactive entries."},
+    {"name":"ProgrammeLayout.dynamic_slot_index","path":"crates/openjoc-scene/src/layout.rs","relation":"EXACT_BY_CODE","detail":"Local expansion counts dynamic anchors and separates base LFE."},
+    {"name":"JocOutputOrdinal -> OamdObjectOrdinal","path":"crates/openjoc-scene/src/binding.rs","relation":"UNKNOWN","detail":"No verified identifier, permutation, skip, offset, or mismatch policy exists."},
+    {"name":"ProgrammeLayout binding as semantic identity","path":"crates/openjoc-scene/src/layout.rs","relation":"ASSUMED_IF_USED_AS_BINDING","detail":"Count/order compatibility is structural and cannot close the semantic gate."}
+  ],
+  "explicit_non_edges": [
+    "equal counts do not prove identity",
+    "LFE bypass does not define an ordinal subtraction rule",
+    "metadata timing alignment does not define object identity",
+    "preserved decoder order does not identify authored OAMD objects"
+  ],
+  "production_gate": "SemanticBindingState::Unresolved remains the safe state until the UNKNOWN edge is independently specified."
+}

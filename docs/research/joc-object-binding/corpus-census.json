@@ -1,0 +1,12 @@
+{
+  "schema": "openjoc.joc-object-binding.corpus-census.v1",
+  "command": "cargo run --locked -q -p openjoc-cli -- diagnose-oamd <carrier.ec3> -o <out> --all-access-units --trim-config-count 1 --json <report.json> --force",
+  "private_media_policy": "User-owned paths were read in place; no media were copied into the repository.",
+  "observations": [
+    {"carrier":"brainrot.ec3","access_units":3910,"first_oamd_count":16,"first_dynamic_count":15,"first_lfe_count":1,"first_bed_count":0,"first_isf_count":0,"first_active_dynamic_count":15,"first_joc_output_count":15,"first_joc_present_count":15,"profile":"OBSERVED_VENDOR_COMPAT","parse_deviation":"reserved OAMD warp mode 3; trim opaque/unresolved","json_sha256_run1":"CC58D4B1725E9203D5735D7B1208E125EF29FF80CA0524151D92EB04D4DCC15A7","json_sha256_run2":"CC58D4B1725E9203D5735D7B1208E125EF29FF80CA0524151D92EB04D4DCC15A7","deterministic_rerun":true},
+    {"carrier":"forever_friends.ec3","access_units":7773,"first_oamd_count":16,"first_dynamic_count":15,"first_lfe_count":1,"first_bed_count":0,"first_isf_count":0,"first_active_dynamic_count":15,"first_joc_output_count":15,"first_joc_present_count":15,"profile":"OBSERVED_VENDOR_COMPAT","parse_deviation":"reserved OAMD warp mode 3; trim opaque/unresolved","json_sha256":"FFEDC693178AE4D2B120D0E9609FAAEFB772B0C981408771273BBC4BEDA6C346"},
+    {"carrier":"grand_escape.ec3","access_units":10599,"first_oamd_count":16,"first_dynamic_count":15,"first_lfe_count":1,"first_bed_count":0,"first_isf_count":0,"first_active_dynamic_count":15,"first_joc_output_count":15,"first_joc_present_count":15,"profile":"OBSERVED_VENDOR_COMPAT","parse_deviation":"reserved OAMD warp mode 3; trim opaque/unresolved","json_sha256":"7AC448FD0596CBF126FEFA2B85A151A651B51878BE3C6DC931DE1744253631A9"},
+    {"carrier":"hitchcock.ec3","access_units":7146,"first_oamd_count":16,"first_dynamic_count":15,"first_lfe_count":1,"first_bed_count":0,"first_isf_count":0,"first_active_dynamic_count":15,"first_joc_output_count":15,"first_joc_present_count":15,"profile":"OBSERVED_VENDOR_COMPAT","parse_deviation":"reserved OAMD warp mode 3; trim opaque/unresolved","json_sha256":"8B5F9C8BDF4BBF5E3E67923DF21D299CF61D4C11BEA257523E2F00718B886615"}
+  ],
+  "interpretation": "All four carriers show count compatibility and stable structural layout only; none identifies a cross-payload semantic binding."
+}
