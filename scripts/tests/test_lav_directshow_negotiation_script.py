@@ -242,6 +242,8 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
             "joc.lifecycle.mp4",
             "export_synthetic_joc_lifecycle_fixture_when_requested",
             "setts=time_base=1/48000:pts=N*1536:dts=N*1536:duration=1536",
+            "ffmpeg -hide_banner -h bsf=setts",
+            "prescale=1",
             "ffprobe",
         ):
             self.assertIn(required, fixture_text + rust_text)

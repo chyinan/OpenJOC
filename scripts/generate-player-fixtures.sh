@@ -121,8 +121,12 @@ OPENJOC_LIFECYCLE_JOC_PATH="$output/joc.lifecycle.ec3" \
     cargo test -p openjoc-ffmpeg --lib \
     tests::export_synthetic_joc_lifecycle_fixture_when_requested \
     -- --exact --nocapture
+lifecycle_setts='setts=time_base=1/48000:pts=N*1536:dts=N*1536:duration=1536'
+if ffmpeg -hide_banner -h bsf=setts 2>&1 | grep -F -- '-prescale' >/dev/null; then
+    lifecycle_setts="${lifecycle_setts}:prescale=1"
+fi
 ffmpeg -v error -f eac3 -i "$output/joc.lifecycle.ec3" -map 0:a:0 -c:a copy \
-    -bsf:a 'setts=time_base=1/48000:pts=N*1536:dts=N*1536:duration=1536' \
+    -bsf:a "$lifecycle_setts" \
     -f mp4 -y "$output/joc.lifecycle.mp4"
 verify_exact_mp4_payload "$output/joc.lifecycle.ec3" \
     "$output/joc.lifecycle.mp4" joc-lifecycle
