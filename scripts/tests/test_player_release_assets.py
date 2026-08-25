@@ -7,6 +7,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAYER_MANIFEST = ROOT / "packaging" / "player" / "PLAYER_PACKAGE_MANIFEST.json"
+PLAYER_WORKFLOW = ROOT / ".github" / "workflows" / "player-packaging.yml"
+
+
 class PlayerReleaseAssetTests(unittest.TestCase):
     def test_player_manifest_uses_project_release_version_in_all_archive_names(self) -> None:
         cargo_text = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
@@ -21,6 +24,11 @@ class PlayerReleaseAssetTests(unittest.TestCase):
         for platform in manifest["platforms"].values():
             self.assertIn(f"openjoc-mpv-{cargo_version}-", platform["archive"])
             self.assertIn(f"openjoc-mpv-{cargo_version}-", platform["development_archive"])
+
+    def test_windows_fixture_environment_installs_cmp_provider(self) -> None:
+        workflow = PLAYER_WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("            diffutils\n", workflow)
 
 if __name__ == "__main__":
     unittest.main()

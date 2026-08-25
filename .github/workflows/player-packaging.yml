@@ -255,6 +255,7 @@ jobs:
             unzip
             python
             make
+            diffutils
             pkgconf
             meson
             ninja
