@@ -248,6 +248,8 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         ):
             self.assertIn(required, fixture_text + rust_text)
 
+        self.assertEqual(fixture_text.count('-bsf:a "$joc_setts"'), 2)
+
         self.assertIn("FINAL_LINKED_GAIN_LATENCY_SAMPLES", rust_text)
         self.assertIn("one_object_joc_with_sequence", rust_text)
         self.assertIn("SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT", rust_text)
