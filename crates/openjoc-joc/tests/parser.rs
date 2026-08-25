@@ -170,6 +170,61 @@ fn absent_object_has_no_conditional_fields_or_data() {
 }
 
 #[test]
+fn three_object_payload_retains_present_absent_present_ordinals() {
+    let mut bits = Vec::new();
+    push_bits(&mut bits, 0, 3); // 5-channel downmix
+    push_bits(&mut bits, 2, 6); // three objects
+    push_bits(&mut bits, 0, 3); // no extension
+    push_bits(&mut bits, 0, 3 + 5 + 10); // clip gains and sequence
+
+    for present in [true, false, true] {
+        push_bits(&mut bits, u64::from(present), 1);
+        if present {
+            push_bits(&mut bits, 0, 3); // one band
+            push_bits(&mut bits, 0, 1); // full matrix
+            push_bits(&mut bits, 0, 1); // 96 steps
+            push_bits(&mut bits, 0, 1); // smooth
+            push_bits(&mut bits, 0, 1); // one data point
+        }
+    }
+
+    let table = all_huffman_tables()[0];
+    for symbol in [40, 56] {
+        let codeword = codeword_for(table.nodes, symbol);
+        for _ in 0..5 {
+            bits.extend_from_slice(&codeword);
+        }
+    }
+
+    let frame = parse_joc_payload(&pack(bits)).expect("valid three-object payload");
+
+    assert_eq!(frame.header.object_count, 3);
+    assert_eq!(
+        frame
+            .objects
+            .iter()
+            .map(|object| object.present)
+            .collect::<Vec<_>>(),
+        [true, false, true]
+    );
+    assert!(frame.objects[1].data_points.is_empty());
+    for (object_index, expected_symbol) in [(0, 40), (2, 56)] {
+        let JocPayloadData::Full { matrix_symbols } =
+            &frame.objects[object_index].data_points[0].payload
+        else {
+            panic!("expected full matrix at object ordinal {object_index}");
+        };
+        assert_eq!(
+            matrix_symbols
+                .iter()
+                .map(|channel| channel[0].symbol)
+                .collect::<Vec<_>>(),
+            vec![expected_symbol; 5]
+        );
+    }
+}
+
+#[test]
 fn rejects_reserved_header_values_and_more_than_sixteen_objects() {
     for (downmix, objects, extension, expected) in [
         (5, 0, 0, JocParseError::ReservedDownmix { index: 5 }),

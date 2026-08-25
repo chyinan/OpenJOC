@@ -187,3 +187,31 @@ fn object_reconstruction_zeroes_outputs_and_performs_complex_matrix_multiply() {
         .expect("zero matrix");
     assert!(zero[0][0].iter().all(|sample| *sample == Complex64::ZERO));
 }
+
+#[test]
+fn object_reconstruction_preserves_three_matrix_ordinals_including_zero_middle_row() {
+    let inputs = vec![
+        vec![[Complex64::new(2.0, 3.0); 64]],
+        vec![[Complex64::new(-5.0, 7.0); 64]],
+    ];
+    let matrices = vec![
+        vec![vec![[1.0; 64]], vec![[0.0; 64]]],
+        vec![vec![[0.0; 64]], vec![[0.0; 64]]],
+        vec![vec![[0.0; 64]], vec![[1.0; 64]]],
+    ];
+
+    let output = reconstruct_objects(&inputs, &matrices).expect("matching dimensions");
+
+    assert_eq!(output.len(), 3);
+    assert!(
+        output[0][0]
+            .iter()
+            .all(|sample| *sample == Complex64::new(2.0, 3.0))
+    );
+    assert!(output[1][0].iter().all(|sample| *sample == Complex64::ZERO));
+    assert!(
+        output[2][0]
+            .iter()
+            .all(|sample| *sample == Complex64::new(-5.0, 7.0))
+    );
+}

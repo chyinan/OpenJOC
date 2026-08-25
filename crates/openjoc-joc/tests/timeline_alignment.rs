@@ -244,3 +244,77 @@ fn r2_timeline_reset_discards_stale_tail_and_preserves_lfe_ranges() {
     assert_eq!(tail[0].timeline.logical_start_sample, 1920);
     assert_eq!(tail[0].lfe_pcm.as_ref().expect("LFE").len(), 640);
 }
+
+#[test]
+fn r2_timeline_preserves_two_row_ordinals_across_frames_and_tail() {
+    let frame_samples = 640;
+    let programme_samples = frame_samples * 2;
+    let raw_rows = [
+        (0..programme_samples)
+            .map(|sample| sample as f64)
+            .collect::<Vec<_>>(),
+        (0..programme_samples)
+            .map(|sample| 10_000.0 + sample as f64 * 2.0)
+            .collect::<Vec<_>>(),
+    ];
+    let tail_rows = [
+        (0..QMF_LATENCY)
+            .map(|sample| 100_000.0 + sample as f64)
+            .collect::<Vec<_>>(),
+        (0..QMF_LATENCY)
+            .map(|sample| 200_000.0 + sample as f64 * 2.0)
+            .collect::<Vec<_>>(),
+    ];
+    let mut timeline = ReconstructionOutputTimeline::new();
+    let mut aligned = Vec::new();
+
+    for frame_index in 0..2 {
+        let start = frame_index * frame_samples;
+        let end = start + frame_samples;
+        aligned.extend(
+            timeline
+                .push_frame(
+                    frame_index as u64,
+                    48_000,
+                    start as u64,
+                    end as u64,
+                    &[vec![0.0; frame_samples]],
+                    &ReconstructionBasis {
+                        rows: raw_rows
+                            .iter()
+                            .map(|row| row[start..end].to_vec())
+                            .collect(),
+                    },
+                    None,
+                    false,
+                )
+                .expect("aligned frame"),
+        );
+    }
+    aligned.extend(
+        timeline
+            .finish(&ReconstructionBasis {
+                rows: tail_rows.to_vec(),
+            })
+            .expect("aligned tail"),
+    );
+
+    assert_eq!(aligned.len(), 2);
+    assert!(
+        aligned
+            .iter()
+            .all(|frame| frame.reconstruction_basis.rows.len() == 2)
+    );
+    for row_index in 0..2 {
+        let actual = aligned
+            .iter()
+            .flat_map(|frame| frame.reconstruction_basis.rows[row_index].iter().copied())
+            .collect::<Vec<_>>();
+        let expected = raw_rows[row_index][QMF_LATENCY..]
+            .iter()
+            .chain(&tail_rows[row_index])
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "reconstruction row {row_index}");
+    }
+}

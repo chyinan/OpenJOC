@@ -220,6 +220,43 @@ fn inactive_and_bed_objects_use_normative_defaults() {
 }
 
 #[test]
+fn inactive_dynamic_object_retains_its_middle_oamd_ordinal() {
+    let mut bits = Vec::new();
+    push(&mut bits, 0, 2); // sample offset 0
+    push(&mut bits, 0, 3); // one block
+    push(&mut bits, 0, 6); // block offset
+    push(&mut bits, 0, 2); // no ramp
+    push(&mut bits, 1, 1); // reserved data absent
+    full_dynamic_block(&mut bits, 2, Some(20));
+    push(&mut bits, 1, 1); // inactive middle object
+    push(&mut bits, 0, 1); // no additional table data
+    full_dynamic_block(&mut bits, 2, Some(40));
+
+    let decoded = parse_object_element(
+        &pack(bits),
+        &[
+            ObjectClass::Dynamic,
+            ObjectClass::Dynamic,
+            ObjectClass::Dynamic,
+        ],
+    )
+    .expect("three dynamic object ordinals");
+
+    assert_eq!(decoded.objects.len(), 3);
+    assert_eq!(
+        decoded
+            .objects
+            .iter()
+            .map(|updates| updates[0].active)
+            .collect::<Vec<_>>(),
+        [true, false, true]
+    );
+    assert_eq!(decoded.objects[0][0].basic.gain, Gain::Decibels(-6));
+    assert_eq!(decoded.objects[1][0].basic.gain, Gain::NegativeInfinity);
+    assert_eq!(decoded.objects[2][0].basic.gain, Gain::Decibels(-26));
+}
+
+#[test]
 fn rejects_truncation_and_reserved_syntax() {
     assert!(parse_object_element(&[0], &[ObjectClass::Dynamic]).is_err());
 

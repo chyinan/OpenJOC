@@ -57,6 +57,23 @@ fn frame(sequence_count: u16, object: JocObjectFrame) -> JocFrame {
     }
 }
 
+fn multi_frame(sequence_count: u16, objects: Vec<JocObjectFrame>) -> JocFrame {
+    let object_count = u8::try_from(objects.len()).expect("test object count");
+    JocFrame {
+        header: JocHeader {
+            downmix_index: 0,
+            channel_count: 5,
+            object_count_bits: object_count - 1,
+            object_count,
+            extension_index: 0,
+        },
+        clip_gain_x_bits: 0,
+        clip_gain_y_bits: 0,
+        sequence_count,
+        objects,
+    }
+}
+
 fn inputs() -> Vec<Vec<[Complex64; 64]>> {
     (1..=5)
         .map(|value| vec![[Complex64::new(f64::from(value), 0.0); 64]])
@@ -96,6 +113,57 @@ fn frame_pipeline_reuses_absent_state_and_resets_on_sequence_zero() {
             .iter()
             .all(|sample| *sample == Complex64::ZERO)
     );
+}
+
+#[test]
+fn three_object_state_keeps_an_absent_middle_ordinal_through_decode_and_reset() {
+    let mut state = JocDecoderState::new();
+    let first = state
+        .decode_frame(
+            &multi_frame(1, vec![full_object(1), full_object(5), full_object(10)]),
+            &inputs(),
+        )
+        .expect("three present objects");
+    assert_eq!(first.stages.len(), 3);
+    assert_eq!(
+        first
+            .stages
+            .iter()
+            .map(|stage| stage.as_ref().map(|stage| stage.quantized[0][0][0]))
+            .collect::<Vec<_>>(),
+        [Some(49), Some(53), Some(58)]
+    );
+
+    let next = state
+        .decode_frame(
+            &multi_frame(2, vec![full_object(2), absent_object(), full_object(11)]),
+            &inputs(),
+        )
+        .expect("absent middle object reuses its own state");
+    assert_eq!(
+        next.stages.iter().map(Option::is_some).collect::<Vec<_>>(),
+        [true, false, true]
+    );
+    assert_eq!(
+        next.reconstruction_qmf[1], first.reconstruction_qmf[1],
+        "the absent middle ordinal must retain matrix slot 1"
+    );
+    assert_ne!(next.reconstruction_qmf[0], first.reconstruction_qmf[0]);
+    assert_ne!(next.reconstruction_qmf[2], first.reconstruction_qmf[2]);
+
+    let reset = state
+        .decode_frame(
+            &multi_frame(0, vec![absent_object(), absent_object(), absent_object()]),
+            &inputs(),
+        )
+        .expect("sequence reset");
+    assert!(reset.state_reset);
+    assert_eq!(reset.reconstruction_qmf.len(), 3);
+    assert!(reset.reconstruction_qmf.iter().all(|row| {
+        row.iter()
+            .flatten()
+            .all(|sample| *sample == Complex64::ZERO)
+    }));
 }
 
 #[test]
