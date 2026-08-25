@@ -13,8 +13,9 @@ sponsored by Dolby Laboratories.
 The current release includes:
 
 - E-AC-3 JOC decoding and bounded reconstruction;
-- automatic OAMD/JOC bridge control within the documented unresolved semantic
-  boundary;
+- automatic OAMD/JOC bridge control for direct rendering within its documented
+  experimental boundary;
+- scoped reconstructed dynamic ADM export from decoded JOC Objects and OAMD;
 - speaker presets `2.0`, `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`,
   `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`;
 - custom speaker geometry with up to 64 output channels in caller-defined order;
@@ -124,10 +125,23 @@ two PCM channels.
 ## Reconstructed ADM interoperability
 
 `export-adm` writes a reconstructed RIFF/RF64 ADM BWF representation and an
-adjacent semantic report. It is not recovery of the original ADM master.
-Authored-object audio binding remains unresolved, so OpenJOC does not invent
-object identities, discarded source information, or Dolby authoring
-provenance.
+adjacent semantic report. For the explicitly admitted JOC binding profile,
+decoded JOC object audio is associated with its corresponding decoded OAMD
+movement metadata and exported as reconstructed dynamic ADM Objects. Those
+Objects may move because the JOC stream carries decoded position events.
+
+This reconstructs the object scene carried by JOC; it does not recover the
+original Atmos authoring master. The generated names, numbers, UIDs, and
+tracks are OpenJOC output identities. They are not proof that, for example,
+`OpenJOC Reconstructed JOC Object 04` is authored Object 04 from a DAW or ADM
+project. JOC is a lossy delivery representation, so quantization, object
+reorganization, discarded authoring data, and other transforms can make the
+reconstructed trajectory differ from the source automation.
+
+The dynamic binding is admitted only for the documented clean profile. Other
+profiles remain unresolved for dynamic binding: best-effort export keeps
+reconstructed Objects neutral/static and strict export rejects. See
+[ADM export](docs/ADM_EXPORT.md) for the exact profile and report semantics.
 
 The validated workflow is OpenJOC ADM import into Logic Pro followed by a
 Logic-authored re-export accepted by Dolby Encoding Engine. Direct DEE ingest
@@ -159,8 +173,14 @@ decode, spatial rendering, output semantics, and renderer state.
 
 ## Important boundaries
 
-- `ReconstructionBasis` rows are decoder coordinates, not verified
-  authored-object stems. `SemanticBindingState` remains `Unresolved`.
+- `ReconstructionBasis` rows are decoder coordinates, not authored-object
+  stems. Within the admitted profile, a row can carry decoded JOC Object
+  meaning for the current carrier; this never upgrades to authored-object
+  identity. Other profiles remain `SemanticBindingState::Unresolved`.
+- OpenJOC does not recover original DAW/Logic track identity, authored Object
+  numbering, ADM Object UIDs or names, source-stem PCM, unquantized
+  automation, programme/content hierarchy, authoring metadata, Dolby
+  authoring provenance, or a lossless JOC-to-ADM round trip.
 - OpenJOC does not claim Dolby renderer fidelity, bit-identical reference
   output, certification, or endorsement.
 - Ordinary E-AC-3 isolation and compressed passthrough remain explicit in
@@ -184,6 +204,8 @@ owner. In particular:
 - [Capabilities](docs/CAPABILITIES.md) owns current support status.
 - [Known limitations](docs/KNOWN_LIMITATIONS.md) owns current user-visible
   boundaries and non-claims.
+- [ADM export](docs/ADM_EXPORT.md) owns the canonical decoded-object binding
+  and reconstructed dynamic ADM explanation.
 - [Architecture](docs/ARCHITECTURE.md) owns the production data flow.
 - [JOC rendering](docs/JOC_RENDER.md) owns renderer and output behavior.
 - [CHANGELOG](CHANGELOG.md) owns release chronology.

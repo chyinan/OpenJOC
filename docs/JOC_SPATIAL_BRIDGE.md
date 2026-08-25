@@ -3,9 +3,13 @@
 ## JOC Spatial Bridge
 
 The stable functional API is `openjoc_scene::JocSpatialBridge`. Its current
-implementation maturity is **experimental**; its semantic binding state is
-**unresolved**; and its official runtime validation oracle is **not
-independently confirmed**. The bridge is opt-in and is not selected by
+implementation maturity is **experimental**; its codec-domain spatial
+operator remains **unresolved**; and its official runtime validation oracle
+is **not independently confirmed**. This unresolved state concerns the
+time-varying renderer operator and authored-source semantics. It does not
+contradict the separate scoped ADM export gate, which can bind decoded JOC
+object audio to decoded OAMD movement metadata for one exact carrier profile.
+The bridge is opt-in and is not selected by
 `ETSI_STRICT`, `OBSERVED_VENDOR_COMPAT`, or `AUTO`: those remain validation and
 profile-selection policies upstream of this spatial layer. A caller must
 construct the bridge, provide a `SpatialTopologySnapshot` (or reuse the current
@@ -70,8 +74,10 @@ The bridge implements the supported ordinary release domain:
 
 The descriptor's raw warp-3 field is preserved as opaque data and is never
 used as a projection input. Its public semantic meaning remains unresolved.
-The bridge does not make `SemanticBindingState` production-resolved, does not
-claim an official spatial oracle, and does not admit a vendor-fidelity result.
+The bridge does not make authored-object or renderer semantics production-
+resolved, does not claim an official spatial oracle, and does not admit a
+vendor-fidelity result. Its state is independent of the scoped decoded-object
+binding used by reconstructed ADM export.
 The current `render-joc` command composes this function with automatic
 decoded JOC/OAMD bridge-control assembly for experimental speaker output. A
 complete topology sidecar remains an optional explicit override/test input.
@@ -122,13 +128,20 @@ OpenJOC's primary product path is E-AC-3 JOC input, not WAV scene input:
 E-AC-3 JOC
     ↓
 decoder Base + ReconstructionBasis + OAMD
-    ↓
-JOC spatial reconstruction operator T(t)   ← unresolved
-    ↓
-ExplicitSpatialScene / matrix-domain renderer composition
-    ↓
-speaker or binaural PCM
+    ├── exact clean decoded-object gate
+    │       ↓
+    │   reconstructed dynamic ADM Objects
+    │
+    └── JOC spatial reconstruction operator T(t)   ← unresolved
+            ↓
+        ExplicitSpatialScene / matrix-domain renderer composition
+            ↓
+        speaker or binaural PCM
 ```
+
+The upper branch binds decoded carrier objects for reconstructed ADM only.
+The lower branch still lacks a resolved `T(t)` and does not identify authored
+Objects or source stems.
 
 The `render-scene` command and the `openjoc-render` crate remain useful
 caller-bound WAV/reference workflows. They are independent renderer oracles;
@@ -146,9 +159,10 @@ authored objects.
   `ProgrammeLayout` without treating its entries as audio bindings.
 - `SampleRange` gives every committed payload frame an absolute half-open
   sample interval. It is not reconstructed later from vector lengths.
-- `JocSpatialOperatorState::Unresolved` is the only production state in this
-  release. `JocSpatialFrameBridge::frame` borrows the current frame and allocates
-  no duration-sized copy.
+- `JocSpatialOperatorState::Unresolved` remains the only production state for
+  this bridge. `JocSpatialFrameBridge::frame` borrows the current frame and
+  allocates no duration-sized copy. This does not revoke the separate
+  carrier-local decoded-object binding used by reconstructed ADM.
 
 The bridge validates finite values, coordinate cardinality, row/channel
 lengths, `RcLfe` separation, and absolute timing before a consumer can inspect
@@ -241,7 +255,8 @@ RB-row/object or renderer semantic result.
 
 ## Boundaries retained
 
-- `SemanticBindingState` remains `Unresolved`.
+- The bridge's `JocSpatialOperatorState` remains `Unresolved`; the separate
+  ADM decoded-object gate does not resolve the bridge's renderer operator.
 - `RcLfe` remains separate from dynamic RB rows.
 - Dynamic-object count matching RB row count is dimensional compatibility only.
 - `ETSI_STRICT` still treats observed OAMD `warp=3` as

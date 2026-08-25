@@ -35,13 +35,23 @@ input/container ownership and access-unit delivery
           └── EMDF payloads
                   ├── OAMD ──► metadata objects and timed state
                   └── JOC  ──► reconstruction-basis rows
+                                      ├──► codec-domain JOC bridge
+                                      │       (T(t) remains unresolved)
                                       │
-                                      ▼
-                         codec-domain JOC bridge (T(t) unresolved)
-                                       │
-                                       ▼
-                              metadata-only ObjectScene
+                                      └──► exact clean binding gate
+                                               │
+                                               ▼
+                                      bound decoded JOC Objects
+                                               │
+                                               ▼
+                                      reconstructed dynamic ADM
 ```
+
+The binding branch is deliberately narrower than the decoder and renderer
+branches. OAMD supplies decoded dynamic metadata; JOC supplies decoded object
+audio rows. Only the exact admitted carrier profile pairs them. Other scene
+consumers still receive metadata and decoder-coordinate rows without an
+automatic authored-object interpretation.
 
 The `render-joc` workflow adds an explicit experimental speaker branch after
 the decoded component boundary:
@@ -120,25 +130,30 @@ parsing. No production alias, offset, or trim guess is present.
 
 ### Scene and binding
 
-`ObjectScene` is metadata-only. Its metadata objects and timed positions are
-not automatically associated with audio rows. `SemanticBindingState` remains
+`ObjectScene` retains metadata objects, timed positions, and decoder-coordinate
+rows as separate domains. For the exact admitted decoded-JOC/OAMD profile,
+`SemanticBindingState::ResolvedWithinCarrier` records a carrier-local pairing
+for the reconstructed ADM path. For all other profiles it remains
 `Unresolved`; there is no implicit `row == authored object`, slot identity, or
 dominant-row fallback.
 
 ### JOC ReconstructionBasis
 
 JOC reconstruction produces rows with structural indices and deterministic
-numerical behavior. The rows are an exposed reconstruction basis for analysis,
-not verified authored-object PCM. Diagnostic WAV export uses
+numerical behavior. The rows remain decoder coordinates and are not authored-
+object PCM. In the exact admitted carrier profile, a row also has a scoped
+decoded JOC Object interpretation for the dynamic ADM path; that does not
+turn it into an authored stem. Diagnostic WAV export uses
 `diagnostics/reconstruction_rows/row_NNN.wav`.
 
 The stable component boundary uses `ReconstructionBasisRowIndex` as a local
 decoder-coordinate identity. `DecodedComponentLayout` and the CLI
 `diagnostics/components.json` manifest distinguish Base full-band channels,
 separate Base LFE, indexed RB rows, and `SemanticBindingState::Unresolved`
-without retaining another PCM copy. Operations requiring authored-object audio
-identity fail explicitly while binding is unresolved; component-domain decode
-and streaming remain available.
+or its admitted carrier-local counterpart without retaining another PCM copy.
+Operations requiring authored-object audio
+identity fail explicitly even when decoded-object binding is admitted;
+component-domain decode and streaming remain available.
 
 ### JOC spatial reconstruction bridge
 
@@ -154,8 +169,12 @@ The semantic operation is modelled as `o(t) = T(t)c(t)` followed by the
 independent renderer operator. `T(t)` is not known: `JocSpatialOperatorState`
 therefore remains `Unresolved`, and `require_resolved_operator()` is a hard
 gate. There is no automatic conversion from decoded components to
-`ExplicitSpatialScene`, no fixed RB-row/object mapping, and no implicit matrix
-or permutation. The readiness census is in
+`ExplicitSpatialScene`. The scoped decoded-object binding resolves only the
+carrier-local association between decoded JOC row `j` and decoded OAMD dynamic
+ordinal `j` for reconstructed ADM; it does not resolve `T(t)`, a
+speaker-rendering operator, or an authored source identity. There is no fixed
+RB-row/authored-object mapping and no implicit matrix or permutation. The
+readiness census is in
 [`joc_reconstruction_readiness.json`](joc_reconstruction_readiness.json).
 
 The explicitly activated `JocSpatialBridge` is a downstream spatial function
@@ -163,8 +182,9 @@ with experimental maturity. It consumes a losslessly retained topology/
 coordinate snapshot, projects into a caller-supplied public layout, applies the
 Q32 gain scheduler, and accumulates linearly into caller-owned buffers. It does
 not change profile validation, assign authored-object identity, or resolve
-`SemanticBindingState`; its raw warp-3 field is retained as opaque data and
-excluded from projection arithmetic. The supported ordinary domain and
+`SemanticBindingState` for authored or renderer semantics; its raw warp-3 field
+is retained as opaque data and excluded from projection arithmetic. The
+supported ordinary domain and
 activation surface are documented in
 [`JOC_SPATIAL_BRIDGE.md`](JOC_SPATIAL_BRIDGE.md).
 
@@ -279,6 +299,31 @@ capture an unbounded ObjectScene or reconstruction-row vector.
 Malformed or truncated raw E-AC-3 and consumed ISO BMFF structures are rejected
 with bounded diagnostics; streaming output is staged and promoted only after a
 complete successful decode, so failure cannot publish a canonical partial.
+
+### Scoped decoded-JOC/OAMD binding
+
+The payload boundary has one explicit clean-room admission gate for the
+observed ordinary E-AC-3 JOC profile: 15 decoded JOC objects, no OAMD bed, one
+Base LFE at total index 0, no ISF, 15 dynamic OAMD objects, and 16 total OAMD
+entries. Only after this gate passes does the canonical typed mapping produce
+`joc_ordinal = dynamic_ordinal` and `oamd_total_index = joc_ordinal + 1`.
+The `+1` is centralized in `DecodedJocBindingProfile`; it is not an element-ID
+lookup, audio-content match, or PCM heuristic.
+
+`SemanticBindingState::ResolvedWithinCarrier` means only that decoded JOC PCM
+and decoded OAMD metadata are paired inside this admitted carrier profile. It
+does not recover original authored ADM identity. Bed-bearing, ISF-bearing,
+alternative-LFE, count/order-mismatched, compatibility-profile, and
+incomplete-Base-LFE cases remain unresolved; inactive transitions are not
+admitted by the dynamic ADM metadata exporter.
+
+The dynamic ADM path reuses the existing absolute scene sample domain. It
+retains metadata events for the export plan but never duplicates programme PCM:
+each generated `OpenJOC Reconstructed JOC Object NN` track consumes its bound
+reconstruction row during the existing bounded streaming write, while its ADM
+blocks are derived from the corresponding OAMD event boundaries. Reset,
+discontinuity, flush, and stream reopen create a fresh decoder/scene epoch;
+stale metadata and PCM are not combined.
 
 ## Error and evidence model
 

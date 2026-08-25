@@ -21,8 +21,9 @@ summarize host- or workflow-specific implications and link back to that owner.
   and C geometry contract up to 64 ordered output channels.
 - [Spatial portability](SPATIAL_PORTABILITY.md) — 22.2 and binaural portability
   boundaries.
-- [JOC spatial bridge](JOC_SPATIAL_BRIDGE.md) — supporting bridge activation
-  and unresolved semantic boundary.
+- [JOC spatial bridge](JOC_SPATIAL_BRIDGE.md) — supporting bridge activation,
+  unresolved codec-domain renderer operator, and its boundary from the scoped
+  decoded-object ADM binding.
 - [Explicit render-scene workflow](RENDER_SCENE.md) — caller-bound sources;
   separate from JOC authored-object semantics.
 
@@ -51,8 +52,8 @@ selection, and host/output boundaries. Renderer capabilities remain owned by
 
 ## ADM and interchange
 
-- [Reconstructed ADM BWF export](ADM_EXPORT.md) — current export, validation,
-  and semantic boundary.
+- [Reconstructed ADM BWF export](ADM_EXPORT.md) — canonical current export,
+  decoded-object binding, validation, FAQ, and semantic boundary.
 
 ## Architecture, provenance, and planning
 

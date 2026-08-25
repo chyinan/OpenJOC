@@ -10,9 +10,10 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 
 ## Decoder and semantic boundary
 
-- `ObjectScene` is metadata-only. `SemanticBindingState` remains
-  `Unresolved`, and `ReconstructionBasis` rows are diagnostic decoder
-  coordinates rather than verified authored-object PCM or stems.
+- `ObjectScene` keeps `ReconstructionBasis` rows separate from authored
+  objects. The exact admitted decoded-JOC/OAMD carrier profile may report
+  `SemanticBindingState::ResolvedWithinCarrier`, but that state is not
+  authored-object identity recovery; all other profiles remain `Unresolved`.
 - The ordinary-domain `JocSpatialBridge` renders decoded Base/RB contributions
   with OAMD-derived control, but it does not resolve authored-object identity
   or the codec-domain operator `T(t)`.
@@ -81,7 +82,29 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 
 - `export-adm` writes a reconstructed RIFF/RF64 ADM BWF representation, not
   the original ADM/BWF master. Original names, hierarchy, UIDs, authored
-  binding, and discarded source information cannot be recovered.
+  binding, and discarded source information cannot be recovered. The report
+  keeps `original_authored_identity_recovered: false`,
+  `original_adm_master_recovered: false`, and `lossless_round_trip: false`.
+- For the exact clean-room profile (15 JOC objects, no bed, one leading Base
+  LFE, no ISF, 15 dynamic OAMD objects, 16 total), decoded JOC PCM is paired
+  with the corresponding OAMD dynamic metadata by typed carrier-local
+  ordinals. Generated ADM names are neutral `OpenJOC Reconstructed JOC Object
+  NN`; the report keeps original authored identity and original ADM-master
+  recovery explicitly false.
+- A moving reconstructed Object represents the spatial metadata retained and
+  decoded from the JOC programme. Its trajectory may differ from the original
+  DAW automation because JOC can quantize metadata, reorganize object
+  representation, change numbering, or discard authoring information. A
+  meaningful decoded trajectory is not recovery of the original master.
+- OpenJOC does not promise recovery of original DAW/Logic track identity,
+  authored Object numbering, Object names, source-stem PCM, unquantized
+  automation, programme/content hierarchy, authoring metadata, Dolby
+  authoring provenance, or a lossless JOC-to-ADM round trip.
+- The scoped dynamic path exports position at decoded OAMD event boundaries.
+  Active/inactive transitions, extent, gain, divergence, channel lock, zones,
+  and other properties are not used to invent ADM semantics. Unsupported
+  metadata falls back to neutral best-effort output with a reason, or rejects
+  strict export.
 - When Base LFE exists, the exporter creates the minimum legal 5.1 transport
   bed. Only LFE carries recovered Base LFE PCM; L, R, C, Ls, and Rs are
   deterministic silence placeholders reported as generated structure.

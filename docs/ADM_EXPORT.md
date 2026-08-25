@@ -8,6 +8,20 @@ openjoc export-adm INPUT.ec3 -o OUTPUT.wav
 openjoc validate-adm OUTPUT.wav
 ```
 
+## What this export means
+
+For the explicitly admitted JOC profile, OpenJOC can associate decoded JOC
+object audio with the decoded movement metadata carried by the same JOC
+programme. The generated ADM Objects can therefore move. This reconstructs the
+object scene carried by JOC; it does not recover the original Atmos authoring
+master.
+
+Generated names, numbers, and UIDs belong to the export. They are not the
+original DAW/Logic track identity, authored Object numbering, ADM Object UIDs,
+or source-stem PCM. JOC is lossy, so decoded movement can differ from source
+automation. Unsupported profiles remain neutral in best-effort mode or fail
+closed in strict mode. The detailed scope and report fields appear below.
+
 `INPUT` may also be a captured OpenJOC scene directory or a complete
 `ObjectScene` JSON document. For raw E-AC-3 or seekable ordinary ISO BMFF, the
 CLI performs a lightweight sequential preflight, reopens the input once, and
@@ -60,25 +74,65 @@ discarded, quantized, merged, transformed, or never transmitted by the lossy
 encoding process. Multiple different source ADM masters can produce identical
 or observationally equivalent JOC data, so JOC → original ADM is not a unique
 inverse.
+
+## Reconstructed dynamic Objects
+
+For the explicitly admitted decoded-JOC/OAMD profile, OpenJOC can associate
+each decoded JOC object signal with the corresponding decoded OAMD dynamic
+metadata. The export therefore emits generated ADM Objects with the decoded
+position events at their sample-domain boundaries. A reconstructed Object may
+move; it is not forced to a neutral position merely because its audio came
+from JOC.
+
+The generated Object represents a decoded JOC Object carried by the stream.
+It is not a recovered authored Object. OpenJOC does not promise recovery of
+the original DAW/Logic track identity, authored Object numbering, ADM Object
+UID, Object name, source-stem PCM, unquantized automation,
+programme/content hierarchy, authoring metadata, Dolby authoring provenance,
+or a lossless JOC → ADM round trip.
+
+## Are these the original Atmos Objects?
+
+No. `OpenJOC Reconstructed JOC Object 04` is an OpenJOC-generated identity for
+a decoded carrier-local object slot. It must not be read as proof that the
+signal is authored Object 04 in the source Logic or ADM project. Encoding may
+quantize metadata, reorganize object representation, change numbering, or
+discard authoring information.
+
+## Why reconstructed Objects may differ from the source master
+
+When reconstructed Objects move, their trajectories are the spatial metadata
+retained and decoded from the JOC programme. They are not guaranteed to be
+numerically identical to the original DAW automation. JOC is a lossy delivery
+representation, so the decoded scene can preserve meaningful movement while
+still differing from the source master.
+
+Therefore:
+
+```text
+reconstructed dynamic ADM != recovered original ADM master
+```
+
+Comparing an OpenJOC export with the original ADM is useful for evaluating
+what survived encoding. Compare movement and audio with the understanding
+that identities, numbering, and discarded authoring data are not guaranteed
+to correspond directly.
+
 ## Why exported ADM objects may not move
 
 If you open an exported ADM file in a DAW and some objects look still, this does
-not mean OpenJOC failed to decode movement or that direct JOC rendering is static.
+not mean OpenJOC failed to decode movement or that direct JOC rendering is
+static. There are two export cases:
 
-OpenJOC often recovers two separate things:
+1. In the admitted profile, decoded JOC audio and decoded OAMD movement are
+   bound by the clean ordinal contract, so generated dynamic Objects carry
+   position blocks and may move.
+2. Outside that profile, OpenJOC can recover audio and movement separately but
+   cannot safely prove which signal belongs to which decoded metadata object.
+   Best-effort output remains neutral/static and strict output rejects.
 
-- the decoded audio signals from the JOC programme, and
-- the time-varying JOC/OAMD movement and position information.
-
-What it still cannot do reliably today is proving which decoded signal belongs to
-which originally authored object identity. Instead of attaching wrong movement
-information, the exporter takes a conservative path: it keeps reconstructed
-signals at a neutral/static position when exporting ADM. This is intentional
-because guessing would make the output look confident while being potentially
-incorrect.
-
-So “objects in exported ADM do not move” is usually a limitation of the export
-representation, not a sign that direct JOC decoding cannot recover movement.
+So “objects in exported ADM do not move” describes unsupported or unresolved
+profiles, not the admitted dynamic path.
 
 Direct JOC rendering is a different pipeline from ADM export:
 
@@ -88,10 +142,9 @@ while export is:
 
 `JOC decode → reconstructed signals → reconstructed ADM export`
 
-Because the export path intentionally refuses to invent unproven signal↔object
-bindings, static objects in exported ADM do not prove static movement in the
-direct JOC renderer. For now, OpenJOC does not recover the original authored ADM
-master, original object names/IDs, or a proven PCM-to-object pairing.
+Even a moving generated Object does not prove that the original authored
+Object was recovered. The decoded-object binding is carrier-local and does not
+answer the stronger authored-source or renderer questions.
 
 The generated 5.1 bed can also look like “conversion to 5.1,” but it is mainly a
 minimum legal transport shape:
@@ -103,19 +156,42 @@ minimum legal transport shape:
 These placeholder channels are there so downstream tools can accept a standard
 container; they are not extra authored object content.
 
-## Scope and semantic boundary
+## Supported binding profiles
 
 The exporter consumes `ObjectScene` and `ReconstructionBasis` directly. It does
 not consume a 7.1.4/22.2 speaker render, FinalLinkedGain output, or HRTF
 output. Those are renderer-domain results and are not reconstructed scene
 signals.
 
-The current OpenJOC scene contract deliberately keeps the association between
-reconstruction rows and OAMD metadata `Unresolved`. Therefore OpenJOC exports each
-reconstruction row as a deterministic neutral reconstructed signal and reports
-the recovered metadata as unbound. A row index that happens to equal an OAMD
-index is not evidence of object identity and is never serialized as an ADM
-binding.
+The exact clean-room admission profile is
+`E_AC_3_JOC_OBSERVED_ORDINARY_PROFILE` with:
+
+- 15 decoded JOC Objects and 15 reconstruction rows;
+- no OAMD bed, one leading Base LFE, and no ISF;
+- 15 dynamic OAMD Objects and 16 total OAMD entries.
+
+Within the same programme/discontinuity epoch, the typed mapping is:
+
+```text
+joc_ordinal = j
+oamd_dynamic_ordinal = j
+oamd_total_index = j + 1
+```
+
+`ResolvedWithinCarrier` means this decoded JOC audio ↔ decoded OAMD relation
+is admitted. It is not an authored-object identity. The `+1` is a total-list
+domain offset for the leading Base LFE, not an element-ID lookup or PCM
+heuristic.
+
+## Unsupported profiles
+
+Bed-bearing, ISF-bearing, alternate-LFE, count/order-mismatched,
+compatibility-profile, incomplete-Base-LFE, or otherwise unvalidated profiles
+remain unresolved for dynamic binding. Best-effort export retains generated
+Objects at neutral/static positions and records `unsupported_binding_reason`;
+strict export rejects. Unsupported dynamic properties such as inactive
+transitions, gain, extent, divergence, channel lock, and zones are not
+fabricated into ADM.
 
 The Dolby Atmos master profile does not allow a mono DirectSpeakers/LFE bed.
 When known Base LFE PCM is present, OpenJOC places it in the LFE position of the
@@ -169,15 +245,18 @@ exported PCM tracks:
 - a legal room-centric 5.1 DirectSpeakers bed when Base LFE is present, with
   `RC_LFE` carrying recovered PCM and five reported silence placeholders;
 - Dolby Atmos object IDs beginning at `AO_100B` and bed IDs in the bed range;
-- one sample-derived `audioBlockFormat` per signal;
+- one sample-derived `audioBlockFormat` per signal for neutral/unresolved output;
+- for the admitted profile, one deterministic position block per OAMD event
+  boundary, with exact sample-derived `rtime`/duration coverage;
 - cartesian neutral position for signals whose spatial binding is unresolved;
 - standard ADM ID syntax and child-element IDRef relationships;
 - `chna` UIDs/track-format/pack-format references matching the XML and PCM
   track indices.
 
-Generated identities are stable and neutral, for example
-`OpenJOC Reconstructed Signal 01`. Names such as “Lead Vocal”, “Dialogue”, or
-“Music” are never guessed.
+Generated identities are stable and neutral. Unresolved output uses
+`OpenJOC Reconstructed Signal 01`; admitted decoded-object output uses
+`OpenJOC Reconstructed JOC Object 01`. Names such as “Lead Vocal”, “Dialogue”,
+or “Music” are never guessed.
 
 ## Mapping table
 
@@ -186,8 +265,8 @@ The same table is used by the writer and the reconstruction report.
 | Semantic | Status | Current treatment |
 |---|---|---|
 | Reconstruction signal identity | `EXACT` | Local ReconstructionBasis row identity only. |
-| Audio ↔ spatial metadata binding | `UNRESOLVED` | No row is bound to an OAMD object. |
-| Dynamic position/trajectory | `NOT_REPRESENTABLE` | Recovered metadata remains outside the PCM track relationship. |
+| Audio ↔ spatial metadata binding | `EXACT` within scope / `UNRESOLVED` otherwise | In the admitted profile, decoded JOC ordinal `j` maps to OAMD dynamic ordinal `j` and total index `j+1`; no authored identity is claimed. |
+| Dynamic position/trajectory | `EXACT` within supported position scope / `NOT_REPRESENTABLE` otherwise | Admitted OAMD position events become deterministic ADM blocks; unsupported properties or profiles remain neutral/rejected by policy. |
 | Bed/direct-speaker identity for reconstruction rows | `NOT_REPRESENTABLE` | Structural order is not promoted to authored identity. |
 | Separately retained base LFE identity | `EXACT` | Exported in the LFE position of a generated 5.1 DirectSpeakers bed. |
 | Dolby Atmos bed transport placeholders | `APPROXIMATED` | Five explicitly reported silent tracks complete the minimum allowed LFE-bearing bed. |
@@ -197,6 +276,18 @@ The same table is used by the writer and the reconstruction report.
 | Float-to-24-bit storage | `APPROXIMATED` | Deterministic quantization, with no gain processing. |
 | FinalLinkedGain, HRTF, speaker render | `NOT_APPLICABLE` | Export occurs before those renderer stages. |
 
+For the admitted dynamic path, the property boundary is deliberately narrow:
+
+| OAMD property | Status | Export treatment |
+|---|---|---|
+| X/Y/Z position | `ADMITTED` | Finite room, resolved screen, or boundary coordinates become cartesian ADM position elements. |
+| Active/inactive | `PARTIAL` | Active slots are retained; an inactive transition rejects dynamic export and follows policy. |
+| Gain | `UNSUPPORTED` | Not copied into ADM dynamic blocks. |
+| Extent/size/spread | `UNSUPPORTED` | Not fabricated. |
+| Divergence | `UNSUPPORTED` | Not fabricated. |
+| Channel lock | `UNSUPPORTED` | Not fabricated. |
+| Zones and opaque/additional data | `OPAQUE` | Retained by the decoder boundary where applicable, not interpreted by this ADM path. |
+
 ## Policy
 
 Best-effort is the default:
@@ -205,17 +296,20 @@ Best-effort is the default:
 openjoc export-adm INPUT.ec3 -o OUTPUT.wav --adm-policy best-effort
 ```
 
-It emits the recoverable reconstruction signals and writes every unresolved or
-omitted semantic to `OUTPUT.adm-report.json`.
+For the admitted profile it emits bound generated dynamic Objects and writes
+every unsupported or omitted semantic to `OUTPUT.adm-report.json`. For other
+profiles it preserves neutral best-effort output and records the binding reason.
 
-Strict mode rejects the current unresolved audio-to-spatial-metadata boundary:
+Strict mode permits only the complete admitted dynamic path and rejects
+unsupported or unresolved profiles:
 
 ```sh
 openjoc export-adm INPUT.ec3 -o OUTPUT.wav --adm-policy strict
 ```
 
 This is intentional. Strict mode must not turn an unproven row/object
-correspondence into a confident-looking ADM file.
+correspondence or unsupported metadata property into a confident-looking ADM
+file.
 
 ## Reconstruction report
 
@@ -226,7 +320,10 @@ The adjacent JSON report includes:
   representation;
 - reconstructed signal, metadata, dynamic, DirectSpeakers, and generated silent
   bed-placeholder counts;
-- `dynamic_objects_with_bound_pcm: 0` while binding is unresolved;
+- decoded binding state/profile, bound and unbound decoded-object counts, and
+  whether dynamic metadata was exported;
+- `dynamic_objects_with_bound_pcm` is the admitted decoded-object count only
+  when the corresponding dynamic metadata path succeeds;
 - the complete mapping table;
 - generated signal identities;
 - unrecoverable authoring information;
@@ -234,7 +331,48 @@ The adjacent JSON report includes:
 - `source_is_lossy_e_ac_3_joc: true`;
 - `original_adm_master_recovered: false`;
 - `lossless_round_trip: false`.
+- `original_authored_identity_recovered: false` and
+  `unsupported_binding_reason` when the scoped path is unavailable.
+- `decoded_joc_object_binding_state`, `decoded_joc_binding_profile`,
+  `decoded_joc_objects_bound`, `decoded_joc_objects_unbound`, and
+  `dynamic_metadata_exported` are separate fields. A successful admitted
+  dynamic export has a non-zero bound-object count; authored identity remains
+  false.
 - `dolby_authorship_metadata_state: "not-generated"`.
+
+## FAQ
+
+### Why do Objects move now when they were static before?
+
+The admitted profile now proves the decoded JOC audio-to-OAMD relationship.
+OpenJOC can attach each reconstructed decoded JOC Object signal to its
+corresponding decoded movement metadata.
+
+### Does that mean OpenJOC recovered my original ADM master?
+
+No. The export reconstructs the object scene carried by JOC. It does not
+recover the original authored project, hierarchy, names, UIDs, or automation.
+
+### Is reconstructed Object #3 necessarily the same as Object #3 in my source project?
+
+No. The numbering is generated from a carrier-local decoded ordinal. Encoding
+may reorganize object representation and numbering.
+
+### Why can its movement differ slightly from my source project?
+
+JOC is lossy. The export uses the encoded and decoded metadata, which may have
+been quantized or otherwise transformed.
+
+### Can I compare an OpenJOC export with my original ADM?
+
+Yes. That comparison can show which movement and audio information survived
+JOC encoding. Do not assume that names, IDs, numbering, or discarded authoring
+data line up directly.
+
+### Does a moving ball prove bit-perfect original-object recovery?
+
+No. It proves only that the admitted decoded JOC scene carries meaningful
+decoded movement through the reconstructed export path.
 
 `openjoc validate-adm` independently parses RIFF, RF64, and legacy BW64
 containers. It checks container/file accounting, `ds64` and table semantics

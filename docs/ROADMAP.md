@@ -29,9 +29,10 @@ commitment or schedule. Implemented capability status belongs to
   bypass that boundary with an ad hoc mapping.
 - Obtain admissible evidence for unresolved vendor OAMD continuation without
   weakening `ETSI_STRICT` or assigning semantics to opaque fields.
-- Keep metadata understanding separate from authored-object binding. Any
-  future binding claim requires independent identity, timing, negative-control,
-  and repeatability evidence.
+- Keep metadata understanding separate from authored-object binding. The
+  current decoded-JOC/OAMD binding is limited to the exact clean-room profile
+  documented in `ADM_EXPORT.md`; any broader future binding claim requires
+  independent identity, timing, negative-control, and repeatability evidence.
 
 ## Deferred candidates
 
