@@ -28,6 +28,16 @@ else
 fi
 mkdir -p "$output"
 
+require_exact_row() {
+    expected=$1
+    rows=$2
+    if ! grep -Fx "$expected" "$rows" >/dev/null; then
+        echo "missing exact row '$expected' in $rows" >&2
+        cat "$rows" >&2
+        return 1
+    fi
+}
+
 verify_exact_mp4_payload() {
     raw=$1
     mp4=$2
@@ -59,25 +69,33 @@ verify_seekable_eac3_timing() {
         -show_entries frame=pts,pkt_dts,duration,nb_samples:frame_side_data= \
         -of csv=p=0 "$mp4" > "$frame_rows"
 
-    grep -Fx "time_base=1/48000" "$stream_rows" >/dev/null
-    grep -Fx "duration_ts=196608" "$stream_rows" >/dev/null
-    grep -Fx "duration=$expected_duration" "$stream_rows" >/dev/null
-    grep -Fx "nb_frames=$expected_packets" "$stream_rows" >/dev/null
-    grep -Fx "nb_read_packets=$expected_packets" "$stream_rows" >/dev/null
-    awk -F, -v expected_count="$expected_packets" '
+    require_exact_row "time_base=1/48000" "$stream_rows"
+    require_exact_row "duration_ts=196608" "$stream_rows"
+    require_exact_row "duration=$expected_duration" "$stream_rows"
+    require_exact_row "nb_frames=$expected_packets" "$stream_rows"
+    require_exact_row "nb_read_packets=$expected_packets" "$stream_rows"
+    if ! awk -F, -v expected_count="$expected_packets" '
         BEGIN { expected_pts = 0; count = 0 }
         $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ { exit 1 }
         $1 != expected_pts || $2 != expected_pts { exit 1 }
         { expected_pts += 1536; count += 1 }
         END { if (count != expected_count) exit 1 }
-    ' "$packet_pts"
-    awk -F, -v expected_count="$expected_packets" '
+    ' "$packet_pts"; then
+        echo "invalid packet PTS/DTS timeline in $packet_pts" >&2
+        cat "$packet_pts" >&2
+        return 1
+    fi
+    if ! awk -F, -v expected_count="$expected_packets" '
         BEGIN { expected_pts = 0; count = 0 }
         $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ || $3 != "N/A" || $4 != 1536 { exit 1 }
         $1 != expected_pts || $2 != expected_pts { exit 1 }
         { expected_pts += 1536; count += 1 }
         END { if (count != expected_count) exit 1 }
-    ' "$frame_rows"
+    ' "$frame_rows"; then
+        echo "invalid decoded-frame timeline in $frame_rows" >&2
+        cat "$frame_rows" >&2
+        return 1
+    fi
     echo "seekable E-AC-3 timing: $mp4 packets=$expected_packets pts_dts_step=1536 frame_samples=1536 frame_duration=N/A duration_ts=196608 duration=$expected_duration"
     sha256_files "$mp4" "$stream_rows" "$packet_pts" "$frame_rows"
 }
