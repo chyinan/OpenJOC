@@ -94,7 +94,7 @@ fn admitted_scene() -> ObjectScene {
     }));
     let mut metadata_timeline = Vec::new();
     for object_id in 1..=15 {
-        for (start_sample, x) in [(0, -0.5), (2, 0.5)] {
+        for (start_sample, x) in [(0, 0.0), (2, 1.0)] {
             metadata_timeline.push(MetadataUpdate {
                 object_id,
                 start_sample,
@@ -154,12 +154,17 @@ fn admitted_binding_exports_dynamic_position_blocks_and_preserves_base_lfe() {
     assert!(
         first
             .xml
-            .contains("<position coordinate=\"X\">-0.500000</position>")
+            .contains("<position coordinate=\"X\">-1.000000</position>")
     );
     assert!(
         first
             .xml
-            .contains("<position coordinate=\"X\">0.500000</position>")
+            .contains("<position coordinate=\"X\">1.000000</position>")
+    );
+    assert!(
+        first
+            .xml
+            .contains("<position coordinate=\"Y\">0.500000</position>")
     );
     assert!(first.xml.contains("_00000002\" rtime="));
     assert!(first.xml.contains("<speakerLabel>RC_LFE</speakerLabel>"));

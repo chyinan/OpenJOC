@@ -8,8 +8,10 @@
 
 use openjoc_scene::{
     DecodedJocBindingFacts, DecodedJocBindingProfile, MetadataUpdate, ObjectClass, ObjectScene,
-    Position, Position3, SemanticBindingState, admit_decoded_joc_binding,
+    Position, SemanticBindingState, admit_decoded_joc_binding,
 };
+mod coordinate;
+use coordinate::{AdmCartesianPosition, OamdCartesianPosition};
 use serde::Serialize;
 use std::fmt::Write as _;
 use std::{
@@ -515,7 +517,7 @@ struct TrackDescriptor {
 struct AdmDynamicBlock {
     start_sample: u64,
     duration_samples: u64,
-    position: Position3,
+    position: AdmCartesianPosition,
 }
 
 impl TrackDescriptor {
@@ -1356,8 +1358,8 @@ fn generated_object_ids(tracks: &[TrackDescriptor]) -> Vec<String> {
         .collect()
 }
 
-fn position_for_adm(position: &Position) -> Result<Position3, AdmError> {
-    let position = match position {
+fn position_for_adm(position: &Position) -> Result<AdmCartesianPosition, AdmError> {
+    let oamd_position = match position {
         Position::Room(position) => *position,
         Position::RoomAtInfinity {
             boundary_intersection,
@@ -1371,16 +1373,12 @@ fn position_for_adm(position: &Position) -> Result<Position3, AdmError> {
             ));
         }
     };
-    if [position.x, position.y, position.z]
-        .into_iter()
-        .all(f64::is_finite)
-    {
-        Ok(position)
-    } else {
-        Err(AdmError::UnsupportedDynamicMetadata(
-            "dynamic ADM position contains a non-finite coordinate".to_owned(),
-        ))
-    }
+    let oamd_position = OamdCartesianPosition::try_from(oamd_position).map_err(|error| {
+        AdmError::UnsupportedDynamicMetadata(format!("invalid OAMD position: {error}"))
+    })?;
+    AdmCartesianPosition::try_from(oamd_position).map_err(|error| {
+        AdmError::UnsupportedDynamicMetadata(format!("invalid ADM position: {error}"))
+    })
 }
 
 fn bound_mapping_table() -> Vec<MappingRecord> {
@@ -1397,8 +1395,7 @@ fn bound_mapping_table() -> Vec<MappingRecord> {
         .find(|record| record.semantic == "dynamic_object_position_and_trajectory")
     {
         record.status = MappingStatus::Exact;
-        record.detail =
-            "OAMD position updates are exported at their decoded sample-domain event boundaries.";
+        record.detail = "OAMD position updates are validated in the admitted room domain and converted once to normalized ADM Cartesian coordinates at each decoded sample-domain event boundary.";
     }
     mapping
 }
@@ -3170,7 +3167,7 @@ fn xml_escape(value: &str) -> String {
 mod tests {
     use super::*;
     use openjoc_joc::ReconstructionBasis;
-    use openjoc_scene::{MetadataObject, ObjectClass};
+    use openjoc_scene::{IsfLabel, IsfRing, MetadataObject, ObjectClass, Position3, SpeakerLabel};
     use std::io::Cursor;
 
     fn scene() -> ObjectScene {
@@ -3188,6 +3185,80 @@ mod tests {
             }),
             base_lfe_pcm: Some(vec![0.0, 0.1, -0.1, 0.0]),
             semantic_binding: SemanticBindingState::Unresolved,
+        }
+    }
+
+    #[test]
+    fn oamd_center_front_is_converted_to_adm_center_front() {
+        let position = Position::Room(Position3 {
+            x: 0.5,
+            y: 0.0,
+            z: 0.0,
+        });
+
+        assert_eq!(
+            position_for_adm(&position).expect("valid OAMD position"),
+            AdmCartesianPosition {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            }
+        );
+    }
+
+    #[test]
+    fn position_for_adm_converts_boundary_and_screen_room_positions() {
+        let boundary = Position::RoomAtInfinity {
+            boundary_intersection: Position3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+        };
+        assert_eq!(
+            position_for_adm(&boundary).expect("valid boundary position"),
+            AdmCartesianPosition {
+                x: -1.0,
+                y: -1.0,
+                z: 0.0,
+            }
+        );
+
+        let screen = Position::Screen {
+            coded: Position3 {
+                x: 0.25,
+                y: 0.5,
+                z: 0.75,
+            },
+            interpolated_room: Position3 {
+                x: 0.5,
+                y: 0.25,
+                z: 0.4,
+            },
+        };
+        assert_eq!(
+            position_for_adm(&screen).expect("valid interpolated room position"),
+            AdmCartesianPosition {
+                x: 0.0,
+                y: 0.5,
+                z: 0.4,
+            }
+        );
+    }
+
+    #[test]
+    fn position_for_adm_rejects_speaker_and_intermediate_spatial_positions() {
+        for position in [
+            Position::Speaker(SpeakerLabel::RcTfl),
+            Position::IntermediateSpatial(IsfLabel {
+                ring: IsfRing::Upper,
+                index: 2,
+            }),
+        ] {
+            assert!(matches!(
+                position_for_adm(&position),
+                Err(AdmError::UnsupportedDynamicMetadata(_))
+            ));
         }
     }
 

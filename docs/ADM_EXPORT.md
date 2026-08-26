@@ -101,6 +101,29 @@ UID, Object name, source-stem PCM, unquantized automation,
 programme/content hierarchy, authoring metadata, Dolby authoring provenance,
 or a lossless JOC → ADM round trip.
 
+### OAMD and ADM Cartesian coordinates
+
+Decoded OAMD room positions and ADM Cartesian positions are different public
+coordinate domains. In the admitted in-room profile, OAMD uses normalized room
+coordinates: X is left-wall `0` to right-wall `1`, Y is front-wall `0` to
+back-wall `1`, and Z is floor `-1` to ceiling `1`. ADM Cartesian uses a
+centered normalized cube: X is positive to the right, Y is positive to the
+front, and Z is positive upward. OpenJOC converts explicitly at the ADM
+boundary:
+
+```text
+ADM X = 2 × OAMD X - 1
+ADM Y = 1 - 2 × OAMD Y
+ADM Z = OAMD Z
+```
+
+The bridge validates finite values and the supported normalized input/output
+ranges. It rejects unsupported coordinates rather than silently clamping them.
+This conversion does not alter decoded-object binding, the scene model, PCM,
+or any renderer-domain processing. The public-spec reconciliation and control
+truth table are recorded in
+[`docs/research/joc-object-binding/oamd-to-adm-coordinate-reconciliation.md`](research/joc-object-binding/oamd-to-adm-coordinate-reconciliation.md).
+
 ## Are these the original Atmos Objects?
 
 No. `OpenJOC Reconstructed JOC Object 04` is an OpenJOC-generated identity for
@@ -299,7 +322,7 @@ For the admitted dynamic path, the property boundary is deliberately narrow:
 
 | OAMD property | Status | Export treatment |
 |---|---|---|
-| X/Y/Z position | `ADMITTED` | Finite room, resolved screen, or boundary coordinates become cartesian ADM position elements. |
+| X/Y/Z position | `ADMITTED` | Supported finite normalized OAMD room coordinates are converted once to normalized cartesian ADM position elements; unsupported ranges fail closed. |
 | Active/inactive | `PARTIAL` | Active slots are retained; an inactive transition rejects dynamic export and follows policy. |
 | Gain | `UNSUPPORTED` | Not copied into ADM dynamic blocks. |
 | Extent/size/spread | `UNSUPPORTED` | Not fabricated. |
