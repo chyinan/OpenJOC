@@ -1,0 +1,286 @@
+{
+  "schema": "openjoc.oamd-render-state-adm-reconciliation.v1",
+  "status": "COMPLETE_PROVEN_ADM_PROFILE_STATE_FIX",
+  "analyst_role": "CLEAN_SCENE_SEMANTICS_AUDITOR_AND_IMPLEMENTER",
+  "clean_provenance_gate": "PASS",
+  "production_code_changed": true,
+  "commit_created": true,
+  "base_head_before_fix": "f2780bb8d125005cf5f7d448dd267d53ee6f29f9",
+  "fix_commit_subject": "fix(adm): preserve profile object interpolation state",
+  "fix": {
+    "state": "Dolby ADM jumpPosition interpolationLength",
+    "pre_fix": "0 samples on the first and every subsequent Object block",
+    "post_fix": "0 samples on the first Object block and 250 samples on every subsequent Object block",
+    "source": "crates/openjoc-adm/src/lib.rs",
+    "test": "crates/openjoc-adm/tests/adm.rs::admitted_binding_exports_dynamic_position_blocks_and_preserves_base_lfe",
+    "pcm_semantic_bake": false,
+    "causal_link_to_vocal_left_bias": "NOT_PROVEN_PENDING_HUMAN_LOGIC_RECHECK"
+  },
+  "closed_semantics": [
+    "RB rows are decoded JOC output-object PCM within the admitted carrier scope",
+    "decoded JOC ordinal j maps to OAMD dynamic ordinal j and total index j+1",
+    "OAMD to ADM coordinates remain ADM_X=2*OAMD_X-1, ADM_Y=1-2*OAMD_Y, ADM_Z=OAMD_Z",
+    "raw3 admission, PCM storage policy, and authored identity are out of scope"
+  ],
+  "input": {
+    "path": "C:\\OpenJOC-RealMedia-Acceptance\\成都 ~Dolby ATMOS Test2~ .m4a",
+    "sha256": "83bbaabd5705bd4a458dc8ebc7b8bef66ebf5d76d2f8d09b1cdaa225105e2156",
+    "container": "ISO BMFF",
+    "codec": "E-AC-3 with JOC",
+    "sample_rate": 48000,
+    "duration_samples": 15742464,
+    "access_units": 10249
+  },
+  "r00_census": {
+    "metadata_objects": 16,
+    "dynamic_objects": 15,
+    "reconstruction_rows": 15,
+    "total_updates": 163984,
+    "dynamic_updates": 153735,
+    "active_updates": 163984,
+    "inactive_updates": 0,
+    "gain": {
+      "decoded_field_present": true,
+      "update_count": 163984,
+      "distinct_values_db": [
+        0.0
+      ],
+      "non_unity_update_count": 0,
+      "negative_infinity_update_count": 0,
+      "first_non_default_update": null,
+      "representation": "decoded OAMD Gain::Decibels(0), exported scene gain_db=Some(0.0)"
+    },
+    "priority": {
+      "distinct_values": [
+        1.0
+      ],
+      "update_count": 163984
+    },
+    "ramp_duration": {
+      "distinct_values_samples": [
+        1536
+      ],
+      "update_count": 163984
+    },
+    "position_kinds": {
+      "speaker": 10249,
+      "room": 153735,
+      "room_at_infinity": 0,
+      "screen": 0,
+      "intermediate_spatial": 0
+    },
+    "non_default_contribution_state_counts": {
+      "nonzero_size": 0,
+      "channel_lock": 0,
+      "zone_exclude": 0,
+      "nonzero_divergence": 0,
+      "trim_disabled": 0
+    },
+    "trim": {
+      "status": "opaque_unresolved",
+      "element_id": 2,
+      "raw_warp": 3,
+      "deviation": "LOGIC_OAMD_RESERVED_TRIM_WARP_3",
+      "semantic_effect": "not decoded; no production meaning inferred"
+    }
+  },
+  "renderer_relevant_fields": [
+    {
+      "field": "object_class_presence_order",
+      "public_semantic": "Object order is bed/ISF/dynamic; dynamic slot and JOC output population are validated in the admitted carrier scope.",
+      "openjoc_state": "ProgrammeLayout, ObjectClass, DecodedJocBindingProfile",
+      "parser_location": "crates/openjoc-oamd/src/content_description.rs; crates/openjoc-scene/src/layout.rs; crates/openjoc-scene/src/binding.rs",
+      "state_lifetime": "per topology/discontinuity epoch",
+      "scope": "global topology",
+      "default_and_updates": "content description establishes the object population; binding profile is admitted only when stable",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY",
+      "adm_treatment": "EXPORTED_EQUIVALENTLY within admitted carrier-local scope",
+      "r00": "16 total OAMD entries, 15 dynamic entries, 15 JOC rows; stable admitted mapping"
+    },
+    {
+      "field": "active_present",
+      "public_semantic": "b_object_not_active makes the object audio essence silent and removes its contribution for that block.",
+      "openjoc_state": "ObjectUpdate.active -> MetadataUpdate.active",
+      "parser_location": "crates/openjoc-oamd/src/object_element.rs",
+      "state_lifetime": "per object/per metadata block, resolved through block state",
+      "scope": "per object",
+      "default_and_updates": "active bit is decoded per block; inactive forces basic/render defaults; prior state is used only by valid reuse paths",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY; inactive records force zero contribution",
+      "adm_treatment": "USED_FOR_ADMISSION_ONLY; strict dynamic export rejects inactive transitions, best-effort falls back to neutral metadata",
+      "r00": "all 163984 updates active; no transition; no R00 loss"
+    },
+    {
+      "field": "object_gain",
+      "public_semantic": "Object gain is a decoder-interface dB gain; the linear object signal is multiplied by the decoded gain before spatial contribution. -inf is silence.",
+      "openjoc_state": "Gain -> MetadataUpdate.gain_db",
+      "parser_location": "crates/openjoc-oamd/src/basic_properties.rs; crates/openjoc-oamd/src/object_element.rs",
+      "state_lifetime": "per object/per metadata block, with prior-object inheritance for the public reuse code",
+      "scope": "per object",
+      "default_and_updates": "0 dB, -inf, table-coded dB, or prior object gain according to the gain index",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY; BridgeControlAssembler converts dB/-inf to a finite scalar and JocSpatialBridge applies it",
+      "adm_treatment": "DROPPED for non-unity values; no active-object ADM gain is written and PCM is not gain-baked",
+      "target_profile": "Dolby Atmos Master ADM Profile does not use gain to express non-unity gain on active Objects; inactive Object PCM must be silent",
+      "r00": "field decoded on every update, but only 0 dB; 0 non-unity updates, so no R00 semantic difference"
+    },
+    {
+      "field": "priority_importance",
+      "public_semantic": "Object priority is a decoded object importance value; ETSI Annex B maps it to ADM pack importance.",
+      "openjoc_state": "ObjectBasicInfo.priority -> MetadataUpdate.priority",
+      "parser_location": "crates/openjoc-oamd/src/basic_properties.rs; crates/openjoc-oamd/src/object_element.rs",
+      "state_lifetime": "per object/per metadata block with normal reuse",
+      "scope": "per object",
+      "default_and_updates": "decoder default 0 in the raw object state; explicit default code resolves to 1.0; coded values resolve to bits/32",
+      "direct_joc_treatment": "PRESERVED_BUT_NOT_CONSUMED by the current direct bridge",
+      "adm_treatment": "DROPPED; target profile only permits gain/importance on inactive Objects",
+      "r00": "all 163984 updates are 1.0; no observed non-default priority state"
+    },
+    {
+      "field": "position_xyz_distance_screen",
+      "public_semantic": "Position, distance, screen anchor/factors, and resolved position coding determine the object location; distance and screen geometry are resolved before the renderer boundary.",
+      "openjoc_state": "ObjectRenderInfo plus Position",
+      "parser_location": "crates/openjoc-oamd/src/object_element.rs; crates/openjoc-oamd/src/position.rs; crates/openjoc-scene/src/assembly.rs",
+      "state_lifetime": "per object/per metadata block with differential/reuse state resolved to an absolute snapshot",
+      "scope": "per object",
+      "default_and_updates": "room center/default render state; differential and partial fields inherit from the prior block",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY into the public spatial bridge",
+      "adm_treatment": "EXPORTED_EQUIVALENTLY for admitted finite room positions; screen positions are reduced to their resolved room position and unsupported speaker/ISF dynamic positions reject",
+      "r00": "153735 room dynamic updates and 10249 speaker-anchor updates; frozen coordinate bridge passed"
+    },
+    {
+      "field": "ramp_duration_timing",
+      "public_semantic": "ramp_duration is the public period for interpolation from previous property values to current values; metadata timing also defines exact sample-domain event starts.",
+      "openjoc_state": "MetadataTiming.ramp_duration -> MetadataUpdate.ramp_duration",
+      "parser_location": "crates/openjoc-oamd/src/timing.rs; crates/openjoc-scene/src/assembly.rs",
+      "state_lifetime": "per shared metadata block; frame timeline carries absolute sample offsets",
+      "scope": "shared timing plus per-object resolved values",
+      "default_and_updates": "coded 0/512/1536/custom timing; R00 uses 1536 for every block",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY to the direct bridge scheduler duration",
+      "adm_treatment": "APPROXIMATED by sample-derived block starts/durations and Dolby profile jump events; the OAMD ramp number is not serialized as an OAMD field",
+      "target_profile": "Dolby profile uses discrete jumpPosition events and renderer-side smoothing; its normative subsequent interpolationLength is 250 samples, not the OAMD ramp value",
+      "r00": "all 163984 updates use 1536; the pre-fix writer omitted the profile-required 250-sample interpolation on subsequent blocks, now fixed without PCM transformation"
+    },
+    {
+      "field": "extent_size",
+      "public_semantic": "Object size/extent changes point-versus-region contribution and spread behavior.",
+      "openjoc_state": "ObjectRenderInfo.size -> MetadataUpdate.size",
+      "parser_location": "crates/openjoc-oamd/src/basic_properties.rs; crates/openjoc-oamd/src/object_element.rs",
+      "state_lifetime": "per object/per metadata block with reuse",
+      "scope": "per object",
+      "default_and_updates": "zero extent default; table-coded uniform or XYZ extent updates",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY in the current bridge descriptor",
+      "adm_treatment": "DROPPED/UNSUPPORTED in the generated ADM subset",
+      "r00": "all zero extent; no R00 loss"
+    },
+    {
+      "field": "channel_lock_and_zones",
+      "public_semantic": "Channel lock constrains rendering to a speaker; zones constrain allowed renderer regions.",
+      "openjoc_state": "ObjectRenderInfo.channel_lock/zones -> MetadataUpdate.channel_lock/zones",
+      "parser_location": "crates/openjoc-oamd/src/object_element.rs; crates/openjoc-oamd/src/basic_properties.rs",
+      "state_lifetime": "per object/per metadata block with reuse",
+      "scope": "per object",
+      "default_and_updates": "channel lock false and all zones include; partial updates inherit the prior resolved state",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY in direct bridge descriptor/projection",
+      "adm_treatment": "DROPPED/UNSUPPORTED in the generated ADM subset",
+      "r00": "0 channel-lock updates and 0 zone-exclude updates; no R00 loss"
+    },
+    {
+      "field": "object_divergence",
+      "public_semantic": "Divergence spreads one object into a pair along the X axis.",
+      "openjoc_state": "ExtendedObjectElement.divergence -> MetadataUpdate.divergence",
+      "parser_location": "crates/openjoc-oamd/src/extended_object.rs; crates/openjoc-scene/src/assembly.rs",
+      "state_lifetime": "per object/per metadata block, with extension reuse",
+      "scope": "per dynamic object",
+      "default_and_updates": "zero unless the extended element signals a decoded divergence value",
+      "direct_joc_treatment": "PRESERVED_BUT_NOT_CONSUMED by the current automatic bridge",
+      "adm_treatment": "NOT_REPRESENTABLE; Dolby Atmos Master ADM Profile forbids objectDivergence",
+      "r00": "0 nonzero divergence updates; no R00 loss"
+    },
+    {
+      "field": "extended_precision_and_position_coding",
+      "public_semantic": "Extended precision refines the coded position; differential/reuse coding is a transport mechanism for the resolved current state.",
+      "openjoc_state": "ExtendedObjectElement.extended_precision and PositionCoding",
+      "parser_location": "crates/openjoc-oamd/src/extended_object.rs; crates/openjoc-oamd/src/object_element.rs",
+      "state_lifetime": "same object/block state lifetime as position",
+      "scope": "per dynamic object",
+      "default_and_updates": "optional precision and differential/reuse fields; resolved into current absolute position before scene/ADM conversion",
+      "direct_joc_treatment": "EXPORTED_EQUIVALENTLY through resolved position",
+      "adm_treatment": "EXPORTED_EQUIVALENTLY through the resolved position; coding bits are intentionally not copied",
+      "r00": "included in the 153735 decoded room-position updates; coordinate regression remains closed"
+    },
+    {
+      "field": "object_trim",
+      "public_semantic": "Trim changes decoder-side level/warping for screen/out-of-screen object rendering.",
+      "openjoc_state": "TrimElement/TrimUpdate when parsing succeeds",
+      "parser_location": "crates/openjoc-oamd/src/trim.rs; crates/openjoc-scene/src/assembly.rs",
+      "state_lifetime": "global per metadata frame with per-object disable flags",
+      "scope": "global plus per object",
+      "default_and_updates": "default/disabled/custom configurations; public parser rejects reserved modes",
+      "direct_joc_treatment": "UNSUPPORTED when the element is opaque; no meaning is inferred",
+      "adm_treatment": "PRESERVED_BUT_NOT_EXPORTED only when typed scene state exists; no generated ADM trim claim",
+      "r00": "raw warp 3 is opaque and unresolved; no clean decoded trim semantics are available"
+    },
+    {
+      "field": "additional_table_data",
+      "public_semantic": "A bounded additional-data window is retained, but its opaque meaning is not invented.",
+      "openjoc_state": "ObjectUpdate.additional_table_data",
+      "parser_location": "crates/openjoc-oamd/src/object_element.rs",
+      "state_lifetime": "per object/per metadata block",
+      "scope": "per object",
+      "default_and_updates": "optional bounded byte window",
+      "direct_joc_treatment": "PRESERVED_BUT_NOT_INTERPRETED beyond the closed raw3 guard",
+      "adm_treatment": "UNSUPPORTED/OPAQUE",
+      "r00": "raw3/warp-3 interpretation remains explicitly out of scope"
+    }
+  ],
+  "adm_representation_baseline": {
+    "pcm": "decoded ReconstructionBasis.rows[j] written unchanged as signed 24-bit PCM; base LFE remains a separate bed LFE track",
+    "position": "admitted room position converted once to normalized ADM Cartesian X/Y/Z",
+    "gain": "no ADM gain element for active Objects; no semantic gain bake",
+    "active_present": "strict admission rejects inactive dynamic transitions; best-effort disables decoded dynamic metadata on that error",
+    "timing": "sample-domain rtime/duration blocks at each OAMD event boundary; jumpPosition value 1 with interpolationLength 0 on the first Object block and 250 on subsequent blocks",
+    "other_properties": "size, priority, channel lock, zones, divergence, trim, and opaque additional data are not claimed as exported ADM semantics"
+  },
+  "decisions": {
+    "oamd_gain_present_in_r00": "YES_DECODED_BUT_UNITY_ONLY",
+    "oamd_gain_non_unity_objects": 0,
+    "oamd_gain_update_count": 163984,
+    "oamd_gain_public_semantics": "dB decoder-interface gain converted to a linear multiplier on the object signal before spatial contribution; negative infinity is silence",
+    "oamd_gain_current_adm_treatment": "DROPPED_OUTSIDE_R00; NOT_APPLICABLE_TO_R00_VALUES",
+    "active_present_state_present": "YES",
+    "active_present_current_adm_treatment": "USED_FOR_ADMISSION_ONLY_WITH_FAIL_CLOSED_STRICT_REJECTION",
+    "primary_missing_state": "ADM_PROFILE_INTERPOLATION_GAP_CONFIRMED_AND_FIXED",
+    "target_adm_profile_can_express_state_directly": "PARTIAL",
+    "semantic_pcm_bake_required": "NO_FOR_R00; INCONCLUSIVE_FOR_NON_UNITY_GAIN_STREAMS",
+    "semantic_pcm_bake_publicly_equivalent": "INCONCLUSIVE_NOT_NEEDED_FOR_R00",
+    "vocal_left_bias_explained_by_dropped_state": "NO_EVIDENCE; NOT_PROVEN",
+    "render_state_export_gap": "CONFIRMED_AS_ADM_PROFILE_STATE_GAP; CAUSALITY_FOR_R00_SYMPTOM_NOT_PROVEN",
+    "production_code_changed": true,
+    "pcm_changed": false,
+    "pcm_change_reason": "NONE",
+    "remaining_blocker": "HUMAN_LOGIC_RECHECK_REQUIRED_TO_TEST_VOCAL_LOCALIZATION_EFFECT; R00 TRIM IS OPAQUE RAW WARP 3 AND NO CLEAN VOCAL STEM MATRIX WAS PROVIDED"
+  },
+  "validation_reference": {
+    "coordinate_regression": "PASS_PREVIOUS_COORDINATE_FIX",
+    "scene_regression": "PASS_PREVIOUS_ACCEPTED_BASELINE",
+    "r00_coordinate_fixed_adm_sha256": "85592FAFF43A2CF00A7DB2539413298744AE26B69CE041A98ABEC8DB9B37D4CF",
+    "r00_previous_pcm24": "SAFE",
+    "new_semantic_fix_export": "PASS",
+    "r00_fixed_full_adm_export": "PASS",
+    "r00_fixed_adm_validation": "PASS",
+    "r00_fixed_determinism": "PASS",
+    "r00_fixed_wav_sha256": "5AC8AA2A75F60D020889732AF800992A1323DE2CC967A9C086BB8AD6BB8DCEBF",
+    "r00_fixed_data_chunk_sha256": "C749E57CA0B287C423FE3FC676D84F76EDC0EA337233A5F4E5F5D3EF12313857",
+    "r00_fixed_pcm24": "SAFE",
+    "r00_fixed_pcm_bytes": 991775232,
+    "r00_fixed_candidate_a": "C:\\Users\\chyin\\AppData\\Local\\Temp\\openjoc-r00-adm-fixed-20260826\\R00-fixed-candidate.wav",
+    "r00_fixed_candidate_b": "C:\\Users\\chyin\\AppData\\Local\\Temp\\openjoc-r00-adm-fixed-20260827-b\\R00-fixed-candidate-b.wav",
+    "logic_global_spatial_topology": "PASS_PREVIOUS_COORDINATE_FIX",
+    "logic_vocal_localization": "FAIL_PREVIOUS_CANDIDATE",
+    "corrected_logic_recheck": "PENDING_HUMAN_RECHECK"
+  },
+  "public_references": [
+    "https://www.etsi.org/deliver/etsi_ts/103400_103499/103420/01.02.01_60/ts_103420v010201p.pdf",
+    "https://developer.dolby.com/globalassets/documentation/technology/dolby_atmos_master_adm_profile_v1.0.pdf",
+    "https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.2076-2-201910-S%21%21PDF-E.pdf"
+  ]
+}

@@ -167,6 +167,16 @@ fn admitted_binding_exports_dynamic_position_blocks_and_preserves_base_lfe() {
             .contains("<position coordinate=\"Y\">0.500000</position>")
     );
     assert!(first.xml.contains("_00000002\" rtime="));
+    assert!(
+        first
+            .xml
+            .contains("<jumpPosition interpolationLength=\"0\">1</jumpPosition>")
+    );
+    assert!(
+        first
+            .xml
+            .contains("<jumpPosition interpolationLength=\"250\">1</jumpPosition>")
+    );
     assert!(first.xml.contains("<speakerLabel>RC_LFE</speakerLabel>"));
 
     let path = temp_path("bound-dynamic");

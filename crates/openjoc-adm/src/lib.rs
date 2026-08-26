@@ -31,6 +31,11 @@ pub const ADM_STANDARD: &str = "ITU-R BS.2076-3 (02/2025)";
 const MAX_AXML_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CHNA_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_DBMD_BYTES: u64 = 16 * 1024 * 1024;
+// Dolby Atmos Master ADM Profile v1.0 represents object updates as discrete
+// events: the first block jumps immediately, while subsequent blocks use the
+// profile-defined 250-sample renderer smoothing interval. This is a target
+// ADM transport rule, not a copy of the source OAMD ramp duration.
+const DOLBY_SUBSEQUENT_JUMP_INTERPOLATION_SAMPLES: u64 = 250;
 
 /// Export policy for semantic losses.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1523,8 +1528,15 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
                         let block_duration = format_time(block.duration_samples, sample_rate);
                         let _ = write!(
                             xml,
-                            "          <audioBlockFormat audioBlockFormatID=\"{block_id}\" rtime=\"{rtime}\" duration=\"{block_duration}\">\n            <cartesian>1</cartesian>\n            <position coordinate=\"X\">{:.6}</position>\n            <position coordinate=\"Y\">{:.6}</position>\n            <position coordinate=\"Z\">{:.6}</position>\n            <jumpPosition interpolationLength=\"0\">1</jumpPosition>\n          </audioBlockFormat>\n",
-                            block.position.x, block.position.y, block.position.z,
+                            "          <audioBlockFormat audioBlockFormatID=\"{block_id}\" rtime=\"{rtime}\" duration=\"{block_duration}\">\n            <cartesian>1</cartesian>\n            <position coordinate=\"X\">{:.6}</position>\n            <position coordinate=\"Y\">{:.6}</position>\n            <position coordinate=\"Z\">{:.6}</position>\n            <jumpPosition interpolationLength=\"{}\">1</jumpPosition>\n          </audioBlockFormat>\n",
+                            block.position.x,
+                            block.position.y,
+                            block.position.z,
+                            if block_index == 0 {
+                                0
+                            } else {
+                                DOLBY_SUBSEQUENT_JUMP_INTERPOLATION_SAMPLES
+                            },
                         );
                     }
                 }
@@ -2612,7 +2624,7 @@ fn validate_adm_xml(
         if channel_blocks.is_empty() {
             return Err(AdmError::InvalidAdmBwf("audioChannelFormat has no block"));
         }
-        for block in channel_blocks {
+        for (block_index, block) in channel_blocks.into_iter().enumerate() {
             let block_id = block
                 .attribute("audioBlockFormatID")
                 .ok_or(AdmError::InvalidAdmBwf("missing audioBlockFormatID"))?;
@@ -2654,7 +2666,7 @@ fn validate_adm_xml(
                         || block.attribute("duration").is_none()
                         || !coordinates.contains("X")
                         || !coordinates.contains("Y")
-                        || !has_dolby_jump_position(block)
+                        || !has_dolby_jump_position(block, block_index)
                     {
                         return Err(AdmError::InvalidAdmBwf(
                             "Objects block lacks Dolby timing/position/jump metadata",
@@ -2971,17 +2983,22 @@ fn position_value(block: roxmltree::Node<'_, '_>, coordinate: &str) -> Option<f6
         .and_then(|value| value.trim().parse::<f64>().ok())
 }
 
-fn has_dolby_jump_position(block: roxmltree::Node<'_, '_>) -> bool {
+fn has_dolby_jump_position(block: roxmltree::Node<'_, '_>, block_index: usize) -> bool {
     let jumps: Vec<_> = block
         .children()
         .filter(|node| node.is_element() && node.tag_name().name() == "jumpPosition")
         .collect();
+    let expected_interpolation_length = if block_index == 0 {
+        0.0
+    } else {
+        DOLBY_SUBSEQUENT_JUMP_INTERPOLATION_SAMPLES as f64
+    };
     jumps.len() == 1
         && jumps[0].text().map(str::trim) == Some("1")
         && jumps[0]
             .attribute("interpolationLength")
             .and_then(|value| value.parse::<f64>().ok())
-            == Some(0.0)
+            == Some(expected_interpolation_length)
 }
 
 fn same_format_counter(left: &str, right: &str) -> bool {

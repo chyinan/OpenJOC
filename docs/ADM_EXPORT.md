@@ -233,7 +233,10 @@ remain unresolved for dynamic binding. Best-effort export retains generated
 Objects at neutral/static positions and records `unsupported_binding_reason`;
 strict export rejects. Unsupported dynamic properties such as inactive
 transitions, gain, extent, divergence, channel lock, and zones are not
-fabricated into ADM.
+fabricated into ADM. For supported dynamic Objects, the Dolby profile
+`jumpPosition` transport uses `interpolationLength=0` on the first block and
+`250` samples on every subsequent block; this is a target ADM profile rule,
+not a copy of the source OAMD `ramp_duration` value.
 
 The Dolby Atmos master profile does not allow a mono DirectSpeakers/LFE bed.
 When known Base LFE PCM is present, OpenJOC places it in the LFE position of the
@@ -248,7 +251,7 @@ The implementation targets the public standards subset described by:
 
 - ITU-R BS.2076-3 (02/2025), Audio Definition Model.
 - ITU-R BS.2088-2 (11/2025), long-form WAVE metadata chunks and size semantics.
-- Dolby Atmos Master ADM Profile v1.1, interoperability element/ID/bed/BWF
+- Dolby Atmos Master ADM Profile v1.0, interoperability element/ID/bed/BWF
   constraints.
 - EBU Tech 3285 Supplement 6 (2009), public `dbmd` envelope semantics.
 - EBU Tech 3285 Supplement 7 (2018), `chna` chunk reference semantics.
@@ -289,7 +292,8 @@ exported PCM tracks:
 - Dolby Atmos object IDs beginning at `AO_100B` and bed IDs in the bed range;
 - one sample-derived `audioBlockFormat` per signal for neutral/unresolved output;
 - for the admitted profile, one deterministic position block per OAMD event
-  boundary, with exact sample-derived `rtime`/duration coverage;
+  boundary, with exact sample-derived `rtime`/duration coverage and
+  profile-compliant first/subsequent `jumpPosition` interpolation metadata;
 - cartesian neutral position for signals whose spatial binding is unresolved;
 - standard ADM ID syntax and child-element IDRef relationships;
 - `chna` UIDs/track-format/pack-format references matching the XML and PCM
@@ -308,13 +312,13 @@ The same table is used by the writer and the reconstruction report.
 |---|---|---|
 | Reconstruction signal identity | `EXACT` | Local ReconstructionBasis row identity only. |
 | Audio ↔ spatial metadata binding | `EXACT` within scope / `UNRESOLVED` otherwise | In the admitted profile, decoded JOC ordinal `j` maps to OAMD dynamic ordinal `j` and total index `j+1`; no authored identity is claimed. |
-| Dynamic position/trajectory | `EXACT` within supported position scope / `NOT_REPRESENTABLE` otherwise | Admitted OAMD position events become deterministic ADM blocks; unsupported properties or profiles remain neutral/rejected by policy. |
+| Dynamic position/trajectory | `EXACT` within supported position scope / `NOT_REPRESENTABLE` otherwise | Admitted OAMD position events become deterministic ADM blocks with profile-compliant jump interpolation metadata; unsupported properties or profiles remain neutral/rejected by policy. |
 | Bed/direct-speaker identity for reconstruction rows | `NOT_REPRESENTABLE` | Structural order is not promoted to authored identity. |
 | Separately retained base LFE identity | `EXACT` | Exported in the LFE position of a generated 5.1 DirectSpeakers bed. |
 | Dolby Atmos bed transport placeholders | `APPROXIMATED` | Five explicitly reported silent tracks complete the minimum allowed LFE-bearing bed. |
 | Extent, channel lock, divergence, zones, JOC controls | `NOT_REPRESENTABLE` | Not silently invented in ADM fields. |
 | Original hierarchy, names, UIDs, comments | `NOT_RECOVERABLE` | Neutral generated IDs are used only where required. |
-| PCM sample timing and track order | `EXACT` | Derived from the scene sample domain. |
+| PCM sample timing and track order | `EXACT` | Derived from the scene sample domain; object-block interpolation follows the Dolby profile's first-block 0/subsequent-block 250-sample rule. |
 | Float-to-24-bit storage | `APPROXIMATED` | Deterministic quantization, with no gain processing. |
 | FinalLinkedGain, HRTF, speaker render | `NOT_APPLICABLE` | Export occurs before those renderer stages. |
 
@@ -325,6 +329,7 @@ For the admitted dynamic path, the property boundary is deliberately narrow:
 | X/Y/Z position | `ADMITTED` | Supported finite normalized OAMD room coordinates are converted once to normalized cartesian ADM position elements; unsupported ranges fail closed. |
 | Active/inactive | `PARTIAL` | Active slots are retained; an inactive transition rejects dynamic export and follows policy. |
 | Gain | `UNSUPPORTED` | Not copied into ADM dynamic blocks. |
+| Timing / ramp | `APPROXIMATED` | Sample-domain block boundaries are retained; source OAMD ramp values are not copied, and Dolby profile jump interpolation is emitted as 0 samples for the first block and 250 samples thereafter. |
 | Extent/size/spread | `UNSUPPORTED` | Not fabricated. |
 | Divergence | `UNSUPPORTED` | Not fabricated. |
 | Channel lock | `UNSUPPORTED` | Not fabricated. |
