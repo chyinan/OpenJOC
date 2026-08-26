@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt};
 
 mod assembly;
-pub use assembly::{SceneBuildError, SceneBuilder, StreamingSceneSummary};
+pub use assembly::{
+    SceneBuildError, SceneBuilder, StreamingSceneSummary, metadata_updates_for_frame,
+};
 mod bridge;
 pub use bridge::{
     BaseFullBandCoordinate, BridgeError, CodecBasisBlock, FixedFamilyId, FixedMemberId,
@@ -34,8 +36,11 @@ pub use bridge_control::{
 mod binding;
 pub use binding::{
     BindingAdmissionError, BindingAdmissionRequirements, BindingAdmissionStatus,
-    BindingEvidenceClass, BindingEvidenceDimensions, BindingProvenance, BindingRelationKind,
-    SemanticBindingEvidence, VerifiedBindingAdmission,
+    BindingCodecProfile, BindingEvidenceClass, BindingEvidenceDimensions, BindingProvenance,
+    BindingRelationKind, BoundDecodedJocObject, BoundDecodedJocObjectView, DecodedJocBindingFacts,
+    DecodedJocBindingProfile, DecodedJocBindingUnavailable, JocDecodedObjectOrdinal,
+    OamdBindingObjectClass, OamdDynamicObjectOrdinal, OamdTotalObjectIndex,
+    SemanticBindingEvidence, VerifiedBindingAdmission, admit_decoded_joc_binding,
 };
 mod extent;
 mod layout;
@@ -170,14 +175,16 @@ pub type ObjectTrack = MetadataObject;
 /// Semantic state of the audio-to-authored-object relationship.
 ///
 /// Evidence levels are represented separately by [`SemanticBindingEvidence`].
-/// The only currently constructible production state is `Unresolved`; this
-/// prevents structural coincidence or empirical correlation from being
-/// serialized as a verified authored-object/audio-row binding.
+/// `ResolvedWithinCarrier` is a scoped decoded-JOC-PCM ↔ OAMD metadata state;
+/// it never means that the original authored ADM object identity was recovered.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticBindingState {
     #[default]
     Unresolved,
+    /// Decoded JOC PCM is paired with decoded OAMD metadata within the
+    /// admitted carrier profile; original authored identity remains unknown.
+    ResolvedWithinCarrier,
 }
 
 /// Deterministic label for one full-band Base channel at the JOC boundary.
@@ -327,6 +334,7 @@ pub enum SceneError {
         actual: usize,
     },
     NonFiniteTrim,
+    DecodedBindingUnavailable(String),
     Json(String),
 }
 
@@ -386,6 +394,9 @@ impl fmt::Display for SceneError {
             Self::NonFiniteTrim => {
                 formatter.write_str("trim metadata contains non-finite controls")
             }
+            Self::DecodedBindingUnavailable(reason) => {
+                write!(formatter, "decoded JOC object binding is unavailable: {reason}")
+            }
             Self::Json(message) => write!(formatter, "invalid scene JSON: {message}"),
         }
     }
@@ -439,9 +450,7 @@ impl ObjectScene {
     ///
     /// Component-domain decoding remains available when this gate fails.
     pub fn require_authored_object_audio_binding(&self) -> Result<(), SceneError> {
-        match self.semantic_binding {
-            SemanticBindingState::Unresolved => Err(SceneError::SemanticBindingUnresolved),
-        }
+        Err(SceneError::SemanticBindingUnresolved)
     }
 
     /// Validates cross-field invariants required for scene export.
@@ -528,6 +537,26 @@ impl ObjectScene {
             if !trim_is_finite(&update.trim) {
                 return Err(SceneError::NonFiniteTrim);
             }
+        }
+        if self.semantic_binding == SemanticBindingState::ResolvedWithinCarrier {
+            if self.base_lfe_pcm.is_none() {
+                return Err(SceneError::DecodedBindingUnavailable(
+                    "Base LFE binding precondition not satisfied".to_owned(),
+                ));
+            }
+            let classes = self
+                .objects
+                .iter()
+                .map(|object| object.class)
+                .collect::<Vec<_>>();
+            let facts = crate::DecodedJocBindingFacts::from_scene_classes(
+                self.reconstruction_basis
+                    .as_ref()
+                    .map_or(0, |basis| basis.rows.len()),
+                &classes,
+            );
+            crate::admit_decoded_joc_binding(&facts)
+                .map_err(|error| SceneError::DecodedBindingUnavailable(error.to_string()))?;
         }
         Ok(())
     }

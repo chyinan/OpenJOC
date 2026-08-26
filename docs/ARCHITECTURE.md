@@ -126,7 +126,9 @@ renderer profile; explicit `ETSI_STRICT` never falls back, while normative
 inspection remains strict by purpose.
 
 The observed OAMD `warp_mode` value `raw=3` remains reserved under ETSI strict
-parsing. No production alias, offset, or trim guess is present.
+parsing. The exact observed compatibility profile preserves raw3 as opaque and
+may use the decoded OAMD spatial metadata directly for the tested scene scope;
+no production alias, transform, offset, or trim guess is present.
 
 ### Scene and binding
 
@@ -302,18 +304,19 @@ complete successful decode, so failure cannot publish a canonical partial.
 
 ### Scoped decoded-JOC/OAMD binding
 
-The payload boundary has one explicit clean-room admission gate for the
-observed ordinary E-AC-3 JOC profile: 15 decoded JOC objects, no OAMD bed, one
-Base LFE at total index 0, no ISF, 15 dynamic OAMD objects, and 16 total OAMD
-entries. Only after this gate passes does the canonical typed mapping produce
-`joc_ordinal = dynamic_ordinal` and `oamd_total_index = joc_ordinal + 1`.
+The payload boundary has one explicit clean-room structural admission gate for
+the ordinary strict profile and the exact observed raw3-compatible profile: 15
+decoded JOC objects, no OAMD bed, one Base LFE at total index 0, no ISF, 15
+dynamic OAMD objects, and 16 total OAMD entries. Only after this gate passes
+does the canonical typed mapping produce `joc_ordinal = dynamic_ordinal` and
+`oamd_total_index = joc_ordinal + 1`.
 The `+1` is centralized in `DecodedJocBindingProfile`; it is not an element-ID
 lookup, audio-content match, or PCM heuristic.
 
 `SemanticBindingState::ResolvedWithinCarrier` means only that decoded JOC PCM
 and decoded OAMD metadata are paired inside this admitted carrier profile. It
 does not recover original authored ADM identity. Bed-bearing, ISF-bearing,
-alternative-LFE, count/order-mismatched, compatibility-profile, and
+alternative-LFE, count/order-mismatched, unknown-compatibility-deviation, and
 incomplete-Base-LFE cases remain unresolved; inactive transitions are not
 admitted by the dynamic ADM metadata exporter.
 

@@ -1,8 +1,8 @@
 // pattern: Functional Core
 
 use crate::{
-    ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SampleRange, SceneBuildError, SceneBuilder,
-    StreamingSceneSummary,
+    BindingCodecProfile, ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SampleRange,
+    SceneBuildError, SceneBuilder, StreamingSceneSummary,
 };
 use openjoc_joc::{
     DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ReconstructionBasis,
@@ -203,6 +203,14 @@ impl PayloadDecoder {
         &mut self,
         input: JocFrameInput<'_>,
     ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
+        self.decode_frame_inner(input, binding_codec_profile(self.oamd_profile))
+    }
+
+    fn decode_frame_inner(
+        &mut self,
+        input: JocFrameInput<'_>,
+        binding_profile: BindingCodecProfile,
+    ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
         if input.frame_index != self.next_frame_index {
             return Err(PayloadDecodeError::UnexpectedFrameIndex {
                 expected: self.next_frame_index,
@@ -257,12 +265,14 @@ impl PayloadDecoder {
             .checked_add(1)
             .ok_or(PayloadDecodeError::FrameIndexOverflow)?;
         if let Some(builder) = self.builder.as_mut() {
-            builder.append_frame_with_layout(
+            builder.append_frame_with_layout_and_binding_profile(
                 &decoded.reconstruction_basis.rows,
                 input.base_lfe_pcm,
                 &oamd,
                 self.config.reference_screen,
                 &layout,
+                usize::from(joc.header.object_count),
+                binding_profile,
             )?;
         } else {
             let mut builder = if self.streaming {
@@ -270,12 +280,14 @@ impl PayloadDecoder {
             } else {
                 SceneBuilder::new(input.sample_rate, &oamd.prefix)?
             };
-            builder.append_frame_with_layout(
+            builder.append_frame_with_layout_and_binding_profile(
                 &decoded.reconstruction_basis.rows,
                 input.base_lfe_pcm,
                 &oamd,
                 self.config.reference_screen,
                 &layout,
+                usize::from(joc.header.object_count),
+                binding_profile,
             )?;
             self.builder = Some(builder);
         }
@@ -330,20 +342,61 @@ impl PayloadDecoder {
         &mut self,
         input: JocFrameInput<'_>,
         profile: OamdParseProfile,
+        sink: S,
+    ) -> Result<(), E>
+    where
+        S: FnMut(&DecodedPayloadFrame) -> Result<(), E>,
+        E: From<PayloadDecodeError>,
+    {
+        self.decode_frame_with_profile_and_binding_profile(
+            input,
+            profile,
+            binding_codec_profile(profile),
+            sink,
+        )
+    }
+
+    /// Decodes one frame under explicit syntax and independently admitted
+    /// binding profiles, returning the committed frame to a bounded caller.
+    pub fn decode_frame_with_profile_and_binding_profile_to_frame(
+        &mut self,
+        input: JocFrameInput<'_>,
+        profile: OamdParseProfile,
+        binding_profile: BindingCodecProfile,
+    ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
+        let previous = self.oamd_profile;
+        self.oamd_profile = profile;
+        let result = self.decode_frame_with_binding_profile(input, binding_profile);
+        self.oamd_profile = previous;
+        result
+    }
+
+    /// Decodes one frame under explicit syntax and independently admitted
+    /// binding profiles. Compatibility syntax never mints a binding profile
+    /// implicitly; production callers must supply the separately verified
+    /// scoped profile.
+    pub fn decode_frame_with_profile_and_binding_profile<S, E>(
+        &mut self,
+        input: JocFrameInput<'_>,
+        profile: OamdParseProfile,
+        binding_profile: BindingCodecProfile,
         mut sink: S,
     ) -> Result<(), E>
     where
         S: FnMut(&DecodedPayloadFrame) -> Result<(), E>,
         E: From<PayloadDecodeError>,
     {
-        let previous = self.oamd_profile;
-        self.oamd_profile = profile;
-        let result = self
-            .decode_frame(input)
+        self.decode_frame_with_profile_and_binding_profile_to_frame(input, profile, binding_profile)
             .map_err(E::from)
-            .and_then(|frame| sink(&frame));
-        self.oamd_profile = previous;
-        result
+            .and_then(|frame| sink(&frame))
+    }
+
+    fn decode_frame_with_binding_profile(
+        &mut self,
+        input: JocFrameInput<'_>,
+        binding_profile: BindingCodecProfile,
+    ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
+        self.decode_frame_inner(input, binding_profile)
     }
 
     /// Finalizes the accumulated renderer-independent object scene.
@@ -374,5 +427,15 @@ impl PayloadDecoder {
         let tail = self.joc.flush_reconstruction();
         let summary = self.finish_streaming()?;
         Ok((summary, tail))
+    }
+}
+
+fn binding_codec_profile(profile: OamdParseProfile) -> BindingCodecProfile {
+    match profile {
+        OamdParseProfile::EtsiStrict => BindingCodecProfile::EAc3JocObservedOrdinary,
+        // Compatibility parsing is deliberately outside the one admitted
+        // clean-room carrier profile. The structural scene remains usable,
+        // but no decoded-object semantic binding is minted.
+        OamdParseProfile::ObservedVendorCompat => BindingCodecProfile::Unsupported,
     }
 }

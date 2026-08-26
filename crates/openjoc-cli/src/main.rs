@@ -38,9 +38,9 @@ use openjoc_ffmpeg::{
 use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{OamdDecoderConfig, OamdError, OamdParseProfile, Position3, ReferenceScreen};
 use openjoc_scene::{
-    JocFrameInput, MetadataObject, MetadataUpdate, ObjectScene, PayloadDecodeError, PayloadDecoder,
-    PayloadDecoderConfig, SemanticBindingState, SpatialContributionMode, SpeakerLayout,
-    SpeakerLayoutPreset, TrimUpdate,
+    DecodedJocBindingProfile, JocFrameInput, MetadataObject, MetadataUpdate, ObjectScene,
+    PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig, SemanticBindingState,
+    SpatialContributionMode, SpeakerLayout, SpeakerLayoutPreset, TrimUpdate,
 };
 use openjoc_wave::{
     Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WavePcm, WaveWriter, decode,
@@ -292,7 +292,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
     output.push_str(concat!(
         "  capture decode writes a metadata-only scene manifest, a truthful decoded-component manifest, and diagnostic ReconstructionBasis row WAVs\n",
         "  streaming decode writes bounded component WAVs, internal-base diagnostics, and a summary; it does not capture ObjectScene\n",
-        "  ReconstructionBasis rows are not authored-object PCM; semantic binding remains unresolved\n",
+        "  ReconstructionBasis rows are not authored-object PCM; within the admitted carrier scope they are decoded JOC output-object PCM; authored identity remains unresolved\n",
         "\n",
     ));
     append_heading(output, "PROFILE / CONTAINER BOUNDARIES", color)?;
@@ -324,7 +324,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "--drc applies encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
             "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
             "and writes bounded component WAVs, internal-base diagnostics, and a summary without ObjectScene capture.\n",
-            "Rows are not authored-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
+            "Rows are not authored-object PCM. Within the admitted carrier scope they are decoded JOC output-object PCM. AUTO reports strict status and any compatibility selection; explicit ETSI_STRICT never falls back; it is never downgraded.\n",
         ),
         "export-adm" => concat!(
             "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n\n",
@@ -345,7 +345,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64]\n",
             "       [--trim-config-count N] [reference-screen options]\n\n",
             "Diagnostic/API-level payload path. Output is a metadata-only scene and separately\n",
-            "named ReconstructionBasis rows, never verified authored-object PCM.\n",
+            "named ReconstructionBasis rows, decoded-object PCM only within an admitted profile and never authored-object PCM.\n",
         ),
         "sofa" => concat!(
             "usage: openjoc sofa inspect <FILE> [--json]\n\n",
@@ -572,9 +572,6 @@ fn stream_compressed_adm(
     progress_enabled: bool,
     terminal_width: Option<u16>,
 ) -> Result<(openjoc_adm::AdmExportReport, AdmStreamingStats), Box<dyn Error>> {
-    if policy == AdmPolicy::Strict {
-        return Err(AdmError::StrictUnresolvedBinding.into());
-    }
     if progress_enabled {
         eprintln!("Analyzing JOC stream...");
     }
@@ -592,16 +589,32 @@ fn stream_compressed_adm(
         &dither,
         base_policy,
     )?;
-    let plan = AdmExportPlan::new(
+    let mut plan = AdmExportPlan::new(
         preflight.sample_rate,
         preflight.duration_samples,
         preflight.reconstruction_signal_count,
         preflight.base_lfe_present,
         preflight.dynamic_object_count,
         preflight.metadata_object_count,
-        SemanticBindingState::Unresolved,
+        preflight.semantic_binding,
         policy,
     )?;
+    if let Some(profile) = &preflight.binding_profile {
+        if let Err(error) =
+            plan.apply_decoded_joc_binding_metadata(&preflight.metadata_timeline, profile)
+        {
+            if policy == AdmPolicy::Strict {
+                return Err(error.into());
+            }
+            plan.set_decoded_binding_unavailable(error.to_string())?;
+        }
+    } else if policy == AdmPolicy::Strict {
+        return Err(AdmError::StrictUnresolvedBinding.into());
+    } else {
+        plan.set_decoded_binding_unavailable(preflight.binding_reason.clone().unwrap_or_else(
+            || "decoded JOC/OAMD binding is unavailable for this profile".to_owned(),
+        ))?;
+    }
     let file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -624,6 +637,10 @@ fn stream_compressed_adm(
         ValidationProfileRequest::Auto,
         &dither,
         base_policy,
+        preflight
+            .binding_profile
+            .as_ref()
+            .map(DecodedJocBindingProfile::codec_profile),
         |access_unit, _metadata, frame, pcm| {
             progress.update(access_unit.saturating_add(1), frame.sample_range.end_sample);
             if let Err(error) =
@@ -4966,13 +4983,13 @@ fn classify_cli_error(error: &(dyn Error + 'static)) -> CliErrorCategory {
 const fn classify_adm_error(error: &AdmError) -> CliErrorCategory {
     match error {
         AdmError::InvalidPolicy(_) => CliErrorCategory::InvalidArgument,
-        AdmError::StrictUnresolvedBinding | AdmError::NoReconstructionSignals => {
-            CliErrorCategory::UnsupportedFeature
-        }
+        AdmError::StrictUnresolvedBinding
+        | AdmError::UnsupportedDynamicMetadata(_)
+        | AdmError::NoReconstructionSignals
+        | AdmError::SizeOverflow => CliErrorCategory::UnsupportedFeature,
         AdmError::InvalidScene(_)
         | AdmError::NonFiniteSample { .. }
         | AdmError::SampleOutOfRange { .. } => CliErrorCategory::DecodeFailure,
-        AdmError::SizeOverflow => CliErrorCategory::UnsupportedFeature,
         AdmError::Io(_) => CliErrorCategory::IoFailure,
         AdmError::InvalidAdmBwf(_) => CliErrorCategory::MalformedInput,
     }

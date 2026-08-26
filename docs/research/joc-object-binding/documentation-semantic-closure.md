@@ -8,15 +8,18 @@ keeps dated research, release, and provenance statements intact.
 
 ## Canonical claim
 
-For `E_AC_3_JOC_OBSERVED_ORDINARY_PROFILE`, OpenJOC can associate decoded JOC
-object audio with corresponding decoded OAMD movement metadata and export
-reconstructed dynamic ADM Objects. This is a carrier-local decoded-object
-claim. It is not recovery of the original authored ADM master.
+For `E_AC_3_JOC_OBSERVED_ORDINARY_PROFILE` and the exact observed
+`E_AC_3_JOC_OBSERVED_ORDINARY_COMPAT_WARP3_PROFILE`, OpenJOC can associate
+decoded JOC object audio with corresponding decoded OAMD movement metadata and
+export reconstructed dynamic ADM Objects. This is a carrier-local
+decoded-object claim. It is not recovery of the original authored ADM master.
 
-The admitted profile is exactly 15 decoded JOC Objects, no bed, one leading
+The admitted profiles are exactly 15 decoded JOC Objects, no bed, one leading
 Base LFE, no ISF, 15 dynamic OAMD Objects, and 16 total OAMD entries. The
 mapping is `joc_ordinal=j`, `oamd_dynamic_ordinal=j`, and
-`oamd_total_index=j+1`.
+`oamd_total_index=j+1`. The compatibility variant is accepted only for the
+known deviation family and exact opaque raw3 shape; raw3 remains reserved
+under ETSI strict and receives no guessed transform.
 
 ## Semantic census
 
@@ -31,7 +34,7 @@ mapping is `joc_ordinal=j`, `oamd_dynamic_ordinal=j`, and
 | No authored-object binding in JOC rendering | `docs/CAPABILITIES.md`, renderer docs | Still-true stronger claim | Retained for authored identity and renderer fidelity. |
 | Capability status for dynamic ADM | `docs/CAPABILITIES.md` | Stale/incomplete current matrix | Added separate `ADMITTED_WITH_SCOPE` rows for decoded-object binding and reconstructed dynamic ADM, plus `UNRESOLVED` profiles and non-admitted original recovery. |
 | Report fields and original recovery flags | `docs/ADM_EXPORT.md`, `docs/KNOWN_LIMITATIONS.md` | Incomplete current explanation | Documented separately: binding state, dynamic metadata export, bound/unbound counts, authored identity false, ADM master false, and lossless round trip false. |
-| Future binding requires evidence | `docs/ROADMAP.md` | Overbroad current wording | Narrowed it to broader profiles; the exact clean-room profile is now current capability. |
+| Future binding requires evidence | `docs/ROADMAP.md` | Overbroad current wording | Narrowed it to broader or unknown-deviation profiles; the exact ordinary and observed raw3-compatible profiles are now current capability. |
 | Old unresolved binding reports | `CHANGELOG.md`, `docs/PROVENANCE.md`, `docs/research/**` | Historical/research/archived claims | Intentionally retained as dated records; they describe the state at that time. |
 
 ## User-understandability answers

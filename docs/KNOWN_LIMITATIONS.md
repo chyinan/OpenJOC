@@ -20,7 +20,9 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 - `ETSI_STRICT` rejects syntax outside the published profile, including the
   observed reserved OAMD warp value `raw=3`. `OBSERVED_VENDOR_COMPAT` is an
   explicit, partial policy that preserves opaque continuation without
-  assigning vendor semantics.
+  assigning vendor semantics. One exact 15-object compatibility shape with
+  raw3 is admitted for the decoded-object scene path because no additional
+  raw3-specific transform was required within the tested scope.
 - Public-syntax coding-tool support has bounded numerical and state coverage.
   Full fidelity for every producer, carrier, coding-tool combination, and
   malformed-input interaction is not claimed.
@@ -85,12 +87,13 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   binding, and discarded source information cannot be recovered. The report
   keeps `original_authored_identity_recovered: false`,
   `original_adm_master_recovered: false`, and `lossless_round_trip: false`.
-- For the exact clean-room profile (15 JOC objects, no bed, one leading Base
+- For the exact clean-room profiles (15 JOC objects, no bed, one leading Base
   LFE, no ISF, 15 dynamic OAMD objects, 16 total), decoded JOC PCM is paired
   with the corresponding OAMD dynamic metadata by typed carrier-local
-  ordinals. Generated ADM names are neutral `OpenJOC Reconstructed JOC Object
-  NN`; the report keeps original authored identity and original ADM-master
-  recovery explicitly false.
+  ordinals. This includes the ordinary strict profile and the exact observed
+  raw3-compatible profile. Generated ADM names are neutral `OpenJOC
+  Reconstructed JOC Object NN`; the report keeps original authored identity
+  and original ADM-master recovery explicitly false.
 - A moving reconstructed Object represents the spatial metadata retained and
   decoded from the JOC programme. Its trajectory may differ from the original
   DAW automation because JOC can quantize metadata, reorganize object

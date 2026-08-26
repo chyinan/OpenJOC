@@ -1,11 +1,15 @@
 //! Reconstructed ADM BWF export for the renderer-independent OpenJOC scene.
 //!
-//! This crate intentionally does not infer an authored-object/audio-row
-//! relationship. `ObjectScene` currently records that relation as unresolved,
-//! so the export contains deterministic neutral reconstruction signals and a
-//! machine-readable report rather than inventing ADM object bindings.
+//! This crate exports a deterministic reconstructed representation. It emits
+//! neutral reconstruction signals outside the admitted decoded-JOC/OAMD
+//! profile, and emits scoped dynamic ADM objects only after that profile's
+//! structural gate and metadata conversion both succeed. Neither path claims
+//! recovery of authored ADM identity.
 
-use openjoc_scene::{ObjectClass, ObjectScene, SemanticBindingState};
+use openjoc_scene::{
+    DecodedJocBindingFacts, DecodedJocBindingProfile, MetadataUpdate, ObjectClass, ObjectScene,
+    Position, Position3, SemanticBindingState, admit_decoded_joc_binding,
+};
 use serde::Serialize;
 use std::fmt::Write as _;
 use std::{
@@ -92,24 +96,24 @@ pub struct MappingRecord {
     pub detail: &'static str,
 }
 
-/// The complete mapping table for the 0.9 initial subset.
+/// The complete default mapping table for an unresolved or best-effort export.
 #[must_use]
 pub const fn mapping_table() -> [MappingRecord; 11] {
     [
         MappingRecord {
             semantic: "reconstruction_signal_identity",
             status: MappingStatus::Exact,
-            detail: "The ADM track is identified only as a local ReconstructionBasis row.",
+            detail: "The ADM track is identified as a local decoded JOC output-object coordinate; authored identity is not recovered.",
         },
         MappingRecord {
             semantic: "audio_to_spatial_metadata_binding",
             status: MappingStatus::Unresolved,
-            detail: "ObjectScene records no verified association between a reconstruction row and an OAMD object.",
+            detail: "Only the exact admitted carrier-local decoded JOC/OAMD profile supplies this association.",
         },
         MappingRecord {
             semantic: "dynamic_object_position_and_trajectory",
             status: MappingStatus::NotRepresentable,
-            detail: "Recovered OAMD updates are retained by OpenJOC but are not attached to PCM in this release.",
+            detail: "Recovered OAMD position updates are attached only after the scoped decoded-object profile and property gate pass.",
         },
         MappingRecord {
             semantic: "bed_and_direct_speaker_identity_for_reconstruction_rows",
@@ -155,6 +159,7 @@ pub const fn mapping_table() -> [MappingRecord; 11] {
 }
 
 /// Machine-readable reconstruction report written beside every export.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, Serialize)]
 pub struct AdmExportReport {
     pub schema: &'static str,
@@ -183,6 +188,252 @@ pub struct AdmExportReport {
     pub original_adm_master_recovered: bool,
     pub lossless_round_trip: bool,
     pub semantic_binding_state: &'static str,
+    pub decoded_joc_object_binding_state: &'static str,
+    pub decoded_joc_binding_profile: Option<&'static str>,
+    pub decoded_joc_objects_bound: usize,
+    pub decoded_joc_objects_unbound: usize,
+    pub dynamic_metadata_exported: bool,
+    pub original_authored_identity_recovered: bool,
+    pub unsupported_binding_reason: Option<String>,
+    pub generated_object_ids: Vec<String>,
+    pub pcm_headroom_census: Option<PcmHeadroomCensus>,
+}
+
+/// Bounded statistics over decoder-domain f64 PCM immediately before S24
+/// quantization. No PCM samples are retained by this structure.
+#[derive(Clone, Debug, Serialize)]
+pub struct PcmHeadroomCensus {
+    pub domain: &'static str,
+    pub total_samples: u64,
+    pub finite_samples: u64,
+    pub non_finite_samples: u64,
+    pub out_of_range_samples: u64,
+    pub samples_above_one: u64,
+    pub samples_below_negative_one: u64,
+    pub max_positive: Option<f64>,
+    pub min_negative: Option<f64>,
+    pub longest_out_of_range_run: u64,
+    pub peak_abs: f64,
+    pub peak_value: f64,
+    pub peak_sample: Option<u64>,
+    pub peak_stream: Option<String>,
+    pub first_out_of_range: Option<PcmHeadroomLocation>,
+    pub base_lfe: Option<PcmHeadroomTrackCensus>,
+    pub reconstruction: Vec<PcmHeadroomTrackCensus>,
+}
+
+/// Location and value of a first non-representable sample.
+#[derive(Clone, Debug, Serialize)]
+pub struct PcmHeadroomLocation {
+    pub stream: String,
+    pub row_index: Option<usize>,
+    pub sample: u64,
+    pub value: f64,
+}
+
+/// Per-signal bounded PCM range statistics.
+#[derive(Clone, Debug, Serialize)]
+pub struct PcmHeadroomTrackCensus {
+    pub stream: String,
+    pub row_index: Option<usize>,
+    pub total_samples: u64,
+    pub finite_samples: u64,
+    pub non_finite_samples: u64,
+    pub out_of_range_samples: u64,
+    pub samples_above_one: u64,
+    pub samples_below_negative_one: u64,
+    pub max_positive: Option<f64>,
+    pub min_negative: Option<f64>,
+    pub longest_out_of_range_run: u64,
+    pub min_value: Option<f64>,
+    pub max_value: Option<f64>,
+    pub peak_abs: f64,
+    pub peak_sample: Option<u64>,
+    pub first_out_of_range: Option<PcmHeadroomLocation>,
+    #[serde(skip)]
+    current_out_of_range_run: u64,
+}
+
+impl PcmHeadroomCensus {
+    fn new(reconstruction_count: usize, base_lfe_present: bool) -> Self {
+        Self {
+            domain: "decoder_pcm_f64_before_s24_quantization",
+            total_samples: 0,
+            finite_samples: 0,
+            non_finite_samples: 0,
+            out_of_range_samples: 0,
+            samples_above_one: 0,
+            samples_below_negative_one: 0,
+            max_positive: None,
+            min_negative: None,
+            longest_out_of_range_run: 0,
+            peak_abs: 0.0,
+            peak_value: 0.0,
+            peak_sample: None,
+            peak_stream: None,
+            first_out_of_range: None,
+            base_lfe: base_lfe_present.then(|| PcmHeadroomTrackCensus::new("base_lfe", None)),
+            reconstruction: (0..reconstruction_count)
+                .map(|row_index| PcmHeadroomTrackCensus::new("reconstruction", Some(row_index)))
+                .collect(),
+        }
+    }
+
+    fn observe_base_lfe(&mut self, sample: u64, value: f64) {
+        let location = self
+            .base_lfe
+            .as_mut()
+            .map(|track| observe_track_values(track, sample, value));
+        if let Some(location) = location {
+            let longest = self
+                .base_lfe
+                .as_ref()
+                .map_or(0, |track| track.longest_out_of_range_run);
+            self.observe_global("base_lfe", None, sample, value, location, longest);
+        }
+    }
+
+    fn observe_reconstruction(&mut self, row_index: usize, sample: u64, value: f64) {
+        let location = self
+            .reconstruction
+            .get_mut(row_index)
+            .map(|track| observe_track_values(track, sample, value));
+        if let Some(location) = location {
+            let longest = self
+                .reconstruction
+                .get(row_index)
+                .map_or(0, |track| track.longest_out_of_range_run);
+            self.observe_global(
+                "reconstruction",
+                Some(row_index),
+                sample,
+                value,
+                location,
+                longest,
+            );
+        }
+    }
+
+    fn observe_global(
+        &mut self,
+        stream: &str,
+        row_index: Option<usize>,
+        sample: u64,
+        value: f64,
+        first_out_of_range: Option<PcmHeadroomLocation>,
+        track_longest_out_of_range_run: u64,
+    ) {
+        self.total_samples = self.total_samples.saturating_add(1);
+        if !value.is_finite() {
+            self.non_finite_samples = self.non_finite_samples.saturating_add(1);
+            return;
+        }
+        self.finite_samples = self.finite_samples.saturating_add(1);
+        if value > 0.0 {
+            self.max_positive = Some(self.max_positive.map_or(value, |max| max.max(value)));
+        } else if value < 0.0 {
+            self.min_negative = Some(self.min_negative.map_or(value, |min| min.min(value)));
+        }
+        let abs = value.abs();
+        if abs > self.peak_abs {
+            self.peak_abs = abs;
+            self.peak_value = value;
+            self.peak_sample = Some(sample);
+            self.peak_stream = Some(match row_index {
+                Some(row_index) => format!("{stream}[{row_index}]"),
+                None => stream.to_owned(),
+            });
+        }
+        if let Some(location) = first_out_of_range {
+            self.out_of_range_samples = self.out_of_range_samples.saturating_add(1);
+            if value > 1.0 {
+                self.samples_above_one = self.samples_above_one.saturating_add(1);
+            } else {
+                self.samples_below_negative_one = self.samples_below_negative_one.saturating_add(1);
+            }
+            self.longest_out_of_range_run = self
+                .longest_out_of_range_run
+                .max(track_longest_out_of_range_run);
+            if self.first_out_of_range.is_none() {
+                self.first_out_of_range = Some(location);
+            }
+        }
+    }
+}
+
+fn observe_track_values(
+    track: &mut PcmHeadroomTrackCensus,
+    sample: u64,
+    value: f64,
+) -> Option<PcmHeadroomLocation> {
+    track.total_samples = track.total_samples.saturating_add(1);
+    if !value.is_finite() {
+        track.non_finite_samples = track.non_finite_samples.saturating_add(1);
+        track.current_out_of_range_run = 0;
+        return None;
+    }
+    track.finite_samples = track.finite_samples.saturating_add(1);
+    if value > 0.0 {
+        track.max_positive = Some(track.max_positive.map_or(value, |max| max.max(value)));
+    } else if value < 0.0 {
+        track.min_negative = Some(track.min_negative.map_or(value, |min| min.min(value)));
+    }
+    track.min_value = Some(track.min_value.map_or(value, |min| min.min(value)));
+    track.max_value = Some(track.max_value.map_or(value, |max| max.max(value)));
+    let abs = value.abs();
+    if abs > track.peak_abs {
+        track.peak_abs = abs;
+        track.peak_sample = Some(sample);
+    }
+    if abs > 1.0 {
+        track.out_of_range_samples = track.out_of_range_samples.saturating_add(1);
+        if value > 1.0 {
+            track.samples_above_one = track.samples_above_one.saturating_add(1);
+        } else {
+            track.samples_below_negative_one = track.samples_below_negative_one.saturating_add(1);
+        }
+        track.current_out_of_range_run = track.current_out_of_range_run.saturating_add(1);
+        track.longest_out_of_range_run = track
+            .longest_out_of_range_run
+            .max(track.current_out_of_range_run);
+        let location = PcmHeadroomLocation {
+            stream: track.stream.clone(),
+            row_index: track.row_index,
+            sample,
+            value,
+        };
+        if track.first_out_of_range.is_none() {
+            track.first_out_of_range = Some(location.clone());
+        }
+        Some(location)
+    } else {
+        track.current_out_of_range_run = 0;
+        None
+    }
+}
+
+impl PcmHeadroomTrackCensus {
+    fn new(stream: &str, row_index: Option<usize>) -> Self {
+        Self {
+            stream: stream.to_owned(),
+            row_index,
+            total_samples: 0,
+            finite_samples: 0,
+            non_finite_samples: 0,
+            out_of_range_samples: 0,
+            samples_above_one: 0,
+            samples_below_negative_one: 0,
+            max_positive: None,
+            min_negative: None,
+            longest_out_of_range_run: 0,
+            min_value: None,
+            max_value: None,
+            peak_abs: 0.0,
+            peak_sample: None,
+            first_out_of_range: None,
+            current_out_of_range_run: 0,
+        }
+    }
 }
 
 /// Result of building an export in memory.
@@ -227,13 +478,14 @@ impl AdmContainer {
 }
 
 /// Deterministic bounded-memory evidence collected by a streaming write.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct AdmStreamingStats {
     pub frames_written: u64,
     pub chunks_written: u64,
     pub max_chunk_frames: usize,
     pub max_live_input_samples: usize,
     pub max_interleaved_bytes: usize,
+    pub pcm_headroom_census: Option<PcmHeadroomCensus>,
 }
 
 /// Incremental signed-24-bit RIFF/RF64 ADM BWF writer.
@@ -243,6 +495,7 @@ pub struct StreamingAdmWriter<W: Write + Seek> {
     frames_written: u64,
     interleaved: Vec<u8>,
     stats: AdmStreamingStats,
+    pcm_headroom_census: PcmHeadroomCensus,
 }
 
 #[derive(Clone, Debug)]
@@ -254,6 +507,29 @@ struct TrackDescriptor {
     stream_id: String,
     track_id: String,
     kind: TrackKind,
+    bound_decoded_joc_object: bool,
+    dynamic_blocks: Vec<AdmDynamicBlock>,
+}
+
+#[derive(Clone, Debug)]
+struct AdmDynamicBlock {
+    start_sample: u64,
+    duration_samples: u64,
+    position: Position3,
+}
+
+impl TrackDescriptor {
+    fn signal_name(&self) -> String {
+        match self.kind {
+            TrackKind::Bed(channel) => channel.report_name().to_owned(),
+            TrackKind::Reconstruction(index) if self.bound_decoded_joc_object => {
+                format!("OpenJOC Reconstructed JOC Object {:02}", index + 1)
+            }
+            TrackKind::Reconstruction(index) => {
+                format!("OpenJOC Reconstructed Signal {:02}", index + 1)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -350,6 +626,7 @@ pub enum AdmError {
     InvalidPolicy(String),
     InvalidScene(String),
     StrictUnresolvedBinding,
+    UnsupportedDynamicMetadata(String),
     NoReconstructionSignals,
     NonFiniteSample {
         track: usize,
@@ -373,6 +650,9 @@ impl fmt::Display for AdmError {
             Self::StrictUnresolvedBinding => formatter.write_str(
                 "strict ADM export requires a verified audio-to-spatial-metadata binding; current ObjectScene is UNRESOLVED",
             ),
+            Self::UnsupportedDynamicMetadata(detail) => {
+                write!(formatter, "decoded dynamic ADM metadata is unsupported: {detail}")
+            }
             Self::NoReconstructionSignals => formatter.write_str("scene contains no reconstruction signals"),
             Self::NonFiniteSample { track, sample } => write!(formatter, "non-finite ADM PCM at track {track}, sample {sample}"),
             Self::SampleOutOfRange { track, sample, value } => write!(formatter, "ADM signed 24-bit PCM requires [-1, 1], got {value} at track {track}, sample {sample}"),
@@ -485,6 +765,8 @@ impl AdmExportPlan {
                     stream_id: format!("AS_{format_id}"),
                     track_id: format!("AT_{format_id}_01"),
                     kind: TrackKind::Bed(bed_channel),
+                    bound_decoded_joc_object: false,
+                    dynamic_blocks: Vec::new(),
                 });
             }
         }
@@ -507,6 +789,8 @@ impl AdmExportPlan {
                 stream_id: format!("AS_{format_id}"),
                 track_id: format!("AT_{format_id}_01"),
                 kind: TrackKind::Reconstruction(reconstruction_index),
+                bound_decoded_joc_object: false,
+                dynamic_blocks: Vec::new(),
             });
         }
         let xml = make_xml(sample_rate, duration_samples, &tracks);
@@ -525,6 +809,7 @@ impl AdmExportPlan {
             reconstruction_signal_count,
             base_lfe_present,
             container,
+            semantic_binding,
         );
         Ok(Self {
             sample_rate,
@@ -545,13 +830,12 @@ impl AdmExportPlan {
         scene
             .validate()
             .map_err(|error| AdmError::InvalidScene(error.to_string()))?;
-        let reconstruction_signal_count = scene
+        let basis = scene
             .reconstruction_basis
             .as_ref()
-            .ok_or(AdmError::NoReconstructionSignals)?
-            .rows
-            .len();
-        Self::new(
+            .ok_or(AdmError::NoReconstructionSignals)?;
+        let reconstruction_signal_count = basis.rows.len();
+        let mut plan = Self::new(
             scene.sample_rate,
             scene.duration_samples,
             reconstruction_signal_count,
@@ -564,7 +848,184 @@ impl AdmExportPlan {
             scene.objects.len(),
             scene.semantic_binding,
             policy,
-        )
+        )?;
+        if scene.semantic_binding == SemanticBindingState::ResolvedWithinCarrier {
+            let classes = scene
+                .objects
+                .iter()
+                .map(|object| object.class)
+                .collect::<Vec<_>>();
+            let facts =
+                DecodedJocBindingFacts::from_scene_classes(reconstruction_signal_count, &classes);
+            let profile = admit_decoded_joc_binding(&facts)
+                .map_err(|error| AdmError::InvalidScene(error.to_string()))?;
+            profile
+                .bind_scene_objects(basis, &scene.metadata_timeline)
+                .map_err(|error| AdmError::InvalidScene(error.to_string()))?;
+            if let Err(error) =
+                plan.apply_decoded_joc_binding_metadata(&scene.metadata_timeline, &profile)
+            {
+                if policy == AdmPolicy::Strict {
+                    return Err(error);
+                }
+                plan.set_decoded_binding_unavailable(error.to_string())?;
+            }
+        }
+        Ok(plan)
+    }
+
+    /// Attaches only the admitted decoded-JOC/OAMD metadata relation to the
+    /// already planned PCM tracks. Metadata is copied, but decoded PCM is not
+    /// retained a second time.
+    pub fn apply_decoded_joc_binding_metadata(
+        &mut self,
+        metadata_timeline: &[MetadataUpdate],
+        profile: &DecodedJocBindingProfile,
+    ) -> Result<(), AdmError> {
+        self.report.decoded_joc_binding_profile = Some(profile.profile_name());
+        if profile.joc_object_count() != self.reconstruction_signal_count
+            || self.dynamic_object_count() != profile.joc_object_count()
+        {
+            return Err(AdmError::UnsupportedDynamicMetadata(
+                "decoded JOC/OAMD object population differs from the ADM plan".to_owned(),
+            ));
+        }
+        let bound_objects = profile
+            .bind_decoded_objects()
+            .map_err(|error| AdmError::UnsupportedDynamicMetadata(error.to_string()))?;
+        let mut dynamic_blocks = Vec::with_capacity(bound_objects.len());
+        for bound in &bound_objects {
+            let updates = metadata_timeline
+                .iter()
+                .filter(|update| {
+                    update.object_id == u32::try_from(bound.oamd_total_index.0).unwrap_or(u32::MAX)
+                })
+                .collect::<Vec<_>>();
+            if updates.is_empty() {
+                return Err(AdmError::UnsupportedDynamicMetadata(format!(
+                    "no OAMD metadata updates for admitted dynamic ordinal {}",
+                    bound.oamd_dynamic_ordinal.0
+                )));
+            }
+            if updates.iter().any(|update| !update.active) {
+                return Err(AdmError::UnsupportedDynamicMetadata(format!(
+                    "inactive transition is not admitted for dynamic ordinal {}",
+                    bound.oamd_dynamic_ordinal.0
+                )));
+            }
+            let mut blocks = Vec::with_capacity(updates.len());
+            for (index, update) in updates.iter().enumerate() {
+                let next_start = updates
+                    .get(index + 1)
+                    .map_or(self.duration_samples, |next| next.start_sample);
+                if update.start_sample >= next_start || next_start > self.duration_samples {
+                    return Err(AdmError::UnsupportedDynamicMetadata(format!(
+                        "non-contiguous OAMD timing for dynamic ordinal {}",
+                        bound.oamd_dynamic_ordinal.0
+                    )));
+                }
+                let position = position_for_adm(&update.position)?;
+                blocks.push(AdmDynamicBlock {
+                    start_sample: update.start_sample,
+                    duration_samples: next_start - update.start_sample,
+                    position,
+                });
+            }
+            if blocks[0].start_sample != 0
+                || blocks.last().is_none_or(|block| {
+                    block.start_sample + block.duration_samples != self.duration_samples
+                })
+            {
+                return Err(AdmError::UnsupportedDynamicMetadata(format!(
+                    "dynamic ordinal {} does not cover the complete programme",
+                    bound.oamd_dynamic_ordinal.0
+                )));
+            }
+            dynamic_blocks.push(blocks);
+        }
+
+        for (index, blocks) in dynamic_blocks.into_iter().enumerate() {
+            let track = self
+                .tracks
+                .iter_mut()
+                .find(|track| track.kind == TrackKind::Reconstruction(index))
+                .ok_or_else(|| {
+                    AdmError::UnsupportedDynamicMetadata(format!(
+                        "ADM reconstruction track {index} is missing"
+                    ))
+                })?;
+            track.bound_decoded_joc_object = true;
+            track.dynamic_blocks = blocks;
+        }
+        self.report.mapping = bound_mapping_table();
+        self.report.dynamic_objects_with_bound_pcm = self.reconstruction_signal_count;
+        self.report.decoded_joc_objects_bound = self.reconstruction_signal_count;
+        self.report.decoded_joc_objects_unbound = 0;
+        self.report.dynamic_metadata_exported = true;
+        self.report.unsupported_binding_reason = None;
+        self.report.semantic_binding_state = "resolved_within_carrier";
+        self.report.decoded_joc_object_binding_state = "resolved_within_carrier";
+        self.report.decoded_joc_binding_profile = Some(profile.profile_name());
+        self.report.generated_signal_identities = self
+            .tracks
+            .iter()
+            .map(TrackDescriptor::signal_name)
+            .collect();
+        self.report.generated_object_ids = generated_object_ids(&self.tracks);
+        self.xml = make_xml(self.sample_rate, self.duration_samples, &self.tracks);
+        self.refresh_serialized_layout()
+    }
+
+    /// Keeps best-effort export neutral while making the binding failure
+    /// explicit in the adjacent machine-readable report.
+    pub fn set_decoded_binding_unavailable(
+        &mut self,
+        reason: impl Into<String>,
+    ) -> Result<(), AdmError> {
+        let reason = reason.into();
+        for track in &mut self.tracks {
+            track.bound_decoded_joc_object = false;
+            track.dynamic_blocks.clear();
+        }
+        self.report.dynamic_objects_with_bound_pcm = 0;
+        self.report.decoded_joc_objects_bound = 0;
+        self.report.decoded_joc_objects_unbound = self.dynamic_object_count();
+        self.report.dynamic_metadata_exported = false;
+        self.report.unsupported_binding_reason = Some(reason);
+        if let Some(reason) = self.report.unsupported_binding_reason.as_ref() {
+            self.report.warnings.push(format!(
+                "Decoded JOC/OAMD dynamic export unavailable: {reason}"
+            ));
+        }
+        self.report.mapping = mapping_table().to_vec();
+        self.report.generated_signal_identities = self
+            .tracks
+            .iter()
+            .map(TrackDescriptor::signal_name)
+            .collect();
+        self.report.generated_object_ids = generated_object_ids(&self.tracks);
+        self.xml = make_xml(self.sample_rate, self.duration_samples, &self.tracks);
+        self.refresh_serialized_layout()
+    }
+
+    fn dynamic_object_count(&self) -> usize {
+        self.tracks
+            .iter()
+            .filter(|track| matches!(track.kind, TrackKind::Reconstruction(_)))
+            .count()
+    }
+
+    fn refresh_serialized_layout(&mut self) -> Result<(), AdmError> {
+        let axml_len = u64::try_from(self.xml.len()).map_err(|_| AdmError::SizeOverflow)?;
+        let chna_len =
+            u64::try_from(chna_payload(&self.tracks)?.len()).map_err(|_| AdmError::SizeOverflow)?;
+        let dbmd_len = u64::try_from(dbmd_payload().len()).map_err(|_| AdmError::SizeOverflow)?;
+        let (container, total_size) =
+            adm_bwf_layout(axml_len, chna_len, dbmd_len, self.data_bytes)?;
+        self.container = container;
+        self.total_size = total_size;
+        self.report.adm_bwf_container = container.as_str();
+        Ok(())
     }
 
     #[must_use]
@@ -592,12 +1053,15 @@ impl<W: Write + Seek> StreamingAdmWriter<W> {
     /// Opens an ADM BWF stream and writes its container/fmt/data prefix.
     pub fn new(mut writer: W, plan: AdmExportPlan) -> Result<Self, AdmError> {
         write_adm_bwf_header(&mut writer, &plan)?;
+        let pcm_headroom_census =
+            PcmHeadroomCensus::new(plan.reconstruction_signal_count, plan.base_lfe_present);
         Ok(Self {
             writer,
             plan,
             frames_written: 0,
             interleaved: Vec::new(),
             stats: AdmStreamingStats::default(),
+            pcm_headroom_census,
         })
     }
 
@@ -649,6 +1113,8 @@ impl<W: Write + Seek> StreamingAdmWriter<W> {
                     .frames_written
                     .checked_add(u64::try_from(frame).map_err(|_| AdmError::SizeOverflow)?)
                     .ok_or(AdmError::SizeOverflow)?;
+                self.pcm_headroom_census
+                    .observe_base_lfe(sample, lfe[frame]);
                 self.interleaved.extend_from_slice(&quantize_s24(
                     reconstruction_rows.len(),
                     sample,
@@ -661,6 +1127,8 @@ impl<W: Write + Seek> StreamingAdmWriter<W> {
                     .frames_written
                     .checked_add(u64::try_from(frame).map_err(|_| AdmError::SizeOverflow)?)
                     .ok_or(AdmError::SizeOverflow)?;
+                self.pcm_headroom_census
+                    .observe_reconstruction(track, sample, row[frame]);
                 self.interleaved
                     .extend_from_slice(&quantize_s24(track, sample, row[frame])?);
             }
@@ -691,6 +1159,15 @@ impl<W: Write + Seek> StreamingAdmWriter<W> {
 
     /// Verifies exact duration, pads PCM, writes ADM metadata, and flushes.
     pub fn finish(mut self) -> Result<(W, AdmExportReport, AdmStreamingStats), AdmError> {
+        if self.plan.report.policy == AdmPolicy::Strict.as_str()
+            && self.plan.report.decoded_joc_object_binding_state == "resolved_within_carrier"
+            && !self.plan.report.dynamic_metadata_exported
+        {
+            return Err(AdmError::UnsupportedDynamicMetadata(
+                "strict ADM export requires dynamic metadata for every admitted decoded JOC object"
+                    .to_owned(),
+            ));
+        }
         if self.frames_written != self.plan.duration_samples {
             return Err(AdmError::InvalidScene(format!(
                 "streaming ADM wrote {} samples per track; preflight requires {}",
@@ -709,6 +1186,8 @@ impl<W: Write + Seek> StreamingAdmWriter<W> {
             )));
         }
         self.writer.flush()?;
+        self.plan.report.pcm_headroom_census = Some(self.pcm_headroom_census.clone());
+        self.stats.pcm_headroom_census = Some(self.pcm_headroom_census);
         Ok((self.writer, self.plan.report, self.stats))
     }
 }
@@ -779,6 +1258,7 @@ fn make_report(
     reconstruction_signal_count: usize,
     base_lfe_present: bool,
     container: AdmContainer,
+    semantic_binding: SemanticBindingState,
 ) -> AdmExportReport {
     let bed_direct_speaker_count = tracks
         .iter()
@@ -796,8 +1276,6 @@ fn make_report(
     let mut approximations = vec!["float reconstruction samples quantized to signed 24-bit PCM"];
     let mut warnings = vec![
         "This is a reconstructed interoperability representation, not the original ADM master."
-            .to_owned(),
-        "Current OpenJOC evidence does not establish the required signal/object association."
             .to_owned(),
     ];
     if base_lfe_present {
@@ -836,7 +1314,7 @@ fn make_report(
         ],
         approximations,
         omissions: vec![
-            "recovered OAMD position/trajectory is not attached to a PCM track while binding is unresolved",
+            "recovered OAMD position/trajectory is not attached when dynamic metadata export is unavailable",
             "extent, channel lock, divergence, zones, and JOC-specific controls are not represented in ADM",
             "FinalLinkedGain, speaker rendering, and HRTF are not applied",
         ],
@@ -844,8 +1322,85 @@ fn make_report(
         source_is_lossy_e_ac_3_joc: true,
         original_adm_master_recovered: false,
         lossless_round_trip: false,
-        semantic_binding_state: "unresolved",
+        semantic_binding_state: semantic_binding_report_name(semantic_binding),
+        decoded_joc_object_binding_state: semantic_binding_report_name(semantic_binding),
+        decoded_joc_binding_profile: None,
+        decoded_joc_objects_bound: 0,
+        decoded_joc_objects_unbound: dynamic_object_count,
+        dynamic_metadata_exported: false,
+        original_authored_identity_recovered: false,
+        unsupported_binding_reason: (semantic_binding == SemanticBindingState::Unresolved)
+            .then(|| "decoded JOC/OAMD binding is unavailable for this profile".to_owned()),
+        generated_object_ids: generated_object_ids(tracks),
+        pcm_headroom_census: None,
     }
+}
+
+fn semantic_binding_report_name(state: SemanticBindingState) -> &'static str {
+    match state {
+        SemanticBindingState::Unresolved => "unresolved",
+        SemanticBindingState::ResolvedWithinCarrier => "resolved_within_carrier",
+    }
+}
+
+fn generated_object_ids(tracks: &[TrackDescriptor]) -> Vec<String> {
+    tracks
+        .iter()
+        .filter(|track| matches!(track.kind, TrackKind::Reconstruction(_)))
+        .map(|track| {
+            let TrackKind::Reconstruction(index) = track.kind else {
+                unreachable!();
+            };
+            format!("AO_{:04X}", 0x100B + index)
+        })
+        .collect()
+}
+
+fn position_for_adm(position: &Position) -> Result<Position3, AdmError> {
+    let position = match position {
+        Position::Room(position) => *position,
+        Position::RoomAtInfinity {
+            boundary_intersection,
+        } => *boundary_intersection,
+        Position::Screen {
+            interpolated_room, ..
+        } => *interpolated_room,
+        Position::Speaker(_) | Position::IntermediateSpatial(_) => {
+            return Err(AdmError::UnsupportedDynamicMetadata(
+                "dynamic ADM export accepts only room-coordinate position updates".to_owned(),
+            ));
+        }
+    };
+    if [position.x, position.y, position.z]
+        .into_iter()
+        .all(f64::is_finite)
+    {
+        Ok(position)
+    } else {
+        Err(AdmError::UnsupportedDynamicMetadata(
+            "dynamic ADM position contains a non-finite coordinate".to_owned(),
+        ))
+    }
+}
+
+fn bound_mapping_table() -> Vec<MappingRecord> {
+    let mut mapping = mapping_table().to_vec();
+    if let Some(record) = mapping
+        .iter_mut()
+        .find(|record| record.semantic == "audio_to_spatial_metadata_binding")
+    {
+        record.status = MappingStatus::Exact;
+        record.detail = "Within the admitted carrier, typed decoded JOC ordinal j maps to reconstruction row j, OAMD dynamic ordinal j, and OAMD total index j+1.";
+    }
+    if let Some(record) = mapping
+        .iter_mut()
+        .find(|record| record.semantic == "dynamic_object_position_and_trajectory")
+    {
+        record.status = MappingStatus::Exact;
+        record.detail =
+            "OAMD position updates are exported at their decoded sample-domain event boundaries.";
+    }
+    mapping
 }
 
 fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor]) -> String {
@@ -897,7 +1452,7 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
         xml.push_str("        </audioObject>\n");
     }
     for (index, track) in object_tracks.iter().enumerate() {
-        let object_name = format!("OpenJOC Reconstructed Signal {:02}", index + 1);
+        let object_name = track.signal_name();
         let _ = write!(
             xml,
             "        <audioObject audioObjectID=\"AO_{:04X}\" audioObjectName=\"{}\" start=\"00:00:00.00000\" duration=\"{duration}\">\n          <audioPackFormatIDRef>{}</audioPackFormatIDRef>\n          <audioTrackUIDRef>{}</audioTrackUIDRef>\n        </audioObject>\n",
@@ -919,10 +1474,10 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
         xml.push_str("        </audioPackFormat>\n");
     }
     for track in &object_tracks {
-        let TrackKind::Reconstruction(index) = track.kind else {
+        let TrackKind::Reconstruction(_) = track.kind else {
             unreachable!();
         };
-        let object_name = format!("OpenJOC Reconstructed Signal {:02}", index + 1);
+        let object_name = track.signal_name();
         let _ = write!(
             xml,
             "        <audioPackFormat audioPackFormatID=\"{}\" audioPackFormatName=\"{}\" typeLabel=\"0003\" typeDefinition=\"Objects\">\n          <audioChannelFormatIDRef>{}</audioChannelFormatIDRef>\n        </audioPackFormat>\n",
@@ -936,11 +1491,7 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
             TrackKind::Bed(channel) => {
                 (channel.channel_name().to_owned(), "DirectSpeakers", "0001")
             }
-            TrackKind::Reconstruction(index) => (
-                format!("OpenJOC Reconstructed Signal {:02}", index + 1),
-                "Objects",
-                "0003",
-            ),
+            TrackKind::Reconstruction(_) => (track.signal_name(), "Objects", "0003"),
         };
         let block_id = track.channel_id.replacen("AC_", "AB_", 1);
         let _ = writeln!(
@@ -961,10 +1512,25 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
                 );
             }
             TrackKind::Reconstruction(_) => {
-                let _ = write!(
-                    xml,
-                    "          <audioBlockFormat audioBlockFormatID=\"{block_id}_00000001\" rtime=\"00:00:00.00000\" duration=\"{duration}\">\n            <cartesian>1</cartesian>\n            <position coordinate=\"X\">0.000000</position>\n            <position coordinate=\"Y\">0.000000</position>\n            <position coordinate=\"Z\">0.000000</position>\n            <jumpPosition interpolationLength=\"0\">1</jumpPosition>\n          </audioBlockFormat>\n"
-                );
+                if track.dynamic_blocks.is_empty() {
+                    let _ = write!(
+                        xml,
+                        "          <audioBlockFormat audioBlockFormatID=\"{block_id}_00000001\" rtime=\"00:00:00.00000\" duration=\"{duration}\">\n            <cartesian>1</cartesian>\n            <position coordinate=\"X\">0.000000</position>\n            <position coordinate=\"Y\">0.000000</position>\n            <position coordinate=\"Z\">0.000000</position>\n            <jumpPosition interpolationLength=\"0\">1</jumpPosition>\n          </audioBlockFormat>\n"
+                    );
+                } else {
+                    for (block_index, block) in track.dynamic_blocks.iter().enumerate() {
+                        let block_id = format!("{block_id}_{:08X}", block_index + 1);
+                        // Block timing stays in the sample domain without
+                        // rounding to the five-decimal ADM display form.
+                        let rtime = format_time(block.start_sample, sample_rate);
+                        let block_duration = format_time(block.duration_samples, sample_rate);
+                        let _ = write!(
+                            xml,
+                            "          <audioBlockFormat audioBlockFormatID=\"{block_id}\" rtime=\"{rtime}\" duration=\"{block_duration}\">\n            <cartesian>1</cartesian>\n            <position coordinate=\"X\">{:.6}</position>\n            <position coordinate=\"Y\">{:.6}</position>\n            <position coordinate=\"Z\">{:.6}</position>\n            <jumpPosition interpolationLength=\"0\">1</jumpPosition>\n          </audioBlockFormat>\n",
+                            block.position.x, block.position.y, block.position.z,
+                        );
+                    }
+                }
             }
         }
         xml.push_str("        </audioChannelFormat>\n");
@@ -972,9 +1538,7 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
     for track in tracks {
         let channel_name = match track.kind {
             TrackKind::Bed(channel) => channel.channel_name().to_owned(),
-            TrackKind::Reconstruction(index) => {
-                format!("OpenJOC Reconstructed Signal {:02}", index + 1)
-            }
+            TrackKind::Reconstruction(_) => track.signal_name(),
         };
         let _ = write!(
             xml,
@@ -989,9 +1553,7 @@ fn make_xml(sample_rate: u32, duration_samples: u64, tracks: &[TrackDescriptor])
     for track in tracks {
         let channel_name = match track.kind {
             TrackKind::Bed(channel) => channel.channel_name().to_owned(),
-            TrackKind::Reconstruction(index) => {
-                format!("OpenJOC Reconstructed Signal {:02}", index + 1)
-            }
+            TrackKind::Reconstruction(_) => track.signal_name(),
         };
         let _ = write!(
             xml,
@@ -2812,6 +3374,89 @@ mod tests {
             writer.write_pcm(&[vec![1.000_001]], None),
             Err(AdmError::SampleOutOfRange { .. })
         ));
+        assert_eq!(writer.pcm_headroom_census.out_of_range_samples, 1);
+        assert_eq!(
+            writer
+                .pcm_headroom_census
+                .first_out_of_range
+                .as_ref()
+                .expect("first out-of-range sample")
+                .value,
+            1.000_001
+        );
+    }
+
+    #[test]
+    fn streaming_writer_reports_prequantization_headroom_per_signal() {
+        let plan = AdmExportPlan::new(
+            48_000,
+            3,
+            1,
+            true,
+            1,
+            2,
+            SemanticBindingState::Unresolved,
+            AdmPolicy::BestEffort,
+        )
+        .expect("plan");
+        let mut writer = StreamingAdmWriter::new(Cursor::new(Vec::new()), plan).expect("writer");
+        writer
+            .write_pcm(&[vec![-0.25, 0.75, -1.0]], Some(&[0.0, 0.5, -0.5]))
+            .expect("bounded PCM");
+
+        let (_, report, stats) = writer.finish().expect("finish");
+        let census = report
+            .pcm_headroom_census
+            .expect("headroom census in report");
+        assert_eq!(census.total_samples, 6);
+        assert_eq!(census.finite_samples, 6);
+        assert_eq!(census.non_finite_samples, 0);
+        assert_eq!(census.out_of_range_samples, 0);
+        assert_eq!(census.samples_above_one, 0);
+        assert_eq!(census.samples_below_negative_one, 0);
+        assert_eq!(census.max_positive, Some(0.75));
+        assert_eq!(census.min_negative, Some(-1.0));
+        assert_eq!(census.longest_out_of_range_run, 0);
+        assert_eq!(census.peak_abs, 1.0);
+        assert_eq!(census.peak_value, -1.0);
+        assert_eq!(census.peak_sample, Some(2));
+        let base_lfe = census.base_lfe.as_ref().expect("base LFE");
+        assert_eq!(base_lfe.max_positive, Some(0.5));
+        assert_eq!(base_lfe.min_negative, Some(-0.5));
+        assert_eq!(base_lfe.peak_abs, 0.5);
+        assert_eq!(census.reconstruction[0].peak_abs, 1.0);
+        assert_eq!(
+            stats
+                .pcm_headroom_census
+                .expect("headroom census in stats")
+                .total_samples,
+            6
+        );
+    }
+
+    #[test]
+    fn streaming_writer_records_negative_headroom_before_rejecting_it() {
+        let plan = AdmExportPlan::new(
+            48_000,
+            2,
+            1,
+            false,
+            1,
+            1,
+            SemanticBindingState::Unresolved,
+            AdmPolicy::BestEffort,
+        )
+        .expect("plan");
+        let mut writer = StreamingAdmWriter::new(Cursor::new(Vec::new()), plan).expect("writer");
+        let error = writer
+            .write_pcm(&[vec![-1.25, -1.5]], None)
+            .expect_err("negative out-of-range sample");
+        assert!(matches!(error, AdmError::SampleOutOfRange { .. }));
+        assert_eq!(writer.pcm_headroom_census.out_of_range_samples, 1);
+        assert_eq!(writer.pcm_headroom_census.samples_below_negative_one, 1);
+        assert_eq!(writer.pcm_headroom_census.max_positive, None);
+        assert_eq!(writer.pcm_headroom_census.min_negative, Some(-1.25));
+        assert_eq!(writer.pcm_headroom_census.longest_out_of_range_run, 1);
     }
 
     fn write_counted_stream(duration: u64) -> AdmStreamingStats {

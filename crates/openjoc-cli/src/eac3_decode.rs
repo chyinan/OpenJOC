@@ -8,15 +8,20 @@ use openjoc_eac3::{
     group_access_units, index_syncframes, parse_bsi, parse_joc_access_unit,
     validate_complexity_index, validate_joc_access_unit,
 };
-use openjoc_emdf::JocValidationProfile;
+use openjoc_emdf::{
+    JOC_PAYLOAD_ID, JocProfileDeviation, JocProfileField, JocProfileValue, JocValidationProfile,
+    OAMD_PAYLOAD_ID,
+};
 use openjoc_joc::{JocParseError, ReconstructionBasis, parse_joc_payload};
 use openjoc_oamd::{
-    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, ObjectAnchor,
+    OamdDecoderConfig, OamdElement, OamdError, OamdParseProfile, OamdPayload, ObjectAnchor,
     parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use openjoc_scene::{
-    DecodedPayloadFrame, JocFrameInput, ObjectScene, PayloadDecodeError, PayloadDecoder,
-    PayloadDecoderConfig, ProgrammeLayout, StreamingSceneSummary,
+    BindingCodecProfile, DecodedJocBindingFacts, DecodedJocBindingProfile, DecodedPayloadFrame,
+    JocFrameInput, ObjectScene, PayloadDecodeError, PayloadDecoder, PayloadDecoderConfig,
+    ProgrammeLayout, SemanticBindingState, StreamingSceneSummary, admit_decoded_joc_binding,
+    metadata_updates_for_frame,
 };
 use openjoc_wave::WavePcm;
 use std::{fmt, io::Read, time::Instant};
@@ -48,7 +53,7 @@ pub(crate) struct StreamTiming {
     pub(crate) sample_rate: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AdmStreamPreflight {
     pub(crate) access_units: u64,
     pub(crate) duration_samples: u64,
@@ -59,6 +64,10 @@ pub(crate) struct AdmStreamPreflight {
     pub(crate) metadata_object_count: usize,
     pub(crate) max_frame_samples: usize,
     pub(crate) max_au_bytes: usize,
+    pub(crate) metadata_timeline: Vec<openjoc_scene::MetadataUpdate>,
+    pub(crate) binding_profile: Option<DecodedJocBindingProfile>,
+    pub(crate) semantic_binding: SemanticBindingState,
+    pub(crate) binding_reason: Option<String>,
 }
 
 pub(crate) fn stream_timing(stream: &[u8]) -> Result<StreamTiming, DecodeEac3Error> {
@@ -378,6 +387,137 @@ fn parse_oamd_for_profile(
     }
 }
 
+const OBSERVED_COMPAT_DEVIATIONS: [(u64, JocProfileField, JocProfileValue, JocProfileValue); 7] = [
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::CodecDataPresent,
+        JocProfileValue::Bool(false),
+        JocProfileValue::Bool(true),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::PayloadFrameAligned,
+        JocProfileValue::Bool(false),
+        JocProfileValue::Bool(true),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::CreateDuplicate,
+        JocProfileValue::Absent,
+        JocProfileValue::Bool(false),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::RemoveDuplicate,
+        JocProfileValue::Absent,
+        JocProfileValue::Bool(false),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::Priority,
+        JocProfileValue::Absent,
+        JocProfileValue::Unsigned(0),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::ProcessingAllowed,
+        JocProfileValue::Absent,
+        JocProfileValue::Unsigned(0),
+    ),
+    (
+        JOC_PAYLOAD_ID,
+        JocProfileField::CodecDataPresent,
+        JocProfileValue::Bool(false),
+        JocProfileValue::Bool(true),
+    ),
+];
+
+fn exact_observed_compat_deviations(deviations: &[JocProfileDeviation]) -> bool {
+    deviations.len() == OBSERVED_COMPAT_DEVIATIONS.len()
+        && OBSERVED_COMPAT_DEVIATIONS.iter().all(|expected| {
+            deviations
+                .iter()
+                .filter(|actual| {
+                    (
+                        actual.payload_id,
+                        actual.field,
+                        actual.actual,
+                        actual.expected_by_etsi,
+                    ) == *expected
+                })
+                .count()
+                == 1
+        })
+}
+
+fn exact_opaque_warp3_element(oamd: &OamdPayload) -> bool {
+    let mut object_elements = 0_usize;
+    let mut opaque_warp3_elements = 0_usize;
+    for metadata in &oamd.elements {
+        match &metadata.element {
+            OamdElement::Objects(_) => object_elements += 1,
+            OamdElement::OpaqueObservedKnownElement(element) => {
+                if metadata.id != 2
+                    || element.element_id != 2
+                    || element.alternate_data_id.is_some()
+                    || element.raw_warp != 3
+                    || element.first_parser_error != (OamdError::ReservedWarpMode { code: 3 })
+                    || element.preservation_status != "opaque_lossless_bounded"
+                    || element.interpretation_status != "unresolved"
+                    || element.deviation_code != "LOGIC_OAMD_RESERVED_TRIM_WARP_3"
+                    || element.continuation_element_relative_start_bit
+                        >= element.continuation_element_relative_end_bit
+                    || element.continuation_payload_start_bit
+                        >= element.continuation_payload_end_bit
+                {
+                    return false;
+                }
+                opaque_warp3_elements += 1;
+            }
+            OamdElement::Trim(_) | OamdElement::Extended(_) | OamdElement::Unknown(_) => {
+                return false;
+            }
+        }
+    }
+    object_elements == 1 && opaque_warp3_elements == 1 && oamd.elements.len() == 2
+}
+
+fn classify_binding_codec_profile(
+    joc_profile: JocValidationProfile,
+    oamd_profile: OamdParseProfile,
+    deviations: &[JocProfileDeviation],
+    has_exact_opaque_warp3: bool,
+) -> BindingCodecProfile {
+    if joc_profile == JocValidationProfile::EtsiStrict
+        && oamd_profile == OamdParseProfile::EtsiStrict
+        && deviations.is_empty()
+    {
+        BindingCodecProfile::EAc3JocObservedOrdinary
+    } else if joc_profile == JocValidationProfile::ObservedVendorCompat
+        && oamd_profile == OamdParseProfile::ObservedVendorCompat
+        && exact_observed_compat_deviations(deviations)
+        && has_exact_opaque_warp3
+    {
+        BindingCodecProfile::EAc3JocObservedOrdinaryCompatWarp3
+    } else {
+        BindingCodecProfile::Unsupported
+    }
+}
+
+fn binding_codec_profile_for_frame(
+    metadata: &JocMetadataFrame,
+    parsed_oamd: &OamdPayload,
+    joc_profile: JocValidationProfile,
+    oamd_profile: OamdParseProfile,
+) -> BindingCodecProfile {
+    classify_binding_codec_profile(
+        joc_profile,
+        oamd_profile,
+        &metadata.deviations,
+        exact_opaque_warp3_element(parsed_oamd),
+    )
+}
+
 /// Aligns five non-LFE JOC input channels with a separately supplied base LFE.
 /// The LFE is never sent to the JOC QMF matrix; it is bound to an OAMD
 /// speaker-anchored entry at the scene boundary.
@@ -500,6 +640,12 @@ where
             required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
         let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let binding_profile = binding_codec_profile_for_frame(
+            &metadata,
+            &parsed_oamd,
+            validation_profile,
+            oamd_profile,
+        );
         let end = sample_offset
             .checked_add(usize::from(unit.samples))
             .ok_or(DecodeEac3Error::SampleCountOverflow)?;
@@ -511,7 +657,7 @@ where
         let frame_lfe = base_lfe.map(|lfe| &lfe.channels[0][sample_offset..end]);
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
-        decoder.decode_frame_with(
+        decoder.decode_frame_with_profile_and_binding_profile(
             JocFrameInput {
                 sample_rate: unit.sample_rate,
                 downmix_pcm: &frame_pcm,
@@ -520,6 +666,8 @@ where
                 oamd_payload: &metadata.oamd,
                 frame_index: frame_number,
             },
+            oamd_profile,
+            binding_profile,
             |frame| sink(unit_index, &metadata, frame),
         )?;
         sample_offset = end;
@@ -737,6 +885,10 @@ pub(crate) fn preflight_adm_reader<R: Read>(
     let mut topology = None;
     let mut max_frame_samples = 0_usize;
     let mut max_au_bytes = 0_usize;
+    let mut metadata_timeline = Vec::new();
+    let mut binding_admitted = true;
+    let mut binding_profile = None;
+    let mut binding_reason = None;
 
     while let Some(access_unit) = access_units.next_access_unit()? {
         if sample_rate.is_some_and(|expected| expected != access_unit.unit.sample_rate) {
@@ -748,6 +900,7 @@ pub(crate) fn preflight_adm_reader<R: Read>(
             ));
         }
         sample_rate.get_or_insert(access_unit.unit.sample_rate);
+        let frame_offset = duration_samples;
         duration_samples = duration_samples
             .checked_add(u64::from(access_unit.unit.samples))
             .ok_or(DecodeEac3Error::SampleCountOverflow)?;
@@ -790,8 +943,9 @@ pub(crate) fn preflight_adm_reader<R: Read>(
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let parsed_joc = parse_joc_payload(&metadata.joc)?;
         let rows = usize::from(parsed_joc.header.object_count);
-        ProgrammeLayout::from_prefix(&parsed_oamd.prefix)
-            .map_err(PayloadDecodeError::from)?
+        let layout =
+            ProgrammeLayout::from_prefix(&parsed_oamd.prefix).map_err(PayloadDecodeError::from)?;
+        layout
             .validate_reconstruction_basis(rows)
             .map_err(PayloadDecodeError::from)?;
         if reconstruction_signal_count.is_some_and(|expected| expected != rows) {
@@ -811,6 +965,50 @@ pub(crate) fn preflight_adm_reader<R: Read>(
         }
         anchors.get_or_insert(unit_anchors);
 
+        let codec_profile =
+            binding_codec_profile_for_frame(&metadata, &parsed_oamd, joc_profile, oamd_profile);
+        let facts = DecodedJocBindingFacts::from_programme_layout_with_profile(
+            codec_profile,
+            rows,
+            rows,
+            &layout,
+        );
+        match admit_decoded_joc_binding(&facts) {
+            Ok(profile) if binding_admitted => {
+                if binding_profile
+                    .as_ref()
+                    .is_some_and(|existing| existing != &profile)
+                {
+                    binding_admitted = false;
+                    binding_reason.get_or_insert_with(|| {
+                        "decoded JOC binding profile changed during ADM preflight".to_owned()
+                    });
+                    binding_profile = None;
+                } else {
+                    binding_profile = Some(profile);
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                binding_admitted = false;
+                binding_profile = None;
+                binding_reason.get_or_insert_with(|| error.to_string());
+            }
+        }
+
+        let frame_metadata =
+            metadata_updates_for_frame(&parsed_oamd, frame_offset, config.reference_screen)
+                .map_err(PayloadDecodeError::from)?;
+        if frame_metadata
+            .iter()
+            .any(|update| update.start_sample >= duration_samples)
+        {
+            return Err(DecodeEac3Error::Sink(
+                "OAMD metadata timing exceeds the current ADM frame boundary".to_owned(),
+            ));
+        }
+        metadata_timeline.extend(frame_metadata);
+
         if base_lfe_present.is_none() {
             let pcm = audio_decoder.decode_with_policy(
                 &access_unit.bytes,
@@ -827,6 +1025,10 @@ pub(crate) fn preflight_adm_reader<R: Read>(
         return Err(DecodeEac3Error::EmptyStream);
     }
     let anchors = anchors.ok_or(DecodeEac3Error::EmptyStream)?;
+    if binding_admitted && base_lfe_present != Some(true) {
+        binding_profile = None;
+        binding_reason = Some("Base LFE binding precondition not satisfied".to_owned());
+    }
     Ok(AdmStreamPreflight {
         access_units: count,
         duration_samples,
@@ -841,6 +1043,14 @@ pub(crate) fn preflight_adm_reader<R: Read>(
         metadata_object_count: anchors.len(),
         max_frame_samples,
         max_au_bytes,
+        metadata_timeline,
+        binding_profile,
+        semantic_binding: if binding_admitted && base_lfe_present == Some(true) {
+            SemanticBindingState::ResolvedWithinCarrier
+        } else {
+            SemanticBindingState::Unresolved
+        },
+        binding_reason,
     })
 }
 
@@ -892,6 +1102,7 @@ where
         validation_profile,
         dither_values,
         base_policy,
+        None,
         |unit_index, metadata, frame, pcm| {
             sink(unit_index, metadata, frame)?;
             base_sink(unit_index, pcm)
@@ -909,6 +1120,7 @@ pub(crate) fn decode_internal_eac3_reader_with_combined_sink<R, S>(
     validation_profile: ValidationProfileRequest,
     dither_values: &[f64],
     base_policy: InternalBasePolicy,
+    expected_binding_profile: Option<BindingCodecProfile>,
     sink: S,
 ) -> Result<StreamingSceneSummary, DecodeEac3Error>
 where
@@ -927,6 +1139,7 @@ where
         validation_profile,
         dither_values,
         base_policy,
+        expected_binding_profile,
         sink,
     )
 }
@@ -939,6 +1152,7 @@ fn decode_internal_eac3_reader_combined<R, S>(
     validation_profile: ValidationProfileRequest,
     dither_values: &[f64],
     base_policy: InternalBasePolicy,
+    expected_binding_profile: Option<BindingCodecProfile>,
     mut sink: S,
 ) -> Result<StreamingSceneSummary, DecodeEac3Error>
 where
@@ -996,9 +1210,16 @@ where
         metadata.validation_profile = selected_profile;
         let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, selected_profile)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let frame_binding_profile =
+            binding_codec_profile_for_frame(&metadata, &parsed_oamd, joc_profile, oamd_profile);
+        if expected_binding_profile.is_some_and(|expected| expected != frame_binding_profile) {
+            return Err(DecodeEac3Error::Sink(
+                "decoded JOC binding profile changed during ADM export".to_owned(),
+            ));
+        }
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
-        decoder.decode_frame_with_profile(
+        decoder.decode_frame_with_profile_and_binding_profile(
             JocFrameInput {
                 sample_rate: access_unit.unit.sample_rate,
                 downmix_pcm: &pcm.channels,
@@ -1008,6 +1229,7 @@ where
                 frame_index: frame_number,
             },
             oamd_profile,
+            frame_binding_profile,
             |frame| sink(unit_index, &metadata, frame, &pcm),
         )?;
         unit_index = unit_index
@@ -1099,6 +1321,12 @@ where
             required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
         let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let binding_profile = binding_codec_profile_for_frame(
+            &metadata,
+            &parsed_oamd,
+            validation_profile,
+            oamd_profile,
+        );
         let frame_number =
             u64::try_from(unit_index).map_err(|_| DecodeEac3Error::FrameIndexOverflow)?;
         let frame = measure_stage(
@@ -1106,14 +1334,18 @@ where
                 .as_deref_mut()
                 .map(|timing| &mut timing.joc_reconstruction),
             || {
-                decoder.decode_frame(JocFrameInput {
-                    sample_rate: unit.sample_rate,
-                    downmix_pcm: &pcm.channels,
-                    base_lfe_pcm: pcm.lfe.as_deref(),
-                    joc_payload: &metadata.joc,
-                    oamd_payload: &metadata.oamd,
-                    frame_index: frame_number,
-                })
+                decoder.decode_frame_with_profile_and_binding_profile_to_frame(
+                    JocFrameInput {
+                        sample_rate: unit.sample_rate,
+                        downmix_pcm: &pcm.channels,
+                        base_lfe_pcm: pcm.lfe.as_deref(),
+                        joc_payload: &metadata.joc,
+                        oamd_payload: &metadata.oamd,
+                        frame_index: frame_number,
+                    },
+                    oamd_profile,
+                    binding_profile,
+                )
             },
         )?;
         if let Some(timing) = timing.as_mut() {
@@ -1157,12 +1389,16 @@ fn measure_stage_with_clock<T, E>(
 #[cfg(test)]
 mod tests {
     use super::{
-        DecodeEac3Error, ValidationProfileRequest,
+        DecodeEac3Error, ValidationProfileRequest, classify_binding_codec_profile,
         decode_internal_eac3_reader_with_base_sink_and_policy_request, measure_stage_with_clock,
     };
     use openjoc_eac3::InternalBasePolicy;
+    use openjoc_emdf::{
+        JOC_PAYLOAD_ID, JocProfileDeviation, JocProfileField, JocProfileValue,
+        JocValidationProfile, OAMD_PAYLOAD_ID,
+    };
     use openjoc_oamd::OamdDecoderConfig;
-    use openjoc_scene::PayloadDecoderConfig;
+    use openjoc_scene::{BindingCodecProfile, PayloadDecoderConfig};
     use std::{io::Cursor, time::Duration};
 
     #[test]
@@ -1217,5 +1453,91 @@ mod tests {
             |_index, _pcm| Ok(()),
         );
         assert!(matches!(result, Err(DecodeEac3Error::EmptyStream)));
+    }
+
+    fn observed_deviations() -> Vec<JocProfileDeviation> {
+        vec![
+            JocProfileDeviation {
+                payload_id: OAMD_PAYLOAD_ID,
+                field: JocProfileField::CodecDataPresent,
+                actual: JocProfileValue::Bool(false),
+                expected_by_etsi: JocProfileValue::Bool(true),
+            },
+            JocProfileDeviation {
+                payload_id: OAMD_PAYLOAD_ID,
+                field: JocProfileField::PayloadFrameAligned,
+                actual: JocProfileValue::Bool(false),
+                expected_by_etsi: JocProfileValue::Bool(true),
+            },
+            JocProfileDeviation {
+                payload_id: OAMD_PAYLOAD_ID,
+                field: JocProfileField::CreateDuplicate,
+                actual: JocProfileValue::Absent,
+                expected_by_etsi: JocProfileValue::Bool(false),
+            },
+            JocProfileDeviation {
+                payload_id: OAMD_PAYLOAD_ID,
+                field: JocProfileField::RemoveDuplicate,
+                actual: JocProfileValue::Absent,
+                expected_by_etsi: JocProfileValue::Bool(false),
+            },
+            JocProfileDeviation {
+                payload_id: OAMD_PAYLOAD_ID,
+                field: JocProfileField::Priority,
+                actual: JocProfileValue::Absent,
+                expected_by_etsi: JocProfileValue::Unsigned(0),
+            },
+            JocProfileDeviation {
+                payload_id: OAMD_PAYLOAD_ID,
+                field: JocProfileField::ProcessingAllowed,
+                actual: JocProfileValue::Absent,
+                expected_by_etsi: JocProfileValue::Unsigned(0),
+            },
+            JocProfileDeviation {
+                payload_id: JOC_PAYLOAD_ID,
+                field: JocProfileField::CodecDataPresent,
+                actual: JocProfileValue::Bool(false),
+                expected_by_etsi: JocProfileValue::Bool(true),
+            },
+        ]
+    }
+
+    #[test]
+    fn compat_binding_profile_requires_the_exact_documented_deviations_and_warp3() {
+        assert_eq!(
+            classify_binding_codec_profile(
+                JocValidationProfile::ObservedVendorCompat,
+                openjoc_oamd::OamdParseProfile::ObservedVendorCompat,
+                &observed_deviations(),
+                true,
+            ),
+            BindingCodecProfile::EAc3JocObservedOrdinaryCompatWarp3
+        );
+
+        let mut unknown = observed_deviations();
+        unknown.push(JocProfileDeviation {
+            payload_id: JOC_PAYLOAD_ID,
+            field: JocProfileField::GroupId,
+            actual: JocProfileValue::Unsigned(7),
+            expected_by_etsi: JocProfileValue::Present,
+        });
+        assert_eq!(
+            classify_binding_codec_profile(
+                JocValidationProfile::ObservedVendorCompat,
+                openjoc_oamd::OamdParseProfile::ObservedVendorCompat,
+                &unknown,
+                true,
+            ),
+            BindingCodecProfile::Unsupported
+        );
+        assert_eq!(
+            classify_binding_codec_profile(
+                JocValidationProfile::ObservedVendorCompat,
+                openjoc_oamd::OamdParseProfile::ObservedVendorCompat,
+                &observed_deviations(),
+                false,
+            ),
+            BindingCodecProfile::Unsupported
+        );
     }
 }

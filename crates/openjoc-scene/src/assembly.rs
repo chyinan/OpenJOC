@@ -1,9 +1,10 @@
 // pattern: Functional Core
 
 use crate::{
-    Extent3, IsfLabel, IsfRing, MetadataUpdate, ObjectClass, ObjectScene, ObjectTrack, Position,
-    Position3, ProgrammeLayout, ProgrammeLayoutError, SceneError, SemanticBindingState,
-    SpeakerLabel, TrimUpdate, ZoneConstraint, metadata_is_finite, trim_is_finite,
+    BindingCodecProfile, DecodedJocBindingFacts, Extent3, IsfLabel, IsfRing, MetadataUpdate,
+    ObjectClass, ObjectScene, ObjectTrack, Position, Position3, ProgrammeLayout,
+    ProgrammeLayoutError, SceneError, SemanticBindingState, SpeakerLabel, TrimUpdate,
+    ZoneConstraint, admit_decoded_joc_binding, metadata_is_finite, trim_is_finite,
 };
 use openjoc_joc::ReconstructionBasis;
 use openjoc_oamd::{
@@ -87,14 +88,17 @@ impl From<SceneError> for SceneBuildError {
     }
 }
 
-/// Atomic cross-frame assembler for metadata and an unbound reconstruction
-/// basis. It never materializes JOC rows as authored-object PCM.
+/// Atomic cross-frame assembler for metadata and a reconstruction basis. It
+/// may mark the exact admitted carrier-local decoded-JOC binding, but it never
+/// materializes JOC rows as authored-object PCM.
 #[derive(Clone, Debug)]
 pub struct SceneBuilder {
     scene: ObjectScene,
     anchors: Vec<ObjectAnchor>,
     retention: SceneRetention,
     streaming_stats: StreamingSceneStats,
+    binding_admitted: Option<bool>,
+    binding_profile: Option<BindingCodecProfile>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,6 +175,8 @@ impl SceneBuilder {
             anchors,
             retention: SceneRetention::Capture,
             streaming_stats: StreamingSceneStats::default(),
+            binding_admitted: None,
+            binding_profile: None,
         })
     }
 
@@ -215,6 +221,34 @@ impl SceneBuilder {
         oamd: &OamdPayload,
         reference_screen: Option<ReferenceScreen>,
         layout: &ProgrammeLayout,
+    ) -> Result<(), SceneBuildError> {
+        self.append_frame_with_layout_and_binding_profile(
+            reconstruction_rows,
+            base_lfe_pcm,
+            oamd,
+            reference_screen,
+            layout,
+            reconstruction_rows.len(),
+            BindingCodecProfile::EAc3JocObservedOrdinary,
+        )
+    }
+
+    /// Atomically appends one frame with the actual JOC syntax population and
+    /// codec-profile classification supplied by the payload boundary.
+    ///
+    /// The legacy [`Self::append_frame_with_layout`] entry point remains a
+    /// structural scene-assembly API. This entry point is used by the raw
+    /// payload decoder so a row count cannot stand in for the JOC header count.
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_frame_with_layout_and_binding_profile(
+        &mut self,
+        reconstruction_rows: &[Vec<f64>],
+        base_lfe_pcm: Option<&[f64]>,
+        oamd: &OamdPayload,
+        reference_screen: Option<ReferenceScreen>,
+        layout: &ProgrammeLayout,
+        joc_object_count: usize,
+        codec_profile: BindingCodecProfile,
     ) -> Result<(), SceneBuildError> {
         if oamd.prefix.object_anchors()? != self.anchors {
             return Err(SceneBuildError::ContentDescriptionChanged);
@@ -263,41 +297,43 @@ impl SceneBuilder {
             }
         }
 
-        let trim = oamd.elements.iter().rev().find_map(|metadata| {
-            if let OamdElement::Trim(trim) = &metadata.element {
-                Some(trim)
-            } else {
-                None
+        let binding_facts = DecodedJocBindingFacts::from_programme_layout_with_profile(
+            codec_profile,
+            joc_object_count,
+            reconstruction_rows.len(),
+            layout,
+        );
+        let frame_binding_profile = base_lfe_pcm
+            .is_some()
+            .then(|| {
+                admit_decoded_joc_binding(&binding_facts)
+                    .ok()
+                    .map(|profile| profile.codec_profile())
+            })
+            .flatten();
+        let profile_unchanged = self
+            .binding_profile
+            .is_none_or(|expected| frame_binding_profile == Some(expected));
+        let frame_binding_admitted = frame_binding_profile.is_some() && profile_unchanged;
+        let next_binding_admitted =
+            Some(self.binding_admitted.unwrap_or(true) && frame_binding_admitted);
+        if self.binding_admitted.is_none() {
+            self.binding_profile = frame_binding_profile;
+        }
+
+        let frame_metadata = metadata_updates_for_frame(oamd, frame_offset, reference_screen)?;
+        for update in &frame_metadata {
+            if update.start_sample >= next_duration {
+                return Err(SceneBuildError::Scene(SceneError::MetadataOutsideScene {
+                    object_id: update.object_id,
+                    start_sample: update.start_sample,
+                }));
             }
-        });
-        let mut frame_metadata = Vec::new();
-        for (element_index, metadata) in oamd.elements.iter().enumerate() {
-            let OamdElement::Objects(objects) = &metadata.element else {
-                continue;
-            };
-            let extension = extension_after(&oamd.elements, element_index);
-            let updates = append_object_updates(
-                &self.anchors,
-                objects,
-                extension,
-                trim,
-                frame_offset,
-                reference_screen,
-            )?;
-            for update in &updates {
-                if update.start_sample >= next_duration {
-                    return Err(SceneBuildError::Scene(SceneError::MetadataOutsideScene {
-                        object_id: update.object_id,
-                        start_sample: update.start_sample,
-                    }));
-                }
-                if !metadata_is_finite(update) {
-                    return Err(SceneBuildError::Scene(SceneError::NonFiniteMetadata {
-                        object_id: update.object_id,
-                    }));
-                }
+            if !metadata_is_finite(update) {
+                return Err(SceneBuildError::Scene(SceneError::NonFiniteMetadata {
+                    object_id: update.object_id,
+                }));
             }
-            frame_metadata.extend(updates);
         }
         let mut frame_trims = Vec::new();
         for metadata in &oamd.elements {
@@ -325,6 +361,12 @@ impl SceneBuilder {
             }
         }
         self.scene.duration_samples = next_duration;
+        self.binding_admitted = next_binding_admitted;
+        if self.binding_admitted == Some(true) {
+            self.scene.semantic_binding = SemanticBindingState::ResolvedWithinCarrier;
+        } else {
+            self.scene.semantic_binding = SemanticBindingState::Unresolved;
+        }
         self.streaming_stats.frames = self
             .streaming_stats
             .frames
@@ -371,7 +413,9 @@ impl SceneBuilder {
             self.scene.metadata_timeline.extend(frame_metadata);
             self.scene.trim_timeline.extend(frame_trims);
         }
-        debug_assert!(self.scene.validate().is_ok());
+        if self.retention == SceneRetention::Capture {
+            debug_assert!(self.scene.validate().is_ok());
+        }
         Ok(())
     }
 
@@ -392,7 +436,7 @@ impl SceneBuilder {
         if self.retention != SceneRetention::Streaming {
             return Err(SceneBuildError::StreamingSummaryUnavailable);
         }
-        self.scene.validate()?;
+        self.validate_streaming()?;
         Ok(StreamingSceneSummary {
             sample_rate: self.scene.sample_rate,
             duration_samples: self.scene.duration_samples,
@@ -403,6 +447,44 @@ impl SceneBuilder {
             metadata_events: self.streaming_stats.metadata_events,
             trim_events: self.streaming_stats.trim_events,
         })
+    }
+
+    fn validate_streaming(&self) -> Result<(), SceneError> {
+        let mut structural_scene = self.scene.clone();
+        structural_scene.semantic_binding = SemanticBindingState::Unresolved;
+        structural_scene.validate()?;
+
+        if self.scene.semantic_binding == SemanticBindingState::ResolvedWithinCarrier {
+            let profile = self.binding_profile.ok_or_else(|| {
+                SceneError::DecodedBindingUnavailable(
+                    "streaming binding profile is unavailable".to_owned(),
+                )
+            })?;
+            if self.binding_admitted != Some(true) {
+                return Err(SceneError::DecodedBindingUnavailable(
+                    "streaming decoded JOC binding was not admitted for every frame".to_owned(),
+                ));
+            }
+            let classes = self
+                .scene
+                .objects
+                .iter()
+                .map(|object| match object.class {
+                    ObjectClass::Lfe => crate::OamdBindingObjectClass::BaseLfe,
+                    ObjectClass::Dynamic => crate::OamdBindingObjectClass::Dynamic,
+                    ObjectClass::BedOrIsf => crate::OamdBindingObjectClass::Bed,
+                })
+                .collect();
+            let facts = DecodedJocBindingFacts::new(
+                profile,
+                self.streaming_stats.max_reconstruction_rows,
+                self.streaming_stats.max_reconstruction_rows,
+                classes,
+            );
+            admit_decoded_joc_binding(&facts)
+                .map_err(|error| SceneError::DecodedBindingUnavailable(error.to_string()))?;
+        }
+        Ok(())
     }
 }
 
@@ -421,6 +503,40 @@ fn extension_after(
                 None
             }
         })
+}
+
+/// Decodes the renderer-independent metadata updates for one frame without
+/// retaining PCM. The returned offsets use the same absolute sample domain as
+/// [`SceneBuilder`] and are therefore suitable for a bounded ADM preflight.
+pub fn metadata_updates_for_frame(
+    oamd: &OamdPayload,
+    frame_offset: u64,
+    reference_screen: Option<ReferenceScreen>,
+) -> Result<Vec<MetadataUpdate>, SceneBuildError> {
+    let anchors = oamd.prefix.object_anchors()?;
+    let trim = oamd.elements.iter().rev().find_map(|metadata| {
+        if let OamdElement::Trim(trim) = &metadata.element {
+            Some(trim)
+        } else {
+            None
+        }
+    });
+    let mut frame_metadata = Vec::new();
+    for (element_index, metadata) in oamd.elements.iter().enumerate() {
+        let OamdElement::Objects(objects) = &metadata.element else {
+            continue;
+        };
+        let extension = extension_after(&oamd.elements, element_index);
+        frame_metadata.extend(append_object_updates(
+            &anchors,
+            objects,
+            extension,
+            trim,
+            frame_offset,
+            reference_screen,
+        )?);
+    }
+    Ok(frame_metadata)
 }
 
 #[allow(clippy::too_many_arguments)]

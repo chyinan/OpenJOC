@@ -50,6 +50,16 @@ replacement. Decode, range, validation, or I/O failure removes new staging and
 does not publish a successful-looking output/report. Existing files are
 preserved when an authorized replacement fails.
 
+JOC reconstruction is kept in decoder-domain floating-point form until the
+integer PCM boundary. The public JOC reconstruction equations are linear QMF
+matrix sums and do not establish a `[-1, 1]` PCM invariant; therefore a legal
+decoded object can contain floating-point headroom. The signed-24-bit ADM
+writer checks every sample immediately before quantization and fails closed on
+non-finite or out-of-range values. It never clips, saturates, applies a hidden
+limiter, or normalizes individual objects/tracks. Successful reports include a
+bounded `pcm_headroom_census` with whole-programme and per-signal statistics;
+no programme-duration PCM copy is retained for that census.
+
 Interactive stderr shows throttled analysis, export, finalization, and
 validation progress. Redirected/non-TTY execution is quiet apart from the final
 summary or error; `--no-progress` disables interactive updates explicitly.
@@ -163,12 +173,20 @@ not consume a 7.1.4/22.2 speaker render, FinalLinkedGain output, or HRTF
 output. Those are renderer-domain results and are not reconstructed scene
 signals.
 
-The exact clean-room admission profile is
-`E_AC_3_JOC_OBSERVED_ORDINARY_PROFILE` with:
+The exact clean-room admission profiles are
+`E_AC_3_JOC_OBSERVED_ORDINARY_PROFILE` and the exact observed compatibility
+variant `E_AC_3_JOC_OBSERVED_ORDINARY_COMPAT_WARP3_PROFILE`, each with:
 
 - 15 decoded JOC Objects and 15 reconstruction rows;
 - no OAMD bed, one leading Base LFE, and no ISF;
 - 15 dynamic OAMD Objects and 16 total OAMD entries.
+
+The compatibility variant is admitted only when the known deviation family
+and the opaque raw3 element shape both match the clean-room whitelist. ETSI
+strict classification remains `ReservedWarpMode(3)`: OpenJOC preserves the
+opaque raw3 payload, does not claim its full vendor meaning, and does not
+apply a raw3-specific spatial transform. The observed decoded OAMD position
+metadata is sufficient for the scoped bridge in this exact profile.
 
 Within the same programme/discontinuity epoch, the typed mapping is:
 
@@ -186,7 +204,8 @@ heuristic.
 ## Unsupported profiles
 
 Bed-bearing, ISF-bearing, alternate-LFE, count/order-mismatched,
-compatibility-profile, incomplete-Base-LFE, or otherwise unvalidated profiles
+unknown-deviation compatibility, incomplete-Base-LFE, or otherwise
+unvalidated profiles
 remain unresolved for dynamic binding. Best-effort export retains generated
 Objects at neutral/static positions and records `unsupported_binding_reason`;
 strict export rejects. Unsupported dynamic properties such as inactive
@@ -328,6 +347,8 @@ The adjacent JSON report includes:
 - generated signal identities;
 - unrecoverable authoring information;
 - approximations, omissions, warnings;
+- the bounded `pcm_headroom_census`, including finite/non-finite counts,
+  nominal-range violations, extrema, first violation, and per-signal peaks;
 - `source_is_lossy_e_ac_3_joc: true`;
 - `original_adm_master_recovered: false`;
 - `lossless_round_trip: false`.
