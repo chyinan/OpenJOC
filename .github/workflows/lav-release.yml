@@ -144,6 +144,8 @@ jobs:
           $buildScriptText = $buildScriptText.Replace($zlibOption, $zlibOptionWithLibrary)
           if (-not $buildScriptText.Contains('--extra-libs=../thirdparty/64/lib/zlib.lib')) { throw 'LAV FFmpeg zlib library option was not applied.' }
           if (-not (Test-Path -LiteralPath (Join-Path $library 'zlib.lib') -PathType Leaf)) { throw 'LAV FFmpeg zlib library is missing.' }
+          Write-Host "Prepared FFmpeg zlib library: $(Join-Path $library 'zlib.lib')"
+          $buildScriptText | Select-String -Pattern 'extra-libs=.*zlib\.lib' | ForEach-Object { Write-Host $_.Line }
           [IO.File]::WriteAllText($buildScript, $buildScriptText, [Text.UTF8Encoding]::new($false))
 
       - name: Build LAV FFmpeg
@@ -167,6 +169,16 @@ jobs:
           foreach ($name in @('avcodec-lav-63.dll', 'avfilter-lav-12.dll', 'avformat-lav-63.dll', 'avutil-lav-61.dll', 'swresample-lav-7.dll', 'swscale-lav-10.dll')) {
             if (-not (Test-Path -LiteralPath (Join-Path $lav "bin_x64\$name") -PathType Leaf)) { throw "FFmpeg output is missing: $name" }
           }
+
+      - name: Retain FFmpeg configure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lav-ffmpeg-diagnostics-${{ github.run_id }}
+          path: |
+            lav/ffmpeg/ffbuild/config.log
+            lav/ffmpeg/ffbuild/config.out
+          if-no-files-found: ignore
 
       - name: Build LAVAudio
         shell: pwsh
