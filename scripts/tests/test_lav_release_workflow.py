@@ -28,6 +28,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
             self.assertIn(expected, text)
         self.assertIn("cargo build -p openjoc-capi --release --locked", text)
         self.assertIn("--extra-libs=../thirdparty/`$archincdir/lib/zlib.lib", text)
+        self.assertIn('bash -c "./build_ffmpeg_msvc.sh x64 release"', text)
         self.assertIn("release_lav_msbuild.cmd", text)
         self.assertIn("release_lav_smokes.cmd", text)
 

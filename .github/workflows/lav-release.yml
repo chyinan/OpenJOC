@@ -157,7 +157,7 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           set VSLANG=1033
           cd /d "$lav"
-          bash -lc "./build_ffmpeg_msvc.sh x64 release"
+          bash -c "./build_ffmpeg_msvc.sh x64 release"
           exit /b %errorlevel%
           "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
           & cmd.exe /d /c $commandFile
