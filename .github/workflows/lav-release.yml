@@ -130,7 +130,9 @@ jobs:
           $zconfText = Get-Content -Raw -LiteralPath $zconf
           $zconfText = $zconfText -replace '(?m)^#ifdef HAVE_UNISTD_H$', '#if defined(HAVE_UNISTD_H) && HAVE_UNISTD_H'
           [IO.File]::WriteAllText($zconf, $zconfText, [Text.UTF8Encoding]::new($false))
-          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\x64\ZlibDllRelease\zlibwapi.lib') -Destination (Join-Path $library 'zlib.lib') -Force
+          $zlibLibrary = Join-Path $library 'zlib.lib'
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\x64\ZlibDllRelease\zlibwapi.lib') -Destination $zlibLibrary -Force
+          Copy-Item -LiteralPath $zlibLibrary -Destination (Join-Path $lav 'ffmpeg\zlib.lib') -Force
           $avisynthSource = Join-Path $include 'avisynth'
           $avisynthDestination = Join-Path $lav 'ffmpeg\avisynth'
           if (-not (Test-Path -LiteralPath $avisynthSource -PathType Container)) { throw 'LAV Avisynth headers are missing.' }
@@ -143,8 +145,9 @@ jobs:
           $zlibOptionWithLibrary = "    --enable-zlib                   \`n    --extra-libs=../thirdparty/64/lib/zlib.lib                 \`n"
           $buildScriptText = $buildScriptText.Replace($zlibOption, $zlibOptionWithLibrary)
           if (-not $buildScriptText.Contains('--extra-libs=../thirdparty/64/lib/zlib.lib')) { throw 'LAV FFmpeg zlib library option was not applied.' }
-          if (-not (Test-Path -LiteralPath (Join-Path $library 'zlib.lib') -PathType Leaf)) { throw 'LAV FFmpeg zlib library is missing.' }
-          Write-Host "Prepared FFmpeg zlib library: $(Join-Path $library 'zlib.lib')"
+          if (-not (Test-Path -LiteralPath $zlibLibrary -PathType Leaf)) { throw 'LAV FFmpeg zlib library is missing.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $lav 'ffmpeg\zlib.lib') -PathType Leaf)) { throw 'FFmpeg working-directory zlib library is missing.' }
+          Write-Host "Prepared FFmpeg zlib library: $zlibLibrary"
           $buildScriptText | Select-String -Pattern 'extra-libs=.*zlib\.lib' | ForEach-Object { Write-Host $_.Line }
           [IO.File]::WriteAllText($buildScript, $buildScriptText, [Text.UTF8Encoding]::new($false))
 
