@@ -22,6 +22,28 @@ or source-stem PCM. JOC is lossy, so decoded movement can differ from source
 automation. Unsupported profiles remain neutral in best-effort mode or fail
 closed in strict mode. The detailed scope and report fields appear below.
 
+## Structural correctness and renderer equivalence
+
+OpenJOC reconstructs an interoperability-oriented ADM representation of the
+decoded JOC object scene. It does not recover the original authored Dolby
+Atmos master, and it does not guarantee perceptually identical localization to
+a native JOC final renderer.
+
+The reconstructed scene is validated at the decoded-data and ADM-structure
+boundaries: object PCM, carrier-local object binding, coordinates, timing,
+supported gain/state metadata, track identity, container structure, and ADM
+relationships are checked within the documented profile. Those checks establish
+structural and decoded-scene correctness; they do not establish native-renderer
+perceptual equivalence.
+
+A residual localization difference was observed in at least one real-world
+validation programme after the reconstructed ADM passed the applicable
+technical checks. That observation is material-specific and
+non-generalizable. Native JOC playback remains the reference where
+renderer-identical spatial localization is required. This is a known
+limitation of reconstructed ADM interoperability, not a claim that the
+decoded object scene or export structure is invalid.
+
 `INPUT` may also be a captured OpenJOC scene directory or a complete
 `ObjectScene` JSON document. For raw E-AC-3 or seekable ordinary ISO BMFF, the
 CLI performs a lightweight sequential preflight, reopens the input once, and
@@ -188,6 +210,15 @@ minimum legal transport shape:
 
 These placeholder channels are there so downstream tools can accept a standard
 container; they are not extra authored object content.
+
+The same distinction applies to decoded Base full-band PCM. Base/downmix
+channels are inputs to the JOC reconstruction domain, while an independent
+Base contribution in the final delivery scene requires a separate decoder-
+semantic proof. Decoded Base C energy, including vocal-correlated energy, does
+not by itself authorize adding Base C to this bed: doing so could duplicate the
+contribution already represented by decoded JOC Objects. The original authored
+Bed is not a source of evidence for this decision, and no authored Center-bed
+identity is recovered.
 
 ## Supported binding profiles
 

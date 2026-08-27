@@ -53,6 +53,11 @@ audio rows. Only the exact admitted carrier profile pairs them. Other scene
 consumers still receive metadata and decoder-coordinate rows without an
 automatic authored-object interpretation.
 
+The reconstructed ADM branch establishes decoded-scene and ADM structural
+correctness within that profile. It does not recover the authored Atmos master
+or prove perceptual equivalence with a native JOC final renderer; native JOC
+playback remains the reference for renderer-identical localization.
+
 The `render-joc` workflow adds an explicit experimental speaker branch after
 the decoded component boundary:
 
@@ -197,6 +202,18 @@ It includes active LFE in the linked channel set, adds one block of speaker
 output history, and is reset with the stream/timeline lifecycle. The stage is
 not applied to the SOFA binaural path; Base downmix overload protection and
 pre-gain contribution linearity remain separate contracts.
+
+#### Base full-band scene-composition gate
+
+Decoded non-LFE Base/full-band channels are known JOC reconstruction inputs.
+That fact is separate from whether an independent Base contribution survives
+into the final JOC delivery scene. The experimental bridge may accumulate Base
+coordinates and ReconstructionBasis rows together, but that codec-basis
+composition is not proof of the final-scene equation while `T(t)` remains
+unresolved. In particular, strong energy in decoded Base C is not evidence that
+Base C should be exported a second time, and the original authored Bed is not
+used to explain or authorize that export. Base-plus-Objects must pass an
+explicit double-counting proof before ADM scene composition changes.
 
 ### Explicit spatial renderer
 

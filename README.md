@@ -143,6 +143,20 @@ profiles remain unresolved for dynamic binding: best-effort export keeps
 reconstructed Objects neutral/static and strict export rejects. See
 [ADM export](docs/ADM_EXPORT.md) for the exact profile and report semantics.
 
+### Reconstructed ADM rendering equivalence
+
+`openjoc export-adm` reconstructs an interoperability-oriented ADM
+representation from decoded JOC object PCM and supported OAMD semantics. It is
+not an original Dolby Atmos master recovery path.
+
+The decoded object scene is structurally and semantically validated, but its
+perceptual localization is not guaranteed to match a native JOC final
+renderer. A residual localization difference was observed in at least one
+real-world validation programme even after decoded object PCM, object binding,
+coordinates, timing, gain/state metadata, and ADM track identity were checked.
+Use native JOC playback as the reference when exact native-renderer
+localization is required.
+
 The validated workflow is OpenJOC ADM import into Logic Pro followed by a
 Logic-authored re-export accepted by Dolby Encoding Engine. Direct DEE ingest
 of the byte-exact OpenJOC-authored file is not claimed. See

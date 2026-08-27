@@ -17,6 +17,10 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 - The ordinary-domain `JocSpatialBridge` renders decoded Base/RB contributions
   with OAMD-derived control, but it does not resolve authored-object identity
   or the codec-domain operator `T(t)`.
+- Non-LFE Base/full-band PCM is a proven JOC reconstruction input, not yet a
+  proven independent final-scene contribution. Base C energy and the original
+  authored Bed cannot authorize an additional ADM export; Base plus decoded
+  Objects must first pass a double-counting proof.
 - `ETSI_STRICT` rejects syntax outside the published profile, including the
   observed reserved OAMD warp value `raw=3`. `OBSERVED_VENDOR_COMPAT` is an
   explicit, partial policy that preserves opaque continuation without
@@ -94,6 +98,12 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   raw3-compatible profile. Generated ADM names are neutral `OpenJOC
   Reconstructed JOC Object NN`; the report keeps original authored identity
   and original ADM-master recovery explicitly false.
+- Structural and decoded-scene validation does not guarantee perceptually
+  identical localization to a native JOC final renderer. A residual
+  localization difference was observed in at least one real-world validation
+  programme after the applicable technical checks passed; the observation is
+  material-specific and non-generalizable. Native JOC playback remains the
+  reference where exact native-renderer localization is required.
 - A moving reconstructed Object represents the spatial metadata retained and
   decoded from the JOC programme. Its trajectory may differ from the original
   DAW automation because JOC can quantize metadata, reorganize object

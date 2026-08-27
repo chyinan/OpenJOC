@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.13.0] — 2026-08-27
+
+OpenJOC 0.13.0 adds scoped reconstructed dynamic ADM export from decoded JOC
+object scenes and closes the current decoded-object semantic boundary without
+claiming original ADM recovery or native-renderer parity.
+
+### Added
+
+- Added a typed, carrier-local decoded JOC Object ↔ decoded OAMD dynamic
+  metadata binding for the exact admitted 15-object profile.
+- Added reconstructed dynamic ADM Objects with decoded position events and
+  explicit OAMD-to-ADM Cartesian coordinate conversion.
+- Added independent decoded-scene, object-binding, coordinate, interpolation,
+  BW64/CHNA, ADM-structure, deterministic-fixture, and real-media regression
+  coverage for the supported export path.
+
+### Changed
+
+- `export-adm` now uses the admitted decoded-object mapping while preserving
+  generated export identities, the legal 5.1 transport bed, and separate Base
+  LFE handling.
+- Signed 24-bit ADM export remains fail-closed for non-finite or out-of-range
+  decoded PCM; no clipping, hidden limiting, or per-object normalization is
+  introduced.
+- Unsupported binding profiles remain neutral in best-effort mode or reject in
+  strict mode. The generated ADM is an interoperability representation, not a
+  recovered authored Atmos master.
+
+### Known limitations
+
+- Structural and decoded-scene correctness does not guarantee perceptually
+  identical localization to a native JOC final renderer. A residual
+  localization difference was observed in at least one real-world validation
+  programme; native JOC playback remains the reference where exact
+  native-renderer localization is required.
+- Non-LFE Base full-band final-scene contribution remains inconclusive. Base C
+  energy and the original authored Bed do not authorize an additional ADM
+  export without a separate scene-composition and double-counting proof.
+- The OpenJOC C ABI remains experimental at version 1.4; the package release
+  version does not change the ABI version.
+
 ## [0.12.0] — 2026-08-25
 
 OpenJOC 0.12.0 adds truthfully negotiated multichannel PCM transport to the

@@ -18,6 +18,14 @@ binding), provide a validated `SpatialLayout`, and call
 planes. It is therefore opt-in and cannot silently alter the existing decode
 path.
 
+The bridge's Base-plus-ReconstructionBasis accumulation is a codec-basis
+diagnostic/rendering path, not an admitted proof that both domains are
+independent final-delivery contributions. Base full-band is known to feed the
+JOC reconstruction domain; its separate survival into the final scene remains
+unresolved until the public scene-composition operator and double-counting gate
+are established. Base C energy or an original authored Bed observation cannot
+substitute for that proof.
+
 The bridge implements the supported ordinary release domain:
 
 - deterministic explicit-group/fixed-layout/dynamic-record flattening with
