@@ -1,0 +1,39 @@
+:root {
+  --md-primary-fg-color: #1f2937;
+  --md-primary-fg-color--light: #374151;
+  --md-primary-fg-color--dark: #111827;
+  --md-accent-fg-color: #2f8f46;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #111827;
+  --md-primary-fg-color--light: #1f2937;
+  --md-primary-fg-color--dark: #030712;
+  --md-accent-fg-color: #73c98a;
+}
+
+.openjoc-hero {
+  display: block;
+  width: min(100%, 54rem);
+  margin: 0 auto 1.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1rem 2.5rem rgb(17 24 39 / 0.14);
+}
+
+.md-typeset .md-button--primary {
+  background: #2f8f46;
+  border-color: #2f8f46;
+}
+
+.md-typeset .md-button--primary:hover {
+  background: #247238;
+  border-color: #247238;
+}
+
+.md-typeset .grid.cards > ul > li {
+  border-top: 0.2rem solid rgb(47 143 70 / 0.7);
+}
+
+.md-typeset code {
+  font-size: 0.86em;
+}
