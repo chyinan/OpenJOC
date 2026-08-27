@@ -239,7 +239,16 @@ jobs:
           Copy-Item -LiteralPath $zlibDll -Destination $dependencyDir -Force
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
-          $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC\Redist\MSVC') -Recurse -Filter 'vcruntime140.dll' | Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC\d+\.CRT\\vcruntime140\.dll$' } | Select-Object -First 1
+          $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC\Redist\MSVC') -Recurse -Filter 'vcruntime140.dll' |
+            Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC\d+\.CRT\\vcruntime140\.dll$' } |
+            ForEach-Object {
+              $candidateDir = $_.Directory
+              $complete = $true
+              foreach ($name in @('vcruntime140.dll', 'vcruntime140_1.dll', 'vcruntime140_threads.dll')) {
+                if (-not (Test-Path -LiteralPath (Join-Path $candidateDir.FullName $name) -PathType Leaf)) { $complete = $false; break }
+              }
+              if ($complete) { $_ }
+            } | Sort-Object FullName -Descending | Select-Object -First 1
           if ($null -eq $crt) { throw 'MSVC x64 runtime was not found.' }
           $crtDir = $crt.Directory.FullName
           $sdkRedist = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Redist'
