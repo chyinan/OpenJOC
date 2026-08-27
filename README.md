@@ -10,6 +10,8 @@ Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest
 
 ## Documentation
 
+**[Read the OpenJOC documentation site](https://chyinan.github.io/OpenJOC/)** · **[阅读简体中文文档](https://chyinan.github.io/OpenJOC/zh/)**
+
 The [repository documentation index](docs/README.md) points to the canonical Markdown owners. The published documentation site is built from [`docs/site/index.md`](docs/site/index.md), including installation, rendering, ADM export, Windows playback, APIs, and limitations.
 
 ## What it supports
