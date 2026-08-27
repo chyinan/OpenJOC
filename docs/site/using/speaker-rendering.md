@@ -29,7 +29,7 @@ verified object stems.
 
 Use a preset for normal rendering:
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 7.1.4 -o output.wav
 ```
 
@@ -49,7 +49,7 @@ channels; it does not select a separate renderer implementation.
 the selected E-AC-3 stereo downmix policy while reconstructed contributions
 project to the physical stereo layout:
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 2.0 --downmix auto -o stereo.wav
 openjoc render-joc input.m4a --layout 2.0 --downmix loro -o stereo-loro.wav
 openjoc render-joc input.m4a --layout 2.0 --downmix ltrt -o stereo-ltrt.wav
@@ -105,7 +105,7 @@ two semantic LFE destinations. LFE channels are never projection vertices.
 SOFA path, OpenJOC uses the bundled offline SADIE II D1 generic HRTF. The
 default virtual layout is 7.1.4:
 
-```sh
+```text
 openjoc render-joc input.m4a --binaural -o headphones.wav
 openjoc render-joc input.m4a \
   --binaural --virtual-layout 9.1.6 \
@@ -114,7 +114,7 @@ openjoc render-joc input.m4a \
 
 Use `--sofa` for a user-provided dataset:
 
-```sh
+```text
 openjoc render-joc input.m4a \
   --binaural --sofa listener.sofa --virtual-layout 7.1.4 \
   --lfe-policy exclude -o custom-headphones.wav

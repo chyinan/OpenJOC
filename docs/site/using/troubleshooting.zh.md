@@ -28,7 +28,7 @@ openjoc decode input.ec3 --output-dir decode-report
 
 先在 [CLI 参考](../reference/cli-reference.md)中确认选项拼写，再运行最基本的测试命令：
 
-```sh
+```text
 openjoc render-joc input.ec3 --layout 2.0 --output stereo.wav
 ```
 

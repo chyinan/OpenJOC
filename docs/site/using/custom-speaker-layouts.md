@@ -2,7 +2,7 @@
 
 Built-in presets remain the recommended path for ordinary renders:
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
 ```
 
