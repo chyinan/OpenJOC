@@ -128,7 +128,7 @@ jobs:
           $zconf = Join-Path $include 'zconf.h'
           Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'zlib\zconf.h') -Destination $zconf -Force
           $zconfText = Get-Content -Raw -LiteralPath $zconf
-          $zconfText = $zconfText -replace '(?m)^#  if defined\(Z_HAVE_UNISTD_H\)$', '#  if defined(Z_HAVE_UNISTD_H) && !defined(_WIN32)'
+          $zconfText = $zconfText.Replace('#  if defined(Z_HAVE_UNISTD_H)', '#  if defined(Z_HAVE_UNISTD_H) && !defined(_WIN32)')
           if (-not $zconfText.Contains('#  if defined(Z_HAVE_UNISTD_H) && !defined(_WIN32)')) { throw 'zlib Windows include guard was not applied.' }
           [IO.File]::WriteAllText($zconf, $zconfText, [Text.UTF8Encoding]::new($false))
           $zlibLibrary = Join-Path $library 'zlib.lib'
