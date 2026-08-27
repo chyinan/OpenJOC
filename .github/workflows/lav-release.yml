@@ -224,7 +224,7 @@ jobs:
           New-Item -ItemType Directory -Path $smokes -Force | Out-Null
           @"
           @echo off
-          call "$env:GITHUB_WORKSPACE\scripts\release_lav_smokes.cmd" "$vsdevcmd" "$lav" "$include" "$env:GITHUB_WORKSPACE\scripts\LavSmokeNoopLifecycle.cpp" "$smokes"
+          call "$env:GITHUB_WORKSPACE\scripts\release_lav_smokes.cmd" "$vsdevcmd" "$lav" "$include" "$env:GITHUB_WORKSPACE\scripts\tests\LavSmokeNoopLifecycle.cpp" "$smokes"
           exit /b %errorlevel%
           "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
           & cmd.exe /d /c $commandFile

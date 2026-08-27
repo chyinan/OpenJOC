@@ -36,6 +36,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("lav/ffmpeg/ffbuild/config.log", text)
         self.assertIn("release_lav_msbuild.cmd", text)
         self.assertIn("release_lav_smokes.cmd", text)
+        self.assertIn(r'''scripts\tests\LavSmokeNoopLifecycle.cpp''', text)
 
 
 if __name__ == "__main__":
