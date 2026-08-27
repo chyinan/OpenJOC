@@ -34,6 +34,63 @@ theme:
 
 plugins:
   - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          name: English
+          default: true
+          build: true
+        - locale: zh
+          name: 简体中文
+          build: true
+          site_name: OpenJOC 文档
+          site_description: OpenJOC 开源、清洁室实现的 E-AC-3 JOC 解码器与空间渲染器文档。
+          theme:
+            language: zh
+          nav_translations:
+            Home: 首页
+            Getting started: 开始使用
+            Introduction: 简介
+            Installation: 安装
+            Quick start: 快速开始
+            Supported platforms: 支持的平台
+            Using OpenJOC: 使用 OpenJOC
+            Decode and inspect: 解码与检查
+            Speaker rendering: 扬声器渲染
+            Binaural and SOFA: 双耳与 SOFA
+            Reconstructed ADM export: 重建 ADM 导出
+            Reconstructed ADM semantics: 重建 ADM 语义
+            Custom speaker layouts: 自定义扬声器布局
+            Windows LAV / PotPlayer: Windows LAV / PotPlayer
+            Explicit render-scene workflow: 显式 render-scene 工作流
+            Troubleshooting: 故障排除
+            Concepts: 概念
+            E-AC-3 JOC overview: E-AC-3 JOC 概览
+            OpenJOC architecture: OpenJOC 架构
+            OAMD: OAMD
+            Decoded Objects vs authored Objects: 解码 Objects 与创作 Objects
+            Spatial portability: 空间可移植性
+            Reference: 参考
+            CLI reference: CLI 参考
+            Output formats: 输出格式
+            Rust API: Rust API
+            C ABI: C ABI
+            Compatibility and limitations: 兼容性与限制
+            Compatibility: 兼容性
+            Known limitations: 已知限制
+            Reconstructed ADM renderer equivalence: 重建 ADM 渲染器等价性
+            PCM24 headroom: PCM24 余量
+            Project: 项目
+            Capability matrix: 能力矩阵
+            Clean-room methodology: 清洁室方法
+            Standards and references: 标准与参考
+            Integrations: 集成
+            Contributing: 参与贡献
+            Changelog: 更新日志
 
 markdown_extensions:
   - admonition
@@ -44,6 +101,9 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
@@ -72,6 +132,7 @@ nav:
       - Custom speaker layouts: using/custom-speaker-layouts.md
       - Windows LAV / PotPlayer: using/windows-lav-potplayer.md
       - Explicit render-scene workflow: using/explicit-scene-workflow.md
+      - Troubleshooting: using/troubleshooting.md
   - Concepts:
       - E-AC-3 JOC overview: concepts/eac3-joc-overview.md
       - OpenJOC architecture: concepts/architecture.md
