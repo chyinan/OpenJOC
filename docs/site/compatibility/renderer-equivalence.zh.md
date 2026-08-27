@@ -1,29 +1,29 @@
 !!! note "翻译说明"
-    中文文档为维护中的翻译版本，可能略滞后于英文文档。如有技术差异，以英文版本为准。
+    中文文档是持续维护中的翻译版本，可能会略滞后于英文文档；如有技术差异，以英文版为准。
 
-# 重建 ADM 渲染器等价性
+# 重建 ADM 与渲染器的等价性
 
-OpenJOC 重建的是解码后 JOC 对象场的、面向互操作的 ADM 表示。它不恢复原始创作 Dolby Atmos master，也不保证 generic ADM renderer 渲染该文件时能产生与 native JOC renderer 感知上相同的定位。
+OpenJOC 重建的是解码后 JOC 对象场的 ADM 表示，目的是实现互操作。它不会恢复原始创作的 Dolby Atmos 母版，也不保证通用 ADM 渲染器播放该文件时，能做出与原生 JOC 渲染器完全相同的定位结果。
 
-## 已在范围内验证
+## 当前已经验证的范围
 
-当前 validation boundary 覆盖：
+当前验证边界包括：
 
-| Boundary | 状态 |
+| 检查项 | 状态 |
 | --- | --- |
-| Decoded object PCM scene | 在 tested scope 内已验证。 |
-| Decoded JOC Object ↔ OAMD mapping | 对准入的 carrier-local profile 已验证。 |
-| OAMD-to-ADM coordinate conversion | 已验证。 |
-| Position interpolation 与 event timing | 对导出 profile 已验证。 |
-| Physical BW64 / `chna` / TrackUID mapping | 在 tested real-media audit 中验证为 15/15。 |
-| Public renderer-state coverage | `COMPLETE_WITH_SCOPE`。 |
+| 解码后的对象 PCM 场景 | 在当前测试范围内已验证。 |
+| 解码 JOC 对象 ↔ OAMD 映射 | 已针对受支持的 JOC 内部配置组合验证。 |
+| OAMD 到 ADM 的坐标转换 | 已验证。 |
+| 位置插值与事件时序 | 已针对导出配置组合验证。 |
+| BW64 / `chna` / TrackUID 的文件映射 | 在真实测试媒体上审计为 15/15。 |
+| 公共渲染器状态的覆盖范围 | `COMPLETE_WITH_SCOPE`。 |
 
-这些检查建立 decoded-scene 与 ADM-structure correctness，但不建立 generic ADM renderer 与 native JOC renderer 最终 localization choices 相同。
+这些检查可以证明解码场景和 ADM 文件结构正确，但不能证明通用 ADM 渲染器与原生 JOC 渲染器在最终定位上一定相同。
 
-## 剩余保证
+## 尚未提供的保证
 
-一个 self-authored real-world validation programme 在 decoded-scene、mapping、coordinate、timing 和 file-structure 检查通过后仍出现 residual localization difference。该观察与具体素材有关，不能泛化；因此 exact perceptual equivalence 仍在保证范围之外。
+一个由维护者制作的真实世界验证节目，在解码场景、映射、坐标、时序和文件结构均通过检查后，仍出现了残余定位差异。这个观察结果只针对该素材，不能推广到其他节目；因此，“听感上完全等价”仍不在保证范围内。
 
-需要 exact native-renderer localization 时，以 native JOC playback 为参考。不要因此把 ADM exporter 视为 fundamentally broken：它的 contract 是 reconstructed interoperability，而不是 native renderer emulation。
+需要与原生渲染器保持一致时，请以原生 JOC 播放为参考。不要因此把 ADM 导出器理解成彻底失效：它的约定是实现重建式互操作，而不是模拟原生渲染器。
 
-这也是 `ResolvedWithinCarrier` 不等于 authored identity 的原因。请参阅[解码 Objects 与创作 Objects](../concepts/decoded-vs-authored-objects.md)和[重建 ADM 导出](../using/reconstructed-adm-export.md)。
+这也解释了为什么 `ResolvedWithinCarrier` 不等于创作身份。详见[解码对象与创作对象](../concepts/decoded-vs-authored-objects.md)和[重建 ADM 导出](../using/reconstructed-adm-export.md)。
