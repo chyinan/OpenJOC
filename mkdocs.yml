@@ -1,0 +1,97 @@
+site_name: OpenJOC documentation
+site_description: Open-source clean-room E-AC-3 JOC decoder and spatial renderer documentation.
+site_author: OpenJOC contributors
+site_url: https://chyinan.github.io/OpenJOC/
+repo_name: chyinan/OpenJOC
+repo_url: https://github.com/chyinan/OpenJOC
+edit_uri: edit/master/docs/site/
+docs_dir: docs/site
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: en
+  icon:
+    logo: material/surround-sound
+    repo: fontawesome/brands/github
+  features:
+    - content.code.copy
+    - navigation.top
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+extra:
+  release: v0.13.0
+
+copyright: OpenJOC contributors · Apache-2.0
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Introduction: getting-started/introduction.md
+      - Installation: getting-started/installation.md
+      - Quick start: getting-started/quick-start.md
+      - Supported platforms: getting-started/supported-platforms.md
+  - Using OpenJOC:
+      - Decode and inspect: using/decode-inspect.md
+      - Speaker rendering: using/speaker-rendering.md
+      - Binaural and SOFA: using/binaural-sofa.md
+      - Reconstructed ADM export: using/reconstructed-adm-export.md
+      - Reconstructed ADM semantics: using/reconstructed-adm-semantics.md
+      - Custom speaker layouts: using/custom-speaker-layouts.md
+      - Windows LAV / PotPlayer: using/windows-lav-potplayer.md
+      - Explicit render-scene workflow: using/explicit-scene-workflow.md
+  - Concepts:
+      - E-AC-3 JOC overview: concepts/eac3-joc-overview.md
+      - OpenJOC architecture: concepts/architecture.md
+      - OAMD: concepts/oamd.md
+      - Decoded Objects vs authored Objects: concepts/decoded-vs-authored-objects.md
+      - Spatial portability: concepts/spatial-portability.md
+  - Reference:
+      - CLI reference: reference/cli-reference.md
+      - Output formats: reference/output-formats.md
+      - Rust API: reference/rust-api.md
+      - C ABI: reference/c-abi.md
+  - Compatibility and limitations:
+      - Compatibility: compatibility/compatibility.md
+      - Known limitations: compatibility/known-limitations.md
+      - Reconstructed ADM renderer equivalence: compatibility/renderer-equivalence.md
+      - PCM24 headroom: compatibility/pcm24-headroom.md
+  - Project:
+      - Capability matrix: project/capabilities.md
+      - Clean-room methodology: project/clean-room-methodology.md
+      - Standards and references: project/standards-references.md
+      - Integrations: project/integrations.md
+      - Contributing: project/contributing.md
+      - Changelog: project/changelog.md

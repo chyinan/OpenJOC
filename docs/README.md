@@ -1,77 +1,36 @@
-# OpenJOC documentation
+# OpenJOC documentation repository
 
-Each current technical fact has one canonical owner. Secondary documents
-summarize host- or workflow-specific implications and link back to that owner.
+The published user documentation lives under [`docs/site/`](site/). Its navigation is defined in [`mkdocs.yml`](../mkdocs.yml).
 
-## Getting started
+## Canonical site owners
 
-- [Project README](../README.md) — product overview, CLI and PotPlayer quick
-  starts, build instructions, and navigation.
-- [Capabilities](CAPABILITIES.md) — canonical current support/status matrix.
-- [Known limitations](KNOWN_LIMITATIONS.md) — canonical current user-visible
-  limitations and non-claims.
-- [Public smoke fixture](PUBLIC_SMOKE_FIXTURE.md) — installation and bounded
-  synthetic health checks.
+- [Introduction and capabilities](site/getting-started/introduction.md) — user-facing overview and entry points.
+- [Speaker rendering](site/using/speaker-rendering.md) — renderer, layout, level, and timing behavior.
+- [Reconstructed ADM export](site/using/reconstructed-adm-export.md) — current export contract and report semantics.
+- [Decoded Objects vs authored Objects](site/concepts/decoded-vs-authored-objects.md) — identity and recovery boundary.
+- [Known limitations](site/compatibility/known-limitations.md) — current user-visible non-claims.
+- [Clean-room methodology](site/project/clean-room-methodology.md) — permitted sources and evidence classes.
 
-## Renderer and output
+## Repository-only material
 
-- [JOC speaker and binaural rendering](JOC_RENDER.md) — canonical
-  `render-joc` contract, preset/output behavior, latency, and level policies.
-- [Custom speaker layouts](CUSTOM_SPEAKER_LAYOUTS.md) — versioned JSON, Rust,
-  and C geometry contract up to 64 ordered output channels.
-- [Spatial portability](SPATIAL_PORTABILITY.md) — 22.2 and binaural portability
-  boundaries.
-- [JOC spatial bridge](JOC_SPATIAL_BRIDGE.md) — supporting bridge activation,
-  unresolved codec-domain renderer operator, and its boundary from the scoped
-  decoded-object ADM binding.
-- [Explicit render-scene workflow](RENDER_SCENE.md) — caller-bound sources;
-  separate from JOC authored-object semantics.
+The following directories remain outside the published site by design:
 
-## Developer APIs
+- [`archive/`](archive/) — retained historical contracts and older release material;
+- [`research/`](research/) — dated experiments, negative results, and implementation history;
+- [`release/`](release/) — packaging, corresponding-source, and distribution evidence;
+- [`design-plans/`](design-plans/) and [`implementation-plans/`](implementation-plans/) — engineering planning records;
+- [`integration/evidence/`](integration/evidence/) — local and release-gate evidence, including machine-specific capture records.
 
-- [Rust library API](LIBRARY_API.md) — `OpenJocSession`, packet ownership,
-  output frames, latency, lifecycle, and policies.
-- [C ABI](C_API.md) — current ABI 1.4, opaque handles, stream/classifier
-  surfaces, ownership, custom geometry, and failure containment.
-- [Production architecture](ARCHITECTURE.md) — canonical data flow and
-  component ownership.
+These records are not silently rewritten to match current user documentation. A current fact belongs to the site owner above; a historical result stays with its dated record.
 
-## Integrations
+## Maintenance
 
-- [Windows DirectShow / LAV / PotPlayer](integration/LAV_FILTERS_OPENJOC.md)
-- [FFmpeg external bridge](integration/FFMPEG.md)
-- [Native FFmpeg `libopenjoc` wrapper](integration/FFMPEG_NATIVE.md)
-- [GStreamer](integration/GSTREAMER.md)
-- [mpv](integration/MPV.md)
-- [OpenJOC Player Bundle packaging](integration/PLAYER_PACKAGING.md)
-- [Ecosystem packages](integration/ECOSYSTEM_PACKAGING.md)
+Install the pinned docs dependencies from the repository root and run:
 
-Integration documents own only their framework transport, lifecycle,
-selection, and host/output boundaries. Renderer capabilities remain owned by
-[JOC_RENDER.md](JOC_RENDER.md) and [CAPABILITIES.md](CAPABILITIES.md).
+```sh
+python -m pip install -r requirements-docs.txt
+python -m mkdocs serve
+python -m mkdocs build --strict
+```
 
-## ADM and interchange
-
-- [Reconstructed ADM BWF export](ADM_EXPORT.md) — canonical current export,
-  decoded-object binding, validation, FAQ, and semantic boundary.
-
-## Architecture, provenance, and planning
-
-- [Architecture](ARCHITECTURE.md) — current production ownership.
-- [Provenance](PROVENANCE.md) — clean-room/evidence policy and retained
-  provenance chronology.
-- [Roadmap](ROADMAP.md) — future or explicitly deferred work only.
-- [Research history](research/README.md) — dated experiments and negative
-  results; never the current capability owner.
-
-## Release and historical material
-
-- [CHANGELOG](../CHANGELOG.md) owns release-by-release chronology.
-- [`docs/release/`](release/) contains current release packaging,
-  corresponding-source, and distribution evidence.
-- [Historical archive](archive/README.md) contains retained release contracts
-  and requirement/evidence documents that no longer describe current
-  behavior.
-
-Contributor verification and repository-documentation hygiene rules are in
-[CONTRIBUTING.md](../CONTRIBUTING.md).
+The [contributor page](site/project/contributing.md) explains the smallest workflow for adding a page or changing navigation.

@@ -1,7 +1,6 @@
 # Versioned C ABI
 
-The distributable header is
-[`crates/openjoc-capi/include/openjoc.h`](../crates/openjoc-capi/include/openjoc.h).
+The distributable header is the [canonical `openjoc.h` header](https://github.com/chyinan/OpenJOC/blob/master/crates/openjoc-capi/include/openjoc.h).
 It is manually maintained, deterministic, and compiled in both C and C++ by
 the repository smoke script. The crate builds `rlib`, static-library, and
 dynamic-library targets through Cargo. Platform release archives expose the
@@ -33,7 +32,7 @@ copies the validated layout and reports the same order through output labels.
 Existing callers leave the field null and retain preset behavior. The custom
 layout contract, coordinate convention, validation limits, and WAV/CAF
 metadata boundary are documented in
-[`CUSTOM_SPEAKER_LAYOUTS.md`](CUSTOM_SPEAKER_LAYOUTS.md).
+[custom speaker layouts](../using/custom-speaker-layouts.md).
 
 `openjoc_decoder_config_init()` remains the legacy-safe ABI 1.3 prefix
 initializer: it never writes the ABI 1.4 appended field, so a real ABI 1.3

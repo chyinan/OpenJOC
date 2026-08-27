@@ -142,9 +142,9 @@ ADM Z = OAMD Z
 The bridge validates finite values and the supported normalized input/output
 ranges. It rejects unsupported coordinates rather than silently clamping them.
 This conversion does not alter decoded-object binding, the scene model, PCM,
-or any renderer-domain processing. The public-spec reconciliation and control
-truth table are recorded in
-[`docs/research/joc-object-binding/oamd-to-adm-coordinate-reconciliation.md`](research/joc-object-binding/oamd-to-adm-coordinate-reconciliation.md).
+or any renderer-domain processing. Detailed reconciliation evidence remains in
+the repository's dated research record and is intentionally outside this
+published site.
 
 ## Are these the original Atmos Objects?
 

@@ -2,8 +2,8 @@
 
 This document owns the current `render-joc` renderer, output-container,
 timeline, and output-level contract. Current support status belongs to
-[CAPABILITIES.md](CAPABILITIES.md); custom JSON/API geometry belongs to
-[CUSTOM_SPEAKER_LAYOUTS.md](CUSTOM_SPEAKER_LAYOUTS.md).
+[capability matrix](../project/capabilities.md); custom JSON/API geometry belongs to
+[custom speaker layouts](custom-speaker-layouts.md).
 
 `render-joc` decodes admitted E-AC-3 JOC input, aligns Base and
 ReconstructionBasis PCM, assembles bridge control from decoded JOC/OAMD state,
@@ -77,7 +77,7 @@ entries remain logical outputs outside the spatial projector.
 
 Coordinate ranges, validation, projection coverage, Rust construction, C ABI
 1.4 descriptors, and examples are canonical in
-[CUSTOM_SPEAKER_LAYOUTS.md](CUSTOM_SPEAKER_LAYOUTS.md). Renderer support does
+[custom speaker layouts](custom-speaker-layouts.md). Renderer support does
 not imply that a player, framework, audio device, or container accepts the
 same arbitrary geometry.
 
@@ -203,5 +203,5 @@ validated Windows DirectShow/LAV/PotPlayer integration outputs 48 kHz stereo
 float PCM only. The 64-channel renderer limit and standalone preset matrix are
 not DirectShow/LAV output claims.
 
-See [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md) for current non-claims and
-[ARCHITECTURE.md](ARCHITECTURE.md) for component ownership.
+See [known limitations](../compatibility/known-limitations.md) for current non-claims and
+[architecture](../concepts/architecture.md) for component ownership.

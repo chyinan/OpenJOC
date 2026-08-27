@@ -181,8 +181,8 @@ carrier-local association between decoded JOC row `j` and decoded OAMD dynamic
 ordinal `j` for reconstructed ADM; it does not resolve `T(t)`, a
 speaker-rendering operator, or an authored source identity. There is no fixed
 RB-row/authored-object mapping and no implicit matrix or permutation. The
-readiness census is in
-[`joc_reconstruction_readiness.json`](joc_reconstruction_readiness.json).
+readiness census remains a repository artifact and is available as
+[`docs/joc_reconstruction_readiness.json`](https://github.com/chyinan/OpenJOC/blob/master/docs/joc_reconstruction_readiness.json).
 
 The explicitly activated `JocSpatialBridge` is a downstream spatial function
 with experimental maturity. It consumes a losslessly retained topology/
@@ -191,9 +191,9 @@ Q32 gain scheduler, and accumulates linearly into caller-owned buffers. It does
 not change profile validation, assign authored-object identity, or resolve
 `SemanticBindingState` for authored or renderer semantics; its raw warp-3 field
 is retained as opaque data and excluded from projection arithmetic. The
-supported ordinary domain and
-activation surface are documented in
-[`JOC_SPATIAL_BRIDGE.md`](JOC_SPATIAL_BRIDGE.md).
+supported ordinary domain and activation surface remain an experimental
+implementation boundary. The [E-AC-3 JOC overview](eac3-joc-overview.md) shows
+how this branch relates to reconstructed ADM export.
 
 After Base and ReconstructionBasis contributions have been accumulated into
 the final semantic speaker planes, the shared renderer applies a causal,
@@ -350,4 +350,4 @@ stale metadata and PCM are not combined.
 Malformed input, unsupported container shapes, strict profile violations and
 output failures are classified separately. A diagnostic or empirical result
 cannot upgrade semantic binding. Current claim boundaries are summarized in
-`CAPABILITIES.md` and `KNOWN_LIMITATIONS.md`.
+the [capability matrix](../project/capabilities.md) and [known limitations](../compatibility/known-limitations.md).

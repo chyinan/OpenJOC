@@ -31,11 +31,14 @@
 **/coverage/
 **/target/
 **/build/
+/site/
+/.venv-docs/
 
 # Local release-audit outputs and temporary native probe objects
 /audit/
 /artifacts/
 /summary/
+/analysis-output/
 /PROGRESS-*.md
 /OPENJOC_*_HANDOFF.md
 /OPENJOC_*_BASELINE.md

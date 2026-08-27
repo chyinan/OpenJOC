@@ -1,7 +1,7 @@
 # Known limitations
 
 This is the canonical current list of user-visible limitations and non-claims.
-Positive support status belongs to [CAPABILITIES.md](CAPABILITIES.md).
+Positive support status belongs to the [capability matrix](../project/capabilities.md).
 Historical limitations remain in the changelog, research record, and archive.
 
 OpenJOC is an independent experimental interoperability project. It does not
@@ -168,4 +168,4 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   Some real-media acceptance therefore remains a maintainer release gate.
 
 For the corresponding positive claims and evidence boundaries, see
-[CAPABILITIES.md](CAPABILITIES.md) and [JOC_RENDER.md](JOC_RENDER.md).
+[capability matrix](../project/capabilities.md) and [speaker rendering](../using/speaker-rendering.md).

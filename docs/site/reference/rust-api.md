@@ -55,7 +55,7 @@ Physical speaker sessions may also use `SpeakerLayout::custom(...)` and
 `OpenJocConfig::with_speaker_layout(...)`. The custom layout keeps the caller's
 speaker array order as PCM/channel order, validates finite spherical geometry,
 and keeps LFE channels outside the spatial projector. The JSON/CLI form is
-documented in [`CUSTOM_SPEAKER_LAYOUTS.md`](CUSTOM_SPEAKER_LAYOUTS.md); it is
+documented in [custom speaker layouts](../using/custom-speaker-layouts.md); it is
 advanced functionality and does not widen downstream host/device channel
 layout support.
 

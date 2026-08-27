@@ -4,7 +4,8 @@ This is the canonical current capability status. Real-media acceptance confirms
 that Logic imports OpenJOC reconstructed ADM and that a Logic-authored re-export
 is accepted by Dolby Encoding Engine. Direct ingestion of the byte-exact
 OpenJOC-authored file is not claimed. Historical release state belongs to the
-[CHANGELOG](../CHANGELOG.md) and [archive](archive/README.md); dated engineering
+[CHANGELOG](https://github.com/chyinan/OpenJOC/blob/master/CHANGELOG.md) and the
+[historical archive](https://github.com/chyinan/OpenJOC/tree/master/docs/archive); dated engineering
 evidence belongs to the research and provenance records.
 
 ## Status vocabulary
