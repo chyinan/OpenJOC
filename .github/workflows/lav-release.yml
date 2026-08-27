@@ -140,8 +140,10 @@ jobs:
           $buildScriptText = $buildScriptText.Replace("`r`n", "`n")
           $zlibOption = "    --enable-zlib                   \`n"
           if (-not $buildScriptText.Contains($zlibOption)) { throw 'LAV FFmpeg zlib option was not found.' }
-          $zlibOptionWithLibrary = "    --enable-zlib                   \`n    --extra-libs=../thirdparty/`$archincdir/lib/zlib.lib                 \`n"
+          $zlibOptionWithLibrary = "    --enable-zlib                   \`n    --extra-libs=../thirdparty/64/lib/zlib.lib                 \`n"
           $buildScriptText = $buildScriptText.Replace($zlibOption, $zlibOptionWithLibrary)
+          if (-not $buildScriptText.Contains('--extra-libs=../thirdparty/64/lib/zlib.lib')) { throw 'LAV FFmpeg zlib library option was not applied.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $library 'zlib.lib') -PathType Leaf)) { throw 'LAV FFmpeg zlib library is missing.' }
           [IO.File]::WriteAllText($buildScript, $buildScriptText, [Text.UTF8Encoding]::new($false))
 
       - name: Build LAV FFmpeg
@@ -157,7 +159,7 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           set VSLANG=1033
           cd /d "$lav"
-          bash -c "./build_ffmpeg_msvc.sh x64 release"
+          bash -c "sh ./build_ffmpeg_msvc.sh x64 release"
           exit /b %errorlevel%
           "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
           & cmd.exe /d /c $commandFile
