@@ -1,6 +1,6 @@
 # OpenJOC documentation repository
 
-The published user documentation lives under [`docs/site/`](site/). Its navigation is defined in [`mkdocs.yml`](../mkdocs.yml).
+The published user documentation lives under [`docs/site/index.md`](site/index.md). Its navigation is defined in [`mkdocs.yml`](../mkdocs.yml).
 
 ## Canonical site owners
 
@@ -15,11 +15,11 @@ The published user documentation lives under [`docs/site/`](site/). Its navigati
 
 The following directories remain outside the published site by design:
 
-- [`archive/`](archive/) — retained historical contracts and older release material;
-- [`research/`](research/) — dated experiments, negative results, and implementation history;
-- [`release/`](release/) — packaging, corresponding-source, and distribution evidence;
-- [`design-plans/`](design-plans/) and [`implementation-plans/`](implementation-plans/) — engineering planning records;
-- [`integration/evidence/`](integration/evidence/) — local and release-gate evidence, including machine-specific capture records.
+- [`archive/`](archive/README.md) — retained historical contracts and older release material;
+- [`research/`](research/README.md) — dated experiments, negative results, and implementation history;
+- [`release/`](release/README.md) — packaging, corresponding-source, and distribution evidence;
+- [`design-plans/`](design-plans/2026-08-23-openjoc-lav-multichannel-output.md) and [`implementation-plans/`](implementation-plans/2026-08-23-openjoc-lav-multichannel-output/phase_01.md) — engineering planning records;
+- [`integration/evidence/`](integration/evidence/windows-lav-multichannel-2026-08-23.json) — local and release-gate evidence, including machine-specific capture records.
 
 These records are not silently rewritten to match current user documentation. A current fact belongs to the site owner above; a historical result stays with its dated record.
 

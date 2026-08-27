@@ -6,11 +6,11 @@
 
 OpenJOC is an independent, clean-room E-AC-3 JOC decoder and spatial renderer written in Rust. It decodes supported E-AC-3/JOC input, reconstructs carrier-local object signals, and renders speaker or binaural output through one platform-neutral engine.
 
-The current release is **v0.13.0**. OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby Laboratories.
+Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest). OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby Laboratories.
 
 ## Documentation
 
-The [repository documentation index](docs/README.md) points to the canonical Markdown owners. The published documentation site is built from [`docs/site/`](docs/site/), including installation, rendering, ADM export, Windows playback, APIs, and limitations.
+The [repository documentation index](docs/README.md) points to the canonical Markdown owners. The published documentation site is built from [`docs/site/index.md`](docs/site/index.md), including installation, rendering, ADM export, Windows playback, APIs, and limitations.
 
 ## What it supports
 
@@ -35,6 +35,8 @@ openjoc validate-adm reconstructed.wav
 ```
 
 Use `openjoc inspect input.ec3` to inspect a carrier before rendering. The [quick-start guide](docs/site/getting-started/quick-start.md) covers the first render and points to the detailed output contracts.
+
+For custom geometry, use `--layout-file LAYOUT.json`; the documented limit is 64 output channels.
 
 ## Windows playback
 
