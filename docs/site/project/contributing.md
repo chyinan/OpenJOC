@@ -21,10 +21,9 @@ Add a page under the closest information-architecture section, add it to `mkdocs
 
 ## Translations
 
-English is the canonical technical source. Add a maintained Simplified Chinese
-translation beside a page as `page.zh.md` and keep commands, flags, identifiers,
-type names, and filenames unchanged. The first Chinese release intentionally
-covers the high-value user paths; untranslated pages fall back to English under
-`/zh/` and should not block the build. Preserve all scope qualifiers and
-limitations when translating. The short translation notice at the top of
-Chinese pages is intentional: English wins if the two versions differ.
+English is the canonical technical source. Every current site page has a
+maintained Simplified Chinese translation beside it as `page.zh.md`. Keep
+commands, flags, identifiers, type names, and filenames unchanged. Preserve all
+scope qualifiers and limitations when translating. The short translation notice
+at the top of Chinese pages is intentional: English wins if the two versions
+differ. New pages should add both language files together.

@@ -36,7 +36,7 @@ python -m mkdocs build --strict
 The [contributor page](site/project/contributing.md) explains the smallest workflow for adding a page or changing navigation.
 
 The site is English-canonical and also builds a maintained Simplified Chinese
-translation layer with `mkdocs-static-i18n`. Translated pages use the suffix
-form `page.zh.md` beside the English owner. A missing Chinese page falls back
-to the English page under `/zh/`, so translation coverage can grow without
-blocking a site release.
+translation layer with `mkdocs-static-i18n`. Every current site page has a
+Chinese counterpart using the suffix form `page.zh.md` beside the English
+owner. Future pages should add both language files together; the configured
+fallback remains available as a safety net for incomplete future translations.
