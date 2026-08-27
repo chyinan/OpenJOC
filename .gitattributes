@@ -12,7 +12,9 @@ integrations/ffmpeg/native/patches/*.patch whitespace=-blank-at-eol,-blank-at-eo
 *.sh text eol=lf
 *.py linguist-detectable=false
 *.sh linguist-detectable=false
-*.ps1 text eol=crlf
+*.ps1 text eol=crlf linguist-detectable=false
+*.psm1 text eol=crlf linguist-detectable=false
+*.psd1 text eol=crlf linguist-detectable=false
 
 # Binary files
 *.png -text -diff
