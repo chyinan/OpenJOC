@@ -94,6 +94,11 @@ jobs:
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
           if ([string]::IsNullOrWhiteSpace($vs)) { throw 'Visual Studio C++ installation was not found.' }
+          $definition = Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\zlibvc.def'
+          $definitionText = Get-Content -Raw -LiteralPath $definition
+          if ($definitionText -notmatch '(?m)^VERSION\s+1\.3\s*$') { throw 'unexpected zlib module definition VERSION line.' }
+          $definitionText = $definitionText -replace '(?m)^VERSION\s+[^\r\n]*(?:\r?\n|$)', ''
+          [IO.File]::WriteAllText($definition, $definitionText, [Text.UTF8Encoding]::new($false))
           $solution = Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\zlibvc.sln'
           $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-zlib.cmd'
           @"
