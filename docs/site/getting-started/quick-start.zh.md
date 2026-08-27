@@ -7,7 +7,7 @@
 
 ## 渲染扬声器布局
 
-```sh
+```text
 openjoc render-joc input.m4a \\
   --layout 7.1.4 \\
   --output output.wav
@@ -17,7 +17,7 @@ openjoc render-joc input.m4a \\
 
 ## 尝试立体声或双耳输出
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 2.0 --output stereo.wav
 openjoc render-joc input.m4a --binaural --output headphones.wav
 ```

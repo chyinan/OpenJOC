@@ -34,7 +34,7 @@ represent the result.
 Check the [CLI reference](../reference/cli-reference.md) for the exact option
 spelling and run the smallest admitted command first:
 
-```sh
+```text
 openjoc render-joc input.ec3 --layout 2.0 --output stereo.wav
 ```
 

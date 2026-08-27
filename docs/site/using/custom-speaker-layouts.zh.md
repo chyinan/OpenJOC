@@ -5,7 +5,7 @@
 
 对于普通渲染，仍然推荐使用内置预设：
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 7.1.4 --output render.wav
 ```
 

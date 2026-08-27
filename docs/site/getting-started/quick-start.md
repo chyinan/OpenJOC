@@ -4,7 +4,7 @@ This guide takes a supported JOC programme from input to a first file render.
 
 ## Render a speaker layout
 
-```sh
+```text
 openjoc render-joc input.m4a \\
   --layout 7.1.4 \\
   --output output.wav
@@ -14,7 +14,7 @@ The output extension selects the container. Standard layouts can use WAV when th
 
 ## Try stereo or binaural output
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 2.0 --output stereo.wav
 openjoc render-joc input.m4a --binaural --output headphones.wav
 ```

@@ -24,7 +24,7 @@
 
 普通渲染请使用预设：
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 7.1.4 -o output.wav
 ```
 
@@ -40,7 +40,7 @@ openjoc render-joc input.m4a --layout 7.1.4 -o output.wav
 
 `2.0` 表示物理上的 `FL, FR` 扬声器，不是双耳输出。Base 声道使用选定的 E-AC-3 立体声下混策略，重建声部则投影到物理立体声布局：
 
-```sh
+```text
 openjoc render-joc input.m4a --layout 2.0 --downmix auto -o stereo.wav
 openjoc render-joc input.m4a --layout 2.0 --downmix loro -o stereo-loro.wav
 openjoc render-joc input.m4a --layout 2.0 --downmix ltrt -o stereo-ltrt.wav
@@ -82,7 +82,7 @@ openjoc render-joc input.m4a \\
 
 `--binaural` 会把虚拟扬声器场渲染为两个输出声道。如果没有 SOFA 路径，OpenJOC 会使用内置的离线 SADIE II D1 通用 HRTF。默认虚拟布局是 7.1.4：
 
-```sh
+```text
 openjoc render-joc input.m4a --binaural -o headphones.wav
 openjoc render-joc input.m4a \\
   --binaural --virtual-layout 9.1.6 \\
@@ -91,7 +91,7 @@ openjoc render-joc input.m4a \\
 
 使用 `--sofa` 指定用户数据集：
 
-```sh
+```text
 openjoc render-joc input.m4a \\
   --binaural --sofa listener.sofa --virtual-layout 7.1.4 \\
   --lfe-policy exclude -o custom-headphones.wav
