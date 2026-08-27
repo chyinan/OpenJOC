@@ -1,0 +1,288 @@
+name: LAV OpenJOC release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: OpenJOC release tag to receive the LAV asset
+        required: true
+        default: v0.13.0
+      lav_ref:
+        description: Full LAVFilters-OpenJOC commit to build
+        required: true
+        default: d80b2802d05577045426881716138791c18f7b3a
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lav-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-lav:
+    runs-on: windows-2025
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || 'd80b2802d05577045426881716138791c18f7b3a' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Keep build tooling at the workflow revision, while compiling CAPI from
+      # the exact OpenJOC release tag that will receive the asset.
+      - name: Check out build tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Check out OpenJOC release sources
+        uses: actions/checkout@v4
+        with:
+          path: openjoc-release
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Check out pinned LAV sources
+        uses: actions/checkout@v4
+        with:
+          repository: chyinan/LAVFilters-OpenJOC
+          path: lav
+          ref: ${{ env.LAV_REF }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Check out pinned zlib sources
+        uses: actions/checkout@v4
+        with:
+          repository: madler/zlib
+          path: zlib
+          ref: v1.3.1
+          fetch-depth: 1
+
+      - name: Resolve release identity
+        id: identity
+        shell: pwsh
+        run: |
+          $tag = $env:RELEASE_TAG.Trim()
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "release tag must look like vMAJOR.MINOR.PATCH: $tag"
+          }
+          "release_version=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build OpenJOC C API
+        shell: pwsh
+        working-directory: openjoc-release
+        run: cargo build -p openjoc-capi --release --locked --jobs 1
+
+      - name: Set up MSYS2 build tools
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            make
+            nasm
+
+      - name: Build zlib MSVC dependency
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'Visual Studio C++ installation was not found.' }
+          $solution = Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\zlibvc.sln'
+          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-zlib.cmd'
+          @"
+          @echo off
+          call "$vs\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo
+          if errorlevel 1 exit /b %errorlevel%
+          msbuild "$solution" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /nologo
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
+          & cmd.exe /d /c $commandFile
+          if ($LASTEXITCODE -ne 0) { throw "zlib MSVC build failed: $LASTEXITCODE" }
+          $zlibOutput = Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\x64\ZlibDllRelease'
+          foreach ($name in @('zlibwapi.dll', 'zlibwapi.lib')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $zlibOutput $name) -PathType Leaf)) {
+              throw "zlib output is missing: $name"
+            }
+          }
+
+      - name: Prepare LAV FFmpeg inputs
+        shell: pwsh
+        run: |
+          $lav = Join-Path $env:GITHUB_WORKSPACE 'lav'
+          $include = Join-Path $lav 'thirdparty\64\include'
+          $library = Join-Path $lav 'thirdparty\64\lib'
+          New-Item -ItemType Directory -Path $include, $library -Force | Out-Null
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'zlib\zlib.h') -Destination $include -Force
+          $zconf = Join-Path $include 'zconf.h'
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'zlib\zconf.h') -Destination $zconf -Force
+          $zconfText = Get-Content -Raw -LiteralPath $zconf
+          $zconfText = $zconfText -replace '(?m)^#ifdef HAVE_UNISTD_H$', '#if defined(HAVE_UNISTD_H) && HAVE_UNISTD_H'
+          [IO.File]::WriteAllText($zconf, $zconfText, [Text.UTF8Encoding]::new($false))
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\x64\ZlibDllRelease\zlibwapi.lib') -Destination (Join-Path $library 'zlib.lib') -Force
+          $avisynthSource = Join-Path $include 'avisynth'
+          $avisynthDestination = Join-Path $lav 'ffmpeg\avisynth'
+          if (-not (Test-Path -LiteralPath $avisynthSource -PathType Container)) { throw 'LAV Avisynth headers are missing.' }
+          Copy-Item -LiteralPath $avisynthSource -Destination $avisynthDestination -Recurse -Force
+
+      - name: Build LAV FFmpeg
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-lav-ffmpeg.cmd'
+          $lav = Join-Path $env:GITHUB_WORKSPACE 'lav'
+          @"
+          @echo off
+          call "$vs\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo
+          if errorlevel 1 exit /b %errorlevel%
+          set VSLANG=1033
+          cd /d "$lav"
+          bash -lc "./build_ffmpeg_msvc.sh x64 release"
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
+          & cmd.exe /d /c $commandFile
+          if ($LASTEXITCODE -ne 0) { throw "LAV FFmpeg build failed: $LASTEXITCODE" }
+          foreach ($name in @('avcodec-lav-63.dll', 'avfilter-lav-12.dll', 'avformat-lav-63.dll', 'avutil-lav-61.dll', 'swresample-lav-7.dll', 'swscale-lav-10.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $lav "bin_x64\$name") -PathType Leaf)) { throw "FFmpeg output is missing: $name" }
+          }
+
+      - name: Build LAVAudio
+        shell: pwsh
+        run: |
+          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-lav-audio.cmd'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          $vsdevcmd = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
+          $lav = Join-Path $env:GITHUB_WORKSPACE 'lav'
+          $include = Join-Path $env:GITHUB_WORKSPACE 'openjoc-release\crates\openjoc-capi\include'
+          $log = Join-Path $env:RUNNER_TEMP 'lav-msbuild.log'
+          @"
+          @echo off
+          call "$env:GITHUB_WORKSPACE\scripts\release_lav_msbuild.cmd" "$vsdevcmd" "$lav" "$include" "$log"
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
+          & cmd.exe /d /c $commandFile
+          if ($LASTEXITCODE -ne 0) { throw "LAVAudio build failed: $LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath (Join-Path $lav 'bin_x64\LAVAudio.ax') -PathType Leaf)) { throw 'LAVAudio.ax was not produced.' }
+
+      - name: Build LAV smoke tests
+        shell: pwsh
+        run: |
+          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-lav-smokes.cmd'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          $vsdevcmd = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
+          $lav = Join-Path $env:GITHUB_WORKSPACE 'lav'
+          $include = Join-Path $env:GITHUB_WORKSPACE 'openjoc-release\crates\openjoc-capi\include'
+          $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
+          New-Item -ItemType Directory -Path $smokes -Force | Out-Null
+          @"
+          @echo off
+          call "$env:GITHUB_WORKSPACE\scripts\release_lav_smokes.cmd" "$vsdevcmd" "$lav" "$include" "$env:GITHUB_WORKSPACE\scripts\LavSmokeNoopLifecycle.cpp" "$smokes"
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
+          & cmd.exe /d /c $commandFile
+          if ($LASTEXITCODE -ne 0) { throw "LAV smoke build failed: $LASTEXITCODE" }
+
+      - name: Collect MSVC runtime dependencies
+        shell: pwsh
+        run: |
+          $dependencyDir = Join-Path $env:RUNNER_TEMP 'openjoc-lav-runtime-dependencies'
+          New-Item -ItemType Directory -Path $dependencyDir -Force | Out-Null
+          $zlibDll = Join-Path $env:GITHUB_WORKSPACE 'zlib\contrib\vstudio\vc17\x64\ZlibDllRelease\zlibwapi.dll'
+          Copy-Item -LiteralPath $zlibDll -Destination $dependencyDir -Force
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC\Redist\MSVC') -Recurse -Filter 'vcruntime140.dll' | Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC\d+\.CRT\\vcruntime140\.dll$' } | Select-Object -First 1
+          if ($null -eq $crt) { throw 'MSVC x64 runtime was not found.' }
+          $crtDir = $crt.Directory.FullName
+          $sdkRedist = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Redist'
+          $api = Get-ChildItem -LiteralPath $sdkRedist -Recurse -Filter 'api-ms-win-crt-runtime-l1-1-0.dll' | Where-Object { $_.FullName -match '\\ucrt\\DLLs\\x64\\' } | Select-Object -First 1
+          if ($null -eq $api) { throw 'Windows SDK x64 UCRT redistributable was not found.' }
+          $apiDir = $api.Directory.FullName
+          $names = @(
+            'api-ms-win-crt-conio-l1-1-0.dll', 'api-ms-win-crt-convert-l1-1-0.dll',
+            'api-ms-win-crt-environment-l1-1-0.dll', 'api-ms-win-crt-filesystem-l1-1-0.dll',
+            'api-ms-win-crt-heap-l1-1-0.dll', 'api-ms-win-crt-locale-l1-1-0.dll',
+            'api-ms-win-crt-math-l1-1-0.dll', 'api-ms-win-crt-multibyte-l1-1-0.dll',
+            'api-ms-win-crt-private-l1-1-0.dll', 'api-ms-win-crt-process-l1-1-0.dll',
+            'api-ms-win-crt-runtime-l1-1-0.dll', 'api-ms-win-crt-stdio-l1-1-0.dll',
+            'api-ms-win-crt-string-l1-1-0.dll', 'api-ms-win-crt-time-l1-1-0.dll',
+            'api-ms-win-crt-utility-l1-1-0.dll', 'ucrtbase.dll', 'vcruntime140.dll',
+            'vcruntime140_1.dll', 'vcruntime140_threads.dll'
+          )
+          foreach ($name in $names) {
+            $source = if ($name.StartsWith('api-ms-win-crt-') -or $name -eq 'ucrtbase.dll') { Join-Path $apiDir $name } else { Join-Path $crtDir $name }
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "MSVC dependency is missing: $source" }
+            Copy-Item -LiteralPath $source -Destination $dependencyDir -Force
+          }
+          "dependency_dir=$dependencyDir" >> $env:GITHUB_OUTPUT
+        id: dependencies
+
+      - name: Package LAV release asset
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'openjoc-lav-release'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          python scripts/package_lav_release.py `
+            --release-version $env:RELEASE_VERSION `
+            --lav-root (Join-Path $env:GITHUB_WORKSPACE 'lav') `
+            --capi-dll (Join-Path $env:GITHUB_WORKSPACE 'openjoc-release\target\release\openjoc_capi.dll') `
+            --dependency-dir '${{ steps.dependencies.outputs.dependency_dir }}' `
+            --onboarding-template (Join-Path $env:GITHUB_WORKSPACE 'packaging\windows-lav') `
+            --output-dir $output
+          if ($LASTEXITCODE -ne 0) { throw "LAV package creation failed: $LASTEXITCODE" }
+          "package_dir=$output" >> $env:GITHUB_OUTPUT
+        id: package
+
+      - name: Validate package and standalone smoke tests
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
+        run: |
+          $archive = Join-Path '${{ steps.package.outputs.package_dir }}' "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip"
+          $extract = Join-Path $env:RUNNER_TEMP 'openjoc-lav-package-validation'
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          Import-Module (Join-Path $extract 'scripts\OpenJoc.Onboarding.Shell.psm1') -Force
+          $session = New-OpenJocSession -Operation 'validate' -PackageRoot $extract -InstallRoot (Join-Path $env:RUNNER_TEMP 'openjoc-lav-install-validation') -LogPath (Join-Path $env:RUNNER_TEMP 'openjoc-lav-validation.log')
+          $preflight = Test-OpenJocPackage $session
+          if (-not $preflight.Success) { throw $preflight.Detail }
+          $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
+          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
+            & (Join-Path $smokes $name)
+            if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: $name ($LASTEXITCODE)" }
+          }
+          & (Join-Path $smokes 'LAVAudioIdentitySmoke.exe') (Join-Path $extract 'runtime\LAVAudio.ax')
+          if ($LASTEXITCODE -ne 0) { throw "LAVAudio identity smoke failed: $LASTEXITCODE" }
+
+      - name: Upload LAV asset to the OpenJOC release
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
+        run: |
+          $archive = Join-Path '${{ steps.package.outputs.package_dir }}' "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip"
+          $available = $false
+          for ($attempt = 1; $attempt -le 36; $attempt++) {
+            gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+            if ($LASTEXITCODE -eq 0) { $available = $true; break }
+            Start-Sleep -Seconds 10
+          }
+          if (-not $available) { throw "release did not become available: $env:RELEASE_TAG" }
+          gh release upload $env:RELEASE_TAG $archive --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw "release upload failed: $LASTEXITCODE" }
+
+      - name: Retain built LAV asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-lav-${{ steps.identity.outputs.release_version }}-windows-x64
+          path: ${{ steps.package.outputs.package_dir }}/*.zip
+          if-no-files-found: error

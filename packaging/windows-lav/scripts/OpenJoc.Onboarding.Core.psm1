@@ -4,7 +4,43 @@
 
 Set-StrictMode -Version 2.0
 
+function Get-OpenJocRuntimeProfile {
+    param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
+
+    $profilePath = Join-Path $RuntimeRoot 'OpenJocRuntimeProfile.json'
+    if (-not (Test-Path -LiteralPath $profilePath -PathType Leaf)) { return $null }
+    try {
+        $profile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json
+        $properties = @($profile.PSObject.Properties.Name)
+        if ($null -eq $profile -or $properties -notcontains 'version' -or
+            $properties -notcontains 'architecture' -or
+            $properties -notcontains 'required_runtime_files') {
+            throw 'profile must define version, architecture, and required_runtime_files'
+        }
+        $files = @($profile.required_runtime_files | ForEach-Object { [string]$_ })
+        if ($profile.version -notmatch '^\d+\.\d+\.\d+$' -or
+            $profile.architecture -ne 'x64' -or $files.Count -eq 0 -or
+            (@($files | Select-Object -Unique).Count -ne $files.Count) -or
+            (@($files | Where-Object { [IO.Path]::GetFileName($_) -ne $_ }).Count -ne 0)) {
+            throw 'profile has an invalid version, architecture, or file inventory'
+        }
+        [pscustomobject]@{
+            Version = [string]$profile.version
+            Architecture = [string]$profile.architecture
+            RequiredRuntimeFiles = $files
+        }
+    } catch {
+        throw "invalid OpenJOC runtime profile '$profilePath': $($_.Exception.Message)"
+    }
+}
+
 function Get-OpenJocRequiredRuntimeFiles {
+    param([string]$RuntimeRoot)
+
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeRoot)) {
+        $profile = Get-OpenJocRuntimeProfile $RuntimeRoot
+        if ($null -ne $profile) { return @($profile.RequiredRuntimeFiles) }
+    }
     @(
         'LAVAudio.ax',
         'LAVAudio.ax.manifest',
@@ -118,7 +154,7 @@ function Get-OpenJocUninstallDesiredSnapshot {
 }
 
 Export-ModuleMember -Function @(
-    'Get-OpenJocRequiredRuntimeFiles',
+    'Get-OpenJocRuntimeProfile', 'Get-OpenJocRequiredRuntimeFiles',
     'Get-OpenJocClassIds',
     'ConvertTo-OpenJocCommandLineArgument',
     'Test-OpenJocSamePath',

@@ -118,6 +118,44 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
         self.assertEqual(data["Ids"]["StockLavAudio"], "{E8E73B6B-4CB3-44A4-BE99-4F7BCB96E491}")
         self.assertEqual(len(data["Ids"]), 6)
 
+    def test_runtime_profile_overrides_legacy_inventory_for_new_packages(self) -> None:
+        core = TEMPLATE / "scripts" / "OpenJoc.Onboarding.Core.psm1"
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = pathlib.Path(temporary) / "runtime"
+            runtime.mkdir()
+            profile = {
+                "version": "0.13.0",
+                "architecture": "x64",
+                "required_runtime_files": [
+                    "LAVAudio.ax",
+                    "LAVAudio.ax.manifest",
+                    "LAVFilters.Dependencies.manifest",
+                    "openjoc_capi.dll",
+                    "zlibwapi.dll",
+                ],
+            }
+            (runtime / "OpenJocRuntimeProfile.json").write_text(
+                json.dumps(profile), encoding="utf-8"
+            )
+            escaped_core = str(core).replace("'", "''")
+            escaped_runtime = str(runtime).replace("'", "''")
+            command = (
+                f"Import-Module '{escaped_core}' -Force;"
+                f"$p=Get-OpenJocRuntimeProfile '{escaped_runtime}';"
+                f"$f=@(Get-OpenJocRequiredRuntimeFiles '{escaped_runtime}');"
+                "$o=[pscustomobject]@{Version=$p.Version;Files=$f};"
+                "$o|ConvertTo-Json -Compress"
+            )
+            completed = subprocess.run(
+                [str(powershell_51()), "-NoProfile", "-Command", command],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            data = json.loads(completed.stdout)
+            self.assertEqual(data["Version"], "0.13.0")
+            self.assertEqual(data["Files"], profile["required_runtime_files"])
+
     def test_uninstall_snapshot_keeps_live_neighbors_and_restores_original_main(self) -> None:
         core = TEMPLATE / "scripts" / "OpenJoc.Onboarding.Core.psm1"
         environment = os.environ.copy()

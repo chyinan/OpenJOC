@@ -25,6 +25,11 @@ $script:ProductId = 'OpenJOC.LAV.Windows'
 $script:Version = '0.12.0'
 $script:OpenJocClsid = '{27247580-C701-40CD-886D-E618FC8C9FFF}'
 $script:StockClsid = '{E8E73B6B-4CB3-44A4-BE99-4F7BCB96E491}'
+$script:PackageRuntimeRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'runtime'
+$script:PackageRuntimeProfile = Get-OpenJocRuntimeProfile $script:PackageRuntimeRoot
+if ($null -ne $script:PackageRuntimeProfile) {
+    $script:Version = $script:PackageRuntimeProfile.Version
+}
 
 function Get-OpenJocDefaultInstallRoot {
     $programFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
@@ -205,21 +210,22 @@ function Test-OpenJocPeX64 {
 function Test-OpenJocRuntimePayload {
     param([string]$RuntimeRoot)
     $missing = @()
-    foreach ($name in Get-OpenJocRequiredRuntimeFiles) {
+    $requiredFiles = @(Get-OpenJocRequiredRuntimeFiles $RuntimeRoot)
+    foreach ($name in $requiredFiles) {
         if (-not (Test-Path -LiteralPath (Join-Path $RuntimeRoot $name) -PathType Leaf)) { $missing += $name }
     }
     if ($missing.Count -gt 0) {
         return [pscustomobject]@{ Success = $false; Detail = ("Package runtime is incomplete. Missing: {0}" -f ($missing -join ', ')) }
     }
     $invalid = @()
-    foreach ($name in Get-OpenJocRequiredRuntimeFiles) {
+    foreach ($name in $requiredFiles) {
         if ([IO.Path]::GetExtension($name) -notin @('.dll', '.ax')) { continue }
         if (-not (Test-OpenJocPeX64 (Join-Path $RuntimeRoot $name))) { $invalid += $name }
     }
     if ($invalid.Count -gt 0) {
         return [pscustomobject]@{ Success = $false; Detail = ("Package contains an invalid, corrupted, or non-x64 runtime file: {0}" -f ($invalid -join ', ')) }
     }
-    foreach ($name in Get-OpenJocRequiredRuntimeFiles) {
+    foreach ($name in $requiredFiles) {
         if ([IO.Path]::GetExtension($name) -notin @('.dll', '.ax')) { continue }
         $path = Join-Path $RuntimeRoot $name
         $module = [OpenJocNativeLibrary]::LoadLibraryEx($path, [IntPtr]::Zero, 0x00001100)
@@ -492,7 +498,7 @@ function Get-OpenJocVerification {
     param($Session)
     $checks = @()
     $missing = @()
-    foreach ($name in Get-OpenJocRequiredRuntimeFiles) {
+    foreach ($name in Get-OpenJocRequiredRuntimeFiles $Session.InstallRoot) {
         if (-not (Test-Path -LiteralPath (Join-Path $Session.InstallRoot $name) -PathType Leaf)) { $missing += $name }
     }
     $checks += [pscustomobject]@{ Name = 'Installed files'; Passed = ($missing.Count -eq 0); Detail = $(if ($missing.Count) { 'Missing: ' + ($missing -join ', ') } else { 'All required runtime files are present.' }) }
