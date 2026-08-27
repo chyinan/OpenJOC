@@ -135,6 +135,14 @@ jobs:
           $avisynthDestination = Join-Path $lav 'ffmpeg\avisynth'
           if (-not (Test-Path -LiteralPath $avisynthSource -PathType Container)) { throw 'LAV Avisynth headers are missing.' }
           Copy-Item -LiteralPath $avisynthSource -Destination $avisynthDestination -Recurse -Force
+          $buildScript = Join-Path $lav 'build_ffmpeg_msvc.sh'
+          $buildScriptText = Get-Content -Raw -LiteralPath $buildScript
+          $buildScriptText = $buildScriptText.Replace("`r`n", "`n")
+          $zlibOption = "    --enable-zlib                   \`n"
+          if (-not $buildScriptText.Contains($zlibOption)) { throw 'LAV FFmpeg zlib option was not found.' }
+          $zlibOptionWithLibrary = "    --enable-zlib                   \`n    --extra-libs=../thirdparty/`$archincdir/lib/zlib.lib                 \`n"
+          $buildScriptText = $buildScriptText.Replace($zlibOption, $zlibOptionWithLibrary)
+          [IO.File]::WriteAllText($buildScript, $buildScriptText, [Text.UTF8Encoding]::new($false))
 
       - name: Build LAV FFmpeg
         shell: pwsh
