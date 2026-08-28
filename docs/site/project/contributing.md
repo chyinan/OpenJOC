@@ -19,6 +19,16 @@ On Unix-like hosts, activate the environment and use `python -m mkdocs serve` or
 
 Add a page under the closest information-architecture section, add it to `mkdocs.yml`, and run the strict build before committing. Keep one canonical owner for each technical fact. Leave dated research, release evidence, and internal implementation plans under their existing repository directories unless they have a clear user-facing purpose.
 
+## Research contributions
+
+For difficult codec, renderer, storage, or hardware-validation work, read
+[Open Problems & Contribution Opportunities](open-problems.md) first. Start a
+Discussion before a large research implementation so existing evidence
+boundaries and stop conditions are visible. A useful contribution needs a
+reproducible test, a clear evidence boundary, and clean-room-compliant
+provenance. Small deterministic fixes and ordinary documentation changes can
+go straight through the normal contribution workflow.
+
 ## Translations
 
 English is the canonical technical source. Every current site page has a
