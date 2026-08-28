@@ -4,6 +4,11 @@ This is the canonical current list of user-visible limitations and non-claims.
 Positive support status belongs to the [capability matrix](../project/capabilities.md).
 Historical limitations remain in the changelog, research record, and archive.
 
+Some of these boundaries describe areas where more evidence could help. See
+[Open Problems & Contribution Opportunities](../project/open-problems.md) if
+you want to contribute without treating an unresolved point as an invitation
+to make a speculative fix.
+
 OpenJOC is an independent experimental interoperability project. It does not
 claim Dolby endorsement, certification, a licensed implementation,
 bit-identical Reference Player output, or proprietary renderer fidelity.

@@ -2,6 +2,10 @@
 
 OpenJOC reconstructs an interoperability-oriented ADM representation of the decoded JOC object scene. It does not recover the original authored Dolby Atmos master, and it does not guarantee perceptually identical localization when a generic ADM renderer renders that file.
 
+If you want to investigate this boundary, see the corresponding [open problem
+and contribution guidance](../project/open-problems.md) before proposing a
+renderer-semantic change.
+
 ## Validated within scope
 
 The current validation boundary covers:

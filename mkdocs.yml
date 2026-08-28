@@ -89,6 +89,7 @@ plugins:
             Clean-room methodology: 清洁室方法
             Standards and references: 标准与参考
             Integrations: 集成
+            Open Problems & Contribution Opportunities: 开放问题与贡献方向
             Contributing: 参与贡献
             Changelog: 更新日志
 
@@ -154,5 +155,6 @@ nav:
       - Clean-room methodology: project/clean-room-methodology.md
       - Standards and references: project/standards-references.md
       - Integrations: project/integrations.md
+      - Open Problems & Contribution Opportunities: project/open-problems.md
       - Contributing: project/contributing.md
       - Changelog: project/changelog.md

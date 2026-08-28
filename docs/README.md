@@ -10,6 +10,7 @@ The published user documentation lives under [`docs/site/index.md`](site/index.m
 - [Decoded Objects vs authored Objects](site/concepts/decoded-vs-authored-objects.md) — identity and recovery boundary.
 - [Known limitations](site/compatibility/known-limitations.md) — current user-visible non-claims.
 - [Clean-room methodology](site/project/clean-room-methodology.md) — permitted sources and evidence classes.
+- [Open Problems & Contribution Opportunities](site/project/open-problems.md) — stable contribution directions and evidence expectations.
 
 ## Repository-only material
 

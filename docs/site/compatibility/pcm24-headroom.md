@@ -2,6 +2,10 @@
 
 JOC reconstruction is performed in floating-point form. A valid reconstructed sample can lie outside the normalized signed-24-bit range before file quantization.
 
+If you want to investigate a standards-compatible storage path, read the
+corresponding [open problem and contribution guidance](../project/open-problems.md)
+first. The current fail-closed policy is intentional.
+
 ```text
 valid floating-point reconstruction
         ≠

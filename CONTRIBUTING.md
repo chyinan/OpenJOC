@@ -42,6 +42,16 @@ Before adding a current technical claim, identify its owner. Secondary
 documents may summarize and link, but must not create an independently
 maintained duplicate specification.
 
+## Research contributions
+
+The [Open Problems & Contribution Opportunities](docs/site/project/open-problems.md)
+page is the canonical guide for difficult codec, renderer, storage, and
+hardware-validation work. Read it before starting a high-risk semantic change.
+In particular, begin major research with a Discussion, state the evidence
+boundary, preserve the clean-room rules, and include reproducible regression
+coverage. Typo fixes, straightforward documentation changes, and small
+deterministic bug fixes do not need a Discussion first.
+
 ## Public naming
 
 Public names should describe stable function or semantics and must not encode
