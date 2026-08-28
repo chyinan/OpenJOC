@@ -12,17 +12,6 @@ Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest
 
 **[Read the OpenJOC documentation site](https://chyinan.github.io/OpenJOC/)** · **[阅读简体中文文档](https://chyinan.github.io/OpenJOC/zh/)**
 
-## Help wanted
-
-OpenJOC is usable today, but several research and validation problems remain
-open. Contributions are especially welcome around native-renderer equivalence,
-reconstructed-PCM headroom, and physical multichannel hardware validation.
-
-See [Open Problems & Contribution Opportunities](docs/site/project/open-problems.md)
-before starting work on codec or renderer semantics. For difficult research,
-starting a Discussion first is recommended so work does not repeat an already
-investigated path.
-
 ## What it supports
 
 - E-AC-3 JOC decoding with bounded reconstruction;
@@ -81,6 +70,17 @@ cargo build -p openjoc-cli --release --locked
 ```
 
 Contributors should follow [CONTRIBUTING.md](CONTRIBUTING.md) and run the workspace quality gates before committing.
+
+## Help wanted
+
+OpenJOC is usable today, but several research and validation problems remain
+open. Contributions are especially welcome around native-renderer equivalence,
+reconstructed-PCM headroom, and physical multichannel hardware validation.
+
+See [Open Problems & Contribution Opportunities](docs/site/project/open-problems.md)
+before starting work on codec or renderer semantics. For difficult research,
+starting a Discussion first is recommended so work does not repeat an already
+investigated path.
 
 ## License and notices
 
