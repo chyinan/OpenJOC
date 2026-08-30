@@ -2012,6 +2012,20 @@ mod tests {
         std::fs::write(path, stream).expect("write requested lifecycle JOC fixture");
     }
 
+    #[test]
+    fn export_synthetic_ordinary_eac3_fixture_when_requested() {
+        let Some(path) = std::env::var_os("OPENJOC_SYNTHETIC_ORDINARY_EAC3_PATH") else {
+            return;
+        };
+        let frame =
+            five_channel_audio_frame_with_exponent_codes(&[], false, [62, 63, 64, 65, 66], None);
+        let mut stream = Vec::with_capacity(frame.len() * 128);
+        for _ in 0..128 {
+            stream.extend_from_slice(&frame);
+        }
+        std::fs::write(path, stream).expect("write requested synthetic ordinary E-AC-3 fixture");
+    }
+
     fn huffman_codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {
         fn visit(nodes: &[[i16; 2]], node: usize, wanted: u16, path: &mut Vec<bool>) -> bool {
             for branch in 0..2 {

@@ -46,7 +46,10 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("OpenJocStrictOutput.cpp", text)
         self.assertIn("OpenJocStrictNegotiation.cpp", text)
         self.assertIn("OpenJocStrictOutputTests.exe", text)
+        self.assertIn("OpenJocDialnormPolicyTests.cpp", text)
+        self.assertIn("OpenJocDialnormPolicyTests.exe", text)
         self.assertIn("LAV_ENABLE_OPENJOC", text)
+        self.assertIn("LAV_OPENJOC_SIDE_BY_SIDE", text)
         self.assertIn("LAV_OPENJOC_TESTING", text)
         self.assertGreaterEqual(text.count("OpenJocOutput.cpp"), 2)
         self.assertGreaterEqual(text.count("avutil-lav.lib"), 2)
@@ -54,7 +57,7 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertGreaterEqual(text.count('"/I%~2\\common\\baseclasses"'), 2)
         self.assertGreaterEqual(text.count('"/I%~2\\common\\DSUtilLite"'), 2)
         self.assertGreaterEqual(text.count("strmiids.lib"), 3)
-        self.assertGreaterEqual(text.count("call cl"), 12)
+        self.assertGreaterEqual(text.count("call cl"), 13)
 
     def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:
         text = NOOP_LIFECYCLE_SOURCE.read_text(encoding="utf-8")

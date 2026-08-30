@@ -305,7 +305,7 @@ jobs:
           $preflight = Test-OpenJocPackage $session
           if (-not $preflight.Success) { throw $preflight.Detail }
           $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
-          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
+          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
             & (Join-Path $smokes $name)
             if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: $name ($LASTEXITCODE)" }
           }

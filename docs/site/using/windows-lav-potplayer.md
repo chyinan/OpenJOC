@@ -45,6 +45,28 @@ The Windows adapter exposes exactly seven fixed 48 kHz IEEE-float PCM policies:
 
 Each policy makes one exact semantic proposal with no fallback mask. Stereo is the default; select other layouts explicitly. `AUTO_NOT_RELIABLE` is the current automatic downstream layout-discovery status.
 
+## OpenJOC settings
+
+Open the filter properties and select the **OpenJOC** tab. **OpenJOC output**
+contains the same seven fixed output policies listed above; moving this control
+to its own tab does not change layout, channel-order, media-type, or Stereo
+default behavior.
+
+**Dialnorm** has two choices:
+
+- **Calibrated (Recommended)** respects the programme dialnorm carried by
+  E-AC-3.
+- **Unity / Compatibility** disables dialnorm gain for compatibility and may
+  sound substantially louder.
+
+This setting selects the decoder's programme-calibration policy. It is not
+normalization, DRC, a quality mode, or mastering gain, and it adds no
+post-render gain stage.
+
+The **Status** page uses the standard LAV channel meters. It currently displays
+at most the first eight output channels; for 10- and 12-channel policies, the
+displayed first eight meters remain channel-index aligned with the PCM output.
+
 ## Passthrough and hardware boundaries
 
 OpenJOC does not infer a layout from endpoint names, perform Bass Management, or turn multiple physical subwoofers into multiple logical LFE channels. Standalone 7.1.6, 9.1.x, 22.2, custom geometry, and binaural output are not LAV output claims.

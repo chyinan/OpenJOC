@@ -62,6 +62,31 @@ output claims. The full matrix is in the
 [`windows-lav-multichannel-2026-08-25` result](evidence/windows-lav-multichannel-2026-08-25/OPENJOC_LAV_MULTICHANNEL_OUTPUT_RESULT.txt),
 beside the machine-readable JSON evidence.
 
+## OpenJOC property page and programme level
+
+The side-by-side filter adds a dedicated **OpenJOC** property page. The existing
+seven-policy output selector lives on that page without changing its persisted
+numeric values or strict output contracts. Stock LAV has no OpenJOC page or
+OpenJOC settings interfaces.
+
+The page exposes exactly two Dialnorm policies. **Calibrated (Recommended)**
+maps to `OPENJOC_DIALNORM_DEFAULT` and respects encoded E-AC-3 programme
+dialnorm. **Unity / Compatibility** maps to `OPENJOC_DIALNORM_ANALOG`, disables
+dialnorm attenuation, and may sound substantially louder. These policies use
+OpenJOC's existing decoder configuration; LAV does not multiply rendered PCM.
+Dialnorm policy is not normalization, DRC, a quality mode, or mastering gain.
+
+Output and Dialnorm settings persist only below
+`Software\LAV\Audio\OpenJOC`. Dialnorm uses schema version 1 and falls back to
+Calibrated for missing, future, mistyped, or invalid registry values. The new
+level setting is exposed through a separate versioned COM IID so the published
+`ILAVAudioSettings` and `ILAVOpenJocSettings` vtables remain unchanged.
+
+The standard LAV Status page receives read-only volume statistics from valid
+strict OpenJOC FP32 buffers without passing those buffers through stock audio
+processing. Its existing meter capacity remains eight channels; 10- and
+12-channel outputs display the first eight channel indices.
+
 ## Installation and rollback
 
 Extract the complete Windows LAV package, double-click `install.bat`, accept

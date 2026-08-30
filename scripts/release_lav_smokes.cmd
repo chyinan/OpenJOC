@@ -38,7 +38,13 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:OpenJocStrictOutputTests.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC /DLAV_OPENJOC_TESTING ^
+call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC ^
+  "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~3" ^
+  "%~2\decoder\LAVAudio\OpenJocDialnormPolicyTests.cpp" ^
+  /Fe:OpenJocDialnormPolicyTests.exe
+if errorlevel 1 exit /b %errorlevel%
+
+call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC /DLAV_OPENJOC_SIDE_BY_SIDE /DLAV_OPENJOC_TESTING ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
   "/I%~2\common\baseclasses" "/I%~2\ffmpeg" "/I%~2\libbluray\src" ^
   "/I%~2\common\DSUtilLite" "/I%~3" ^
