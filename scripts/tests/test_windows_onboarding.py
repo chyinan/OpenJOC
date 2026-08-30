@@ -124,7 +124,7 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
             runtime = pathlib.Path(temporary) / "runtime"
             runtime.mkdir()
             profile = {
-                "version": "0.13.0",
+                "version": "0.14.0",
                 "architecture": "x64",
                 "required_runtime_files": [
                     "LAVAudio.ax",
@@ -153,7 +153,7 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             data = json.loads(completed.stdout)
-            self.assertEqual(data["Version"], "0.13.0")
+            self.assertEqual(data["Version"], "0.14.0")
             self.assertEqual(data["Files"], profile["required_runtime_files"])
 
     def test_uninstall_snapshot_keeps_live_neighbors_and_restores_original_main(self) -> None:

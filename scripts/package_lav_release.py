@@ -78,7 +78,7 @@ def _required_runtime_files() -> tuple[str, ...]:
 
 def build_package(arguments: argparse.Namespace) -> int:
     version = arguments.release_version
-    if version != "0.13.0":
+    if version != "0.14.0":
         raise ValueError(f"unsupported OpenJOC LAV release version: {version}")
     lav_root = arguments.lav_root.resolve()
     capi_dll = arguments.capi_dll.resolve()

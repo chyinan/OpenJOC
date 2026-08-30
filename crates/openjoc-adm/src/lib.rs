@@ -1927,10 +1927,8 @@ pub fn validate_reader<R: Read + Seek>(reader: &mut R) -> Result<AdmValidationSu
                 }
                 fmt = Some(read_bounded_chunk(reader, payload_start, size, 64)?);
             }
-            b"data" => {
-                if data_bytes.replace(size).is_some() {
-                    return Err(AdmError::InvalidAdmBwf("duplicate data chunk"));
-                }
+            b"data" if data_bytes.replace(size).is_some() => {
+                return Err(AdmError::InvalidAdmBwf("duplicate data chunk"));
             }
             b"axml" => {
                 if axml.is_some() {

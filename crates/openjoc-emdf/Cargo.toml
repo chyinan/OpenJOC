@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-bitio = { version = "0.13.0", path = "../openjoc-bitio" }
+openjoc-bitio = { version = "0.14.0", path = "../openjoc-bitio" }
 
 [lints]
 workspace = true

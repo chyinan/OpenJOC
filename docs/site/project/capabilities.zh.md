@@ -58,7 +58,7 @@
 | 渲染 | 静态显式声源均匀分区双耳卷积 | `ADMITTED_WITH_SCOPE` | `openjoc-render` 固定 FFT 后端、直接 FIR 等价、多种分区大小/声源、部分输入、精确尾部和生命周期回归测试 | 调用方选择一个固定的二次幂 `P`；FFT 大小为 `2P`，输入是精确的 `P` 采样点分区加一次最终不完整分区，调度延迟明确为 `P` 个采样点；不支持自适应选择、非均匀分区、SOFA、插值、移动声源或 JOC 桥接 |
 | 渲染 | 严格的 `SimpleFreeFieldHRIR` SOFA 读取和受限 HRIR 插值 | `ADMITTED_WITH_SCOPE` | `openjoc-sofa` 合成 CDF-1 测试样本、坐标/耳朵/延迟/坏文件测试、精确身份、球面线段/三角形插值、延迟/ITD、方位角环绕、有限结果和稀疏覆盖测试，以及直接/分区构建集成 | 本地只读 NetCDF classic CDF-1 子集；SOFA 约定版本 1.0–1.2，恰好两个接收器，球面度/度/米声源位置和整数采样延迟；不支持 HDF5/NetCDF-4、重采样、下载、写入或任意覆盖声明；超出实测本地球面范围的插值会拒绝继续处理 |
 | 渲染 | 绑定原始创作对象的 `ObjectScene` 或渲染器保真度 | `NOT_ADMITTED` | 范围受限的解码对象绑定无法识别原始声源，也无法复现专有渲染器 | 不声明原始创作对象身份、双耳等价或 Dolby 渲染器保真度 |
-| 发布 | OpenJOC 0.13.0 平台软件包及现有 LAV 集成 | `ADMITTED_WITH_SCOPE` | GitHub Actions 源码/版本检查、原生平台质量门槛、软件包验证、C ABI 产物检查、汇总校验和验证、解码 JOC 动态 ADM 回归覆盖，以及现有分层 DirectShow/LAV 传输和端点证据 | 工作流面向 macOS arm64、Windows x86_64 和 GNU/Linux x86_64；Windows DirectShow/LAV 子集仍限于 v0.12.0 起的七种固定方案；不声明物理多声道硬件和自动语义协商；精确的 OpenJOC ADM 不支持或不声明直接送入 DEE；不保证重建 ADM 与原生渲染器在听感上等价 |
+| 发布 | OpenJOC 0.14.0 平台软件包及现有 LAV 集成 | `ADMITTED_WITH_SCOPE` | GitHub Actions 源码/版本检查、原生平台质量门槛、软件包验证、C ABI 产物检查、汇总校验和验证、解码 JOC 动态 ADM 回归覆盖，以及现有分层 DirectShow/LAV 传输和端点证据 | 工作流面向 macOS arm64、Windows x86_64 和 GNU/Linux x86_64；Windows DirectShow/LAV 子集仍限于 v0.12.0 起的七种固定方案；不声明物理多声道硬件和自动语义协商；精确的 OpenJOC ADM 不支持或不声明直接送入 DEE；不保证重建 ADM 与原生渲染器在听感上等价 |
 
 这个矩阵有意把生产状态和证据类别分开。一个数值上合法的重建行不是原始创作对象；某个真实载体被厂商配置接受，也不能证明 ETSI 严格语义有误。
 

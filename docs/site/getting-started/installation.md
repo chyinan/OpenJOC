@@ -6,7 +6,7 @@ You can use a release archive or build the CLI from the repository.
 
 Download the matching platform asset from the [OpenJOC releases page](https://github.com/chyinan/OpenJOC/releases). Extract it into a directory you control and put the CLI on your `PATH`, or invoke it by its full path.
 
-The v0.13.0 release workflow targets macOS arm64, Windows x86_64, and GNU/Linux x86_64. Ecosystem packages have their own runtime and licensing boundaries; use the package quick-start material that ships with each archive.
+The v0.14.0 release workflow targets macOS arm64, Windows x86_64, and GNU/Linux x86_64. Ecosystem packages have their own runtime and licensing boundaries; use the package quick-start material that ships with each archive.
 
 ## Build from source
 

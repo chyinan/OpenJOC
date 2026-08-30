@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.14.0] — 2026-08-30
+
+OpenJOC 0.14.0 improves the Windows LAV/DirectShow playback experience with
+dedicated OpenJOC controls, configurable E-AC-3 dialnorm handling, and
+corrected channel metering.
+
+### Added
+
+- Added a dedicated **OpenJOC** settings page to the OpenJOC LAV Audio Decoder.
+- Added **Calibrated (Recommended)** and **Unity / Compatibility** programme
+  dialnorm policies. Calibrated respects encoded E-AC-3 dialnorm; Unity uses
+  unity programme gain for compatibility with paths that do not apply the same
+  calibration.
+
+### Changed
+
+- Moved OpenJOC output-layout selection from generic Audio Settings to the
+  dedicated OpenJOC page without changing the seven fixed output policies.
+- Added guidance to select a PCM layout supported by the downstream renderer;
+  stereo headphones and 2.0 speakers should use Stereo.
+
+### Fixed
+
+- Corrected OpenJOC Status channel meters that could remain pinned near
+  full-scale. Valid strict OpenJOC PCM now feeds the existing read-only LAV
+  volume-statistics path; decoded PCM samples are unchanged.
+
+### Documentation
+
+- Updated the Windows LAV / PotPlayer guide and maintained Simplified Chinese
+  translation for the new controls, dialnorm policy, and output-layout boundary.
+
+### Known limitations
+
+- The Status page displays at most eight channels. Physical endpoint support and
+  any downstream layout conversion remain outside OpenJOC.
+- Reconstructed ADM output is not claimed to be perceptually equivalent to a
+  proprietary native JOC renderer.
+
 ## [0.13.0] — 2026-08-27
 
 OpenJOC 0.13.0 adds scoped reconstructed dynamic ADM export from decoded JOC

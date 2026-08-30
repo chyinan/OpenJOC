@@ -1,6 +1,6 @@
 # CLI reference
 
-This page was audited against the v0.13.0 executable output from:
+This page was audited against the v0.14.0 executable output from:
 
 ```sh
 cargo run -p openjoc-cli --locked -- --help
