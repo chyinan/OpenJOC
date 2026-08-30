@@ -13,7 +13,7 @@ OpenJOC 是一个独立的实验性互操作项目。不声明得到 Dolby 的�
 
 - `ObjectScene` 会把 `ReconstructionBasis` 行与原始创作对象区分开来。只有符合精确支持条件的 decoded-JOC/OAMD 配置组合，才会报告 `SemanticBindingState::ResolvedWithinCarrier`；这表示解码数据与 OAMD 运动信息可以在该 JOC 数据内部对应起来，并不表示原始创作对象身份已经恢复。其他配置均保持 `Unresolved`。
 - 普通域的 `JocSpatialBridge` 会使用 OAMD 中的控制信息来渲染解码后的 Base/RB 声部，但不会恢复原始创作对象身份，也不实现编解码器域中的算子 `T(t)`。
-- 非 LFE 的 Base/全频带 PCM 已确认可以作为 JOC 重建输入，但尚未证明它可以作为最终场景中的独立声部。Base C 能量与原始创作床层（Bed）不能单独作为额外 ADM 导出的依据；Base 与解码对象必须先通过重复计数校验。
+- 对于精确支持的 common profile（一个前置 Base LFE、无 Bed/ISF、15 个动态 JOC 对象），物理 2.0 输出使用 E-AC-3 compatibility presentation，不再叠加第二份 reconstructed-object Stereo。现有 Lo/Ro 或 Lt/Rt 矩阵、规范要求的 `1 / max_sum` 溢出保护、元数据控制的 LFE、dialnorm、DRC 与 FinalLinkedGain 顺序均保持不变；该 ownership 结论不会推广到其他 profile。
 - `ETSI_STRICT` 会拒绝已发布配置范围之外的语法，包括已观察到的 OAMD warp `raw=3`。`OBSERVED_VENDOR_COMPAT` 是明确限定范围的部分兼容策略：它只保留无法解释的扩展数据，不为这些数据臆造厂商语义。在测试范围内，一种精确的、包含 15 个对象的 raw3 兼容形式可以进入解码对象场景路径，因为该路径不需要额外的 raw3 专用变换。
 - 对公开语法的编码工具支持只覆盖有限的数值和状态范围。项目不声称对所有制作工具、媒体格式、编码工具组合，以及各种异常输入组合，都能保持完整的保真度。
 
@@ -22,6 +22,8 @@ OpenJOC 是一个独立的实验性互操作项目。不声明得到 Dolby 的�
 - JOC 渲染采用 48 kHz。原始 E-AC-3，以及普通（非分片）ISO BMFF 容器中支持随机访问的输入，只有在文档规定的拓扑和访问单元边界内才会被接受；不支持随机访问的 MP4 和分片 MP4 不在支持范围内。
 - Rust `OpenJocSession` 的数据包接口每次接收一个完整的 E-AC-3 JOC 访问单元：I0 加可选的 D0。解复用、任意字节拆分，以及一次传入多个访问单元，属于有界的 C 流式解码器或框架适配器负责的范围，不属于 Rust 数据包接口的约定。
 - 目前只接受一个 I0 加可选 D0 的从属流结构；其他从属子流形态会被拒绝。
+- 标准 flat-7.X 仅由 JOC downmix index 1、七个 JOC 输入和 `L R C Ls Rs Lrs Rrs` Table-47 组装共同识别。JOC reconstruction 使用 I0+D0 组装后的七输入 plane，2.0 compatibility rendering 使用独立 I0 presentation；OpenJOC 不会臆造 Lrs/Rrs 到 Stereo 的直接系数。
+- legacy AC-3 core 加 E-AC-3 D0 的载体当前不受支持，也不会被当成受支持的 E-AC-3 I0/可选 D0 flat-7.X profile。
 - 某些支持随机访问的容器和兼容 Base 的处理流程需要 `ffprobe` 或 `ffmpeg`；OpenJOC 的发行包并非完全无需额外依赖。
 
 ## 扬声器与双耳渲染

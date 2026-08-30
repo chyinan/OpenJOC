@@ -1,8 +1,9 @@
 // pattern: Functional Core
 
 use crate::{
-    BindingCodecProfile, ObjectScene, ProgrammeLayout, ProgrammeLayoutError, SampleRange,
-    SceneBuildError, SceneBuilder, StreamingSceneSummary,
+    BindingCodecProfile, DecodedJocBindingFacts, DecodedJocBindingProfile, ObjectScene,
+    ProgrammeLayout, ProgrammeLayoutError, SampleRange, SceneBuildError, SceneBuilder,
+    StreamingSceneSummary, admit_decoded_joc_binding,
 };
 use openjoc_joc::{
     DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ReconstructionBasis,
@@ -45,6 +46,19 @@ pub struct DecodedPayloadFrame {
     pub oamd: OamdPayload,
     pub decoded: DecodedJocFrame,
     pub programme_layout: ProgrammeLayout,
+    /// Scoped common-profile token minted only when codec/OAMD/JOC facts and
+    /// the required Base-LFE PCM plane all pass clean-room admission.
+    #[doc(hidden)]
+    pub decoded_joc_binding: Option<DecodedJocBindingProfile>,
+}
+
+impl DecodedPayloadFrame {
+    /// Returns the exact common-profile admission token retained at decode.
+    #[must_use]
+    #[doc(hidden)]
+    pub const fn admitted_decoded_joc_binding(&self) -> Option<&DecodedJocBindingProfile> {
+        self.decoded_joc_binding.as_ref()
+    }
 }
 
 /// Failures in the raw payload-to-scene orchestration boundary.
@@ -127,6 +141,8 @@ pub struct PayloadDecoder {
     sample_rate: Option<u32>,
     next_frame_index: u64,
     next_sample: u64,
+    binding_profile: Option<BindingCodecProfile>,
+    binding_admitted: bool,
     reconstruction_timing_enabled: bool,
     last_reconstruction_timing: ReconstructionStageTiming,
 }
@@ -144,6 +160,8 @@ impl PayloadDecoder {
             sample_rate: None,
             next_frame_index: 0,
             next_sample: 0,
+            binding_profile: None,
+            binding_admitted: true,
             reconstruction_timing_enabled: false,
             last_reconstruction_timing: ReconstructionStageTiming::default(),
         }
@@ -247,6 +265,29 @@ impl PayloadDecoder {
 
         let mut next_joc = self.joc.clone();
         let decoded = next_joc.decode_pcm_frame(&joc, input.downmix_pcm)?;
+        let binding_facts = DecodedJocBindingFacts::from_programme_layout_with_profile(
+            binding_profile,
+            usize::from(joc.header.object_count),
+            decoded.reconstruction_basis.rows.len(),
+            &layout,
+        );
+        let candidate_binding = input
+            .base_lfe_pcm
+            .and_then(|_| admit_decoded_joc_binding(&binding_facts).ok());
+        let candidate_profile = candidate_binding
+            .as_ref()
+            .map(DecodedJocBindingProfile::codec_profile);
+        let profile_unchanged = self
+            .binding_profile
+            .is_none_or(|expected| Some(expected) == candidate_profile);
+        let next_binding_admitted =
+            self.binding_admitted && candidate_binding.is_some() && profile_unchanged;
+        let next_binding_profile = if self.binding_profile.is_none() && next_binding_admitted {
+            candidate_profile
+        } else {
+            self.binding_profile
+        };
+        let decoded_joc_binding = next_binding_admitted.then_some(candidate_binding).flatten();
         let mut reconstruction_timing = next_joc.take_reconstruction_timing();
         reconstruction_timing.payload_parsing += payload_parsing;
         self.last_reconstruction_timing = reconstruction_timing;
@@ -296,6 +337,8 @@ impl PayloadDecoder {
         self.sample_rate = Some(input.sample_rate);
         self.next_frame_index = next_frame_index;
         self.next_sample = sample_range_end;
+        self.binding_profile = next_binding_profile;
+        self.binding_admitted = next_binding_admitted;
         Ok(DecodedPayloadFrame {
             frame_index: input.frame_index,
             sample_rate: input.sample_rate,
@@ -304,6 +347,7 @@ impl PayloadDecoder {
             oamd,
             decoded,
             programme_layout: layout,
+            decoded_joc_binding,
         })
     }
 

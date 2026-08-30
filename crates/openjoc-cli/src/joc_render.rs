@@ -6,8 +6,8 @@
 
 use crate::performance::RenderStageTiming;
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, DialnormMode, DialnormState, DownmixMetadata,
-    JocMetadataFrame, StereoDownmixMode, stereo_downmix_matrix,
+    ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, DialnormMode, DialnormState,
+    DownmixMetadata, JocMetadataFrame, StereoDownmixMode, stereo_downmix_matrix,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_joc::{
@@ -749,6 +749,7 @@ struct PendingRenderFrame {
     lfe_location: Option<ChannelLocation>,
     downmix: DownmixMetadata,
     dialnorm: DialnormState,
+    compatibility_pcm: Option<DecodedAccessUnitPcm>,
 }
 
 #[derive(Debug)]
@@ -975,8 +976,9 @@ impl JocSpeakerRenderer {
     }
 
     /// Compatibility entry point for already aligned/synthetic bridge frames.
-    /// The normal `render-joc` path uses [`Self::render_frame_aligned`] so raw
-    /// causal QMF output cannot bypass reconstruction timeline ownership.
+    /// The normal `render-joc` path uses
+    /// [`Self::render_frame_aligned_with_pcm_planes`] so raw causal QMF output
+    /// cannot bypass reconstruction timeline ownership.
     #[allow(dead_code)]
     pub fn render_frame(
         &mut self,
@@ -984,17 +986,53 @@ impl JocSpeakerRenderer {
         frame: &DecodedPayloadFrame,
         base: &DecodedAccessUnitPcm,
     ) -> Result<RenderedBlock, JocRenderError> {
-        self.render_aligned_frame(frame_index, frame, base)
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: base.clone(),
+            joc_input_pcm: base.clone(),
+        };
+        self.render_frame_with_pcm_planes(frame_index, frame, &planes)
+    }
+
+    fn render_frame_with_pcm_planes(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        pcm_planes: &DecodedJocAccessUnitPcm,
+    ) -> Result<RenderedBlock, JocRenderError> {
+        self.render_aligned_frame(
+            frame_index,
+            frame,
+            &pcm_planes.joc_input_pcm,
+            Some(&pcm_planes.compatibility_pcm),
+        )
     }
 
     /// Queues raw reconstruction output and returns all complete logical
     /// intervals available after the declared QMF delay.
+    /// This legacy/synthetic adapter owns two non-aliasing clones of the
+    /// caller's single-plane PCM. Production compressed-media paths use
+    /// [`Self::render_frame_aligned_with_pcm_planes`] instead.
+    #[allow(dead_code)]
     pub fn render_frame_aligned(
         &mut self,
         frame_index: usize,
         frame: &DecodedPayloadFrame,
         base: &DecodedAccessUnitPcm,
     ) -> Result<Vec<RenderedBlock>, JocRenderError> {
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: base.clone(),
+            joc_input_pcm: base.clone(),
+        };
+        self.render_frame_aligned_with_pcm_planes(frame_index, frame, &planes)
+    }
+
+    pub fn render_frame_aligned_with_pcm_planes(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        pcm_planes: &DecodedJocAccessUnitPcm,
+    ) -> Result<Vec<RenderedBlock>, JocRenderError> {
+        let base = &pcm_planes.joc_input_pcm;
         let frame_index =
             u64::try_from(frame_index).map_err(|_| JocRenderError::FrameSampleCount)?;
         if frame_index != self.next_input_frame || frame.frame_index != frame_index {
@@ -1034,6 +1072,9 @@ impl JocSpeakerRenderer {
             lfe_location: base.lfe_location,
             downmix: base.downmix,
             dialnorm: base.dialnorm,
+            compatibility_pcm: (self.layout.is_stereo()
+                && frame.admitted_decoded_joc_binding().is_some())
+            .then(|| pcm_planes.compatibility_pcm.clone()),
         });
         self.next_input_frame = self
             .next_input_frame
@@ -1047,6 +1088,7 @@ impl JocSpeakerRenderer {
         frame_index: usize,
         frame: &DecodedPayloadFrame,
         base: &DecodedAccessUnitPcm,
+        compatibility_pcm: Option<&DecodedAccessUnitPcm>,
     ) -> Result<RenderedBlock, JocRenderError> {
         let frame_index =
             u64::try_from(frame_index).map_err(|_| JocRenderError::FrameSampleCount)?;
@@ -1068,7 +1110,23 @@ impl JocSpeakerRenderer {
                 frame: frame.sample_rate,
             });
         }
+        let stereo_speaker = self.layout.is_stereo();
+        let common_profile_stereo =
+            stereo_speaker && frame.admitted_decoded_joc_binding().is_some();
         let calibrated_base = base.with_dialnorm_applied();
+        let calibrated_compatibility = if common_profile_stereo {
+            Some(
+                compatibility_pcm
+                    .ok_or_else(|| {
+                        JocRenderError::InvalidControl(
+                            "missing admitted I0 compatibility PCM plane".to_owned(),
+                        )
+                    })?
+                    .with_dialnorm_applied(),
+            )
+        } else {
+            None
+        };
         let mut calibrated_frame = frame.clone();
         for row in &mut calibrated_frame.decoded.reconstruction_basis.rows {
             base.dialnorm.apply_to_samples(row);
@@ -1113,7 +1171,6 @@ impl JocSpeakerRenderer {
         }
         let mut active =
             vec![vec![0.0; sample_count]; self.layout.spatial().active_channel_count()];
-        let stereo_speaker = self.layout.is_stereo();
         let automatic_frame = if let Some(assembler) = self.assembler.as_mut() {
             let start = self.stage_timing_enabled.then(Instant::now);
             let frame = assembler.assemble_frame(&calibrated_frame, &base_coordinates, None)?;
@@ -1131,8 +1188,10 @@ impl JocSpeakerRenderer {
                 &control_frame,
                 sample_count,
                 &calibrated_base,
+                calibrated_compatibility.as_ref(),
                 &mut active,
                 stereo_speaker,
+                common_profile_stereo,
             )?;
             if let Some(start) = start {
                 self.stage_timings.spatial_bridge_render += start.elapsed();
@@ -1152,7 +1211,9 @@ impl JocSpeakerRenderer {
             } else {
                 self.contribution_mode
             };
-            if !stereo_speaker || self.contribution_mode.includes_reconstruction() {
+            if !stereo_speaker
+                || (self.contribution_mode.includes_reconstruction() && !common_profile_stereo)
+            {
                 self.bridge.render_codec_basis_frame_with_contribution(
                     &bridge_frame,
                     bridge_contribution,
@@ -1167,16 +1228,31 @@ impl JocSpeakerRenderer {
                 self.stage_timings.spatial_bridge_render += start.elapsed();
             }
             if stereo_speaker && self.contribution_mode.includes_base() {
-                add_stereo_base_downmix(&mut active, &calibrated_base, self.downmix_policy)?;
+                let compatibility_source = if common_profile_stereo {
+                    calibrated_compatibility
+                        .as_ref()
+                        .expect("common-profile compatibility PCM was checked")
+                } else {
+                    &calibrated_base
+                };
+                add_stereo_base_downmix(&mut active, compatibility_source, self.downmix_policy)?;
             }
         }
+
+        let composition_base = if common_profile_stereo {
+            calibrated_compatibility
+                .as_ref()
+                .expect("common-profile compatibility PCM was checked")
+        } else {
+            &calibrated_base
+        };
 
         let mut channels = vec![vec![0.0; sample_count]; self.layout.channel_count()];
         let mut active_index = 0;
         for (output_index, channel) in self.layout.spatial().channels().iter().enumerate() {
             if channel.lfe {
                 if self.contribution_mode.includes_base() {
-                    if let Some(lfe) = calibrated_base.lfe.as_deref() {
+                    if let Some(lfe) = composition_base.lfe.as_deref() {
                         channels[output_index].copy_from_slice(lfe);
                     }
                 }
@@ -1189,7 +1265,7 @@ impl JocSpeakerRenderer {
         self.apply_final_linked_gain(
             frame.sample_rate,
             &mut channels,
-            calibrated_base.lfe.as_deref(),
+            composition_base.lfe.as_deref(),
         )?;
         self.expected_frame = self
             .expected_frame
@@ -1278,20 +1354,24 @@ impl JocSpeakerRenderer {
                         .map_err(|_| JocRenderError::FrameSampleCount)?,
                     &aligned_frame,
                     &aligned_base,
+                    pending.compatibility_pcm.as_ref(),
                 )?,
             );
         }
         Ok(rendered)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_automatic_segments(
         &mut self,
         bridge_frame: &openjoc_scene::JocSpatialReconstructionFrame<'_>,
         control_frame: &BridgeControlFrame,
         sample_count: usize,
         base: &DecodedAccessUnitPcm,
+        compatibility_pcm: Option<&DecodedAccessUnitPcm>,
         active: &mut [Vec<f64>],
         stereo_speaker: bool,
+        common_profile_stereo: bool,
     ) -> Result<(), JocRenderError> {
         let mut boundaries = vec![0_usize, sample_count];
         for event in &control_frame.events {
@@ -1330,7 +1410,7 @@ impl JocSpeakerRenderer {
                 .rows
                 .iter()
                 .map(|pcm| {
-                    if self.contribution_mode.includes_reconstruction() {
+                    if self.contribution_mode.includes_reconstruction() && !common_profile_stereo {
                         pcm.as_slice()
                     } else {
                         zero_pcm
@@ -1370,7 +1450,12 @@ impl JocSpeakerRenderer {
             )?;
         }
         if stereo_speaker && self.contribution_mode.includes_base() {
-            add_stereo_base_downmix(active, base, self.downmix_policy)?;
+            let compatibility_source = if common_profile_stereo {
+                compatibility_pcm.expect("common-profile compatibility PCM was checked")
+            } else {
+                base
+            };
+            add_stereo_base_downmix(active, compatibility_source, self.downmix_policy)?;
         }
         Ok(())
     }
@@ -1909,11 +1994,27 @@ impl JocBinauralRenderer {
 
     /// Queues raw reconstruction output and renders all complete aligned
     /// intervals available after the declared QMF delay.
+    /// This is retained only for legacy/synthetic single-plane callers;
+    /// production compressed-media paths supply explicit PCM planes.
+    #[allow(dead_code)]
     pub fn render_frame_aligned(
         &mut self,
         frame_index: usize,
         frame: &DecodedPayloadFrame,
         base: &DecodedAccessUnitPcm,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: base.clone(),
+            joc_input_pcm: base.clone(),
+        };
+        self.render_frame_aligned_with_pcm_planes(frame_index, frame, &planes)
+    }
+
+    pub fn render_frame_aligned_with_pcm_planes(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        pcm_planes: &DecodedJocAccessUnitPcm,
     ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
         if self.finished {
             return Err(JocRenderError::BinauralOutput(
@@ -1921,9 +2022,9 @@ impl JocBinauralRenderer {
             ));
         }
         self.ensure_engine(frame.sample_rate)?;
-        let rendered = self
-            .speaker
-            .render_frame_aligned(frame_index, frame, base)?;
+        let rendered =
+            self.speaker
+                .render_frame_aligned_with_pcm_planes(frame_index, frame, pcm_planes)?;
         let speaker_timings = self.speaker.take_stage_timings();
         self.stage_timings.bridge_control_assembly += speaker_timings.bridge_control_assembly;
         self.stage_timings.spatial_bridge_render += speaker_timings.spatial_bridge_render;
@@ -3314,7 +3415,10 @@ mod tests {
         five_point_one_preset, selected_stereo_policy, stereo_downmix_coefficients,
         virtual_speaker_direction,
     };
-    use openjoc_eac3::{ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata};
+    use openjoc_eac3::{
+        ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, DialnormState,
+        DownmixMetadata,
+    };
     use openjoc_emdf::JocValidationProfile;
     use openjoc_joc::{DecodedJocFrame, JocFrame, JocHeader, ReconstructionBasis};
     use openjoc_oamd::{
@@ -3327,10 +3431,11 @@ mod tests {
         HrirPair, StaticBinauralSource,
     };
     use openjoc_scene::{
-        BaseFullBandCoordinate, DecodedPayloadFrame, JocSpatialBridge, ProgrammeLayout,
-        SampleRange, SpatialBindingRecord, SpatialContributionMode, SpatialDescriptor,
-        SpatialExplicitGroup, SpatialExplicitMember, SpatialRouteVector, SpatialSourceClass,
-        SpatialTopologySnapshot, speaker_channel_mask_for_labels,
+        BaseFullBandCoordinate, BindingCodecProfile, DecodedJocBindingFacts, DecodedPayloadFrame,
+        JocSpatialBridge, ProgrammeLayout, SampleRange, SpatialBindingRecord,
+        SpatialContributionMode, SpatialDescriptor, SpatialExplicitGroup, SpatialExplicitMember,
+        SpatialRouteVector, SpatialSourceClass, SpatialTopologySnapshot, admit_decoded_joc_binding,
+        speaker_channel_mask_for_labels,
     };
     use openjoc_wave::{SampleFormat, decode};
     use std::{
@@ -3548,6 +3653,7 @@ mod tests {
                 state_reset: frame_index == 0,
             },
             programme_layout: ProgrammeLayout::from_prefix(&prefix).unwrap(),
+            decoded_joc_binding: None,
         }
     }
 
@@ -3582,6 +3688,60 @@ mod tests {
             }),
         }];
         frame
+    }
+
+    fn common_profile_decoded_frame(samples: usize) -> DecodedPayloadFrame {
+        let prefix = OamdContentPrefix {
+            syntax_version: 0,
+            object_count: 16,
+            content: ContentDescription::DynamicOnly { lfe_present: true },
+            alternate_object_data_present: false,
+            element_count: 0,
+            consumed_bits: 0,
+        };
+        let layout = ProgrammeLayout::from_prefix(&prefix).expect("common programme layout");
+        let facts = DecodedJocBindingFacts::from_programme_layout_with_profile(
+            BindingCodecProfile::EAc3JocObservedOrdinary,
+            15,
+            15,
+            &layout,
+        );
+        DecodedPayloadFrame {
+            frame_index: 0,
+            sample_rate: 48_000,
+            sample_range: SampleRange::new(0, samples as u64).expect("sample range"),
+            joc: JocFrame {
+                header: JocHeader {
+                    downmix_index: 0,
+                    channel_count: 5,
+                    object_count_bits: 14,
+                    object_count: 15,
+                    extension_index: 0,
+                },
+                clip_gain_x_bits: 0,
+                clip_gain_y_bits: 0,
+                sequence_count: 0,
+                objects: Vec::new(),
+            },
+            oamd: OamdPayload {
+                prefix,
+                object_classes: vec![ObjectClass::Dynamic; 15],
+                elements: Vec::new(),
+                consumed_bits: 0,
+            },
+            decoded: DecodedJocFrame {
+                reconstruction_qmf: Vec::new(),
+                reconstruction_basis: ReconstructionBasis {
+                    rows: vec![vec![500.0; samples]; 15],
+                },
+                stages: Vec::new(),
+                state_reset: true,
+            },
+            programme_layout: layout,
+            decoded_joc_binding: Some(
+                admit_decoded_joc_binding(&facts).expect("exact common-profile admission"),
+            ),
+        }
     }
 
     fn base(samples: usize, value: f64) -> DecodedAccessUnitPcm {
@@ -4311,6 +4471,153 @@ mod tests {
         assert_eq!(block.channels[0].len(), 2);
         assert_eq!(block.channels[1].len(), 2);
         assert_ne!(block.channels[0], block.channels[1]);
+    }
+
+    #[test]
+    fn common_profile_stereo_is_exactly_i0_compatibility_without_object_accumulation() {
+        let identities = vec!["FC"; 20];
+        let mut renderer = JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+            "2.0",
+            control_with_identities(false, &identities),
+            SpatialContributionMode::Full,
+            false,
+        )
+        .expect("common Stereo renderer");
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .expect("Lo/Ro policy");
+
+        let compatibility_pcm = base(2, 1.0);
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: compatibility_pcm.clone(),
+            joc_input_pcm: compatibility_pcm.clone(),
+        };
+        let mut expected = vec![vec![0.0; 2], vec![0.0; 2]];
+        add_stereo_base_downmix(&mut expected, &compatibility_pcm, StereoDownmixPolicy::LoRo)
+            .expect("compatibility downmix");
+
+        let block = renderer
+            .render_frame_with_pcm_planes(0, &common_profile_decoded_frame(2), &planes)
+            .expect("common-profile Stereo");
+
+        assert_eq!(block.channels, expected);
+    }
+
+    #[test]
+    fn common_profile_final_chain_keeps_metadata_lfe_then_final_linked_gain() {
+        let identities = vec!["FC"; 20];
+        let mut renderer = JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+            "2.0",
+            control_with_identities(false, &identities),
+            SpatialContributionMode::Full,
+            true,
+        )
+        .expect("linked common Stereo renderer");
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .expect("Lo/Ro policy");
+
+        let mut compatibility_pcm = base(32, 1.0);
+        compatibility_pcm.downmix.lfe_mix_level_code = Some(31);
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: compatibility_pcm.clone(),
+            joc_input_pcm: compatibility_pcm.clone(),
+        };
+        let mut expected_input = vec![vec![0.0; 32], vec![0.0; 32]];
+        add_stereo_base_downmix(
+            &mut expected_input,
+            &compatibility_pcm,
+            StereoDownmixPolicy::LoRo,
+        )
+        .expect("compatibility plus metadata LFE");
+        let mut expected_gain = FinalLinkedGain::new(48_000, 32, &[true, true])
+            .expect("independent FinalLinkedGain oracle");
+        let mut expected_first = expected_input.clone();
+        expected_gain
+            .process(&mut expected_first)
+            .expect("expected first linked-gain block");
+        let mut expected_second = expected_input;
+        expected_gain
+            .process(&mut expected_second)
+            .expect("expected second linked-gain block");
+
+        let mut without_lfe = compatibility_pcm.clone();
+        without_lfe.lfe_location = None;
+        without_lfe.lfe = None;
+        let mut without_lfe_input = vec![vec![0.0; 32], vec![0.0; 32]];
+        add_stereo_base_downmix(
+            &mut without_lfe_input,
+            &without_lfe,
+            StereoDownmixPolicy::LoRo,
+        )
+        .expect("LFE-excluded control");
+        let mut without_lfe_gain =
+            FinalLinkedGain::new(48_000, 32, &[true, true]).expect("control FinalLinkedGain");
+        let mut without_lfe_first = without_lfe_input.clone();
+        without_lfe_gain
+            .process(&mut without_lfe_first)
+            .expect("control first linked-gain block");
+        let mut without_lfe_second = without_lfe_input;
+        without_lfe_gain
+            .process(&mut without_lfe_second)
+            .expect("control second linked-gain block");
+
+        let first = common_profile_decoded_frame(32);
+        let first_block = renderer
+            .render_frame_with_pcm_planes(0, &first, &planes)
+            .expect("first common-profile Stereo block");
+        assert_eq!(first_block.channels, expected_first);
+        let mut second = common_profile_decoded_frame(32);
+        second.frame_index = 1;
+        second.sample_range = SampleRange::new(32, 64).expect("second sample range");
+        second.joc.sequence_count = 1;
+        second.decoded.state_reset = false;
+        let block = renderer
+            .render_frame_with_pcm_planes(1, &second, &planes)
+            .expect("complete common-profile Stereo chain");
+
+        assert_eq!(block.channels, expected_second);
+        assert_ne!(block.channels, without_lfe_second);
+    }
+
+    #[test]
+    fn common_profile_flat7_stereo_does_not_read_merged_rear_channels() {
+        let identities = vec!["FC"; 22];
+        let mut renderer = JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+            "2.0",
+            control_with_identities(false, &identities),
+            SpatialContributionMode::Full,
+            false,
+        )
+        .expect("flat-7.X Stereo renderer");
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .expect("Lo/Ro policy");
+
+        let compatibility_pcm = base(2, 1.0);
+        let mut joc_input_pcm = compatibility_pcm.clone();
+        joc_input_pcm
+            .channel_locations
+            .extend([ChannelLocation::LeftBack, ChannelLocation::RightBack]);
+        joc_input_pcm
+            .channels
+            .extend([vec![1_000.0; 2], vec![-1_000.0; 2]]);
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: compatibility_pcm.clone(),
+            joc_input_pcm,
+        };
+        let mut frame = common_profile_decoded_frame(2);
+        frame.joc.header.downmix_index = 1;
+        frame.joc.header.channel_count = 7;
+        let mut expected = vec![vec![0.0; 2], vec![0.0; 2]];
+        add_stereo_base_downmix(&mut expected, &compatibility_pcm, StereoDownmixPolicy::LoRo)
+            .expect("I0 compatibility downmix");
+
+        let block = renderer
+            .render_frame_with_pcm_planes(0, &frame, &planes)
+            .expect("flat-7.X common-profile Stereo");
+
+        assert_eq!(block.channels, expected);
     }
 
     #[test]

@@ -113,6 +113,15 @@ packets, and multiple AUs in one packet. An independent-only AU remains
 pending until the next I0 proves its boundary or EOF closes it. Maximum frame,
 AU, and staging sizes are explicit; whole programmes are never buffered.
 
+For standards-defined flat-7.X JOC, downmix index 1 is admitted only with the
+seven-input Table-47 order `L R C Ls Rs Lrs Rrs`. The bridge retains two
+separate internal PCM meanings: I0-only compatibility PCM and assembled
+I0+D0 JOC reconstruction-input PCM. Stereo uses the existing I0 compatibility
+Lo/Ro or Lt/Rt matrix, including its normative `1 / max_sum` overflow scale;
+the rear D0 pair is not directly downmixed. Expanded speaker rendering keeps
+using all seven reconstruction inputs. Legacy AC-3 core plus E-AC-3 D0 is
+outside this carriage contract.
+
 Raw E-AC-3, MP4 EC-3, and Matroska packetization may differ by demuxer and
 file. The same assembler handles all three. Automated acceptance covers a
 positive synthetic raw JOC stream plus ordinary E-AC-3 controls demuxed from

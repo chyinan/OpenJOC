@@ -13,17 +13,19 @@
 #![allow(clippy::too_many_lines)]
 
 use openjoc_eac3::{
-    ChannelLocation, DecodedAccessUnitPcm, DialnormState, DownmixMetadata, InternalBasePolicy,
-    JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode,
+    ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, DialnormState, DownmixMetadata,
+    InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode,
     extract_joc_access_unit_for_profile, group_access_units, index_syncframes,
     parse_joc_access_unit, stereo_downmix_matrix, validate_complexity_index,
     validate_joc_access_unit,
 };
-use openjoc_emdf::JocValidationProfile;
-use openjoc_joc::{ReconstructionBasis, ReconstructionOutputTimeline};
+use openjoc_emdf::{
+    JOC_PAYLOAD_ID, JocProfileDeviation, JocProfileField, JocProfileValue, JocValidationProfile,
+};
+use openjoc_joc::{ReconstructionBasis, ReconstructionOutputTimeline, parse_joc_payload};
 use openjoc_oamd::{
-    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdParseProfile, parse_oamd_payload_with_config,
-    parse_oamd_payload_with_profile,
+    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdElement, OamdError, OamdParseProfile, OamdPayload,
+    parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use openjoc_render::{
     BinauralRenderer, BinauralSourceBlock, CartesianPosition, FINAL_LINKED_GAIN_BLOCK_SAMPLES,
@@ -31,8 +33,8 @@ use openjoc_render::{
     StaticBinauralSource,
 };
 use openjoc_scene::{
-    BaseFullBandCoordinate, BridgeControlAssembler, DecodedPayloadFrame, JocFrameInput,
-    JocSpatialBridge, JocSpatialFrameBridge, PayloadDecoder, PayloadDecoderConfig,
+    BaseFullBandCoordinate, BindingCodecProfile, BridgeControlAssembler, DecodedPayloadFrame,
+    JocFrameInput, JocSpatialBridge, JocSpatialFrameBridge, PayloadDecoder, PayloadDecoderConfig,
     SemanticChannelLayout, SpeakerLayout, SpeakerLayoutPreset,
 };
 use openjoc_sofa::{
@@ -659,6 +661,7 @@ impl OpenJocSession {
             speaker_layout,
             config.downmix,
             config.render_mode != RenderMode::Binaural,
+            config.render_mode != RenderMode::Binaural,
         );
         let binaural = config
             .binaural
@@ -749,15 +752,19 @@ impl OpenJocSession {
             self.sample_rate = Some(unit.sample_rate);
         }
 
-        let pcm = self.audio_decoder.decode_with_policy(
+        let pcm_planes = self.audio_decoder.decode_pcm_planes_with_policy(
             packet.data,
             &frames,
             unit,
             &self.dither_values,
             self.config.drc.internal(),
         )?;
+        let pcm = &pcm_planes.joc_input_pcm;
         pcm.validate_joc_topology()?;
         let (metadata, profile, oamd_profile) = self.select_metadata(packet.data, &frames, unit)?;
+        let parsed_joc = parse_joc_payload(&metadata.joc)
+            .map_err(|error| OpenJocError::Decode(error.to_string()))?;
+        pcm.validate_joc_downmix_topology(parsed_joc.header.downmix_index)?;
         if let Some(previous) = self.selected_profile {
             if previous != profile {
                 return Err(OpenJocError::ProfileChanged);
@@ -772,17 +779,28 @@ impl OpenJocSession {
         let input = JocFrameInput {
             sample_rate: unit.sample_rate,
             downmix_pcm: &pcm.channels,
-            base_lfe_pcm: pcm.lfe.as_deref(),
+            base_lfe_pcm: pcm_planes.compatibility_pcm.lfe.as_deref(),
             joc_payload: &metadata.joc,
             oamd_payload: &metadata.oamd,
             frame_index: frame_number,
         };
         let mut decoded = None;
+        let binding_profile = classify_binding_codec_profile_for_frame(
+            &metadata,
+            &parsed_oamd,
+            profile,
+            oamd_profile,
+        );
         self.payload_decoder
-            .decode_frame_with_profile(input, oamd_profile, |frame| {
-                decoded = Some(frame.clone());
-                Ok::<(), OpenJocError>(())
-            })?;
+            .decode_frame_with_profile_and_binding_profile(
+                input,
+                oamd_profile,
+                binding_profile,
+                |frame| {
+                    decoded = Some(frame.clone());
+                    Ok::<(), OpenJocError>(())
+                },
+            )?;
         let frame = decoded.ok_or(OpenJocError::Decode(
             "payload decoder returned no frame".to_owned(),
         ))?;
@@ -790,7 +808,7 @@ impl OpenJocSession {
             .next_input_sample
             .checked_add(u64::from(unit.samples))
             .ok_or_else(|| OpenJocError::Decode("sample timeline overflow".to_owned()))?;
-        let rendered = self.speaker.render_frame_aligned(&frame, &pcm)?;
+        let rendered = self.speaker.render_frame_aligned(&frame, &pcm_planes)?;
         self.emit_rendered(rendered)?;
         // `preroll` is retained as an explicit input fact for future seek
         // adapters. It is decoded normally in this first ABI because the
@@ -1062,6 +1080,143 @@ fn parse_oamd_for_profile(
     }
 }
 
+const OBSERVED_COMPAT_DEVIATIONS: [(u64, JocProfileField, JocProfileValue, JocProfileValue); 7] = [
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::CodecDataPresent,
+        JocProfileValue::Bool(false),
+        JocProfileValue::Bool(true),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::PayloadFrameAligned,
+        JocProfileValue::Bool(false),
+        JocProfileValue::Bool(true),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::CreateDuplicate,
+        JocProfileValue::Absent,
+        JocProfileValue::Bool(false),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::RemoveDuplicate,
+        JocProfileValue::Absent,
+        JocProfileValue::Bool(false),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::Priority,
+        JocProfileValue::Absent,
+        JocProfileValue::Unsigned(0),
+    ),
+    (
+        OAMD_PAYLOAD_ID,
+        JocProfileField::ProcessingAllowed,
+        JocProfileValue::Absent,
+        JocProfileValue::Unsigned(0),
+    ),
+    (
+        JOC_PAYLOAD_ID,
+        JocProfileField::CodecDataPresent,
+        JocProfileValue::Bool(false),
+        JocProfileValue::Bool(true),
+    ),
+];
+
+fn exact_observed_compat_deviations(deviations: &[JocProfileDeviation]) -> bool {
+    deviations.len() == OBSERVED_COMPAT_DEVIATIONS.len()
+        && OBSERVED_COMPAT_DEVIATIONS.iter().all(|expected| {
+            deviations
+                .iter()
+                .filter(|actual| {
+                    (
+                        actual.payload_id,
+                        actual.field,
+                        actual.actual,
+                        actual.expected_by_etsi,
+                    ) == *expected
+                })
+                .count()
+                == 1
+        })
+}
+
+fn exact_opaque_warp3_element(oamd: &OamdPayload) -> bool {
+    let mut object_elements = 0_usize;
+    let mut opaque_warp3_elements = 0_usize;
+    for metadata in &oamd.elements {
+        match &metadata.element {
+            OamdElement::Objects(_) => object_elements += 1,
+            OamdElement::OpaqueObservedKnownElement(element) => {
+                if metadata.id != 2
+                    || element.element_id != 2
+                    || element.alternate_data_id.is_some()
+                    || element.raw_warp != 3
+                    || element.first_parser_error != (OamdError::ReservedWarpMode { code: 3 })
+                    || element.preservation_status != "opaque_lossless_bounded"
+                    || element.interpretation_status != "unresolved"
+                    || element.deviation_code != "LOGIC_OAMD_RESERVED_TRIM_WARP_3"
+                    || element.continuation_element_relative_start_bit
+                        >= element.continuation_element_relative_end_bit
+                    || element.continuation_payload_start_bit
+                        >= element.continuation_payload_end_bit
+                {
+                    return false;
+                }
+                opaque_warp3_elements += 1;
+            }
+            OamdElement::Trim(_) | OamdElement::Extended(_) | OamdElement::Unknown(_) => {
+                return false;
+            }
+        }
+    }
+    object_elements == 1 && opaque_warp3_elements == 1 && oamd.elements.len() == 2
+}
+
+/// Shared exact clean-room carrier classifier used by the API and CLI.
+#[doc(hidden)]
+#[must_use]
+pub fn classify_binding_codec_profile(
+    joc_profile: JocValidationProfile,
+    oamd_profile: OamdParseProfile,
+    deviations: &[JocProfileDeviation],
+    has_exact_opaque_warp3: bool,
+) -> BindingCodecProfile {
+    if joc_profile == JocValidationProfile::EtsiStrict
+        && oamd_profile == OamdParseProfile::EtsiStrict
+        && deviations.is_empty()
+    {
+        BindingCodecProfile::EAc3JocObservedOrdinary
+    } else if joc_profile == JocValidationProfile::ObservedVendorCompat
+        && oamd_profile == OamdParseProfile::ObservedVendorCompat
+        && exact_observed_compat_deviations(deviations)
+        && has_exact_opaque_warp3
+    {
+        BindingCodecProfile::EAc3JocObservedOrdinaryCompatWarp3
+    } else {
+        BindingCodecProfile::Unsupported
+    }
+}
+
+/// Applies the shared exact carrier classifier to one parsed metadata frame.
+#[doc(hidden)]
+#[must_use]
+pub fn classify_binding_codec_profile_for_frame(
+    metadata: &JocMetadataFrame,
+    parsed_oamd: &OamdPayload,
+    joc_profile: JocValidationProfile,
+    oamd_profile: OamdParseProfile,
+) -> BindingCodecProfile {
+    classify_binding_codec_profile(
+        joc_profile,
+        oamd_profile,
+        &metadata.deviations,
+        exact_opaque_warp3_element(parsed_oamd),
+    )
+}
+
 fn dither_values() -> Vec<f64> {
     let mut state = 0x6d2b_79f5_u32;
     (0..32_768)
@@ -1089,6 +1244,7 @@ struct PendingRenderFrame {
     lfe_location: Option<ChannelLocation>,
     downmix: DownmixMetadata,
     dialnorm: DialnormState,
+    compatibility_pcm: Option<DecodedAccessUnitPcm>,
 }
 
 #[derive(Debug)]
@@ -1107,6 +1263,7 @@ struct SpeakerRenderer {
     downmix_policy: DownmixPolicy,
     final_linked_gain: Option<FinalLinkedGain>,
     linked_gain_enabled: bool,
+    common_profile_stereo_enabled: bool,
 }
 
 impl SpeakerRenderer {
@@ -1114,6 +1271,7 @@ impl SpeakerRenderer {
         layout: SpeakerLayout,
         downmix_policy: DownmixPolicy,
         linked_gain_enabled: bool,
+        common_profile_stereo_enabled: bool,
     ) -> Self {
         let dimensions = layout.spatial().coordinate_dimension_count();
         Self {
@@ -1135,6 +1293,7 @@ impl SpeakerRenderer {
             downmix_policy,
             final_linked_gain: None,
             linked_gain_enabled,
+            common_profile_stereo_enabled,
         }
     }
 
@@ -1145,8 +1304,9 @@ impl SpeakerRenderer {
     fn render_frame_aligned(
         &mut self,
         frame: &DecodedPayloadFrame,
-        base: &DecodedAccessUnitPcm,
+        pcm_planes: &DecodedJocAccessUnitPcm,
     ) -> Result<Vec<RenderedBlock>, OpenJocError> {
+        let base = &pcm_planes.joc_input_pcm;
         if frame.decoded.state_reset {
             self.timeline.reset();
             self.pending_frames.clear();
@@ -1188,6 +1348,10 @@ impl SpeakerRenderer {
             lfe_location: base.lfe_location,
             downmix: base.downmix,
             dialnorm: base.dialnorm,
+            compatibility_pcm: (self.common_profile_stereo_enabled
+                && self.layout.is_stereo()
+                && frame.admitted_decoded_joc_binding().is_some())
+            .then(|| pcm_planes.compatibility_pcm.clone()),
         });
         self.next_input_frame = self.next_input_frame.saturating_add(1);
         if let Some(previous) = &self.base_coordinates {
@@ -1222,6 +1386,7 @@ impl SpeakerRenderer {
             rendered.push(self.render_aligned_block(
                 &aligned_payload,
                 &aligned_base,
+                pending.compatibility_pcm.as_ref(),
                 aligned_frame.timeline.logical_start_sample,
             )?);
         }
@@ -1232,6 +1397,7 @@ impl SpeakerRenderer {
         &mut self,
         frame: &DecodedPayloadFrame,
         base: &DecodedAccessUnitPcm,
+        compatibility_pcm: Option<&DecodedAccessUnitPcm>,
         logical_start_sample: u64,
     ) -> Result<RenderedBlock, OpenJocError> {
         if frame.sample_range.start_sample != self.expected_sample {
@@ -1250,7 +1416,24 @@ impl SpeakerRenderer {
                 actual: base.sample_rate,
             });
         }
+        let stereo = self.layout.is_stereo();
+        let common_profile_stereo = stereo
+            && self.common_profile_stereo_enabled
+            && frame.admitted_decoded_joc_binding().is_some();
         let calibrated_base = base.with_dialnorm_applied();
+        let calibrated_compatibility = if common_profile_stereo {
+            Some(
+                compatibility_pcm
+                    .ok_or_else(|| {
+                        OpenJocError::Render(
+                            "missing admitted I0 compatibility PCM plane".to_owned(),
+                        )
+                    })?
+                    .with_dialnorm_applied(),
+            )
+        } else {
+            None
+        };
         let mut calibrated_frame = frame.clone();
         for row in &mut calibrated_frame.decoded.reconstruction_basis.rows {
             base.dialnorm.apply_to_samples(row);
@@ -1290,7 +1473,6 @@ impl SpeakerRenderer {
         }
         boundaries.sort_unstable();
         boundaries.dedup();
-        let stereo = self.layout.is_stereo();
         let zero = vec![0.0; sample_count];
         let mut coordinates = Vec::with_capacity(coordinate_count);
         for pcm in bridge_frame.basis.base_full_band_pcm {
@@ -1306,7 +1488,13 @@ impl SpeakerRenderer {
                 .reconstruction_basis
                 .rows
                 .iter()
-                .map(Vec::as_slice),
+                .map(|pcm| {
+                    if common_profile_stereo {
+                        zero.as_slice()
+                    } else {
+                        pcm.as_slice()
+                    }
+                }),
         );
         for window in boundaries.windows(2) {
             let start = window[0];
@@ -1341,13 +1529,27 @@ impl SpeakerRenderer {
             )?;
         }
         if stereo {
-            add_stereo_base_downmix(&mut active, &calibrated_base, self.downmix_policy)?;
+            let compatibility_source = if common_profile_stereo {
+                calibrated_compatibility
+                    .as_ref()
+                    .expect("common-profile compatibility PCM was checked")
+            } else {
+                &calibrated_base
+            };
+            add_stereo_base_downmix(&mut active, compatibility_source, self.downmix_policy)?;
         }
+        let composition_base = if common_profile_stereo {
+            calibrated_compatibility
+                .as_ref()
+                .expect("common-profile compatibility PCM was checked")
+        } else {
+            &calibrated_base
+        };
         let mut channels = vec![vec![0.0; sample_count]; self.layout.channel_count()];
         let mut active_index = 0;
         for (output_index, channel) in self.layout.spatial().channels().iter().enumerate() {
             if channel.lfe {
-                if let Some(lfe) = calibrated_base.lfe.as_deref() {
+                if let Some(lfe) = composition_base.lfe.as_deref() {
                     channels[output_index].copy_from_slice(lfe);
                 }
             } else {
@@ -1358,7 +1560,7 @@ impl SpeakerRenderer {
         self.apply_final_linked_gain(
             frame.sample_rate,
             &mut channels,
-            calibrated_base.lfe.as_deref(),
+            composition_base.lfe.as_deref(),
         )?;
         self.expected_frame = self.expected_frame.saturating_add(1);
         self.expected_sample = self.expected_sample.saturating_add(sample_count as u64);
@@ -1452,6 +1654,7 @@ impl SpeakerRenderer {
             rendered.push(self.render_aligned_block(
                 &frame,
                 &base,
+                pending.compatibility_pcm.as_ref(),
                 aligned_frame.timeline.logical_start_sample,
             )?);
         }
@@ -1822,9 +2025,30 @@ mod tests {
             ..OpenJocConfig::default()
         };
         let session = OpenJocSession::new(config).expect("built-in generic HRTF session");
+        assert!(!session.speaker.common_profile_stereo_enabled);
         let info = session.output_info();
         assert_eq!(info.layout_name, "Binaural stereo");
         assert_eq!(info.channel_labels, ["Left Ear", "Right Ear"]);
+    }
+
+    #[test]
+    fn common_profile_stereo_composition_is_disabled_for_binaural_only() {
+        let physical = OpenJocSession::new(OpenJocConfig {
+            render_mode: RenderMode::Stereo,
+            speaker_layout: "2.0".to_owned(),
+            ..OpenJocConfig::default()
+        })
+        .expect("physical Stereo session");
+        assert!(physical.speaker.common_profile_stereo_enabled);
+
+        let binaural = OpenJocSession::new(OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "2.0".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("2.0")),
+            ..OpenJocConfig::default()
+        })
+        .expect("virtual-2.0 binaural session");
+        assert!(!binaural.speaker.common_profile_stereo_enabled);
     }
 
     #[test]

@@ -22,10 +22,13 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 - The ordinary-domain `JocSpatialBridge` renders decoded Base/RB contributions
   with OAMD-derived control, but it does not resolve authored-object identity
   or the codec-domain operator `T(t)`.
-- Non-LFE Base/full-band PCM is a proven JOC reconstruction input, not yet a
-  proven independent final-scene contribution. Base C energy and the original
-  authored Bed cannot authorize an additional ADM export; Base plus decoded
-  Objects must first pass a double-counting proof.
+- For the exact admitted common profile (one leading Base LFE, no Bed or ISF,
+  and 15 dynamic JOC objects), physical 2.0 output uses the E-AC-3
+  compatibility presentation and does not add a second reconstructed-object
+  Stereo contribution. The existing Lo/Ro or Lt/Rt matrix, its normative
+  `1 / max_sum` overflow scaling, metadata-gated LFE policy, dialnorm, DRC, and
+  FinalLinkedGain order remain unchanged. Other profiles do not inherit this
+  ownership rule.
 - `ETSI_STRICT` rejects syntax outside the published profile, including the
   observed reserved OAMD warp value `raw=3`. `OBSERVED_VENDOR_COMPAT` is an
   explicit, partial policy that preserves opaque continuation without
@@ -47,6 +50,13 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   framework adapters, not that Rust packet contract.
 - Only one I0 plus optional D0 dependent topology is admitted. Additional
   dependent-substream shapes are rejected.
+- Standards-defined flat-7.X is identified narrowly by JOC downmix index 1,
+  seven JOC inputs, and `L R C Ls Rs Lrs Rrs` Table-47 assembly. JOC
+  reconstruction consumes the assembled I0+D0 seven-input plane, while 2.0
+  compatibility rendering consumes the independent I0 presentation. OpenJOC
+  does not invent direct Lrs/Rrs-to-Stereo coefficients.
+- Legacy AC-3 core plus E-AC-3 D0 carriage is not supported; it is not treated
+  as the supported E-AC-3 I0/optional-D0 flat-7.X profile.
 - Some seekable container and compatible-base workflows require `ffprobe` or
   `ffmpeg`; OpenJOC is not a zero-dependency distribution.
 

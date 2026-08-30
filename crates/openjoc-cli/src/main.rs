@@ -643,9 +643,10 @@ fn stream_compressed_adm(
             .map(DecodedJocBindingProfile::codec_profile),
         |access_unit, _metadata, frame, pcm| {
             progress.update(access_unit.saturating_add(1), frame.sample_range.end_sample);
-            if let Err(error) =
-                writer.write_pcm(&frame.decoded.reconstruction_basis.rows, pcm.lfe.as_deref())
-            {
+            if let Err(error) = writer.write_pcm(
+                &frame.decoded.reconstruction_basis.rows,
+                pcm.joc_input_pcm.lfe.as_deref(),
+            ) {
                 let message = error.to_string();
                 adm_error = Some(error);
                 return Err(eac3_decode::DecodeEac3Error::Sink(message));
@@ -2459,7 +2460,7 @@ fn run_legacy_render_pass(
                 arguments.dialnorm,
                 |frame_index, metadata, frame, base| {
                     let blocks = renderer
-                        .render_frame_aligned(frame_index, frame, base)
+                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         sink.consume(&joc_render::RenderedBlock {
@@ -2473,7 +2474,7 @@ fn run_legacy_render_pass(
                     render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
                     render_timing.binaural_render += stage_timings.binaural_render;
                     render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.samples);
+                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -2561,7 +2562,7 @@ fn run_legacy_render_pass(
                 arguments.dialnorm,
                 |frame_index, metadata, frame, base| {
                     let blocks = renderer
-                        .render_frame_aligned(frame_index, frame, base)
+                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         sink.consume(&block).map_err(|error| {
@@ -2573,7 +2574,7 @@ fn run_legacy_render_pass(
                     render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
                     render_timing.binaural_render += stage_timings.binaural_render;
                     render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.samples);
+                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -2884,7 +2885,7 @@ fn render_joc(
                 arguments.dialnorm,
                 |frame_index, metadata, frame, base| {
                     let blocks = renderer
-                        .render_frame_aligned(frame_index, frame, base)
+                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         let output_start = collect_timing.then(std::time::Instant::now);
@@ -2905,7 +2906,7 @@ fn render_joc(
                     render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
                     render_timing.binaural_render += stage_timings.binaural_render;
                     render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.samples);
+                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -3047,7 +3048,7 @@ fn render_joc(
                 arguments.dialnorm,
                 |frame_index, metadata, frame, base| {
                     let blocks = renderer
-                        .render_frame_aligned(frame_index, frame, base)
+                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         let output_start = collect_timing.then(std::time::Instant::now);
@@ -3063,7 +3064,7 @@ fn render_joc(
                     render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
                     render_timing.binaural_render += stage_timings.binaural_render;
                     render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.samples);
+                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)

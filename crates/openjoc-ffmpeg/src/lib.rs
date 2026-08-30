@@ -1390,6 +1390,7 @@ mod tests {
         container.push(0, 2);
         container.push(0, 3);
         for (id, payload) in [(11, oamd), (14, joc)] {
+            assert!(payload.len() <= u8::MAX.into(), "EMDF payload too large");
             container.push(id, 5);
             container.push(0, 1);
             container.push(0, 1);
@@ -1582,6 +1583,117 @@ mod tests {
 
     fn five_channel_audio_frame(emdf: &[u8], joc_extension: bool) -> Vec<u8> {
         five_channel_audio_frame_with_exponent_codes(emdf, joc_extension, [62; 5], None)
+    }
+
+    fn two_channel_dependent_audio_frame(emdf: &[u8]) -> Vec<u8> {
+        let size = 4096;
+        let mut bits = Bits::default();
+        for (value, width) in [
+            (0x0b77, 16),
+            (1, 2),       // dependent substream
+            (0, 3),       // D0
+            (2047, 11),   // 4096-byte frame
+            (0, 2),       // 48 kHz
+            (3, 2),       // six blocks
+            (2, 3),       // two full-band channels
+            (0, 1),       // no LFE
+            (16, 5),      // E-AC-3
+            (31, 5),      // dialnorm
+            (0, 1),       // no compression metadata
+            (1, 1),       // custom channel map present
+            (0x0200, 16), // Table E.1.4 Lrs/Rrs pair
+            (0, 1),       // no mixing metadata
+            (0, 1),       // no informational metadata
+            (1, 1),       // addbsi present
+            (1, 6),       // two addbsi bytes
+            (0x01, 8),    // JOC extension type
+            (16, 8),      // complexity index for 16 OAMD objects
+            (1, 1),       // per-block exponent strategies
+            (0, 1),       // no AHT
+            (0, 2),       // frame SNR offsets
+            (0, 1),       // no transient processing
+            (0, 7),       // no optional syntax flags
+            (0, 1),       // coupling off in block zero
+        ] {
+            bits.push(value, width);
+        }
+        for _ in 1..6 {
+            bits.push(0, 1); // reuse coupling strategy
+        }
+        for block in 0..6 {
+            for _ in 0..2 {
+                bits.push(u64::from(block == 0), 2); // D15 then reuse
+            }
+        }
+        bits.push(0, 6); // coarse SNR
+        bits.push(0, 4); // fine SNR
+        bits.push(0, 1); // block-start information absent
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX absent
+        for _ in 0..4 {
+            bits.push(0, 1); // stereo rematrix flags disabled
+        }
+        for _ in 0..2 {
+            bits.push(0, 6); // chbwcod
+        }
+        for exponent_delta_code in [82_u8, 86] {
+            bits.push(15, 4); // initial exponent
+            for _ in 0..24 {
+                bits.push(u64::from(exponent_delta_code), 7);
+            }
+            bits.push(0, 2); // gain range
+        }
+        bits.push(0, 1); // no new bit-allocation parameters
+        for _ in 1..6 {
+            bits.push(0, 1); // dynamic range absent
+            bits.push(0, 1); // SPX strategy reused
+            bits.push(0, 1); // rematrix strategy reused
+            bits.push(0, 1); // bit-allocation parameters reused
+        }
+        bits.0.resize(size * 8, false);
+        let auxdatae_position = size * 8 - 18;
+        let length_position = auxdatae_position - 14;
+        bits.set(
+            length_position,
+            u64::try_from(emdf.len() * 8).expect("EMDF bit length"),
+            14,
+        );
+        bits.set(auxdatae_position, 1, 1);
+        let start = length_position - emdf.len() * 8;
+        for (index, byte) in emdf.iter().copied().enumerate() {
+            bits.set(start + index * 8, u64::from(byte), 8);
+        }
+        bits.bytes(size)
+    }
+
+    fn common_profile_oamd() -> Vec<u8> {
+        let mut body = Bits::default();
+        body.push(0, 1); // discard unknown
+        body.push(0, 2); // sample offset
+        body.push(0, 3); // one metadata block
+        body.push(0, 6); // block offset factor
+        body.push(0, 2); // zero ramp
+        body.push(1, 1); // no reserved object-element data
+        for _ in 0..16 {
+            body.push(1, 1); // Base-LFE/dynamic object inactive
+            body.push(0, 1); // no additional table data
+        }
+        let body = body.padded_bytes();
+
+        let mut payload = Bits::default();
+        payload.push(0, 2); // syntax version
+        payload.push(15, 5); // 16 total objects
+        payload.push(1, 1); // dynamic-only programme
+        payload.push(1, 1); // Base LFE present
+        payload.push(0, 1); // no alternate object data
+        payload.push(1, 4); // one element
+        payload.push(1, 4); // object element
+        payload.push(u64::try_from(body.len() - 1).expect("OAMD body size"), 4);
+        payload.push(0, 1); // no size continuation
+        for byte in body {
+            payload.push(u64::from(byte), 8);
+        }
+        payload.padded_bytes()
     }
 
     fn synthetic_joc_frame() -> Vec<u8> {
@@ -2082,6 +2194,61 @@ mod tests {
         one_object_joc_with_sequence(42)
     }
 
+    fn fifteen_object_flat7x_joc_with_sequence(sequence_count: u16) -> Vec<u8> {
+        assert!(sequence_count <= 1023);
+        let mut bits = Vec::new();
+        for (value, width) in [
+            (1, 3), // flat 7.X downmix index
+            (14, 6),
+            (0, 3),
+            (2, 3),
+            (17, 5),
+            (u64::from(sequence_count), 10),
+        ] {
+            push(&mut bits, value, width);
+        }
+        for _ in 0..15 {
+            push(&mut bits, 1, 1); // present
+            push(&mut bits, 0, 3); // one parameter band
+            push(&mut bits, 1, 1); // sparse vector
+            push(&mut bits, 0, 1); // coarse quantization
+            push(&mut bits, 0, 1); // smooth
+            push(&mut bits, 0, 1); // one data point
+        }
+        let table = openjoc_joc::all_huffman_tables()[2];
+        let zero = huffman_codeword_for(table.nodes, 48);
+        let positive = huffman_codeword_for(table.nodes, 95);
+        for object in 0..15 {
+            let initial_channel = if object == 0 {
+                5
+            } else if object == 1 {
+                6
+            } else {
+                0
+            };
+            push(&mut bits, initial_channel, 3);
+            bits.extend_from_slice(if object < 2 { &positive } else { &zero });
+        }
+        pack(bits)
+    }
+
+    fn standard_flat7x_access_unit(sequence_count: u16) -> Vec<u8> {
+        let emdf = joc_emdf(
+            &common_profile_oamd(),
+            &fifteen_object_flat7x_joc_with_sequence(sequence_count),
+        );
+        [
+            five_channel_audio_frame_with_exponent_codes(
+                &[],
+                false,
+                [62, 82, 86, 102, 106],
+                Some([[0, 1, 2]; 6]),
+            ),
+            two_channel_dependent_audio_frame(&emdf),
+        ]
+        .concat()
+    }
+
     fn ordinary_eac3_frame() -> Vec<u8> {
         five_channel_audio_frame(&[], false)
     }
@@ -2374,6 +2541,236 @@ mod tests {
         assert_eq!(decoder.classification(), JocClassification::ConfirmedNonJoc);
         assert!(decoder.session.is_none());
         assert!(decoder.output.is_empty());
+    }
+
+    #[test]
+    fn standard_i0_d0_idx1_fixture_preserves_both_planes_and_all_seven_inputs() {
+        let access_unit = standard_flat7x_access_unit(1);
+        let frames = openjoc_eac3::index_syncframes(&access_unit).expect("index I0+D0");
+        let units = openjoc_eac3::group_access_units(&frames).expect("group I0+D0");
+        assert_eq!(frames.len(), 2);
+        assert_eq!(units.len(), 1);
+        for entry in &frames {
+            openjoc_eac3::parse_audio_frame(&access_unit[entry.offset..])
+                .expect("parse complete I0/D0 audio frame");
+        }
+        openjoc_eac3::parse_first_audio_block_prefix(&access_unit[frames[1].offset..])
+            .expect("parse D0 first audio block");
+        let mut audio = openjoc_eac3::JocAccessUnitPcmDecoder::new();
+        let planes = audio
+            .decode_pcm_planes_with_policy(
+                &access_unit,
+                &frames,
+                units[0],
+                &vec![0.25; 32_768],
+                openjoc_eac3::InternalBasePolicy::CurrentDefault,
+            )
+            .expect("decode standard I0+D0 PCM planes");
+        assert_eq!(planes.compatibility_pcm.channels.len(), 5);
+        assert_eq!(
+            planes
+                .compatibility_pcm
+                .channel_locations
+                .iter()
+                .map(|location| location.label())
+                .collect::<Vec<_>>(),
+            ["L", "R", "C", "Ls", "Rs"]
+        );
+        assert_eq!(
+            planes
+                .joc_input_pcm
+                .channel_locations
+                .iter()
+                .map(|location| location.label())
+                .collect::<Vec<_>>(),
+            ["L", "R", "C", "Ls", "Rs", "Lrs", "Rrs"]
+        );
+        assert!(
+            planes.joc_input_pcm.channels[5]
+                .iter()
+                .any(|value| *value != 0.0)
+        );
+        assert!(
+            planes.joc_input_pcm.channels[6]
+                .iter()
+                .any(|value| *value != 0.0)
+        );
+
+        let metadata = openjoc_eac3::extract_joc_access_unit_for_profile(
+            &access_unit,
+            &frames,
+            units[0],
+            openjoc_emdf::JocValidationProfile::EtsiStrict,
+        )
+        .expect("extract standard metadata")
+        .expect("JOC metadata");
+        assert_eq!(
+            classify_complete_access_unit(&access_unit),
+            JocClassification::ConfirmedJoc
+        );
+        let joc = openjoc_joc::parse_joc_payload(&metadata.joc).expect("idx1 JOC");
+        assert_eq!(joc.header.downmix_index, 1);
+        assert_eq!(joc.header.channel_count, 7);
+        assert_eq!(joc.header.object_count, 15);
+        let oamd = openjoc_oamd::parse_oamd_payload(&metadata.oamd).expect("common OAMD");
+        assert_eq!(oamd.prefix.object_count, 16);
+        assert_eq!(oamd.object_classes.len(), 16);
+        assert_eq!(oamd.object_classes[0], openjoc_oamd::ObjectClass::BedOrIsf);
+        assert!(
+            oamd.object_classes[1..]
+                .iter()
+                .all(|class| *class == openjoc_oamd::ObjectClass::Dynamic)
+        );
+
+        let mut payload =
+            openjoc_scene::PayloadDecoder::streaming(openjoc_scene::PayloadDecoderConfig {
+                reference_screen: None,
+                oamd: openjoc_oamd::OamdDecoderConfig::default(),
+            });
+        let mut wrong_dimension =
+            openjoc_scene::PayloadDecoder::streaming(openjoc_scene::PayloadDecoderConfig {
+                reference_screen: None,
+                oamd: openjoc_oamd::OamdDecoderConfig::default(),
+            });
+        assert!(
+            wrong_dimension
+                .decode_frame(openjoc_scene::JocFrameInput {
+                    sample_rate: 48_000,
+                    downmix_pcm: &planes.joc_input_pcm.channels[..5],
+                    base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                    joc_payload: &metadata.joc,
+                    oamd_payload: &metadata.oamd,
+                    frame_index: 0,
+                })
+                .is_err(),
+            "idx1 must reject a reconstruction dimension other than seven"
+        );
+        let frame = payload
+            .decode_frame(openjoc_scene::JocFrameInput {
+                sample_rate: 48_000,
+                downmix_pcm: &planes.joc_input_pcm.channels,
+                base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: 0,
+            })
+            .expect("seven-input reconstruction");
+        assert_eq!(frame.decoded.reconstruction_basis.rows.len(), 15);
+        assert!(frame.admitted_decoded_joc_binding().is_some());
+        assert!(frame.decoded.stages[0].as_ref().unwrap().quantized[0][5][0] > 48);
+        assert!(frame.decoded.stages[1].as_ref().unwrap().quantized[0][6][0] > 48);
+        let mut muted_channels = planes.joc_input_pcm.channels.clone();
+        muted_channels[5].fill(0.0);
+        muted_channels[6].fill(0.0);
+        let mut muted_payload =
+            openjoc_scene::PayloadDecoder::streaming(openjoc_scene::PayloadDecoderConfig {
+                reference_screen: None,
+                oamd: openjoc_oamd::OamdDecoderConfig::default(),
+            });
+        let muted_frame = muted_payload
+            .decode_frame(openjoc_scene::JocFrameInput {
+                sample_rate: 48_000,
+                downmix_pcm: &muted_channels,
+                base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: 0,
+            })
+            .expect("muted rear-input control reconstruction");
+        assert_ne!(
+            frame.decoded.reconstruction_basis.rows[0],
+            muted_frame.decoded.reconstruction_basis.rows[0],
+            "muting input 6 must change its explicitly bound reconstruction row"
+        );
+        assert_ne!(
+            frame.decoded.reconstruction_basis.rows[1],
+            muted_frame.decoded.reconstruction_basis.rows[1],
+            "muting input 7 must change its explicitly bound reconstruction row"
+        );
+        assert!(
+            frame
+                .decoded
+                .reconstruction_basis
+                .rows
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+        );
+    }
+
+    fn assert_standard_flat7x_session_output(
+        render_mode: RenderMode,
+        layout: &str,
+        expected_channels: usize,
+    ) {
+        let mut session = OpenJocSession::new(OpenJocConfig {
+            render_mode,
+            speaker_layout: layout.to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        })
+        .expect("standard flat-7.X session");
+        let mut output = Vec::new();
+        for sequence in 1..=4_u16 {
+            let access_unit = standard_flat7x_access_unit(sequence);
+            session
+                .push_packet(OpenJocPacket {
+                    data: &access_unit,
+                    pts_samples: Some(i64::from(sequence - 1) * 1536),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .expect("push standard flat-7.X access unit");
+            while let Some(frame) = session.receive_frame() {
+                output.push(frame);
+            }
+        }
+        session.drain().expect("drain standard flat-7.X session");
+        while let Some(frame) = session.receive_frame() {
+            output.push(frame);
+        }
+        assert!(!output.is_empty());
+        assert!(output.iter().all(|frame| {
+            frame.channel_count == expected_channels
+                && frame.interleaved_f32.len() == frame.sample_count * expected_channels
+                && frame.interleaved_f32.iter().all(|value| value.is_finite())
+        }));
+    }
+
+    #[test]
+    fn standard_i0_d0_idx1_fixture_reaches_stereo_and_seven_one_four() {
+        assert_standard_flat7x_session_output(RenderMode::Stereo, "2.0", 2);
+        assert_standard_flat7x_session_output(RenderMode::Speaker, "7.1.4", 12);
+    }
+
+    #[test]
+    fn flat7x_fixture_malformed_emdf_and_truncated_d0_fail_closed() {
+        let mut malformed_emdf = joc_emdf(
+            &common_profile_oamd(),
+            &fifteen_object_flat7x_joc_with_sequence(1),
+        );
+        malformed_emdf.pop();
+        let malformed = [
+            five_channel_audio_frame_with_exponent_codes(
+                &[],
+                false,
+                [62, 82, 86, 102, 106],
+                Some([[0, 1, 2]; 6]),
+            ),
+            two_channel_dependent_audio_frame(&malformed_emdf),
+        ]
+        .concat();
+        assert_eq!(
+            classify_complete_access_unit(&malformed),
+            JocClassification::InvalidOrUnsupported
+        );
+
+        let mut truncated_d0 = standard_flat7x_access_unit(1);
+        truncated_d0.pop();
+        assert_eq!(
+            classify_complete_access_unit(&truncated_d0),
+            JocClassification::InvalidOrUnsupported
+        );
     }
 
     #[test]

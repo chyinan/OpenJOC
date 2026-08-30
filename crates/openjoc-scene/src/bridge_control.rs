@@ -1256,6 +1256,7 @@ mod tests {
                 state_reset: true,
             },
             programme_layout: ProgrammeLayout::from_prefix(&prefix).unwrap(),
+            decoded_joc_binding: None,
         }
     }
 
@@ -1475,6 +1476,7 @@ mod tests {
                 state_reset: true,
             },
             programme_layout: ProgrammeLayout::from_prefix(&prefix).unwrap(),
+            decoded_joc_binding: None,
         };
         let mut assembler = super::BridgeControlAssembler::new(8, 1);
         let control = assembler

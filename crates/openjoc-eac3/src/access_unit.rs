@@ -32,6 +32,19 @@ pub struct DecodedAccessUnitPcm {
     pub dialnorm: DialnormState,
 }
 
+/// The two distinct PCM meanings carried by one decoded JOC access unit.
+///
+/// `compatibility_pcm` is decoded only from the independent I0 presentation.
+/// `joc_input_pcm` is the Table-47 reconstruction input assembled from I0 and
+/// the optional D0. Keeping them as separately owned values prevents a 7.X
+/// reconstruction input from being mistaken for a compatibility downmix.
+#[derive(Clone, Debug, PartialEq)]
+#[doc(hidden)]
+pub struct DecodedJocAccessUnitPcm {
+    pub compatibility_pcm: DecodedAccessUnitPcm,
+    pub joc_input_pcm: DecodedAccessUnitPcm,
+}
+
 impl DecodedAccessUnitPcm {
     /// Returns a copy with the frame's prepared dialnorm scalar applied to
     /// every decoded Base plane, including the retained LFE plane.
@@ -101,6 +114,45 @@ impl DecodedAccessUnitPcm {
             });
         }
         Ok(())
+    }
+
+    /// Binds the standards-defined flat-7.X JOC identity to its exact rear
+    /// Table-47 input topology. Other valid JOC downmix indices retain their
+    /// existing count-based decoder behavior and are not labeled flat-7.X.
+    ///
+    /// # Errors
+    /// Returns [`Eac3Error::UnsupportedJocChannelTopology`] when index 1 is
+    /// paired with anything other than `L R C Ls Rs Lrs Rrs`, or when that
+    /// rear topology is paired with a different JOC index.
+    pub fn validate_joc_downmix_topology(&self, downmix_index: u8) -> Result<(), Eac3Error> {
+        let rear_seven = self.has_flat7x_rear_topology();
+        if (downmix_index == 1 && !rear_seven) || (rear_seven && downmix_index != 1) {
+            return Err(Eac3Error::UnsupportedJocChannelTopology {
+                full_band_channels: self.channel_locations.len(),
+                lfe_present: self.lfe.is_some(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Whether this PCM plane has the exact standards-defined idx=1 flat-7.X
+    /// identity and rear-channel ordering.
+    #[must_use]
+    pub fn is_standard_flat7x_joc_input(&self, downmix_index: u8) -> bool {
+        downmix_index == 1 && self.has_flat7x_rear_topology()
+    }
+
+    fn has_flat7x_rear_topology(&self) -> bool {
+        const FLAT_SEVEN: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        self.channel_locations.as_slice() == FLAT_SEVEN
     }
 }
 
@@ -275,6 +327,25 @@ impl JocAccessUnitPcmDecoder {
         dither_values: &[f64],
         policy: InternalBasePolicy,
     ) -> Result<DecodedAccessUnitPcm, Eac3Error> {
+        self.decode_pcm_planes_with_policy(stream, frames, unit, dither_values, policy)
+            .map(|planes| planes.joc_input_pcm)
+    }
+
+    /// Decodes one access unit while retaining the independent compatibility
+    /// presentation separately from the assembled JOC reconstruction input.
+    ///
+    /// # Errors
+    /// Returns the same checked decode and assembly failures as
+    /// [`Self::decode_with_policy`].
+    #[doc(hidden)]
+    pub fn decode_pcm_planes_with_policy(
+        &mut self,
+        stream: &[u8],
+        frames: &[SyncframeIndexEntry],
+        unit: AccessUnitIndex,
+        dither_values: &[f64],
+        policy: InternalBasePolicy,
+    ) -> Result<DecodedJocAccessUnitPcm, Eac3Error> {
         let total_start = self.stage_timing_enabled.then(Instant::now);
         let mut stage_timing = self
             .stage_timing_enabled
@@ -377,7 +448,7 @@ impl JocAccessUnitPcmDecoder {
             stage_timing.as_mut(),
             |timing| &mut timing.pcm_assembly,
             || {
-                merge_substreams_with_dialnorm(
+                merge_substream_pcm_planes(
                     unit,
                     &independent_info,
                     independent,
@@ -654,6 +725,32 @@ fn merge_substreams_with_dialnorm(
     })
 }
 
+fn merge_substream_pcm_planes(
+    unit: AccessUnitIndex,
+    independent_info: &BitstreamInformation,
+    independent: DecodedAudioPcm,
+    dependent: Option<(&BitstreamInformation, &DecodedAudioPcm)>,
+    dialnorm: DialnormState,
+) -> Result<DecodedJocAccessUnitPcm, Eac3Error> {
+    let mut compatibility_pcm = merge_substreams_with_dialnorm(
+        unit,
+        independent_info,
+        independent.clone(),
+        None,
+        dialnorm,
+    )?;
+    let joc_input_pcm =
+        merge_substreams_with_dialnorm(unit, independent_info, independent, dependent, dialnorm)?;
+    // Mixing metadata remains programme-scoped: retain the established
+    // independent-first, dependent-fallback selection even though the
+    // compatibility audio samples themselves are strictly I0-only.
+    compatibility_pcm.downmix = joc_input_pcm.downmix;
+    Ok(DecodedJocAccessUnitPcm {
+        compatibility_pcm,
+        joc_input_pcm,
+    })
+}
+
 fn lfe_channel_location(info: &BitstreamInformation) -> Result<Option<ChannelLocation>, Eac3Error> {
     let locations = channel_locations(info)?;
     let mut lfe_locations = locations
@@ -834,6 +931,72 @@ mod tests {
             ]
         );
         output.validate_joc_topology().expect("Table 47 7.X");
+    }
+
+    #[test]
+    fn dual_plane_assembly_preserves_i0_compatibility_and_seven_input_joc_ownership() {
+        let independent = DecodedAudioPcm {
+            channels: vec![vec![1.0], vec![2.0], vec![3.0], vec![4.0], vec![5.0]],
+            lfe: Some(vec![8.0]),
+        };
+        let dependent = DecodedAudioPcm {
+            channels: vec![vec![6.0], vec![7.0]],
+            lfe: None,
+        };
+        let mut dependent_info = info(2, Some(1 << 9));
+        dependent_info.downmix.dmixmod = Some(1);
+        let planes = merge_substream_pcm_planes(
+            AccessUnitIndex {
+                first_frame: 0,
+                frame_count: 2,
+                sample_rate: 48_000,
+                samples: 1,
+            },
+            &info_with(7, true, None),
+            independent,
+            Some((&dependent_info, &dependent)),
+            DialnormState::default(),
+        )
+        .expect("valid dual-plane 7.X assembly");
+
+        assert_eq!(
+            planes.compatibility_pcm.channel_locations,
+            vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ]
+        );
+        assert_eq!(
+            planes.compatibility_pcm.channels,
+            vec![vec![1.0], vec![3.0], vec![2.0], vec![4.0], vec![5.0]]
+        );
+        assert_eq!(
+            planes.joc_input_pcm.channel_locations,
+            vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+                ChannelLocation::LeftBack,
+                ChannelLocation::RightBack,
+            ]
+        );
+        assert_eq!(planes.joc_input_pcm.channels[5], vec![6.0]);
+        assert_eq!(planes.joc_input_pcm.channels[6], vec![7.0]);
+        assert_eq!(planes.compatibility_pcm.downmix.dmixmod, Some(1));
+        assert_ne!(
+            planes.compatibility_pcm.channels[0].as_ptr(),
+            planes.joc_input_pcm.channels[0].as_ptr(),
+            "the two semantic planes must not alias storage"
+        );
+        planes
+            .joc_input_pcm
+            .validate_joc_topology()
+            .expect("Table 47 7.X");
     }
 
     #[test]
@@ -1092,6 +1255,37 @@ mod tests {
         ));
         lfe2.lfe_location = Some(ChannelLocation::Lfe(0));
         lfe2.validate_joc_topology().expect("Table 47 5.1");
+    }
+
+    #[test]
+    fn idx1_requires_rear_flat7x_while_idx4_is_not_given_that_identity() {
+        let mut pcm = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+                ChannelLocation::TopFrontLeft,
+                ChannelLocation::TopFrontRight,
+            ],
+            channels: vec![vec![0.0]; 7],
+            lfe_location: Some(ChannelLocation::Lfe(0)),
+            lfe: Some(vec![0.0]),
+            downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
+        };
+        assert!(pcm.validate_joc_downmix_topology(1).is_err());
+        assert!(pcm.validate_joc_downmix_topology(4).is_ok());
+        assert!(!pcm.is_standard_flat7x_joc_input(4));
+        pcm.channel_locations[5] = ChannelLocation::LeftBack;
+        pcm.channel_locations[6] = ChannelLocation::RightBack;
+        assert!(pcm.validate_joc_downmix_topology(4).is_err());
+        pcm.validate_joc_downmix_topology(1)
+            .expect("idx1 exact flat-7.X topology");
+        assert!(pcm.is_standard_flat7x_joc_input(1));
     }
 
     #[test]

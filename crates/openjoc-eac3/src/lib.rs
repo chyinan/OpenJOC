@@ -43,7 +43,9 @@ mod stereo_downmix;
 mod timing;
 mod transform;
 
-pub use access_unit::{ChannelLocation, DecodedAccessUnitPcm, JocAccessUnitPcmDecoder};
+pub use access_unit::{
+    ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, JocAccessUnitPcmDecoder,
+};
 pub use aht::{
     decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
     expand_aht_gaq_gains,
