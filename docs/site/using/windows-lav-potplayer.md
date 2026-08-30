@@ -52,6 +52,23 @@ contains the same seven fixed output policies listed above; moving this control
 to its own tab does not change layout, channel-order, media-type, or Stereo
 default behavior.
 
+**OpenJOC output** selects the PCM speaker layout that OpenJOC renders and
+sends to the downstream audio renderer/device. Choose a layout supported by
+that endpoint. Selecting an unsupported multichannel layout may cause playback
+failure, stuttering, or downstream conversion. For stereo headphones or 2.0
+speakers, use **Stereo**.
+
+OpenJOC does not detect the physical speaker configuration or automatically
+downmix to match the endpoint. A larger layout may be rejected or accepted and
+converted later by Windows/the downstream renderer; that conversion is outside
+OpenJOC and is not equivalent to choosing **Stereo** directly.
+
+Examples: stereo headphones / 2.0 speakers → **Stereo**; physical 5.1 →
+**5.1**; physical 7.1 → **7.1**; a height-capable endpoint → the corresponding
+height layout. Selecting **7.1.4** on a stereo endpoint does not provide
+additional OpenJOC spatialization. Any later stereo downmix, if accepted by the
+downstream path, happens outside OpenJOC.
+
 **Dialnorm** has two choices:
 
 - **Calibrated (Recommended)** respects the programme dialnorm carried by

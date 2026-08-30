@@ -69,6 +69,16 @@ seven-policy output selector lives on that page without changing its persisted
 numeric values or strict output contracts. Stock LAV has no OpenJOC page or
 OpenJOC settings interfaces.
 
+**OpenJOC output** is the PCM speaker layout rendered and sent downstream. It
+is a renderer target layout, not physical-endpoint detection or automatic
+downmix. Select a layout supported by the downstream renderer/device: use
+Stereo for stereo headphones or 2.0 speakers, 5.1 for a physical 5.1 setup,
+7.1 for a physical 7.1 setup, and the corresponding height layout for a
+height-capable endpoint. Selecting an unsupported multichannel layout may cause
+playback failure, stuttering, or downstream conversion. Selecting 7.1.4 on a
+stereo endpoint does not add OpenJOC spatialization; any later stereo downmix,
+if accepted, occurs outside OpenJOC.
+
 The page exposes exactly two Dialnorm policies. **Calibrated (Recommended)**
 maps to `OPENJOC_DIALNORM_DEFAULT` and respects encoded E-AC-3 programme
 dialnorm. **Unity / Compatibility** maps to `OPENJOC_DIALNORM_ANALOG`, disables
