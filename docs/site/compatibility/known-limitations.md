@@ -44,8 +44,10 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 - JOC rendering is 48 kHz. Raw E-AC-3 and seekable ordinary ISO BMFF input
   are admitted within the documented topology and access-unit boundaries.
   Non-seekable or fragmented MP4 is not admitted.
-- The Rust `OpenJocSession` packet API accepts one complete E-AC-3 JOC access
-  unit per push: I0 plus optional D0. Demuxing, arbitrary byte fragmentation,
+- The Rust `OpenJocSession` packet API accepts one complete JOC access unit per
+  push: I0 plus optional D0. I0 may use E-AC-3 syntax or the original AC-3
+  syntax admitted by ETSI TS 102 366 Annex J (`bsid` 6 or 8) when paired with
+  E-AC-3 D0. Demuxing, arbitrary byte fragmentation,
   and multiple AUs per call belong to the bounded C stream decoder or
   framework adapters, not that Rust packet contract.
 - Only one I0 plus optional D0 dependent topology is admitted. Additional
@@ -55,8 +57,12 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   reconstruction consumes the assembled I0+D0 seven-input plane, while 2.0
   compatibility rendering consumes the independent I0 presentation. OpenJOC
   does not invent direct Lrs/Rrs-to-Stereo coefficients.
-- Legacy AC-3 core plus E-AC-3 D0 carriage is not supported; it is not treated
-  as the supported E-AC-3 I0/optional-D0 flat-7.X profile.
+- The original-syntax I0 profile is narrowly scoped to the public 48-kHz
+  Annex-J/TS-103-420 shape: one CRC-valid AC-3 I0, one E-AC-3 D0, matching
+  six-block timing, valid semantic chanmap, and JOC/OAMD in the last D0.
+  Ordinary AC-3 remains outside OpenJOC admission. A known malformed
+  real-world file is still rejected at its truncated AU0 EMDF boundary; it is
+  not evidence of full real-stream validation.
 - Some seekable container and compatible-base workflows require `ffprobe` or
   `ffmpeg`; OpenJOC is not a zero-dependency distribution.
 

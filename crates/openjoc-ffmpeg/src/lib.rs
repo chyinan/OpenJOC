@@ -2,7 +2,8 @@
 //!
 //! This crate is not a libavcodec plugin. Its core accepts borrowed compressed
 //! packet bytes plus an `AVStream.time_base` equivalent, assembles bounded
-//! E-AC-3 access units, positively admits JOC, and drives `OpenJocSession`.
+//! AC-3/E-AC-3 JOC access units, positively admits JOC, and drives
+//! `OpenJocSession`.
 //! With the `ffmpeg` feature it also owns real, public-API-allocated AVFrames
 //! and exposes a small libavformat demux helper.
 
@@ -15,6 +16,7 @@ use openjoc_api::{
 use openjoc_eac3::{
     AccessUnitIndex, StreamType, group_access_units, index_syncframes, parse_audio_frame,
     parse_joc_access_unit, parse_syncframe_header, validate_joc_access_unit,
+    validate_joc_access_unit_decoder_contract,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_scene::SpeakerLayoutPreset;
@@ -989,25 +991,53 @@ fn inspect_complete_access_unit(bytes: &[u8]) -> Result<InspectedAccessUnit, Bri
     }
     let parsed = parse_joc_access_unit(bytes, &frames, unit)
         .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    let classification = match parsed {
-        None => JocClassification::ConfirmedNonJoc,
-        Some(parsed) => {
-            let strict = validate_joc_access_unit(&parsed, JocValidationProfile::EtsiStrict);
-            let compatible =
-                validate_joc_access_unit(&parsed, JocValidationProfile::ObservedVendorCompat);
-            if strict.is_ok() || compatible.is_ok() {
-                JocClassification::ConfirmedJoc
-            } else {
-                JocClassification::InvalidOrUnsupported
-            }
-        }
+    let accepted_metadata = parsed.as_ref().and_then(|parsed| {
+        validate_joc_access_unit(parsed, JocValidationProfile::EtsiStrict)
+            .or_else(|_| {
+                validate_joc_access_unit(parsed, JocValidationProfile::ObservedVendorCompat)
+            })
+            .ok()
+    });
+    let admitted = if parsed.is_none() {
+        JocClassification::ConfirmedNonJoc
+    } else if accepted_metadata.is_some() {
+        JocClassification::ConfirmedJoc
+    } else {
+        JocClassification::InvalidOrUnsupported
     };
+    if frames
+        .first()
+        .is_some_and(|entry| entry.header.stream_type == StreamType::LegacyIndependent)
+        && admitted == JocClassification::ConfirmedJoc
+    {
+        let metadata = accepted_metadata.as_ref().ok_or_else(|| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                "missing admitted JOC metadata",
+            )
+        })?;
+        let joc = openjoc_joc::parse_joc_payload(&metadata.joc)
+            .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
+        validate_joc_access_unit_decoder_contract(
+            bytes,
+            &frames,
+            unit,
+            joc.header.downmix_index,
+            joc.header.channel_count,
+        )
+        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
+    }
     let independent_frame_count = frames
         .iter()
-        .filter(|entry| entry.header.stream_type == StreamType::Independent)
+        .filter(|entry| {
+            matches!(
+                entry.header.stream_type,
+                StreamType::LegacyIndependent | StreamType::Independent
+            )
+        })
         .count();
     Ok(InspectedAccessUnit {
-        classification,
+        classification: admitted,
         unit,
         independent_frame_count,
         dependent_frame_count: frames.len().saturating_sub(independent_frame_count),
@@ -1027,7 +1057,11 @@ fn parse_access_unit(bytes: &[u8], eos: bool) -> Result<AccessUnitParse, BridgeE
     }
     let first = parse_syncframe_header(bytes)
         .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    if first.stream_type != StreamType::Independent || first.substream_id != 0 {
+    if !matches!(
+        first.stream_type,
+        StreamType::LegacyIndependent | StreamType::Independent
+    ) || first.substream_id != 0
+    {
         return Err(BridgeError::new(
             BridgeErrorKind::Unsupported,
             "access unit does not start with independent substream zero",
@@ -1071,7 +1105,11 @@ fn parse_access_unit(bytes: &[u8], eos: bool) -> Result<AccessUnitParse, BridgeE
     }
     let second = parse_syncframe_header(&bytes[first.frame_size..])
         .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    if second.stream_type == StreamType::Independent && second.substream_id == 0 {
+    if matches!(
+        second.stream_type,
+        StreamType::LegacyIndependent | StreamType::Independent
+    ) && second.substream_id == 0
+    {
         return Ok(AccessUnitParse::Complete(first.frame_size));
     }
     if second.stream_type != StreamType::Dependent || second.substream_id != 0 {
@@ -2249,6 +2287,180 @@ mod tests {
         .concat()
     }
 
+    fn crc16_update(mut register: u16, input: bool) -> u16 {
+        let feedback = ((register >> 15) != 0) ^ input;
+        register <<= 1;
+        if feedback {
+            register ^= 0x8005;
+        }
+        register
+    }
+
+    fn crc16(bytes: &[u8]) -> u16 {
+        bytes.iter().fold(0_u16, |mut register, byte| {
+            for shift in (0..8).rev() {
+                register = crc16_update(register, byte & (1 << shift) != 0);
+            }
+            register
+        })
+    }
+
+    fn crc16_reverse(register: u16, input: bool) -> u16 {
+        for top in [false, true] {
+            let feedback = top ^ input;
+            let shifted = register ^ if feedback { 0x8005 } else { 0 };
+            if shifted & 1 == 0 {
+                let previous = (shifted >> 1) | (u16::from(top) << 15);
+                if crc16_update(previous, input) == register {
+                    return previous;
+                }
+            }
+        }
+        panic!("CRC reverse transition");
+    }
+
+    fn two_bytes_for_crc_target(target: u16) -> [u8; 2] {
+        (0..=u16::MAX)
+            .map(u16::to_be_bytes)
+            .find(|bytes| crc16(bytes) == target)
+            .expect("CRC preimage")
+    }
+
+    fn finalize_ac3_crc(frame: &mut [u8]) {
+        let five_eighth_bytes = (((frame.len() / 2) >> 1) + ((frame.len() / 2) >> 3)) * 2;
+        let required =
+            frame[4..five_eighth_bytes]
+                .iter()
+                .rev()
+                .fold(0_u16, |mut register, byte| {
+                    for shift in 0..8 {
+                        register = crc16_reverse(register, byte & (1 << shift) != 0);
+                    }
+                    register
+                });
+        frame[2..4].copy_from_slice(&two_bytes_for_crc_target(required));
+        let end = frame.len();
+        frame[end - 2] = 0;
+        frame[end - 1] = 0;
+        let prefix_state = frame[2..end - 2].iter().fold(0_u16, |mut register, byte| {
+            for shift in (0..8).rev() {
+                register = crc16_update(register, byte & (1 << shift) != 0);
+            }
+            register
+        });
+        let crc2 = (0..=u16::MAX)
+            .find(|value| {
+                value
+                    .to_be_bytes()
+                    .iter()
+                    .fold(prefix_state, |mut register, byte| {
+                        for shift in (0..8).rev() {
+                            register = crc16_update(register, byte & (1 << shift) != 0);
+                        }
+                        register
+                    })
+                    == 0
+            })
+            .expect("CRC2 preimage");
+        frame[end - 2..].copy_from_slice(&crc2.to_be_bytes());
+    }
+
+    fn legacy_ac3_core_frame() -> Vec<u8> {
+        const SIZE: usize = 2560;
+        let mut bits = Bits::default();
+        for (value, width) in [
+            (0x0b77, 16),
+            (0, 16),
+            (0, 2),
+            (36, 6),
+            (8, 5),
+            (0, 3),
+            (7, 3),
+            (0, 2),
+            (0, 2),
+            (1, 1),
+            (31, 5),
+            (0, 1),
+            (0, 1),
+            (0, 1),
+            (0, 1),
+            (1, 1),
+            (0, 1),
+            (0, 1),
+            (0, 1),
+        ] {
+            bits.push(value, width);
+        }
+        for block in 0..6 {
+            for _ in 0..5 {
+                bits.push(0, 1);
+            }
+            for _ in 0..5 {
+                bits.push(1, 1);
+            }
+            bits.push(0, 1);
+            bits.push(u64::from(block == 0), 1);
+            if block == 0 {
+                bits.push(0, 1);
+            }
+            for _ in 0..5 {
+                bits.push(u64::from(block == 0), 2);
+            }
+            bits.push(u64::from(block == 0), 1);
+            if block == 0 {
+                for _ in 0..5 {
+                    bits.push(0, 6);
+                }
+                for code in [62_u8, 82, 86, 102, 106] {
+                    bits.push(15, 4);
+                    for _ in 0..24 {
+                        bits.push(u64::from(code), 7);
+                    }
+                    bits.push(0, 2);
+                }
+                bits.push(0, 4);
+                bits.push(62, 7);
+                bits.push(62, 7);
+            }
+            bits.push(u64::from(block == 0), 1);
+            if block == 0 {
+                for (value, width) in [(2, 2), (1, 2), (1, 2), (2, 2), (7, 3)] {
+                    bits.push(value, width);
+                }
+            }
+            bits.push(u64::from(block == 0), 1);
+            if block == 0 {
+                bits.push(5, 6);
+                for _ in 0..5 {
+                    bits.push(0, 4);
+                    bits.push(4, 3);
+                }
+                bits.push(15, 4);
+                bits.push(4, 3);
+            }
+            bits.push(0, 1);
+            bits.push(0, 1);
+            for group in 0..3 {
+                bits.push(u64::try_from((block * 3 + group) % 27).unwrap(), 5);
+            }
+        }
+        let mut frame = bits.bytes(SIZE);
+        finalize_ac3_crc(&mut frame);
+        frame
+    }
+
+    fn standard_legacy_flat7x_access_unit(sequence_count: u16) -> Vec<u8> {
+        let emdf = joc_emdf(
+            &common_profile_oamd(),
+            &fifteen_object_flat7x_joc_with_sequence(sequence_count),
+        );
+        [
+            legacy_ac3_core_frame(),
+            two_channel_dependent_audio_frame(&emdf),
+        ]
+        .concat()
+    }
+
     fn ordinary_eac3_frame() -> Vec<u8> {
         five_channel_audio_frame(&[], false)
     }
@@ -2276,6 +2488,9 @@ mod tests {
             (u64::try_from(size / 2 - 1).expect("frame words"), 11),
             (0, 2),
             (3, 2),
+            (2, 3),
+            (0, 1),
+            (16, 5),
         ] {
             for shift in (0..width).rev() {
                 if value & (1_u64 << shift) != 0 {
@@ -2500,6 +2715,12 @@ mod tests {
             classify_complete_access_unit(&ordinary),
             JocClassification::ConfirmedNonJoc
         );
+        let mut ordinary_decoder = FfmpegDecoder::new(OpenJocConfig::default()).expect("wrapper");
+        assert_eq!(
+            ordinary_decoder.send_packet(packet(&ordinary, Some(0))),
+            Ok(BridgeStatus::NeedMoreInput)
+        );
+        assert_eq!(ordinary_decoder.drain(), Ok(BridgeStatus::NotJoc));
         assert_eq!(
             classify_complete_access_unit(&[0xde, 0xad, 0xbe, 0xef]),
             JocClassification::InvalidOrUnsupported
@@ -2541,6 +2762,276 @@ mod tests {
         assert_eq!(decoder.classification(), JocClassification::ConfirmedNonJoc);
         assert!(decoder.session.is_none());
         assert!(decoder.output.is_empty());
+    }
+
+    #[test]
+    fn annex_j_legacy_core_d0_fixture_is_streaming_confirmed_joc() {
+        let access_unit = standard_legacy_flat7x_access_unit(1);
+        assert_eq!(
+            classify_complete_access_unit(&access_unit),
+            JocClassification::ConfirmedJoc
+        );
+        let mut classifier = JocClassifier::new();
+        let classification = classifier
+            .send_chunk(&access_unit)
+            .expect("streaming mixed-carriage classification");
+        assert_eq!(classification, JocClassification::ConfirmedJoc);
+
+        let mut bsid6 = standard_legacy_flat7x_access_unit(1);
+        for bit in 40..45 {
+            bsid6[bit / 8] &= !(0x80 >> (bit % 8));
+        }
+        bsid6[42 / 8] |= 0x80 >> (42 % 8);
+        bsid6[43 / 8] |= 0x80 >> (43 % 8);
+        let core_size = legacy_ac3_core_frame().len();
+        finalize_ac3_crc(&mut bsid6[..core_size]);
+        assert_eq!(
+            classify_complete_access_unit(&bsid6),
+            JocClassification::ConfirmedJoc
+        );
+    }
+
+    #[test]
+    fn annex_j_fixture_proves_dual_planes_idx1_seven_inputs_and_oamd_binding() {
+        let access_unit = standard_legacy_flat7x_access_unit(1);
+        let frames = openjoc_eac3::index_syncframes(&access_unit).expect("mixed index");
+        let unit = openjoc_eac3::group_access_units(&frames).expect("mixed grouping")[0];
+        let mut audio = openjoc_eac3::JocAccessUnitPcmDecoder::new();
+        let planes = audio
+            .decode_pcm_planes_with_policy(
+                &access_unit,
+                &frames,
+                unit,
+                &vec![0.25; 32_768],
+                openjoc_eac3::InternalBasePolicy::CodecCore,
+            )
+            .expect("native mixed PCM");
+        assert_eq!(planes.compatibility_pcm.channels.len(), 5);
+        assert_eq!(planes.joc_input_pcm.channels.len(), 7);
+        assert!(planes.joc_input_pcm.is_standard_flat7x_joc_input(1));
+        assert_ne!(
+            planes.compatibility_pcm.channels[0].as_ptr(),
+            planes.joc_input_pcm.channels[0].as_ptr()
+        );
+
+        let metadata = openjoc_eac3::extract_joc_access_unit_for_profile(
+            &access_unit,
+            &frames,
+            unit,
+            openjoc_emdf::JocValidationProfile::EtsiStrict,
+        )
+        .expect("mixed JOC extraction")
+        .expect("mixed JOC metadata");
+        let joc = openjoc_joc::parse_joc_payload(&metadata.joc).expect("idx1 payload");
+        assert_eq!(joc.header.downmix_index, 1);
+        assert_eq!(joc.header.channel_count, 7);
+        let mut payload =
+            openjoc_scene::PayloadDecoder::streaming(openjoc_scene::PayloadDecoderConfig {
+                reference_screen: None,
+                oamd: openjoc_oamd::OamdDecoderConfig::default(),
+            });
+        let decoded = payload
+            .decode_frame(openjoc_scene::JocFrameInput {
+                sample_rate: unit.sample_rate,
+                downmix_pcm: &planes.joc_input_pcm.channels,
+                base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: 0,
+            })
+            .expect("legacy-core seven-input reconstruction");
+        assert_eq!(decoded.decoded.reconstruction_basis.rows.len(), 15);
+        assert!(decoded.admitted_decoded_joc_binding().is_some());
+        assert!(decoded.decoded.stages[0].as_ref().unwrap().quantized[0][5][0] > 48);
+        assert!(decoded.decoded.stages[1].as_ref().unwrap().quantized[0][6][0] > 48);
+        assert!(
+            decoded
+                .decoded
+                .reconstruction_basis
+                .rows
+                .iter()
+                .flatten()
+                .all(|sample| sample.is_finite())
+        );
+    }
+
+    #[test]
+    fn ordinary_and_crc_invalid_legacy_ac3_are_not_admitted_as_openjoc() {
+        let ordinary = legacy_ac3_core_frame();
+        assert_eq!(
+            classify_complete_access_unit(&ordinary),
+            JocClassification::ConfirmedNonJoc
+        );
+
+        let mut malformed = standard_legacy_flat7x_access_unit(1);
+        malformed[64] ^= 0x01;
+        assert_eq!(
+            classify_complete_access_unit(&malformed),
+            JocClassification::InvalidOrUnsupported
+        );
+        let mut malformed_emdf = joc_emdf(
+            &common_profile_oamd(),
+            &fifteen_object_flat7x_joc_with_sequence(1),
+        );
+        malformed_emdf.pop();
+        let malformed_legacy = [
+            legacy_ac3_core_frame(),
+            two_channel_dependent_audio_frame(&malformed_emdf),
+        ]
+        .concat();
+        assert_eq!(
+            classify_complete_access_unit(&malformed_legacy),
+            JocClassification::InvalidOrUnsupported
+        );
+
+        let unrelated = [
+            legacy_ac3_core_frame(),
+            two_channel_dependent_audio_frame(&[]),
+        ]
+        .concat();
+        assert_eq!(
+            classify_complete_access_unit(&unrelated),
+            JocClassification::ConfirmedNonJoc
+        );
+
+        let mut timing_mismatch = standard_legacy_flat7x_access_unit(1);
+        timing_mismatch[legacy_ac3_core_frame().len() + 4] |= 0x40; // D0 at 44.1 kHz
+        assert_eq!(
+            classify_complete_access_unit(&timing_mismatch),
+            JocClassification::InvalidOrUnsupported
+        );
+
+        let mut invalid_chanmap = standard_legacy_flat7x_access_unit(1);
+        let d0 = legacy_ac3_core_frame().len();
+        for bit in 0..16 {
+            let position = d0 * 8 + 52 + bit;
+            let mask = 0x80 >> (position % 8);
+            invalid_chanmap[position / 8] &= !mask;
+            if 0x4000 & (1 << (15 - bit)) != 0 {
+                invalid_chanmap[position / 8] |= mask;
+            }
+        }
+        assert_eq!(
+            classify_complete_access_unit(&invalid_chanmap),
+            JocClassification::InvalidOrUnsupported
+        );
+
+        let mut idx1_topology_mismatch = standard_legacy_flat7x_access_unit(1);
+        for bit in 0..16 {
+            let position = d0 * 8 + 52 + bit;
+            let mask = 0x80 >> (position % 8);
+            idx1_topology_mismatch[position / 8] &= !mask;
+            if 0xa000 & (1 << (15 - bit)) != 0 {
+                idx1_topology_mismatch[position / 8] |= mask;
+            }
+        }
+        assert_eq!(
+            classify_complete_access_unit(&idx1_topology_mismatch),
+            JocClassification::InvalidOrUnsupported
+        );
+
+        let too_many = [
+            standard_legacy_flat7x_access_unit(1),
+            two_channel_dependent_audio_frame(&[]),
+        ]
+        .concat();
+        assert_eq!(
+            classify_complete_access_unit(&too_many),
+            JocClassification::InvalidOrUnsupported
+        );
+    }
+
+    fn assert_legacy_flat7x_session_output(
+        render_mode: RenderMode,
+        layout: &str,
+        expected_channels: usize,
+    ) {
+        let mut session = OpenJocSession::new(OpenJocConfig {
+            render_mode,
+            speaker_layout: layout.to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        })
+        .expect("legacy-core JOC session");
+        let mut output = Vec::new();
+        for sequence in 1..=4_u16 {
+            let access_unit = standard_legacy_flat7x_access_unit(sequence);
+            session
+                .push_packet(OpenJocPacket {
+                    data: &access_unit,
+                    pts_samples: Some(i64::from(sequence - 1) * 1536),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .expect("push legacy-core JOC access unit");
+            while let Some(frame) = session.receive_frame() {
+                output.push(frame);
+            }
+        }
+        session.drain().expect("drain legacy-core JOC session");
+        while let Some(frame) = session.receive_frame() {
+            output.push(frame);
+        }
+        assert!(!output.is_empty());
+        assert!(output.iter().all(|frame| {
+            frame.channel_count == expected_channels
+                && frame.interleaved_f32.len() == frame.sample_count * expected_channels
+                && frame
+                    .interleaved_f32
+                    .iter()
+                    .all(|sample| sample.is_finite())
+        }));
+    }
+
+    #[test]
+    fn annex_j_legacy_core_d0_fixture_reaches_stereo_and_seven_one_four() {
+        assert_legacy_flat7x_session_output(RenderMode::Stereo, "2.0", 2);
+        assert_legacy_flat7x_session_output(RenderMode::Speaker, "7.1.4", 12);
+    }
+
+    #[test]
+    fn switching_between_eac3_i0_and_legacy_core_requires_session_reset() {
+        let mut session = OpenJocSession::new(OpenJocConfig {
+            render_mode: RenderMode::Stereo,
+            speaker_layout: "2.0".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        })
+        .expect("profile-change session");
+        let eac3 = standard_flat7x_access_unit(1);
+        session
+            .push_packet(OpenJocPacket {
+                data: &eac3,
+                pts_samples: Some(0),
+                discontinuity: false,
+                preroll: false,
+            })
+            .expect("initial E-AC-3 I0 profile");
+        while session.receive_frame().is_some() {}
+        let legacy = standard_legacy_flat7x_access_unit(2);
+
+        assert_eq!(
+            session.push_packet(OpenJocPacket {
+                data: &legacy,
+                pts_samples: Some(1536),
+                discontinuity: false,
+                preroll: false,
+            }),
+            Err(openjoc_api::OpenJocError::ProfileChanged)
+        );
+
+        session.reset();
+        let legacy_after_reset = standard_legacy_flat7x_access_unit(0);
+        assert!(
+            session
+                .push_packet(OpenJocPacket {
+                    data: &legacy_after_reset,
+                    pts_samples: Some(0),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .is_ok()
+        );
     }
 
     #[test]
@@ -2963,6 +3454,26 @@ mod tests {
                 assert_eq!(bridge.byte_length, direct.byte_length);
             }
         }
+    }
+
+    #[test]
+    fn legacy_core_wrapper_pcm_matches_the_common_direct_session() {
+        let first = standard_legacy_flat7x_access_unit(1);
+        let second = standard_legacy_flat7x_access_unit(2);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Stereo,
+            speaker_layout: "2.0".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let direct = collect_direct(config.clone(), &first, &second);
+        let (wrapper, bridged) = collect_wrapper(config, &first, &second);
+        assert_eq!(wrapper.classification(), JocClassification::ConfirmedJoc);
+        let direct_pcm = direct
+            .iter()
+            .map(|frame| (frame.pts_samples, frame.interleaved_f32.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(wrapper_in_openjoc_order(&bridged), direct_pcm);
     }
 
     #[test]

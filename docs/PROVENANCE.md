@@ -2898,3 +2898,46 @@ LFE fold-down and absent metadata excludes LFE. Base back/height channels fail
 closed because the public 6.8 matrix does not define their reduction. This is
 normative/public-specification behavior, not binaural/HRIR rendering or
 bass-management DSP.
+
+## Original-syntax I0 JOC carriage provenance
+
+The mixed frontend is public-specification work derived from ETSI
+TS 102 366 V1.4.1 clauses 4.1, 4.3, 6.10, Annex D, E.2.8.2, F.2 and Annex J,
+together with ETSI TS 103 420 V1.2.1 clauses 6.3.2, 8.1-8.3 and Annex E.
+Annex J identifies an Enhanced AC-3 elementary stream whose independent
+substream zero may use original AC-3 syntax with `bsid` 6 or 8 when dependent
+substream zero is present. D0 remains E-AC-3 `bsid` 16, stream type 1,
+substream ID 0. The implemented Core object-based audio media profile is 48 kHz, big
+endian, six blocks/1,536 samples, non-dual-mono, one I0 plus exactly one D0.
+For `bsid` 6, the Annex-D `xbsi1e` downmix fields are normalized into the
+same programme metadata model and `xbsi2e` is consumed as bounded
+informational syntax; absent xBSI retains the original centre/surround fields.
+The original-syntax reserved reproduction rules are explicit: centre and
+surround mix codes use the specified -4.5 dB/-6 dB fallbacks, reserved
+`dsurmod` is treated as not indicated, and `dialnorm=0` uses -31 dB.
+
+The AC-3-specific implementation is limited to syntax dispatch, BSI, both CRC
+coverage regions, original audio-block state and validation. Existing OpenJOC
+DSP is reused for grouped exponents, bit allocation, grouped mantissas,
+dithering, standard coupling reconstruction, rematrixing, IMDCT, overlap/add,
+DRC and LFE. Core dialnorm is retained for the one common renderer calibration
+stage; presentation DRC is applied once in the shared audio-block path;
+FinalLinkedGain remains one renderer stage. FFmpeg is not linked or invoked by
+production decoding.
+
+Development-only differential validation used FFmpeg 8.1 to encode and decode
+controlled public AC-3 vectors for every admitted `acmod` from 1 through 7.
+OpenJOC decoded the same CRC-valid frames natively without gain fitting. The
+per-channel RMS ratios were within 0.000001 of unity, correlations were above
+0.999999996, and residual RMS was below 0.000006. The 5.1 vector exercised
+standard coupling in all 192 audio blocks; the Stereo vector exercised
+rematrixing in 35 blocks. This oracle validates implementation behavior but
+does not define normative semantics.
+
+The repository-owned positive carriage fixture is built transparently from
+test syntax: original AC-3 I0, E-AC-3 D0 rear supplement, strict OAMD/JOC,
+idx=1 and seven reconstruction inputs. It is not copied or patched from a
+vendor encode. The known real mode21 file remains a negative fixture: its
+frozen SHA-256 matches, and the production classifier rejects AU0 because the
+EMDF declares 573 bytes while its enclosing range provides only 507. No skip,
+repair, padding, rescan or source fingerprint is implemented.

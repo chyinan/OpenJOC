@@ -21,6 +21,11 @@ recursive corresponding-source and third-party license closure.
 - E-AC-3 passthrough remains authoritative on the existing LAV bitstream path.
 - Only positively confirmed JOC is admitted to OpenJOC.
 - Confirmed JOC can be decoded from raw E-AC-3 and MP4 E-AC-3 inputs.
+- The standalone core and C ABI now understand the standards-defined
+  original-AC-3-I0 plus E-AC-3-D0 JOC shape. The published LAV fork has not
+  yet been qualified to route an AC-3-typed DirectShow input into that lane;
+  ordinary AC-3 must continue to stay on stock LAV. LAV routing for this new
+  carrier is therefore a follow-up, not part of the current validated claim.
 - The OpenJOC-enabled filter has a separate DirectShow COM identity and can be
   installed side-by-side with stock LAV.
 

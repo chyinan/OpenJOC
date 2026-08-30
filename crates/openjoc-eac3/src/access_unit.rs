@@ -7,7 +7,7 @@ use crate::{
     DialnormState, DownmixMetadata, Eac3DecodeStageTiming, Eac3Error, InternalBasePolicy,
     StreamType, SyncframeIndexEntry,
     audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
-    inspect_audio_block_carriers, parse_bsi,
+    inspect_audio_block_carriers, parse_audio_frame, parse_bsi,
 };
 use std::time::Instant;
 
@@ -156,6 +156,121 @@ impl DecodedAccessUnitPcm {
     }
 }
 
+/// Validates that a complete compressed AU is consumable by the native audio
+/// frontend and that its assembled Table-47 topology matches the admitted JOC
+/// header, without synthesizing PCM or creating renderer state.
+#[doc(hidden)]
+pub fn validate_joc_access_unit_decoder_contract(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+    downmix_index: u8,
+    joc_channel_count: u8,
+) -> Result<(), Eac3Error> {
+    let unit_end = unit
+        .first_frame
+        .checked_add(unit.frame_count)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    if unit.frame_count == 0 || unit_end > frames.len() || unit.frame_count > 2 {
+        return Err(Eac3Error::InvalidAccessUnitRange);
+    }
+    let first = frames[unit.first_frame];
+    if !matches!(
+        first.header.stream_type,
+        StreamType::LegacyIndependent | StreamType::Independent
+    ) || first.header.substream_id != 0
+    {
+        return Err(Eac3Error::MissingIndependentSubstreamZero {
+            frame: unit.first_frame,
+        });
+    }
+    let dependent = (unit.frame_count == 2).then(|| frames[unit.first_frame + 1]);
+    if dependent.is_some_and(|entry| {
+        entry.header.stream_type != StreamType::Dependent || entry.header.substream_id != 0
+    }) {
+        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+            actual: unit.frame_count,
+        });
+    }
+    if first.header.stream_type == StreamType::LegacyIndependent
+        && (dependent.is_none()
+            || !matches!(first.header.bitstream_id, 6 | 8)
+            || first.header.sample_rate != 48_000)
+    {
+        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+            actual: unit.frame_count,
+        });
+    }
+
+    let mut information = Vec::with_capacity(unit.frame_count);
+    for (relative, entry) in frames[unit.first_frame..unit_end]
+        .iter()
+        .copied()
+        .enumerate()
+    {
+        if entry.header.sample_rate != unit.sample_rate
+            || entry.header.samples != unit.samples
+            || entry.header.audio_blocks != 6
+        {
+            return Err(Eac3Error::SubstreamTimingMismatch {
+                frame: unit.first_frame + relative,
+            });
+        }
+        let end = entry
+            .offset
+            .checked_add(entry.header.frame_size)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let bytes = stream
+            .get(entry.offset..end)
+            .ok_or(Eac3Error::TruncatedFrame {
+                offset: entry.offset,
+                declared: entry.header.frame_size,
+                available: stream.len().saturating_sub(entry.offset),
+            })?;
+        let frame = parse_audio_frame(bytes)?;
+        let report = inspect_audio_block_carriers(bytes, |_| {})?;
+        if report.examined_blocks != usize::from(entry.header.audio_blocks)
+            || report.unresolved_blocks != 0
+        {
+            return Err(Eac3Error::AudioBlockCarrierTraversalUnresolved {
+                examined_blocks: report.examined_blocks,
+                unresolved_blocks: report.unresolved_blocks,
+            });
+        }
+        validate_channel_description(&frame.bsi, frame.full_bandwidth_channels)?;
+        information.push(frame.bsi);
+    }
+    if first.header.stream_type == StreamType::LegacyIndependent
+        && information[0].audio_coding_mode == 0
+    {
+        return Err(Eac3Error::UnsupportedAc3CodingTool {
+            tool: "Annex-J dual-mono core",
+        });
+    }
+
+    let (channel_locations, lfe_location) =
+        assembled_channel_topology(&information[0], information.get(1))?;
+    let topology = DecodedAccessUnitPcm {
+        sample_rate: unit.sample_rate,
+        samples: unit.samples,
+        channels: vec![Vec::new(); channel_locations.len()],
+        channel_locations,
+        lfe: lfe_location.map(|_| Vec::new()),
+        lfe_location,
+        downmix: DownmixMetadata::default(),
+        dialnorm: DialnormState::default(),
+    };
+    topology.validate_joc_topology()?;
+    topology.validate_joc_downmix_topology(downmix_index)?;
+    if topology.channel_locations.len() != usize::from(joc_channel_count) {
+        return Err(Eac3Error::UnsupportedJocChannelTopology {
+            full_band_channels: topology.channel_locations.len(),
+            lfe_present: topology.lfe.is_some(),
+        });
+    }
+    Ok(())
+}
+
 /// Logical channel location from TS 102 366 Table E.1.4.
 ///
 /// OpenJOC keeps the table's paired locations distinct after expanding a
@@ -231,6 +346,9 @@ pub struct JocAccessUnitPcmDecoder {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SubstreamPcmConfiguration {
+    stream_type: StreamType,
+    bitstream_id: u8,
+    bitstream_mode: Option<u8>,
     sample_rate: u32,
     audio_coding_mode: u8,
     lfe_on: bool,
@@ -240,6 +358,9 @@ struct SubstreamPcmConfiguration {
 impl From<&BitstreamInformation> for SubstreamPcmConfiguration {
     fn from(info: &BitstreamInformation) -> Self {
         Self {
+            stream_type: info.header.stream_type,
+            bitstream_id: info.bitstream_id,
+            bitstream_mode: info.bitstream_mode,
             sample_rate: info.header.sample_rate,
             audio_coding_mode: info.audio_coding_mode,
             lfe_on: info.lfe_on,
@@ -361,7 +482,11 @@ impl JocAccessUnitPcmDecoder {
             return Err(Eac3Error::InvalidAccessUnitRange);
         }
         let first = frames[unit.first_frame];
-        if first.header.stream_type != StreamType::Independent || first.header.substream_id != 0 {
+        if !matches!(
+            first.header.stream_type,
+            StreamType::LegacyIndependent | StreamType::Independent
+        ) || first.header.substream_id != 0
+        {
             return Err(Eac3Error::MissingIndependentSubstreamZero {
                 frame: unit.first_frame,
             });
@@ -382,6 +507,15 @@ impl JocAccessUnitPcmDecoder {
         } else {
             None
         };
+        if first.header.stream_type == StreamType::LegacyIndependent
+            && (dependent_entry.is_none()
+                || !matches!(first.header.bitstream_id, 6 | 8)
+                || first.header.sample_rate != 48_000)
+        {
+            return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+                actual: unit.frame_count,
+            });
+        }
         if first.header.sample_rate != unit.sample_rate || first.header.samples != unit.samples {
             return Err(Eac3Error::SubstreamTimingMismatch {
                 frame: unit.first_frame,
@@ -415,6 +549,13 @@ impl JocAccessUnitPcmDecoder {
             dependent_drc.as_ref(),
             stage_timing.as_mut(),
         )?;
+        if first.header.stream_type == StreamType::LegacyIndependent
+            && independent_info.audio_coding_mode == 0
+        {
+            return Err(Eac3Error::UnsupportedAc3CodingTool {
+                tool: "Annex-J dual-mono core",
+            });
+        }
         let dependent = dependent_entry
             .map(|entry| {
                 decode_frame(
@@ -645,6 +786,53 @@ fn channel_locations(info: &BitstreamInformation) -> Result<Vec<ChannelLocation>
     Ok(locations)
 }
 
+fn validate_channel_description(
+    info: &BitstreamInformation,
+    full_bandwidth_channels: u8,
+) -> Result<(), Eac3Error> {
+    let locations = channel_locations(info)?;
+    let full_band = locations
+        .iter()
+        .filter(|location| !matches!(location, ChannelLocation::Lfe(_)))
+        .count();
+    let lfe = locations
+        .iter()
+        .filter(|location| matches!(location, ChannelLocation::Lfe(_)))
+        .count();
+    if lfe > 1 {
+        return Err(Eac3Error::MultipleLfeChannels);
+    }
+    if full_band != usize::from(full_bandwidth_channels) || lfe != usize::from(info.lfe_on) {
+        return Err(Eac3Error::InvalidDependentChannelMap {
+            expected: usize::from(full_bandwidth_channels) + usize::from(info.lfe_on),
+            actual: locations.len(),
+        });
+    }
+    Ok(())
+}
+
+fn assembled_channel_topology(
+    independent: &BitstreamInformation,
+    dependent: Option<&BitstreamInformation>,
+) -> Result<(Vec<ChannelLocation>, Option<ChannelLocation>), Eac3Error> {
+    let mut channels = Vec::new();
+    let mut lfe_location = None;
+    for info in std::iter::once(independent).chain(dependent) {
+        for location in channel_locations(info)? {
+            if matches!(location, ChannelLocation::Lfe(_)) {
+                if lfe_location.is_some_and(|current| current != location) {
+                    return Err(Eac3Error::MultipleLfeChannels);
+                }
+                lfe_location = Some(location);
+            } else if !channels.contains(&location) {
+                channels.push(location);
+            }
+        }
+    }
+    channels.sort_by_key(|location| location_rank(*location));
+    Ok((channels, lfe_location))
+}
+
 #[cfg(test)]
 fn merge_substreams(
     unit: AccessUnitIndex,
@@ -834,11 +1022,13 @@ mod tests {
             header: crate::SyncframeHeader {
                 stream_type: StreamType::Independent,
                 substream_id: 0,
+                bitstream_id: 16,
                 frame_size: 0,
                 sample_rate: 48_000,
                 audio_blocks: 1,
                 samples: 1,
             },
+            bitstream_mode: None,
             audio_coding_mode,
             lfe_on,
             bitstream_id: 16,

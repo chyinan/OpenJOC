@@ -21,7 +21,26 @@ fn frame(stream_type: u8, substream_id: u8, size: usize) -> Vec<u8> {
     );
     push(&mut bits, 0, 2); // 48 kHz
     push(&mut bits, 3, 2); // six blocks
+    push(&mut bits, 2, 3); // stereo
+    push(&mut bits, 0, 1); // no LFE
+    push(&mut bits, 16, 5); // E-AC-3 syntax
     let mut bytes = vec![0_u8; size];
+    for (index, bit) in bits.into_iter().enumerate() {
+        if bit {
+            bytes[index / 8] |= 0x80 >> (index % 8);
+        }
+    }
+    bytes
+}
+
+fn legacy_frame() -> Vec<u8> {
+    let mut bits = Vec::new();
+    push(&mut bits, 0x0b77, 16);
+    push(&mut bits, 0, 16);
+    push(&mut bits, 0, 2);
+    push(&mut bits, 0, 6); // 128 bytes
+    push(&mut bits, 8, 5);
+    let mut bytes = vec![0_u8; 128];
     for (index, bit) in bits.into_iter().enumerate() {
         if bit {
             bytes[index / 8] |= 0x80 >> (index % 8);
@@ -114,6 +133,21 @@ fn raw_reader_accepts_eof_on_exact_frame_boundary() {
     );
     assert_eq!(reader.next_frame().expect("frame"), Some(bytes.clone()));
     assert_eq!(reader.next_frame().expect("exact EOF"), None);
+}
+
+#[test]
+fn access_unit_reader_groups_annex_j_legacy_i0_with_dependent_d0() {
+    let stream = [legacy_frame(), frame(1, 0, 128)].concat();
+    let mut reader = RawEac3AccessUnitReader::new(stream.as_slice(), 4096);
+
+    let access_unit = reader
+        .next_access_unit()
+        .expect("mixed reader")
+        .expect("mixed access unit");
+
+    assert_eq!(access_unit.frames.len(), 2);
+    assert_eq!(access_unit.unit.frame_count, 2);
+    assert_eq!(reader.next_access_unit().expect("EOF"), None);
 }
 
 #[test]

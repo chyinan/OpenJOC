@@ -14,8 +14,8 @@
 
 use openjoc_eac3::{
     ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, DialnormState, DownmixMetadata,
-    InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode,
-    extract_joc_access_unit_for_profile, group_access_units, index_syncframes,
+    InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode, StreamType,
+    extract_joc_access_unit_for_profile, group_access_units, index_syncframes, parse_bsi,
     parse_joc_access_unit, stereo_downmix_matrix, validate_complexity_index,
     validate_joc_access_unit,
 };
@@ -462,7 +462,13 @@ pub fn trace_access_units(
             let independent_frame_count = frames
                 [unit.first_frame..unit.first_frame + unit.frame_count]
                 .iter()
-                .filter(|entry| entry.header.stream_type == openjoc_eac3::StreamType::Independent)
+                .filter(|entry| {
+                    matches!(
+                        entry.header.stream_type,
+                        openjoc_eac3::StreamType::LegacyIndependent
+                            | openjoc_eac3::StreamType::Independent
+                    )
+                })
                 .count();
             let dependent_frame_count = unit.frame_count.saturating_sub(independent_frame_count);
             let pts_samples = pts_origin_samples.map(|origin| {
@@ -633,6 +639,16 @@ impl From<openjoc_render::RenderError> for OpenJocError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LegacyCoreConfiguration {
+    bitstream_id: u8,
+    bitstream_mode: Option<u8>,
+    audio_coding_mode: u8,
+    lfe_on: bool,
+    sample_rate: u32,
+    frame_size: usize,
+}
+
 /// The one canonical headless decode/render session.
 #[derive(Debug)]
 pub struct OpenJocSession {
@@ -643,6 +659,8 @@ pub struct OpenJocSession {
     binaural: Option<BinauralState>,
     output_queue: VecDeque<OpenJocPcmFrame>,
     selected_profile: Option<JocValidationProfile>,
+    core_stream_type: Option<StreamType>,
+    legacy_core_configuration: Option<LegacyCoreConfiguration>,
     dither_values: Vec<f64>,
     sample_rate: Option<u32>,
     segment_pts: Option<i64>,
@@ -677,6 +695,8 @@ impl OpenJocSession {
             binaural,
             output_queue: VecDeque::new(),
             selected_profile: None,
+            core_stream_type: None,
+            legacy_core_configuration: None,
             dither_values: dither_values(),
             sample_rate: None,
             segment_pts: None,
@@ -740,6 +760,41 @@ impl OpenJocSession {
             return Err(OpenJocError::InvalidPacket(
                 "a packet must contain exactly one complete JOC access unit".to_owned(),
             ));
+        }
+        let core_stream_type = frames[unit.first_frame].header.stream_type;
+        if self
+            .core_stream_type
+            .is_some_and(|expected| expected != core_stream_type)
+        {
+            return Err(OpenJocError::ProfileChanged);
+        }
+        let legacy_core_configuration = if core_stream_type == StreamType::LegacyIndependent {
+            let core = frames[unit.first_frame];
+            let core_end = core
+                .offset
+                .checked_add(core.header.frame_size)
+                .ok_or_else(|| {
+                    OpenJocError::InvalidPacket("legacy core range overflow".to_owned())
+                })?;
+            let core_bytes = packet.data.get(core.offset..core_end).ok_or_else(|| {
+                OpenJocError::InvalidPacket("legacy core range overflow".to_owned())
+            })?;
+            let bsi = parse_bsi(core_bytes)?;
+            Some(LegacyCoreConfiguration {
+                bitstream_id: bsi.bitstream_id,
+                bitstream_mode: bsi.bitstream_mode,
+                audio_coding_mode: bsi.audio_coding_mode,
+                lfe_on: bsi.lfe_on,
+                sample_rate: bsi.header.sample_rate,
+                frame_size: bsi.header.frame_size,
+            })
+        } else {
+            None
+        };
+        if self.legacy_core_configuration.is_some()
+            && self.legacy_core_configuration != legacy_core_configuration
+        {
+            return Err(OpenJocError::ProfileChanged);
         }
         if let Some(expected) = self.sample_rate {
             if expected != unit.sample_rate {
@@ -810,6 +865,8 @@ impl OpenJocSession {
             .ok_or_else(|| OpenJocError::Decode("sample timeline overflow".to_owned()))?;
         let rendered = self.speaker.render_frame_aligned(&frame, &pcm_planes)?;
         self.emit_rendered(rendered)?;
+        self.core_stream_type = Some(core_stream_type);
+        self.legacy_core_configuration = legacy_core_configuration;
         // `preroll` is retained as an explicit input fact for future seek
         // adapters. It is decoded normally in this first ABI because the
         // decoder cannot discard a delayed frame without a caller policy.
@@ -890,6 +947,8 @@ impl OpenJocSession {
             binaural.reset();
         }
         self.selected_profile = None;
+        self.core_stream_type = None;
+        self.legacy_core_configuration = None;
         self.sample_rate = None;
         self.segment_pts = None;
         self.next_input_sample = 0;
@@ -1962,6 +2021,9 @@ mod tests {
         );
         push_bits(&mut bytes, &mut cursor, 0, 2);
         push_bits(&mut bytes, &mut cursor, 3, 2);
+        push_bits(&mut bytes, &mut cursor, 2, 3);
+        push_bits(&mut bytes, &mut cursor, 0, 1);
+        push_bits(&mut bytes, &mut cursor, 16, 5);
         bytes[size - 1] = marker;
         bytes
     }

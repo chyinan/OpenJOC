@@ -821,11 +821,19 @@ pub fn inverse_aht_dct(spectrum: &[[f64; 6]]) -> Result<Vec<[f64; 6]>, Eac3Error
 /// Returns an error for malformed frame syntax, truncation, invalid SPX,
 /// coupling, or exponent dimensions, or checked cursor arithmetic failure.
 pub fn parse_first_audio_block_prefix(bytes: &[u8]) -> Result<AudioBlockPrefix, Eac3Error> {
-    let frame = parse_audio_frame(bytes)?;
+    let mut frame = parse_audio_frame(bytes)?;
+    if frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+        crate::validate_ac3_crc(bytes)?;
+    }
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
     let mut bits = BitReader::new(frame_bytes);
     let _consumed = bits.take_bits(frame.audio_blocks_offset_bits)?;
-    parse_first_prefix_reader(&mut bits, &frame)
+    if frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+        let mut state = AudioBlockState::new(usize::from(frame.full_bandwidth_channels));
+        parse_ac3_audio_block_prefix_reader(&mut bits, &mut frame, 0, &mut state)
+    } else {
+        parse_first_prefix_reader(&mut bits, &frame)
+    }
 }
 
 fn consume_conventional_mantissas(
@@ -1132,7 +1140,10 @@ pub fn inspect_audio_block_carriers<F>(
 where
     F: FnMut(&AudioBlockCarrier),
 {
-    let frame = parse_audio_frame(bytes)?;
+    let mut frame = parse_audio_frame(bytes)?;
+    if frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+        crate::validate_ac3_crc(bytes)?;
+    }
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
     let mut bits = BitReader::new(frame_bytes);
     bits.take_bits(frame.audio_blocks_offset_bits)?;
@@ -1156,7 +1167,15 @@ where
         let prefix_start_offset_bits = frame_bits
             .checked_sub(bits.bits_remaining())
             .ok_or(Eac3Error::FrameSizeOverflow)?;
-        let prefix = parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state)?;
+        let prefix = if frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+            parse_ac3_audio_block_prefix_reader(&mut bits, &mut frame, block_index, &mut state)
+                .map_err(|source| Eac3Error::Ac3AudioBlock {
+                    block: block_index,
+                    source: Box::new(source),
+                })?
+        } else {
+            parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state)?
+        };
         let parameter_codes = state
             .bit_allocation_parameters
             .ok_or(Eac3Error::FrameSizeOverflow)?;
@@ -1720,7 +1739,7 @@ fn decode_audio_blocks_until(
     mut timing: Option<&mut Eac3DecodeStageTiming>,
     drc_override: Option<&DynamicRangeOverride>,
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    let frame = match preparsed_frame {
+    let mut frame = match preparsed_frame {
         Some(frame) => frame,
         None => Eac3DecodeStageTiming::measure(
             timing.as_deref_mut(),
@@ -1728,6 +1747,9 @@ fn decode_audio_blocks_until(
             || parse_audio_frame(bytes),
         )?,
     };
+    if frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+        crate::validate_ac3_crc(bytes)?;
+    }
     let frame_bytes = &bytes[..frame.bsi.header.frame_size];
     let fscod = match frame.bsi.header.sample_rate {
         48_000 => 0,
@@ -1768,7 +1790,22 @@ fn decode_audio_blocks_until(
         let prefix = Eac3DecodeStageTiming::measure(
             timing.as_deref_mut(),
             |timing| &mut timing.audio_block_syntax_and_exponents,
-            || parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state),
+            || {
+                if frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+                    parse_ac3_audio_block_prefix_reader(
+                        &mut bits,
+                        &mut frame,
+                        block_index,
+                        &mut state,
+                    )
+                    .map_err(|source| Eac3Error::Ac3AudioBlock {
+                        block: block_index,
+                        source: Box::new(source),
+                    })
+                } else {
+                    parse_audio_block_prefix_reader(&mut bits, &frame, block_index, &mut state)
+                }
+            },
         )?;
         if let Some(timing) = timing.as_deref_mut() {
             timing.coupling_blocks += u64::from(prefix.coupling.is_some());
@@ -3175,6 +3212,392 @@ fn parse_audio_block_prefix_reader(
     })
 }
 
+fn parse_ac3_audio_block_prefix_reader(
+    bits: &mut BitReader<'_>,
+    frame: &mut AudioFrameInformation,
+    block_index: usize,
+    state: &mut AudioBlockState,
+) -> Result<AudioBlockPrefix, Eac3Error> {
+    let previous = state.clone();
+    let channels = usize::from(frame.full_bandwidth_channels);
+    let block_switch = read_flags_or_default(bits, channels, true, false)?;
+    let dither = read_flags_or_default(bits, channels, true, false)?;
+    let dynamic_range = read_optional_u8(bits, 8)?;
+    let dynamic_range_2 = if frame.bsi.audio_coding_mode == 0 {
+        read_optional_u8(bits, 8)?
+    } else {
+        None
+    };
+    state.dynamic_range = dynamic_range.or(previous.dynamic_range).or(Some(0));
+    state.dynamic_range_2 = if frame.bsi.audio_coding_mode == 0 {
+        dynamic_range_2.or(previous.dynamic_range_2).or(Some(0))
+    } else {
+        None
+    };
+
+    let coupling_strategy_exists = bits.read_bit()?;
+    if block_index == 0 && !coupling_strategy_exists {
+        return Err(Eac3Error::UnsupportedAc3CodingTool {
+            tool: "block-zero coupling strategy reuse",
+        });
+    }
+    let coupling_in_use = if coupling_strategy_exists {
+        bits.read_bit()?
+    } else {
+        previous.coupling.is_some()
+    };
+    frame.coupling_strategy_exists[block_index] = coupling_strategy_exists;
+    frame.coupling_in_use[block_index] = coupling_in_use;
+    let coupling = if coupling_in_use {
+        if frame.bsi.audio_coding_mode < 2 {
+            return Err(Eac3Error::InvalidAc3Syntax {
+                field: "coupling in mono/dual-mono",
+            });
+        }
+        let mut information = if coupling_strategy_exists {
+            let channel_in_use = read_flags_or_default(bits, channels, true, false)?;
+            if !channel_in_use.iter().any(|value| *value) {
+                return Err(Eac3Error::InvalidCouplingRange { begin: 0, end: 0 });
+            }
+            let phase_flags_in_use = frame.bsi.audio_coding_mode == 2 && bits.read_bit()?;
+            let begin_frequency_code = read_u8(bits, 4)?;
+            let end_frequency_code =
+                i8::try_from(read_u8(bits, 4)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            let subband_count =
+                3_i16 + i16::from(end_frequency_code) - i16::from(begin_frequency_code);
+            if !(1..=18).contains(&subband_count) {
+                return Err(Eac3Error::InvalidCouplingRange {
+                    begin: i16::from(begin_frequency_code),
+                    end: i16::from(end_frequency_code),
+                });
+            }
+            let subband_count =
+                u8::try_from(subband_count).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+            let mut band_structure = [false; 18];
+            for band in 1..subband_count {
+                band_structure[usize::from(band)] = bits.read_bit()?;
+            }
+            let band_count = count_unmerged(&band_structure[..usize::from(subband_count)])?;
+            StandardCouplingInformation {
+                channel_in_use,
+                phase_flags_in_use,
+                begin_frequency_code,
+                end_frequency_code,
+                subband_count,
+                band_structure,
+                band_count,
+                coordinates: vec![None; channels],
+                phase_flags: Vec::new(),
+            }
+        } else {
+            match previous.coupling.clone() {
+                Some(CouplingInformation::Standard(value)) => value,
+                _ => return Err(Eac3Error::FrameSizeOverflow),
+            }
+        };
+        let previous_standard = match previous.coupling.as_ref() {
+            Some(CouplingInformation::Standard(value)) => Some(value),
+            _ => None,
+        };
+        let mut any_new_coordinates = false;
+        for (channel, in_use) in information.channel_in_use.iter().copied().enumerate() {
+            if !in_use {
+                information.coordinates[channel] = None;
+                continue;
+            }
+            if bits.read_bit()? {
+                any_new_coordinates = true;
+                let master = read_u8(bits, 2)?;
+                let bands = (0..information.band_count)
+                    .map(|_| Ok((read_u8(bits, 4)?, read_u8(bits, 4)?)))
+                    .collect::<Result<Vec<_>, Eac3Error>>()?;
+                information.coordinates[channel] =
+                    Some(StandardCouplingCoordinates { master, bands });
+            } else {
+                information.coordinates[channel] = previous_standard
+                    .and_then(|value| value.coordinates.get(channel).cloned().flatten())
+                    .ok_or(Eac3Error::FrameSizeOverflow)
+                    .map(Some)?;
+            }
+        }
+        information.phase_flags = if information.phase_flags_in_use && any_new_coordinates {
+            read_flags_or_default(bits, usize::from(information.band_count), true, false)?
+        } else {
+            previous_standard
+                .map(|value| value.phase_flags.clone())
+                .unwrap_or_default()
+        };
+        Some(CouplingInformation::Standard(information))
+    } else {
+        None
+    };
+    state.coupling = coupling.clone();
+    state.spectral_extension = None;
+
+    let rematrix_flags = if frame.bsi.audio_coding_mode == 2 {
+        if bits.read_bit()? {
+            read_flags_or_default(
+                bits,
+                usize::from(rematrix_band_count(coupling.as_ref(), None)),
+                true,
+                false,
+            )?
+        } else if block_index == 0 {
+            vec![false; 4]
+        } else {
+            previous.rematrix_flags.clone()
+        }
+    } else {
+        Vec::new()
+    };
+    state.rematrix_flags = rematrix_flags.clone();
+
+    if coupling.is_some() {
+        frame.coupling_exponent_strategy[block_index] = read_u8(bits, 2)?;
+    }
+    for channel in 0..channels {
+        frame.channel_exponent_strategy[block_index][channel] = read_u8(bits, 2)?;
+    }
+    if frame.bsi.lfe_on {
+        frame.lfe_exponent_strategy[block_index] = bits.read_bit()?;
+    }
+
+    let (channel_bandwidth_codes, channel_end_mantissas) = if block_index == 0 {
+        parse_channel_bandwidths(bits, coupling.as_ref(), None, channels)?
+    } else {
+        parse_following_channel_bandwidths(
+            bits,
+            frame,
+            block_index,
+            coupling.as_ref(),
+            None,
+            &previous,
+        )?
+    };
+    let coupling_exponents = if block_index == 0 {
+        parse_coupling_exponents(bits, frame, coupling.as_ref()).map_err(|source| {
+            Eac3Error::Ac3SyntaxField {
+                field: "coupling exponents",
+                source: Box::new(source),
+            }
+        })?
+    } else {
+        parse_following_coupling_exponents(
+            bits,
+            frame,
+            block_index,
+            coupling.as_ref(),
+            previous.coupling_exponents.as_ref(),
+        )
+        .map_err(|source| Eac3Error::Ac3SyntaxField {
+            field: "coupling exponents",
+            source: Box::new(source),
+        })?
+    };
+    let channel_exponents = if block_index == 0 {
+        parse_channel_exponents(bits, frame, &channel_end_mantissas).map_err(|source| {
+            Eac3Error::Ac3SyntaxField {
+                field: "channel exponents",
+                source: Box::new(source),
+            }
+        })?
+    } else {
+        parse_following_channel_exponents(
+            bits,
+            frame,
+            block_index,
+            &channel_end_mantissas,
+            &previous.channel_exponents,
+        )
+        .map_err(|source| Eac3Error::Ac3SyntaxField {
+            field: "channel exponents",
+            source: Box::new(source),
+        })?
+    };
+    let lfe_exponents = if block_index == 0 {
+        parse_lfe_exponents(bits, frame).map_err(|source| Eac3Error::Ac3SyntaxField {
+            field: "LFE exponents",
+            source: Box::new(source),
+        })?
+    } else {
+        parse_following_lfe_exponents(bits, frame, block_index, previous.lfe_exponents.as_ref())
+            .map_err(|source| Eac3Error::Ac3SyntaxField {
+                field: "LFE exponents",
+                source: Box::new(source),
+            })?
+    };
+    let bit_allocation_parameters = parse_bit_allocation_parameters(bits, frame)?;
+    if block_index == 0 && bit_allocation_parameters.is_none() {
+        return Err(Eac3Error::InvalidAc3Syntax {
+            field: "block-zero bit allocation reuse",
+        });
+    }
+
+    let (snr_offsets, fast_gain_codes) = if bits.read_bit()? {
+        let coarse_code = read_u8(bits, 6)?;
+        let coupling_fine_code = coupling.as_ref().map(|_| read_u8(bits, 4)).transpose()?;
+        let coupling_fast_gain_code = coupling.as_ref().map(|_| read_u8(bits, 3)).transpose()?;
+        let mut channel_fine_codes = Vec::with_capacity(channels);
+        let mut channel_fast_gain_codes = Vec::with_capacity(channels);
+        for _ in 0..channels {
+            channel_fine_codes.push(read_u8(bits, 4)?);
+            channel_fast_gain_codes.push(read_u8(bits, 3)?);
+        }
+        let lfe_fine_code = frame.bsi.lfe_on.then(|| read_u8(bits, 4)).transpose()?;
+        let lfe_fast_gain_code = frame.bsi.lfe_on.then(|| read_u8(bits, 3)).transpose()?;
+        (
+            Some(SnrOffsets {
+                coarse_code,
+                coupling_fine_code,
+                channel_fine_codes,
+                lfe_fine_code,
+            }),
+            Some(FastGainCodes {
+                coupling: coupling_fast_gain_code,
+                channels: channel_fast_gain_codes,
+                lfe: lfe_fast_gain_code,
+            }),
+        )
+    } else {
+        (None, None)
+    };
+    if block_index == 0 && snr_offsets.is_none() {
+        return Err(Eac3Error::InvalidAc3Syntax {
+            field: "block-zero SNR offset reuse",
+        });
+    }
+    let coupling_leak = if coupling.is_some() {
+        if bits.read_bit()? {
+            Some(CouplingLeak {
+                fast_code: read_u8(bits, 3)?,
+                slow_code: read_u8(bits, 3)?,
+            })
+        } else {
+            previous
+                .coupling_leak
+                .ok_or(Eac3Error::FrameSizeOverflow)
+                .map(Some)?
+        }
+    } else {
+        None
+    };
+    let delta_bit_allocation = parse_ac3_delta_bit_allocation(
+        bits,
+        coupling.as_ref(),
+        channels,
+        previous.delta_bit_allocation.as_ref(),
+    )?;
+    let (skip_field, skip_field_start_offset_bits) = parse_skip_field(bits, frame)?;
+    let frame_bits = frame
+        .bsi
+        .header
+        .frame_size
+        .checked_mul(8)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let next_offset_bits = frame_bits
+        .checked_sub(bits.bits_remaining())
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+
+    state.channel_bandwidth_codes = channel_bandwidth_codes
+        .iter()
+        .enumerate()
+        .map(|(channel, code)| code.or(previous.channel_bandwidth_codes[channel]))
+        .collect();
+    state.channel_end_mantissas = channel_end_mantissas;
+    state.coupling_exponents = coupling_exponents.clone();
+    state.channel_exponents = channel_exponents.clone();
+    state.lfe_exponents = lfe_exponents.clone();
+    state.bit_allocation_parameters = bit_allocation_parameters
+        .or(previous.bit_allocation_parameters)
+        .or(Some(BitAllocationParameters {
+            slow_decay_code: 2,
+            fast_decay_code: 1,
+            slow_gain_code: 1,
+            db_per_bit_code: 2,
+            floor_code: 7,
+        }));
+    state.snr_offsets = snr_offsets.clone().or(previous.snr_offsets);
+    state.fast_gain_codes = fast_gain_codes.clone().or(previous.fast_gain_codes);
+    state.coupling_leak = coupling_leak;
+    state.delta_bit_allocation = delta_bit_allocation
+        .clone()
+        .or(previous.delta_bit_allocation);
+
+    Ok(AudioBlockPrefix {
+        block_switch,
+        dither,
+        dynamic_range,
+        dynamic_range_2,
+        spectral_extension: None,
+        coupling,
+        rematrix_flags,
+        channel_bandwidth_codes,
+        coupling_exponents,
+        channel_exponents,
+        lfe_exponents,
+        bit_allocation_parameters,
+        snr_offsets,
+        fast_gain_codes,
+        converter_snr_offset: None,
+        coupling_leak,
+        delta_bit_allocation,
+        skip_field,
+        skip_field_start_offset_bits,
+        next_offset_bits,
+    })
+}
+
+fn parse_ac3_delta_bit_allocation(
+    bits: &mut BitReader<'_>,
+    coupling: Option<&CouplingInformation>,
+    channels: usize,
+    previous: Option<&DeltaBitAllocation>,
+) -> Result<Option<DeltaBitAllocation>, Eac3Error> {
+    if !bits.read_bit()? {
+        return Ok(None);
+    }
+    let coupling_strategy = coupling.map(|_| read_u8(bits, 2)).transpose()?;
+    let channel_strategies = (0..channels)
+        .map(|_| read_u8(bits, 2))
+        .collect::<Result<Vec<_>, _>>()?;
+    let resolve = |bits: &mut BitReader<'_>,
+                   strategy: u8,
+                   prior: Option<&DeltaBitAllocationElement>|
+     -> Result<DeltaBitAllocationElement, Eac3Error> {
+        match strategy {
+            0 => prior
+                .cloned()
+                .ok_or(Eac3Error::InvalidDeltaBitAllocationStrategy { actual: strategy }),
+            1 | 2 => parse_delta_element(bits, strategy),
+            actual => Err(Eac3Error::InvalidDeltaBitAllocationStrategy { actual }),
+        }
+    };
+    let coupling = coupling_strategy
+        .map(|strategy| {
+            resolve(
+                bits,
+                strategy,
+                previous.and_then(|value| value.coupling.as_ref()),
+            )
+        })
+        .transpose()?;
+    let channel_elements = channel_strategies
+        .into_iter()
+        .enumerate()
+        .map(|(channel, strategy)| {
+            resolve(
+                bits,
+                strategy,
+                previous.and_then(|value| value.channels.get(channel)),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(DeltaBitAllocation {
+        coupling,
+        channels: channel_elements,
+    }))
+}
+
 fn merge_reusable_coupling(
     current: CouplingInformation,
     previous: Option<&CouplingInformation>,
@@ -3465,7 +3888,7 @@ fn parse_following_channel_bandwidths(
             codes.push(Some(code));
             ends.push(channel_end_mantissa(code)?);
         } else if coupled {
-            let end = coupling_end_mantissa(coupling, channel)?;
+            let end = coupling_end_mantissa(frame, coupling, channel)?;
             codes.push(None);
             ends.push(end);
         } else if spx_active {
@@ -3486,6 +3909,7 @@ fn parse_following_channel_bandwidths(
 }
 
 fn coupling_end_mantissa(
+    frame: &AudioFrameInformation,
     coupling: Option<&CouplingInformation>,
     channel: usize,
 ) -> Result<usize, Eac3Error> {
@@ -3499,8 +3923,17 @@ fn coupling_end_mantissa(
     if !active {
         return Err(Eac3Error::FrameSizeOverflow);
     }
-    match coupling {
-        CouplingInformation::Standard(info) => {
+    match (frame.bsi.header.stream_type, coupling) {
+        (StreamType::LegacyIndependent, CouplingInformation::Standard(info)) => {
+            usize::from(info.begin_frequency_code)
+                .checked_mul(12)
+                .and_then(|value| value.checked_add(37))
+                .ok_or(Eac3Error::InvalidCouplingRange {
+                    begin: i16::from(info.begin_frequency_code),
+                    end: i16::from(info.end_frequency_code),
+                })
+        }
+        (_, CouplingInformation::Standard(info)) => {
             let end_code = i16::from(info.end_frequency_code) + 3;
             usize::try_from(end_code)
                 .ok()
@@ -3511,7 +3944,7 @@ fn coupling_end_mantissa(
                     end: i16::from(info.end_frequency_code),
                 })
         }
-        CouplingInformation::Enhanced(info) => ENHANCED_COUPLING_SUBBAND_MANTISSA
+        (_, CouplingInformation::Enhanced(info)) => ENHANCED_COUPLING_SUBBAND_MANTISSA
             .get(usize::from(info.end_subband))
             .copied()
             .ok_or(Eac3Error::InvalidCouplingRange {

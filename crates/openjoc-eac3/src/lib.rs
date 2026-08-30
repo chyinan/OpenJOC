@@ -1,6 +1,6 @@
 // pattern: Functional Core
 
-//! Clean-room Enhanced AC-3 frontend from ETSI TS 102 366 Annex E.
+//! Clean-room AC-3 / Enhanced AC-3 frontend from ETSI TS 102 366.
 
 // The reference frontend intentionally keeps literal ETSI tables, explicit
 // checked index conversions, and long clause-shaped syntax/error functions.
@@ -29,6 +29,7 @@
     clippy::useless_conversion
 )]
 
+mod ac3;
 mod access_unit;
 mod aht;
 mod audio_block;
@@ -43,8 +44,11 @@ mod stereo_downmix;
 mod timing;
 mod transform;
 
+use ac3::validate_ac3_crc;
+
 pub use access_unit::{
     ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, JocAccessUnitPcmDecoder,
+    validate_joc_access_unit_decoder_contract,
 };
 pub use aht::{
     decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
@@ -121,6 +125,9 @@ pub enum Eac3Error {
     Bit(BitError),
     InvalidSyncword {
         actual: u16,
+    },
+    UnsupportedBitstreamId {
+        actual: u8,
     },
     ReservedStreamType,
     ReservedSampleRate,
@@ -404,6 +411,23 @@ pub enum Eac3Error {
         carrier_frame: usize,
         required_frame: usize,
     },
+    InvalidAc3Crc {
+        region: &'static str,
+    },
+    UnsupportedAc3CodingTool {
+        tool: &'static str,
+    },
+    Ac3AudioBlock {
+        block: usize,
+        source: Box<Eac3Error>,
+    },
+    Ac3SyntaxField {
+        field: &'static str,
+        source: Box<Eac3Error>,
+    },
+    InvalidAc3Syntax {
+        field: &'static str,
+    },
 }
 
 impl Eac3Error {
@@ -686,7 +710,10 @@ impl fmt::Display for Eac3Error {
         match self {
             Self::Bit(error) => write!(formatter, "failed to read E-AC-3 bitstream: {error}"),
             Self::InvalidSyncword { actual } => {
-                write!(formatter, "invalid E-AC-3 syncword 0x{actual:04x}")
+                write!(formatter, "invalid AC-3/E-AC-3 syncword 0x{actual:04x}")
+            }
+            Self::UnsupportedBitstreamId { actual } => {
+                write!(formatter, "unsupported AC-3/E-AC-3 bitstream id {actual}")
             }
             Self::TruncatedFrame {
                 offset,
@@ -785,6 +812,30 @@ impl fmt::Display for Eac3Error {
                 formatter,
                 "JOC EMDF carrier frame {carrier_frame} is not required last dependent frame {required_frame}"
             ),
+            Self::InvalidAc3Crc { region } => {
+                write!(formatter, "invalid original-syntax AC-3 {region} coverage")
+            }
+            Self::UnsupportedAc3CodingTool { tool } => {
+                write!(
+                    formatter,
+                    "unsupported original-syntax AC-3 coding tool: {tool}"
+                )
+            }
+            Self::Ac3AudioBlock { block, source } => {
+                write!(
+                    formatter,
+                    "failed to decode original-syntax AC-3 block {block}: {source}"
+                )
+            }
+            Self::Ac3SyntaxField { field, source } => {
+                write!(
+                    formatter,
+                    "failed to decode original-syntax AC-3 {field}: {source}"
+                )
+            }
+            Self::InvalidAc3Syntax { field } => {
+                write!(formatter, "invalid original-syntax AC-3 {field}")
+            }
             Self::ReservedStreamType
             | Self::ReservedSampleRate
             | Self::FrameSizeOverflow
@@ -871,6 +922,8 @@ impl From<JocProfileValidationFailure> for Eac3Error {
 /// Table E.1.1 stream identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StreamType {
+    /// Original AC-3 syncframe syntax used as Annex-J independent substream 0.
+    LegacyIndependent,
     Independent,
     Dependent,
     ConvertedIndependent,
@@ -881,6 +934,7 @@ pub enum StreamType {
 pub struct SyncframeHeader {
     pub stream_type: StreamType,
     pub substream_id: u8,
+    pub bitstream_id: u8,
     pub frame_size: usize,
     pub sample_rate: u32,
     pub audio_blocks: u8,
@@ -946,6 +1000,8 @@ pub struct JocAddbsi {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitstreamInformation {
     pub header: SyncframeHeader,
+    /// Original-syntax `bsmod`; absent for E-AC-3 syntax.
+    pub bitstream_mode: Option<u8>,
     pub audio_coding_mode: u8,
     pub lfe_on: bool,
     pub bitstream_id: u8,
@@ -1050,8 +1106,97 @@ impl AudioFrameSyntaxFlags {
 /// Returns an error for truncation, invalid synchronization, or reserved table
 /// values.
 pub fn parse_syncframe_header(bytes: &[u8]) -> Result<SyncframeHeader, Eac3Error> {
+    let mut probe = BitReader::new(bytes);
+    let syncword = u16::try_from(probe.read_bits(16)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    if syncword != EAC3_SYNCWORD {
+        return Err(Eac3Error::InvalidSyncword { actual: syncword });
+    }
+    let _common_prefix = probe.read_bits(24)?;
+    let bitstream_id = read_u8(&mut probe, 5)?;
     let mut bits = BitReader::new(bytes);
-    Ok(parse_header_reader(&mut bits)?.0)
+    match bitstream_id {
+        0..=8 => parse_ac3_header_reader(&mut bits),
+        16 => {
+            let mut header = parse_header_reader(&mut bits)?.0;
+            header.bitstream_id = bitstream_id;
+            Ok(header)
+        }
+        actual => Err(Eac3Error::UnsupportedBitstreamId { actual }),
+    }
+}
+
+fn parse_ac3_header_reader(bits: &mut BitReader<'_>) -> Result<SyncframeHeader, Eac3Error> {
+    const FRAME_SIZE_WORDS: [[u16; 3]; 38] = [
+        [64, 69, 96],
+        [64, 70, 96],
+        [80, 87, 120],
+        [80, 88, 120],
+        [96, 104, 144],
+        [96, 105, 144],
+        [112, 121, 168],
+        [112, 122, 168],
+        [128, 139, 192],
+        [128, 140, 192],
+        [160, 174, 240],
+        [160, 175, 240],
+        [192, 208, 288],
+        [192, 209, 288],
+        [224, 243, 336],
+        [224, 244, 336],
+        [256, 278, 384],
+        [256, 279, 384],
+        [320, 348, 480],
+        [320, 349, 480],
+        [384, 417, 576],
+        [384, 418, 576],
+        [448, 487, 672],
+        [448, 488, 672],
+        [512, 557, 768],
+        [512, 558, 768],
+        [640, 696, 960],
+        [640, 697, 960],
+        [768, 835, 1152],
+        [768, 836, 1152],
+        [896, 975, 1344],
+        [896, 976, 1344],
+        [1024, 1114, 1536],
+        [1024, 1115, 1536],
+        [1152, 1253, 1728],
+        [1152, 1254, 1728],
+        [1280, 1393, 1920],
+        [1280, 1394, 1920],
+    ];
+    let syncword = u16::try_from(bits.read_bits(16)?).map_err(|_| Eac3Error::FrameSizeOverflow)?;
+    if syncword != EAC3_SYNCWORD {
+        return Err(Eac3Error::InvalidSyncword { actual: syncword });
+    }
+    let _crc1 = bits.read_bits(16)?;
+    let sample_rate_code = read_u8(bits, 2)?;
+    let sample_rate = match sample_rate_code {
+        0 => 48_000,
+        1 => 44_100,
+        2 => 32_000,
+        _ => return Err(Eac3Error::ReservedSampleRate),
+    };
+    let frame_size_code = read_u8(bits, 6)?;
+    let bitstream_id = read_u8(bits, 5)?;
+    let frame_words = FRAME_SIZE_WORDS
+        .get(usize::from(frame_size_code))
+        .and_then(|sizes| sizes.get(usize::from(sample_rate_code)))
+        .copied()
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    let frame_size = usize::from(frame_words)
+        .checked_mul(2)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    Ok(SyncframeHeader {
+        stream_type: StreamType::LegacyIndependent,
+        substream_id: 0,
+        bitstream_id,
+        frame_size,
+        sample_rate,
+        audio_blocks: 6,
+        samples: 1536,
+    })
 }
 
 fn parse_header_reader(bits: &mut BitReader<'_>) -> Result<(SyncframeHeader, u8), Eac3Error> {
@@ -1095,6 +1240,7 @@ fn parse_header_reader(bits: &mut BitReader<'_>) -> Result<(SyncframeHeader, u8)
         SyncframeHeader {
             stream_type,
             substream_id,
+            bitstream_id: 16,
             frame_size,
             sample_rate,
             audio_blocks,
@@ -1119,7 +1265,130 @@ pub fn parse_bsi(bytes: &[u8]) -> Result<BitstreamInformation, Eac3Error> {
         });
     }
     let mut bits = BitReader::new(&bytes[..header.frame_size]);
-    Ok(parse_bsi_reader(&mut bits)?.0)
+    if header.stream_type == StreamType::LegacyIndependent {
+        parse_ac3_bsi_reader(&mut bits)
+    } else {
+        Ok(parse_bsi_reader(&mut bits)?.0)
+    }
+}
+
+fn parse_ac3_bsi_reader(bits: &mut BitReader<'_>) -> Result<BitstreamInformation, Eac3Error> {
+    let header = parse_ac3_header_reader(bits)?;
+    let bitstream_id = header.bitstream_id;
+    let bitstream_mode = read_u8(bits, 3)?;
+    let acmod = read_u8(bits, 3)?;
+    let centre_mix = if acmod & 1 != 0 && acmod != 1 {
+        Some(read_u8(bits, 2)?)
+    } else {
+        None
+    };
+    let surround_mix = if acmod & 4 != 0 {
+        Some(read_u8(bits, 2)?)
+    } else {
+        None
+    };
+    let dolby_surround_mode = if acmod == 2 {
+        Some(read_u8(bits, 2)?)
+    } else {
+        None
+    };
+    let lfe_on = bits.read_bit()?;
+    let dialnorm = match read_u8(bits, 5)? {
+        0 => 31,
+        value => value,
+    };
+    let compr = bits.read_bit()?.then(|| read_u8(bits, 8)).transpose()?;
+    skip_optional(bits, 8)?; // langcod
+    if bits.read_bit()? {
+        skip(bits, 7)?; // mixlevel + roomtyp
+    }
+    let (dialnorm_2, compr_2) = if acmod == 0 {
+        let dialnorm_2 = Some(match read_u8(bits, 5)? {
+            0 => 31,
+            value => value,
+        });
+        let compr_2 = bits.read_bit()?.then(|| read_u8(bits, 8)).transpose()?;
+        skip_optional(bits, 8)?;
+        if bits.read_bit()? {
+            skip(bits, 7)?;
+        }
+        (dialnorm_2, compr_2)
+    } else {
+        (None, None)
+    };
+    skip(bits, 1)?; // copyrightb
+    skip(bits, 1)?; // origbs
+    let extended_downmix = if bitstream_id == 6 {
+        let downmix = if bits.read_bit()? {
+            Some(DownmixMetadata {
+                dmixmod: Some(read_u8(bits, 2)?),
+                ltrt_center_mix_level: Some(read_u8(bits, 3)?),
+                ltrt_surround_mix_level: Some(read_u8(bits, 3)?),
+                loro_center_mix_level: Some(read_u8(bits, 3)?),
+                loro_surround_mix_level: Some(read_u8(bits, 3)?),
+                lfe_mix_level_code: None,
+            })
+        } else {
+            None
+        };
+        if bits.read_bit()? {
+            let _dsurexmod = read_u8(bits, 2)?;
+            let _dheadphonmod = read_u8(bits, 2)?;
+            let _adconvtyp = bits.read_bit()?;
+            let _xbsi2 = read_u8(bits, 8)?;
+            let _encinfo = bits.read_bit()?;
+        }
+        downmix
+    } else {
+        skip_optional(bits, 14)?; // timecod1
+        skip_optional(bits, 14)?; // timecod2
+        None
+    };
+    let addbsi = if bits.read_bit()? {
+        let length = usize::from(read_u8(bits, 6)?) + 1;
+        let mut data = Vec::with_capacity(length);
+        for _ in 0..length {
+            data.push(read_u8(bits, 8)?);
+        }
+        Some(data)
+    } else {
+        None
+    };
+    let map_center = |code: u8| match code {
+        0 => 4,
+        1 => 5,
+        2 => 6,
+        _ => 5,
+    };
+    let map_surround = |code: u8| match code {
+        0 => 4,
+        1 => 6,
+        2 => 7,
+        _ => 6,
+    };
+    let center = centre_mix.map(map_center);
+    let surround = surround_mix.map(map_surround);
+    Ok(BitstreamInformation {
+        header,
+        bitstream_mode: Some(bitstream_mode),
+        audio_coding_mode: acmod,
+        lfe_on,
+        bitstream_id,
+        dialnorm,
+        dialnorm_2,
+        compr,
+        compr_2,
+        downmix: extended_downmix.unwrap_or(DownmixMetadata {
+            dmixmod: dolby_surround_mode.map(|mode| if mode == 2 { 1 } else { 2 }),
+            ltrt_center_mix_level: center,
+            loro_center_mix_level: center,
+            ltrt_surround_mix_level: surround,
+            loro_surround_mix_level: surround,
+            lfe_mix_level_code: None,
+        }),
+        channel_map: None,
+        addbsi,
+    })
 }
 
 fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u8), Eac3Error> {
@@ -1171,6 +1440,7 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
     Ok((
         BitstreamInformation {
             header,
+            bitstream_mode: None,
             audio_coding_mode: acmod,
             lfe_on,
             bitstream_id,
@@ -1198,6 +1468,39 @@ pub fn parse_audio_frame(bytes: &[u8]) -> Result<AudioFrameInformation, Eac3Erro
             offset: 0,
             declared: header.frame_size,
             available: bytes.len(),
+        });
+    }
+    if header.stream_type == StreamType::LegacyIndependent {
+        let frame_bits = header
+            .frame_size
+            .checked_mul(8)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        let mut bits = BitReader::new(&bytes[..header.frame_size]);
+        let bsi = parse_ac3_bsi_reader(&mut bits)?;
+        let channel_count = full_bandwidth_channels(bsi.audio_coding_mode);
+        let block_count = usize::from(bsi.header.audio_blocks);
+        let audio_blocks_offset_bits = frame_bits
+            .checked_sub(bits.bits_remaining())
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        return Ok(AudioFrameInformation {
+            bsi,
+            full_bandwidth_channels: channel_count,
+            snr_offset_strategy: 2,
+            frame_coarse_snr_code: None,
+            frame_fine_snr_code: None,
+            // Original syntax carries these controls in every audio block.
+            syntax: AudioFrameSyntaxFlags(0b0011_0111),
+            coupling_in_use: vec![false; block_count],
+            coupling_strategy_exists: vec![false; block_count],
+            coupling_exponent_strategy: vec![0; block_count],
+            channel_exponent_strategy: vec![vec![0; usize::from(channel_count)]; block_count],
+            lfe_exponent_strategy: vec![false; block_count],
+            coupling_aht_in_use: false,
+            channel_aht_in_use: vec![false; usize::from(channel_count)],
+            lfe_aht_in_use: false,
+            spx_attenuation_codes: vec![None; usize::from(channel_count)],
+            block_start_information: None,
+            audio_blocks_offset_bits,
         });
     }
     let frame_bits = header
@@ -1738,7 +2041,9 @@ pub fn group_access_units(
                     }
                     expected_dependent += 1;
                 }
-                StreamType::Independent | StreamType::ConvertedIndependent => {
+                StreamType::LegacyIndependent
+                | StreamType::Independent
+                | StreamType::ConvertedIndependent => {
                     if header.substream_id != expected_independent {
                         return Err(Eac3Error::NonsequentialIndependentSubstream {
                             expected: expected_independent,
@@ -1747,7 +2052,10 @@ pub fn group_access_units(
                     }
                     expected_independent += 1;
                     expected_dependent = 0;
-                    dependent_allowed = header.stream_type == StreamType::Independent;
+                    dependent_allowed = matches!(
+                        header.stream_type,
+                        StreamType::LegacyIndependent | StreamType::Independent
+                    );
                 }
             }
             index += 1;
@@ -2060,7 +2368,13 @@ fn inspect_skip_joc_carriers(
     frame_index: usize,
     found: &mut Option<(usize, ParsedEmdf)>,
 ) -> Result<(), Eac3Error> {
-    if !parse_audio_frame(frame)?.syntax.skip_field() {
+    let parsed_frame = parse_audio_frame(frame)?;
+    if parsed_frame.bsi.header.stream_type == StreamType::LegacyIndependent {
+        // TS 103 420 places the profile carrier in the last D0. The AC-3
+        // compatibility core is CRC-validated but never scanned as a carrier.
+        return validate_ac3_crc(frame);
+    }
+    if !parsed_frame.syntax.skip_field() {
         return Ok(());
     }
     let mut carrier_error = None;

@@ -59,6 +59,9 @@ fn frame(stream_type: u8, substream_id: u8, size: usize, fscod: u8, blocks: u8) 
     bits.push(u64::try_from(size / 2 - 1).expect("frame words"), 11);
     bits.push(u64::from(fscod), 2);
     bits.push(u64::from(blocks), 2);
+    bits.push(2, 3); // stereo
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // E-AC-3 syntax
     bits.bytes(size)
 }
 
@@ -2590,19 +2593,22 @@ fn auxdata_frame(auxdatae: bool, declared_bits: u16, payload: &[u8]) -> Vec<u8> 
     bits.push(0x0b77, 16);
     bits.push(0, 2);
     bits.push(0, 3);
-    bits.push(7, 11); // 16 bytes
+    bits.push(15, 11); // 32 bytes
     bits.push(0, 2);
     bits.push(0, 2);
-    bits.0.resize(128, false);
+    bits.push(2, 3);
+    bits.push(0, 1);
+    bits.push(16, 5);
+    bits.0.resize(256, false);
     if auxdatae {
-        bits.set(96, u64::from(declared_bits), 14);
-        bits.set(110, 1, 1);
-        let payload_start = 96 - payload.len() * 8;
+        bits.set(224, u64::from(declared_bits), 14);
+        bits.set(238, 1, 1);
+        let payload_start = 224 - payload.len() * 8;
         for (index, byte) in payload.iter().copied().enumerate() {
             bits.set(payload_start + index * 8, u64::from(byte), 8);
         }
     }
-    bits.bytes(16)
+    bits.bytes(32)
 }
 
 #[test]
@@ -2616,10 +2622,10 @@ fn extracts_forward_ordered_auxdata_from_the_frame_end() {
 
     assert_eq!(extract_auxdata(&auxdata_frame(false, 0, &[])), Ok(None));
     assert_eq!(
-        extract_auxdata(&auxdata_frame(true, 100, &[])),
+        extract_auxdata(&auxdata_frame(true, 225, &[])),
         Err(Eac3Error::AuxDataLengthOutOfRange {
-            declared: 100,
-            available: 96,
+            declared: 225,
+            available: 224,
         })
     );
 }

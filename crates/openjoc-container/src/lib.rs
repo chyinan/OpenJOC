@@ -2,7 +2,7 @@
 
 //! Input-media boundary for OpenJOC.
 //!
-//! This crate deliberately stops at container demuxing. E-AC-3 syncframes,
+//! This crate deliberately stops at container demuxing. AC-3/E-AC-3 syncframes,
 //! EMDF, JOC, and OAMD are parsed by the OpenJOC codec crates after this
 //! boundary. FFmpeg is used only as an external ISO BMFF demuxer with audio
 //! stream copy; it is not an audio decoder or a normative reference.
@@ -219,7 +219,11 @@ impl<R: Read> RawEac3AccessUnitReader<R> {
             return Ok(None);
         };
         let first_header = raw_frame_header(&first)?;
-        if first_header.stream_type != StreamType::Independent || first_header.substream_id != 0 {
+        if !matches!(
+            first_header.stream_type,
+            StreamType::LegacyIndependent | StreamType::Independent
+        ) || first_header.substream_id != 0
+        {
             return Err(InputMediaError::InvalidDemuxedEac3(
                 Eac3Error::MissingIndependentSubstreamZero { frame: 0 },
             ));

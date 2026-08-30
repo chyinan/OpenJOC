@@ -1940,6 +1940,8 @@ mod tests {
         // traversal failure rather than treating it as carrier absence.
         frame[2] = 0;
         frame[3] = 31; // 64-byte syncframe: frame_size = 2 * (31 + 1)
+        frame[4] = 0x34; // 48 kHz, six blocks, stereo, no LFE
+        frame[5] = 0x80; // E-AC-3 bsid 16
         frame
     }
 
