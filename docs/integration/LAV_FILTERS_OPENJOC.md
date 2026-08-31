@@ -18,14 +18,23 @@ recursive corresponding-source and third-party license closure.
 ## Routing behavior
 
 - Ordinary E-AC-3 remains on stock LAV/FFmpeg decoding.
+- Ordinary AC-3 remains on stock LAV/FFmpeg decoding.
 - E-AC-3 passthrough remains authoritative on the existing LAV bitstream path.
 - Only positively confirmed JOC is admitted to OpenJOC.
 - Confirmed JOC can be decoded from raw E-AC-3 and MP4 E-AC-3 inputs.
-- The standalone core and C ABI now understand the standards-defined
-  original-AC-3-I0 plus E-AC-3-D0 JOC shape. The published LAV fork has not
-  yet been qualified to route an AC-3-typed DirectShow input into that lane;
-  ordinary AC-3 must continue to stay on stock LAV. LAV routing for this new
-  carrier is therefore a follow-up, not part of the current validated claim.
+- The standalone core, C ABI, and published LAV fork positively admit the
+  standards-defined original-AC-3-I0 plus E-AC-3-D0 JOC shape through the same
+  bounded classifier/decoder lane. A transparent deterministic raw fixture
+  has been validated through a real DirectShow graph for Stereo and 7.1.4.
+- Candidate eligibility covers both AC-3 and E-AC-3 codec identities, but
+  ordinary AC-3 and non-JOC E-AC-3 are rejected by the classifier and replayed
+  exactly through stock LAV/FFmpeg. Active bitstreaming and AC-3 SPDIF retain
+  precedence over OpenJOC probing.
+- The known malformed real-world file remains rejected at its truncated AU0
+  EMDF boundary; LAV does not skip, pad, truncate, or search past that AU.
+- The validated mixed-carriage claim is raw elementary-stream only. An
+  AC-3-tagged MP4 wrapper produced by available public tooling rewrites the
+  payload, so containerized mixed-carriage integration remains follow-up work.
 - The OpenJOC-enabled filter has a separate DirectShow COM identity and can be
   installed side-by-side with stock LAV.
 
