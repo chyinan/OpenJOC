@@ -2853,6 +2853,39 @@ mod tests {
     }
 
     #[test]
+    fn general_multi_dependent_speaker_51_rejects_unroutable_base_semantically() {
+        let mut session = OpenJocSession::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "5.1".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        })
+        .expect("General multi-dependent narrow-layout session");
+        let access_unit = standard_general_multi_dependent_access_unit(1);
+        assert_eq!(
+            session
+                .push_packet(OpenJocPacket {
+                    data: &access_unit,
+                    pts_samples: Some(0),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .expect("multi-dependent AU is decoded before timeline release"),
+            openjoc_api::OpenJocStatus::NeedMoreInput
+        );
+        let error = session
+            .drain()
+            .expect_err("5.1 must reject missing Lb/Rb routes semantically");
+        let openjoc_api::OpenJocError::Render(message) = error else {
+            panic!("expected semantic render error, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "spatial projection error: unsupported explicit route Lb (unsupported)"
+        );
+    }
+
+    #[test]
     fn annex_j_fixture_proves_dual_planes_idx1_seven_inputs_and_oamd_binding() {
         let access_unit = standard_legacy_flat7x_access_unit(1);
         let frames = openjoc_eac3::index_syncframes(&access_unit).expect("mixed index");
@@ -3293,6 +3326,46 @@ mod tests {
     fn standard_i0_d0_idx1_fixture_reaches_stereo_and_seven_one_four() {
         assert_standard_flat7x_session_output(RenderMode::Stereo, "2.0", 2);
         assert_standard_flat7x_session_output(RenderMode::Speaker, "7.1.4", 12);
+    }
+
+    #[test]
+    fn flat7x_speaker_51_rejects_unroutable_explicit_base_semantically() {
+        let mut session = OpenJocSession::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "5.1".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        })
+        .expect("narrow Flat-7.X session");
+        let first = standard_flat7x_access_unit(1);
+        assert_eq!(
+            session
+                .push_packet(OpenJocPacket {
+                    data: &first,
+                    pts_samples: Some(0),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .expect("first Flat-7.X AU is accepted before timeline release"),
+            openjoc_api::OpenJocStatus::NeedMoreInput
+        );
+
+        let second = standard_flat7x_access_unit(2);
+        let error = session
+            .push_packet(OpenJocPacket {
+                data: &second,
+                pts_samples: Some(1536),
+                discontinuity: false,
+                preroll: false,
+            })
+            .expect_err("5.1 cannot accept missing Lb/Rb routes implicitly");
+        let openjoc_api::OpenJocError::Render(message) = error else {
+            panic!("expected semantic render error, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "spatial projection error: unsupported explicit route Lb (unsupported)"
+        );
     }
 
     #[test]

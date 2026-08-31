@@ -5,6 +5,8 @@
 //! registries, not authored objects. The module is downstream of the existing
 //! ETSI/vendor validation profiles; it does not alter parser policy.
 
+// pattern: Functional Core
+
 use super::{JocSpatialReconstructionFrame, SpatialContributionMode};
 use crate::{RegionSemanticState, RegionTopologySelector, SemanticBindingState};
 use serde::{Deserialize, Serialize};
@@ -1518,8 +1520,16 @@ impl SpatialLayout {
                     .find(|route| route.identity == format!("explicit/{}", descriptor.identity))
                 {
                     route.vector.clone()
-                } else {
+                } else if !descriptor.coordinates.is_empty() {
+                    // Legacy explicit sidecars may provide a real point
+                    // position as their explicit fallback input.
                     self.point_vector(&descriptor.coordinates)?
+                } else {
+                    return Err(SpatialProjectionError::UnsupportedRoute {
+                        source_class: "explicit",
+                        identity: descriptor.identity.clone(),
+                        status: SpatialRouteStatus::Unsupported,
+                    });
                 }
             }
             SpatialSourceClass::DynamicPoint | SpatialSourceClass::DynamicRegion => {

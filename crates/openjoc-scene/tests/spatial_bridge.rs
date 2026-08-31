@@ -1,3 +1,5 @@
+// pattern: Functional Core
+
 use openjoc_scene::{
     FixedRouteKey, GainScheduler, JocSpatialBridge, NamedFallbackParameterTuple, NamedTargetId,
     RegionHorizontalState, RegionSemanticState, RegionTopBottomState, RegionTopologySelector,
@@ -1040,6 +1042,90 @@ fn channel_lock_off_is_an_exact_point_identity_across_admitted_layouts() {
             assert_eq!(outcome.locked_output, None);
         }
     }
+}
+
+#[test]
+fn unroutable_explicit_back_channels_fail_closed_without_point_projection() {
+    let layout = executable_layout("5.1");
+    for identity in ["Lb", "Rb"] {
+        let error = layout
+            .project(&descriptor(
+                SpatialSourceClass::ExplicitChannel,
+                identity,
+                Vec::new(),
+            ))
+            .expect_err("narrow layout must not reinterpret an explicit channel as a point");
+        assert_eq!(
+            error,
+            openjoc_scene::SpatialProjectionError::UnsupportedRoute {
+                source_class: "explicit",
+                identity: identity.to_owned(),
+                status: SpatialRouteStatus::Unsupported,
+            }
+        );
+    }
+}
+
+#[test]
+fn explicit_route_and_point_projection_remain_separate() {
+    let narrow = executable_layout("5.1");
+    let point_target = narrow
+        .project(&dynamic_point(0.5, 0.5, 0.0))
+        .expect("real point source still projects");
+    assert_eq!(point_target.len(), narrow.active_channel_count());
+    assert_unit_l2(&point_target);
+
+    let wide = executable_layout("7.1.4");
+    for identity in ["Lb", "Rb"] {
+        let target = wide
+            .project(&descriptor(
+                SpatialSourceClass::ExplicitChannel,
+                identity,
+                Vec::new(),
+            ))
+            .expect("exact explicit route wins when the output identity exists");
+        assert_eq!(target[active_index(&wide, identity)], 1.0);
+        assert_eq!(target.iter().filter(|value| **value != 0.0).count(), 1);
+    }
+}
+
+#[test]
+fn unroutable_explicit_channel_has_the_same_error_on_initial_and_reuse_calls() {
+    let layout = executable_layout("5.1");
+    let topology = single_record_topology(descriptor(
+        SpatialSourceClass::ExplicitChannel,
+        "Lb",
+        Vec::new(),
+    ));
+    let input = [1.0_f64];
+    let mut bridge = JocSpatialBridge::new();
+    let mut errors = Vec::new();
+
+    for initial in [true, false] {
+        let mut storage = vec![vec![0.0; input.len()]; layout.active_channel_count()];
+        let mut outputs = storage
+            .iter_mut()
+            .map(Vec::as_mut_slice)
+            .collect::<Vec<_>>();
+        errors.push(
+            bridge
+                .render_coordinates(
+                    &[input.as_slice()],
+                    initial.then_some(&topology),
+                    None,
+                    &layout,
+                    0,
+                    48_000,
+                    &mut outputs,
+                )
+                .expect_err("explicit route absence must be semantic on every AU")
+                .to_string(),
+        );
+    }
+
+    assert_eq!(errors[0], errors[1]);
+    assert!(errors[0].contains("unsupported explicit route Lb"));
+    assert!(!errors[0].contains("coordinates"));
 }
 
 #[test]
