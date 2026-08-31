@@ -2204,6 +2204,68 @@ mod tests {
         pack(bits)
     }
 
+    fn fifteen_object_idx234_joc_with_sequence(downmix_index: u8, sequence_count: u16) -> Vec<u8> {
+        assert!((2..=4).contains(&downmix_index));
+        assert!(sequence_count <= 1023);
+        let channel_count = if downmix_index == 3 { 5 } else { 7 };
+        let mut bits = Vec::new();
+        for (value, width) in [
+            (u64::from(downmix_index), 3),
+            (14, 6),
+            (0, 3),
+            (2, 3),
+            (17, 5),
+            (u64::from(sequence_count), 10),
+        ] {
+            push(&mut bits, value, width);
+        }
+        for _ in 0..15 {
+            push(&mut bits, 1, 1); // present
+            push(&mut bits, 3, 3); // seven parameter bands
+            push(&mut bits, 1, 1); // sparse vector
+            push(&mut bits, 0, 1); // coarse quantization
+            push(&mut bits, 0, 1); // smooth
+            push(&mut bits, 0, 1); // one data point
+        }
+
+        let tables = openjoc_joc::all_huffman_tables();
+        let position_table = tables[4 + usize::from(channel_count == 7)];
+        let coefficient = huffman_codeword_for(tables[2].nodes, 95);
+        for _ in 0..15 {
+            push(&mut bits, 0, 3); // initial channel
+            let mut previous_raw = 0_u8;
+            for band in 1..7_u8 {
+                let raw = if band < channel_count {
+                    (band + channel_count - previous_raw) % channel_count
+                } else {
+                    0
+                };
+                bits.extend_from_slice(&huffman_codeword_for(position_table.nodes, u16::from(raw)));
+                previous_raw = raw;
+            }
+            for _ in 0..7 {
+                bits.extend_from_slice(&coefficient);
+            }
+        }
+        pack(bits)
+    }
+
+    fn standard_idx234_access_unit(downmix_index: u8, sequence_count: u16) -> Vec<u8> {
+        let joc = fifteen_object_idx234_joc_with_sequence(downmix_index, sequence_count);
+        let emdf = joc_emdf(&common_profile_oamd(), &joc);
+        let channel_map = if downmix_index == 3 { 0xc000 } else { 0x0010 };
+        [
+            five_channel_audio_frame_with_exponent_codes(
+                &[],
+                false,
+                [62, 82, 86, 102, 106],
+                Some([[0, 1, 2]; 6]),
+            ),
+            two_channel_dependent_audio_frame_with(Some(&emdf), 0, channel_map),
+        ]
+        .concat()
+    }
+
     fn standard_flat7x_access_unit(sequence_count: u16) -> Vec<u8> {
         let emdf = joc_emdf(
             &common_profile_oamd(),
@@ -2947,6 +3009,173 @@ mod tests {
                 .flatten()
                 .all(|sample| sample.is_finite())
         );
+    }
+
+    #[test]
+    fn synthetic_idx234_carriage_closes_topology_binding_and_speaker_rendering() {
+        for downmix_index in [2, 3, 4] {
+            let access_unit = standard_idx234_access_unit(downmix_index, 1);
+            assert_eq!(
+                classify_complete_access_unit(&access_unit),
+                JocClassification::ConfirmedJoc,
+                "idx {downmix_index} synthetic carriage must be admitted"
+            );
+            let frames = openjoc_eac3::index_syncframes(&access_unit).expect("idx234 index");
+            let unit = openjoc_eac3::group_access_units(&frames).expect("idx234 grouping")[0];
+            let mut audio = openjoc_eac3::JocAccessUnitPcmDecoder::new();
+            let planes = audio
+                .decode_pcm_planes_with_policy(
+                    &access_unit,
+                    &frames,
+                    unit,
+                    &vec![0.25; 32_768],
+                    openjoc_eac3::InternalBasePolicy::CodecCore,
+                )
+                .expect("idx234 synthetic PCM");
+            let expected_locations = if downmix_index == 3 {
+                vec![
+                    openjoc_eac3::ChannelLocation::Left,
+                    openjoc_eac3::ChannelLocation::Right,
+                    openjoc_eac3::ChannelLocation::Centre,
+                    openjoc_eac3::ChannelLocation::LeftSurround,
+                    openjoc_eac3::ChannelLocation::RightSurround,
+                ]
+            } else {
+                vec![
+                    openjoc_eac3::ChannelLocation::Left,
+                    openjoc_eac3::ChannelLocation::Right,
+                    openjoc_eac3::ChannelLocation::Centre,
+                    openjoc_eac3::ChannelLocation::LeftSurround,
+                    openjoc_eac3::ChannelLocation::RightSurround,
+                    openjoc_eac3::ChannelLocation::TopFrontLeft,
+                    openjoc_eac3::ChannelLocation::TopFrontRight,
+                ]
+            };
+            assert_eq!(planes.compatibility_pcm.channels.len(), 5);
+            assert_eq!(
+                planes.compatibility_pcm.lfe.as_ref().map(Vec::len),
+                Some(1536)
+            );
+            assert_eq!(planes.joc_input_pcm.channel_locations, expected_locations);
+            assert_eq!(
+                planes.joc_input_pcm.channels.len(),
+                if downmix_index == 3 { 5 } else { 7 }
+            );
+            assert!(planes.joc_input_pcm.lfe.is_some());
+            planes
+                .joc_input_pcm
+                .validate_joc_topology()
+                .expect("Table 47 topology");
+            planes
+                .joc_input_pcm
+                .validate_joc_downmix_topology(downmix_index)
+                .expect("exact Table 47 index binding");
+
+            let metadata = openjoc_eac3::extract_joc_access_unit_for_profile(
+                &access_unit,
+                &frames,
+                unit,
+                openjoc_emdf::JocValidationProfile::EtsiStrict,
+            )
+            .expect("idx234 metadata extraction")
+            .expect("idx234 metadata");
+            let joc = openjoc_joc::parse_joc_payload(&metadata.joc).expect("idx234 payload");
+            assert_eq!(joc.header.downmix_index, downmix_index);
+            assert_eq!(
+                joc.header.channel_count,
+                if downmix_index == 3 { 5 } else { 7 }
+            );
+            assert_eq!(joc.header.object_count, 15);
+
+            let mut payload =
+                openjoc_scene::PayloadDecoder::streaming(openjoc_scene::PayloadDecoderConfig {
+                    reference_screen: None,
+                    oamd: openjoc_oamd::OamdDecoderConfig::default(),
+                });
+            let decoded = payload
+                .decode_frame(openjoc_scene::JocFrameInput {
+                    sample_rate: unit.sample_rate,
+                    downmix_pcm: &planes.joc_input_pcm.channels,
+                    base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                    joc_payload: &metadata.joc,
+                    oamd_payload: &metadata.oamd,
+                    frame_index: 0,
+                })
+                .expect("idx234 JOC/OAMD reconstruction");
+            assert_eq!(decoded.decoded.reconstruction_basis.rows.len(), 15);
+            assert!(decoded.admitted_decoded_joc_binding().is_some());
+            assert!(
+                decoded
+                    .decoded
+                    .reconstruction_basis
+                    .rows
+                    .iter()
+                    .flatten()
+                    .all(|sample| sample.is_finite())
+            );
+
+            if downmix_index != 3 {
+                for (channel_index, channel_name) in [(5, "sixth"), (6, "seventh")] {
+                    let height_channel = &planes.joc_input_pcm.channels[channel_index];
+                    assert!(
+                        height_channel.iter().all(|sample| sample.is_finite()),
+                        "idx {downmix_index} assembled {channel_name} height channel must be finite"
+                    );
+                    assert!(
+                        height_channel.iter().any(|sample| sample.abs() > 1.0e-12),
+                        "idx {downmix_index} assembled {channel_name} height channel must be materially nonzero"
+                    );
+
+                    let mut muted_channels = planes.joc_input_pcm.channels.clone();
+                    muted_channels[channel_index].fill(0.0);
+                    let mut muted_payload = openjoc_scene::PayloadDecoder::streaming(
+                        openjoc_scene::PayloadDecoderConfig {
+                            reference_screen: None,
+                            oamd: openjoc_oamd::OamdDecoderConfig::default(),
+                        },
+                    );
+                    let muted = muted_payload
+                        .decode_frame(openjoc_scene::JocFrameInput {
+                            sample_rate: unit.sample_rate,
+                            downmix_pcm: &muted_channels,
+                            base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                            joc_payload: &metadata.joc,
+                            oamd_payload: &metadata.oamd,
+                            frame_index: 0,
+                        })
+                        .expect("muted idx234 height-channel reconstruction");
+                    assert_ne!(
+                        decoded.decoded.reconstruction_basis.rows,
+                        muted.decoded.reconstruction_basis.rows,
+                        "idx {downmix_index} assembled {channel_name} height channel must be causally reconstructed"
+                    );
+                }
+            }
+
+            let layout = if downmix_index == 3 { "5.1" } else { "7.1.4" };
+            let mut session = OpenJocSession::new(OpenJocConfig {
+                render_mode: RenderMode::Speaker,
+                speaker_layout: layout.to_owned(),
+                validation_profile: ValidationProfile::EtsiStrict,
+                ..OpenJocConfig::default()
+            })
+            .expect("idx234 speaker session");
+            session
+                .push_packet(OpenJocPacket {
+                    data: &access_unit,
+                    pts_samples: Some(0),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .expect("idx234 speaker packet");
+            session.drain().expect("idx234 speaker render");
+            let mut rendered = Vec::new();
+            while let Some(frame) = session.receive_frame() {
+                rendered.extend(frame.interleaved_f32);
+            }
+            assert!(!rendered.is_empty());
+            assert!(rendered.iter().all(|sample| sample.is_finite()));
+        }
     }
 
     #[test]

@@ -57,6 +57,15 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   reconstruction consumes the assembled I0+D0..Dn seven-input plane, while 2.0
   compatibility rendering consumes the independent I0 presentation. OpenJOC
   does not invent direct Lrs/Rrs-to-Stereo coefficients.
+- ETSI idx2 and idx4 are admitted only with the exact seven-input
+  `L R C Ls Rs Tfl Tfr` Table-47 topology; idx3 is admitted only with the
+  exact five-input `L R C Ls Rs` topology. The 90-degree phase wording is
+  configuration signalling at the JOC boundary: OpenJOC consumes the decoded
+  E-AC-3 downmix and applies no additional phase rotation. These profiles have
+  transparent synthetic end-to-end validation; suitable real full-stream
+  evidence is not claimed, and idx5..7 remain fail-closed.
+- Rare normative profiles may rely on repository-owned synthetic validation
+  until independently generated or naturally occurring media is available.
 - The original-syntax I0 profile is narrowly scoped to the public 48-kHz
   Annex-J/TS-103-420 shape: one CRC-valid AC-3 I0, one E-AC-3 D0, matching
   six-block timing, valid semantic chanmap, and JOC/OAMD in the last D0.

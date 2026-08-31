@@ -147,11 +147,43 @@ impl DecodedAccessUnitPcm {
     ///
     /// # Errors
     /// Returns [`Eac3Error::UnsupportedJocChannelTopology`] when index 1 is
-    /// paired with anything other than `L R C Ls Rs Lrs Rrs`, or when that
-    /// rear topology is paired with a different JOC index.
+    /// paired with anything other than `L R C Ls Rs Lrs Rrs`, when index 0 or 3
+    /// is paired with anything other than 5.X, or when index 2 or 4 is paired
+    /// with anything other than `L R C Ls Rs Tfl Tfr`. Reserved indices are
+    /// rejected instead of being mapped to the closest known configuration.
     pub fn validate_joc_downmix_topology(&self, downmix_index: u8) -> Result<(), Eac3Error> {
-        let rear_seven = self.has_flat7x_rear_topology();
-        if (downmix_index == 1 && !rear_seven) || (rear_seven && downmix_index != 1) {
+        const FIVE: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+        ];
+        const HEIGHT_SEVEN: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::TopFrontLeft,
+            ChannelLocation::TopFrontRight,
+        ];
+        const REAR_SEVEN: &[ChannelLocation] = &[
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        let expected = match downmix_index {
+            0 | 3 => Some(FIVE),
+            1 => Some(REAR_SEVEN),
+            2 | 4 => Some(HEIGHT_SEVEN),
+            _ => None,
+        };
+        if expected != Some(self.channel_locations.as_slice()) {
             return Err(Eac3Error::UnsupportedJocChannelTopology {
                 full_band_channels: self.channel_locations.len(),
                 lfe_present: self.lfe.is_some(),
@@ -1445,6 +1477,12 @@ mod tests {
             ]
         );
         output.validate_joc_topology().expect("Table 47 5.X+2");
+        output
+            .validate_joc_downmix_topology(2)
+            .expect("idx2 Table 47 5.X+2");
+        output
+            .validate_joc_downmix_topology(4)
+            .expect("idx4 Table 47 5.X+2");
     }
 
     #[test]
@@ -1631,6 +1669,74 @@ mod tests {
         pcm.validate_joc_downmix_topology(1)
             .expect("idx1 exact flat-7.X topology");
         assert!(pcm.is_standard_flat7x_joc_input(1));
+    }
+
+    #[test]
+    fn every_table_47_index_requires_its_exact_channel_topology() {
+        let five = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ],
+            channels: vec![vec![0.0]; 5],
+            lfe_location: Some(ChannelLocation::Lfe(0)),
+            lfe: Some(vec![0.0]),
+            downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
+        };
+        let rear = DecodedAccessUnitPcm {
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+                ChannelLocation::LeftBack,
+                ChannelLocation::RightBack,
+            ],
+            channels: vec![vec![0.0]; 7],
+            ..five.clone()
+        };
+        let height = DecodedAccessUnitPcm {
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+                ChannelLocation::TopFrontLeft,
+                ChannelLocation::TopFrontRight,
+            ],
+            channels: vec![vec![0.0]; 7],
+            ..five.clone()
+        };
+
+        for index in [0, 3] {
+            five.validate_joc_topology().expect("5.X with LFE");
+            assert!(five.validate_joc_downmix_topology(index).is_ok());
+            assert!(rear.validate_joc_downmix_topology(index).is_err());
+            assert!(height.validate_joc_downmix_topology(index).is_err());
+        }
+        rear.validate_joc_topology().expect("7.X with LFE");
+        assert!(five.validate_joc_downmix_topology(1).is_err());
+        assert!(rear.validate_joc_downmix_topology(1).is_ok());
+        assert!(height.validate_joc_downmix_topology(1).is_err());
+        for index in [2, 4] {
+            height.validate_joc_topology().expect("5.X+2 with LFE");
+            assert!(five.validate_joc_downmix_topology(index).is_err());
+            assert!(rear.validate_joc_downmix_topology(index).is_err());
+            assert!(height.validate_joc_downmix_topology(index).is_ok());
+        }
+        for index in [5, 6, 7] {
+            assert!(five.validate_joc_downmix_topology(index).is_err());
+            assert!(rear.validate_joc_downmix_topology(index).is_err());
+            assert!(height.validate_joc_downmix_topology(index).is_err());
+        }
     }
 
     #[test]

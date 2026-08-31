@@ -1,9 +1,125 @@
+// pattern: Functional Core
+
 use num_complex::Complex64;
 use openjoc_joc::{
     HuffmanCodeword, JocDataPoint, JocDecodeError, JocDecoderState, JocFrame, JocHeader,
     JocObjectFrame, JocPayloadData, QuantMode, ReconstructionStageTiming, Slope,
+    all_huffman_tables,
 };
 use openjoc_qmf::ReferenceQmf64F64;
+
+fn push_bits(bits: &mut Vec<bool>, value: u64, width: u8) {
+    for shift in (0..width).rev() {
+        bits.push(value & (1_u64 << shift) != 0);
+    }
+}
+
+fn pack_bits(mut bits: Vec<bool>) -> Vec<u8> {
+    while bits.len() % 8 != 0 {
+        bits.push(false);
+    }
+    let mut bytes = vec![0_u8; bits.len() / 8];
+    for (index, bit) in bits.into_iter().enumerate() {
+        if bit {
+            bytes[index / 8] |= 0x80 >> (index % 8);
+        }
+    }
+    bytes
+}
+
+fn codeword_for(nodes: &[[i16; 2]], wanted: u16) -> Vec<bool> {
+    fn visit(nodes: &[[i16; 2]], node: usize, wanted: u16, path: &mut Vec<bool>) -> bool {
+        for branch in 0..2 {
+            path.push(branch != 0);
+            let child = nodes[node][branch];
+            if child > 0 {
+                if visit(
+                    nodes,
+                    usize::try_from(child).expect("Huffman node"),
+                    wanted,
+                    path,
+                ) {
+                    return true;
+                }
+            } else if u16::try_from(-i32::from(child) - 1) == Ok(wanted) {
+                return true;
+            }
+            path.pop();
+        }
+        false
+    }
+
+    let mut path = Vec::new();
+    assert!(visit(nodes, 0, wanted, &mut path));
+    path
+}
+
+fn synthetic_payload(
+    downmix_index: u8,
+    channel_count: u8,
+    sparse: bool,
+    sequence_count: u16,
+    object_present: bool,
+) -> Vec<u8> {
+    assert!(sequence_count <= 1023);
+    let tables = all_huffman_tables();
+    let mut bits = Vec::new();
+    push_bits(&mut bits, u64::from(downmix_index), 3);
+    push_bits(&mut bits, 0, 6); // one object
+    push_bits(&mut bits, 0, 3); // no extension
+    push_bits(&mut bits, 0, 3); // clip gain X
+    push_bits(&mut bits, 0, 5); // clip gain Y
+    push_bits(&mut bits, u64::from(sequence_count), 10);
+    push_bits(&mut bits, u64::from(object_present), 1);
+    if !object_present {
+        return pack_bits(bits);
+    }
+    push_bits(&mut bits, if sparse { 3 } else { 0 }, 3); // seven or one band
+    push_bits(&mut bits, u64::from(sparse), 1);
+    push_bits(&mut bits, 0, 1); // coarse 96-step quantizer
+    push_bits(&mut bits, 0, 1); // smooth interpolation
+    push_bits(&mut bits, 0, 1); // one data point
+
+    if sparse {
+        push_bits(&mut bits, 0, 3); // initial channel
+        let index_table = tables[4 + usize::from(channel_count == 7)];
+        let mut previous_raw = 0_u8;
+        for band in 1..7_u8 {
+            let raw = if band < channel_count {
+                (band + channel_count - previous_raw) % channel_count
+            } else {
+                0
+            };
+            bits.extend(codeword_for(index_table.nodes, u16::from(raw)));
+            previous_raw = raw;
+        }
+        for _ in 0..7 {
+            bits.extend(codeword_for(tables[2].nodes, 1));
+        }
+    } else {
+        for channel in 0..channel_count {
+            bits.extend(codeword_for(tables[0].nodes, 49 + u16::from(channel)));
+        }
+    }
+    pack_bits(bits)
+}
+
+fn synthetic_inputs(channel_count: u8) -> Vec<Vec<[Complex64; 64]>> {
+    (0..usize::from(channel_count))
+        .map(|channel| {
+            vec![
+                [Complex64::new(channel as f64 + 1.0, 0.25); 64],
+                [Complex64::new(channel as f64 + 2.0, -0.5); 64],
+            ]
+        })
+        .collect()
+}
+
+fn single_timeslot_inputs(channel_count: u8) -> Vec<Vec<[Complex64; 64]>> {
+    (0..usize::from(channel_count))
+        .map(|channel| vec![[Complex64::new(channel as f64 + 1.0, 0.25); 64]])
+        .collect()
+}
 
 fn full_object(symbol: u16) -> JocObjectFrame {
     JocObjectFrame {
@@ -285,4 +401,160 @@ fn reconstruction_timing_is_opt_in_and_tracks_qmf_stages() {
         state.take_reconstruction_timing(),
         ReconstructionStageTiming::default()
     );
+}
+
+#[test]
+fn idx234_full_and_sparse_payloads_decode_the_declared_input_dimensions() {
+    for (downmix_index, channel_count) in [(2, 7), (3, 5), (4, 7)] {
+        for sparse in [false, true] {
+            let payload = synthetic_payload(downmix_index, channel_count, sparse, 1, true);
+            let inputs = synthetic_inputs(channel_count);
+            let mut decoder_state = JocDecoderState::new();
+            let (frame, decoded) = decoder_state
+                .decode_payload(&payload, &inputs)
+                .expect("synthetic idx2/idx3/idx4 payload");
+
+            assert_eq!(frame.header.downmix_index, downmix_index);
+            assert_eq!(frame.header.channel_count, channel_count);
+            assert_eq!(decoded.reconstruction_basis.rows.len(), 1);
+            assert!(
+                decoded.reconstruction_basis.rows[0]
+                    .iter()
+                    .all(|sample| sample.is_finite())
+            );
+            let object_stages = decoded.stages[0].as_ref().expect("present object stages");
+            assert_eq!(object_stages.quantized[0].len(), usize::from(channel_count));
+            if sparse {
+                assert_eq!(object_stages.quantized[0][0].len(), 7);
+                assert!(
+                    object_stages.quantized[0]
+                        .iter()
+                        .all(|bands| bands.iter().any(|value| *value != 50))
+                );
+            } else {
+                assert!(
+                    object_stages.quantized[0]
+                        .iter()
+                        .all(|bands| bands.len() == 1 && bands[0] != 50)
+                );
+            }
+
+            for channel in 0..usize::from(channel_count) {
+                let mut altered_inputs = inputs.clone();
+                for sample in altered_inputs[channel]
+                    .iter_mut()
+                    .flat_map(|timeslot| timeslot.iter_mut())
+                {
+                    *sample = Complex64::ZERO;
+                }
+                let mut altered_state = JocDecoderState::new();
+                let (_, altered) = altered_state
+                    .decode_payload(&payload, &altered_inputs)
+                    .expect("altered synthetic input");
+                assert_ne!(
+                    altered.reconstruction_qmf[0], decoded.reconstruction_qmf[0],
+                    "idx {downmix_index} {channel_count}-channel input {channel} is causal"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn phase_shift_indices_do_not_rotate_pcm_again() {
+    for (base_index, phase_index, channel_count) in [(0, 3, 5), (2, 4, 7)] {
+        let inputs = synthetic_inputs(channel_count);
+        let mut base_state = JocDecoderState::new();
+        let (_, base) = base_state
+            .decode_payload(
+                &synthetic_payload(base_index, channel_count, false, 1, true),
+                &inputs,
+            )
+            .expect("base synthetic payload");
+        let mut phase_state = JocDecoderState::new();
+        let (_, phase) = phase_state
+            .decode_payload(
+                &synthetic_payload(phase_index, channel_count, false, 1, true),
+                &inputs,
+            )
+            .expect("phase-index synthetic payload");
+
+        assert_eq!(
+            base.reconstruction_qmf, phase.reconstruction_qmf,
+            "idx {phase_index} is signaling-only at the JOC decoder stage"
+        );
+        assert_eq!(base.reconstruction_basis, phase.reconstruction_basis);
+    }
+}
+
+#[test]
+fn idx234_payload_state_reuses_absent_objects_resets_and_resets_on_topology_change() {
+    for (downmix_index, channel_count) in [(2, 7), (3, 5), (4, 7)] {
+        let inputs = single_timeslot_inputs(channel_count);
+        let mut state = JocDecoderState::new();
+        let (first_frame, first) = state
+            .decode_payload(
+                &synthetic_payload(downmix_index, channel_count, false, 1, true),
+                &inputs,
+            )
+            .expect("present idx2/idx3/idx4 payload");
+        assert_eq!(first_frame.header.downmix_index, downmix_index);
+        assert_eq!(first_frame.header.channel_count, channel_count);
+        assert_eq!(first_frame.sequence_count, 1);
+        assert!(first_frame.objects[0].present);
+
+        let (reused_frame, reused) = state
+            .decode_payload(
+                &synthetic_payload(downmix_index, channel_count, false, 2, false),
+                &inputs,
+            )
+            .expect("absent idx2/idx3/idx4 payload");
+
+        assert_eq!(reused_frame.sequence_count, 2);
+        assert!(!reused_frame.objects[0].present);
+        assert_eq!(reused.reconstruction_qmf, first.reconstruction_qmf);
+        assert!(reused.stages[0].is_none());
+        assert!(!reused.state_reset);
+
+        let (reset_frame, reset) = state
+            .decode_payload(
+                &synthetic_payload(downmix_index, channel_count, false, 0, false),
+                &inputs,
+            )
+            .expect("sequence-zero idx2/idx3/idx4 payload");
+        assert_eq!(reset_frame.sequence_count, 0);
+        assert!(!reset_frame.objects[0].present);
+        assert!(reset.state_reset);
+        assert!(
+            reset
+                .reconstruction_qmf
+                .iter()
+                .flatten()
+                .flatten()
+                .all(|sample| *sample == Complex64::ZERO)
+        );
+        assert!(
+            reset
+                .reconstruction_basis
+                .rows
+                .iter()
+                .flatten()
+                .all(|sample| *sample == 0.0)
+        );
+    }
+
+    let mut transition_state = JocDecoderState::new();
+    transition_state
+        .decode_payload(
+            &synthetic_payload(3, 5, false, 1, true),
+            &single_timeslot_inputs(5),
+        )
+        .expect("5-channel idx3 transition source");
+    let (_, transitioned) = transition_state
+        .decode_payload(
+            &synthetic_payload(2, 7, false, 2, true),
+            &single_timeslot_inputs(7),
+        )
+        .expect("7-channel idx2 transition target");
+    assert!(transitioned.state_reset);
 }
