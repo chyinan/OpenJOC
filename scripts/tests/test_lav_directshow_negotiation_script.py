@@ -15,7 +15,7 @@ SCRIPT = ROOT / "scripts" / "test_lav_directshow_negotiation.cmd"
 RELEASE_SMOKES = ROOT / "scripts" / "release_lav_smokes.cmd"
 FIXTURE_SCRIPT = ROOT / "scripts" / "generate-player-fixtures.sh"
 RUST_BRIDGE = ROOT / "crates" / "openjoc-ffmpeg" / "src" / "lib.rs"
-LAV_ROOT = pathlib.Path(r"D:\Program\LAVFilters-OpenJOC")
+LAV_ROOT = pathlib.Path(r"D:\Programs\LAVFilters-OpenJOC")
 HARNESS = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocDirectShowNegotiationSmoke.cpp"
 POLICY_CONTROL = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocPolicyControl.cpp"
 DIAGNOSTICS = LAV_ROOT / "decoder" / "LAVAudio" / "LAVOpenJocDiagnostics.h"
@@ -197,6 +197,21 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("export_synthetic_joc_fingerprint_fixture_when_requested", rust_text)
         self.assertIn("assert_fingerprint_fixture_distinguishes_every_policy", rust_text)
 
+    def test_fixture_generation_exports_legacy_core_mixed_carriage(self) -> None:
+        fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
+        rust_text = RUST_BRIDGE.read_text(encoding="utf-8")
+
+        for required in (
+            "OPENJOC_LEGACY_CORE_JOC_PATH",
+            "joc.legacy-core.ec3",
+            "joc.legacy-core.ac3",
+            "export_synthetic_legacy_core_joc_fixture_when_requested",
+            "standard_legacy_flat7x_access_unit",
+            "ConfirmedJoc",
+        ):
+            self.assertIn(required, fixture_text + rust_text)
+        self.assertNotIn("joc.legacy-core.ac3.mp4", fixture_text)
+
     def test_fixture_generation_supports_native_macos_sha256_tooling(self) -> None:
         fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
 
@@ -223,11 +238,14 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("QI2(ILAVOpenJocDiagnostics)", audio_source)
         self.assertIn("m_openJoc.ClassifierInputBytes()", audio_source)
         self.assertIn("m_openJoc.StreamInputBytes()", audio_source)
+        self.assertIn("IsLAVOpenJocCandidate", audio_source)
+        self.assertNotIn("m_nCodecId == AV_CODEC_ID_EAC3 &&", audio_source)
         self.assertIn("ILAVOpenJocDiagnostics", harness_text)
         self.assertIn("GetOpenJocInputByteCounts", harness_text)
 
         self.assertIn("ordinary.fingerprint.eac3", fixture_text)
         self.assertIn("ordinary.fingerprint.mp4", fixture_text)
+        self.assertIn("ordinary.fingerprint.ac3", fixture_text)
         self.assertIn("-c:a copy", fixture_text)
         self.assertIn("aevalsrc", fixture_text)
 
@@ -266,7 +284,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         harness_text = HARNESS.read_text(encoding="utf-8")
         self.assertIn("TASK3_LIFECYCLE_UNSUPPORTED", harness_text)
         self.assertIn("UNSUPPORTED_RAW_CONTAINER_OPERATION", harness_text)
-        self.assertIn("empty_eos_resolution=StockEac3", harness_text)
+        self.assertIn("empty_eos_resolution=Stock decoder", harness_text)
         self.assertIn("stage=mixed-seek-outcomes", harness_text)
         self.assertIn("AM_SEEKING_CanSeekAbsolute", harness_text)
 
@@ -328,6 +346,10 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("NotifyAllocator", harness_text)
         self.assertIn("GetMediaType", harness_text)
         self.assertIn("LAVOpenJocDecoder", harness_text)
+        self.assertIn("--legacy-core", harness_text)
+        self.assertIn("--ac3-bitstream", harness_text)
+        self.assertIn("FindSingleDolbyCompressedSourcePin", harness_text)
+        self.assertIn("IsExactDolbyCompressedMediaType", harness_text)
         self.assertIn("ConnectDirect", harness_text)
         self.assertIn("IFileSourceFilter", harness_text)
         self.assertIn("ILAVFSettings", harness_text)

@@ -9,6 +9,9 @@
 
 #![cfg_attr(feature = "ffmpeg", allow(unsafe_code))]
 
+// pattern: Mixed (unavoidable)
+// Reason: this existing crate keeps the production FFmpeg bridge and its test-only deterministic fixture exporters together.
+
 use openjoc_api::{
     FINAL_LINKED_GAIN_LATENCY_SAMPLES, OpenJocConfig, OpenJocPacket, OpenJocPcmFrame,
     OpenJocSession, QMF_LATENCY_SAMPLES, RenderMode,
@@ -2160,6 +2163,24 @@ mod tests {
         let stream = synthetic_joc_lifecycle_stream();
         assert_lifecycle_fixture_streaming_contract(&stream);
         std::fs::write(path, stream).expect("write requested lifecycle JOC fixture");
+    }
+
+    #[test]
+    fn export_synthetic_legacy_core_joc_fixture_when_requested() {
+        let Some(path) = std::env::var_os("OPENJOC_LEGACY_CORE_JOC_PATH") else {
+            return;
+        };
+        let mut stream = Vec::with_capacity(8 * MAX_ACCESS_UNIT_BYTES);
+        for sequence in 1..=8_u16 {
+            let access_unit = standard_legacy_flat7x_access_unit(sequence);
+            assert_eq!(
+                classify_complete_access_unit(&access_unit),
+                JocClassification::ConfirmedJoc,
+                "legacy-core fixture access unit must remain positively classified"
+            );
+            stream.extend_from_slice(&access_unit);
+        }
+        std::fs::write(path, stream).expect("write requested legacy-core JOC fixture");
     }
 
     #[test]

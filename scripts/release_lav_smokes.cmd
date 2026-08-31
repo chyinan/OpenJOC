@@ -15,9 +15,11 @@ if errorlevel 1 exit /b %errorlevel%
 pushd "%~5"
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /nologo /EHsc /std:c++17 /O2 /MT /D__STDC_CONSTANT_MACROS ^
+  "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocAdmissionTests.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocAdmission.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocCandidate.cpp" ^
   /Fe:OpenJocAdmissionTests.exe
 if errorlevel 1 exit /b %errorlevel%
 
@@ -76,7 +78,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   "%~2\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocStrictNegotiation.cpp" ^
   /Fe:OpenJocDirectShowNegotiationSmoke.exe ^
-  /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
+  /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib oleaut32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
 call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^

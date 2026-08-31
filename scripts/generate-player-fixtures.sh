@@ -133,6 +133,16 @@ verify_exact_mp4_payload "$output/joc.lifecycle.ec3" \
     "$output/joc.lifecycle.mp4" joc-lifecycle
 verify_seekable_eac3_timing "$output/joc.lifecycle.mp4" joc-lifecycle 128 4.096000
 
+# Annex-J transparent mixed-carriage fixture. The first syncframe is original
+# syntax AC-3 I0 and each access unit is followed by dependent E-AC-3 D0. The
+# OpenJOC test exporter owns the deterministic bytes and validates idx=1
+# flat-7.X JOC classification before writing them for LAV integration tests.
+OPENJOC_LEGACY_CORE_JOC_PATH="$output/joc.legacy-core.ec3" \
+    cargo test -p openjoc-ffmpeg --lib \
+    tests::export_synthetic_legacy_core_joc_fixture_when_requested \
+    -- --exact --nocapture
+cp "$output/joc.legacy-core.ec3" "$output/joc.legacy-core.ac3"
+
 # The qualification probe uses distinct bed excitation paths (BAP-0 dither
 # driven by separate exponent paths), grouped LFE mantissas, and an asymmetric
 # object-position sweep. Its test-only exporter decodes the complete stream
@@ -175,6 +185,12 @@ ffmpeg -v error -y -f lavfi -i "sine=frequency=1003:sample_rate=48000:duration=0
     -c:a libmp3lame -b:a 128k "$output/mp3.mp3"
 ffmpeg -v error -y -f lavfi -i "anullsrc=r=48000:cl=stereo" -t 0.5 \
     -c:a ac3 -b:a 192k -f ac3 "$output/ac3.ac3"
+# A non-silent, channel-distinguishing ordinary AC-3 stock-path oracle. It is
+# intentionally separate from the E-AC-3 control so candidate probing and
+# exact stock replay are tested for both codec families.
+ffmpeg -v error -y -f lavfi \
+    -i "aevalsrc=0.12*sin(2*PI*211*t)|0.11*sin(2*PI*307*t)|0.10*sin(2*PI*401*t)|0.09*sin(2*PI*61*t)|0.08*sin(2*PI*601*t)|0.07*sin(2*PI*701*t):s=48000:d=1:c=5.1(side)" \
+    -c:a ac3 -b:a 640k -f ac3 "$output/ordinary.fingerprint.ac3"
 ffmpeg -v error -y -f lavfi -i "testsrc=size=320x180:rate=24" -f lavfi \
     -i "anullsrc=r=48000:cl=stereo" -t 0.5 -c:v mpeg4 -pix_fmt yuv420p \
     -c:a aac -shortest "$output/video.mp4"
