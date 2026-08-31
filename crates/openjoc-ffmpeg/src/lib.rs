@@ -17,9 +17,9 @@ use openjoc_api::{
     OpenJocSession, QMF_LATENCY_SAMPLES, RenderMode,
 };
 use openjoc_eac3::{
-    AccessUnitIndex, StreamType, group_access_units, index_syncframes, parse_audio_frame,
-    parse_joc_access_unit, parse_syncframe_header, validate_joc_access_unit,
-    validate_joc_access_unit_decoder_contract,
+    AccessUnitIndex, AccessUnitParse, GENERAL_MAX_DEPENDENT_SUBSTREAMS, StreamType,
+    group_access_units, index_syncframes, parse_access_unit_bounds, parse_audio_frame,
+    parse_joc_access_unit, validate_joc_access_unit, validate_joc_access_unit_decoder_contract,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_scene::SpeakerLayoutPreset;
@@ -44,8 +44,10 @@ pub const SAMPLE_RATE: u32 = 48_000;
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 /// E-AC-3 syncframes are bounded to 4096 bytes by the coded frame-size field.
 pub const MAX_SYNCFRAME_BYTES: usize = 4096;
-/// OpenJOC admits I0 plus at most D0 per access unit.
-pub const MAX_ACCESS_UNIT_BYTES: usize = MAX_SYNCFRAME_BYTES * 2;
+/// OpenJOC admits one I0 plus the eight General-profile dependents D0..D7.
+pub const MAX_ACCESS_UNIT_FRAMES: usize = 1 + GENERAL_MAX_DEPENDENT_SUBSTREAMS;
+/// Maximum compressed size of one admitted General-profile access unit.
+pub const MAX_ACCESS_UNIT_BYTES: usize = MAX_SYNCFRAME_BYTES * MAX_ACCESS_UNIT_FRAMES;
 /// Maximum compressed data retained across calls. This is 16 maximum AUs.
 pub const MAX_COMPRESSED_STAGING_BYTES: usize = MAX_ACCESS_UNIT_BYTES * 16;
 
@@ -460,11 +462,6 @@ enum Timeline {
     Unset,
     Timed { next_pts: i64 },
     Untimed,
-}
-
-enum AccessUnitParse {
-    NeedMore,
-    Complete(usize),
 }
 
 enum PumpResult {
@@ -1008,11 +1005,7 @@ fn inspect_complete_access_unit(bytes: &[u8]) -> Result<InspectedAccessUnit, Bri
     } else {
         JocClassification::InvalidOrUnsupported
     };
-    if frames
-        .first()
-        .is_some_and(|entry| entry.header.stream_type == StreamType::LegacyIndependent)
-        && admitted == JocClassification::ConfirmedJoc
-    {
+    if admitted == JocClassification::ConfirmedJoc {
         let metadata = accepted_metadata.as_ref().ok_or_else(|| {
             BridgeError::new(
                 BridgeErrorKind::InvalidData,
@@ -1048,105 +1041,8 @@ fn inspect_complete_access_unit(bytes: &[u8]) -> Result<InspectedAccessUnit, Bri
 }
 
 fn parse_access_unit(bytes: &[u8], eos: bool) -> Result<AccessUnitParse, BridgeError> {
-    if bytes.len() < 8 {
-        return if eos {
-            Err(BridgeError::new(
-                BridgeErrorKind::InvalidData,
-                "truncated E-AC-3 syncframe header at EOF",
-            ))
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-    let first = parse_syncframe_header(bytes)
-        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    if !matches!(
-        first.stream_type,
-        StreamType::LegacyIndependent | StreamType::Independent
-    ) || first.substream_id != 0
-    {
-        return Err(BridgeError::new(
-            BridgeErrorKind::Unsupported,
-            "access unit does not start with independent substream zero",
-        ));
-    }
-    if first.frame_size > MAX_SYNCFRAME_BYTES || first.sample_rate != SAMPLE_RATE {
-        return Err(BridgeError::new(
-            BridgeErrorKind::Unsupported,
-            format!(
-                "unsupported E-AC-3 frame size/rate: {} bytes at {} Hz",
-                first.frame_size, first.sample_rate
-            ),
-        ));
-    }
-    if bytes.len() < first.frame_size {
-        return if eos {
-            Err(BridgeError::new(
-                BridgeErrorKind::InvalidData,
-                "truncated independent syncframe at EOF",
-            ))
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-    if bytes.len() == first.frame_size {
-        return if eos {
-            Ok(AccessUnitParse::Complete(first.frame_size))
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-    if bytes.len() < first.frame_size + 8 {
-        return if eos {
-            Err(BridgeError::new(
-                BridgeErrorKind::InvalidData,
-                "partial second syncframe header at EOF",
-            ))
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-    let second = parse_syncframe_header(&bytes[first.frame_size..])
-        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    if matches!(
-        second.stream_type,
-        StreamType::LegacyIndependent | StreamType::Independent
-    ) && second.substream_id == 0
-    {
-        return Ok(AccessUnitParse::Complete(first.frame_size));
-    }
-    if second.stream_type != StreamType::Dependent || second.substream_id != 0 {
-        return Err(BridgeError::new(
-            BridgeErrorKind::Unsupported,
-            "unsupported substream order after independent substream zero",
-        ));
-    }
-    if second.frame_size > MAX_SYNCFRAME_BYTES
-        || second.sample_rate != SAMPLE_RATE
-        || second.audio_blocks != first.audio_blocks
-    {
-        return Err(BridgeError::new(
-            BridgeErrorKind::Unsupported,
-            "dependent substream timing or size does not match I0",
-        ));
-    }
-    let total = first
-        .frame_size
-        .checked_add(second.frame_size)
-        .ok_or_else(|| {
-            BridgeError::new(BridgeErrorKind::InvalidData, "access-unit size overflow")
-        })?;
-    if bytes.len() < total {
-        return if eos {
-            Err(BridgeError::new(
-                BridgeErrorKind::InvalidData,
-                "truncated dependent syncframe at EOF",
-            ))
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-    Ok(AccessUnitParse::Complete(total))
+    parse_access_unit_bounds(bytes, eos)
+        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))
 }
 
 fn channel_layout_for_config(config: &OpenJocConfig) -> Result<FfmpegChannelLayout, BridgeError> {
@@ -1627,34 +1523,49 @@ mod tests {
     }
 
     fn two_channel_dependent_audio_frame(emdf: &[u8]) -> Vec<u8> {
+        two_channel_dependent_audio_frame_with(Some(emdf), 0, 0x0200)
+    }
+
+    fn two_channel_dependent_audio_frame_with(
+        emdf: Option<&[u8]>,
+        dependent_id: u8,
+        channel_map: u16,
+    ) -> Vec<u8> {
+        assert!(dependent_id < 8);
         let size = 4096;
         let mut bits = Bits::default();
         for (value, width) in [
             (0x0b77, 16),
-            (1, 2),       // dependent substream
-            (0, 3),       // D0
-            (2047, 11),   // 4096-byte frame
-            (0, 2),       // 48 kHz
-            (3, 2),       // six blocks
-            (2, 3),       // two full-band channels
-            (0, 1),       // no LFE
-            (16, 5),      // E-AC-3
-            (31, 5),      // dialnorm
-            (0, 1),       // no compression metadata
-            (1, 1),       // custom channel map present
-            (0x0200, 16), // Table E.1.4 Lrs/Rrs pair
-            (0, 1),       // no mixing metadata
-            (0, 1),       // no informational metadata
-            (1, 1),       // addbsi present
-            (1, 6),       // two addbsi bytes
-            (0x01, 8),    // JOC extension type
-            (16, 8),      // complexity index for 16 OAMD objects
-            (1, 1),       // per-block exponent strategies
-            (0, 1),       // no AHT
-            (0, 2),       // frame SNR offsets
-            (0, 1),       // no transient processing
-            (0, 7),       // no optional syntax flags
-            (0, 1),       // coupling off in block zero
+            (1, 2), // dependent substream
+            (u64::from(dependent_id), 3),
+            (2047, 11), // 4096-byte frame
+            (0, 2),     // 48 kHz
+            (3, 2),     // six blocks
+            (2, 3),     // two full-band channels
+            (0, 1),     // no LFE
+            (16, 5),    // E-AC-3
+            (31, 5),    // dialnorm
+            (0, 1),     // no compression metadata
+            (1, 1),     // custom channel map present
+            (u64::from(channel_map), 16),
+            (0, 1),                         // no mixing metadata
+            (0, 1),                         // no informational metadata
+            (u64::from(emdf.is_some()), 1), // addbsi present for the carrier
+        ] {
+            bits.push(value, width);
+        }
+        if emdf.is_some() {
+            bits.push(1, 6); // two addbsi bytes
+            bits.push(0x01, 8); // JOC extension type
+            bits.push(16, 8); // complexity index for 16 OAMD objects
+        }
+        for (value, width) in [
+            (1, 1), // per-block exponent strategies
+            (0, 1), // no AHT
+            (0, 2), // frame SNR offsets
+            (0, 1), // no transient processing
+            (0, 7), // no optional syntax flags
+            (0, 1), // coupling off in block zero
         ] {
             bits.push(value, width);
         }
@@ -1692,17 +1603,19 @@ mod tests {
             bits.push(0, 1); // bit-allocation parameters reused
         }
         bits.0.resize(size * 8, false);
-        let auxdatae_position = size * 8 - 18;
-        let length_position = auxdatae_position - 14;
-        bits.set(
-            length_position,
-            u64::try_from(emdf.len() * 8).expect("EMDF bit length"),
-            14,
-        );
-        bits.set(auxdatae_position, 1, 1);
-        let start = length_position - emdf.len() * 8;
-        for (index, byte) in emdf.iter().copied().enumerate() {
-            bits.set(start + index * 8, u64::from(byte), 8);
+        if let Some(emdf) = emdf {
+            let auxdatae_position = size * 8 - 18;
+            let length_position = auxdatae_position - 14;
+            bits.set(
+                length_position,
+                u64::try_from(emdf.len() * 8).expect("EMDF bit length"),
+                14,
+            );
+            bits.set(auxdatae_position, 1, 1);
+            let start = length_position - emdf.len() * 8;
+            for (index, byte) in emdf.iter().copied().enumerate() {
+                bits.set(start + index * 8, u64::from(byte), 8);
+            }
         }
         bits.bytes(size)
     }
@@ -2482,6 +2395,25 @@ mod tests {
         .concat()
     }
 
+    fn standard_general_multi_dependent_access_unit(sequence_count: u16) -> Vec<u8> {
+        let emdf = joc_emdf(
+            &common_profile_oamd(),
+            &fifteen_object_flat7x_joc_with_sequence(sequence_count),
+        );
+        [
+            five_channel_audio_frame_with_exponent_codes(
+                &[],
+                false,
+                [62, 82, 86, 102, 106],
+                Some([[0, 1, 2]; 6]),
+            ),
+            two_channel_dependent_audio_frame_with(None, 0, 0xc000),
+            two_channel_dependent_audio_frame_with(None, 1, 0x3000),
+            two_channel_dependent_audio_frame_with(Some(&emdf), 2, 0x0200),
+        ]
+        .concat()
+    }
+
     fn ordinary_eac3_frame() -> Vec<u8> {
         five_channel_audio_frame(&[], false)
     }
@@ -2645,6 +2577,25 @@ mod tests {
             )
             .is_err()
         );
+
+        let mut maximum = indexed_syncframe(0, 16);
+        for dependent_id in 0..GENERAL_MAX_DEPENDENT_SUBSTREAMS {
+            let mut dependent = indexed_syncframe(1, 16);
+            dependent[2] =
+                (dependent[2] & 0xc7) | (u8::try_from(dependent_id).expect("dependent ID") << 3);
+            maximum.extend_from_slice(&dependent);
+        }
+        assert!(matches!(
+            parse_access_unit(&maximum, false).expect("maximum AU waits for boundary"),
+            AccessUnitParse::NeedMore
+        ));
+        assert_eq!(
+            parse_access_unit(&maximum, true).expect("maximum AU at EOF"),
+            AccessUnitParse::Complete(MAX_ACCESS_UNIT_FRAMES * 16)
+        );
+        let mut over_limit = maximum;
+        over_limit.push(0);
+        assert!(parse_access_unit(&over_limit, true).is_err());
     }
 
     #[test]
@@ -2659,14 +2610,24 @@ mod tests {
         assert!(matches!(
             parse_access_unit(&[independent.clone(), dependent.clone()].concat(), false)
                 .expect("I0 plus D0"),
-            AccessUnitParse::Complete(32)
+            AccessUnitParse::NeedMore
         ));
         assert!(matches!(
-            parse_access_unit(&[independent.clone(), next].concat(), false)
+            parse_access_unit(&[independent, dependent, next].concat(), false)
                 .expect("next AU proves boundary"),
-            AccessUnitParse::Complete(16)
+            AccessUnitParse::Complete(32)
         ));
-        assert!(parse_access_unit(&[independent, dependent[..4].to_vec()].concat(), true).is_err());
+        assert!(
+            parse_access_unit(
+                &[
+                    indexed_syncframe(0, 16),
+                    indexed_syncframe(1, 16)[..4].to_vec()
+                ]
+                .concat(),
+                true
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -2793,9 +2754,13 @@ mod tests {
             JocClassification::ConfirmedJoc
         );
         let mut classifier = JocClassifier::new();
-        let classification = classifier
+        let pending = classifier
             .send_chunk(&access_unit)
             .expect("streaming mixed-carriage classification");
+        assert_eq!(pending, JocClassification::Unknown);
+        let classification = classifier
+            .finish()
+            .expect("finish mixed-carriage classification");
         assert_eq!(classification, JocClassification::ConfirmedJoc);
 
         let mut bsid6 = standard_legacy_flat7x_access_unit(1);
@@ -2810,6 +2775,81 @@ mod tests {
             classify_complete_access_unit(&bsid6),
             JocClassification::ConfirmedJoc
         );
+    }
+
+    #[test]
+    fn general_multi_dependent_fixture_decodes_all_dependents_and_reconstructs() {
+        let access_unit = standard_general_multi_dependent_access_unit(1);
+        assert_eq!(
+            classify_complete_access_unit(&access_unit),
+            JocClassification::ConfirmedJoc
+        );
+        let mut classifier = JocClassifier::new();
+        for chunk in access_unit.chunks(1) {
+            assert_eq!(
+                classifier
+                    .send_chunk(chunk)
+                    .expect("one-byte classifier chunk"),
+                JocClassification::Unknown
+            );
+        }
+        assert_eq!(
+            classifier
+                .finish()
+                .expect("finish one-byte classifier chunks"),
+            JocClassification::ConfirmedJoc
+        );
+        let frames = openjoc_eac3::index_syncframes(&access_unit).expect("multi index");
+        let unit = openjoc_eac3::group_access_units(&frames).expect("multi grouping")[0];
+        assert_eq!(unit.frame_count, 4);
+        let dither_values = vec![0.5; 4096];
+        let planes = openjoc_eac3::JocAccessUnitPcmDecoder::new()
+            .decode_pcm_planes_with_policy(
+                &access_unit,
+                &frames,
+                unit,
+                &dither_values,
+                openjoc_eac3::InternalBasePolicy::CodecCore,
+            )
+            .expect("decode all dependent PCM");
+        let pcm = &planes.joc_input_pcm;
+        assert_eq!(
+            pcm.channel_locations,
+            vec![
+                openjoc_eac3::ChannelLocation::Left,
+                openjoc_eac3::ChannelLocation::Right,
+                openjoc_eac3::ChannelLocation::Centre,
+                openjoc_eac3::ChannelLocation::LeftSurround,
+                openjoc_eac3::ChannelLocation::RightSurround,
+                openjoc_eac3::ChannelLocation::LeftBack,
+                openjoc_eac3::ChannelLocation::RightBack,
+            ]
+        );
+        let metadata = openjoc_eac3::extract_joc_access_unit_for_profile(
+            &access_unit,
+            &frames,
+            unit,
+            openjoc_emdf::JocValidationProfile::EtsiStrict,
+        )
+        .expect("multi JOC extraction")
+        .expect("multi JOC metadata");
+        assert_eq!(metadata.carrier_frame, 3);
+        let mut payload =
+            openjoc_scene::PayloadDecoder::streaming(openjoc_scene::PayloadDecoderConfig {
+                reference_screen: None,
+                oamd: openjoc_oamd::OamdDecoderConfig::default(),
+            });
+        let decoded = payload
+            .decode_frame(openjoc_scene::JocFrameInput {
+                sample_rate: unit.sample_rate,
+                downmix_pcm: &pcm.channels,
+                base_lfe_pcm: planes.compatibility_pcm.lfe.as_deref(),
+                joc_payload: &metadata.joc,
+                oamd_payload: &metadata.oamd,
+                frame_index: 0,
+            })
+            .expect("reconstruct multi-dependent JOC input");
+        assert_eq!(decoded.decoded.reconstruction_basis.rows.len(), 15);
     }
 
     #[test]
@@ -2907,7 +2947,7 @@ mod tests {
 
         let unrelated = [
             legacy_ac3_core_frame(),
-            two_channel_dependent_audio_frame(&[]),
+            two_channel_dependent_audio_frame_with(None, 0, 0x0200),
         ]
         .concat();
         assert_eq!(

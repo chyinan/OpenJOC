@@ -44,23 +44,25 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 - JOC rendering is 48 kHz. Raw E-AC-3 and seekable ordinary ISO BMFF input
   are admitted within the documented topology and access-unit boundaries.
   Non-seekable or fragmented MP4 is not admitted.
-- The Rust `OpenJocSession` packet API accepts one complete JOC access unit per
-  push: I0 plus optional D0. I0 may use E-AC-3 syntax or the original AC-3
-  syntax admitted by ETSI TS 102 366 Annex J (`bsid` 6 or 8) when paired with
-  E-AC-3 D0. Demuxing, arbitrary byte fragmentation,
-  and multiple AUs per call belong to the bounded C stream decoder or
-  framework adapters, not that Rust packet contract.
-- Only one I0 plus optional D0 dependent topology is admitted. Additional
-  dependent-substream shapes are rejected.
+- The Rust `OpenJocSession` packet API accepts one complete General JOC access
+  unit per push: I0 plus ordered D0..D7 dependents, within the bounded public
+  maximum. Demuxing, arbitrary byte fragmentation, and multiple AUs per call
+  belong to the bounded C stream decoder or framework adapters, not that Rust
+  packet contract.
+- CMAF Annex E.3 remains limited to I0 plus optional D0. The existing original
+  AC-3 Annex-J I0 combination also remains D0-only; Type 2 streams do not gain
+  dependent-substream support.
 - Standards-defined flat-7.X is identified narrowly by JOC downmix index 1,
   seven JOC inputs, and `L R C Ls Rs Lrs Rrs` Table-47 assembly. JOC
-  reconstruction consumes the assembled I0+D0 seven-input plane, while 2.0
+  reconstruction consumes the assembled I0+D0..Dn seven-input plane, while 2.0
   compatibility rendering consumes the independent I0 presentation. OpenJOC
   does not invent direct Lrs/Rrs-to-Stereo coefficients.
 - The original-syntax I0 profile is narrowly scoped to the public 48-kHz
   Annex-J/TS-103-420 shape: one CRC-valid AC-3 I0, one E-AC-3 D0, matching
   six-block timing, valid semantic chanmap, and JOC/OAMD in the last D0.
-  Ordinary AC-3 remains outside OpenJOC admission. A known malformed
+  Ordinary AC-3 remains outside OpenJOC admission. General multi-dependent
+  validation is transparent synthetic coverage; no redistributable real
+  multi-dependent sample is claimed. A known malformed
   real-world file is still rejected at its truncated AU0 EMDF boundary; it is
   not evidence of full real-stream validation.
 - Some seekable container and compatible-base workflows require `ffprobe` or

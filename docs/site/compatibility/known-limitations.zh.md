@@ -20,9 +20,9 @@ OpenJOC 是一个独立的实验性互操作项目。不声明得到 Dolby 的�
 ## 输入与流式处理
 
 - JOC 渲染采用 48 kHz。原始 E-AC-3，以及普通（非分片）ISO BMFF 容器中支持随机访问的输入，只有在文档规定的拓扑和访问单元边界内才会被接受；不支持随机访问的 MP4 和分片 MP4 不在支持范围内。
-- Rust `OpenJocSession` 的数据包接口每次接收一个完整的 JOC 访问单元：I0 加可选的 D0。I0 可以使用 E-AC-3 语法，也可以在与 E-AC-3 D0 配对时使用 ETSI TS 102 366 Annex J 允许的原始 AC-3 语法（`bsid` 6 或 8）。解复用、任意字节拆分，以及一次传入多个访问单元，属于有界的 C 流式解码器或框架适配器负责的范围。
-- 目前只接受一个 I0 加可选 D0 的从属流结构；其他从属子流形态会被拒绝。
-- 标准 flat-7.X 仅由 JOC downmix index 1、七个 JOC 输入和 `L R C Ls Rs Lrs Rrs` Table-47 组装共同识别。JOC reconstruction 使用 I0+D0 组装后的七输入 plane，2.0 compatibility rendering 使用独立 I0 presentation；OpenJOC 不会臆造 Lrs/Rrs 到 Stereo 的直接系数。
+- Rust `OpenJocSession` 的数据包接口每次接收一个完整的 General JOC 访问单元：I0 加按顺序排列的 D0..D7，受公开最大值约束。解复用、任意字节拆分，以及一次传入多个访问单元，属于有界的 C 流式解码器或框架适配器负责的范围。
+- CMAF Annex E.3 仍限制为 I0 加可选 D0；原始 AC-3 Annex-J I0 组合也仍保持 D0-only，Type 2 不扩展从属子流支持。
+- 标准 flat-7.X 仅由 JOC downmix index 1、七个 JOC 输入和 `L R C Ls Rs Lrs Rrs` Table-47 组装共同识别。JOC reconstruction 使用 I0+D0..Dn 组装后的七输入 plane，2.0 compatibility rendering 使用独立 I0 presentation；OpenJOC 不会臆造 Lrs/Rrs 到 Stereo 的直接系数。
 - 原始语法 I0 的支持严格限定为公开的 48 kHz Annex-J/TS-103-420 结构：一个 CRC 有效的 AC-3 I0、一个 E-AC-3 D0、匹配的六 block 时序、有效语义 chanmap，以及位于最后 D0 的 JOC/OAMD。普通 AC-3 不会进入 OpenJOC。已知 malformed 真实文件仍会在 AU0 截断 EMDF 边界失败关闭，不构成完整真实流验证。
 - 某些支持随机访问的容器和兼容 Base 的处理流程需要 `ffprobe` 或 `ffmpeg`；OpenJOC 的发行包并非完全无需额外依赖。
 

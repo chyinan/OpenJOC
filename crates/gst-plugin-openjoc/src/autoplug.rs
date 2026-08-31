@@ -1,12 +1,13 @@
-use super::{MAX_SYNCFRAME_BYTES, SAMPLE_RATE, category};
+use super::category;
 use gst::glib;
 use gst::prelude::*;
 use gst::subclass::prelude::*;
 use gst_base::prelude::*;
 use gst_base::subclass::prelude::*;
+pub(super) use openjoc_eac3::AccessUnitParse;
 use openjoc_eac3::{
-    StreamType, group_access_units, index_syncframes, parse_audio_frame, parse_joc_access_unit,
-    parse_syncframe_header,
+    group_access_units, index_syncframes, parse_access_unit_bounds, parse_audio_frame,
+    parse_joc_access_unit, validate_joc_access_unit_decoder_contract,
 };
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
@@ -35,85 +36,11 @@ impl JocClassification {
     }
 }
 
-pub(super) enum AccessUnitParse {
-    NeedMore,
-    Complete(usize),
-}
-
-/// Finds exactly one admitted I0/[D0] access unit without owning an adapter.
-/// The decoder and classifier both use this function so AU boundaries cannot
-/// drift between the pre-decoder and decoder stages.
+/// Finds exactly one admitted General I0+D0..D7 access unit without owning an
+/// adapter. The decoder and classifier both use the core boundary function so
+/// AU framing cannot drift between the pre-decoder and decoder stages.
 pub(super) fn parse_access_unit(bytes: &[u8], eos: bool) -> Result<AccessUnitParse, String> {
-    if bytes.len() < 8 {
-        return if eos {
-            Err("truncated E-AC-3 syncframe header at EOS".to_owned())
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-
-    let first = parse_syncframe_header(bytes).map_err(|error| error.to_string())?;
-    if first.stream_type != StreamType::Independent || first.substream_id != 0 {
-        return Err("access unit does not start with independent substream zero".to_owned());
-    }
-    if first.frame_size > MAX_SYNCFRAME_BYTES || first.sample_rate != SAMPLE_RATE {
-        return Err(format!(
-            "unsupported E-AC-3 frame size/rate: {} bytes at {} Hz",
-            first.frame_size, first.sample_rate
-        ));
-    }
-    if bytes.len() < first.frame_size {
-        return if eos {
-            Err("truncated first E-AC-3 syncframe at EOS".to_owned())
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-
-    if bytes.len() == first.frame_size {
-        return if eos {
-            Ok(AccessUnitParse::Complete(first.frame_size))
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-
-    let second_header_offset = first.frame_size;
-    if bytes.len() < second_header_offset + 8 {
-        return if eos {
-            Err("partial second E-AC-3 syncframe header at EOS".to_owned())
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-
-    let second = parse_syncframe_header(&bytes[second_header_offset..])
-        .map_err(|error| error.to_string())?;
-    if second.stream_type != StreamType::Dependent && second.substream_id == 0 {
-        return Ok(AccessUnitParse::Complete(first.frame_size));
-    }
-    if second.stream_type != StreamType::Dependent || second.substream_id != 0 {
-        return Err("unsupported substream order after independent substream zero".to_owned());
-    }
-    if second.frame_size > MAX_SYNCFRAME_BYTES
-        || second.sample_rate != SAMPLE_RATE
-        || second.audio_blocks != first.audio_blocks
-    {
-        return Err("dependent substream timing or size does not match I0".to_owned());
-    }
-
-    let total = first
-        .frame_size
-        .checked_add(second.frame_size)
-        .ok_or_else(|| "access unit size overflow".to_owned())?;
-    if bytes.len() < total {
-        return if eos {
-            Err("truncated dependent-zero syncframe at EOS".to_owned())
-        } else {
-            Ok(AccessUnitParse::NeedMore)
-        };
-    }
-    Ok(AccessUnitParse::Complete(total))
+    parse_access_unit_bounds(bytes, eos).map_err(|error| error.to_string())
 }
 
 /// Classifies one complete AU using the existing public OpenJOC admission
@@ -144,7 +71,33 @@ pub(super) fn classify_access_unit(bytes: &[u8]) -> JocClassification {
     }
 
     match parse_joc_access_unit(bytes, &frames, unit) {
-        Ok(Some(_)) => JocClassification::ConfirmedJoc,
+        Ok(Some(metadata)) => {
+            let Some(joc_payload) = metadata
+                .emdf
+                .payloads
+                .iter()
+                .find(|payload| payload.id == 14)
+                .map(|payload| payload.data.as_slice())
+            else {
+                return JocClassification::InvalidOrUnsupported;
+            };
+            let Ok(joc) = openjoc_joc::parse_joc_payload(joc_payload) else {
+                return JocClassification::InvalidOrUnsupported;
+            };
+            if validate_joc_access_unit_decoder_contract(
+                bytes,
+                &frames,
+                unit,
+                joc.header.downmix_index,
+                joc.header.channel_count,
+            )
+            .is_ok()
+            {
+                JocClassification::ConfirmedJoc
+            } else {
+                JocClassification::InvalidOrUnsupported
+            }
+        }
         Ok(None) => JocClassification::ConfirmedNonJoc,
         Err(_) => JocClassification::InvalidOrUnsupported,
     }

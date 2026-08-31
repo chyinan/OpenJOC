@@ -1069,9 +1069,30 @@ mod tests {
         feed(&adapter, syncframe(0, 0, 16));
         assert_eq!(parse_adapter(&adapter, false), Err(gst::FlowError::Eos));
         feed(&adapter, syncframe(1, 0, 16));
-        assert_eq!(parse_adapter(&adapter, false), Ok((0, 32)));
+        assert_eq!(parse_adapter(&adapter, false), Err(gst::FlowError::Eos));
+        assert_eq!(parse_adapter(&adapter, true), Ok((0, 32)));
         adapter.flush(32);
         assert_eq!(adapter.available(), 0);
+    }
+
+    #[test]
+    fn general_parser_handles_multiple_dependents_before_the_next_unit() {
+        gst::init().expect("GStreamer initializes");
+        let adapter = gst_base::Adapter::new();
+        feed(
+            &adapter,
+            [
+                syncframe(0, 0, 16),
+                syncframe(1, 0, 16),
+                syncframe(1, 1, 16),
+                syncframe(1, 2, 16),
+                syncframe(0, 0, 16),
+            ]
+            .concat(),
+        );
+        assert_eq!(parse_adapter(&adapter, false), Ok((0, 64)));
+        adapter.flush(64);
+        assert_eq!(adapter.available(), 16);
     }
 
     #[test]

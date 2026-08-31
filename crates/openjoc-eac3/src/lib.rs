@@ -48,7 +48,8 @@ use ac3::validate_ac3_crc;
 
 pub use access_unit::{
     ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, JocAccessUnitPcmDecoder,
-    validate_joc_access_unit_decoder_contract,
+    JocAccessUnitProfile, validate_joc_access_unit_decoder_contract,
+    validate_joc_access_unit_decoder_contract_for_profile,
 };
 pub use aht::{
     decode_aht_element_mantissas, decode_aht_gaq_mantissa, decode_aht_vq_vector,
@@ -110,6 +111,17 @@ use openjoc_emdf::{
 };
 
 const EAC3_SYNCWORD: u16 = 0x0b77;
+
+/// Maximum number of General Enhanced AC-3 dependent substreams associated
+/// with one independent programme, as specified by TS 102 366 E.1.3.1.2.
+pub const GENERAL_MAX_DEPENDENT_SUBSTREAMS: usize = 8;
+/// CMAF Annex E.3 permits at most the optional D0 dependent substream.
+pub const CMAF_MAX_DEPENDENT_SUBSTREAMS: usize = 1;
+/// Maximum coded E-AC-3 syncframe size represented by the acquisition field.
+pub const MAX_SYNCFRAME_BYTES: usize = 4096;
+/// Maximum compressed size of one General I0+D0..D7 access unit.
+pub const GENERAL_MAX_ACCESS_UNIT_BYTES: usize =
+    MAX_SYNCFRAME_BYTES * (1 + GENERAL_MAX_DEPENDENT_SUBSTREAMS);
 
 /// Spectral element that owns a conventional mantissa codeword.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -398,6 +410,10 @@ pub enum Eac3Error {
         expected: usize,
         actual: usize,
     },
+    ConflictingDependentChannelLocation {
+        dependent_id: u8,
+        location: String,
+    },
     MultipleLfeChannels,
     AccessUnitPcmSampleCountMismatch {
         expected: usize,
@@ -406,6 +422,9 @@ pub enum Eac3Error {
     MultipleJocCarriers,
     MissingJocAddbsi {
         frame: usize,
+    },
+    MissingJocCarrier {
+        required_frame: usize,
     },
     InvalidJocCarrierPlacement {
         carrier_frame: usize,
@@ -501,7 +520,7 @@ impl Eac3Error {
             )),
             Self::UnsupportedJocAccessUnitFrameCount { actual } => Some(write!(
                 formatter,
-                "JOC E-AC-3 access unit contains {actual} frames; expected one independent and at most one dependent frame"
+                "JOC E-AC-3 access unit contains {actual} frames and exceeds the admitted profile bound"
             )),
             Self::UnsupportedJocAudioBlockCount { actual } => Some(write!(
                 formatter,
@@ -517,6 +536,13 @@ impl Eac3Error {
             Self::InvalidDependentChannelMap { expected, actual } => Some(write!(
                 formatter,
                 "dependent E-AC-3 channel map contains {expected} channels but audio carries {actual}"
+            )),
+            Self::ConflictingDependentChannelLocation {
+                dependent_id,
+                location,
+            } => Some(write!(
+                formatter,
+                "dependent E-AC-3 substream {dependent_id} repeats channel location {location}"
             )),
             Self::AccessUnitPcmSampleCountMismatch { expected, actual } => Some(write!(
                 formatter,
@@ -805,6 +831,10 @@ impl fmt::Display for Eac3Error {
             Self::MissingJocAddbsi { frame } => {
                 write!(formatter, "missing JOC addbsi in carrier frame {frame}")
             }
+            Self::MissingJocCarrier { required_frame } => write!(
+                formatter,
+                "missing JOC EMDF carrier in required frame {required_frame}"
+            ),
             Self::InvalidJocCarrierPlacement {
                 carrier_frame,
                 required_frame,
@@ -849,6 +879,7 @@ impl fmt::Display for Eac3Error {
             | Self::UnsupportedJocAudioBlockCount { .. }
             | Self::UnsupportedJocChannelTopology { .. }
             | Self::InvalidDependentChannelMap { .. }
+            | Self::ConflictingDependentChannelLocation { .. }
             | Self::MultipleLfeChannels
             | Self::AccessUnitPcmSampleCountMismatch { .. }
             | Self::MultipleJocCarriers
@@ -1997,6 +2028,108 @@ pub fn index_syncframes(bytes: &[u8]) -> Result<Vec<SyncframeIndexEntry>, Eac3Er
     Ok(entries)
 }
 
+/// Result of bounded General JOC access-unit framing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessUnitParse {
+    NeedMore,
+    Complete(usize),
+}
+
+/// Finds one complete 48 kHz General JOC access unit using only syncframe
+/// headers. A complete unit is I0 followed by zero through eight sequential
+/// dependents; when the final dependent is present, the next independent frame
+/// or EOS is required to prove the unit boundary.
+pub fn parse_access_unit_bounds(bytes: &[u8], eos: bool) -> Result<AccessUnitParse, Eac3Error> {
+    if bytes.len() < 8 {
+        return if eos {
+            Err(Eac3Error::InvalidAccessUnitRange)
+        } else {
+            Ok(AccessUnitParse::NeedMore)
+        };
+    }
+    let first = parse_syncframe_header(bytes)?;
+    if !matches!(
+        first.stream_type,
+        StreamType::LegacyIndependent | StreamType::Independent
+    ) || first.substream_id != 0
+    {
+        return Err(Eac3Error::MissingIndependentSubstreamZero { frame: 0 });
+    }
+    if first.frame_size > MAX_SYNCFRAME_BYTES || first.sample_rate != 48_000 {
+        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount { actual: 1 });
+    }
+    if bytes.len() < first.frame_size {
+        return if eos {
+            Err(Eac3Error::InvalidAccessUnitRange)
+        } else {
+            Ok(AccessUnitParse::NeedMore)
+        };
+    }
+
+    let mut consumed = first.frame_size;
+    let mut expected_dependent = 0_u8;
+    loop {
+        if bytes.len() == consumed {
+            return if eos {
+                Ok(AccessUnitParse::Complete(consumed))
+            } else {
+                Ok(AccessUnitParse::NeedMore)
+            };
+        }
+        let header_end = consumed
+            .checked_add(8)
+            .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+        if bytes.len() < header_end {
+            return if eos {
+                Err(Eac3Error::InvalidAccessUnitRange)
+            } else {
+                Ok(AccessUnitParse::NeedMore)
+            };
+        }
+        let next = parse_syncframe_header(&bytes[consumed..])?;
+        if matches!(
+            next.stream_type,
+            StreamType::LegacyIndependent | StreamType::Independent
+        ) && next.substream_id == 0
+        {
+            return Ok(AccessUnitParse::Complete(consumed));
+        }
+        if next.stream_type != StreamType::Dependent {
+            return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+                actual: expected_dependent as usize + 2,
+            });
+        }
+        if usize::from(expected_dependent) >= GENERAL_MAX_DEPENDENT_SUBSTREAMS
+            || next.substream_id != expected_dependent
+        {
+            return Err(Eac3Error::NonsequentialDependentSubstream {
+                expected: expected_dependent,
+                actual: next.substream_id,
+            });
+        }
+        if next.frame_size > MAX_SYNCFRAME_BYTES
+            || next.sample_rate != first.sample_rate
+            || next.audio_blocks != first.audio_blocks
+            || next.samples != first.samples
+        {
+            return Err(Eac3Error::SubstreamTimingMismatch {
+                frame: expected_dependent as usize + 1,
+            });
+        }
+        consumed = consumed
+            .checked_add(next.frame_size)
+            .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+        expected_dependent = expected_dependent.saturating_add(1);
+        if bytes.len() < consumed {
+            return if eos {
+                Err(Eac3Error::InvalidAccessUnitRange)
+            } else {
+                Ok(AccessUnitParse::NeedMore)
+            };
+        }
+    }
+}
+
 /// Groups E.1.3.1.2 ordered substreams into time-aligned access units.
 ///
 /// # Errors
@@ -2025,13 +2158,21 @@ pub fn group_access_units(
             {
                 break;
             }
-            if header.sample_rate != base.sample_rate || header.audio_blocks != base.audio_blocks {
+            if header.sample_rate != base.sample_rate
+                || header.audio_blocks != base.audio_blocks
+                || header.samples != base.samples
+            {
                 return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
             }
             match header.stream_type {
                 StreamType::Dependent => {
                     if !dependent_allowed {
                         return Err(Eac3Error::DependentAfterConvertedSubstream { frame: index });
+                    }
+                    if usize::from(expected_dependent) >= GENERAL_MAX_DEPENDENT_SUBSTREAMS {
+                        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+                            actual: index - first + 1,
+                        });
                     }
                     if header.substream_id != expected_dependent {
                         return Err(Eac3Error::NonsequentialDependentSubstream {
@@ -2315,6 +2456,11 @@ fn parse_joc_access_unit_impl(
         }
     }
     let Some((carrier_frame, parsed)) = found else {
+        if extract_joc_addbsi_access_unit(stream, frames, unit)?.is_some() {
+            return Err(Eac3Error::MissingJocCarrier {
+                required_frame: required_dependent.unwrap_or(unit.first_frame),
+            });
+        }
         return Ok(None);
     };
     if let Some(required_frame) = required_dependent {
@@ -2440,7 +2586,7 @@ pub fn extract_joc_addbsi_access_unit(
     let unit_frames = frames
         .get(unit.first_frame..end_frame)
         .ok_or(Eac3Error::InvalidAccessUnitRange)?;
-    for entry in unit_frames {
+    for entry in unit_frames.iter().rev() {
         let frame = frame_bytes(stream, *entry)?;
         let bsi = parse_bsi(frame)?;
         let Some(addbsi) = bsi.addbsi else {

@@ -785,7 +785,7 @@ fn explicit_access_unit_decoder_reset_matches_a_fresh_decoder() {
 }
 
 #[test]
-fn joc_decoder_rejects_more_than_one_dependent_substream() {
+fn joc_decoder_assembles_more_than_one_dependent_substream() {
     let independent = six_block_mono_frame(0, None, Some(0x00));
     let dependent_zero = six_block_mono_frame(1, Some(0x4000), Some(0xa5));
     let mut dependent_one = six_block_mono_frame(1, Some(0x8000), Some(0xa5));
@@ -795,10 +795,49 @@ fn joc_decoder_rejects_more_than_one_dependent_substream() {
     let frames = index_syncframes(&bytes).expect("I0/D0/D1 frames");
     let unit = group_access_units(&frames).expect("general E-AC-3 grouping")[0];
     assert_eq!(unit.frame_count, 3);
+    let output = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &[0.5; 512])
+        .expect("decode I0+D0+D1");
     assert_eq!(
-        JocAccessUnitPcmDecoder::new().decode(&bytes, &frames, unit, &[0.5; 512]),
-        Err(Eac3Error::UnsupportedJocAccessUnitFrameCount { actual: 3 })
+        output.channel_locations,
+        vec![ChannelLocation::Left, ChannelLocation::Centre]
     );
+}
+
+#[test]
+fn groups_the_normative_eight_dependent_substream_limit() {
+    let mut bytes = frame(0, 0, 16, 0, 3);
+    for dependent_id in 0..8 {
+        bytes.extend(frame(1, dependent_id, 16, 0, 3));
+    }
+    let frames = index_syncframes(&bytes).expect("index maximum General AU");
+    let units = group_access_units(&frames).expect("group maximum General AU");
+    assert_eq!(units.len(), 1);
+    assert_eq!(units[0].frame_count, 9);
+}
+
+#[test]
+fn joc_decoder_decodes_all_eight_general_dependents_with_bounded_state() {
+    let independent = six_block_mono_frame(0, None, Some(0x00));
+    let dependent_maps = [
+        0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0100, 0x0080, 0x0008,
+    ];
+    let mut bytes = independent;
+    for (dependent_id, channel_map) in dependent_maps.into_iter().enumerate() {
+        let mut dependent = six_block_mono_frame(1, Some(channel_map), Some(0x00));
+        dependent[2] =
+            (dependent[2] & 0xc7) | (u8::try_from(dependent_id).expect("dependent ID") << 3);
+        bytes.extend(dependent);
+    }
+    let frames = index_syncframes(&bytes).expect("index maximum General AU");
+    let unit = group_access_units(&frames).expect("group maximum General AU")[0];
+    let dither_values = vec![0.5; 32_768];
+    let output = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &dither_values)
+        .expect("decode all eight dependents");
+    assert_eq!(unit.frame_count, 9);
+    assert_eq!(output.channels.len(), dependent_maps.len());
+    assert_eq!(output.channel_locations.len(), output.channels.len());
 }
 
 #[test]
@@ -2772,6 +2811,15 @@ fn joc_emdf() -> Vec<u8> {
 }
 
 fn joc_carrier_frame(stream_type: u8, substream_id: u8, emdf: Option<&[u8]>) -> Vec<u8> {
+    joc_carrier_frame_with_addbsi(stream_type, substream_id, emdf, emdf.is_some())
+}
+
+fn joc_carrier_frame_with_addbsi(
+    stream_type: u8,
+    substream_id: u8,
+    emdf: Option<&[u8]>,
+    addbsi: bool,
+) -> Vec<u8> {
     let size = 64;
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
@@ -2790,8 +2838,8 @@ fn joc_carrier_frame(stream_type: u8, substream_id: u8, emdf: Option<&[u8]>) -> 
     }
     bits.push(0, 1);
     bits.push(0, 1);
-    bits.push(u64::from(emdf.is_some()), 1);
-    if emdf.is_some() {
+    bits.push(u64::from(addbsi), 1);
+    if addbsi {
         bits.push(1, 6);
         bits.push(0x01, 8);
         bits.push(2, 8);
@@ -2956,4 +3004,37 @@ fn rejects_joc_profile_before_the_last_dependent_substream() {
             required_frame: 2,
         })
     );
+}
+
+#[test]
+fn rejects_duplicate_joc_carriers_across_dependents() {
+    let emdf = joc_emdf();
+    let bytes = [
+        joc_carrier_frame(0, 0, None),
+        joc_carrier_frame(1, 0, Some(&emdf)),
+        joc_carrier_frame(1, 1, Some(&emdf)),
+    ]
+    .concat();
+    let frames = index_syncframes(&bytes).expect("frames");
+    let unit = group_access_units(&frames).expect("unit")[0];
+    assert_eq!(
+        extract_aux_joc_access_unit(&bytes, &frames, unit),
+        Err(Eac3Error::MultipleJocCarriers)
+    );
+}
+
+#[test]
+fn rejects_missing_joc_carrier_when_the_last_dependent_signals_joc() {
+    let bytes = [
+        joc_carrier_frame(0, 0, None),
+        joc_carrier_frame(1, 0, None),
+        joc_carrier_frame_with_addbsi(1, 1, None, true),
+    ]
+    .concat();
+    let frames = index_syncframes(&bytes).expect("frames");
+    let unit = group_access_units(&frames).expect("unit")[0];
+    assert!(matches!(
+        extract_aux_joc_access_unit(&bytes, &frames, unit),
+        Err(Eac3Error::MissingJocCarrier { required_frame: 2 })
+    ));
 }

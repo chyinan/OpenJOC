@@ -407,8 +407,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
     output
 }
 
-/// Borrowed compressed input. A packet is exactly one complete JOC access
-/// unit: independent substream zero and optional dependent substream zero.
+/// Borrowed compressed input. A packet is exactly one complete General JOC
+/// access unit: independent substream zero and its ordered D0..Dn dependents.
 #[derive(Clone, Copy, Debug)]
 pub struct OpenJocPacket<'a> {
     pub data: &'a [u8],
@@ -746,6 +746,12 @@ impl OpenJocSession {
         }
         if packet.data.is_empty() {
             return Err(OpenJocError::InvalidPacket("packet is empty".to_owned()));
+        }
+        if packet.data.len() > openjoc_eac3::GENERAL_MAX_ACCESS_UNIT_BYTES {
+            return Err(OpenJocError::InvalidPacket(format!(
+                "packet exceeds the bounded {0}-byte General JOC access-unit limit",
+                openjoc_eac3::GENERAL_MAX_ACCESS_UNIT_BYTES
+            )));
         }
         if packet.discontinuity {
             self.reset_stream_state();

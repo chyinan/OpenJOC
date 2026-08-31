@@ -85,13 +85,15 @@ manual `ac3parse ! openjocdec` form is intentionally replaced by
 `ac3parse ! openjocclassify ! openjocdec`.
 
 The decoder's bounded `parse` callback verifies complete syncframes and emits
-one OpenJOC access unit at a time. The first version admits the current
-OpenJOC contract:
+one OpenJOC access unit at a time. The General profile admits:
 
 ```text
 I0 independent substream zero
-[optional D0 dependent substream zero]
+D0 through D7 dependent substreams, when present and sequential
 ```
+
+CMAF and the existing original-syntax AC-3 Annex-J combination remain limited
+to optional D0.
 
 It never assumes that an incoming `GstBuffer` is already an OpenJOC access
 unit. A split syncframe is held until complete; a second independent substream
@@ -109,8 +111,8 @@ decision.
 ### Need-data and EOS semantics
 
 `GstAudioDecoder` has no separate `NEED_DATA` return value. While the bounded
-adapter contains an incomplete syncframe or a complete I0 whose possible D0 has
-not arrived, `openjocdec` returns Rust `FlowError::Eos`. The GStreamer base
+adapter contains an incomplete syncframe or a complete I0 whose possible D0..Dn
+has not arrived, `openjocdec` returns Rust `FlowError::Eos`. The GStreamer base
 class maps that to `GST_FLOW_EOS` internally, interprets it as “no frame yet,”
 keeps the adapter contents, and returns to the upstream chain without emitting
 an EOS event or transitioning the pipeline to EOS. This is the documented
@@ -135,7 +137,7 @@ The element maps the GStreamer lifecycle as follows:
 |---|---|
 | `start` | Create an instance-owned `OpenJocSession`, enable drainability |
 | `set_format` | Require framed E-AC-3 and flush the session for the new format |
-| `parse` | Assemble one complete I0/optional-D0 access unit |
+| `parse` | Assemble one complete General I0+D0..Dn access unit |
 | `handle_frame(Some)` | Convert the input PTS, push one AU, copy owned PCM to GStreamer buffers |
 | `handle_frame(None)` | Call `OpenJocSession::drain` and emit every tail buffer with the GStreamer forced-drain frame completion semantics |
 | `flush` | Flush/reset QMF, reconstruction, dialnorm, speaker, and SOFA/FIR state |

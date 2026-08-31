@@ -25,7 +25,7 @@
 | 输入 | 支持随机访问的普通 MP4/M4A，且只有一个 E-AC-3 轨道 | `ADMITTED_WITH_SCOPE` | 容器和采样游标回归测试 | 使用 `ffprobe`/`ffmpeg`；不支持随机访问和分片 MP4 不在范围内 |
 | 基础 E-AC-3 | 普通基础解码及声道/LFE 标记 | `ADMITTED_WITH_SCOPE` | 公开语法、拓扑、TDAC 和状态测试 | 不是扬声器渲染器；跨解码器保真度仍不完整 |
 | 编码工具 | 耦合、SPX、AHT、重混矩阵 | `ADMITTED_WITH_SCOPE` | 规范/公开语法的数值和状态测试框架 | 一些真实制作工具的启用情况及完整 PCM 保真度仍待解决 |
-| 子流 | 一个 I0 加可选 D0 的组装 | `ADMITTED_WITH_SCOPE` | 声道映射、原子组装和重置测试 | 多个从属流不在支持范围内 |
+| 子流 | General E-AC-3 I0 加按顺序排列的 D0..D7 组装 | `ADMITTED_WITH_SCOPE` | 声道映射、原子组装、有界的逐 dependent 状态、分类器和合成端到端测试 | CMAF 与 legacy AC-3 组合仍为 D0-only；Type 2 仍不带 dependent；不声明真实多-dependent 媒体验证 |
 | OAMD | 规范元数据前缀和仅元数据时间线 | `ADMITTED_WITH_SCOPE` | 规范解析器和受控状态测试 | 完整的厂商扩展尾部不可用 |
 | OAMD | `ETSI_STRICT` 配置 | `ADMITTED` | 已发布的 ETSI 校验规则 | 观察到的原始 `warp=3` 会表示为 `ReservedWarpMode`，并被拒绝 |
 | OAMD | `OBSERVED_VENDOR_COMPAT` 配置 | `PARTIAL` | 明确的观测信令接受规则和偏差证据 | 扩展数据会原样保留，但不会解释其厂商语义 |

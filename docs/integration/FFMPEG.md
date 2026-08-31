@@ -105,13 +105,17 @@ bridge never equates an `AVPacket` with one OpenJOC AU. The shared OpenJOC
 E-AC-3 primitives parse:
 
 ```text
-independent substream I0 + optional dependent substream D0 = one admitted AU
+independent substream I0 + ordered dependent substreams D0..Dn = one admitted General AU
 ```
 
-The assembler handles an AU split across packets, I0 and D0 in different
+The assembler handles an AU split across packets, I0 and D0..Dn in different
 packets, and multiple AUs in one packet. An independent-only AU remains
 pending until the next I0 proves its boundary or EOF closes it. Maximum frame,
 AU, and staging sizes are explicit; whole programmes are never buffered.
+
+General E-AC-3 permits at most eight associated dependents, assigned
+sequentially as D0 through D7. CMAF remains constrained to optional D0, and
+the original-syntax AC-3 Annex-J combination remains D0-only.
 
 For the public CMAF object-audio profile, I0 may use original AC-3 syntax with
 `bsid` 6 or 8 while D0 remains E-AC-3 `bsid` 16. OpenJOC dispatches from the
@@ -123,7 +127,7 @@ complete valid JOC D0 remains `CONFIRMED_NON_JOC`.
 For standards-defined flat-7.X JOC, downmix index 1 is admitted only with the
 seven-input Table-47 order `L R C Ls Rs Lrs Rrs`. The bridge retains two
 separate internal PCM meanings: I0-only compatibility PCM and assembled
-I0+D0 JOC reconstruction-input PCM. Stereo uses the existing I0 compatibility
+I0+D0..Dn JOC reconstruction-input PCM. Stereo uses the existing I0 compatibility
 Lo/Ro or Lt/Rt matrix, including its normative `1 / max_sum` overflow scale;
 the rear D0 pair is not directly downmixed. Expanded speaker rendering keeps
 using all seven reconstruction inputs. With original-syntax I0, compatibility

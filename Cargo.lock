@@ -364,6 +364,7 @@ dependencies = [
  "gstreamer-base",
  "openjoc-api",
  "openjoc-eac3",
+ "openjoc-joc",
 ]
 
 [[package]]

@@ -27,7 +27,7 @@ openjoc decode input.ec3 \\
   --streaming
 ```
 
-The Rust packet API accepts one complete E-AC-3 JOC access unit per push: I0 plus optional D0. Demuxing, arbitrary byte fragmentation, and multiple access units belong to the bounded stream decoder or framework adapters.
+The Rust packet API accepts one complete General E-AC-3 JOC access unit per push: I0 plus ordered D0..D7 within the public maximum. CMAF and the existing legacy AC-3 Annex-J combination remain D0-only. Demuxing, arbitrary byte fragmentation, and multiple access units belong to the bounded stream decoder or framework adapters.
 
 ## Select a validation profile
 
