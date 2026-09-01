@@ -20,7 +20,7 @@ the complete OpenJOC Cargo workspace, including `tools/import-etsi-tables`.
 The public downstream repository is
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC)
 with branch `openjoc-main`, downstream commit
-`7242890fdcc1b90b11196c50d04ea4191107d5a1`, and upstream base
+`dce9fb9f281fd16a4221b46d975bfd90c2e809f8`, and upstream base
 `fefb6987994ed56e4525e8a125f5fbb53707bc52`.
 The corresponding-source archive remains the authoritative full closure,
 including source components not represented by the public LAV fork.
