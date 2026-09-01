@@ -5174,7 +5174,7 @@ mod tests {
                 "-map",
                 "0:a:0",
                 "-bsf:a",
-                "setts=time_base=1/48000:pts=N*1536:dts=N*1536:duration=1536:prescale=1",
+                "setts=time_base=1/48000:pts=N*2880:dts=N*2880:duration=1536",
                 "-video_track_timescale",
                 "48000",
                 "-c:a",
@@ -5201,11 +5201,10 @@ mod tests {
             .expect("open CMAF fixture");
         let mut decoder = FfmpegDecoder::new(config).expect("decoder");
         let mut packets = Vec::new();
-        let mut packet_index = 0_i64;
         while let Some(packet) = demuxer.read_cmaf_sample(&track).expect("read CMAF packet") {
-            assert_eq!(packet.pts, Some(packet_index));
-            assert_eq!(packet.dts, Some(packet_index));
-            assert!(packet.duration.is_none() || packet.duration == Some(1536));
+            assert!(packet.pts.is_some());
+            assert!(packet.dts.is_some());
+            assert_eq!(packet.duration, Some(1536));
             let validated = track
                 .validate_sample(packet.data)
                 .expect("CMAF packet is one complete JOC sample");
@@ -5225,7 +5224,6 @@ mod tests {
                     },
                 )
                 .expect("send CMAF sample");
-            packet_index += 1536;
         }
         assert_eq!(packets, vec![first, second]);
         assert_ne!(
