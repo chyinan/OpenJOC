@@ -21,6 +21,8 @@
 //! live at the `openjoc-sofa` boundary; moving binaural sources, distance, room
 //! acoustics, occlusion, and JOC semantic binding remain explicit non-features.
 
+// pattern: Functional Core
+
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -4783,6 +4785,69 @@ mod tests {
         assert_ne!(left, right);
         assert_eq!(renderer.remaining_tail_samples(), 0);
         assert!(renderer.is_finished());
+    }
+
+    #[test]
+    fn binaural_renderer_separates_front_rear_top_left_and_right_causally() {
+        let bank = HrirBank::new(
+            48_000,
+            vec![
+                hrir_entry_test(31, CartesianPosition::new(0.0, 1.0, 0.0), &[1.0], &[0.5]),
+                hrir_entry_test(32, CartesianPosition::new(0.0, -1.0, 0.0), &[0.25], &[1.0]),
+                hrir_entry_test(33, CartesianPosition::new(0.0, 0.0, 1.0), &[0.75], &[0.75]),
+                hrir_entry_test(34, CartesianPosition::new(-1.0, 0.0, 0.0), &[1.25], &[0.0]),
+                hrir_entry_test(35, CartesianPosition::new(1.0, 0.0, 0.0), &[0.0], &[1.25]),
+            ],
+        )
+        .unwrap();
+        let positions = [
+            (
+                31,
+                CartesianPosition::new(0.0, 1.0, 0.0),
+                HrirEntryId::new(31),
+            ),
+            (
+                32,
+                CartesianPosition::new(0.0, -1.0, 0.0),
+                HrirEntryId::new(32),
+            ),
+            (
+                33,
+                CartesianPosition::new(0.0, 0.0, 1.0),
+                HrirEntryId::new(33),
+            ),
+            (
+                34,
+                CartesianPosition::new(-1.0, 0.0, 0.0),
+                HrirEntryId::new(34),
+            ),
+            (
+                35,
+                CartesianPosition::new(1.0, 0.0, 0.0),
+                HrirEntryId::new(35),
+            ),
+        ];
+        let mut fingerprints = Vec::new();
+        for (id, direction, entry_id) in positions {
+            let source =
+                StaticBinauralSource::new(SourceId::new(id), direction, 1.0, entry_id).unwrap();
+            let mut renderer = BinauralRenderer::new(48_000, bank.clone(), vec![source]).unwrap();
+            let mut left = [0.0];
+            let mut right = [0.0];
+            renderer
+                .render_block(
+                    &[BinauralSourceBlock::new(SourceId::new(id), &[1.0])],
+                    &mut left,
+                    &mut right,
+                )
+                .unwrap();
+            assert!(left[0].is_finite() && right[0].is_finite());
+            fingerprints.push([left[0], right[0]]);
+        }
+
+        assert_ne!(fingerprints[0], fingerprints[1]);
+        assert_ne!(fingerprints[0], fingerprints[2]);
+        assert_ne!(fingerprints[3], fingerprints[4]);
     }
 
     #[test]
