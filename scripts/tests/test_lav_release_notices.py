@@ -16,9 +16,13 @@ NEW_LAV_FILES = (
     "decoder/LAVAudio/OpenJocAdmission.cpp",
     "decoder/LAVAudio/OpenJocAdmission.h",
     "decoder/LAVAudio/OpenJocAdmissionTests.cpp",
+    "decoder/LAVAudio/OpenJocCandidate.cpp",
+    "decoder/LAVAudio/OpenJocCandidate.h",
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDialnorm.h",
+    "decoder/LAVAudio/OpenJocDialnormPolicyTests.cpp",
     "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
     "decoder/LAVAudio/OpenJocOutput.cpp",
     "decoder/LAVAudio/OpenJocOutput.h",
@@ -68,9 +72,11 @@ V012_MODIFIED_UPSTREAM_FILES = {
     "common/DSUtilLite/growarray.h",
     "common/genversion.bat",
     "decoder/LAVAudio/AudioSettingsProp.h",
+    "decoder/LAVAudio/resource.h",
+}
+V015_MODIFIED_UPSTREAM_FILES = {
     "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/PostProcessor.cpp",
-    "decoder/LAVAudio/resource.h",
 }
 
 
@@ -138,9 +144,15 @@ class LavReleaseNoticeTests(unittest.TestCase):
                 text = (root / relative).read_text(encoding="utf-8")
                 header = "\n".join(text.splitlines()[:45])
                 self.assertIn("OpenJOC downstream modification", header)
-                current = relative in V012_MODIFIED_UPSTREAM_FILES
-                release = "openjoc-0.12.0" if current else "openjoc-0.10.0"
-                date = "2026-08-25" if current else "2026-08-22"
+                if relative in V015_MODIFIED_UPSTREAM_FILES:
+                    release = "openjoc-0.15.0"
+                    date = "2026-09-01"
+                elif relative in V012_MODIFIED_UPSTREAM_FILES:
+                    release = "openjoc-0.12.0"
+                    date = "2026-08-25"
+                else:
+                    release = "openjoc-0.10.0"
+                    date = "2026-08-22"
                 self.assertIn(release, header)
                 self.assertIn(date, header)
 
@@ -197,7 +209,7 @@ class LavReleaseNoticeTests(unittest.TestCase):
         records = data["compiled_inputs"]
         actual_units = {record["source_path"] for record in records}
         self.assertEqual(actual_units, expected_units)
-        self.assertEqual(len(records), 64)
+        self.assertEqual(len(records), 65)
         required_fields = {
             "source_path",
             "origin",

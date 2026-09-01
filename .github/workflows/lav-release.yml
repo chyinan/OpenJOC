@@ -8,11 +8,11 @@ on:
       release_tag:
         description: OpenJOC release tag to receive the LAV asset
         required: true
-        default: v0.14.0
+        default: v0.15.0
       lav_ref:
         description: Full LAVFilters-OpenJOC commit to build
         required: true
-        default: 354c7f30ee1f85bff300eacf76ea2c532e533bac
+        default: 7242890fdcc1b90b11196c50d04ea4191107d5a1
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '354c7f30ee1f85bff300eacf76ea2c532e533bac' }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '7242890fdcc1b90b11196c50d04ea4191107d5a1' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # Keep build tooling at the workflow revision, while compiling CAPI from
@@ -58,7 +58,7 @@ jobs:
         with:
           repository: madler/zlib
           path: zlib
-          ref: v1.3.1
+          ref: v1.3.2
           fetch-depth: 1
 
       - name: Resolve release identity

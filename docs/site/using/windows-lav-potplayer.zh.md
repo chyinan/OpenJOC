@@ -5,7 +5,7 @@
 
 OpenJOC 提供一个可选的 Windows DirectShow 下游 LAV Audio Decoder。它有独立的筛选器标识，可以和原有的 LAV 并存安装；安装包不会自动改动 PotPlayer 的设置。
 
-下面记录的是 v0.12 及以后 Windows 集成中验证过的安装包行为；本站的发布基线是 v0.14.0。
+下面记录的是 v0.12 及以后 Windows 集成中验证过的安装包行为；本站的发布基线是 v0.15.0。
 
 ## 安装并验证
 

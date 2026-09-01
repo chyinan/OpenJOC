@@ -23,6 +23,12 @@ FFMPEG_DLLS = (
     "swresample-lav-7.dll",
     "swscale-lav-10.dll",
 )
+LAV_SUPPORT_DLLS = (
+    "libbluray.dll",
+    "libgcc_s_seh-1.dll",
+    "libwinpthread-1.dll",
+    "zlib1.dll",
+)
 CRT_DLLS = (
     *(f"api-ms-win-crt-{name}-l1-1-0.dll" for name in (
         "conio", "convert", "environment", "filesystem", "heap", "locale",
@@ -43,7 +49,7 @@ class LavReleasePackageTests(unittest.TestCase):
             root = pathlib.Path(temporary)
             lav = root / "lav"
             (lav / "bin_x64").mkdir(parents=True)
-            for name in (*FFMPEG_DLLS, "LAVAudio.ax"):
+            for name in (*FFMPEG_DLLS, *LAV_SUPPORT_DLLS, "LAVAudio.ax"):
                 (lav / "bin_x64" / name).write_bytes(name.encode("ascii"))
             manifest = lav / "decoder" / "LAVAudio" / "LAVAudio.manifest"
             manifest.parent.mkdir(parents=True)
@@ -59,7 +65,7 @@ class LavReleasePackageTests(unittest.TestCase):
                 [
                     sys.executable,
                     str(PACKAGE_SCRIPT),
-                    "--release-version", "0.14.0",
+                    "--release-version", "0.15.0",
                     "--lav-root", str(lav),
                     "--capi-dll", str(capi),
                     "--dependency-dir", str(dependencies),
@@ -70,19 +76,19 @@ class LavReleasePackageTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            archive = output / "openjoc-lav-0.14.0-windows-x64.zip"
+            archive = output / "openjoc-lav-0.15.0-windows-x64.zip"
             self.assertTrue(archive.is_file())
             with zipfile.ZipFile(archive) as handle:
                 names = set(handle.namelist())
                 self.assertIn("runtime/OpenJocRuntimeProfile.json", names)
-                self.assertNotIn("runtime/libbluray.dll", names)
+                self.assertIn("runtime/libbluray.dll", names)
                 profile = json.loads(handle.read("runtime/OpenJocRuntimeProfile.json"))
-                self.assertEqual(profile["version"], "0.14.0")
+                self.assertEqual(profile["version"], "0.15.0")
                 self.assertEqual(profile["architecture"], "x64")
                 self.assertEqual(
                     set(profile["required_runtime_files"]),
                     {"LAVAudio.ax", "LAVAudio.ax.manifest", "LAVFilters.Dependencies.manifest",
-                     "openjoc_capi.dll", *FFMPEG_DLLS, *CRT_DLLS},
+                     "openjoc_capi.dll", *LAV_SUPPORT_DLLS, *FFMPEG_DLLS, *CRT_DLLS},
                 )
                 self.assertIn("runtime/LAVAudio.ax.manifest", names)
                 self.assertIn("runtime/LAVFilters.Dependencies.manifest", names)

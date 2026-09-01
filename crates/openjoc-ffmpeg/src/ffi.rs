@@ -4,9 +4,7 @@ use super::{
     AV_NOPTS_VALUE, BridgeError, BridgeErrorKind, FfmpegDecoder, FfmpegFrame, Rational,
     ReceiveOutcome,
 };
-use openjoc_container::cmaf::{
-    CMAF_SAMPLE_AUDIO_DURATION, CmafJocTrack, CmafTrackMetadata, parse_ec3_specific_box,
-};
+use openjoc_container::cmaf::{CmafJocTrack, CmafTrackMetadata, parse_ec3_specific_box};
 use std::{
     ffi::{CStr, CString, c_char, c_float, c_int, c_uchar, c_uint, c_void},
     marker::PhantomData,
@@ -73,6 +71,13 @@ unsafe extern "C" {
     ) -> c_int;
     fn openjoc_av_demux_read(
         demux: *mut DemuxOpaque,
+        view: *mut PacketView,
+        error: *mut c_char,
+        error_capacity: usize,
+    ) -> c_int;
+    fn openjoc_av_demux_read_stream(
+        demux: *mut DemuxOpaque,
+        stream_index: c_int,
         view: *mut PacketView,
         error: *mut c_char,
         error_capacity: usize,
@@ -341,39 +346,51 @@ impl Demuxer {
                 )
             })?,
         );
-        loop {
-            let Some(packet) = self.read_packet()? else {
-                return Ok(None);
-            };
-            if packet.stream_index != target_stream {
-                continue;
-            }
-            track.validate_sample(packet.data).map_err(|error| {
-                BridgeError::new(
-                    BridgeErrorKind::InvalidData,
-                    format!("CMAF sample validation failed: {error}"),
-                )
-            })?;
-            if packet.time_base != expected_time_base {
-                return Err(BridgeError::new(
-                    BridgeErrorKind::InvalidTimestamp,
-                    "CMAF packet time base does not match the track timescale",
-                ));
-            }
-            if packet.duration != Some(i64::from(CMAF_SAMPLE_AUDIO_DURATION)) {
-                return Err(BridgeError::new(
-                    BridgeErrorKind::InvalidTimestamp,
-                    format!(
-                        "CMAF packet duration must be {CMAF_SAMPLE_AUDIO_DURATION}, got {:?}",
-                        packet.duration
-                    ),
-                ));
-            }
-            return Ok(Some(packet));
+        let Some(packet) = self.read_packet_for_stream(target_stream)? else {
+            return Ok(None);
+        };
+        if packet.stream_index != target_stream {
+            return Err(BridgeError::new(
+                BridgeErrorKind::Ffmpeg,
+                "FFmpeg stream-filtered packet has an unexpected stream index",
+            ));
         }
+        let sample = track.validate_sample(packet.data).map_err(|error| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                format!("CMAF sample validation failed: {error}"),
+            )
+        })?;
+        if packet.time_base != expected_time_base {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidTimestamp,
+                "CMAF packet time base does not match the track timescale",
+            ));
+        }
+        // FFmpeg may expose AVPacket.duration as unknown or in a backend-
+        // specific unit for an MP4 E-AC-3 packet. The complete validated
+        // sample supplies the canonical CMAF duration in decoded samples.
+        Ok(Some(DemuxPacket {
+            duration: Some(i64::from(sample.audio_duration)),
+            ..packet
+        }))
     }
 
     pub fn read_packet(&mut self) -> Result<Option<DemuxPacket<'_>>, BridgeError> {
+        self.read_packet_inner(None)
+    }
+
+    fn read_packet_for_stream(
+        &mut self,
+        stream_index: i32,
+    ) -> Result<Option<DemuxPacket<'_>>, BridgeError> {
+        self.read_packet_inner(Some(stream_index))
+    }
+
+    fn read_packet_inner(
+        &mut self,
+        stream_index: Option<i32>,
+    ) -> Result<Option<DemuxPacket<'_>>, BridgeError> {
         let mut view = PacketView {
             data: std::ptr::null(),
             size: 0,
@@ -385,12 +402,21 @@ impl Demuxer {
         let mut error = [0_i8; ERROR_CAPACITY];
         // SAFETY: `raw`, `view`, and the error buffer remain valid for the call.
         let result = unsafe {
-            openjoc_av_demux_read(
-                self.raw.as_ptr(),
-                std::ptr::addr_of_mut!(view),
-                error.as_mut_ptr(),
-                error.len(),
-            )
+            match stream_index {
+                Some(stream_index) => openjoc_av_demux_read_stream(
+                    self.raw.as_ptr(),
+                    stream_index,
+                    std::ptr::addr_of_mut!(view),
+                    error.as_mut_ptr(),
+                    error.len(),
+                ),
+                None => openjoc_av_demux_read(
+                    self.raw.as_ptr(),
+                    std::ptr::addr_of_mut!(view),
+                    error.as_mut_ptr(),
+                    error.len(),
+                ),
+            }
         };
         if result == 0 {
             return Ok(None);

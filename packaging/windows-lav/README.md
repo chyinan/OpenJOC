@@ -1,4 +1,4 @@
-# OpenJOC LAV 0.12.0 for Windows x64
+# OpenJOC LAV 0.15.0 for Windows x64
 
 ## PotPlayer users
 

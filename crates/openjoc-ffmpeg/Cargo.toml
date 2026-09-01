@@ -13,13 +13,13 @@ default = []
 ffmpeg = ["dep:openjoc-wave"]
 
 [dependencies]
-openjoc-api = { version = "0.14.0", path = "../openjoc-api" }
-openjoc-container = { version = "0.14.0", path = "../openjoc-container" }
-openjoc-eac3 = { version = "0.14.0", path = "../openjoc-eac3" }
-openjoc-emdf = { version = "0.14.0", path = "../openjoc-emdf" }
-openjoc-joc = { version = "0.14.0", path = "../openjoc-joc" }
-openjoc-scene = { version = "0.14.0", path = "../openjoc-scene" }
-openjoc-wave = { version = "0.14.0", path = "../openjoc-wave", optional = true }
+openjoc-api = { version = "0.15.0", path = "../openjoc-api" }
+openjoc-container = { version = "0.15.0", path = "../openjoc-container" }
+openjoc-eac3 = { version = "0.15.0", path = "../openjoc-eac3" }
+openjoc-emdf = { version = "0.15.0", path = "../openjoc-emdf" }
+openjoc-joc = { version = "0.15.0", path = "../openjoc-joc" }
+openjoc-scene = { version = "0.15.0", path = "../openjoc-scene" }
+openjoc-wave = { version = "0.15.0", path = "../openjoc-wave", optional = true }
 sha2 = "0.10"
 
 [build-dependencies]
@@ -27,7 +27,7 @@ cc = "1"
 pkg-config = "0.3"
 
 [dev-dependencies]
-openjoc-oamd = { version = "0.14.0", path = "../openjoc-oamd" }
+openjoc-oamd = { version = "0.15.0", path = "../openjoc-oamd" }
 
 [[bin]]
 name = "openjoc-avdecode"

@@ -618,12 +618,14 @@ impl FfmpegDecoder {
                 format!("CMAF sample validation failed: {error}"),
             )
         })?;
-        if packet.duration != Some(i64::from(sample.audio_duration)) {
+        if let Some(duration) = packet.duration
+            && duration != i64::from(sample.audio_duration)
+        {
             return Err(BridgeError::new(
                 BridgeErrorKind::InvalidTimestamp,
                 format!(
-                    "CMAF sample duration must be {}, got {:?}",
-                    sample.audio_duration, packet.duration
+                    "CMAF sample duration must be {}, got {duration}",
+                    sample.audio_duration,
                 ),
             ));
         }
@@ -5163,7 +5165,7 @@ mod tests {
         let raw = directory.join("joc.ec3");
         let first = standard_flat7x_access_unit(1);
         let second = standard_flat7x_access_unit(2);
-        fs::write(&raw, [&first, &second].concat()).expect("write JOC source");
+        fs::write(&raw, [first.as_slice(), second.as_slice()].concat()).expect("write JOC source");
         let container = directory.join("joc.mp4");
         let status = Command::new("ffmpeg")
             .args(["-v", "error", "-y", "-f", "eac3", "-i"])
@@ -5181,7 +5183,7 @@ mod tests {
             validation_profile: ValidationProfile::EtsiStrict,
             ..OpenJocConfig::default()
         };
-        let mut metadata_demux = Demuxer::open(container.to_str().expect("UTF-8 container path"))
+        let metadata_demux = Demuxer::open(container.to_str().expect("UTF-8 container path"))
             .expect("open metadata fixture");
         assert!(metadata_demux.cmaf_joc_track().is_err());
         let mut demuxer = Demuxer::open(container.to_str().expect("UTF-8 container path"))
@@ -5192,7 +5194,7 @@ mod tests {
         while let Some(packet) = demuxer.read_cmaf_sample(&track).expect("read CMAF packet") {
             assert_eq!(packet.pts, Some(packet_index));
             assert_eq!(packet.dts, Some(packet_index));
-            assert_eq!(packet.duration, Some(1536));
+            assert!(packet.duration.is_none() || packet.duration == Some(1536));
             let validated = track
                 .validate_sample(packet.data)
                 .expect("CMAF packet is one complete JOC sample");

@@ -24,6 +24,12 @@ FFMPEG_DLLS = (
     "swresample-lav-7.dll",
     "swscale-lav-10.dll",
 )
+LAV_SUPPORT_DLLS = (
+    "libbluray.dll",
+    "libgcc_s_seh-1.dll",
+    "libwinpthread-1.dll",
+    "zlib1.dll",
+)
 CRT_DLLS = (
     *(f"api-ms-win-crt-{name}-l1-1-0.dll" for name in (
         "conio", "convert", "environment", "filesystem", "heap", "locale",
@@ -62,7 +68,7 @@ def _replace_release_version(root: pathlib.Path, version: str) -> None:
     for path in root.rglob("*"):
         if path.is_file() and path.suffix.casefold() in TEXT_SUFFIXES:
             text = path.read_text(encoding="utf-8")
-            _write_text(path, text.replace("0.12.0", version))
+            _write_text(path, text.replace("0.15.0", version))
 
 
 def _required_runtime_files() -> tuple[str, ...]:
@@ -71,6 +77,7 @@ def _required_runtime_files() -> tuple[str, ...]:
         "LAVAudio.ax.manifest",
         "LAVFilters.Dependencies.manifest",
         "openjoc_capi.dll",
+        *LAV_SUPPORT_DLLS,
         *FFMPEG_DLLS,
         *CRT_DLLS,
     )
@@ -78,7 +85,7 @@ def _required_runtime_files() -> tuple[str, ...]:
 
 def build_package(arguments: argparse.Namespace) -> int:
     version = arguments.release_version
-    if version != "0.14.0":
+    if version != "0.15.0":
         raise ValueError(f"unsupported OpenJOC LAV release version: {version}")
     lav_root = arguments.lav_root.resolve()
     capi_dll = arguments.capi_dll.resolve()
@@ -105,6 +112,8 @@ def build_package(arguments: argparse.Namespace) -> int:
         runtime.mkdir()
 
         for name in FFMPEG_DLLS:
+            _copy_file(lav_root / "bin_x64" / name, runtime / name)
+        for name in LAV_SUPPORT_DLLS:
             _copy_file(lav_root / "bin_x64" / name, runtime / name)
         _copy_file(lav_root / "bin_x64" / "LAVAudio.ax", runtime / "LAVAudio.ax")
         _copy_file(capi_dll, runtime / "openjoc_capi.dll")

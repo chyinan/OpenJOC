@@ -24,7 +24,7 @@ from release_packaging_core import (
 )
 
 
-CANONICAL_RELEASE_VERSION = "0.12.0"
+CANONICAL_RELEASE_VERSION = "0.15.0"
 LAV_UPSTREAM_BASE = "fefb6987994ed56e4525e8a125f5fbb53707bc52"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",
@@ -55,6 +55,8 @@ LAV_NEW_FILES = (
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDialnorm.h",
+    "decoder/LAVAudio/OpenJocDialnormPolicyTests.cpp",
     "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
     "decoder/LAVAudio/OpenJocOutput.cpp",
     "decoder/LAVAudio/OpenJocOutput.h",
@@ -104,6 +106,10 @@ RUNTIME_REPLACEMENTS = (
     "swresample-lav-7.dll",
     "swscale-lav-10.dll",
     "LAVAudio.ax",
+    "libbluray.dll",
+    "libgcc_s_seh-1.dll",
+    "libwinpthread-1.dll",
+    "zlib1.dll",
 )
 LEGACY_ROOT_INSTALLERS = ("install.ps1", "verify.ps1", "uninstall.ps1")
 

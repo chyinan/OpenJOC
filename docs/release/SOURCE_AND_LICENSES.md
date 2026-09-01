@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 OpenJOC contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenJOC LAV 0.12.0 source and license boundaries
+# OpenJOC LAV 0.15.0 source and license boundaries
 
 OpenJOC core and `openjoc_capi.dll` remain Apache-2.0. The downstream LAV
 integration code is separately marked GPL-2.0-or-later and does not copy the
@@ -12,13 +12,13 @@ OpenJOC Apache header into the LAV license boundary.
 The public source is the downstream fork
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC),
 branch `openjoc-main`, downstream revision
-`d80b2802d05577045426881716138791c18f7b3a`,
+`7242890fdcc1b90b11196c50d04ea4191107d5a1`,
 based on LAV Filters 0.83. The corresponding-source ZIP remains attached to
 the OpenJOC release because it contains the full recursive closure, including
 components outside the public LAV fork.
 
 `LAVAudio.ax` is based on LAV Filters 0.83 revision
-`fefb6987994ed56e4525e8a125f5fbb53707bc52`. Its exact 64 compiled units are
+`fefb6987994ed56e4525e8a125f5fbb53707bc52`. Its exact 65 compiled units are
 listed in `LAV_SOURCE_LICENSE_CENSUS.json`: 16 GPL-2.0-or-later LAVAudio units,
 15 GPL-2.0-or-later and two GPL-3.0-only DSUtilLite units, 24 MIT DirectShow
 Base Classes units, and seven MIT plus GPL-2.0-or-later lineage-modified Base
@@ -38,7 +38,8 @@ The matching source archive contains:
 - the exact LAV source state, recursive FFmpeg/libbluray/libudfread/qsdecoder
   snapshots, modification patch, provenance documents, and sanitized FFmpeg
   configuration evidence;
-- exact source archives for static FFmpeg inputs and zlib; and
+- exact source archives for static FFmpeg inputs and the matching MSYS2 zlib
+  source package (plus its upstream zlib archive); and
 - `mingw-w64-gcc-16.2.0-3.src.tar.zst`, the exact official MSYS2 source-only
   package corresponding to the redistributed GCC runtime DLL.
 

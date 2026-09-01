@@ -38,9 +38,13 @@ EXPECTED_LAV_NEW_FILES = {
     "decoder/LAVAudio/OpenJocAdmission.cpp",
     "decoder/LAVAudio/OpenJocAdmission.h",
     "decoder/LAVAudio/OpenJocAdmissionTests.cpp",
+    "decoder/LAVAudio/OpenJocCandidate.cpp",
+    "decoder/LAVAudio/OpenJocCandidate.h",
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDialnorm.h",
+    "decoder/LAVAudio/OpenJocDialnormPolicyTests.cpp",
     "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
     "decoder/LAVAudio/OpenJocOutput.cpp",
     "decoder/LAVAudio/OpenJocOutput.h",
@@ -77,8 +81,8 @@ EXPECTED_LAV_MODIFIED_FILES = {
 
 
 class ReleasePackagingTests(unittest.TestCase):
-    def test_canonical_release_version_is_v012(self) -> None:
-        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.12.0")
+    def test_canonical_release_version_is_v015(self) -> None:
+        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.15.0")
 
     def test_reproducibility_manifest_uses_frozen_lav_upstream_base(self) -> None:
         self.assertEqual(

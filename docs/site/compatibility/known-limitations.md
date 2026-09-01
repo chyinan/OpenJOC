@@ -69,6 +69,9 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   reconstruction consumes the assembled I0+D0..Dn seven-input plane, while 2.0
   compatibility rendering consumes the independent I0 presentation. OpenJOC
   does not invent direct Lrs/Rrs-to-Stereo coefficients.
+- Flat-7.X explicit `Lb/Rb` is not automatically folded into a 5.1 output
+  policy. When the target has no exact `Lb/Rb` route, the semantic result is
+  `UnsupportedRoute`.
 - ETSI idx2 and idx4 are admitted only with the exact seven-input
   `L R C Ls Rs Tfl Tfr` Table-47 topology; idx3 is admitted only with the
   exact five-input `L R C Ls Rs` topology. The 90-degree phase wording is
@@ -192,11 +195,12 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   5.1.4, 7.1.2, and 7.1.4. Each makes one exact semantic
   `WAVEFORMATEXTENSIBLE` proposal with no fallback. Automatic downstream
   semantic layout discovery is `AUTO_NOT_RELIABLE`; Stereo is the default and
-  other layouts require explicit selection. Physical multichannel hardware is
-  not verified. OpenJOC does not infer layouts from endpoint names, perform
-  Bass Management, or translate physical subwoofer counts into logical LFE
-  channels. Standalone 7.1.6/9.1.x/22.2 or custom renderer support is not a LAV
-  output claim.
+  other layouts require explicit selection. LAV Stereo is compatibility Stereo,
+  not binaural or HRTF spatialization. Physical multichannel hardware is not
+  verified. OpenJOC does not infer the downstream physical endpoint's speaker
+  count or layouts from endpoint names, perform Bass Management, or translate
+  physical subwoofer counts into logical LFE channels. Standalone
+  7.1.6/9.1.x/22.2 or custom renderer support is not a LAV output claim.
 
 ## Platform and release scope
 

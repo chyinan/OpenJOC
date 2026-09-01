@@ -9,10 +9,10 @@ The source is published as [LAVFilters-OpenJOC](https://github.com/chyinan/LAVFi
 a downstream fork of [Nevcairiel/LAVFilters](https://github.com/Nevcairiel/LAVFilters).
 The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
 `fefb6987994ed56e4525e8a125f5fbb53707bc52`. Release source is frozen by the
-immutable downstream tag `openjoc-0.12.0`.
+immutable downstream tag `openjoc-0.15.0`.
 
 The public release also includes the
-`openjoc-lav-0.12.0-corresponding-source.zip` asset, which carries the full
+`openjoc-lav-0.15.0-corresponding-source.zip` asset, which carries the full
 recursive corresponding-source and third-party license closure.
 
 ## Routing behavior

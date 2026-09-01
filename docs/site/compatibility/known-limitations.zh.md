@@ -23,6 +23,7 @@ OpenJOC 是一个独立的实验性互操作项目。不声明得到 Dolby 的�
 - Rust `OpenJocSession` 的数据包接口每次接收一个完整的 General JOC 访问单元：I0 加按顺序排列的 D0..D7，受公开最大值约束。解复用、任意字节拆分，以及一次传入多个访问单元，属于有界的 C 流式解码器或框架适配器负责的范围。
 - CMAF Annex E.3 仍限制为 E-AC-3 I0 加可选 D0，每个同步帧包含六个 audio block，每个 sample 为完整的 1,536 个采样，并遵循 `ec-3`/`dec3` 轨道约定。原始 AC-3 Annex-J I0 组合不纳入标准 CMAF JOC 声明；Type 2 不扩展从属子流支持。容器元数据会交叉校验，但不会替代带内 JOC classifier。
 - 标准 flat-7.X 仅由 JOC downmix index 1、七个 JOC 输入和 `L R C Ls Rs Lrs Rrs` Table-47 组装共同识别。JOC reconstruction 使用 I0+D0..Dn 组装后的七输入 plane，2.0 compatibility rendering 使用独立 I0 presentation；OpenJOC 不会臆造 Lrs/Rrs 到 Stereo 的直接系数。
+- Flat-7.X 的显式 `Lb/Rb` 不会自动折叠到 5.1 输出策略；当目标没有精确的 `Lb/Rb` 路由时，语义结果为 `UnsupportedRoute`。
 - ETSI idx2 和 idx4 仅接受精确的七输入 `L R C Ls Rs Tfl Tfr` Table-47 拓扑；idx3 仅接受精确的五输入 `L R C Ls Rs` 拓扑。90 度 phase wording 在 JOC 边界上只是配置信令：OpenJOC 使用已解码的 E-AC-3 downmix，不额外执行 phase rotation。这些配置已有透明的仓库合成端到端验证；不声明适用的真实完整流证据，idx5..7 仍保持 fail-closed。
 - 在适合的真实媒体可用之前，稀有规范配置可以依赖仓库自有的合成验证；这不等于真实媒体验证。
 - 原始语法 I0 的支持严格限定为公开的 48 kHz Annex-J/TS-103-420 结构：一个 CRC 有效的 AC-3 I0、一个 E-AC-3 D0、匹配的六 block 时序、有效语义 chanmap，以及位于最后 D0 的 JOC/OAMD。普通 AC-3 不会进入 OpenJOC。已知 malformed 真实文件仍会在 AU0 截断 EMDF 边界失败关闭，不构成完整真实流验证。
@@ -61,7 +62,7 @@ OpenJOC 是一个独立的实验性互操作项目。不声明得到 Dolby 的�
 - 外部 FFmpeg 桥接是供其他程序嵌入的接口，不是针对已安装 `ffmpeg` 可执行文件的独立插件。原生 `libopenjoc` 解码器需要使用打过补丁的定制 FFmpeg 构建，并且必须显式选择 JOC。
 - GStreamer 使用 OpenJOC 专用的实验性 caps 特性，需要匹配的主机运行时，不会全局修改已安装的 GStreamer。
 - mpv 和 OpenJOC Player Bundles 是项目提供的定制构建，不是官方上游的 mpv 或 FFmpeg 发行版。物理多声道播放仍需要音频输出和设备能够接受请求的声道映射。
-- Windows DirectShow/LAV 集成会主动接受 JOC，把普通 E-AC-3 留在原有的 LAV/FFmpeg 路径，并保持直通优先级。它固定提供 48 kHz IEEE-float PCM 输出方案：Stereo、5.1、7.1、5.1.2、5.1.4、7.1.2 和 7.1.4。每种方案只提出一种明确的 `WAVEFORMATEXTENSIBLE` 格式，不提供备用方案。Stereo 是默认值，其他布局需要显式选择；物理多声道硬件尚未验证。OpenJOC 不会根据音频端点名称推断布局，不执行低频管理，也不会把物理低音炮数量转换成逻辑 LFE 声道。独立的 7.1.6、9.1.x、22.2、自定义渲染器支持，都不属于 LAV 输出声明。
+- Windows DirectShow/LAV 集成会主动接受 JOC，把普通 E-AC-3 留在原有的 LAV/FFmpeg 路径，并保持直通优先级。它固定提供 48 kHz IEEE-float PCM 输出方案：Stereo、5.1、7.1、5.1.2、5.1.4、7.1.2 和 7.1.4。每种方案只提出一种明确的 `WAVEFORMATEXTENSIBLE` 格式，不提供备用方案。Stereo 是兼容性立体声，不是双耳/HRTF 空间化；Stereo 是默认值，其他布局需要显式选择。物理多声道硬件尚未验证。OpenJOC 不会推断下游物理端点的扬声器数量或根据端点名称推断布局，不执行低频管理，也不会把物理低音炮数量转换成逻辑 LFE 声道。独立的 7.1.6、9.1.x、22.2、自定义渲染器支持，都不属于 LAV 输出声明。
 
 ## 平台与发布范围
 

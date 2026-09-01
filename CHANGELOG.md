@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.15.0] — 2026-09-01
+
+OpenJOC 0.15.0 expands the public ETSI JOC profile and carriage surface while
+keeping admission fail-closed and separating validated behavior from evidence
+that remains synthetic or core-level.
+
+### Added
+
+- Added public ETSI Table 47/48 `joc_dmx_config_idx` coverage for idx0 through
+  idx4, including true Flat-7.X, 5.X+2, and the phase-signaling variants;
+  reserved idx5 through idx7 remain rejected.
+- Added General E-AC-3 JOC assembly for I0 with ordered D0 through D7
+  dependents, plus legal 1-, 2-, 3-, and 6-block syncframe grouping into one
+  1,536-sample processing unit.
+- Added the constrained ETSI CMAF E-AC-3 JOC path for `ec-3`/`dec3` tracks,
+  including fragmented samples, cross-validated metadata, and strict rejection
+  of Type 2, D1+, and short-block CMAF inputs.
+- Added the standards-defined original-syntax AC-3 I0 plus E-AC-3 D0 JOC
+  frontend, with LAV admission for supported legacy-core elementary streams.
+
+### Changed
+
+- Raw elementary streams, ordinary containers, and CMAF samples retain the
+  original compressed payload at their respective boundaries; in-band JOC
+  classification remains authoritative over container labels.
+- LAV keeps ordinary AC-3 and non-JOC E-AC-3 on the stock decoder path while
+  confirmed JOC uses the bounded OpenJOC lane.
+- Stereo composition now uses the established compatibility presentation for
+  the admitted common profile, without adding a second reconstructed-object
+  Stereo contribution.
+
+### Fixed
+
+- Explicit-channel routing now rejects semantic layouts that cannot be mapped
+  to the selected output route instead of accepting an ambiguous channel shape.
+
+### Validation / compatibility
+
+- Synthetic end-to-end coverage exercises idx0 through idx4, full and sparse
+  5- and 7-input reconstruction, General multi-dependent assembly, short-block
+  grouping, legacy-core carriage, and constrained CMAF carriage.
+- Raw ES and CMAF fixture PCM is bit-identical, and the CMAF compressed payload
+  remains byte-exact before and after the container boundary.
+- Real-media evidence is common-profile evidence for idx0, valid-tail/core
+  evidence for idx1, and partial core evidence for idx4. idx2, idx3, General
+  multi-dependent, short-block, and CMAF evidence remains synthetic-only.
+
+### Known limitations
+
+- LAV Stereo is compatibility Stereo, not binaural or HRTF spatialization.
+  Select a downstream-supported output policy; OpenJOC does not infer the
+  physical endpoint's speaker count.
+- Flat-7.X explicit `Lb/Rb` does not automatically fold into a 5.1 route;
+  incompatible explicit-channel selections fail as `UnsupportedRoute`.
+- Reconstructed ADM is interoperability output, not recovery of the original
+  authored identity or master, and lossless round-trip and exact native-
+  renderer perceptual equivalence are not guaranteed.
+- Legacy AC-3 core plus E-AC-3 D0 is supported as the bounded elementary-stream
+  carriage. A legacy-core mixed MP4 mutation remains deferred and is outside
+  the standard CMAF claim. Malformed streams remain fail-closed.
+
 ## [0.14.0] — 2026-08-30
 
 OpenJOC 0.14.0 improves the Windows LAV/DirectShow playback experience with

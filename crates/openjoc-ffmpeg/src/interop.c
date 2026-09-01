@@ -159,6 +159,18 @@ int openjoc_av_demux_read(OpenJocAvDemux *demux, OpenJocAvPacketView *view,
     return 1;
 }
 
+int openjoc_av_demux_read_stream(OpenJocAvDemux *demux, int stream_index,
+                                 OpenJocAvPacketView *view, char *error,
+                                 size_t error_capacity) {
+    if (stream_index < 0)
+        return AVERROR(EINVAL);
+    for (;;) {
+        const int result = openjoc_av_demux_read(demux, view, error, error_capacity);
+        if (result <= 0 || view->stream_index == stream_index)
+            return result;
+    }
+}
+
 int openjoc_av_demux_seek(OpenJocAvDemux *demux, int stream_index,
                           int64_t timestamp, char *error,
                           size_t error_capacity) {

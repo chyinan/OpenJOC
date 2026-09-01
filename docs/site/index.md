@@ -52,6 +52,6 @@ OpenJOC decodes E-AC-3 JOC programmes, reconstructs decoded object signals, and 
 
 ## Current release
 
-The repository baseline for this site is **v0.14.0**. Support is intentionally scoped. See the [capability matrix](project/capabilities.md) and [known limitations](compatibility/known-limitations.md) before treating a render or export as a production deliverable.
+The repository baseline for this site is **v0.15.0**. Support is intentionally scoped. See the [capability matrix](project/capabilities.md) and [known limitations](compatibility/known-limitations.md) before treating a render or export as a production deliverable.
 
 OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby Laboratories. Third-party names belong to their respective owners.

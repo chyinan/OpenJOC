@@ -50,7 +50,7 @@ def powershell_51() -> pathlib.Path:
 
 
 class WindowsOnboardingTemplateTests(unittest.TestCase):
-    def test_template_targets_current_v012_release(self) -> None:
+    def test_template_targets_current_v015_release(self) -> None:
         current_files = (
             TEMPLATE / "README.md",
             TEMPLATE / "scripts" / "install.ps1",
@@ -59,7 +59,7 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
             TEMPLATE / "scripts" / "OpenJoc.Onboarding.Shell.psm1",
         )
         combined = "\n".join(path.read_text(encoding="utf-8") for path in current_files)
-        self.assertIn("0.12.0", combined)
+        self.assertIn("0.15.0", combined)
         self.assertNotIn("0.11.0", combined)
 
     def test_template_exposes_obvious_root_launchers_and_script_core(self) -> None:
@@ -124,7 +124,7 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
             runtime = pathlib.Path(temporary) / "runtime"
             runtime.mkdir()
             profile = {
-                "version": "0.14.0",
+                "version": "0.15.0",
                 "architecture": "x64",
                 "required_runtime_files": [
                     "LAVAudio.ax",
@@ -153,7 +153,7 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             data = json.loads(completed.stdout)
-            self.assertEqual(data["Version"], "0.14.0")
+            self.assertEqual(data["Version"], "0.15.0")
             self.assertEqual(data["Files"], profile["required_runtime_files"])
 
     def test_uninstall_snapshot_keeps_live_neighbors_and_restores_original_main(self) -> None:

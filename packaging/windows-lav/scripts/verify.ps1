@@ -19,7 +19,7 @@ $session = New-OpenJocSession -Operation 'verify' -PackageRoot $packageRoot -Ins
 if (-not [string]::IsNullOrWhiteSpace($LauncherStatusPath)) { Set-Content -LiteralPath $LauncherStatusPath -Value 'OpenJOC UI initialized' -Encoding ASCII }
 
 try {
-    Write-OpenJocHeader 'OpenJOC LAV Verification 0.12.0'
+    Write-OpenJocHeader 'OpenJOC LAV Verification 0.15.0'
     $verification = Get-OpenJocVerification $session
     Write-OpenJocVerification $session $verification
     if ($verification.Success) {
