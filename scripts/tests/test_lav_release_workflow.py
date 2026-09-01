@@ -34,6 +34,8 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("libbluray\\libbluray.vcxproj", text)
         self.assertIn("libbluray.dll", text)
         self.assertIn("mingw-w64-x86_64-gcc-libs", text)
+        self.assertIn("setup-msys2\\msys2.cmd", text)
+        self.assertIn("cygpath' '-w' '/mingw64/bin", text)
         self.assertIn(r'''gsub(/\\\\/, "/")''', text)
         self.assertIn("defined(Z_HAVE_UNISTD_H) && !defined(_WIN32)", text)
         self.assertIn('bash -c "sh ./build_ffmpeg_msvc.sh x64 release"', text)

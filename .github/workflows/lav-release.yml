@@ -216,8 +216,12 @@ jobs:
           $built = Join-Path $lav 'libbluray\bin_x64\libbluray\libbluray.dll'
           if (-not (Test-Path -LiteralPath $built -PathType Leaf)) { throw "libbluray output is missing: $built" }
           Copy-Item -LiteralPath $built -Destination (Join-Path $lav 'bin_x64\libbluray.dll') -Force
-          $msys = if ([string]::IsNullOrWhiteSpace($env:MSYS2_LOCATION)) { 'C:\msys64' } else { $env:MSYS2_LOCATION }
-          $mingwBin = Join-Path $msys 'mingw64\bin'
+          $msysCommand = Join-Path $env:RUNNER_TEMP 'setup-msys2\msys2.cmd'
+          if (-not (Test-Path -LiteralPath $msysCommand -PathType Leaf)) { throw "MSYS2 command wrapper is missing: $msysCommand" }
+          $mingwBin = (& $msysCommand -c "'cygpath' '-w' '/mingw64/bin'").Trim()
+          if ([string]::IsNullOrWhiteSpace($mingwBin) -or -not (Test-Path -LiteralPath $mingwBin -PathType Container)) {
+            throw "MSYS2 MinGW bin directory is missing: $mingwBin"
+          }
           foreach ($name in @('libgcc_s_seh-1.dll', 'libwinpthread-1.dll', 'zlib1.dll')) {
             $source = Join-Path $mingwBin $name
             if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "MSYS2 runtime is missing: $source" }
