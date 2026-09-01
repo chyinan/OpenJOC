@@ -87,6 +87,9 @@ jobs:
           install: >-
             make
             nasm
+            mingw-w64-x86_64-gcc-libs
+            mingw-w64-x86_64-libwinpthread
+            mingw-w64-x86_64-zlib
 
       - name: Build zlib MSVC dependency
         shell: pwsh
@@ -191,6 +194,35 @@ jobs:
             lav/ffmpeg/ffbuild/config.log
             lav/ffmpeg/ffbuild/config.out
           if-no-files-found: ignore
+
+      - name: Build libbluray runtime dependency
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'Visual Studio C++ installation was not found.' }
+          $lav = Join-Path $env:GITHUB_WORKSPACE 'lav'
+          $project = Join-Path $lav 'libbluray\libbluray.vcxproj'
+          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-libbluray.cmd'
+          @"
+          @echo off
+          call "$vs\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo
+          if errorlevel 1 exit /b %errorlevel%
+          msbuild "$project" /m /t:Rebuild /p:Configuration=Release /p:Platform=x64 /nologo
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
+          & cmd.exe /d /c $commandFile
+          if ($LASTEXITCODE -ne 0) { throw "libbluray MSVC build failed: $LASTEXITCODE" }
+          $built = Join-Path $lav 'libbluray\bin_x64\libbluray\libbluray.dll'
+          if (-not (Test-Path -LiteralPath $built -PathType Leaf)) { throw "libbluray output is missing: $built" }
+          Copy-Item -LiteralPath $built -Destination (Join-Path $lav 'bin_x64\libbluray.dll') -Force
+          $msys = if ([string]::IsNullOrWhiteSpace($env:MSYS2_LOCATION)) { 'C:\msys64' } else { $env:MSYS2_LOCATION }
+          $mingwBin = Join-Path $msys 'mingw64\bin'
+          foreach ($name in @('libgcc_s_seh-1.dll', 'libwinpthread-1.dll', 'zlib1.dll')) {
+            $source = Join-Path $mingwBin $name
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "MSYS2 runtime is missing: $source" }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $lav "bin_x64\$name") -Force
+          }
 
       - name: Build LAVAudio
         shell: pwsh
