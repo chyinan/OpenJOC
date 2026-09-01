@@ -29,6 +29,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("cargo build -p openjoc-capi --release --locked", text)
         self.assertIn("--extra-libs=../thirdparty/64/lib/zlib.lib", text)
         self.assertIn("Join-Path $lav 'ffmpeg\\zlib.lib'", text)
+        self.assertIn("ref: v1.3.1", text)
         self.assertIn(r'''gsub(/\\\\/, "/")''', text)
         self.assertIn("defined(Z_HAVE_UNISTD_H) && !defined(_WIN32)", text)
         self.assertIn('bash -c "sh ./build_ffmpeg_msvc.sh x64 release"', text)

@@ -38,8 +38,9 @@ The matching source archive contains:
 - the exact LAV source state, recursive FFmpeg/libbluray/libudfread/qsdecoder
   snapshots, modification patch, provenance documents, and sanitized FFmpeg
   configuration evidence;
-- exact source archives for static FFmpeg inputs and the matching MSYS2 zlib
-  source package (plus its upstream zlib archive); and
+- exact source archives for static FFmpeg inputs, zlib 1.3.1 used to build
+  `zlibwapi.dll`, and the matching MSYS2 zlib 1.3.2 source package plus its
+  upstream zlib 1.3.2 archive; and
 - `mingw-w64-gcc-16.2.0-3.src.tar.zst`, the exact official MSYS2 source-only
   package corresponding to the redistributed GCC runtime DLL.
 

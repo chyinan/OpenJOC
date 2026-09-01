@@ -58,7 +58,7 @@ jobs:
         with:
           repository: madler/zlib
           path: zlib
-          ref: v1.3.2
+          ref: v1.3.1
           fetch-depth: 1
 
       - name: Resolve release identity
