@@ -521,6 +521,11 @@ impl FfmpegDecoder {
         config
             .validate()
             .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string()))?;
+        if config.render_mode == RenderMode::Binaural {
+            OpenJocSession::new(config.clone()).map_err(|error| {
+                BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+            })?;
+        }
         let layout = channel_layout_for_config(&config)?;
         let config_descriptor = config.effective_config_descriptor();
         let config_fingerprint = config.effective_config_fingerprint();
@@ -3033,6 +3038,23 @@ mod tests {
             binaural.channel_layout().standard_layout.as_deref(),
             Some("binaural")
         );
+    }
+
+    #[test]
+    fn binaural_stream_configuration_preflights_semantically_invalid_sofa() {
+        let error = FfmpegDecoder::new(OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::from_sofa_bytes(
+                b"not SOFA".to_vec(),
+                "7.1.4",
+                openjoc_api::BinauralLfePolicy::Exclude,
+            )),
+            ..OpenJocConfig::default()
+        })
+        .expect_err("invalid binaural SOFA must fail during stream creation");
+        assert_eq!(error.kind, BridgeErrorKind::InvalidConfig);
+        assert!(error.message.contains("unsupported SOFA container"));
     }
 
     #[test]

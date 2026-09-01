@@ -62,6 +62,15 @@ use the same two-channel PCM transport shape, but they are different
 renderers. Selecting an unsupported multichannel layout may cause playback
 failure, stuttering, or downstream conversion.
 
+When Binaural is selected, the OpenJOC page also provides an HRTF source. The
+default is **Built-in SADIE II D1 (Recommended)**. **Custom SOFA...** opens a
+normal Windows file picker for one local `.sofa` file; OpenJOC validates the
+selected dataset before Apply and uses the same strict loader as the standalone
+SOFA path. An invalid selection is rejected and the previous known-good HRTF
+remains active. If a persisted custom file is later moved, deleted, denied, or
+becomes invalid, reopening Binaural reports a bounded HRTF configuration error
+until the user selects the built-in source or another valid file.
+
 OpenJOC does not detect the physical speaker configuration or automatically
 downmix to match the endpoint. A larger layout may be rejected or accepted and
 converted later by Windows/the downstream renderer; that conversion is outside

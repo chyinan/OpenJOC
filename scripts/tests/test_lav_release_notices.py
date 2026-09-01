@@ -18,6 +18,7 @@ NEW_LAV_FILES = (
     "decoder/LAVAudio/OpenJocAdmissionTests.cpp",
     "decoder/LAVAudio/OpenJocCandidate.cpp",
     "decoder/LAVAudio/OpenJocCandidate.h",
+    "decoder/LAVAudio/OpenJocBinauralSettings.h",
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",

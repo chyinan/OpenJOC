@@ -970,7 +970,9 @@ pub extern "C" fn openjoc_decoder_get_channel_label(
 ///
 /// Unlike `openjoc_decoder`, this bridge accepts arbitrary byte chunks and
 /// owns bounded packet-to-access-unit staging. The render session remains
-/// lazy until the first complete access unit is positively admitted as JOC.
+/// lazy until the first complete access unit is positively admitted as JOC;
+/// Binaural configurations are preflighted at creation so SOFA/layout errors
+/// are returned before an adapter persists or starts a stream.
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_stream_decoder_create(
     config: *const openjoc_decoder_config,

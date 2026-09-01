@@ -81,13 +81,13 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib oleaut32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
+call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" "/I%~2\decoder\LAVAudio" ^
   "%~2\decoder\LAVAudio\OpenJocSettingsSmoke.cpp" ^
   /Fe:OpenJocSettingsSmoke.exe /link advapi32.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
 call cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX /DUNICODE /D_UNICODE ^
-  "/I%~2\include" ^
+  "/I%~2\include" "/I%~2\decoder\LAVAudio" ^
   "%~2\decoder\LAVAudio\OpenJocPolicyControl.cpp" ^
   /Fe:OpenJocPolicyControl.exe /link advapi32.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%

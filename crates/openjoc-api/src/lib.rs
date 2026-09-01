@@ -12,6 +12,8 @@
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::too_many_lines)]
 
+// pattern: Functional Core
+
 use openjoc_eac3::{
     ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, DialnormState, DownmixMetadata,
     InternalBasePolicy, JocAccessUnitPcmDecoder, JocMetadataFrame, StereoDownmixMode, StreamType,
@@ -38,7 +40,8 @@ use openjoc_scene::{
     SemanticChannelLayout, SpeakerLayout, SpeakerLayoutPreset,
 };
 use openjoc_sofa::{
-    SofaLoadLimits, load_builtin_generic_hrir, parse_simple_free_field_hrir, resolve_hrir,
+    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, SofaLoadLimits, load_builtin_generic_hrir,
+    parse_simple_free_field_hrir, resolve_hrir,
 };
 use sha2::{Digest, Sha256};
 use std::{collections::VecDeque, fmt, fmt::Write as _};
@@ -1830,6 +1833,12 @@ impl BinauralState {
         } else {
             parse_simple_free_field_hrir(&config.sofa_bytes, SofaLoadLimits::default())?
         };
+        if loaded.metadata.sample_rate_hz != BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ {
+            return Err(OpenJocError::InvalidConfig(format!(
+                "binaural SOFA sampling rate must be {BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ} Hz, got {} Hz",
+                loaded.metadata.sample_rate_hz
+            )));
+        }
         let preset = SpeakerLayoutPreset::for_name(&config.virtual_layout)
             .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
         let mut entries = loaded.bank.entries().to_vec();
