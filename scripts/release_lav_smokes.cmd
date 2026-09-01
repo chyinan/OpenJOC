@@ -53,6 +53,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC /DLAV_OPENJOC_SIDE
   "%~2\decoder\LAVAudio\OpenJocDecoderSmoke.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocDecoder.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocAdmission.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocDiagnostic.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
   /Fe:OpenJocDecoderSmoke.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
@@ -74,6 +75,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   "%~2\decoder\LAVAudio\OpenJocDirectShowNegotiationSmoke.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocDecoder.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocAdmission.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocDiagnostic.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocStrictNegotiation.cpp" ^

@@ -18,6 +18,12 @@ openjoc render-joc input.m4a \\
   --output custom-headphones.wav
 ```
 
+`--virtual-layout 9.1.6` selects the canonical experimental 16-channel virtual
+layout (`FL, FR, FC, LFE, Lb, Rb, Ls, Rs, Lw, Rw, Ltf, Rtf, Ltm, Rtm, Ltr,
+Rtr`). The virtual feeds still pass through the same SOFA/HRTF backend and the
+final output remains two-channel binaural PCM. The default remains 7.1.4;
+9.1.6 is not a claim of perceptual superiority.
+
 ## SOFA scope
 
 The loader accepts the documented `SimpleFreeFieldHRIR` NetCDF classic CDF-1 subset. The file must provide two receivers, the matching sample rate, and exact or safely interpolatable coverage for every requested non-LFE virtual direction. HDF5/NetCDF-4, resampling, downloads, writing, moving sources, and universal coverage are not supported.

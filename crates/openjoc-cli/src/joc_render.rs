@@ -4,6 +4,8 @@
 //! does not infer authored-object identity from OAMD order or ReconstructionBasis
 //! row order.
 
+// pattern: Mixed (needs refactoring)
+
 use crate::performance::RenderStageTiming;
 use openjoc_eac3::{
     ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, DialnormMode, DialnormState,
@@ -3441,7 +3443,7 @@ mod tests {
     use std::{
         fs,
         path::Path,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Instant, SystemTime, UNIX_EPOCH},
     };
 
     fn caf_channel_descriptions(bytes: &[u8]) -> Vec<(u32, u32, [f32; 3])> {
@@ -4692,6 +4694,247 @@ mod tests {
                     - 1
             );
         }
+    }
+
+    #[test]
+    fn binaural_916_is_not_a_714_alias_and_keeps_two_channel_finite_output() {
+        let frame = automatic_decoded_frame(openjoc_oamd::Position3 {
+            x: 0.5,
+            y: 0.2,
+            z: 0.8,
+        });
+        let pcm = base(2, 1.0);
+        let bank = binaural_bank("7.1.4", 48_000);
+        let mut seven = JocBinauralRenderer::new(
+            "7.1.4",
+            bank.clone(),
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            None,
+        )
+        .unwrap();
+        let mut nine = JocBinauralRenderer::new(
+            "9.1.6",
+            bank,
+            BinauralBackend::Direct,
+            Some(BinauralLfePolicy::Exclude),
+            None,
+        )
+        .unwrap();
+        let seven_output = collect_binaural(&mut seven, 0, &frame, &pcm);
+        let nine_output = collect_binaural(&mut nine, 0, &frame, &pcm);
+        assert_eq!(seven_output.len(), nine_output.len());
+        assert!(
+            nine_output
+                .iter()
+                .flat_map(|(left, right)| [*left, *right])
+                .all(f64::is_finite)
+        );
+        assert_ne!(seven_output, nine_output);
+    }
+
+    #[test]
+    fn binaural_916_spatial_fixture_is_deterministic_finite_and_causal() {
+        let positions = [
+            openjoc_oamd::Position3 {
+                x: 0.5,
+                y: 0.0,
+                z: 0.5,
+            },
+            openjoc_oamd::Position3 {
+                x: 0.5,
+                y: 1.0,
+                z: 0.5,
+            },
+            openjoc_oamd::Position3 {
+                x: 0.0,
+                y: 0.5,
+                z: 0.5,
+            },
+            openjoc_oamd::Position3 {
+                x: 1.0,
+                y: 0.5,
+                z: 0.5,
+            },
+            openjoc_oamd::Position3 {
+                x: 0.5,
+                y: 0.5,
+                z: 1.0,
+            },
+        ];
+        let render = |position| {
+            let mut renderer = JocBinauralRenderer::new(
+                "9.1.6",
+                binaural_bank("7.1.4", 48_000),
+                BinauralBackend::Direct,
+                Some(BinauralLfePolicy::Exclude),
+                None,
+            )
+            .unwrap();
+            collect_binaural(
+                &mut renderer,
+                0,
+                &automatic_decoded_frame(position),
+                &base(2, 1.0),
+            )
+        };
+        let first = positions.into_iter().map(render).collect::<Vec<_>>();
+        assert!(
+            first
+                .iter()
+                .flatten()
+                .flat_map(|(left, right)| [*left, *right])
+                .all(f64::is_finite)
+        );
+        assert_ne!(first[0], first[1]);
+        assert_ne!(first[1], first[2]);
+        assert_eq!(
+            first,
+            positions.iter().copied().map(render).collect::<Vec<_>>()
+        );
+        let height_low = render(openjoc_oamd::Position3 {
+            x: 0.3,
+            y: 0.3,
+            z: 0.2,
+        });
+        let height_high = render(openjoc_oamd::Position3 {
+            x: 0.3,
+            y: 0.3,
+            z: 0.8,
+        });
+        assert_ne!(height_low, height_high);
+        let moving_before = render(openjoc_oamd::Position3 {
+            x: 0.3,
+            y: 0.3,
+            z: 0.4,
+        });
+        let moving_after = render(openjoc_oamd::Position3 {
+            x: 0.3,
+            y: 0.7,
+            z: 0.4,
+        });
+        assert_ne!(moving_before, moving_after);
+    }
+
+    #[test]
+    #[ignore = "manual release performance harness"]
+    fn binaural_714_and_916_performance_harness() {
+        const ITERATIONS: usize = 25;
+        const REALTIME_BUDGET_SECONDS: f64 = 480.0 / 48_000.0;
+        let bank = openjoc_sofa::load_builtin_generic_hrir()
+            .expect("bundled SADIE II D1 resource")
+            .bank;
+        let mut frame = automatic_decoded_frame(openjoc_oamd::Position3 {
+            x: 0.5,
+            y: 0.2,
+            z: 0.8,
+        });
+        frame.sample_range = SampleRange::new(0, 480).unwrap();
+        frame.decoded.reconstruction_basis.rows[0] = vec![6.0; 480];
+        let pcm = base(480, 1.0);
+        for layout in ["7.1.4", "9.1.6"] {
+            let mut renderer = JocBinauralRenderer::new(
+                layout,
+                bank.clone(),
+                BinauralBackend::Direct,
+                Some(BinauralLfePolicy::Exclude),
+                None,
+            )
+            .unwrap();
+            for _ in 0..3 {
+                renderer.render_frame(0, &frame, &pcm).unwrap();
+                renderer.reset();
+            }
+            let mut samples = (0..ITERATIONS)
+                .map(|_| {
+                    let start = Instant::now();
+                    let output = renderer.render_frame(0, &frame, &pcm).unwrap();
+                    assert!(
+                        output
+                            .iter()
+                            .flat_map(|block| block.left.iter().chain(&block.right))
+                            .all(|sample| sample.is_finite())
+                    );
+                    renderer.reset();
+                    start.elapsed().as_secs_f64()
+                })
+                .collect::<Vec<_>>();
+            samples.sort_by(f64::total_cmp);
+            let average = samples.iter().sum::<f64>() / samples.len() as f64;
+            let p95 = samples[(samples.len() * 95).div_ceil(100).saturating_sub(1)];
+            println!(
+                "layout={layout} average_render_seconds={average:.9} p95_render_seconds={p95:.9} realtime_budget_seconds={REALTIME_BUDGET_SECONDS:.9}"
+            );
+            let allowed_seconds = if cfg!(debug_assertions) {
+                REALTIME_BUDGET_SECONDS * 4.0
+            } else {
+                REALTIME_BUDGET_SECONDS * 0.5
+            };
+            assert!(p95 < allowed_seconds, "{layout} p95={p95}");
+        }
+    }
+
+    #[test]
+    #[ignore = "manual release energy harness"]
+    fn binaural_714_and_916_headroom_harness() {
+        let bank = openjoc_sofa::load_builtin_generic_hrir()
+            .expect("bundled SADIE II D1 resource")
+            .bank;
+        let frame = automatic_decoded_frame(openjoc_oamd::Position3 {
+            x: 0.5,
+            y: 0.2,
+            z: 0.8,
+        });
+        let pcm = base(2, 1.0);
+        let mut metrics = Vec::new();
+        for layout in ["7.1.4", "9.1.6"] {
+            let mut renderer = JocBinauralRenderer::new(
+                layout,
+                bank.clone(),
+                BinauralBackend::Direct,
+                Some(BinauralLfePolicy::Exclude),
+                None,
+            )
+            .unwrap();
+            let output = collect_binaural(&mut renderer, 0, &frame, &pcm);
+            let sum = output
+                .iter()
+                .flat_map(|(left, right)| [*left, *right])
+                .map(|sample| sample * sample)
+                .sum::<f64>();
+            let peak = output
+                .iter()
+                .flat_map(|(left, right)| [left.abs(), right.abs()])
+                .fold(0.0, f64::max);
+            let rms = (sum / (output.len() * 2) as f64).sqrt();
+            assert!(peak.is_finite() && rms.is_finite());
+            let out_of_range = output
+                .iter()
+                .flat_map(|(left, right)| [*left, *right])
+                .filter(|sample| sample.abs() > 1.0)
+                .count();
+            assert!(
+                peak <= 8.0,
+                "{layout} peak exceeded the headroom budget: {peak}"
+            );
+            assert!(
+                rms <= 1.0,
+                "{layout} RMS exceeded the headroom budget: {rms}"
+            );
+            assert!(
+                out_of_range <= output.len(),
+                "{layout} more than half of the output samples exceeded unit range: {out_of_range}/{}",
+                output.len() * 2
+            );
+            println!(
+                "layout={layout} peak={peak:.9} rms={rms:.9} out_of_range_samples={out_of_range} samples={}",
+                output.len()
+            );
+            metrics.push((peak, rms, out_of_range));
+        }
+        assert_ne!(metrics[0], metrics[1]);
+        assert!(metrics[1].0 <= metrics[0].0 * 1.5);
+        assert!(metrics[1].1 <= metrics[0].1 * 1.5);
     }
 
     #[test]

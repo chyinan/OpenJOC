@@ -1,10 +1,16 @@
+// pattern: Mixed (unavoidable)
+// Reason: this integration test owns a deterministic in-memory SOFA fixture
+// and exercises the pure parser/renderer boundary, with one opt-in exporter
+// for the native LAV smoke.
+
 use openjoc_render::{
-    BinauralRenderer, CartesianPosition, HrirBank, HrirEntry, HrirEntryId, HrirPair, SourceId,
-    StaticBinauralSource, UniformPartitionedConfig, UniformPartitionedConvolver,
+    BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntry, HrirEntryId,
+    HrirPair, SourceId, StaticBinauralSource, UniformPartitionedConfig,
+    UniformPartitionedConvolver,
 };
 use openjoc_sofa::{
-    SofaError, SofaLoadLimits, load_simple_free_field_hrir, parse_simple_free_field_hrir,
-    resolve_hrir,
+    SofaError, SofaLoadLimits, load_builtin_generic_hrir, load_simple_free_field_hrir,
+    parse_simple_free_field_hrir, resolve_hrir,
 };
 
 #[test]
@@ -65,6 +71,54 @@ fn deterministic_load_and_renderer_integration() {
     let config = UniformPartitionedConfig::new(4).expect("partition config");
     let _partitioned = UniformPartitionedConvolver::new(48_000, config, bank, sources)
         .expect("partition integration");
+}
+
+#[test]
+fn built_in_and_synthetic_custom_hrtf_produce_distinct_finite_pcm() {
+    let builtin = load_builtin_generic_hrir().expect("built-in HRTF").bank;
+    let custom = parse_simple_free_field_hrir(&dense_binaural_fixture(), SofaLoadLimits::default())
+        .expect("synthetic custom HRTF")
+        .bank;
+    let direction = CartesianPosition::new(0.0, 1.0, 0.0);
+    let render = |bank: HrirBank| {
+        let entry = bank
+            .entries()
+            .iter()
+            .find(|entry| {
+                let vector = entry.direction();
+                vector[0] * direction.x + vector[1] * direction.y + vector[2] * direction.z
+                    > 1.0 - 1.0e-12
+            })
+            .expect("front measurement");
+        let source = StaticBinauralSource::new(SourceId::new(1), direction, 1.0, entry.id())
+            .expect("static source");
+        let mut renderer = BinauralRenderer::new(48_000, bank, vec![source]).expect("renderer");
+        let samples = [1.0, 0.0, 0.0, 0.0];
+        let block = BinauralSourceBlock::new(SourceId::new(1), &samples);
+        let mut left = vec![0.0; samples.len()];
+        let mut right = vec![0.0; samples.len()];
+        renderer
+            .render_block(&[block], &mut left, &mut right)
+            .expect("finite binaural render");
+        (left, right)
+    };
+    let builtin_pcm = render(builtin);
+    let custom_pcm = render(custom);
+    assert!(
+        builtin_pcm
+            .0
+            .iter()
+            .chain(&builtin_pcm.1)
+            .all(|sample| sample.is_finite())
+    );
+    assert!(
+        custom_pcm
+            .0
+            .iter()
+            .chain(&custom_pcm.1)
+            .all(|sample| sample.is_finite())
+    );
+    assert_ne!(builtin_pcm, custom_pcm);
 }
 
 #[test]
@@ -332,6 +386,130 @@ fn fixture(convention: &str, delays: [f64; 2], per_measurement_delay: bool) -> V
         text_attr("License", "Apache-2.0 project-owned synthetic data"),
     ];
     cdf1(&dimensions, &globals, &mut variables)
+}
+
+fn dense_binaural_fixture() -> Vec<u8> {
+    let dimensions = vec![("M", 15usize), ("R", 2), ("N", 2), ("C", 3)];
+    let dim_id = |name: &str| {
+        dimensions
+            .iter()
+            .position(|(candidate, _)| *candidate == name)
+            .expect("dimension")
+    };
+    let directions = [
+        [-1.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [-1.0, -1.0, 0.0],
+        [1.0, -1.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.67767333984375, 0.0],
+        [1.0, 0.67767333984375, 0.0],
+        [-1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [-1.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [-1.0, -1.0, 1.0],
+        [1.0, -1.0, 1.0],
+    ];
+    let source_values = directions
+        .iter()
+        .flat_map(|direction| {
+            let length = direction
+                .iter()
+                .map(|value| value * value)
+                .sum::<f64>()
+                .sqrt();
+            let x = direction[0] / length;
+            let y = direction[1] / length;
+            let z = direction[2] / length;
+            [
+                y.atan2(x).to_degrees(),
+                z.atan2((x * x + y * y).sqrt()).to_degrees(),
+                1.0,
+            ]
+        })
+        .collect::<Vec<_>>();
+    let ir_values = (0..directions.len())
+        .flat_map(|index| [1.0 + index as f64, 0.0, 2.0 + index as f64, 0.0])
+        .collect::<Vec<_>>();
+    let mut variables = vec![
+        Var::new(
+            "Data.IR",
+            vec![dim_id("M"), dim_id("R"), dim_id("N")],
+            &ir_values,
+            vec![],
+        ),
+        Var::new(
+            "Data.SamplingRate",
+            vec![dim_id("R")],
+            &[48_000.0, 48_000.0],
+            vec![text_attr("Units", "hertz")],
+        ),
+        Var::new(
+            "Data.Delay",
+            vec![dim_id("R")],
+            &[0.0, 0.0],
+            vec![text_attr("Units", "samples")],
+        ),
+        Var::new(
+            "SourcePosition",
+            vec![dim_id("M"), dim_id("C")],
+            &source_values,
+            vec![
+                text_attr("Type", "spherical"),
+                text_attr("Units", "degree, degree, metre"),
+            ],
+        ),
+        Var::new(
+            "ListenerPosition",
+            vec![dim_id("C")],
+            &[0.0, 0.0, 0.0],
+            vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
+        ),
+        Var::new(
+            "ListenerView",
+            vec![dim_id("C")],
+            &[0.0, 1.0, 0.0],
+            vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
+        ),
+        Var::new(
+            "ListenerUp",
+            vec![dim_id("C")],
+            &[0.0, 0.0, 1.0],
+            vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
+        ),
+        Var::new(
+            "ReceiverPosition",
+            vec![dim_id("R"), dim_id("C")],
+            &[-0.1, 0.0, 0.0, 0.1, 0.0, 0.0],
+            vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
+        ),
+        Var::new(
+            "EmitterPosition",
+            vec![dim_id("C")],
+            &[0.0, 0.0, 0.0],
+            vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
+        ),
+    ];
+    let globals = vec![
+        text_attr("Conventions", "SOFA"),
+        text_attr("SOFAConventions", "SimpleFreeFieldHRIR"),
+        text_attr("SOFAConventionsVersion", "1.2"),
+        text_attr("DataType", "FIR"),
+        text_attr("RoomType", "free field"),
+        text_attr("Title", "OpenJOC synthetic binaural fixture"),
+        text_attr("License", "Apache-2.0 project-owned synthetic data"),
+    ];
+    cdf1(&dimensions, &globals, &mut variables)
+}
+
+#[test]
+#[ignore = "native LAV smoke fixture export"]
+fn export_dense_binaural_fixture_for_native_smoke() {
+    let output = std::env::var_os("OPENJOC_TEST_SOFA_OUTPUT").expect("output path");
+    std::fs::write(output, dense_binaural_fixture()).expect("write synthetic SOFA");
 }
 
 #[derive(Clone)]

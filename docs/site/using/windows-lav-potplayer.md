@@ -71,6 +71,18 @@ remains active. If a persisted custom file is later moved, deleted, denied, or
 becomes invalid, reopening Binaural reports a bounded HRTF configuration error
 until the user selects the built-in source or another valid file.
 
+The Binaural page also selects the virtual speaker layout: **7.1.4
+(Recommended)** or **9.1.6 (Experimental)**. This parameterizes the existing
+virtual-speaker stage before the same SOFA/HRTF backend; final output remains
+two-channel binaural PCM. 9.1.6 is not claimed to be better or reference
+quality, and its extra virtual feeds may cost more CPU.
+
+The canonical 9.1.6 intermediate order is `FL, FR, FC, LFE, Lb, Rb, Ls, Rs,
+Lw, Rw, Ltf, Rtf, Ltm, Rtm, Ltr, Rtr`. LFE follows the existing explicit LFE
+policy; the other 15 virtual feeds are resolved by the existing exact or
+bounded interpolation path, then convolved to the two ear channels. This is a
+virtual layout, not a 16-channel downstream speaker output.
+
 OpenJOC does not detect the physical speaker configuration or automatically
 downmix to match the endpoint. A larger layout may be rejected or accepted and
 converted later by Windows/the downstream renderer; that conversion is outside

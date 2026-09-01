@@ -329,6 +329,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocDirectShowNegotiationSmoke.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocDecoder.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocAdmission.cpp" ^
+  "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocDiagnostic.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocOutput.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocStrictOutput.cpp" ^
   "%TARGET_LAV_ROOT%\decoder\LAVAudio\OpenJocStrictNegotiation.cpp" ^
