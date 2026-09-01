@@ -43,7 +43,9 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 
 - JOC rendering is 48 kHz. Raw E-AC-3 and seekable ordinary ISO BMFF input
   are admitted within the documented topology and access-unit boundaries.
-  Non-seekable or fragmented MP4 is not admitted.
+  The explicit ETSI CMAF JOC sample gate also accepts repository-validated
+  fragmented samples when a caller supplies the parsed `ec-3`/`dec3` track
+  metadata. Generic container discovery does not infer JOC from branding.
 - Generic E-AC-3 short syncframes may contain 1, 2, or 3 audio blocks. For
   General JOC carriage, OpenJOC groups ordered I0/D0..D7 programme sets until
   each selected programme covers six cumulative blocks (1,536 samples),
@@ -56,9 +58,12 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   maximum. Demuxing, arbitrary byte fragmentation, and multiple AUs per call
   belong to the bounded C stream decoder or framework adapters, not that Rust
   packet contract.
-- CMAF Annex E.3 remains limited to I0 plus optional D0. The existing original
-  AC-3 Annex-J I0 combination also remains D0-only; Type 2 streams do not gain
-  dependent-substream support.
+- CMAF Annex E.3 remains limited to E-AC-3 I0 plus optional D0, with six blocks
+  per syncframe, complete 1,536-sample samples, and the `ec-3`/`dec3` track
+  contract. The legacy original-syntax AC-3 Annex-J I0 combination is outside
+  the standard CMAF JOC claim. Type 2 streams do not gain dependent-substream
+  support. Container metadata is cross-validated but never replaces the
+  in-band JOC classifier.
 - Standards-defined flat-7.X is identified narrowly by JOC downmix index 1,
   seven JOC inputs, and `L R C Ls Rs Lrs Rrs` Table-47 assembly. JOC
   reconstruction consumes the assembled I0+D0..Dn seven-input plane, while 2.0

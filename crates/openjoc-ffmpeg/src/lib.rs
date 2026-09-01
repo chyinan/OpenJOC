@@ -16,6 +16,9 @@ use openjoc_api::{
     FINAL_LINKED_GAIN_LATENCY_SAMPLES, OpenJocConfig, OpenJocPacket, OpenJocPcmFrame,
     OpenJocSession, QMF_LATENCY_SAMPLES, RenderMode,
 };
+pub use openjoc_container::cmaf::{
+    CmafJocTrack, CmafTrackMetadata, Ec3SpecificBox, Ec3SubstreamConfig, parse_ec3_specific_box,
+};
 use openjoc_eac3::{
     AccessUnitIndex, AccessUnitParse, GENERAL_MAX_ACCESS_UNIT_BYTES,
     GENERAL_MAX_ACCESS_UNIT_FRAMES, StreamType, group_access_units, index_syncframes,
@@ -600,6 +603,46 @@ impl FfmpegDecoder {
 
     pub fn send_packet(&mut self, packet: PacketRef<'_>) -> Result<BridgeStatus, BridgeError> {
         self.guard(|decoder| decoder.send_packet_inner(packet))
+    }
+
+    /// Validates one complete CMAF sample before handing its unchanged bytes
+    /// to the common in-band classifier and decoder path.
+    pub fn send_cmaf_sample(
+        &mut self,
+        track: &CmafJocTrack,
+        packet: PacketRef<'_>,
+    ) -> Result<BridgeStatus, BridgeError> {
+        let sample = track.validate_sample(packet.data).map_err(|error| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                format!("CMAF sample validation failed: {error}"),
+            )
+        })?;
+        if packet.duration != Some(i64::from(sample.audio_duration)) {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidTimestamp,
+                format!(
+                    "CMAF sample duration must be {}, got {:?}",
+                    sample.audio_duration, packet.duration
+                ),
+            ));
+        }
+        let expected_time_base = Rational::new(
+            1,
+            i32::try_from(track.metadata().timescale).map_err(|_| {
+                BridgeError::new(
+                    BridgeErrorKind::InvalidTimestamp,
+                    "CMAF track timescale is outside i32",
+                )
+            })?,
+        );
+        if packet.time_base != expected_time_base {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidTimestamp,
+                "CMAF packet time base does not match the track timescale",
+            ));
+        }
+        self.send_packet(packet)
     }
 
     pub fn receive_frame(&mut self) -> Result<ReceiveOutcome, BridgeError> {
@@ -1295,8 +1338,12 @@ mod tests {
     use openjoc_api::{BinauralConfig, ValidationProfile};
     use std::collections::HashSet;
     use std::thread;
-    #[cfg(feature = "ffmpeg")]
-    use std::{fs, process::Command, time::SystemTime};
+    use std::{
+        fs,
+        path::Path,
+        process::Command,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[derive(Default)]
     struct Bits(Vec<bool>);
@@ -4522,6 +4569,510 @@ mod tests {
         decoder.classification()
     }
 
+    fn synthetic_cmaf_joc_track(lfe_on: bool) -> openjoc_container::cmaf::CmafJocTrack {
+        synthetic_cmaf_joc_track_with(1, lfe_on, Some(2))
+    }
+
+    fn synthetic_cmaf_joc_track_with(
+        dependent_substreams: u8,
+        lfe_on: bool,
+        chan_loc: Option<u16>,
+    ) -> openjoc_container::cmaf::CmafJocTrack {
+        synthetic_cmaf_joc_track_config(dependent_substreams, lfe_on, chan_loc, 16)
+    }
+
+    fn synthetic_cmaf_joc_track_config(
+        dependent_substreams: u8,
+        lfe_on: bool,
+        chan_loc: Option<u16>,
+        complexity_index_type_a: u8,
+    ) -> openjoc_container::cmaf::CmafJocTrack {
+        use openjoc_container::cmaf::{
+            CmafJocTrack, CmafTrackMetadata, Ec3SpecificBox, Ec3SubstreamConfig,
+        };
+
+        CmafJocTrack::new(CmafTrackMetadata {
+            sample_entry: *b"ec-3",
+            timescale: 48_000,
+            sample_rate: 48_000,
+            decoder_config: Some(Ec3SpecificBox {
+                data_rate_kbps: 768,
+                independent_substreams: vec![Ec3SubstreamConfig {
+                    fscod: 0,
+                    bsid: 16,
+                    asvc: false,
+                    bsmod: 0,
+                    acmod: 7,
+                    lfe_on,
+                    dependent_substreams,
+                    chan_loc,
+                }],
+                flag_ec3_extension_type_a: true,
+                complexity_index_type_a,
+            }),
+            compatibility_brands: vec![*b"ceao"],
+        })
+        .expect("synthetic CMAF track")
+    }
+
+    #[test]
+    fn cmaf_sample_gate_keeps_in_band_classifier_authoritative() {
+        let track = synthetic_cmaf_joc_track(false);
+        let ordinary = [
+            five_channel_audio_frame(&[], false),
+            two_channel_dependent_audio_frame_with(None, 0, 0x0200),
+        ]
+        .concat();
+        let mut decoder = FfmpegDecoder::new(OpenJocConfig::default()).expect("wrapper");
+        assert_eq!(
+            decoder
+                .send_cmaf_sample(&track, packet(&ordinary, Some(0)))
+                .expect("CMAF sample gate"),
+            BridgeStatus::NeedMoreInput
+        );
+        assert_eq!(
+            decoder.drain().expect("ordinary CMAF drain"),
+            BridgeStatus::NotJoc
+        );
+        assert_eq!(decoder.classification(), JocClassification::ConfirmedNonJoc);
+    }
+
+    #[test]
+    fn cmaf_sample_gate_admits_valid_joc_and_requires_sample_duration() {
+        let track = synthetic_cmaf_joc_track(true);
+        let sample = standard_flat7x_access_unit(1);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut decoder = FfmpegDecoder::new(config.clone()).expect("wrapper");
+        assert_ne!(
+            decoder
+                .send_cmaf_sample(&track, packet(&sample, Some(0)))
+                .expect("valid CMAF sample"),
+            BridgeStatus::NotJoc
+        );
+        assert_ne!(
+            decoder.drain().expect("valid CMAF drain"),
+            BridgeStatus::NotJoc
+        );
+        assert_eq!(decoder.classification(), JocClassification::ConfirmedJoc);
+
+        let mut contradictory_metadata = track.metadata().clone();
+        contradictory_metadata
+            .decoder_config
+            .as_mut()
+            .expect("dec3")
+            .complexity_index_type_a = 15;
+        let contradictory_track = CmafJocTrack::new(contradictory_metadata)
+            .expect("track metadata remains structurally valid");
+        let mut contradictory_decoder = FfmpegDecoder::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        })
+        .expect("wrapper");
+        assert!(
+            contradictory_decoder
+                .send_cmaf_sample(&contradictory_track, packet(&sample, Some(0)))
+                .is_err()
+        );
+
+        let mut wrong_duration = FfmpegDecoder::new(config.clone()).expect("wrapper");
+        let mut input = packet(&sample, Some(0));
+        input.duration = Some(1280);
+        assert_eq!(
+            wrong_duration
+                .send_cmaf_sample(&track, input)
+                .expect_err("duration gate")
+                .kind,
+            BridgeErrorKind::InvalidTimestamp
+        );
+
+        let mut wrong_time_base = FfmpegDecoder::new(config).expect("wrapper");
+        let mut input = packet(&sample, Some(0));
+        input.time_base = Rational::new(1, 90_000);
+        assert_eq!(
+            wrong_time_base
+                .send_cmaf_sample(&track, input)
+                .expect_err("time-base gate")
+                .kind,
+            BridgeErrorKind::InvalidTimestamp
+        );
+    }
+
+    #[test]
+    fn cmaf_sample_gate_preserves_idx0_and_idx2_positive_admission() {
+        let cases = [
+            (
+                synthetic_joc_frame(),
+                synthetic_cmaf_joc_track_config(0, false, None, 1),
+            ),
+            (
+                standard_idx234_access_unit(2, 1),
+                synthetic_cmaf_joc_track_config(1, true, Some(64), 16),
+            ),
+        ];
+        for (sample, track) in cases {
+            let config = OpenJocConfig {
+                render_mode: RenderMode::Speaker,
+                speaker_layout: "7.1.4".to_owned(),
+                validation_profile: ValidationProfile::EtsiStrict,
+                ..OpenJocConfig::default()
+            };
+            let mut decoder = FfmpegDecoder::new(config).expect("wrapper");
+            assert_ne!(
+                decoder
+                    .send_cmaf_sample(&track, packet(&sample, Some(0)))
+                    .expect("CMAF positive sample"),
+                BridgeStatus::NotJoc
+            );
+            assert_ne!(
+                decoder.drain().expect("CMAF positive drain"),
+                BridgeStatus::NotJoc
+            );
+            assert_eq!(decoder.classification(), JocClassification::ConfirmedJoc);
+        }
+    }
+
+    #[test]
+    fn cmaf_gate_pcm_matches_direct_raw_session() {
+        let first = standard_flat7x_access_unit(1);
+        let second = standard_flat7x_access_unit(2);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let direct = collect_direct(config.clone(), &first, &second);
+        let track = synthetic_cmaf_joc_track(true);
+        let mut decoder = FfmpegDecoder::new(config).expect("CMAF decoder");
+        let mut bridged = Vec::new();
+        for (index, sample) in [&first, &second].into_iter().enumerate() {
+            decoder
+                .send_cmaf_sample(
+                    &track,
+                    packet(sample, Some(i64::try_from(index * 1536).expect("PTS"))),
+                )
+                .expect("CMAF sample");
+            while let ReceiveOutcome::Frame(frame) = decoder.receive_frame().expect("receive") {
+                bridged.push(frame);
+            }
+        }
+        let _ = decoder.drain().expect("CMAF drain");
+        loop {
+            match decoder.receive_frame().expect("drain receive") {
+                ReceiveOutcome::Frame(frame) => bridged.push(frame),
+                ReceiveOutcome::EndOfStream => break,
+                ReceiveOutcome::NeedMoreInput => {}
+                ReceiveOutcome::NotJoc => panic!("CMAF JOC became non-JOC"),
+            }
+        }
+        let direct_pcm = direct
+            .iter()
+            .map(|frame| (frame.pts_samples, frame.interleaved_f32.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(wrapper_in_openjoc_order(&bridged), direct_pcm);
+        assert_eq!(decoder.classification(), JocClassification::ConfirmedJoc);
+    }
+
+    #[test]
+    fn cmaf_gate_supports_stereo_rendering_without_hijacking_the_track() {
+        let sample = standard_flat7x_access_unit(1);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Stereo,
+            speaker_layout: "2.0".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut decoder = FfmpegDecoder::new(config).expect("stereo CMAF decoder");
+        decoder
+            .send_cmaf_sample(&synthetic_cmaf_joc_track(true), packet(&sample, Some(0)))
+            .expect("stereo CMAF sample");
+        let _ = decoder.drain().expect("stereo CMAF drain");
+        let mut frames = Vec::new();
+        loop {
+            match decoder.receive_frame().expect("stereo receive") {
+                ReceiveOutcome::Frame(frame) => frames.push(frame),
+                ReceiveOutcome::EndOfStream => break,
+                ReceiveOutcome::NeedMoreInput => {}
+                ReceiveOutcome::NotJoc => panic!("stereo CMAF became non-JOC"),
+            }
+        }
+        assert!(!frames.is_empty());
+        assert!(frames.iter().all(|frame| {
+            frame.channel_layout.openjoc_order.len() == 2
+                && frame
+                    .interleaved_f32
+                    .iter()
+                    .all(|sample| sample.is_finite())
+        }));
+        assert_eq!(decoder.classification(), JocClassification::ConfirmedJoc);
+    }
+
+    #[test]
+    fn cmaf_gate_fails_closed_when_common_in_band_syntax_is_malformed() {
+        let mut malformed = standard_flat7x_access_unit(1);
+        let emdf = malformed
+            .windows(2)
+            .position(|window| window == [0x58, 0x38])
+            .expect("synthetic EMDF");
+        malformed[emdf + 4] ^= 1;
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut decoder = FfmpegDecoder::new(config).expect("decoder");
+        decoder
+            .send_cmaf_sample(&synthetic_cmaf_joc_track(true), packet(&malformed, Some(0)))
+            .expect("structural CMAF gate");
+        assert!(decoder.drain().is_err());
+    }
+
+    fn cmaf_bmff_box(kind: [u8; 4], payload: &[u8]) -> Vec<u8> {
+        let size = u32::try_from(payload.len() + 8).expect("BMFF box size");
+        let mut output = size.to_be_bytes().to_vec();
+        output.extend_from_slice(&kind);
+        output.extend_from_slice(payload);
+        output
+    }
+
+    fn cmaf_bmff_full_box(kind: [u8; 4], flags: u32, payload: &[u8]) -> Vec<u8> {
+        let mut full = flags.to_be_bytes().to_vec();
+        full.extend_from_slice(payload);
+        cmaf_bmff_box(kind, &full)
+    }
+
+    fn cmaf_dec3_box() -> Vec<u8> {
+        let mut bits = Bits::default();
+        for (value, width) in [
+            (768, 13), // data_rate
+            (0, 3),    // num_ind_sub: one independent substream
+            (0, 2),    // fscod: 48 kHz
+            (16, 5),   // bsid
+            (0, 1),    // reserved
+            (0, 1),    // asvc
+            (0, 3),    // bsmod
+            (7, 3),    // acmod
+            (1, 1),    // lfeon
+            (0, 3),    // reserved
+            (1, 4),    // num_dep_sub: D0
+            (2, 9),    // chan_loc: Lrs/Rrs
+            (0, 7),    // reserved
+            (1, 1),    // flag_ec3_extension_type_a
+            (16, 8),   // complexity_index_type_a
+        ] {
+            bits.push(value, width);
+        }
+        let payload = bits.padded_bytes();
+        let size = u32::try_from(payload.len() + 8).expect("dec3 size");
+        [size.to_be_bytes().as_slice(), b"dec3", payload.as_slice()].concat()
+    }
+
+    fn cmaf_audio_sample_entry(dec3: &[u8]) -> Vec<u8> {
+        let mut payload = vec![0_u8; 6];
+        payload.extend_from_slice(&1_u16.to_be_bytes());
+        payload.extend_from_slice(&[0_u8; 8]);
+        payload.extend_from_slice(&2_u16.to_be_bytes());
+        payload.extend_from_slice(&16_u16.to_be_bytes());
+        payload.extend_from_slice(&[0_u8; 4]);
+        payload.extend_from_slice(&(48_000_u32 << 16).to_be_bytes());
+        payload.extend_from_slice(dec3);
+        cmaf_bmff_box(*b"ec-3", &payload)
+    }
+
+    fn cmaf_init_segment_for_e2e(dec3: &[u8]) -> Vec<u8> {
+        let mut ftyp = Vec::new();
+        ftyp.extend_from_slice(b"cmfc");
+        ftyp.extend_from_slice(&0_u32.to_be_bytes());
+        for brand in [b"isom", b"iso6", b"cmfc", b"ceao"] {
+            ftyp.extend_from_slice(brand);
+        }
+
+        let mut movie_fields = vec![0_u8; 96];
+        movie_fields[8..12].copy_from_slice(&48_000_u32.to_be_bytes());
+        let movie_header_box = cmaf_bmff_full_box(*b"mvhd", 0, &movie_fields);
+        let mut track_fields = vec![0_u8; 80];
+        track_fields[8..12].copy_from_slice(&1_u32.to_be_bytes());
+        let tkhd = cmaf_bmff_full_box(*b"tkhd", 7, &track_fields);
+        let mut media_fields = vec![0_u8; 20];
+        media_fields[8..12].copy_from_slice(&48_000_u32.to_be_bytes());
+        let media_header_box = cmaf_bmff_full_box(*b"mdhd", 0, &media_fields);
+        let mut handler_fields = vec![0_u8; 20];
+        handler_fields[4..8].copy_from_slice(b"soun");
+        handler_fields.extend_from_slice(b"SoundHandler\0");
+        let hdlr = cmaf_bmff_full_box(*b"hdlr", 0, &handler_fields);
+        let smhd = cmaf_bmff_full_box(*b"smhd", 0, &[0_u8; 4]);
+        let url = cmaf_bmff_full_box(*b"url ", 1, &[]);
+        let dref = cmaf_bmff_full_box(
+            *b"dref",
+            0,
+            &[1_u32.to_be_bytes().as_slice(), &url].concat(),
+        );
+        let dinf = cmaf_bmff_box(*b"dinf", &dref);
+        let entry = cmaf_audio_sample_entry(dec3);
+        let stsd = cmaf_bmff_full_box(
+            *b"stsd",
+            0,
+            &[1_u32.to_be_bytes().as_slice(), &entry].concat(),
+        );
+        let stbl = cmaf_bmff_box(*b"stbl", &stsd);
+        let minf = cmaf_bmff_box(*b"minf", &[smhd, dinf, stbl].concat());
+        let mdia = cmaf_bmff_box(*b"mdia", &[media_header_box, hdlr, minf].concat());
+        let trak = cmaf_bmff_box(*b"trak", &[tkhd, mdia].concat());
+        let trex_fields = [
+            1_u32.to_be_bytes().as_slice(),
+            1_u32.to_be_bytes().as_slice(),
+            1536_u32.to_be_bytes().as_slice(),
+            0_u32.to_be_bytes().as_slice(),
+            0_u32.to_be_bytes().as_slice(),
+        ]
+        .concat();
+        let trex = cmaf_bmff_full_box(*b"trex", 0, &trex_fields);
+        let mvex = cmaf_bmff_box(*b"mvex", &trex);
+        let moov = cmaf_bmff_box(*b"moov", &[movie_header_box, trak, mvex].concat());
+        [cmaf_bmff_box(*b"ftyp", &ftyp), moov].concat()
+    }
+
+    fn cmaf_fragment_for_e2e(sample: &[u8], sequence: u32, decode_time: u64) -> Vec<u8> {
+        let mfhd = cmaf_bmff_full_box(*b"mfhd", 0, &sequence.to_be_bytes());
+        let tfhd_fields = [
+            1_u32.to_be_bytes().as_slice(),
+            1536_u32.to_be_bytes().as_slice(),
+        ]
+        .concat();
+        let tfhd = cmaf_bmff_full_box(*b"tfhd", 0x0002_0008, &tfhd_fields);
+        let tfdt = cmaf_bmff_full_box(*b"tfdt", 0x0100_0000, &decode_time.to_be_bytes());
+        let mut trun_fields = Vec::new();
+        trun_fields.extend_from_slice(&1_u32.to_be_bytes());
+        trun_fields.extend_from_slice(&0_u32.to_be_bytes());
+        trun_fields.extend_from_slice(&1536_u32.to_be_bytes());
+        trun_fields.extend_from_slice(
+            &u32::try_from(sample.len())
+                .expect("sample size")
+                .to_be_bytes(),
+        );
+        let trun = cmaf_bmff_full_box(*b"trun", 0x0000_0301, &trun_fields);
+        let traf = cmaf_bmff_box(*b"traf", &[tfhd, tfdt, trun].concat());
+        let moof = cmaf_bmff_box(*b"moof", &[mfhd, traf].concat());
+        let data_offset = u32::try_from(moof.len() + 8).expect("data offset");
+        let mut patched_trun_fields = Vec::new();
+        patched_trun_fields.extend_from_slice(&1_u32.to_be_bytes());
+        patched_trun_fields.extend_from_slice(&data_offset.to_be_bytes());
+        patched_trun_fields.extend_from_slice(&1536_u32.to_be_bytes());
+        patched_trun_fields.extend_from_slice(
+            &u32::try_from(sample.len())
+                .expect("sample size")
+                .to_be_bytes(),
+        );
+        let patched_trun = cmaf_bmff_full_box(*b"trun", 0x0000_0301, &patched_trun_fields);
+        let patched_tfhd_fields = [
+            1_u32.to_be_bytes().as_slice(),
+            1536_u32.to_be_bytes().as_slice(),
+        ]
+        .concat();
+        let patched_tfhd = cmaf_bmff_full_box(*b"tfhd", 0x0002_0008, &patched_tfhd_fields);
+        let patched_tfdt = cmaf_bmff_full_box(*b"tfdt", 0x0100_0000, &decode_time.to_be_bytes());
+        let patched_traf = cmaf_bmff_box(
+            *b"traf",
+            &[patched_tfhd, patched_tfdt, patched_trun].concat(),
+        );
+        let patched_moof = cmaf_bmff_box(
+            *b"moof",
+            &[
+                cmaf_bmff_full_box(*b"mfhd", 0, &sequence.to_be_bytes()),
+                patched_traf,
+            ]
+            .concat(),
+        );
+        [patched_moof, cmaf_bmff_box(*b"mdat", sample)].concat()
+    }
+
+    #[test]
+    fn fragmented_cmaf_demux_to_decoder_matches_direct_es_pcm() {
+        if Command::new("ffprobe").arg("-version").status().is_err() {
+            eprintln!("skipping fragmented CMAF decoder test: ffprobe is unavailable");
+            return;
+        }
+        let first = standard_flat7x_access_unit(1);
+        let second = standard_flat7x_access_unit(2);
+        let source_sample_sha256 = sha256_hex(&first);
+        assert_eq!(
+            source_sample_sha256,
+            "2106c7c5ae83ae7997bee431a9be6415982d2be08119274fb06309d8e8e8b1cc"
+        );
+        let init = cmaf_init_segment_for_e2e(&cmaf_dec3_box());
+        let file = [
+            init,
+            cmaf_fragment_for_e2e(&first, 1, 0),
+            cmaf_fragment_for_e2e(&second, 2, 1536),
+        ]
+        .concat();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("openjoc-cmaf-e2e-{nonce}.mp4"));
+        fs::write(&path, file).expect("write fragmented CMAF");
+        let mut reader = openjoc_container::open_seekable_iso_bmff(
+            &path,
+            Path::new("ffprobe"),
+            MAX_ACCESS_UNIT_BYTES,
+        )
+        .expect("open CMAF fixture");
+        let track = synthetic_cmaf_joc_track(true);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let direct = collect_direct(config.clone(), &first, &second);
+        let mut decoder = FfmpegDecoder::new(config).expect("CMAF decoder");
+        let mut bridged = Vec::new();
+        for (index, expected) in [&first, &second].into_iter().enumerate() {
+            let sample = reader
+                .next_cmaf_sample(&track)
+                .expect("read CMAF sample")
+                .expect("CMAF sample present");
+            assert_eq!(&sample, expected);
+            assert_eq!(sha256_hex(&sample), sha256_hex(expected));
+            decoder
+                .send_cmaf_sample(
+                    &track,
+                    packet(&sample, Some(i64::try_from(index * 1536).expect("PTS"))),
+                )
+                .expect("send CMAF sample");
+            while let ReceiveOutcome::Frame(frame) = decoder.receive_frame().expect("receive") {
+                bridged.push(frame);
+            }
+        }
+        let _ = decoder.drain().expect("drain CMAF decoder");
+        loop {
+            match decoder.receive_frame().expect("drain receive") {
+                ReceiveOutcome::Frame(frame) => bridged.push(frame),
+                ReceiveOutcome::EndOfStream => break,
+                ReceiveOutcome::NeedMoreInput => {}
+                ReceiveOutcome::NotJoc => panic!("CMAF JOC became non-JOC"),
+            }
+        }
+        assert_eq!(
+            wrapper_in_openjoc_order(&bridged),
+            direct
+                .iter()
+                .map(|frame| (frame.pts_samples, frame.interleaved_f32.clone()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(reader.next_cmaf_sample(&track).expect("CMAF EOF"), None);
+        fs::remove_file(path).expect("remove fragmented CMAF");
+    }
+
     #[cfg(feature = "ffmpeg")]
     #[test]
     fn libavformat_demuxes_raw_and_container_controls_without_libavcodec_decode() {
@@ -4597,5 +5148,78 @@ mod tests {
             );
         }
         fs::remove_dir_all(&directory).expect("remove temp directory");
+    }
+
+    #[cfg(feature = "ffmpeg")]
+    #[test]
+    fn cmaf_mp4_packets_preserve_joc_samples_and_decode_through_common_path() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("openjoc-cmaf-demux-{}-{nonce}", std::process::id()));
+        fs::create_dir(&directory).expect("create temp directory");
+        let raw = directory.join("joc.ec3");
+        let first = standard_flat7x_access_unit(1);
+        let second = standard_flat7x_access_unit(2);
+        fs::write(&raw, [&first, &second].concat()).expect("write JOC source");
+        let container = directory.join("joc.mp4");
+        let status = Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "eac3", "-i"])
+            .arg(&raw)
+            .args(["-map", "0:a:0", "-c:a", "copy", "-f", "mp4"])
+            .arg(&container)
+            .status()
+            .expect("run FFmpeg CMAF fixture packaging");
+        assert!(status.success(), "FFmpeg could not package synthetic JOC");
+
+        let track = synthetic_cmaf_joc_track(true);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut metadata_demux = Demuxer::open(container.to_str().expect("UTF-8 container path"))
+            .expect("open metadata fixture");
+        assert!(metadata_demux.cmaf_joc_track().is_err());
+        let mut demuxer = Demuxer::open(container.to_str().expect("UTF-8 container path"))
+            .expect("open CMAF fixture");
+        let mut decoder = FfmpegDecoder::new(config).expect("decoder");
+        let mut packets = Vec::new();
+        let mut packet_index = 0_i64;
+        while let Some(packet) = demuxer.read_cmaf_sample(&track).expect("read CMAF packet") {
+            assert_eq!(packet.pts, Some(packet_index));
+            assert_eq!(packet.dts, Some(packet_index));
+            assert_eq!(packet.duration, Some(1536));
+            let validated = track
+                .validate_sample(packet.data)
+                .expect("CMAF packet is one complete JOC sample");
+            packets.push(packet.data.to_vec());
+            decoder
+                .send_cmaf_sample(
+                    &track,
+                    PacketRef {
+                        data: validated.bytes,
+                        pts: packet.pts,
+                        dts: packet.dts,
+                        duration: packet.duration,
+                        time_base: packet.time_base,
+                        stream_index: packet.stream_index,
+                        discontinuity: false,
+                        preroll: false,
+                    },
+                )
+                .expect("send CMAF sample");
+            packet_index += 1536;
+        }
+        assert_eq!(packets, vec![first, second]);
+        assert_ne!(
+            decoder.drain().expect("drain CMAF decoder"),
+            BridgeStatus::NotJoc
+        );
+        assert_eq!(decoder.classification(), JocClassification::ConfirmedJoc);
+        fs::remove_dir_all(&directory).expect("remove CMAF temp directory");
     }
 }

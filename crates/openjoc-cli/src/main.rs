@@ -5049,6 +5049,7 @@ const fn classify_input_error(error: &InputMediaError) -> CliErrorCategory {
         InputMediaError::EmptyInput
         | InputMediaError::TruncatedRawEac3 { .. }
         | InputMediaError::InvalidDemuxedEac3(_)
+        | InputMediaError::InvalidCmaf(_)
         | InputMediaError::ProbeFailed { .. }
         | InputMediaError::MalformedProbeRow { .. }
         | InputMediaError::DemuxFailed { .. }

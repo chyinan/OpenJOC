@@ -28,7 +28,8 @@ renderer.
 | Area | Capability | Status | Evidence boundary | Important scope |
 |---|---|---|---|---|
 | Input | Raw E-AC-3 parsing and bounded streaming | `ADMITTED` | Controlled carriers, public syntax, and grouped short-block streaming tests | Full real-stream codec fidelity remains scoped |
-| Input | Seekable ordinary MP4/M4A with one E-AC-3 track | `ADMITTED_WITH_SCOPE` | Container and sample-cursor regressions | Uses `ffprobe`/`ffmpeg`; non-seekable and fragmented MP4 are not admitted |
+| Input | Seekable ordinary MP4/M4A with one E-AC-3 track | `ADMITTED_WITH_SCOPE` | Container and sample-cursor regressions | Uses `ffprobe`/`ffmpeg`; generic ordinary-container path remains separate from explicit CMAF validation |
+| Input | ETSI CMAF E-AC-3 JOC sample carriage | `ADMITTED_WITH_SCOPE` | `ec-3`/`dec3` validator, synthetic init + fragmented fixture, byte-exact sample extraction, and shared in-band classifier gate | One I0 plus optional D0, six blocks/1,536 samples, 48 kHz Core subset; synthetic carriage evidence only; legacy AC-3 core, D1+, short blocks, and Type 2 remain outside the CMAF claim |
 | Base E-AC-3 | Ordinary base decode and channel/LFE labels | `ADMITTED_WITH_SCOPE` | Public syntax, topology, TDAC and state tests | Not a speaker renderer; cross-decoder fidelity remains incomplete |
 | Coding tools | Coupling, SPX, AHT, rematrix | `ADMITTED_WITH_SCOPE` | Normative/public-syntax numerical and state harnesses | Some real-producer activation and full PCM fidelity remain open |
 | Substreams | General E-AC-3 I0 plus ordered D0..D7 assembly | `ADMITTED_WITH_SCOPE` | Chanmap, atomic assembly, bounded per-dependent state, classifier, and synthetic end-to-end tests | CMAF and legacy AC-3 combinations remain D0-only; Type 2 remains without dependents; no real multi-dependent media claim |

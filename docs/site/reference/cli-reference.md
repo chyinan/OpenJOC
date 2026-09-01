@@ -60,7 +60,9 @@ The command exports a reconstructed RIFF/RF64 ADM BWF representation. It cannot 
 
 - `ETSI_STRICT` is never auto-downgraded.
 - `OBSERVED_VENDOR_COMPAT` is explicit and partial.
-- Non-seekable or fragmented MP4 streaming is not admitted.
+- Generic CLI streaming does not infer CMAF JOC from a container brand; the
+  explicit CMAF adapter validates supplied `ec-3`/`dec3` metadata and complete
+  fragmented samples before the common in-band classifier is called.
 - `render-scene` accepts explicit static sources and the strict local SOFA subset only.
 - ReconstructionBasis rows are not authored-object PCM.
 - `--overwrite` is required for existing outputs in non-interactive execution; replacements remain transactional.

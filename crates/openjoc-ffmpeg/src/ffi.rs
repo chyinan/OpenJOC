@@ -1,6 +1,11 @@
+// pattern: Imperative Shell
+
 use super::{
     AV_NOPTS_VALUE, BridgeError, BridgeErrorKind, FfmpegDecoder, FfmpegFrame, Rational,
     ReceiveOutcome,
+};
+use openjoc_container::cmaf::{
+    CMAF_SAMPLE_AUDIO_DURATION, CmafJocTrack, CmafTrackMetadata, parse_ec3_specific_box,
 };
 use std::{
     ffi::{CStr, CString, c_char, c_float, c_int, c_uchar, c_uint, c_void},
@@ -11,6 +16,7 @@ use std::{
 };
 
 const ERROR_CAPACITY: usize = 256;
+const MAX_DEC3_EXTRADATA_BYTES: usize = 4096;
 
 #[repr(C)]
 struct DemuxOpaque {
@@ -32,6 +38,16 @@ struct PacketView {
     stream_index: c_int,
 }
 
+#[repr(C)]
+struct CodecMetadataView {
+    sample_entry: [c_uchar; 4],
+    sample_rate: c_int,
+    time_base_num: c_int,
+    time_base_den: c_int,
+    extradata: *const c_uchar,
+    extradata_size: usize,
+}
+
 unsafe extern "C" {
     fn openjoc_avutil_version() -> c_uint;
     fn openjoc_avcodec_version() -> c_uint;
@@ -49,6 +65,11 @@ unsafe extern "C" {
         stream_index: c_int,
         numerator: *mut c_int,
         denominator: *mut c_int,
+    ) -> c_int;
+    fn openjoc_av_demux_eac3_metadata(
+        demux: *const DemuxOpaque,
+        stream_index: c_int,
+        view: *mut CodecMetadataView,
     ) -> c_int;
     fn openjoc_av_demux_read(
         demux: *mut DemuxOpaque,
@@ -202,6 +223,14 @@ impl Demuxer {
         })
     }
 
+    /// Opens an E-AC-3 demuxer and validates the FFmpeg-exposed CMAF JOC
+    /// track metadata before any sample is delivered.
+    pub fn open_cmaf_joc(path: &str) -> Result<(Self, CmafJocTrack), BridgeError> {
+        let demuxer = Self::open(path)?;
+        let track = demuxer.cmaf_joc_track()?;
+        Ok((demuxer, track))
+    }
+
     #[must_use]
     pub const fn target_stream_index(&self) -> i32 {
         self.target_stream
@@ -210,6 +239,138 @@ impl Demuxer {
     #[must_use]
     pub const fn time_base(&self) -> Rational {
         self.time_base
+    }
+
+    /// Reads the public FFmpeg codec metadata needed to validate CMAF JOC.
+    ///
+    /// The native path consumes `dec3` only when FFmpeg exposes it as codec
+    /// extradata. Missing metadata is an explicit failure; it is never
+    /// reconstructed from the elementary stream or treated as a JOC hint.
+    pub fn cmaf_joc_track(&self) -> Result<CmafJocTrack, BridgeError> {
+        let mut view = CodecMetadataView {
+            sample_entry: [0; 4],
+            sample_rate: 0,
+            time_base_num: 0,
+            time_base_den: 0,
+            extradata: std::ptr::null(),
+            extradata_size: 0,
+        };
+        // SAFETY: `self.raw` is live and `view` is writable for this call.
+        let result = unsafe {
+            openjoc_av_demux_eac3_metadata(
+                self.raw.as_ptr(),
+                self.target_stream,
+                std::ptr::addr_of_mut!(view),
+            )
+        };
+        if result < 0 {
+            return Err(BridgeError::new(
+                BridgeErrorKind::Ffmpeg,
+                "could not read FFmpeg E-AC-3 track metadata",
+            ));
+        }
+        if view.extradata.is_null() || view.extradata_size == 0 {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                "CMAF JOC requires FFmpeg-exposed dec3 codec extradata",
+            ));
+        }
+        if view.extradata_size > MAX_DEC3_EXTRADATA_BYTES {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                "FFmpeg dec3 codec extradata exceeds the bounded configuration limit",
+            ));
+        }
+        if view.sample_rate <= 0 || view.time_base_num != 1 || view.time_base_den <= 0 {
+            return Err(BridgeError::new(
+                BridgeErrorKind::InvalidTimestamp,
+                "FFmpeg E-AC-3 metadata has an invalid sample rate or time base",
+            ));
+        }
+        let extradata = unsafe {
+            // SAFETY: FFmpeg owns this immutable buffer for the lifetime of
+            // the open demuxer; parsing completes before this method returns.
+            slice::from_raw_parts(view.extradata, view.extradata_size)
+        };
+        let decoder_config = parse_ec3_specific_box(extradata).map_err(|error| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                format!("FFmpeg dec3 metadata is invalid: {error}"),
+            )
+        })?;
+        let timescale = u32::try_from(view.time_base_den).map_err(|_| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidTimestamp,
+                "FFmpeg E-AC-3 time base denominator is outside u32",
+            )
+        })?;
+        let sample_rate = u32::try_from(view.sample_rate).map_err(|_| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                "FFmpeg E-AC-3 sample rate is outside u32",
+            )
+        })?;
+        CmafJocTrack::new(CmafTrackMetadata {
+            sample_entry: view.sample_entry,
+            timescale,
+            sample_rate,
+            decoder_config: Some(decoder_config),
+            compatibility_brands: Vec::new(),
+        })
+        .map_err(|error| {
+            BridgeError::new(
+                BridgeErrorKind::InvalidData,
+                format!("FFmpeg CMAF JOC metadata is invalid: {error}"),
+            )
+        })
+    }
+
+    /// Reads only the selected audio track's next complete CMAF JOC sample.
+    /// Other media packets are skipped at this explicit audio-carriage API.
+    pub fn read_cmaf_sample(
+        &mut self,
+        track: &CmafJocTrack,
+    ) -> Result<Option<DemuxPacket<'_>>, BridgeError> {
+        let target_stream = self.target_stream;
+        let expected_time_base = Rational::new(
+            1,
+            i32::try_from(track.metadata().timescale).map_err(|_| {
+                BridgeError::new(
+                    BridgeErrorKind::InvalidTimestamp,
+                    "CMAF track timescale is outside i32",
+                )
+            })?,
+        );
+        loop {
+            let Some(packet) = self.read_packet()? else {
+                return Ok(None);
+            };
+            if packet.stream_index != target_stream {
+                continue;
+            }
+            track.validate_sample(packet.data).map_err(|error| {
+                BridgeError::new(
+                    BridgeErrorKind::InvalidData,
+                    format!("CMAF sample validation failed: {error}"),
+                )
+            })?;
+            if packet.time_base != expected_time_base {
+                return Err(BridgeError::new(
+                    BridgeErrorKind::InvalidTimestamp,
+                    "CMAF packet time base does not match the track timescale",
+                ));
+            }
+            if packet.duration != Some(i64::from(CMAF_SAMPLE_AUDIO_DURATION)) {
+                return Err(BridgeError::new(
+                    BridgeErrorKind::InvalidTimestamp,
+                    format!(
+                        "CMAF packet duration must be {CMAF_SAMPLE_AUDIO_DURATION}, got {:?}",
+                        packet.duration
+                    ),
+                ));
+            }
+            return Ok(Some(packet));
+        }
     }
 
     pub fn read_packet(&mut self) -> Result<Option<DemuxPacket<'_>>, BridgeError> {

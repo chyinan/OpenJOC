@@ -1,3 +1,6 @@
+use openjoc_container::cmaf::{
+    CmafJocTrack, CmafTrackMetadata, Ec3SpecificBox, Ec3SubstreamConfig,
+};
 use openjoc_container::{
     InputMediaError, InputMediaKind, IsoBmffSample, SeekableIsoBmffEc3Reader, detect_media,
     load_eac3_with_tools, parse_audio_probe_output, parse_packet_probe_output,
@@ -9,6 +12,67 @@ use std::{
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+fn push_bits(bits: &mut Vec<bool>, value: u64, width: usize) {
+    for shift in (0..width).rev() {
+        bits.push(value & (1_u64 << shift) != 0);
+    }
+}
+
+fn cmaf_i0_sample() -> Vec<u8> {
+    let size = 128;
+    let mut bits = Vec::new();
+    push_bits(&mut bits, 0x0b77, 16);
+    push_bits(&mut bits, 0, 2);
+    push_bits(&mut bits, 0, 3);
+    push_bits(
+        &mut bits,
+        u64::try_from(size / 2 - 1).expect("frame words"),
+        11,
+    );
+    push_bits(&mut bits, 0, 2);
+    push_bits(&mut bits, 3, 2);
+    push_bits(&mut bits, 7, 3);
+    push_bits(&mut bits, 0, 1);
+    push_bits(&mut bits, 16, 5);
+    push_bits(&mut bits, 31, 5);
+    push_bits(&mut bits, 0, 1);
+    push_bits(&mut bits, 0, 1);
+    push_bits(&mut bits, 0, 1);
+    push_bits(&mut bits, 0, 1);
+    let mut frame = vec![0_u8; size];
+    for (index, bit) in bits.into_iter().enumerate() {
+        if bit {
+            frame[index / 8] |= 0x80 >> (index % 8);
+        }
+    }
+    frame
+}
+
+fn cmaf_track() -> CmafJocTrack {
+    CmafJocTrack::new(CmafTrackMetadata {
+        sample_entry: *b"ec-3",
+        timescale: 48_000,
+        sample_rate: 48_000,
+        decoder_config: Some(Ec3SpecificBox {
+            data_rate_kbps: 768,
+            independent_substreams: vec![Ec3SubstreamConfig {
+                fscod: 0,
+                bsid: 16,
+                asvc: false,
+                bsmod: 0,
+                acmod: 7,
+                lfe_on: false,
+                dependent_substreams: 0,
+                chan_loc: None,
+            }],
+            flag_ec3_extension_type_a: true,
+            complexity_index_type_a: 16,
+        }),
+        compatibility_brands: vec![*b"ceao"],
+    })
+    .expect("CMAF track")
+}
 
 #[test]
 fn detects_raw_eac3_by_syncword_signature() {
@@ -128,6 +192,25 @@ fn seekable_reader_rejects_offset_overflow_without_allocation() {
         reader.next_sample(),
         Err(InputMediaError::DemuxOutputTooLarge { limit: 64 })
     ));
+}
+
+#[test]
+fn seekable_reader_validates_cmaf_sample_before_returning_exact_bytes() {
+    let sample = cmaf_i0_sample();
+    let source = [b"prefix".as_slice(), sample.as_slice(), b"suffix"].concat();
+    let mut reader = SeekableIsoBmffEc3Reader::new(
+        Cursor::new(source),
+        vec![IsoBmffSample {
+            offset: 6,
+            size: sample.len(),
+        }],
+        4096,
+    )
+    .expect("reader");
+    assert_eq!(
+        reader.next_cmaf_sample(&cmaf_track()).expect("CMAF sample"),
+        Some(sample)
+    );
 }
 
 #[test]

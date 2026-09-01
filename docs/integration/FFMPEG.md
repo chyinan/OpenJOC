@@ -122,12 +122,42 @@ General E-AC-3 permits at most eight associated dependents, assigned
 sequentially as D0 through D7. CMAF remains constrained to optional D0, and
 the original-syntax AC-3 Annex-J combination remains D0-only.
 
-For the public CMAF object-audio profile, I0 may use original AC-3 syntax with
-`bsid` 6 or 8 while D0 remains E-AC-3 `bsid` 16. OpenJOC dispatches from the
-common fixed `bsid` location, validates both AC-3 CRC regions, decodes the core
-natively, and then reuses the ordinary D0/chanmap/JOC path. This is automatic
-bitstream admission, not a user-selected legacy mode. Ordinary AC-3 without a
-complete valid JOC D0 remains `CONFIRMED_NON_JOC`.
+The legacy original-syntax AC-3 I0 plus E-AC-3 D0 combination is intentionally
+outside the standard CMAF JOC claim. It remains available to the broader
+elementary-stream/ordinary-container path only.
+
+### CMAF E-AC-3 JOC carriage
+
+The explicit CMAF entry point accepts the constrained profile from [ETSI TS
+103 420 Annex E](https://www.etsi.org/deliver/etsi_ts/103400_103499/103420/01.02.01_60/ts_103420v010201p.pdf)
+and [ETSI TS 102 366 Annex F/J](https://www.etsi.org/deliver/etsi_ts/102300_102399/102366/01.04.01_60/ts_102366v010401p.pdf):
+
+- an unencrypted E-AC-3 track uses `EC3SampleEntry` (`ec-3`) and an
+  `EC3SpecificBox` (`dec3`);
+- the `dec3` descriptor carries the independent/dependent counts and the
+  per-substream `fscod`, `bsid`, `acmod`, `lfeon`, and dependent `chan_loc`
+  information. The TS 103 420 type-A extension flag and complexity index are
+  retained as the container's JOC claim. `ceao` is the recommended object-audio
+  compatibility brand; it is not decoder proof;
+- the supported OpenJOC subset is one E-AC-3 independent I0 and optional D0,
+  with `numblkscod=3`, big-endian syncword `0x0B77`, 48 kHz, and a Core CMAF
+  bitrate no greater than 3024 kbps;
+- each CMAF sample is one complete 1536-sample access unit: I0 first, then D0
+  when present. A sample boundary may not cut a syncframe or split this unit.
+
+`CmafJocTrack` validates the container contract and
+`FfmpegDecoder::send_cmaf_sample` validates each complete sample before passing
+the unchanged compressed bytes to the existing common bridge. The native
+`Demuxer::cmaf_joc_track`/`read_cmaf_sample` pair uses FFmpeg-exposed
+`ec-3`/`dec3` metadata and packet timing when that metadata is available;
+missing extradata fails closed rather than being reconstructed from the ES.
+The in-band OpenJOC classifier still decides `CONFIRMED_JOC`; a container JOC
+claim cannot turn ordinary E-AC-3 into JOC. The repository-owned fragmented
+fixture proves FFprobe sample extraction, complete sample boundaries, and
+consecutive 1536-sample decode-time/PTS fields; the feature-enabled native
+FFmpeg test additionally exercises packet delivery and decoding when the
+development SDK is available. This is synthetic carriage validation, not a
+claim about every historical Dolby MP4.
 
 For standards-defined flat-7.X JOC, downmix index 1 is admitted only with the
 seven-input Table-47 order `L R C Ls Rs Lrs Rrs`. The bridge retains two

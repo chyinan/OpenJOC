@@ -722,6 +722,7 @@ version = "0.14.0"
 dependencies = [
  "cc",
  "openjoc-api",
+ "openjoc-container",
  "openjoc-eac3",
  "openjoc-emdf",
  "openjoc-joc",

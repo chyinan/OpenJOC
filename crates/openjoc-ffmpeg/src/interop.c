@@ -1,3 +1,5 @@
+// pattern: Imperative Shell
+
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -27,6 +29,15 @@ typedef struct OpenJocAvPacketView {
     int64_t duration;
     int stream_index;
 } OpenJocAvPacketView;
+
+typedef struct OpenJocAvCodecMetadataView {
+    unsigned char sample_entry[4];
+    int sample_rate;
+    int time_base_num;
+    int time_base_den;
+    const unsigned char *extradata;
+    size_t extradata_size;
+} OpenJocAvCodecMetadataView;
 
 static void openjoc_av_error(int code, char *buffer, size_t capacity) {
     if (!buffer || capacity == 0)
@@ -99,6 +110,29 @@ int openjoc_av_demux_time_base(const OpenJocAvDemux *demux, int stream_index,
     const AVRational time_base = demux->format->streams[stream_index]->time_base;
     *numerator = time_base.num;
     *denominator = time_base.den;
+    return 0;
+}
+
+int openjoc_av_demux_eac3_metadata(const OpenJocAvDemux *demux,
+                                   int stream_index,
+                                   OpenJocAvCodecMetadataView *view) {
+    if (!demux || !demux->format || stream_index < 0 ||
+        (unsigned)stream_index >= demux->format->nb_streams || !view)
+        return AVERROR(EINVAL);
+    const AVStream *stream = demux->format->streams[stream_index];
+    if (!stream->codecpar || stream->codecpar->codec_type != AVMEDIA_TYPE_AUDIO ||
+        stream->codecpar->codec_id != AV_CODEC_ID_EAC3)
+        return AVERROR(EINVAL);
+    const uint32_t tag = stream->codecpar->codec_tag;
+    for (unsigned index = 0; index < 4; ++index)
+        view->sample_entry[index] = (unsigned char)(tag >> (index * 8));
+    view->sample_rate = stream->codecpar->sample_rate;
+    view->time_base_num = stream->time_base.num;
+    view->time_base_den = stream->time_base.den;
+    view->extradata = stream->codecpar->extradata;
+    view->extradata_size = stream->codecpar->extradata_size > 0
+                               ? (size_t)stream->codecpar->extradata_size
+                               : 0;
     return 0;
 }
 

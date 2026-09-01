@@ -7,6 +7,7 @@
 //! boundary. FFmpeg is used only as an external ISO BMFF demuxer with audio
 //! stream copy; it is not an audio decoder or a normative reference.
 
+use crate::cmaf::{CmafError, CmafJocTrack};
 use openjoc_eac3::{
     AccessUnitIndex, Eac3Error, GENERAL_MAX_ACCESS_UNIT_BYTES, GENERAL_MAX_DEPENDENT_SUBSTREAMS,
     StreamType, SyncframeHeader, SyncframeIndexEntry, group_access_units, index_syncframes,
@@ -20,6 +21,8 @@ use std::{
     process::{Child, ChildStderr, ChildStdout, Command, Stdio},
     thread,
 };
+
+pub mod cmaf;
 
 /// Maximum elementary-stream size accepted by the demux boundary.
 pub const DEFAULT_MAX_EAC3_BYTES: usize = 512 * 1024 * 1024;
@@ -456,6 +459,7 @@ pub enum InputMediaError {
         available: usize,
     },
     InvalidDemuxedEac3(Eac3Error),
+    InvalidCmaf(CmafError),
 }
 
 impl fmt::Display for InputMediaError {
@@ -509,6 +513,7 @@ impl fmt::Display for InputMediaError {
             Self::InvalidDemuxedEac3(error) => {
                 write!(formatter, "demuxed E-AC-3 stream is invalid: {error}")
             }
+            Self::InvalidCmaf(error) => write!(formatter, "CMAF sample is invalid: {error}"),
         }
     }
 }
@@ -518,6 +523,7 @@ impl std::error::Error for InputMediaError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::InvalidDemuxedEac3(error) => Some(error),
+            Self::InvalidCmaf(error) => Some(error),
             _ => None,
         }
     }
@@ -830,6 +836,21 @@ impl<R: Read + io::Seek> SeekableIsoBmffEc3Reader<R> {
         }
         self.stats.max_current_sample_bytes = self.stats.max_current_sample_bytes.max(bytes.len());
         self.stats.max_samples_simultaneously_retained = 1;
+        Ok(Some(bytes))
+    }
+
+    /// Reads and validates the next CMAF JOC sample without modifying its
+    /// compressed bytes.
+    pub fn next_cmaf_sample(
+        &mut self,
+        track: &CmafJocTrack,
+    ) -> Result<Option<Vec<u8>>, InputMediaError> {
+        let Some(bytes) = self.next_sample()? else {
+            return Ok(None);
+        };
+        track
+            .validate_sample(&bytes)
+            .map_err(InputMediaError::InvalidCmaf)?;
         Ok(Some(bytes))
     }
 

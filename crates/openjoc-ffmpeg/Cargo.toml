@@ -14,6 +14,7 @@ ffmpeg = ["dep:openjoc-wave"]
 
 [dependencies]
 openjoc-api = { version = "0.14.0", path = "../openjoc-api" }
+openjoc-container = { version = "0.14.0", path = "../openjoc-container" }
 openjoc-eac3 = { version = "0.14.0", path = "../openjoc-eac3" }
 openjoc-emdf = { version = "0.14.0", path = "../openjoc-emdf" }
 openjoc-joc = { version = "0.14.0", path = "../openjoc-joc" }
