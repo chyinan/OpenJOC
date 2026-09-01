@@ -14,7 +14,6 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 mod autoplug;
 
 const SAMPLE_RATE: u32 = 48_000;
-const MAX_SYNCFRAME_BYTES: usize = 4_096;
 // GStreamer 1.28 resolves a negative finish-frame count relative to the
 // pending compressed-input queue.  -1 therefore finishes all pending input
 // frames; during forced drain the queue is empty because every admitted AU
@@ -1044,6 +1043,9 @@ mod tests {
         );
         push_bits(&mut bytes, &mut cursor, 0, 2);
         push_bits(&mut bytes, &mut cursor, 3, 2);
+        push_bits(&mut bytes, &mut cursor, 2, 3);
+        push_bits(&mut bytes, &mut cursor, 0, 1);
+        push_bits(&mut bytes, &mut cursor, 16, 5);
         bytes
     }
 
@@ -1109,7 +1111,7 @@ mod tests {
         );
         assert_eq!(parse_adapter(&adapter, false), Ok((0, 32)));
         adapter.flush(32);
-        assert_eq!(parse_adapter(&adapter, false), Ok((0, 32)));
+        assert_eq!(parse_adapter(&adapter, true), Ok((0, 32)));
         adapter.flush(32);
         assert_eq!(adapter.available(), 0);
     }
@@ -1360,6 +1362,7 @@ mod tests {
 
     #[test]
     fn gstreamer_transport_order_is_canonical_without_changing_two_channel_binaural() {
+        gst::init().expect("GStreamer initializes");
         let labels = supported_speaker_layouts()
             .iter()
             .find(|(name, _)| *name == "9.1.6")
@@ -1408,6 +1411,7 @@ mod tests {
 
     #[test]
     fn pcm_transport_is_a_permutation_only_for_noncanonical_layout_order() {
+        gst::init().expect("GStreamer initializes");
         let labels = supported_speaker_layouts()
             .iter()
             .find(|(name, _)| *name == "9.1.6")

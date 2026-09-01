@@ -343,6 +343,9 @@ mod tests {
         );
         push_bits(&mut bytes, &mut cursor, 0, 2);
         push_bits(&mut bytes, &mut cursor, 3, 2);
+        push_bits(&mut bytes, &mut cursor, 2, 3);
+        push_bits(&mut bytes, &mut cursor, 0, 1);
+        push_bits(&mut bytes, &mut cursor, 16, 5);
         bytes
     }
 
