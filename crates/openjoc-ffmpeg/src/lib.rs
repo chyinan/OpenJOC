@@ -618,16 +618,16 @@ impl FfmpegDecoder {
                 format!("CMAF sample validation failed: {error}"),
             )
         })?;
-        if let Some(duration) = packet.duration
-            && duration != i64::from(sample.audio_duration)
-        {
-            return Err(BridgeError::new(
-                BridgeErrorKind::InvalidTimestamp,
-                format!(
-                    "CMAF sample duration must be {}, got {duration}",
-                    sample.audio_duration,
-                ),
-            ));
+        if let Some(duration) = packet.duration {
+            if duration != i64::from(sample.audio_duration) {
+                return Err(BridgeError::new(
+                    BridgeErrorKind::InvalidTimestamp,
+                    format!(
+                        "CMAF sample duration must be {}, got {duration}",
+                        sample.audio_duration,
+                    ),
+                ));
+            }
         }
         let expected_time_base = Rational::new(
             1,
@@ -5170,7 +5170,18 @@ mod tests {
         let status = Command::new("ffmpeg")
             .args(["-v", "error", "-y", "-f", "eac3", "-i"])
             .arg(&raw)
-            .args(["-map", "0:a:0", "-c:a", "copy", "-f", "mp4"])
+            .args([
+                "-map",
+                "0:a:0",
+                "-bsf:a",
+                "setts=time_base=1/48000:pts=N*1536:dts=N*1536:duration=1536:prescale=1",
+                "-video_track_timescale",
+                "48000",
+                "-c:a",
+                "copy",
+                "-f",
+                "mp4",
+            ])
             .arg(&container)
             .status()
             .expect("run FFmpeg CMAF fixture packaging");
@@ -5222,6 +5233,8 @@ mod tests {
             BridgeStatus::NotJoc
         );
         assert_eq!(decoder.classification(), JocClassification::ConfirmedJoc);
+        drop(demuxer);
+        drop(metadata_demux);
         fs::remove_dir_all(&directory).expect("remove CMAF temp directory");
     }
 }
