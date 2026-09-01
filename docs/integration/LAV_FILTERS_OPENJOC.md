@@ -45,10 +45,13 @@ endorsement by PotPlayer, LAV Filters, FFmpeg, Dolby, Microsoft, or SADIE.
 
 ## Output scope
 
-The public DirectShow subset contains exactly seven explicit fixed 48 kHz
+The public DirectShow subset contains exactly eight explicit fixed 48 kHz
 IEEE-float PCM policies:
 
-- Stereo: 2 channels, mask `0x00000003`;
+- Stereo (Speakers): 2 channels, mask `0x00000003`, conventional physical
+  two-speaker rendering without HRTF;
+- Binaural (Headphones): 2 channels, mask `0x00000003`, OpenJOC virtual
+  speaker rendering through the embedded SADIE II D1 KU100 HRTF;
 - 5.1: 6 channels, mask `0x0000060f`;
 - 7.1: 8 channels, mask `0x0000063f`;
 - 5.1.2: 8 channels, mask `0x0000560f`;
@@ -68,25 +71,28 @@ endpoint does not prove physical multichannel reproduction. Physical
 multichannel hardware is not verified.
 
 Automatic downstream semantic layout discovery is `AUTO_NOT_RELIABLE`.
-Stereo remains the default and the other layouts require explicit selection.
+Stereo remains the default and all other layouts, including Binaural, require
+explicit selection. Stereo and Binaural both emit two-channel IEEE-float PCM,
+but they are not aliases: Binaural applies the existing OpenJOC HRTF path.
 Production code does not infer semantics from endpoint/product names, perform
 Bass Management, or map physical subwoofer counts to logical LFE channels.
-Standalone 7.1.6, 9.1.x, 22.2, custom-geometry, and binaural support are not LAV
-output claims. The full matrix is in the
+Standalone 7.1.6, 9.1.x, 22.2, and custom-geometry support are not LAV output
+claims. The full matrix is in the
 [`windows-lav-multichannel-2026-08-25` result](evidence/windows-lav-multichannel-2026-08-25/OPENJOC_LAV_MULTICHANNEL_OUTPUT_RESULT.txt),
 beside the machine-readable JSON evidence.
 
 ## OpenJOC property page and programme level
 
 The side-by-side filter adds a dedicated **OpenJOC** property page. The existing
-seven-policy output selector lives on that page without changing its persisted
+eight-policy output selector lives on that page without changing its persisted
 numeric values or strict output contracts. Stock LAV has no OpenJOC page or
 OpenJOC settings interfaces.
 
 **OpenJOC output** is the PCM speaker layout rendered and sent downstream. It
 is a renderer target layout, not physical-endpoint detection or automatic
 downmix. Select a layout supported by the downstream renderer/device: use
-Stereo for stereo headphones or 2.0 speakers, 5.1 for a physical 5.1 setup,
+Stereo (Speakers) for conventional two-speaker playback, Binaural (Headphones)
+for built-in-HRTF headphone rendering, 5.1 for a physical 5.1 setup,
 7.1 for a physical 7.1 setup, and the corresponding height layout for a
 height-capable endpoint. Selecting an unsupported multichannel layout may cause
 playback failure, stuttering, or downstream conversion. Selecting 7.1.4 on a
@@ -110,6 +116,14 @@ The standard LAV Status page receives read-only volume statistics from valid
 strict OpenJOC FP32 buffers without passing those buffers through stock audio
 processing. Its existing meter capacity remains eight channels; 10- and
 12-channel outputs display the first eight channel indices.
+
+The same Status page exposes OpenJOC, Stock decoder, or Stock decoder
+(OpenJOC fallback). Ordinary AC-3 and non-JOC E-AC-3 are normal stock
+decoding and show no warning. A real pre-admission OpenJOC failure shows a
+warning with a stable reason and bounded detail, including the first failed AU
+when known; the warning remains visible for that stream and clears when the
+next stream is positively classified. A downstream layout rejection is shown
+as Unsupported output layout while preserving the actual OpenJOC state.
 
 ## Installation and rollback
 
