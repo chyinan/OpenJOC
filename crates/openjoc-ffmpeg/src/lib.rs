@@ -17,9 +17,10 @@ use openjoc_api::{
     OpenJocSession, QMF_LATENCY_SAMPLES, RenderMode,
 };
 use openjoc_eac3::{
-    AccessUnitIndex, AccessUnitParse, GENERAL_MAX_DEPENDENT_SUBSTREAMS, StreamType,
-    group_access_units, index_syncframes, parse_access_unit_bounds, parse_audio_frame,
-    parse_joc_access_unit, validate_joc_access_unit, validate_joc_access_unit_decoder_contract,
+    AccessUnitIndex, AccessUnitParse, GENERAL_MAX_ACCESS_UNIT_BYTES,
+    GENERAL_MAX_ACCESS_UNIT_FRAMES, StreamType, group_access_units, index_syncframes,
+    parse_access_unit_bounds, parse_audio_frame, parse_joc_access_unit, validate_joc_access_unit,
+    validate_joc_access_unit_decoder_contract,
 };
 use openjoc_emdf::JocValidationProfile;
 use openjoc_scene::SpeakerLayoutPreset;
@@ -44,10 +45,10 @@ pub const SAMPLE_RATE: u32 = 48_000;
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 /// E-AC-3 syncframes are bounded to 4096 bytes by the coded frame-size field.
 pub const MAX_SYNCFRAME_BYTES: usize = 4096;
-/// OpenJOC admits one I0 plus the eight General-profile dependents D0..D7.
-pub const MAX_ACCESS_UNIT_FRAMES: usize = 1 + GENERAL_MAX_DEPENDENT_SUBSTREAMS;
+/// OpenJOC admits six one-block temporal sets, each with I0 plus D0..D7.
+pub const MAX_ACCESS_UNIT_FRAMES: usize = GENERAL_MAX_ACCESS_UNIT_FRAMES;
 /// Maximum compressed size of one admitted General-profile access unit.
-pub const MAX_ACCESS_UNIT_BYTES: usize = MAX_SYNCFRAME_BYTES * MAX_ACCESS_UNIT_FRAMES;
+pub const MAX_ACCESS_UNIT_BYTES: usize = GENERAL_MAX_ACCESS_UNIT_BYTES;
 /// Maximum compressed data retained across calls. This is 16 maximum AUs.
 pub const MAX_COMPRESSED_STAGING_BYTES: usize = MAX_ACCESS_UNIT_BYTES * 16;
 
@@ -778,7 +779,7 @@ impl FfmpegDecoder {
                     }
                 }
                 let (pts_samples, timestamp_source) =
-                    self.resolve_timestamp(size, inspection.unit.samples)?;
+                    self.resolve_timestamp(size, inspection.unit.samples, &bytes)?;
                 let preroll = self
                     .boundaries
                     .front()
@@ -864,6 +865,7 @@ impl FfmpegDecoder {
         &mut self,
         au_size: usize,
         samples: u16,
+        bytes: &[u8],
     ) -> Result<(Option<i64>, TimestampSource), BridgeError> {
         let start = self
             .boundaries
@@ -891,16 +893,45 @@ impl FfmpegDecoder {
                 ));
             }
         };
+        let frames = index_syncframes(bytes)
+            .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
+        let mut next_set_start = 0_i64;
+        let mut current_set_start = 0_i64;
+        let mut frame_starts = Vec::with_capacity(frames.len());
+        for entry in &frames {
+            if entry.header.stream_type != StreamType::Dependent {
+                current_set_start = next_set_start;
+            }
+            frame_starts.push((entry.offset, current_set_start));
+            if entry.header.stream_type != StreamType::Dependent {
+                next_set_start = next_set_start
+                    .checked_add(i64::from(entry.header.samples))
+                    .ok_or_else(|| {
+                        BridgeError::new(
+                            BridgeErrorKind::InvalidTimestamp,
+                            "sample timeline overflow",
+                        )
+                    })?;
+            }
+        }
         for boundary in self
             .boundaries
             .iter()
             .filter(|entry| entry.byte_offset > 0 && entry.byte_offset < au_size)
         {
             if let Some(value) = boundary.timestamp {
-                if pts != Some(value) {
+                let local_start = frame_starts
+                    .iter()
+                    .take_while(|(offset, _)| *offset <= boundary.byte_offset)
+                    .last()
+                    .map(|(_, sample)| *sample);
+                let expected = pts
+                    .zip(local_start)
+                    .and_then(|(pts, offset)| pts.checked_add(offset));
+                if expected != Some(value) {
                     return Err(BridgeError::new(
                         BridgeErrorKind::InvalidTimestamp,
-                        "a packet fragment carries a conflicting mid-AU timestamp",
+                        "a packet boundary carries a conflicting mid-AU timestamp",
                     ));
                 }
             }
@@ -1520,6 +1551,235 @@ mod tests {
 
     fn five_channel_audio_frame(emdf: &[u8], joc_extension: bool) -> Vec<u8> {
         five_channel_audio_frame_with_exponent_codes(emdf, joc_extension, [62; 5], None)
+    }
+
+    fn short_five_channel_audio_frame(emdf: Option<&[u8]>, blocks: u8, convsync: bool) -> Vec<u8> {
+        assert!((1..=3).contains(&blocks));
+        let block_code = match blocks {
+            1 => 0,
+            2 => 1,
+            3 => 2,
+            _ => unreachable!(),
+        };
+        let size = 4096;
+        let mut bits = Bits::default();
+        for (value, width) in [
+            (0x0b77, 16),
+            (0, 2),
+            (0, 3),
+            (2047, 11),
+            (0, 2),
+            (block_code, 2),
+            (7, 3),
+            (0, 1),
+            (16, 5),
+            (31, 5),
+            (0, 1),
+            (0, 1),
+            (0, 1),
+        ] {
+            bits.push(value, width);
+        }
+        bits.push(u64::from(convsync), 1);
+        bits.push(u64::from(emdf.is_some()), 1);
+        if emdf.is_some() {
+            bits.push(1, 6);
+            bits.push(0x01, 8);
+            bits.push(16, 8);
+        }
+        bits.push(0, 2); // frame SNR strategy
+        bits.push(0, 1); // no transient processing
+        bits.push(0, 7); // compact syntax flags
+        bits.push(0, 1); // coupling off in block zero
+        for _ in 1..blocks {
+            bits.push(0, 1); // coupling strategy reused
+        }
+        for block in 0..blocks {
+            for _ in 0..5 {
+                bits.push(u64::from(block == 0), 2);
+            }
+        }
+        bits.push(0, 1); // converter exponent strategy absent
+        bits.push(0, 6); // frame coarse SNR offset
+        bits.push(0, 4); // frame fine SNR offset
+        if blocks > 1 {
+            bits.push(0, 1); // no block-start information
+        }
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX not in use
+        for _ in 0..5 {
+            bits.push(0, 6); // channel bandwidth code
+        }
+        for _ in 0..5 {
+            bits.push(0, 4); // channel initial exponent
+            for _ in 0..24 {
+                bits.push(62, 7); // neutral mantissas
+            }
+            bits.push(0, 2); // gain range
+        }
+        bits.push(0, 1); // converter SNR offset absent
+        for _ in 1..blocks {
+            bits.push(0, 1); // dynamic range absent
+            bits.push(0, 1); // SPX strategy reused
+            bits.push(0, 1); // converter SNR offset absent
+        }
+        bits.0.resize(size * 8, false);
+        if let Some(emdf) = emdf {
+            let auxdatae_position = size * 8 - 18;
+            let length_position = auxdatae_position - 14;
+            bits.set(
+                length_position,
+                u64::try_from(emdf.len() * 8).expect("EMDF bit length"),
+                14,
+            );
+            bits.set(auxdatae_position, 1, 1);
+            let start = length_position - emdf.len() * 8;
+            for (index, byte) in emdf.iter().copied().enumerate() {
+                bits.set(start + index * 8, u64::from(byte), 8);
+            }
+        }
+        bits.bytes(size)
+    }
+
+    fn short_two_channel_dependent_audio_frame(
+        emdf: Option<&[u8]>,
+        dependent_id: u8,
+        channel_map: u16,
+        blocks: u8,
+    ) -> Vec<u8> {
+        assert!(dependent_id < 8 && (1..=3).contains(&blocks));
+        let block_code = match blocks {
+            1 => 0,
+            2 => 1,
+            3 => 2,
+            _ => unreachable!(),
+        };
+        let size = 4096;
+        let mut bits = Bits::default();
+        for (value, width) in [
+            (0x0b77, 16),
+            (1, 2),
+            (u64::from(dependent_id), 3),
+            (2047, 11),
+            (0, 2),
+            (block_code, 2),
+            (2, 3),
+            (0, 1),
+            (16, 5),
+            (31, 5),
+            (0, 1),
+            (1, 1),
+            (u64::from(channel_map), 16),
+            (0, 1),
+            (0, 1),
+            (u64::from(emdf.is_some()), 1),
+        ] {
+            bits.push(value, width);
+        }
+        if emdf.is_some() {
+            bits.push(1, 6);
+            bits.push(0x01, 8);
+            bits.push(16, 8);
+        }
+        bits.push(0, 2); // frame SNR strategy
+        bits.push(0, 1); // no transient processing
+        bits.push(0, 7); // compact syntax flags
+        bits.push(0, 1); // coupling off in block zero
+        for _ in 1..blocks {
+            bits.push(0, 1); // coupling strategy reused
+        }
+        for block in 0..blocks {
+            for _ in 0..2 {
+                bits.push(u64::from(block == 0), 2);
+            }
+        }
+        bits.push(0, 6); // frame coarse SNR offset
+        bits.push(0, 4); // frame fine SNR offset
+        if blocks > 1 {
+            bits.push(0, 1); // no block-start information
+        }
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX not in use
+        for _ in 0..4 {
+            bits.push(0, 1); // stereo rematrix flags disabled
+        }
+        for _ in 0..2 {
+            bits.push(0, 6); // channel bandwidth code
+        }
+        for exponent_delta_code in [82_u8, 86] {
+            bits.push(15, 4); // channel initial exponent
+            for _ in 0..24 {
+                bits.push(u64::from(exponent_delta_code), 7);
+            }
+            bits.push(0, 2); // gain range
+        }
+        for _ in 1..blocks {
+            bits.push(0, 1); // dynamic range absent
+            bits.push(0, 1); // SPX strategy reused
+            bits.push(0, 1); // rematrix strategy reused
+        }
+        bits.0.resize(size * 8, false);
+        if let Some(emdf) = emdf {
+            let auxdatae_position = size * 8 - 18;
+            let length_position = auxdatae_position - 14;
+            bits.set(
+                length_position,
+                u64::try_from(emdf.len() * 8).expect("EMDF bit length"),
+                14,
+            );
+            bits.set(auxdatae_position, 1, 1);
+            let start = length_position - emdf.len() * 8;
+            for (index, byte) in emdf.iter().copied().enumerate() {
+                bits.set(start + index * 8, u64::from(byte), 8);
+            }
+        }
+        bits.bytes(size)
+    }
+
+    fn short_flat7x_access_unit(sequence_count: u16) -> Vec<u8> {
+        short_joc_access_unit(1, sequence_count)
+    }
+
+    fn short_joc_access_unit(downmix_index: u8, sequence_count: u16) -> Vec<u8> {
+        short_joc_access_unit_with_partition(downmix_index, sequence_count, &[1; 6])
+    }
+
+    fn short_joc_access_unit_with_partition(
+        downmix_index: u8,
+        sequence_count: u16,
+        partition: &[u8],
+    ) -> Vec<u8> {
+        assert!(!partition.is_empty());
+        assert_eq!(
+            partition
+                .iter()
+                .map(|blocks| u16::from(*blocks))
+                .sum::<u16>(),
+            6
+        );
+        assert!(partition.iter().all(|blocks| (1..=3).contains(blocks)));
+        let joc = if downmix_index == 1 {
+            fifteen_object_flat7x_joc_with_sequence(sequence_count)
+        } else {
+            fifteen_object_idx234_joc_with_sequence(downmix_index, sequence_count)
+        };
+        let emdf = joc_emdf(&common_profile_oamd(), &joc);
+        let channel_map = match downmix_index {
+            1 => 0x0200,
+            3 => 0xc000,
+            _ => 0x0010,
+        };
+        let mut bytes = Vec::new();
+        for (index, blocks) in partition.iter().copied().enumerate() {
+            bytes.extend(short_five_channel_audio_frame(None, blocks, index == 0));
+            bytes.extend(short_two_channel_dependent_audio_frame(
+                (index + 1 == partition.len()).then_some(emdf.as_slice()),
+                0,
+                channel_map,
+                blocks,
+            ));
+        }
+        bytes
     }
 
     fn two_channel_dependent_audio_frame(emdf: &[u8]) -> Vec<u8> {
@@ -2641,7 +2901,7 @@ mod tests {
         );
 
         let mut maximum = indexed_syncframe(0, 16);
-        for dependent_id in 0..GENERAL_MAX_DEPENDENT_SUBSTREAMS {
+        for dependent_id in 0..openjoc_eac3::GENERAL_MAX_DEPENDENT_SUBSTREAMS {
             let mut dependent = indexed_syncframe(1, 16);
             dependent[2] =
                 (dependent[2] & 0xc7) | (u8::try_from(dependent_id).expect("dependent ID") << 3);
@@ -2653,7 +2913,7 @@ mod tests {
         ));
         assert_eq!(
             parse_access_unit(&maximum, true).expect("maximum AU at EOF"),
-            AccessUnitParse::Complete(MAX_ACCESS_UNIT_FRAMES * 16)
+            AccessUnitParse::Complete((1 + openjoc_eac3::GENERAL_MAX_DEPENDENT_SUBSTREAMS) * 16,)
         );
         let mut over_limit = maximum;
         over_limit.push(0);
@@ -3598,6 +3858,182 @@ mod tests {
     }
 
     #[test]
+    fn short_block_idx1_joc_is_classified_and_decoded_end_to_end() {
+        let access_unit = short_flat7x_access_unit(1);
+        let frames = openjoc_eac3::index_syncframes(&access_unit).expect("short index");
+        let units = openjoc_eac3::group_access_units(&frames).expect("short grouping");
+        assert_eq!(frames.len(), 12);
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].samples, 1536);
+        let mut audio = openjoc_eac3::JocAccessUnitPcmDecoder::new();
+        let planes = audio
+            .decode_pcm_planes_with_policy(
+                &access_unit,
+                &frames,
+                units[0],
+                &vec![0.25; 32_768],
+                openjoc_eac3::InternalBasePolicy::CurrentDefault,
+            )
+            .expect("decode short I0+D0 PCM planes");
+        assert_eq!(planes.compatibility_pcm.samples, 1536);
+        assert_eq!(planes.joc_input_pcm.samples, 1536);
+        assert_eq!(planes.compatibility_pcm.channels.len(), 5);
+        assert_eq!(planes.joc_input_pcm.channels.len(), 7);
+        assert!(
+            planes
+                .joc_input_pcm
+                .channels
+                .iter()
+                .all(|channel| channel.len() == 1536)
+        );
+
+        let metadata = openjoc_eac3::extract_joc_access_unit_for_profile(
+            &access_unit,
+            &frames,
+            units[0],
+            openjoc_emdf::JocValidationProfile::EtsiStrict,
+        )
+        .expect("extract short metadata")
+        .expect("short metadata");
+        assert_eq!(metadata.carrier_frame, 11);
+        assert_eq!(
+            classify_complete_access_unit(&access_unit),
+            JocClassification::ConfirmedJoc
+        );
+
+        let mut session = OpenJocSession::new(OpenJocConfig {
+            speaker_layout: "7.1.4".to_owned(),
+            ..OpenJocConfig::default()
+        })
+        .expect("short session");
+        session
+            .push_packet(OpenJocPacket {
+                data: &access_unit,
+                pts_samples: Some(0),
+                discontinuity: false,
+                preroll: false,
+            })
+            .expect("push short JOC AU");
+        session.drain().expect("drain short session");
+        let mut output = Vec::new();
+        while let Some(frame) = session.receive_frame() {
+            output.push(frame);
+        }
+        assert!(!output.is_empty());
+        assert_eq!(
+            output.iter().map(|frame| frame.sample_count).sum::<usize>(),
+            1536 + FINAL_LINKED_GAIN_LATENCY_SAMPLES
+        );
+    }
+
+    #[test]
+    fn short_block_idx234_joc_reuses_the_same_grouped_frontend() {
+        for downmix_index in [2, 3, 4] {
+            let access_unit = short_joc_access_unit(downmix_index, 1);
+            let frames = openjoc_eac3::index_syncframes(&access_unit).expect("short idx index");
+            let unit = openjoc_eac3::group_access_units(&frames)
+                .expect("short idx grouping")
+                .into_iter()
+                .next()
+                .expect("short idx unit");
+            let mut audio = openjoc_eac3::JocAccessUnitPcmDecoder::new();
+            let planes = audio
+                .decode_pcm_planes_with_policy(
+                    &access_unit,
+                    &frames,
+                    unit,
+                    &vec![0.25; 32_768],
+                    openjoc_eac3::InternalBasePolicy::CurrentDefault,
+                )
+                .expect("decode short idx PCM planes");
+            let expected_channels = if downmix_index == 3 { 5 } else { 7 };
+            assert_eq!(planes.joc_input_pcm.channels.len(), expected_channels);
+            assert!(
+                planes
+                    .joc_input_pcm
+                    .channels
+                    .iter()
+                    .all(|channel| channel.len() == 1536)
+            );
+            let metadata = openjoc_eac3::extract_joc_access_unit_for_profile(
+                &access_unit,
+                &frames,
+                unit,
+                openjoc_emdf::JocValidationProfile::EtsiStrict,
+            )
+            .expect("short idx metadata")
+            .expect("short idx JOC metadata");
+            let joc = openjoc_joc::parse_joc_payload(&metadata.joc).expect("short idx payload");
+            assert_eq!(joc.header.downmix_index, downmix_index);
+            assert_eq!(metadata.carrier_frame, 11);
+            assert_eq!(
+                classify_complete_access_unit(&access_unit),
+                JocClassification::ConfirmedJoc
+            );
+        }
+    }
+
+    #[test]
+    fn short_block_pure_two_and_three_block_partitions_are_end_to_end_valid() {
+        for partition in [[2, 2, 2].as_slice(), [3, 3].as_slice()] {
+            let access_unit = short_joc_access_unit_with_partition(1, 1, partition);
+            let frames = openjoc_eac3::index_syncframes(&access_unit).expect("pure short index");
+            let unit = openjoc_eac3::group_access_units(&frames)
+                .expect("pure short grouping")
+                .into_iter()
+                .next()
+                .expect("pure short unit");
+            let mut audio = openjoc_eac3::JocAccessUnitPcmDecoder::new();
+            let planes = audio
+                .decode_pcm_planes_with_policy(
+                    &access_unit,
+                    &frames,
+                    unit,
+                    &vec![0.25; 32_768],
+                    openjoc_eac3::InternalBasePolicy::CurrentDefault,
+                )
+                .expect("decode pure short partition");
+            assert_eq!(planes.joc_input_pcm.samples, 1536);
+            assert!(
+                planes
+                    .joc_input_pcm
+                    .channels
+                    .iter()
+                    .all(|channel| channel.len() == 1536)
+            );
+            assert_eq!(
+                classify_complete_access_unit(&access_unit),
+                JocClassification::ConfirmedJoc
+            );
+        }
+    }
+
+    #[test]
+    fn classifier_waits_for_a_complete_short_group_and_boundary() {
+        let first = short_flat7x_access_unit(1);
+        let second = short_flat7x_access_unit(2);
+        let mut classifier = JocClassifier::new();
+
+        assert_eq!(
+            classifier
+                .send_chunk(&first[..first.len() / 12])
+                .expect("first short syncframe"),
+            JocClassification::Unknown
+        );
+        assert_eq!(
+            classifier
+                .send_chunk(&first[first.len() / 12..])
+                .expect("rest of first short group"),
+            JocClassification::Unknown
+        );
+        assert_eq!(
+            classifier.send_chunk(&second).expect("next short group"),
+            JocClassification::ConfirmedJoc
+        );
+        assert_eq!(classifier.classification(), JocClassification::ConfirmedJoc);
+    }
+
+    #[test]
     fn flat7x_fixture_malformed_emdf_and_truncated_d0_fail_closed() {
         let mut malformed_emdf = joc_emdf(
             &common_profile_oamd(),
@@ -3817,6 +4253,106 @@ mod tests {
                 assert_eq!(bridge.byte_length, direct.byte_length);
             }
         }
+    }
+
+    #[test]
+    fn short_wrapper_pcm_matches_direct_session_across_packet_boundaries() {
+        let first = short_flat7x_access_unit(1);
+        let second = short_flat7x_access_unit(2);
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let direct = collect_direct(config.clone(), &first, &second);
+        let (mut wrapper, bridged) = collect_wrapper(config, &first, &second);
+
+        assert_eq!(wrapper.classification(), JocClassification::ConfirmedJoc);
+        let direct_pcm = direct
+            .iter()
+            .map(|frame| (frame.pts_samples, frame.interleaved_f32.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(wrapper_in_openjoc_order(&bridged), direct_pcm);
+        assert_eq!(wrapper.take_traces().len(), 2);
+    }
+
+    #[test]
+    fn short_wrapper_accepts_header_and_payload_split_syncframes() {
+        let first = short_flat7x_access_unit(1);
+        let second = short_flat7x_access_unit(2);
+        let stream = [first.clone(), second.clone()].concat();
+        let indexed = openjoc_eac3::index_syncframes(&stream).expect("short split index");
+        let mut chunks = Vec::new();
+        let mut next_set_start = 0_i64;
+        let mut current_set_start = 0_i64;
+        for entry in indexed {
+            let start = entry.offset;
+            let end = start + entry.header.frame_size;
+            if entry.header.stream_type != StreamType::Dependent {
+                current_set_start = next_set_start;
+                next_set_start += i64::from(entry.header.samples);
+            }
+            chunks.push((&stream[start..=start], Some(current_set_start)));
+            chunks.push((&stream[start + 1..start + 8], Some(current_set_start)));
+            chunks.push((&stream[start + 8..end], Some(current_set_start)));
+        }
+
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let direct = collect_direct(config.clone(), &first, &second);
+        let mut decoder = FfmpegDecoder::new(config).expect("split wrapper");
+        let mut output = Vec::new();
+        for (chunk, pts) in chunks {
+            loop {
+                let status = decoder
+                    .send_packet(PacketRef {
+                        data: chunk,
+                        pts,
+                        dts: None,
+                        duration: None,
+                        time_base: Rational::SAMPLE_TIME_BASE,
+                        stream_index: 0,
+                        discontinuity: false,
+                        preroll: false,
+                    })
+                    .expect("split chunk");
+                if status == BridgeStatus::WouldBlock {
+                    while let ReceiveOutcome::Frame(frame) =
+                        decoder.receive_frame().expect("split receive")
+                    {
+                        output.push(frame);
+                    }
+                    continue;
+                }
+                while let ReceiveOutcome::Frame(frame) =
+                    decoder.receive_frame().expect("split receive")
+                {
+                    output.push(frame);
+                }
+                break;
+            }
+        }
+        let _ = decoder.drain().expect("split drain");
+        loop {
+            match decoder.receive_frame().expect("split drain receive") {
+                ReceiveOutcome::Frame(frame) => output.push(frame),
+                ReceiveOutcome::EndOfStream => break,
+                ReceiveOutcome::NeedMoreInput => {}
+                ReceiveOutcome::NotJoc => panic!("short split classified non-JOC"),
+            }
+        }
+
+        let direct_pcm = direct
+            .iter()
+            .map(|frame| (frame.pts_samples, frame.interleaved_f32.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(wrapper_in_openjoc_order(&output), direct_pcm);
+        assert_eq!(decoder.take_traces().len(), 2);
     }
 
     #[test]

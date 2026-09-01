@@ -8,8 +8,9 @@
 //! stream copy; it is not an audio decoder or a normative reference.
 
 use openjoc_eac3::{
-    AccessUnitIndex, Eac3Error, StreamType, SyncframeHeader, SyncframeIndexEntry,
-    group_access_units, index_syncframes, parse_syncframe_header,
+    AccessUnitIndex, Eac3Error, GENERAL_MAX_ACCESS_UNIT_BYTES, GENERAL_MAX_DEPENDENT_SUBSTREAMS,
+    StreamType, SyncframeHeader, SyncframeIndexEntry, group_access_units, index_syncframes,
+    parse_syncframe_header,
 };
 use std::{
     fmt,
@@ -192,10 +193,11 @@ impl<R> RawEac3FrameReader<R> {
     }
 }
 
-/// Sequential access-unit consumer built on [`RawEac3FrameReader`].
+/// Sequential six-block access-unit consumer built on [`RawEac3FrameReader`].
 ///
-/// A single frame of lookahead is retained to detect the next independent
-/// substream-zero boundary.  No programme-wide frame or AU index is built.
+/// A single frame of lookahead is retained to detect the next complete-unit
+/// boundary. Short syncframes are accumulated by programme-set timing; no
+/// programme-wide frame or AU index is built.
 pub struct RawEac3AccessUnitReader<R> {
     frame_reader: RawEac3FrameReader<R>,
     lookahead: Option<Vec<u8>>,
@@ -234,16 +236,25 @@ impl<R: Read> RawEac3AccessUnitReader<R> {
             offset: 0,
             header: first_header,
         }];
-        while let Some(next) = self.take_frame()? {
-            let header = raw_frame_header(&next)?;
-            if header.stream_type != StreamType::Dependent && header.substream_id == 0 {
-                self.lookahead = Some(next);
-                self.stats.max_lookahead_frames = self.stats.max_lookahead_frames.max(1);
-                break;
+        if first_header.audio_blocks < 6 {
+            if first_header.stream_type != StreamType::Independent {
+                return Err(InputMediaError::InvalidDemuxedEac3(
+                    Eac3Error::UnsupportedJocAudioBlockCount {
+                        actual: first_header.audio_blocks,
+                    },
+                ));
             }
-            let offset = bytes.len();
-            bytes.extend_from_slice(&next);
-            frames.push(SyncframeIndexEntry { offset, header });
+            self.read_short_access_unit(&mut bytes, &mut frames, first_header)?;
+        } else {
+            while let Some(next) = self.take_frame()? {
+                let header = raw_frame_header(&next)?;
+                if header.stream_type != StreamType::Dependent && header.substream_id == 0 {
+                    self.lookahead = Some(next);
+                    self.stats.max_lookahead_frames = self.stats.max_lookahead_frames.max(1);
+                    break;
+                }
+                append_raw_frame(&mut bytes, &mut frames, &next, header)?;
+            }
         }
 
         let units = group_access_units(&frames).map_err(InputMediaError::InvalidDemuxedEac3)?;
@@ -279,6 +290,93 @@ impl<R: Read> RawEac3AccessUnitReader<R> {
         self.stats
     }
 
+    fn read_short_access_unit(
+        &mut self,
+        bytes: &mut Vec<u8>,
+        frames: &mut Vec<SyncframeIndexEntry>,
+        first: SyncframeHeader,
+    ) -> Result<(), InputMediaError> {
+        let mut total_blocks = first.audio_blocks;
+        let mut current_independent = first;
+        let mut expected_dependent = 0_u8;
+        let mut expected_dependent_count = None;
+        loop {
+            let Some(next) = self.take_frame()? else {
+                if total_blocks == 6
+                    && (expected_dependent_count.is_none()
+                        || expected_dependent_count == Some(usize::from(expected_dependent)))
+                {
+                    return Ok(());
+                }
+                return Err(InputMediaError::InvalidDemuxedEac3(
+                    Eac3Error::InvalidAccessUnitRange,
+                ));
+            };
+            let header = raw_frame_header(&next)?;
+            if header.stream_type == StreamType::Dependent {
+                if usize::from(expected_dependent) >= GENERAL_MAX_DEPENDENT_SUBSTREAMS
+                    || header.substream_id != expected_dependent
+                {
+                    return Err(InputMediaError::InvalidDemuxedEac3(
+                        Eac3Error::NonsequentialDependentSubstream {
+                            expected: expected_dependent,
+                            actual: header.substream_id,
+                        },
+                    ));
+                }
+                if header.sample_rate != current_independent.sample_rate
+                    || header.audio_blocks != current_independent.audio_blocks
+                {
+                    return Err(InputMediaError::InvalidDemuxedEac3(
+                        Eac3Error::SubstreamTimingMismatch {
+                            frame: frames.len(),
+                        },
+                    ));
+                }
+                expected_dependent = expected_dependent.saturating_add(1);
+                append_raw_frame(bytes, frames, &next, header)?;
+                continue;
+            }
+            if header.stream_type != StreamType::Independent || header.substream_id != 0 {
+                return Err(InputMediaError::InvalidDemuxedEac3(
+                    Eac3Error::MissingIndependentSubstreamZero {
+                        frame: frames.len(),
+                    },
+                ));
+            }
+            if let Some(expected) = expected_dependent_count {
+                if expected != usize::from(expected_dependent) {
+                    return Err(InputMediaError::InvalidDemuxedEac3(
+                        Eac3Error::SubstreamTimingMismatch {
+                            frame: frames.len(),
+                        },
+                    ));
+                }
+            } else {
+                expected_dependent_count = Some(usize::from(expected_dependent));
+            }
+            if total_blocks == 6 {
+                self.lookahead = Some(next);
+                self.stats.max_lookahead_frames = self.stats.max_lookahead_frames.max(1);
+                return Ok(());
+            }
+            let next_total = total_blocks.checked_add(header.audio_blocks).ok_or(
+                InputMediaError::InvalidDemuxedEac3(Eac3Error::FrameSizeOverflow),
+            )?;
+            if next_total > 6 {
+                return Err(InputMediaError::InvalidDemuxedEac3(
+                    Eac3Error::SubstreamTimingMismatch {
+                        frame: frames.len(),
+                    },
+                ));
+            }
+            total_blocks = next_total;
+            current_independent = header;
+            expected_dependent = 0;
+            append_raw_frame(bytes, frames, &next, header)?;
+        }
+    }
+
     fn take_frame(&mut self) -> Result<Option<Vec<u8>>, InputMediaError> {
         let frame = match self.lookahead.take() {
             Some(frame) => Some(frame),
@@ -290,6 +388,30 @@ impl<R: Read> RawEac3AccessUnitReader<R> {
         self.stats.max_frame_bytes = frame_reader_stats.max_frame_bytes;
         Ok(frame)
     }
+}
+
+fn append_raw_frame(
+    bytes: &mut Vec<u8>,
+    frames: &mut Vec<SyncframeIndexEntry>,
+    frame: &[u8],
+    header: SyncframeHeader,
+) -> Result<(), InputMediaError> {
+    let new_len =
+        bytes
+            .len()
+            .checked_add(frame.len())
+            .ok_or(InputMediaError::DemuxOutputTooLarge {
+                limit: GENERAL_MAX_ACCESS_UNIT_BYTES,
+            })?;
+    if new_len > GENERAL_MAX_ACCESS_UNIT_BYTES {
+        return Err(InputMediaError::DemuxOutputTooLarge {
+            limit: GENERAL_MAX_ACCESS_UNIT_BYTES,
+        });
+    }
+    let offset = bytes.len();
+    bytes.extend_from_slice(frame);
+    frames.push(SyncframeIndexEntry { offset, header });
+    Ok(())
 }
 
 /// Lightweight header information useful to a bounded AU consumer.

@@ -33,11 +33,14 @@ process-global decoder, layout, SOFA object, or error buffer exists.
 ## Input contract
 
 `OpenJocPacket` is borrowed for the duration of `push_packet`. `data` must be
-one complete General E-AC-3 JOC access unit: independent substream zero and
-ordered dependent substreams D0 through D7, within the bounded maximum. This
-matches the JOC metadata, Base/RB alignment, and E-AC-3 inheritance contract.
-The session does not retain the compressed input buffer. CMAF and the existing
-legacy AC-3 Annex-J combination remain D0-only.
+one complete General E-AC-3 JOC access unit: ordered I0/D0..D7 programme sets
+covering six cumulative audio blocks (1,536 samples), within the bounded
+maximum. A long six-block syncframe is the common one-set form; legal 1/2/3
+block syncframes are grouped by cumulative timing and retain per-substream
+synthesis state. This matches the JOC metadata, Base/RB alignment, and E-AC-3
+inheritance contract. The session does not retain the compressed input buffer.
+CMAF and the existing legacy AC-3 Annex-J combination remain D0-only; CMAF
+also requires six blocks per syncframe.
 
 Arbitrary byte fragmentation, file paths, MP4/Matroska demuxing, and multiple
 AUs in one call are intentionally outside this first contract.

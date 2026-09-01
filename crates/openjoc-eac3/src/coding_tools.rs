@@ -162,9 +162,9 @@ fn expanded_exponents(
 
 /// Builds a complete diagnostic inventory from parser-emitted block state.
 ///
-/// The returned value is committed only after all six blocks and all channel
-/// invariants pass. It is therefore safe for callers to treat this as an
-/// atomic AU diagnostic record.
+/// The returned value is committed only after all blocks declared by the
+/// current syncframe and all channel invariants pass. It is therefore safe for
+/// callers to treat this as an atomic syncframe diagnostic record.
 pub fn emit_coding_tool_inventory(
     vector_id: impl Into<String>,
     au_index: usize,
@@ -172,11 +172,10 @@ pub fn emit_coding_tool_inventory(
     blocks: &[DecodedAudioBlock],
 ) -> Result<CodingToolInventory, Eac3Error> {
     if blocks.len() != usize::from(frame.bsi.header.audio_blocks)
-        || blocks.len() != 6
         || frame.full_bandwidth_channels == 0
     {
         return Err(Eac3Error::InvalidAudioBlockSwitchCount {
-            expected: 6,
+            expected: usize::from(frame.bsi.header.audio_blocks),
             actual: blocks.len(),
         });
     }

@@ -119,9 +119,12 @@ pub const GENERAL_MAX_DEPENDENT_SUBSTREAMS: usize = 8;
 pub const CMAF_MAX_DEPENDENT_SUBSTREAMS: usize = 1;
 /// Maximum coded E-AC-3 syncframe size represented by the acquisition field.
 pub const MAX_SYNCFRAME_BYTES: usize = 4096;
+/// Maximum number of syncframes in one six-block General I0+D0..D7 unit:
+/// six one-block temporal sets, each with I0 and eight dependents.
+pub const GENERAL_MAX_ACCESS_UNIT_FRAMES: usize = 6 * (1 + GENERAL_MAX_DEPENDENT_SUBSTREAMS);
 /// Maximum compressed size of one General I0+D0..D7 access unit.
 pub const GENERAL_MAX_ACCESS_UNIT_BYTES: usize =
-    MAX_SYNCFRAME_BYTES * (1 + GENERAL_MAX_DEPENDENT_SUBSTREAMS);
+    MAX_SYNCFRAME_BYTES * GENERAL_MAX_ACCESS_UNIT_FRAMES;
 
 /// Spectral element that owns a conventional mantissa codeword.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -979,7 +982,10 @@ pub struct SyncframeIndexEntry {
     pub header: SyncframeHeader,
 }
 
-/// One time-aligned set of independent and dependent substream frames.
+/// One complete six-block codec/presentation unit.
+///
+/// Long-form units contain one I0/dependent programme set. Short-form units
+/// contain the ordered programme sets needed to accumulate six blocks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccessUnitIndex {
     pub first_frame: usize,
@@ -1051,6 +1057,10 @@ pub struct BitstreamInformation {
     /// Custom channel map for a dependent substream, in the MSB-first table
     /// E.1.4 representation. `None` means the `acmod`/`lfeon` mapping applies.
     pub channel_map: Option<u16>,
+    /// Converter synchronization marker present on short independent frames.
+    /// `None` means the syntax does not carry `convsync` (long frames,
+    /// dependents, and original AC-3 syntax).
+    pub convsync: Option<bool>,
     pub addbsi: Option<Vec<u8>>,
 }
 
@@ -1418,6 +1428,7 @@ fn parse_ac3_bsi_reader(bits: &mut BitReader<'_>) -> Result<BitstreamInformation
             lfe_mix_level_code: None,
         }),
         channel_map: None,
+        convsync: None,
         addbsi,
     })
 }
@@ -1449,9 +1460,11 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
     if bits.read_bit()? {
         parse_informational_metadata(bits, acmod)?;
     }
-    if header.stream_type == StreamType::Independent && num_blocks_code != 3 {
-        skip(bits, 1)?;
-    }
+    let convsync = if header.stream_type == StreamType::Independent && num_blocks_code != 3 {
+        Some(bits.read_bit()?)
+    } else {
+        None
+    };
     if header.stream_type == StreamType::ConvertedIndependent {
         let block_id = num_blocks_code == 3 || bits.read_bit()?;
         if block_id {
@@ -1481,6 +1494,7 @@ fn parse_bsi_reader(bits: &mut BitReader<'_>) -> Result<(BitstreamInformation, u
             compr_2,
             downmix,
             channel_map,
+            convsync,
             addbsi,
         },
         num_blocks_code,
@@ -2035,10 +2049,12 @@ pub enum AccessUnitParse {
     Complete(usize),
 }
 
-/// Finds one complete 48 kHz General JOC access unit using only syncframe
-/// headers. A complete unit is I0 followed by zero through eight sequential
-/// dependents; when the final dependent is present, the next independent frame
-/// or EOS is required to prove the unit boundary.
+/// Finds one complete 48 kHz General JOC access unit using syncframe headers
+/// and short-form `convsync` markers. A complete long unit is I0 followed by
+/// zero through eight sequential dependents. A short unit contains ordered
+/// I0/dependent programme sets whose cumulative I0 block count is six; when
+/// the final set is present, the next independent frame or EOS is required to
+/// prove the unit boundary.
 pub fn parse_access_unit_bounds(bytes: &[u8], eos: bool) -> Result<AccessUnitParse, Eac3Error> {
     if bytes.len() < 8 {
         return if eos {
@@ -2064,6 +2080,9 @@ pub fn parse_access_unit_bounds(bytes: &[u8], eos: bool) -> Result<AccessUnitPar
         } else {
             Ok(AccessUnitParse::NeedMore)
         };
+    }
+    if first.audio_blocks < 6 {
+        return parse_short_access_unit_bounds(bytes, eos, first);
     }
 
     let mut consumed = first.frame_size;
@@ -2130,12 +2149,101 @@ pub fn parse_access_unit_bounds(bytes: &[u8], eos: bool) -> Result<AccessUnitPar
     }
 }
 
-/// Groups E.1.3.1.2 ordered substreams into time-aligned access units.
+fn parse_short_access_unit_bounds(
+    bytes: &[u8],
+    eos: bool,
+    first: SyncframeHeader,
+) -> Result<AccessUnitParse, Eac3Error> {
+    let first_end = first.frame_size;
+    let first_bsi = parse_bsi(&bytes[..first_end])?;
+    if first_bsi.convsync != Some(true) {
+        return Err(Eac3Error::InvalidAccessUnitRange);
+    }
+    let mut consumed = first_end;
+    let mut total_blocks = first.audio_blocks;
+    let mut current_independent = first;
+    let mut expected_dependent = 0_u8;
+    loop {
+        if bytes.len() == consumed {
+            return if eos && total_blocks == 6 {
+                Ok(AccessUnitParse::Complete(consumed))
+            } else if eos {
+                Err(Eac3Error::InvalidAccessUnitRange)
+            } else {
+                Ok(AccessUnitParse::NeedMore)
+            };
+        }
+        let header_end = consumed
+            .checked_add(8)
+            .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+        if bytes.len() < header_end {
+            return if eos {
+                Err(Eac3Error::InvalidAccessUnitRange)
+            } else {
+                Ok(AccessUnitParse::NeedMore)
+            };
+        }
+        let next = parse_syncframe_header(&bytes[consumed..])?;
+        if next.frame_size > MAX_SYNCFRAME_BYTES || next.sample_rate != first.sample_rate {
+            return Err(Eac3Error::SubstreamTimingMismatch { frame: consumed });
+        }
+        let next_end = consumed
+            .checked_add(next.frame_size)
+            .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+        if bytes.len() < next_end {
+            return if eos {
+                Err(Eac3Error::InvalidAccessUnitRange)
+            } else {
+                Ok(AccessUnitParse::NeedMore)
+            };
+        }
+        if next.stream_type == StreamType::Dependent {
+            if usize::from(expected_dependent) >= GENERAL_MAX_DEPENDENT_SUBSTREAMS
+                || next.substream_id != expected_dependent
+            {
+                return Err(Eac3Error::NonsequentialDependentSubstream {
+                    expected: expected_dependent,
+                    actual: next.substream_id,
+                });
+            }
+            if next.audio_blocks != current_independent.audio_blocks
+                || next.samples != current_independent.samples
+            {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: consumed });
+            }
+            expected_dependent = expected_dependent.saturating_add(1);
+            consumed = next_end;
+            continue;
+        }
+        if next.stream_type != StreamType::Independent || next.substream_id != 0 {
+            return Err(Eac3Error::MissingIndependentSubstreamZero { frame: consumed });
+        }
+        if total_blocks == 6 {
+            return Ok(AccessUnitParse::Complete(consumed));
+        }
+        let next_total = total_blocks
+            .checked_add(next.audio_blocks)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if next_total > 6 {
+            return Err(Eac3Error::SubstreamTimingMismatch { frame: consumed });
+        }
+        let next_bsi = parse_bsi(&bytes[consumed..next_end])?;
+        if next_bsi.convsync != Some(false) {
+            return Err(Eac3Error::InvalidAccessUnitRange);
+        }
+        total_blocks = next_total;
+        current_independent = next;
+        expected_dependent = 0;
+        consumed = next_end;
+    }
+}
+
+/// Groups E.1.3.1.2 ordered substreams into complete six-block access units.
 ///
 /// # Errors
 /// Returns an error unless each unit starts with independent substream zero,
 /// independent and dependent IDs are sequential, dependent streams immediately
-/// follow their parent, and every substream has identical rate/block timing.
+/// follow their parent, and every programme set has exact rate/block timing.
 pub fn group_access_units(
     frames: &[SyncframeIndexEntry],
 ) -> Result<Vec<AccessUnitIndex>, Eac3Error> {
@@ -2145,6 +2253,17 @@ pub fn group_access_units(
         let base = frames[first].header;
         if base.stream_type == StreamType::Dependent || base.substream_id != 0 {
             return Err(Eac3Error::MissingIndependentSubstreamZero { frame: first });
+        }
+        if base.audio_blocks < 6 {
+            let end = group_short_access_unit(frames, first)?;
+            units.push(AccessUnitIndex {
+                first_frame: first,
+                frame_count: end - first,
+                sample_rate: base.sample_rate,
+                samples: 1536,
+            });
+            first = end;
+            continue;
         }
         let mut expected_independent = 0_u8;
         let mut expected_dependent = 0_u8;
@@ -2210,6 +2329,113 @@ pub fn group_access_units(
         first = index;
     }
     Ok(units)
+}
+
+fn group_short_access_unit(
+    frames: &[SyncframeIndexEntry],
+    first: usize,
+) -> Result<usize, Eac3Error> {
+    let base = frames[first].header;
+    let mut total_blocks = 0_u8;
+    let mut index = first;
+    let mut expected_dependents = None;
+
+    while index < frames.len() {
+        let independent = frames[index].header;
+        if independent.stream_type != StreamType::Independent || independent.substream_id != 0 {
+            return Err(Eac3Error::MissingIndependentSubstreamZero { frame: index });
+        }
+        if independent.sample_rate != base.sample_rate {
+            return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+        }
+        let next_total = total_blocks
+            .checked_add(independent.audio_blocks)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if next_total > 6 {
+            return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+        }
+        total_blocks = next_total;
+        index += 1;
+
+        let dependent_start = index;
+        let mut expected_dependent = 0_u8;
+        while index < frames.len() && frames[index].header.stream_type == StreamType::Dependent {
+            let dependent = frames[index].header;
+            if usize::from(expected_dependent) >= GENERAL_MAX_DEPENDENT_SUBSTREAMS
+                || dependent.substream_id != expected_dependent
+            {
+                return Err(Eac3Error::NonsequentialDependentSubstream {
+                    expected: expected_dependent,
+                    actual: dependent.substream_id,
+                });
+            }
+            if dependent.sample_rate != independent.sample_rate
+                || dependent.audio_blocks != independent.audio_blocks
+            {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+            }
+            expected_dependent = expected_dependent.saturating_add(1);
+            index += 1;
+        }
+        let dependent_count = index - dependent_start;
+        if let Some(expected) = expected_dependents {
+            if expected != dependent_count {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+            }
+        } else {
+            expected_dependents = Some(dependent_count);
+        }
+
+        if total_blocks == 6 {
+            return Ok(index);
+        }
+        if index >= frames.len() {
+            return Err(Eac3Error::InvalidAccessUnitRange);
+        }
+        let next = frames[index].header;
+        if next.stream_type != StreamType::Independent || next.substream_id != 0 {
+            return Err(Eac3Error::MissingIndependentSubstreamZero { frame: index });
+        }
+    }
+
+    Err(Eac3Error::InvalidAccessUnitRange)
+}
+
+#[doc(hidden)]
+pub fn validate_short_access_unit_convsync(
+    stream: &[u8],
+    frames: &[SyncframeIndexEntry],
+    unit: AccessUnitIndex,
+) -> Result<(), Eac3Error> {
+    let end = unit
+        .first_frame
+        .checked_add(unit.frame_count)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    let unit_frames = frames
+        .get(unit.first_frame..end)
+        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    if unit_frames
+        .first()
+        .is_none_or(|entry| entry.header.audio_blocks == 6)
+    {
+        return Ok(());
+    }
+    let mut first_independent = true;
+    for entry in unit_frames {
+        if entry.header.stream_type != StreamType::Independent || entry.header.substream_id != 0 {
+            continue;
+        }
+        let bytes = frame_bytes(stream, *entry)?;
+        let bsi = parse_bsi(bytes)?;
+        if bsi.convsync != Some(first_independent) {
+            return Err(Eac3Error::InvalidAccessUnitRange);
+        }
+        first_independent = false;
+    }
+    if first_independent {
+        return Err(Eac3Error::InvalidAccessUnitRange);
+    }
+    Ok(())
 }
 
 /// Extracts E.1.2.5 auxiliary user data backward from the fixed frame end.
@@ -2421,6 +2647,7 @@ fn parse_joc_access_unit_impl(
     let unit_frames = frames
         .get(unit.first_frame..end_frame)
         .ok_or(Eac3Error::InvalidAccessUnitRange)?;
+    validate_short_access_unit_convsync(stream, frames, unit)?;
     let required_dependent = unit_frames
         .iter()
         .enumerate()

@@ -27,11 +27,12 @@ renderer.
 
 | Area | Capability | Status | Evidence boundary | Important scope |
 |---|---|---|---|---|
-| Input | Raw E-AC-3 parsing and bounded streaming | `ADMITTED` | Controlled carriers and public syntax | Full real-stream codec fidelity remains scoped |
+| Input | Raw E-AC-3 parsing and bounded streaming | `ADMITTED` | Controlled carriers, public syntax, and grouped short-block streaming tests | Full real-stream codec fidelity remains scoped |
 | Input | Seekable ordinary MP4/M4A with one E-AC-3 track | `ADMITTED_WITH_SCOPE` | Container and sample-cursor regressions | Uses `ffprobe`/`ffmpeg`; non-seekable and fragmented MP4 are not admitted |
 | Base E-AC-3 | Ordinary base decode and channel/LFE labels | `ADMITTED_WITH_SCOPE` | Public syntax, topology, TDAC and state tests | Not a speaker renderer; cross-decoder fidelity remains incomplete |
 | Coding tools | Coupling, SPX, AHT, rematrix | `ADMITTED_WITH_SCOPE` | Normative/public-syntax numerical and state harnesses | Some real-producer activation and full PCM fidelity remain open |
 | Substreams | General E-AC-3 I0 plus ordered D0..D7 assembly | `ADMITTED_WITH_SCOPE` | Chanmap, atomic assembly, bounded per-dependent state, classifier, and synthetic end-to-end tests | CMAF and legacy AC-3 combinations remain D0-only; Type 2 remains without dependents; no real multi-dependent media claim |
+| Substreams | ETSI short-block frame-set grouping | `ADMITTED_WITH_SCOPE` | TS 102 366/TS 103 420 contract audit, `convsync` boundary checks, 1/2/3-block cumulative grouping, I0+D0..D7 state continuity, and synthetic end-to-end JOC tests | General carriage groups ordered programme sets until six cumulative blocks / 1,536 samples; CMAF Annex E remains six-block per syncframe and D0-only; validation is synthetic E2E |
 | OAMD | Normative metadata prefix and metadata-only timeline | `ADMITTED_WITH_SCOPE` | Normative parser and controlled state tests | Complete vendor trim continuation is unavailable |
 | OAMD | `ETSI_STRICT` profile | `ADMITTED` | Published ETSI validation rules | Observed raw `warp=3` is `ReservedWarpMode` and is rejected |
 | OAMD | `OBSERVED_VENDOR_COMPAT` profile | `PARTIAL` | Explicit observed-signaling acceptance and deviation evidence | Continuation is retained opaquely; no vendor semantic interpretation |

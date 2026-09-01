@@ -1,5 +1,8 @@
 use openjoc_container::{InputMediaError, RawEac3AccessUnitReader, RawEac3FrameReader};
-use openjoc_eac3::{group_access_units, index_syncframes};
+use openjoc_eac3::{
+    GENERAL_MAX_ACCESS_UNIT_BYTES, GENERAL_MAX_DEPENDENT_SUBSTREAMS, group_access_units,
+    index_syncframes,
+};
 use std::io::{self, Read};
 
 fn push(bits: &mut Vec<bool>, value: u64, width: usize) {
@@ -30,6 +33,12 @@ fn frame(stream_type: u8, substream_id: u8, size: usize) -> Vec<u8> {
             bytes[index / 8] |= 0x80 >> (index % 8);
         }
     }
+    bytes
+}
+
+fn short_frame(stream_type: u8, substream_id: u8, size: usize) -> Vec<u8> {
+    let mut bytes = frame(stream_type, substream_id, size);
+    bytes[4] &= !0x30; // numblkscod = 0, one audio block
     bytes
 }
 
@@ -307,6 +316,55 @@ fn access_unit_reader_emits_local_indices_with_one_frame_lookahead() {
     assert_eq!(stats.max_au_bytes, 34);
     assert_eq!(stats.max_lookahead_frames, 1);
     assert!(stats.max_complete_frames_retained <= 3);
+}
+
+#[test]
+fn access_unit_reader_groups_six_short_syncframes() {
+    let mut stream = Vec::new();
+    for _ in 0..12 {
+        stream.extend(short_frame(0, 0, 16));
+    }
+    let mut reader = RawEac3AccessUnitReader::new(stream.as_slice(), 64);
+
+    let first = reader
+        .next_access_unit()
+        .expect("first short AU")
+        .expect("first short AU present");
+    assert_eq!(first.frames.len(), 6);
+    assert_eq!(first.unit.samples, 1536);
+    assert_eq!(first.unit.frame_count, 6);
+
+    let second = reader
+        .next_access_unit()
+        .expect("second short AU")
+        .expect("second short AU present");
+    assert_eq!(second.frames.len(), 6);
+    assert_eq!(second.unit.samples, 1536);
+    assert_eq!(reader.next_access_unit().expect("short EOF"), None);
+}
+
+#[test]
+fn access_unit_reader_honors_the_54_syncframe_general_bound() {
+    let mut stream = Vec::with_capacity(GENERAL_MAX_ACCESS_UNIT_BYTES);
+    for _ in 0..6 {
+        stream.extend(short_frame(0, 0, 4096));
+        for dependent_id in 0..GENERAL_MAX_DEPENDENT_SUBSTREAMS {
+            let mut dependent = short_frame(1, 0, 4096);
+            dependent[2] = (dependent[2] & 0xc7) | ((dependent_id as u8) << 3);
+            stream.extend(dependent);
+        }
+    }
+    assert_eq!(stream.len(), GENERAL_MAX_ACCESS_UNIT_BYTES);
+
+    let mut reader = RawEac3AccessUnitReader::new(stream.as_slice(), 4096);
+    let access_unit = reader
+        .next_access_unit()
+        .expect("maximum short AU")
+        .expect("maximum short AU present");
+    assert_eq!(access_unit.frames.len(), 54);
+    assert_eq!(access_unit.bytes.len(), GENERAL_MAX_ACCESS_UNIT_BYTES);
+    assert_eq!(access_unit.unit.samples, 1536);
+    assert_eq!(reader.stats().max_au_bytes, GENERAL_MAX_ACCESS_UNIT_BYTES);
 }
 
 #[test]

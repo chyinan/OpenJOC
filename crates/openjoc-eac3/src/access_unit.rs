@@ -8,6 +8,7 @@ use crate::{
     GENERAL_MAX_DEPENDENT_SUBSTREAMS, InternalBasePolicy, StreamType, SyncframeIndexEntry,
     audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
     inspect_audio_block_carriers, parse_audio_frame, parse_bsi,
+    validate_short_access_unit_convsync,
 };
 use std::time::Instant;
 
@@ -32,6 +33,14 @@ impl JocAccessUnitProfile {
 }
 
 struct AccessUnitFrames<'a> {
+    independent: SyncframeIndexEntry,
+    dependents: &'a [SyncframeIndexEntry],
+    program_sets: Vec<ProgramSet<'a>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProgramSet<'a> {
+    first_frame: usize,
     independent: SyncframeIndexEntry,
     dependents: &'a [SyncframeIndexEntry],
 }
@@ -247,10 +256,6 @@ pub fn validate_joc_access_unit_decoder_contract_for_profile(
     profile: JocAccessUnitProfile,
 ) -> Result<(), Eac3Error> {
     let structure = validate_access_unit_frames(frames, unit, profile)?;
-    let unit_end = unit
-        .first_frame
-        .checked_add(unit.frame_count)
-        .ok_or(Eac3Error::InvalidAccessUnitRange)?;
     let first = structure.independent;
     if first.header.stream_type == StreamType::LegacyIndependent
         && (structure.dependents.is_empty()
@@ -262,55 +267,61 @@ pub fn validate_joc_access_unit_decoder_contract_for_profile(
         });
     }
 
-    let mut information = Vec::with_capacity(unit.frame_count);
-    for (relative, entry) in frames[unit.first_frame..unit_end]
-        .iter()
-        .copied()
-        .enumerate()
-    {
-        if entry.header.sample_rate != unit.sample_rate
-            || entry.header.samples != unit.samples
-            || entry.header.audio_blocks != 6
+    let mut expected_topology = None;
+    for (set_index, set) in structure.program_sets.iter().enumerate() {
+        let mut information = Vec::with_capacity(set.dependents.len() + 1);
+        for entry in std::iter::once(set.independent).chain(set.dependents.iter().copied()) {
+            let end = entry
+                .offset
+                .checked_add(entry.header.frame_size)
+                .ok_or(Eac3Error::FrameSizeOverflow)?;
+            let bytes = stream
+                .get(entry.offset..end)
+                .ok_or(Eac3Error::TruncatedFrame {
+                    offset: entry.offset,
+                    declared: entry.header.frame_size,
+                    available: stream.len().saturating_sub(entry.offset),
+                })?;
+            let frame = parse_audio_frame(bytes)?;
+            let report = inspect_audio_block_carriers(bytes, |_| {})?;
+            if report.examined_blocks != usize::from(entry.header.audio_blocks)
+                || report.unresolved_blocks != 0
+            {
+                return Err(Eac3Error::AudioBlockCarrierTraversalUnresolved {
+                    examined_blocks: report.examined_blocks,
+                    unresolved_blocks: report.unresolved_blocks,
+                });
+            }
+            validate_channel_description(&frame.bsi, frame.full_bandwidth_channels)?;
+            information.push(frame.bsi);
+        }
+        if set.independent.header.audio_blocks < 6
+            && information[0].convsync != Some(set_index == 0)
+        {
+            return Err(Eac3Error::InvalidAccessUnitRange);
+        }
+        validate_dependent_channel_semantics(information.iter().skip(1))?;
+        let topology = assembled_channel_topology(&information[0], &information[1..])?;
+        if expected_topology
+            .as_ref()
+            .is_some_and(|expected| expected != &topology)
         {
             return Err(Eac3Error::SubstreamTimingMismatch {
-                frame: unit.first_frame + relative,
+                frame: set.first_frame,
             });
         }
-        let end = entry
-            .offset
-            .checked_add(entry.header.frame_size)
-            .ok_or(Eac3Error::FrameSizeOverflow)?;
-        let bytes = stream
-            .get(entry.offset..end)
-            .ok_or(Eac3Error::TruncatedFrame {
-                offset: entry.offset,
-                declared: entry.header.frame_size,
-                available: stream.len().saturating_sub(entry.offset),
-            })?;
-        let frame = parse_audio_frame(bytes)?;
-        let report = inspect_audio_block_carriers(bytes, |_| {})?;
-        if report.examined_blocks != usize::from(entry.header.audio_blocks)
-            || report.unresolved_blocks != 0
+        expected_topology = Some(topology);
+        if set_index == 0
+            && first.header.stream_type == StreamType::LegacyIndependent
+            && information[0].audio_coding_mode == 0
         {
-            return Err(Eac3Error::AudioBlockCarrierTraversalUnresolved {
-                examined_blocks: report.examined_blocks,
-                unresolved_blocks: report.unresolved_blocks,
+            return Err(Eac3Error::UnsupportedAc3CodingTool {
+                tool: "Annex-J dual-mono core",
             });
         }
-        validate_channel_description(&frame.bsi, frame.full_bandwidth_channels)?;
-        information.push(frame.bsi);
     }
-    if first.header.stream_type == StreamType::LegacyIndependent
-        && information[0].audio_coding_mode == 0
-    {
-        return Err(Eac3Error::UnsupportedAc3CodingTool {
-            tool: "Annex-J dual-mono core",
-        });
-    }
-
-    validate_dependent_channel_semantics(information.iter().skip(1))?;
     let (channel_locations, lfe_location) =
-        assembled_channel_topology(&information[0], &information[1..])?;
+        expected_topology.ok_or(Eac3Error::InvalidAccessUnitRange)?;
     let topology = DecodedAccessUnitPcm {
         sample_rate: unit.sample_rate,
         samples: unit.samples,
@@ -390,7 +401,8 @@ impl ChannelLocation {
 /// General TS 102 366 carriage permits up to eight sequential dependents. The
 /// dependent channel data replaces matching I0 locations and supplements the
 /// base 5.X channels for the 7.X and 5.X+2 configurations. Transform delay is
-/// retained independently for I0 and each dependent ID across access units.
+/// retained independently for I0 and each dependent ID across grouped access
+/// units and their short syncframes.
 #[derive(Clone, Debug, Default)]
 pub struct JocAccessUnitPcmDecoder {
     independent: AudioPcmSynthesizer,
@@ -450,59 +462,100 @@ fn validate_access_unit_frames(
             frame: unit.first_frame,
         });
     }
-    if profile == JocAccessUnitProfile::Cmaf
-        && independent.header.stream_type != StreamType::Independent
-    {
-        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
-            actual: unit.frame_count,
+    let mut program_sets = Vec::new();
+    let mut index = unit.first_frame;
+    let mut total_blocks = 0_u8;
+    let mut expected_dependent_count = None;
+    while index < unit_end {
+        let set_first_frame = index;
+        let set_independent = frames[index];
+        if (index != unit.first_frame
+            && (set_independent.header.stream_type != StreamType::Independent
+                || set_independent.header.substream_id != 0))
+            || set_independent.header.sample_rate != unit.sample_rate
+        {
+            return Err(Eac3Error::MissingIndependentSubstreamZero { frame: index });
+        }
+        if set_independent.header.stream_type == StreamType::LegacyIndependent
+            && set_independent.header.audio_blocks != 6
+        {
+            return Err(Eac3Error::UnsupportedJocAudioBlockCount {
+                actual: set_independent.header.audio_blocks,
+            });
+        }
+        total_blocks = total_blocks
+            .checked_add(set_independent.header.audio_blocks)
+            .ok_or(Eac3Error::FrameSizeOverflow)?;
+        if total_blocks > 6 {
+            return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+        }
+        index += 1;
+        let dependent_start = index;
+        let mut expected_id = 0_u8;
+        while index < unit_end && frames[index].header.stream_type == StreamType::Dependent {
+            let entry = frames[index];
+            let maximum_dependents =
+                if set_independent.header.stream_type == StreamType::LegacyIndependent {
+                    profile.maximum_dependents().min(1)
+                } else {
+                    profile.maximum_dependents()
+                };
+            if index - dependent_start >= maximum_dependents {
+                return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+                    actual: unit.frame_count,
+                });
+            }
+            if entry.header.substream_id != expected_id {
+                return Err(Eac3Error::NonsequentialDependentSubstream {
+                    expected: expected_id,
+                    actual: entry.header.substream_id,
+                });
+            }
+            if entry.header.sample_rate != set_independent.header.sample_rate
+                || entry.header.samples != set_independent.header.samples
+                || entry.header.audio_blocks != set_independent.header.audio_blocks
+            {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+            }
+            expected_id = expected_id.saturating_add(1);
+            index += 1;
+        }
+        let dependents = &frames[dependent_start..index];
+        if let Some(expected) = expected_dependent_count {
+            if expected != dependents.len() {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: index });
+            }
+        } else {
+            expected_dependent_count = Some(dependents.len());
+        }
+        program_sets.push(ProgramSet {
+            first_frame: set_first_frame,
+            independent: set_independent,
+            dependents,
         });
-    }
-    let maximum_dependents = if independent.header.stream_type == StreamType::LegacyIndependent {
-        profile.maximum_dependents().min(1)
-    } else {
-        profile.maximum_dependents()
-    };
-    let dependent_count = unit.frame_count.saturating_sub(1);
-    if dependent_count > maximum_dependents {
-        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
-            actual: unit.frame_count,
-        });
-    }
-    let dependents = &frames[unit.first_frame + 1..unit_end];
-    for (index, entry) in dependents.iter().enumerate() {
-        let expected_id = u8::try_from(index).unwrap_or(u8::MAX);
-        if entry.header.stream_type != StreamType::Dependent {
+        if index < unit_end && frames[index].header.stream_type != StreamType::Independent {
             return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
                 actual: unit.frame_count,
             });
         }
-        if entry.header.substream_id != expected_id {
-            return Err(Eac3Error::NonsequentialDependentSubstream {
-                expected: expected_id,
-                actual: entry.header.substream_id,
-            });
-        }
-        if entry.header.sample_rate != independent.header.sample_rate
-            || entry.header.samples != independent.header.samples
-            || entry.header.audio_blocks != independent.header.audio_blocks
-            || entry.header.sample_rate != unit.sample_rate
-            || entry.header.samples != unit.samples
-        {
-            return Err(Eac3Error::SubstreamTimingMismatch {
-                frame: unit.first_frame + index + 1,
-            });
-        }
     }
-    if independent.header.sample_rate != unit.sample_rate
-        || independent.header.samples != unit.samples
+    if total_blocks != 6 || unit.samples != 1536 {
+        return Err(Eac3Error::InvalidAccessUnitRange);
+    }
+    if profile == JocAccessUnitProfile::Cmaf
+        && (independent.header.stream_type != StreamType::Independent
+            || program_sets.len() != 1
+            || independent.header.audio_blocks != 6)
     {
-        return Err(Eac3Error::SubstreamTimingMismatch {
-            frame: unit.first_frame,
+        return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
+            actual: unit.frame_count,
         });
     }
+    let dependents = program_sets[0].dependents;
     Ok(AccessUnitFrames {
         independent,
         dependents,
+        program_sets,
     })
 }
 
@@ -612,20 +665,15 @@ impl JocAccessUnitPcmDecoder {
             self.last_stage_timing = Eac3DecodeStageTiming::default();
         }
         let structure = validate_access_unit_frames(frames, unit, JocAccessUnitProfile::General)?;
+        validate_short_access_unit_convsync(stream, frames, unit)?;
         let first = structure.independent;
-        let dependent_entries = structure.dependents;
         if first.header.stream_type == StreamType::LegacyIndependent
-            && (dependent_entries.is_empty()
+            && (structure.dependents.is_empty()
                 || !matches!(first.header.bitstream_id, 6 | 8)
                 || first.header.sample_rate != 48_000)
         {
             return Err(Eac3Error::UnsupportedJocAccessUnitFrameCount {
                 actual: unit.frame_count,
-            });
-        }
-        if first.header.audio_blocks != 6 {
-            return Err(Eac3Error::UnsupportedJocAudioBlockCount {
-                actual: first.header.audio_blocks,
             });
         }
 
@@ -636,80 +684,121 @@ impl JocAccessUnitPcmDecoder {
         if let (Some(timing), Some(start)) = (stage_timing.as_mut(), allocation_start) {
             timing.allocation_and_copy += start.elapsed();
         }
-        for index in dependent_entries.len()..GENERAL_MAX_DEPENDENT_SUBSTREAMS {
+        let dependent_count = structure.dependents.len();
+        for index in dependent_count..GENERAL_MAX_DEPENDENT_SUBSTREAMS {
             if let Some(synthesizer) = dependent_synthesizers[index].as_mut() {
                 synthesizer.reset();
             }
             dependent_configurations[index] = None;
         }
-        let dependent_drc = dependent_entries
-            .last()
-            .map(|entry| dependent_dynamic_range_override(stream, *entry))
-            .transpose()?;
-        let (independent_info, independent, independent_configuration) = decode_frame(
-            stream,
-            first,
-            dither_values,
-            &mut independent_synth,
-            self.independent_configuration,
-            policy,
-            dependent_drc.as_ref(),
-            stage_timing.as_mut(),
-        )?;
-        if first.header.stream_type == StreamType::LegacyIndependent
-            && independent_info.audio_coding_mode == 0
-        {
-            return Err(Eac3Error::UnsupportedAc3CodingTool {
-                tool: "Annex-J dual-mono core",
-            });
-        }
-        let mut dependent = Vec::with_capacity(dependent_entries.len());
-        for entry in dependent_entries {
-            let dependent_id = usize::from(entry.header.substream_id);
-            let synthesizer =
-                dependent_synthesizers[dependent_id].get_or_insert_with(AudioPcmSynthesizer::new);
-            let decoded = decode_frame(
+
+        let mut group_independent_configuration = None;
+        let mut group_dependent_configurations = [None; GENERAL_MAX_DEPENDENT_SUBSTREAMS];
+        let mut previous_independent_configuration = self.independent_configuration;
+        let mut final_independent_configuration = self.independent_configuration;
+        let mut accumulated = None;
+        for (set_index, set) in structure.program_sets.iter().enumerate() {
+            let dependent_drc = set
+                .dependents
+                .last()
+                .map(|entry| dependent_dynamic_range_override(stream, *entry))
+                .transpose()?;
+            let (independent_info, independent, independent_configuration) = decode_frame(
                 stream,
-                *entry,
+                set.independent,
                 dither_values,
-                synthesizer,
-                dependent_configurations[dependent_id],
+                &mut independent_synth,
+                previous_independent_configuration,
                 policy,
                 dependent_drc.as_ref(),
                 stage_timing.as_mut(),
             )?;
-            if decoded.0.header.audio_blocks != 6 {
-                return Err(Eac3Error::UnsupportedJocAudioBlockCount {
-                    actual: decoded.0.header.audio_blocks,
+            if group_independent_configuration
+                .is_some_and(|previous| previous != independent_configuration)
+            {
+                return Err(Eac3Error::SubstreamTimingMismatch { frame: set_index });
+            }
+            group_independent_configuration = Some(independent_configuration);
+            previous_independent_configuration = Some(independent_configuration);
+            final_independent_configuration = Some(independent_configuration);
+            if set_index == 0
+                && first.header.stream_type == StreamType::LegacyIndependent
+                && independent_info.audio_coding_mode == 0
+            {
+                return Err(Eac3Error::UnsupportedAc3CodingTool {
+                    tool: "Annex-J dual-mono core",
                 });
             }
-            dependent_configurations[dependent_id] = Some(decoded.2);
-            dependent.push(decoded);
+            let mut dependent = Vec::with_capacity(set.dependents.len());
+            for entry in set.dependents {
+                let dependent_id = usize::from(entry.header.substream_id);
+                let synthesizer = dependent_synthesizers[dependent_id]
+                    .get_or_insert_with(AudioPcmSynthesizer::new);
+                let decoded = decode_frame(
+                    stream,
+                    *entry,
+                    dither_values,
+                    synthesizer,
+                    dependent_configurations[dependent_id],
+                    policy,
+                    dependent_drc.as_ref(),
+                    stage_timing.as_mut(),
+                )?;
+                if group_dependent_configurations[dependent_id]
+                    .is_some_and(|previous| previous != decoded.2)
+                {
+                    return Err(Eac3Error::SubstreamTimingMismatch { frame: set_index });
+                }
+                group_dependent_configurations[dependent_id] = Some(decoded.2);
+                dependent_configurations[dependent_id] = Some(decoded.2);
+                dependent.push(decoded);
+            }
+            let dependent_refs = dependent
+                .iter()
+                .map(|(info, pcm, _)| (info, pcm))
+                .collect::<Vec<_>>();
+            let segment_unit = AccessUnitIndex {
+                first_frame: set.first_frame,
+                frame_count: set.dependents.len() + 1,
+                sample_rate: set.independent.header.sample_rate,
+                samples: set.independent.header.samples,
+            };
+            let dialnorm = DialnormState::new(self.dialnorm_mode, independent_info.dialnorm);
+            let segment = Eac3DecodeStageTiming::measure(
+                stage_timing.as_mut(),
+                |timing| &mut timing.pcm_assembly,
+                || {
+                    merge_substream_pcm_planes(
+                        segment_unit,
+                        &independent_info,
+                        independent,
+                        &dependent_refs,
+                        dialnorm,
+                    )
+                },
+            )?;
+            if let Some(total) = accumulated.as_mut() {
+                append_decoded_pcm_planes(total, segment)?;
+            } else {
+                accumulated = Some(segment);
+            }
         }
-        let dependent_refs = dependent
-            .iter()
-            .map(|(info, pcm, _)| (info, pcm))
-            .collect::<Vec<_>>();
-        let dialnorm = DialnormState::new(self.dialnorm_mode, independent_info.dialnorm);
-        let output = Eac3DecodeStageTiming::measure(
-            stage_timing.as_mut(),
-            |timing| &mut timing.pcm_assembly,
-            || {
-                merge_substream_pcm_planes(
-                    unit,
-                    &independent_info,
-                    independent,
-                    &dependent_refs,
-                    dialnorm,
-                )
-            },
-        )?;
+        let output = accumulated.ok_or(Eac3Error::InvalidAccessUnitRange)?;
+        if output.compatibility_pcm.samples != unit.samples
+            || output.joc_input_pcm.samples != unit.samples
+        {
+            return Err(Eac3Error::AccessUnitPcmSampleCountMismatch {
+                expected: usize::from(unit.samples),
+                actual: usize::from(output.joc_input_pcm.samples),
+            });
+        }
+        let dialnorm = output.joc_input_pcm.dialnorm;
 
         let commit_start = stage_timing.is_some().then(Instant::now);
         self.independent = independent_synth;
         self.dependent_synthesizers = dependent_synthesizers;
         self.dependent_configurations = dependent_configurations;
-        self.independent_configuration = Some(independent_configuration);
+        self.independent_configuration = final_independent_configuration;
         self.dialnorm_state = dialnorm;
         if let (Some(timing), Some(start)) = (stage_timing.as_mut(), commit_start) {
             timing.decoder_state_commit += start.elapsed();
@@ -720,6 +809,47 @@ impl JocAccessUnitPcmDecoder {
         }
         Ok(output)
     }
+}
+
+fn append_decoded_pcm_planes(
+    target: &mut DecodedJocAccessUnitPcm,
+    segment: DecodedJocAccessUnitPcm,
+) -> Result<(), Eac3Error> {
+    let DecodedJocAccessUnitPcm {
+        compatibility_pcm,
+        joc_input_pcm,
+    } = segment;
+    append_decoded_pcm(&mut target.compatibility_pcm, compatibility_pcm)?;
+    append_decoded_pcm(&mut target.joc_input_pcm, joc_input_pcm)?;
+    Ok(())
+}
+
+fn append_decoded_pcm(
+    target: &mut DecodedAccessUnitPcm,
+    segment: DecodedAccessUnitPcm,
+) -> Result<(), Eac3Error> {
+    if target.sample_rate != segment.sample_rate
+        || target.channel_locations != segment.channel_locations
+        || target.lfe_location != segment.lfe_location
+        || target.channels.len() != segment.channels.len()
+        || target.lfe.is_some() != segment.lfe.is_some()
+    {
+        return Err(Eac3Error::SubstreamTimingMismatch { frame: 0 });
+    }
+    for (target_channel, segment_channel) in target.channels.iter_mut().zip(segment.channels) {
+        target_channel.extend(segment_channel);
+    }
+    if let (Some(target_lfe), Some(segment_lfe)) = (target.lfe.as_mut(), segment.lfe) {
+        target_lfe.extend(segment_lfe);
+    }
+    target.samples = target
+        .samples
+        .checked_add(segment.samples)
+        .ok_or(Eac3Error::FrameSizeOverflow)?;
+    if target.downmix == DownmixMetadata::default() {
+        target.downmix = segment.downmix;
+    }
+    Ok(())
 }
 
 fn decode_frame(
@@ -1190,6 +1320,7 @@ mod tests {
             compr_2: None,
             downmix: DownmixMetadata::default(),
             channel_map,
+            convsync: None,
             addbsi: None,
         }
     }
@@ -1209,6 +1340,13 @@ mod tests {
         }
     }
 
+    fn short_frame_entry() -> SyncframeIndexEntry {
+        let mut entry = frame_entry(StreamType::Independent, 0);
+        entry.header.audio_blocks = 1;
+        entry.header.samples = 256;
+        entry
+    }
+
     #[test]
     fn general_profile_allows_two_dependents_but_cmaf_does_not() {
         let frames = [
@@ -1226,6 +1364,29 @@ mod tests {
         assert!(matches!(
             validate_access_unit_frames(&frames, unit, JocAccessUnitProfile::Cmaf),
             Err(Eac3Error::UnsupportedJocAccessUnitFrameCount { actual: 3 })
+        ));
+    }
+
+    #[test]
+    fn cmaf_profile_rejects_a_grouped_short_block_unit() {
+        let frames = [
+            short_frame_entry(),
+            short_frame_entry(),
+            short_frame_entry(),
+            short_frame_entry(),
+            short_frame_entry(),
+            short_frame_entry(),
+        ];
+        let unit = AccessUnitIndex {
+            first_frame: 0,
+            frame_count: frames.len(),
+            sample_rate: 48_000,
+            samples: 1536,
+        };
+
+        assert!(matches!(
+            validate_access_unit_frames(&frames, unit, JocAccessUnitProfile::Cmaf),
+            Err(Eac3Error::UnsupportedJocAccessUnitFrameCount { actual: 6 })
         ));
     }
 

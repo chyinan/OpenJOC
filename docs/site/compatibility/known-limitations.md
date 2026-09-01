@@ -44,6 +44,13 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 - JOC rendering is 48 kHz. Raw E-AC-3 and seekable ordinary ISO BMFF input
   are admitted within the documented topology and access-unit boundaries.
   Non-seekable or fragmented MP4 is not admitted.
+- Generic E-AC-3 short syncframes may contain 1, 2, or 3 audio blocks. For
+  General JOC carriage, OpenJOC groups ordered I0/D0..D7 programme sets until
+  each selected programme covers six cumulative blocks (1,536 samples),
+  preserving per-substream synthesis state. CMAF Annex E remains restricted
+  to `numblkscod=3` and one I0 plus optional D0. This short-block capability is
+  validated with repository-owned synthetic end-to-end streams; no rare real
+  short-block JOC corpus is claimed.
 - The Rust `OpenJocSession` packet API accepts one complete General JOC access
   unit per push: I0 plus ordered D0..D7 dependents, within the bounded public
   maximum. Demuxing, arbitrary byte fragmentation, and multiple AUs per call

@@ -87,7 +87,8 @@ public-API-allocated AVFrame / AVBuffer
 ```
 
 `PacketRef` borrows packet bytes only for `send_packet`. Bytes that must
-survive the call are copied into at most 131,072 bytes of compressed staging.
+survive the call are copied into at most 3,538,944 bytes of compressed staging
+(16 × the 221,184-byte maximum General short-block AU).
 No `AVPacket *` is retained. The wrapper output queue is bounded to frames
 from one session send/drain batch; a caller that does not receive sees
 `WouldBlock`. `AvFrame` owns a normal `AVFrame` whose packed audio allocation
@@ -105,13 +106,17 @@ bridge never equates an `AVPacket` with one OpenJOC AU. The shared OpenJOC
 E-AC-3 primitives parse:
 
 ```text
-independent substream I0 + ordered dependent substreams D0..Dn = one admitted General AU
+ordered programme sets (I0 + D0..Dn), accumulated until every selected
+programme covers six audio blocks = one admitted General AU
 ```
 
 The assembler handles an AU split across packets, I0 and D0..Dn in different
-packets, and multiple AUs in one packet. An independent-only AU remains
-pending until the next I0 proves its boundary or EOF closes it. Maximum frame,
-AU, and staging sizes are explicit; whole programmes are never buffered.
+packets, short 1/2/3-block syncframes, mixed short partitioning whose cumulative
+total is six blocks, and multiple AUs in one packet. A short-block group starts
+at an I0 `convsync=1` marker and subsequent temporal I0 frames must carry
+`convsync=0`. Maximum frame, AU, and staging sizes are explicit: at most 54
+syncframes and 221,184 coded bytes for one General I0+D0..D7 six-block unit;
+whole programmes are never buffered.
 
 General E-AC-3 permits at most eight associated dependents, assigned
 sequentially as D0 through D7. CMAF remains constrained to optional D0, and

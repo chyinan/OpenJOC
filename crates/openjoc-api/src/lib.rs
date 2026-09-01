@@ -408,7 +408,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Borrowed compressed input. A packet is exactly one complete General JOC
-/// access unit: independent substream zero and its ordered D0..Dn dependents.
+/// access unit: ordered I0/D0..Dn programme sets covering six cumulative
+/// audio blocks, with short syncframes grouped before JOC processing.
 #[derive(Clone, Copy, Debug)]
 pub struct OpenJocPacket<'a> {
     pub data: &'a [u8],
@@ -448,6 +449,7 @@ pub fn trace_access_units(
         .into_iter()
         .enumerate()
         .map(|(index, unit)| {
+            openjoc_eac3::validate_short_access_unit_convsync(stream, &frames, unit)?;
             let first = frames[unit.first_frame];
             let last = frames[unit.first_frame + unit.frame_count - 1];
             let end = last

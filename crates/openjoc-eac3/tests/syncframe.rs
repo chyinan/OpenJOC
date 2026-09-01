@@ -6,11 +6,12 @@ use openjoc_eac3::{
     classify_aux_emdf, classify_skip_field_emdf, decode_audio_blocks,
     decode_audio_blocks_with_parsed_frame, decode_audio_blocks_with_policy, decode_audio_frame_pcm,
     decode_exponents, decode_first_audio_block, decode_frame_exponent_strategy, dynamic_range_gain,
-    extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, extract_joc_addbsi_access_unit,
-    group_access_units, index_syncframes, inspect_audio_block_carriers, parse_audio_frame,
-    parse_bsi, parse_first_audio_block_prefix, parse_joc_access_unit, parse_joc_addbsi,
-    parse_syncframe_header, reconstruct_enhanced_coupling, spx_subband_range,
-    synthesize_audio_blocks, validate_complexity_index, validate_joc_access_unit,
+    extract_aux_emdf, extract_aux_joc_access_unit, extract_auxdata, extract_joc_access_unit,
+    extract_joc_addbsi_access_unit, group_access_units, index_syncframes,
+    inspect_audio_block_carriers, parse_audio_frame, parse_bsi, parse_first_audio_block_prefix,
+    parse_joc_access_unit, parse_joc_addbsi, parse_syncframe_header, reconstruct_enhanced_coupling,
+    spx_subband_range, synthesize_audio_blocks, validate_complexity_index,
+    validate_joc_access_unit,
 };
 use openjoc_emdf::{JocProfileField, JocValidationProfile, JocValidationStatus};
 use sha2::{Digest, Sha256};
@@ -63,6 +64,131 @@ fn frame(stream_type: u8, substream_id: u8, size: usize, fscod: u8, blocks: u8) 
     bits.push(0, 1); // no LFE
     bits.push(16, 5); // E-AC-3 syntax
     bits.bytes(size)
+}
+
+fn short_mono_frame(stream_type: u8, blocks: u8, convsync: bool) -> Vec<u8> {
+    short_mono_frame_with_channel_map(stream_type, blocks, convsync, None)
+}
+
+fn short_mono_frame_with_channel_map(
+    stream_type: u8,
+    blocks: u8,
+    convsync: bool,
+    channel_map: Option<u16>,
+) -> Vec<u8> {
+    short_mono_frame_with_options(stream_type, blocks, convsync, channel_map, None, None)
+}
+
+fn short_mono_frame_with_options(
+    stream_type: u8,
+    blocks: u8,
+    convsync: bool,
+    channel_map: Option<u16>,
+    addbsi: Option<&[u8]>,
+    emdf: Option<&[u8]>,
+) -> Vec<u8> {
+    let num_blocks_code = match blocks {
+        1 => 0,
+        2 => 1,
+        3 => 2,
+        _ => panic!("short fixture block count"),
+    };
+    let mut bits = Bits::default();
+    bits.push(0x0b77, 16);
+    bits.push(u64::from(stream_type), 2);
+    bits.push(0, 3);
+    bits.push(255, 11); // 512-byte frame
+    bits.push(0, 2); // 48 kHz
+    bits.push(num_blocks_code, 2);
+    bits.push(1, 3); // mono
+    bits.push(0, 1); // no LFE
+    bits.push(16, 5); // E-AC-3 version
+    bits.push(31, 5); // dialnorm
+    bits.push(0, 1); // no compression word
+    if stream_type == 1 {
+        bits.push(u64::from(channel_map.is_some()), 1);
+        if let Some(channel_map) = channel_map {
+            bits.push(u64::from(channel_map), 16);
+        }
+    }
+    bits.push(0, 1); // no mixing metadata
+    bits.push(0, 1); // no informational metadata
+    if stream_type == 0 {
+        bits.push(u64::from(convsync), 1);
+    }
+    if let Some(addbsi) = addbsi {
+        assert!((1..=64).contains(&addbsi.len()));
+        bits.push(1, 1);
+        bits.push(u64::try_from(addbsi.len() - 1).expect("addbsi length"), 6);
+        for byte in addbsi {
+            bits.push(u64::from(*byte), 8);
+        }
+    } else {
+        bits.push(0, 1); // no addbsi
+    }
+    bits.push(0, 2); // frame SNR strategy
+    bits.push(0, 1); // no transient processing
+    bits.push(0, 7); // compact syntax flags
+    for block in 0..blocks {
+        bits.push(u64::from(block == 0), 2); // D15 then reuse
+    }
+    if stream_type == 0 {
+        bits.push(0, 1); // converter exponent strategy absent
+    }
+    bits.push(0, 6); // frame coarse SNR offset
+    bits.push(0, 4); // frame fine SNR offset
+    if blocks > 1 {
+        bits.push(0, 1); // no block-start information
+    }
+    bits.push(0, 1); // dynamic range absent
+    bits.push(0, 1); // SPX not in use
+    bits.push(0, 6); // channel bandwidth code
+    bits.push(15, 4); // channel absolute exponent
+    for _ in 0..24 {
+        bits.push(62, 7); // zero-allocated mantissas
+    }
+    bits.push(0, 2); // gain range
+    bits.push(0, 1); // converter SNR offset absent
+    for _ in 1..blocks {
+        bits.push(0, 1); // dynamic range absent
+        bits.push(0, 1); // SPX strategy reused
+        bits.push(0, 1); // converter SNR offset absent
+    }
+    if let Some(emdf) = emdf {
+        let frame_bits = 512 * 8;
+        let length_position = frame_bits - 32;
+        bits.0.resize(frame_bits, false);
+        bits.set(
+            length_position,
+            u64::try_from(emdf.len() * 8).expect("EMDF bits"),
+            14,
+        );
+        bits.set(frame_bits - 18, 1, 1);
+        let start = length_position - emdf.len() * 8;
+        for (index, byte) in emdf.iter().copied().enumerate() {
+            bits.set(start + index * 8, u64::from(byte), 8);
+        }
+    }
+    bits.bytes(512)
+}
+
+fn short_dependent_mono_frame(substream_id: u8, blocks: u8, channel_map: u16) -> Vec<u8> {
+    let mut bytes = short_mono_frame_with_channel_map(1, blocks, false, Some(channel_map));
+    bytes[2] = (bytes[2] & 0xc7) | (substream_id << 3);
+    bytes
+}
+
+fn short_dependent_carrier_frame(
+    substream_id: u8,
+    blocks: u8,
+    channel_map: u16,
+    addbsi: Option<&[u8]>,
+    emdf: Option<&[u8]>,
+) -> Vec<u8> {
+    let mut bytes =
+        short_mono_frame_with_options(1, blocks, false, Some(channel_map), addbsi, emdf);
+    bytes[2] = (bytes[2] & 0xc7) | (substream_id << 3);
+    bytes
 }
 
 fn six_block_mono_frame(
@@ -334,6 +460,14 @@ fn eac3_core_release_benchmark() {
 }
 
 fn skip_field_joc_frame(emdf: &[u8]) -> Vec<u8> {
+    let mut bytes = skip_field_joc_frame_single(emdf, true);
+    for _ in 1..6 {
+        bytes.extend(skip_field_joc_frame_single(&[], false));
+    }
+    bytes
+}
+
+fn skip_field_joc_frame_single(emdf: &[u8], convsync: bool) -> Vec<u8> {
     let size = 512;
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);
@@ -349,7 +483,7 @@ fn skip_field_joc_frame(emdf: &[u8]) -> Vec<u8> {
     bits.push(0, 1); // no compression metadata
     bits.push(0, 1); // no mixing metadata
     bits.push(0, 1); // no informational metadata
-    bits.push(0, 1); // convsync
+    bits.push(u64::from(convsync), 1); // convsync
     bits.push(1, 1); // addbsie
     bits.push(1, 6); // two addbsi bytes
     bits.push(0x01, 8); // JOC extension flag
@@ -862,14 +996,213 @@ fn truncated_dependent_chanmap_is_a_bounded_parser_error() {
 }
 
 #[test]
-fn rejects_non_six_block_joc_access_units() {
+fn rejects_incomplete_short_block_joc_access_units() {
     let bytes = frame(0, 0, 16, 0, 0);
     let frames = index_syncframes(&bytes).expect("indexed one-block frame");
-    let units = group_access_units(&frames).expect("grouped one-block frame");
-    let mut decoder = JocAccessUnitPcmDecoder::new();
     assert_eq!(
-        decoder.decode(&bytes, &frames, units[0], &[]),
-        Err(Eac3Error::UnsupportedJocAudioBlockCount { actual: 1 })
+        group_access_units(&frames),
+        Err(Eac3Error::InvalidAccessUnitRange)
+    );
+}
+
+#[test]
+fn groups_short_one_block_program_sets_into_one_presentation_unit() {
+    let mut bytes = Vec::new();
+    for _ in 0..6 {
+        bytes.extend(frame(0, 0, 16, 0, 0));
+        bytes.extend(frame(1, 0, 16, 0, 0));
+    }
+
+    let frames = index_syncframes(&bytes).expect("indexed short one-block stream");
+    let units = group_access_units(&frames).expect("grouped short one-block stream");
+
+    assert_eq!(units.len(), 1);
+    assert_eq!(units[0].first_frame, 0);
+    assert_eq!(units[0].frame_count, 12);
+    assert_eq!(units[0].samples, 1536);
+}
+
+#[test]
+fn decodes_short_one_block_i0_sequence_as_one_pcm_interval() {
+    let mut bytes = Vec::new();
+    for index in 0..6 {
+        bytes.extend(short_mono_frame(0, 1, index == 0));
+    }
+
+    let frames = index_syncframes(&bytes).expect("indexed short mono stream");
+    let unit = group_access_units(&frames).expect("grouped short mono stream")[0];
+    let pcm = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &vec![0.5; 4096])
+        .expect("decoded short mono stream");
+
+    assert_eq!(pcm.sample_rate, 48_000);
+    assert_eq!(pcm.samples, 1536);
+    assert_eq!(pcm.channels.len(), 1);
+    assert_eq!(pcm.channels[0].len(), 1536);
+}
+
+#[test]
+fn decodes_short_i0_and_dependent_program_sets_without_restarting_tdac() {
+    let mut bytes = Vec::new();
+    for index in 0..6 {
+        bytes.extend(short_mono_frame(0, 1, index == 0));
+        bytes.extend(short_mono_frame_with_channel_map(1, 1, false, Some(0x8000)));
+    }
+
+    let frames = index_syncframes(&bytes).expect("indexed short I0/D0 stream");
+    let unit = group_access_units(&frames).expect("grouped short I0/D0 stream")[0];
+    let pcm = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &vec![0.5; 8192])
+        .expect("decoded short I0/D0 stream");
+
+    assert_eq!(pcm.samples, 1536);
+    assert_eq!(
+        pcm.channel_locations,
+        vec![ChannelLocation::Left, ChannelLocation::Centre]
+    );
+    assert!(pcm.channels.iter().all(|channel| channel.len() == 1536));
+}
+
+#[test]
+fn decodes_short_i0_and_multiple_dependents_across_the_full_interval() {
+    let mut bytes = Vec::new();
+    for index in 0..6 {
+        bytes.extend(short_mono_frame(0, 1, index == 0));
+        bytes.extend(short_dependent_mono_frame(0, 1, 0x8000));
+        bytes.extend(short_dependent_mono_frame(1, 1, 0x2000));
+    }
+
+    let frames = index_syncframes(&bytes).expect("indexed short multi-dependent stream");
+    let unit = group_access_units(&frames).expect("grouped short multi-dependent stream")[0];
+    let pcm = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &vec![0.5; 12_288])
+        .expect("decoded short multi-dependent stream");
+
+    assert_eq!(pcm.samples, 1536);
+    assert_eq!(
+        pcm.channel_locations,
+        vec![
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre
+        ]
+    );
+    assert!(pcm.channels.iter().all(|channel| channel.len() == 1536));
+}
+
+#[test]
+fn decodes_mixed_one_two_three_block_partitioning_to_exactly_1536_samples() {
+    let bytes = [
+        short_mono_frame(0, 1, true),
+        short_mono_frame(0, 2, false),
+        short_mono_frame(0, 3, false),
+    ]
+    .concat();
+    let frames = index_syncframes(&bytes).expect("indexed mixed short stream");
+    let unit = group_access_units(&frames).expect("grouped mixed short stream")[0];
+    let pcm = JocAccessUnitPcmDecoder::new()
+        .decode(&bytes, &frames, unit, &vec![0.5; 4096])
+        .expect("decoded mixed short stream");
+
+    assert_eq!(unit.frame_count, 3);
+    assert_eq!(unit.samples, 1536);
+    assert_eq!(pcm.channels[0].len(), 1536);
+}
+
+#[test]
+fn rejects_dependent_with_a_different_short_block_partition() {
+    let bytes = [
+        frame(0, 0, 16, 0, 0),
+        frame(1, 0, 16, 0, 1),
+        frame(0, 0, 16, 0, 0),
+        frame(0, 0, 16, 0, 0),
+        frame(0, 0, 16, 0, 0),
+        frame(0, 0, 16, 0, 0),
+    ]
+    .concat();
+    assert_eq!(
+        group_access_units(&index_syncframes(&bytes).expect("indexed mismatch")),
+        Err(Eac3Error::SubstreamTimingMismatch { frame: 1 })
+    );
+}
+
+#[test]
+fn extracts_short_joc_carrier_from_the_final_dependent_of_the_group() {
+    let emdf = joc_emdf();
+    let addbsi = [0x01, 0x02];
+    let mut bytes = Vec::new();
+    for index in 0..6 {
+        bytes.extend(short_mono_frame(0, 1, index == 0));
+        bytes.extend(short_dependent_carrier_frame(
+            0,
+            1,
+            0x8000,
+            (index == 5).then_some(&addbsi),
+            (index == 5).then_some(emdf.as_slice()),
+        ));
+    }
+    let frames = index_syncframes(&bytes).expect("indexed short carrier stream");
+    let unit = group_access_units(&frames).expect("grouped short carrier stream")[0];
+    let metadata = extract_joc_access_unit(&bytes, &frames, unit)
+        .expect("short carrier parse")
+        .expect("short JOC metadata");
+
+    assert_eq!(metadata.carrier_frame, 11);
+    assert_eq!(metadata.samples, 1536);
+}
+
+#[test]
+fn rejects_short_joc_carrier_before_the_final_dependent_temporal_segment() {
+    let emdf = joc_emdf();
+    let addbsi = [0x01, 0x02];
+    let mut bytes = Vec::new();
+    for index in 0..6 {
+        bytes.extend(short_mono_frame(0, 1, index == 0));
+        bytes.extend(short_dependent_carrier_frame(
+            0,
+            1,
+            0x8000,
+            (index == 0).then_some(&addbsi),
+            (index == 0).then_some(emdf.as_slice()),
+        ));
+    }
+    let frames = index_syncframes(&bytes).expect("indexed early-carrier stream");
+    let unit = group_access_units(&frames).expect("grouped early-carrier stream")[0];
+
+    assert_eq!(
+        extract_joc_access_unit(&bytes, &frames, unit),
+        Err(Eac3Error::InvalidJocCarrierPlacement {
+            carrier_frame: 1,
+            required_frame: 11,
+        })
+    );
+}
+
+#[test]
+fn short_access_unit_bounds_cover_all_syncframes_in_the_group() {
+    let mut bytes = Vec::new();
+    for index in 0..6 {
+        bytes.extend(short_mono_frame(0, 1, index == 0));
+    }
+    bytes.extend(short_mono_frame(0, 1, true));
+
+    assert_eq!(
+        openjoc_eac3::parse_access_unit_bounds(&bytes, false),
+        Ok(openjoc_eac3::AccessUnitParse::Complete(6 * 512))
+    );
+}
+
+#[test]
+fn rejects_short_group_without_converter_sync_marker() {
+    let bytes = (0..6)
+        .flat_map(|_| short_mono_frame(0, 1, false))
+        .collect::<Vec<_>>();
+    let frames = index_syncframes(&bytes).expect("indexed short stream");
+    let unit = group_access_units(&frames).expect("grouped short stream")[0];
+
+    assert_eq!(
+        JocAccessUnitPcmDecoder::new().decode(&bytes, &frames, unit, &vec![0.5; 4096]),
+        Err(Eac3Error::InvalidAccessUnitRange)
     );
 }
 

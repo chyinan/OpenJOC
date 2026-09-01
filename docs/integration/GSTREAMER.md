@@ -85,7 +85,9 @@ manual `ac3parse ! openjocdec` form is intentionally replaced by
 `ac3parse ! openjocclassify ! openjocdec`.
 
 The decoder's bounded `parse` callback verifies complete syncframes and emits
-one OpenJOC access unit at a time. The General profile admits:
+one OpenJOC access unit at a time. For short syncframes it accumulates ordered
+programme sets until six cumulative audio blocks (1,536 samples), using the
+same core boundary as the decoder. The General profile admits:
 
 ```text
 I0 independent substream zero
@@ -97,8 +99,10 @@ to optional D0.
 
 It never assumes that an incoming `GstBuffer` is already an OpenJOC access
 unit. A split syncframe is held until complete; a second independent substream
-zero starts the next unit. Unsupported substream order, a truncated frame, or
-more than the admitted dependent topology fails closed. The current native
+zero starts the next short temporal set or, after six accumulated blocks, the
+next unit. Unsupported substream order, a truncated frame, an incomplete
+short-block group, or more than the admitted dependent topology fails closed.
+The current native
 renderer path is 48 kHz only, matching the existing OpenJOC FinalLinkedGain
 contract.
 
