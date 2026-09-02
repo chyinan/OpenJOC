@@ -6,6 +6,7 @@
 #![allow(unsafe_code)]
 
 use super::{Decoder, DecoderStatus, performance::PerformanceSummary};
+use openjoc_api::DialnormMode;
 use std::{
     alloc::{Layout, alloc, dealloc},
     cell::RefCell,
@@ -18,6 +19,7 @@ const STATUS_FRAME_AVAILABLE: i32 = 1;
 const STATUS_OUTPUT_PENDING: i32 = 2;
 const STATUS_END_OF_STREAM: i32 = 3;
 const STATUS_ERROR: i32 = -1;
+const NO_PTS_SAMPLES: i64 = i64::MIN;
 const MAX_WASM_ALLOCATION_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
@@ -72,7 +74,17 @@ fn status_code(status: DecoderStatus) -> i32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_wasm_decoder_create() -> u32 {
-    let Ok(decoder) = Decoder::new() else {
+    openjoc_wasm_decoder_create_with_dialnorm(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_create_with_dialnorm(mode: u32) -> u32 {
+    let dialnorm = match mode {
+        0 => DialnormMode::Default,
+        1 => DialnormMode::Analog,
+        _ => return 0,
+    };
+    let Ok(decoder) = Decoder::new_with_dialnorm(dialnorm) else {
         return 0;
     };
     DECODERS.with(|decoders| {
@@ -194,6 +206,34 @@ pub unsafe extern "C" fn openjoc_wasm_decoder_push_bytes(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn openjoc_wasm_decoder_push_packet(
+    handle: u32,
+    pointer: u32,
+    length: u32,
+    pts_samples: i64,
+    flags: u32,
+) -> i32 {
+    let Ok(length) = usize::try_from(length) else {
+        return STATUS_ERROR;
+    };
+    if length == 0 || pointer == 0 || !known_allocation(pointer, length) {
+        return STATUS_ERROR;
+    }
+    if !wasm_memory_range_valid(pointer, length) {
+        return STATUS_ERROR;
+    }
+    // SAFETY: The caller guarantees that the pointer references `length`
+    // readable bytes in this module's linear memory.
+    let bytes = unsafe { slice::from_raw_parts(pointer as usize as *const u8, length) };
+    let pts = (pts_samples != NO_PTS_SAMPLES).then_some(pts_samples);
+    let discontinuity = (flags & 1) != 0;
+    let preroll = (flags & 2) != 0;
+    guarded_status(handle, |decoder| {
+        decoder.push_packet(bytes, pts, discontinuity, preroll)
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn openjoc_wasm_decoder_flush(handle: u32) -> i32 {
     match catch_unwind(AssertUnwindSafe(|| with_decoder(handle, Decoder::flush))) {
         Ok(Some(Ok(status))) => with_decoder(handle, |decoder| {
@@ -261,6 +301,17 @@ pub extern "C" fn openjoc_wasm_decoder_pcm_samples(handle: u32) -> u32 {
         })
     })
     .unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_pcm_pts_samples(handle: u32) -> i64 {
+    with_decoder(handle, |decoder| {
+        decoder
+            .expose_current_pcm()
+            .and_then(|frame| frame.pts_samples)
+            .unwrap_or(NO_PTS_SAMPLES)
+    })
+    .unwrap_or(NO_PTS_SAMPLES)
 }
 
 #[unsafe(no_mangle)]
@@ -463,8 +514,10 @@ fn known_allocation(pointer: u32, length: usize) -> bool {
 mod tests {
     use super::{
         known_allocation, openjoc_wasm_dealloc, openjoc_wasm_decoder_create,
-        openjoc_wasm_decoder_destroy, openjoc_wasm_decoder_error_category,
-        openjoc_wasm_decoder_push_bytes, openjoc_wasm_decoder_receive_pcm,
+        openjoc_wasm_decoder_create_with_dialnorm, openjoc_wasm_decoder_destroy,
+        openjoc_wasm_decoder_error_category, openjoc_wasm_decoder_pcm_pts_samples,
+        openjoc_wasm_decoder_push_bytes, openjoc_wasm_decoder_push_packet,
+        openjoc_wasm_decoder_receive_pcm,
     };
 
     #[test]
@@ -483,5 +536,22 @@ mod tests {
         unsafe { openjoc_wasm_dealloc(0x1000, 64) };
         unsafe { openjoc_wasm_dealloc(0x1000, 64) };
         openjoc_wasm_decoder_destroy(handle);
+    }
+
+    #[test]
+    fn timestamped_packet_abi_rejects_missing_input_and_exposes_empty_pts() {
+        let handle = openjoc_wasm_decoder_create();
+        assert_ne!(handle, 0);
+        assert_eq!(
+            unsafe { openjoc_wasm_decoder_push_packet(handle, 0, 0, 0, 1) },
+            -1
+        );
+        assert_eq!(openjoc_wasm_decoder_pcm_pts_samples(handle), i64::MIN);
+        openjoc_wasm_decoder_destroy(handle);
+    }
+
+    #[test]
+    fn dialnorm_abi_rejects_unknown_mode() {
+        assert_eq!(openjoc_wasm_decoder_create_with_dialnorm(99), 0);
     }
 }

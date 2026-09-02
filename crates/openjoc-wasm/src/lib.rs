@@ -7,8 +7,8 @@ mod performance;
 mod stream;
 
 use openjoc_api::{
-    DownmixPolicy, DrcPolicy, OpenJocConfig, OpenJocError, OpenJocPcmFrame, OpenJocSession,
-    OpenJocStatus, RenderMode, ValidationProfile,
+    DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig, OpenJocError, OpenJocPcmFrame,
+    OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
 };
 use performance::{TimingSample, summarize};
 use std::collections::VecDeque;
@@ -75,7 +75,7 @@ pub struct DecoderStatusSnapshot {
     pub realtime_factor: Option<f64>,
 }
 
-/// Stateful, bounded raw-E-AC-3-to-Stereo bridge.
+/// Stateful, bounded raw-E-AC-3/CMAF-sample-to-Stereo bridge.
 pub struct Decoder {
     session: OpenJocSession,
     framer: ElementaryStreamFramer,
@@ -96,11 +96,17 @@ pub struct Decoder {
 impl Decoder {
     /// Creates the fixed Phase-0 Stereo (Speakers) session.
     pub fn new() -> Result<Self, DecoderError> {
+        Self::new_with_dialnorm(DialnormMode::Default)
+    }
+
+    /// Creates the fixed Stereo session with the existing OpenJOC dialnorm policy.
+    pub fn new_with_dialnorm(dialnorm: DialnormMode) -> Result<Self, DecoderError> {
         let config = OpenJocConfig {
             render_mode: RenderMode::Stereo,
             speaker_layout: String::from("2.0"),
             downmix: DownmixPolicy::Auto,
             drc: DrcPolicy::Line,
+            dialnorm,
             validation_profile: ValidationProfile::Auto,
             ..OpenJocConfig::default()
         };
@@ -139,6 +145,45 @@ impl Decoder {
             }
         }
         self.pump(false)
+    }
+
+    /// Adds one complete CMAF audio sample with its media-timeline PTS.
+    pub fn push_packet(
+        &mut self,
+        bytes: &[u8],
+        pts_samples: Option<i64>,
+        discontinuity: bool,
+        preroll: bool,
+    ) -> DecoderStatus {
+        if self.end_of_stream {
+            return DecoderStatus::EndOfStream;
+        }
+        if !self.output.is_empty() || self.current_pcm.is_some() {
+            return DecoderStatus::OutputPending;
+        }
+        if bytes.is_empty() {
+            return self.fail(DecoderError {
+                category: FailureCategory::InvalidInput,
+                detail: "CMAF sample is empty".to_owned(),
+            });
+        }
+        if bytes.len() > openjoc_eac3::GENERAL_MAX_ACCESS_UNIT_BYTES {
+            return self.fail(DecoderError {
+                category: FailureCategory::InvalidInput,
+                detail: "CMAF sample exceeds the bounded access-unit limit".to_owned(),
+            });
+        }
+        self.input_seen = true;
+        match self.decode_access_unit(bytes, pts_samples, discontinuity, preroll) {
+            Ok(()) => {
+                if self.output.is_empty() {
+                    DecoderStatus::NeedMoreInput
+                } else {
+                    DecoderStatus::FrameAvailable
+                }
+            }
+            Err(error) => self.fail(error),
+        }
     }
 
     /// Returns one owned interleaved Float32 PCM frame.
@@ -249,7 +294,7 @@ impl Decoder {
             match next {
                 FramingStatus::NeedMoreInput => return DecoderStatus::NeedMoreInput,
                 FramingStatus::AccessUnit(packet) => {
-                    if let Err(error) = self.decode_access_unit(&packet) {
+                    if let Err(error) = self.decode_access_unit(&packet, None, false, false) {
                         return self.fail(error);
                     }
                     if !self.output.is_empty() {
@@ -281,14 +326,20 @@ impl Decoder {
         }
     }
 
-    fn decode_access_unit(&mut self, packet: &[u8]) -> Result<(), DecoderError> {
+    fn decode_access_unit(
+        &mut self,
+        packet: &[u8],
+        pts_samples: Option<i64>,
+        discontinuity: bool,
+        preroll: bool,
+    ) -> Result<(), DecoderError> {
         let status = self
             .session
             .push_packet(openjoc_api::OpenJocPacket {
                 data: packet,
-                pts_samples: None,
-                discontinuity: false,
-                preroll: false,
+                pts_samples,
+                discontinuity,
+                preroll,
             })
             .map_err(|error| map_openjoc_error(&error))?;
         if status == OpenJocStatus::OutputPending {
