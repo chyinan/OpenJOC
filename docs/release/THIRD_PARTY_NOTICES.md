@@ -20,7 +20,7 @@ The DirectShow Base Classes originate in Microsoft sample code under MIT.
 Two inherited CSS units originate in the MPC-HC GPLv3 source tree. Their
 license and ancestry evidence are retained in the source archive.
 
-`libbluray.dll` derives from libbluray `2df828e...` and libudfread
+`libbluray.dll` derives from libbluray `f131282...` and libudfread
 `139a219...`. `zlib1.dll` is MSYS2 zlib 1.3.2-2. `libgcc_s_seh-1.dll` is from
 MSYS2 `mingw-w64-x86_64-gcc-libs` 16.2.0-3; the package's GPLv3, LGPL, and GCC
 Runtime Library Exception texts are included, and its exact official

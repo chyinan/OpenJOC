@@ -12,7 +12,7 @@ OpenJOC Apache header into the LAV license boundary.
 The public source is the downstream fork
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC),
 branch `openjoc-main`, downstream revision
-`4bedf3276b33443e2ee4971dd498a2b3bed78020`,
+`f673c326f990a7a2d7dcfff5d168f9088fd8fa41`,
 based on LAV Filters 0.83. The corresponding-source ZIP remains attached to
 the OpenJOC release because it contains the full recursive closure, including
 components outside the public LAV fork.

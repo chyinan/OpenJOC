@@ -6,10 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 # OpenJOC LAV 0.16.0 source state
 
 - OpenJOC revision: exact remediation branch HEAD is recorded in `REPRODUCIBILITY-MANIFEST.txt`
-- LAV downstream release revision: `4bedf3276b33443e2ee4971dd498a2b3bed78020`
+- LAV downstream release revision: `f673c326f990a7a2d7dcfff5d168f9088fd8fa41`
 - LAV upstream base: `fefb6987994ed56e4525e8a125f5fbb53707bc52`
 - FFmpeg recursive revision: `599d3a140460e1b57c234fe064db5185fb76ee5b`
-- libbluray revision: `2df828e7dfef1d8c3fe7ebc2e8b764064a3f69f3`
+- libbluray revision: `f1312826d3de9e8804212734243f8692d6bc0b72`
 - libudfread revision: `139a2194525f2745b98a98e4d8fa627d07440176`
 - qsdecoder revision: `72e6b6a944460d3cbeffe13e78b88dd773a85602`
 
@@ -21,7 +21,7 @@ the complete OpenJOC Cargo workspace, including `tools/import-etsi-tables`.
 The public downstream repository is
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC)
 with branch `openjoc-main`, downstream commit
-`4bedf3276b33443e2ee4971dd498a2b3bed78020`, and upstream base
+`f673c326f990a7a2d7dcfff5d168f9088fd8fa41`, and upstream base
 `fefb6987994ed56e4525e8a125f5fbb53707bc52`.
 The corresponding-source archive remains the authoritative full closure,
 including source components not represented by the public LAV fork.
