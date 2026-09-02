@@ -1,0 +1,18 @@
+[package]
+name = "openjoc-wasm"
+version.workspace = true
+description = "Thin browser-facing WebAssembly bridge for OpenJOC Stereo playback"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+openjoc-api = { version = "0.16.0", path = "../openjoc-api" }
+openjoc-eac3 = { version = "0.16.0", path = "../openjoc-eac3" }
+
+[lints]
+workspace = true

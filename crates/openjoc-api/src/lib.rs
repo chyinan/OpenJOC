@@ -44,7 +44,9 @@ use openjoc_sofa::{
     parse_simple_free_field_hrir, resolve_hrir,
 };
 use sha2::{Digest, Sha256};
-use std::{collections::VecDeque, fmt, fmt::Write as _};
+use std::{collections::VecDeque, fmt, fmt::Write as _, time::Duration};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{sync::OnceLock, time::Instant};
 
 /// The first public C ABI is intentionally experimental. This is separate
 /// from the Rust package version and may evolve during the OpenJOC 0.x series.
@@ -393,6 +395,13 @@ fn validation_profile_name(profile: ValidationProfile) -> &'static str {
     }
 }
 
+fn joc_profile_name(profile: JocValidationProfile) -> &'static str {
+    match profile {
+        JocValidationProfile::EtsiStrict => "etsi-strict",
+        JocValidationProfile::ObservedVendorCompat => "observed-vendor-compat",
+    }
+}
+
 fn binaural_lfe_policy_name(policy: BinauralLfePolicy) -> &'static str {
     match policy {
         BinauralLfePolicy::Exclude => "exclude",
@@ -408,6 +417,37 @@ fn sha256_hex(bytes: &[u8]) -> String {
         let _ = write!(output, "{byte:02x}");
     }
     output
+}
+
+#[cfg(target_arch = "wasm32")]
+fn clock_now_ms() -> f64 {
+    wasm_clock::now_ms()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn clock_now_ms() -> f64 {
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0
+}
+
+fn elapsed_since_ms(start_ms: f64) -> Duration {
+    Duration::from_secs_f64((clock_now_ms() - start_ms).max(0.0) / 1000.0)
+}
+
+#[cfg(target_arch = "wasm32")]
+mod wasm_clock {
+    #![allow(unsafe_code)]
+
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        fn openjoc_wasm_clock_now_ms() -> f64;
+    }
+
+    pub fn now_ms() -> f64 {
+        // SAFETY: The browser and parity harness provide this named clock
+        // import when instantiating the raw WASM module.
+        unsafe { openjoc_wasm_clock_now_ms() }
+    }
 }
 
 /// Borrowed compressed input. A packet is exactly one complete General JOC
@@ -515,6 +555,23 @@ pub struct OpenJocOutputInfo {
     pub layout_name: String,
     pub render_mode: RenderMode,
     pub latency_samples: usize,
+}
+
+/// Stable stream facts retained for adapter diagnostics.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenJocDiagnostics {
+    pub profile: Option<&'static str>,
+    pub downmix_index: Option<u8>,
+    pub object_count: Option<u16>,
+    pub complexity_index: Option<u8>,
+}
+
+/// Opt-in timing for one successful AU push through the headless session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OpenJocStageTiming {
+    pub decode: Duration,
+    pub render: Duration,
+    pub total: Duration,
 }
 
 /// One owned interleaved PCM frame. The session owns the frame after
@@ -671,6 +728,11 @@ pub struct OpenJocSession {
     segment_pts: Option<i64>,
     next_input_sample: u64,
     last_output_end: u64,
+    downmix_index: Option<u8>,
+    object_count: Option<u16>,
+    complexity_index: Option<u8>,
+    stage_timing_enabled: bool,
+    last_stage_timing: OpenJocStageTiming,
     drained: bool,
 }
 
@@ -707,6 +769,11 @@ impl OpenJocSession {
             segment_pts: None,
             next_input_sample: 0,
             last_output_end: 0,
+            downmix_index: None,
+            object_count: None,
+            complexity_index: None,
+            stage_timing_enabled: false,
+            last_stage_timing: OpenJocStageTiming::default(),
             drained: false,
             config,
         })
@@ -737,12 +804,35 @@ impl OpenJocSession {
         }
     }
 
+    /// Returns the bounded profile/topology facts observed in decoded metadata.
+    #[must_use]
+    pub fn diagnostics(&self) -> OpenJocDiagnostics {
+        OpenJocDiagnostics {
+            profile: self.selected_profile.map(joc_profile_name),
+            downmix_index: self.downmix_index,
+            object_count: self.object_count,
+            complexity_index: self.complexity_index,
+        }
+    }
+
+    /// Enables opt-in decode/render timing for later successful AU pushes.
+    pub fn enable_stage_timing(&mut self) {
+        self.stage_timing_enabled = true;
+        self.last_stage_timing = OpenJocStageTiming::default();
+    }
+
+    /// Takes the most recent successful AU stage timing record.
+    pub fn take_stage_timing(&mut self) -> OpenJocStageTiming {
+        std::mem::take(&mut self.last_stage_timing)
+    }
+
     /// Sends one complete access unit. Caller packet memory is borrowed only
     /// for this call; the session copies only decoded PCM into bounded state.
     pub fn push_packet(
         &mut self,
         packet: OpenJocPacket<'_>,
     ) -> Result<OpenJocStatus, OpenJocError> {
+        let total_start = self.stage_timing_enabled.then(clock_now_ms);
         if self.drained {
             return Err(OpenJocError::AlreadyDrained);
         }
@@ -818,6 +908,7 @@ impl OpenJocSession {
             self.sample_rate = Some(unit.sample_rate);
         }
 
+        let decode_start = self.stage_timing_enabled.then(clock_now_ms);
         let pcm_planes = self.audio_decoder.decode_pcm_planes_with_policy(
             packet.data,
             &frames,
@@ -841,6 +932,12 @@ impl OpenJocSession {
         let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, self.config.oamd, oamd_profile)
             .map_err(|error| OpenJocError::Decode(error.to_string()))?;
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        self.downmix_index
+            .get_or_insert(parsed_joc.header.downmix_index);
+        self.object_count
+            .get_or_insert(parsed_oamd.prefix.object_count);
+        self.complexity_index
+            .get_or_insert(metadata.complexity_index);
         let frame_number = self.next_input_sample / u64::from(unit.samples);
         let input = JocFrameInput {
             sample_rate: unit.sample_rate,
@@ -870,12 +967,24 @@ impl OpenJocSession {
         let frame = decoded.ok_or(OpenJocError::Decode(
             "payload decoder returned no frame".to_owned(),
         ))?;
+        let decode_elapsed = decode_start.map(elapsed_since_ms);
         self.next_input_sample = self
             .next_input_sample
             .checked_add(u64::from(unit.samples))
             .ok_or_else(|| OpenJocError::Decode("sample timeline overflow".to_owned()))?;
+        let render_start = self.stage_timing_enabled.then(clock_now_ms);
         let rendered = self.speaker.render_frame_aligned(&frame, &pcm_planes)?;
+        let render_elapsed = render_start.map(elapsed_since_ms);
         self.emit_rendered(rendered)?;
+        if let (Some(total_start), Some(decode), Some(render)) =
+            (total_start, decode_elapsed, render_elapsed)
+        {
+            self.last_stage_timing = OpenJocStageTiming {
+                decode,
+                render,
+                total: elapsed_since_ms(total_start),
+            };
+        }
         self.core_stream_type = Some(core_stream_type);
         self.legacy_core_configuration = legacy_core_configuration;
         // `preroll` is retained as an explicit input fact for future seek
@@ -964,6 +1073,9 @@ impl OpenJocSession {
         self.segment_pts = None;
         self.next_input_sample = 0;
         self.last_output_end = 0;
+        self.downmix_index = None;
+        self.object_count = None;
+        self.complexity_index = None;
     }
 
     fn check_timestamp(&mut self, pts: Option<i64>) -> Result<(), OpenJocError> {
