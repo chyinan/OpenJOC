@@ -12,7 +12,7 @@ on:
       lav_ref:
         description: Full LAVFilters-OpenJOC commit to build
         required: true
-        default: e12452ead8551cd58f70ce8dc34453eb44ee6a1b
+        default: 18c56fb777464bbc86b69cafb8114127988d0c6d
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || 'e12452ead8551cd58f70ce8dc34453eb44ee6a1b' }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '18c56fb777464bbc86b69cafb8114127988d0c6d' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # Keep build tooling at the workflow revision, while compiling CAPI from
