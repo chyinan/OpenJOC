@@ -20,7 +20,7 @@ $session = New-OpenJocSession -Operation 'uninstall' -PackageRoot $packageRoot -
 if (-not [string]::IsNullOrWhiteSpace($LauncherStatusPath)) { Set-Content -LiteralPath $LauncherStatusPath -Value 'OpenJOC UI initialized' -Encoding ASCII }
 
 try {
-    Write-OpenJocHeader 'OpenJOC LAV Uninstaller 0.15.0'
+    Write-OpenJocHeader 'OpenJOC LAV Uninstaller 0.16.0'
     if (-not (Test-OpenJocUninstallRequiresElevation $session.InstallRoot)) {
         exit (Complete-OpenJocSession $session 0 'NOTHING TO REMOVE' 'OpenJOC LAV is not currently installed. Nothing needs to be removed.' $null 'Stock LAV and PotPlayer were not changed.' $null)
     }

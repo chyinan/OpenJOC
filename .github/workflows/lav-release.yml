@@ -8,11 +8,11 @@ on:
       release_tag:
         description: OpenJOC release tag to receive the LAV asset
         required: true
-        default: v0.15.0
+        default: v0.16.0
       lav_ref:
         description: Full LAVFilters-OpenJOC commit to build
         required: true
-        default: dce9fb9f281fd16a4221b46d975bfd90c2e809f8
+        default: 4bedf3276b33443e2ee4971dd498a2b3bed78020
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || 'dce9fb9f281fd16a4221b46d975bfd90c2e809f8' }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '4bedf3276b33443e2ee4971dd498a2b3bed78020' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # Keep build tooling at the workflow revision, while compiling CAPI from
@@ -341,7 +341,7 @@ jobs:
           $preflight = Test-OpenJocPackage $session
           if (-not $preflight.Success) { throw $preflight.Detail }
           $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
-          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
+          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
             & (Join-Path $smokes $name)
             if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: $name ($LASTEXITCODE)" }
           }

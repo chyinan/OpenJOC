@@ -23,6 +23,9 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("pattern: Imperative Shell", text)
         self.assertIn("OpenJocAdmissionTests.cpp", text)
         self.assertIn("OpenJocDecoderSmoke.cpp", text)
+        self.assertIn("OpenJocDiagnosticTests.cpp", text)
+        self.assertIn("OpenJocDiagnosticTests.exe", text)
+        self.assertIn("OpenJocDiagnostic.cpp", text)
         self.assertIn("LAVAudioIdentitySmoke.cpp", text)
         self.assertIn("LAVAudioResourceIdentitySmoke.cpp", text)
         self.assertIn("LAVAudioResourceIdentitySmoke.exe", text)
@@ -57,7 +60,7 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertGreaterEqual(text.count('"/I%~2\\common\\baseclasses"'), 2)
         self.assertGreaterEqual(text.count('"/I%~2\\common\\DSUtilLite"'), 2)
         self.assertGreaterEqual(text.count("strmiids.lib"), 3)
-        self.assertGreaterEqual(text.count("call cl"), 13)
+        self.assertGreaterEqual(text.count("call cl"), 14)
 
     def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:
         text = NOOP_LIFECYCLE_SOURCE.read_text(encoding="utf-8")

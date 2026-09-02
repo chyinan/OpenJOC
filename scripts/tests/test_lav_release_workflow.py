@@ -19,7 +19,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
             "workflow_dispatch:",
             "tags: ['v*']",
             "repository: chyinan/LAVFilters-OpenJOC",
-            "dce9fb9f281fd16a4221b46d975bfd90c2e809f8",
+            "4bedf3276b33443e2ee4971dd498a2b3bed78020",
             "scripts/package_lav_release.py",
             "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip",
             "gh release upload",
@@ -46,6 +46,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(r'''scripts\tests\LavSmokeNoopLifecycle.cpp''', text)
         self.assertIn("$complete = $true", text)
         self.assertIn("vcruntime140_threads.dll", text)
+        self.assertIn("OpenJocDiagnosticTests.exe", text)
 
 
 if __name__ == "__main__":

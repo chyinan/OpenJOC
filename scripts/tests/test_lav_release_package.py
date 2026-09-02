@@ -65,7 +65,7 @@ class LavReleasePackageTests(unittest.TestCase):
                 [
                     sys.executable,
                     str(PACKAGE_SCRIPT),
-                    "--release-version", "0.15.0",
+                    "--release-version", "0.16.0",
                     "--lav-root", str(lav),
                     "--capi-dll", str(capi),
                     "--dependency-dir", str(dependencies),
@@ -76,14 +76,14 @@ class LavReleasePackageTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            archive = output / "openjoc-lav-0.15.0-windows-x64.zip"
+            archive = output / "openjoc-lav-0.16.0-windows-x64.zip"
             self.assertTrue(archive.is_file())
             with zipfile.ZipFile(archive) as handle:
                 names = set(handle.namelist())
                 self.assertIn("runtime/OpenJocRuntimeProfile.json", names)
                 self.assertIn("runtime/libbluray.dll", names)
                 profile = json.loads(handle.read("runtime/OpenJocRuntimeProfile.json"))
-                self.assertEqual(profile["version"], "0.15.0")
+                self.assertEqual(profile["version"], "0.16.0")
                 self.assertEqual(profile["architecture"], "x64")
                 self.assertEqual(
                     set(profile["required_runtime_files"]),

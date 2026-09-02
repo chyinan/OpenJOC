@@ -21,12 +21,12 @@ $session = New-OpenJocSession -Operation 'install' -PackageRoot $packageRoot -In
 if (-not [string]::IsNullOrWhiteSpace($LauncherStatusPath)) { Set-Content -LiteralPath $LauncherStatusPath -Value 'OpenJOC UI initialized' -Encoding ASCII }
 
 try {
-    Write-OpenJocHeader 'OpenJOC LAV Installer 0.15.0'
+    Write-OpenJocHeader 'OpenJOC LAV Installer 0.16.0'
     Write-OpenJocStep $session 1 6 'Checking Windows architecture' 'RUNNING'
     $preflight = Test-OpenJocPackage $session
     if (-not $preflight.Success) {
         Write-OpenJocStep $session 1 6 'Checking package files' 'FAILED'
-        exit (Complete-OpenJocSession $session 20 'INSTALLATION FAILED' 'The extracted package is incomplete or unsupported.' 'Check package files' 'Extract a fresh copy of the complete v0.15.0 ZIP, then run install.bat again.' $preflight.Detail)
+        exit (Complete-OpenJocSession $session 20 'INSTALLATION FAILED' 'The extracted package is incomplete or unsupported.' 'Check package files' 'Extract a fresh copy of the complete v0.16.0 ZIP, then run install.bat again.' $preflight.Detail)
     }
     Write-OpenJocStep $session 1 6 'Checking Windows architecture and package files' 'OK'
 

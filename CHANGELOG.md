@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.16.0] — 2026-09-02
+
+OpenJOC v0.16 focuses on the playback experience after v0.15's ETSI profile
+and carriage work.
+
+### Added
+
+- Added native Binaural (Headphones) playback in the OpenJOC LAV/PotPlayer path.
+- Added explicit Custom SOFA HRTF selection with validation and persistence.
+- Added the experimental virtual 9.1.6 binaural layout; 7.1.4 remains the recommended default.
+- Added structured OpenJOC fallback diagnostics with stable reason categories, bounded details, and AU context when known.
+
+### Changed
+
+- Clarified the conventional output as Stereo (Speakers), distinct from Binaural (Headphones).
+- Added additive Binaural HRTF and virtual-layout settings without renumbering existing output-policy values.
+- Kept final Binaural delivery as 48 kHz, 2-channel headphone PCM.
+
+### Fixed
+
+- Reduced OpenJOC Status meter lock contention so Stereo, Binaural, and multichannel meter updates remain smooth without changing PCM, delivery cadence, or timestamps.
+- Kept ordinary AC-3 and non-JOC E-AC-3 on the stock decoder path without false fallback warnings.
+
+### Validation
+
+- Added/updated Custom SOFA lifecycle, 7.1.4/9.1.6 layout, output-contract, fallback-diagnostic, meter, release-packaging, and LAV provenance coverage.
+- Validated the exact LAV v0.16 release pin and corresponding-source overlay against the current downstream diff.
+
+### Known limitations
+
+- No head tracking or automatic headphone detection; Custom SOFA is a user-selected local dataset, not personalization.
+- Virtual 9.1.6 is experimental and is not claimed to be better than 7.1.4; Binaural output remains 2-channel.
+- Exact native Dolby/Apple binaural equivalence is not claimed.
+- Flat-7.X to physical 5.1 automatic fold-down remains unsupported.
+- Status pages display only the first eight channels for outputs with more than eight channels.
+
 ## [0.15.0] — 2026-09-01
 
 OpenJOC 0.15.0 expands the public ETSI JOC profile and carriage surface while

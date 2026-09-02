@@ -8,10 +8,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-openjoc-render = { version = "0.15.0", path = "../openjoc-render" }
+openjoc-render = { version = "0.16.0", path = "../openjoc-render" }
 
 [dev-dependencies]
-openjoc-render = { version = "0.15.0", path = "../openjoc-render" }
+openjoc-render = { version = "0.16.0", path = "../openjoc-render" }
 
 [lints]
 workspace = true

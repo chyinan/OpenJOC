@@ -24,6 +24,13 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /D__STDC_CONSTANT_MACROS ^
 if errorlevel 1 exit /b %errorlevel%
 
 call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+  "/I%~2\decoder\LAVAudio" ^
+  "%~2\decoder\LAVAudio\OpenJocDiagnosticTests.cpp" ^
+  "%~2\decoder\LAVAudio\OpenJocDiagnostic.cpp" ^
+  /Fe:OpenJocDiagnosticTests.exe
+if errorlevel 1 exit /b %errorlevel%
+
+call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocOutputTests.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^

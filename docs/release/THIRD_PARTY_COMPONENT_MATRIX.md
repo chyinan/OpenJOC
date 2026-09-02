@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Component | Exact version/revision | Binary form | Corresponding source | Classification | Status |
 |---|---|---|---|---|---|
-| LAV Audio Decoder + OpenJOC glue | downstream `dce9fb9...` on LAV 0.83 / upstream base `fefb698...` + recorded changes | `LAVAudio.ax` | Full snapshot, patch, new files | Effective GPL-3.0-only combined work | COMPLETE |
+| LAV Audio Decoder + OpenJOC glue | downstream `4bedf327...` on LAV 0.83 / upstream base `fefb698...` + recorded changes | `LAVAudio.ax` | Full snapshot, patch, new files | Effective GPL-3.0-only combined work | COMPLETE |
 | FFmpeg LAV runtime | `599d3a1...` | Six DLLs | Full snapshot + sanitized config evidence | GPL-3.0-or-later | COMPLETE |
 | DirectShow Base Classes | Microsoft sample `d59e5f1...`, LAV lineage | Linked in AX | Full source + per-file census | MIT; seven units also GPL-2.0-or-later | COMPLETE |
 | MPC-HC CSS units | MPC-HC `dcbf6bf...`, LAV import `bd86f1c...` | Linked in AX | Full source + ancestry evidence | GPL-3.0-only | COMPLETE |
@@ -23,7 +23,7 @@ SPDX-License-Identifier: Apache-2.0
 | libgcc runtime | MSYS2 GCC 16.2.0-3 | DLL | Exact official source-only package | GPL-3.0-or-later WITH GCC-exception-3.1 | COMPLETE |
 | libwinpthread | MSYS2 `14.0.0.r302.gd7f3c5201-1` | DLL | LAV/MSYS2 source material | MIT AND BSD-3-Clause-Clear | COMPLETE |
 | Microsoft UCRT/VC runtime | UCRT 10.0.19041.685; VC 14.50.35719.0 | App-local DLLs | Microsoft redist terms apply | Microsoft redistributable | COMPLETE |
-| SADIE II D1 KU100 resource | recorded OpenJOC asset hash/provenance | Embedded in C ABI DLL | Exact resource + provenance | Upstream attribution terms | COMPLETE |
+| SADIE II D1 KU100 resource | generated SHA-256 `b9bcecd8...869fab`; upstream SHA-256 `e6c72a84...a8a31` | Embedded in C ABI DLL | Exact resource + provenance | Apache-2.0 with University of York attribution | COMPLETE |
 
 Windows system/API-set DLLs are operating-system dependencies and are not
 counted as redistributed project components.

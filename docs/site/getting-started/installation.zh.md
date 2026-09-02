@@ -9,7 +9,7 @@
 
 从 [OpenJOC 发行版页面](https://github.com/chyinan/OpenJOC/releases)下载与你的平台匹配的软件包。把它解压到自己有权限管理的目录，然后将 CLI 加入 `PATH`，或者直接使用完整路径调用。
 
-v0.15.0 提供 macOS arm64、Windows x86_64 和 GNU/Linux x86_64 版本。不同平台的软件包有各自的运行时和许可要求；请参考压缩包附带的快速开始说明。
+v0.16.0 提供 macOS arm64、Windows x86_64 和 GNU/Linux x86_64 版本。不同平台的软件包有各自的运行时和许可要求；请参考压缩包附带的快速开始说明。
 
 ## 从源代码构建
 

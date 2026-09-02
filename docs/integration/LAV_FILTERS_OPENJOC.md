@@ -9,10 +9,10 @@ The source is published as [LAVFilters-OpenJOC](https://github.com/chyinan/LAVFi
 a downstream fork of [Nevcairiel/LAVFilters](https://github.com/Nevcairiel/LAVFilters).
 The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
 `fefb6987994ed56e4525e8a125f5fbb53707bc52`. Release source is frozen by the
-immutable downstream tag `openjoc-0.15.0`.
+immutable downstream tag `openjoc-0.16.0`.
 
 The public release also includes the
-`openjoc-lav-0.15.0-corresponding-source.zip` asset, which carries the full
+`openjoc-lav-0.16.0-corresponding-source.zip` asset, which carries the full
 recursive corresponding-source and third-party license closure.
 
 ## Routing behavior
@@ -105,6 +105,12 @@ dialnorm. **Unity / Compatibility** maps to `OPENJOC_DIALNORM_ANALOG`, disables
 dialnorm attenuation, and may sound substantially louder. These policies use
 OpenJOC's existing decoder configuration; LAV does not multiply rendered PCM.
 Dialnorm policy is not normalization, DRC, a quality mode, or mastering gain.
+
+For **Binaural (Headphones)**, the page also exposes the additive HRTF source
+and virtual-layout settings. Built-in SADIE II D1 with **7.1.4 (Recommended)**
+is the default; **Custom SOFA** is an explicit validated local-file choice; and
+**9.1.6 (Experimental)** selects the larger virtual speaker field while the
+delivered PCM remains two-channel.
 
 Output and Dialnorm settings persist only below
 `Software\LAV\Audio\OpenJOC`. Dialnorm uses schema version 1 and falls back to

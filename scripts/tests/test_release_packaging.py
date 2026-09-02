@@ -44,6 +44,9 @@ EXPECTED_LAV_NEW_FILES = {
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDiagnostic.cpp",
+    "decoder/LAVAudio/OpenJocDiagnostic.h",
+    "decoder/LAVAudio/OpenJocDiagnosticTests.cpp",
     "decoder/LAVAudio/OpenJocDialnorm.h",
     "decoder/LAVAudio/OpenJocDialnormPolicyTests.cpp",
     "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
@@ -65,6 +68,8 @@ EXPECTED_LAV_NEW_FILES = {
 }
 EXPECTED_LAV_MODIFIED_FILES = {
     "common/DSUtilLite/growarray.h",
+    "common/baseclasses/wxutil.cpp",
+    "common/baseclasses/wxutil.h",
     "common/genversion.bat",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
@@ -74,6 +79,7 @@ EXPECTED_LAV_MODIFIED_FILES = {
     "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/LAVAudio.vcxproj",
     "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+    "decoder/LAVAudio/Media.cpp",
     "decoder/LAVAudio/PostProcessor.cpp",
     "decoder/LAVAudio/dllmain.cpp",
     "decoder/LAVAudio/resource.h",
@@ -82,8 +88,8 @@ EXPECTED_LAV_MODIFIED_FILES = {
 
 
 class ReleasePackagingTests(unittest.TestCase):
-    def test_canonical_release_version_is_v015(self) -> None:
-        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.15.0")
+    def test_canonical_release_version_is_v016(self) -> None:
+        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.16.0")
 
     def test_reproducibility_manifest_uses_frozen_lav_upstream_base(self) -> None:
         self.assertEqual(

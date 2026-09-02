@@ -16,6 +16,8 @@ import tempfile
 from release_packaging_core import deterministic_zip, render_sha256_manifest, sha256_file
 
 
+CANONICAL_RELEASE_VERSION = "0.16.0"
+
 FFMPEG_DLLS = (
     "avcodec-lav-63.dll",
     "avfilter-lav-12.dll",
@@ -68,7 +70,7 @@ def _replace_release_version(root: pathlib.Path, version: str) -> None:
     for path in root.rglob("*"):
         if path.is_file() and path.suffix.casefold() in TEXT_SUFFIXES:
             text = path.read_text(encoding="utf-8")
-            _write_text(path, text.replace("0.15.0", version))
+            _write_text(path, text.replace(CANONICAL_RELEASE_VERSION, version))
 
 
 def _required_runtime_files() -> tuple[str, ...]:
@@ -85,7 +87,7 @@ def _required_runtime_files() -> tuple[str, ...]:
 
 def build_package(arguments: argparse.Namespace) -> int:
     version = arguments.release_version
-    if version != "0.15.0":
+    if version != CANONICAL_RELEASE_VERSION:
         raise ValueError(f"unsupported OpenJOC LAV release version: {version}")
     lav_root = arguments.lav_root.resolve()
     capi_dll = arguments.capi_dll.resolve()

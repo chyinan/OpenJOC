@@ -22,6 +22,9 @@ NEW_LAV_FILES = (
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDiagnostic.cpp",
+    "decoder/LAVAudio/OpenJocDiagnostic.h",
+    "decoder/LAVAudio/OpenJocDiagnosticTests.cpp",
     "decoder/LAVAudio/OpenJocDialnorm.h",
     "decoder/LAVAudio/OpenJocDialnormPolicyTests.cpp",
     "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
@@ -43,6 +46,8 @@ NEW_LAV_FILES = (
 )
 MODIFIED_UPSTREAM_FILES = (
     "common/DSUtilLite/growarray.h",
+    "common/baseclasses/wxutil.cpp",
+    "common/baseclasses/wxutil.h",
     "common/genversion.bat",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
@@ -52,6 +57,7 @@ MODIFIED_UPSTREAM_FILES = (
     "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/LAVAudio.vcxproj",
     "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+    "decoder/LAVAudio/Media.cpp",
     "decoder/LAVAudio/PostProcessor.cpp",
     "decoder/LAVAudio/dllmain.cpp",
     "decoder/LAVAudio/resource.h",
@@ -63,6 +69,8 @@ MODIFIED_UPSTREAM_GPL_NOTICE_FILES = tuple(
     if relative
     not in {
         "common/genversion.bat",
+        "common/baseclasses/wxutil.cpp",
+        "common/baseclasses/wxutil.h",
         "decoder/LAVAudio/LAVAudio.rc",
         "decoder/LAVAudio/LAVAudio.vcxproj",
         "decoder/LAVAudio/LAVAudio.vcxproj.filters",
@@ -78,6 +86,11 @@ V012_MODIFIED_UPSTREAM_FILES = {
 V015_MODIFIED_UPSTREAM_FILES = {
     "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/PostProcessor.cpp",
+}
+V016_MODIFIED_UPSTREAM_FILES = {
+    "common/baseclasses/wxutil.cpp",
+    "common/baseclasses/wxutil.h",
+    "decoder/LAVAudio/Media.cpp",
 }
 
 
@@ -145,7 +158,10 @@ class LavReleaseNoticeTests(unittest.TestCase):
                 text = (root / relative).read_text(encoding="utf-8")
                 header = "\n".join(text.splitlines()[:45])
                 self.assertIn("OpenJOC downstream modification", header)
-                if relative in V015_MODIFIED_UPSTREAM_FILES:
+                if relative in V016_MODIFIED_UPSTREAM_FILES:
+                    release = "openjoc-0.16.0"
+                    date = "2026-09-02"
+                elif relative in V015_MODIFIED_UPSTREAM_FILES:
                     release = "openjoc-0.15.0"
                     date = "2026-09-01"
                 elif relative in V012_MODIFIED_UPSTREAM_FILES:
@@ -210,7 +226,7 @@ class LavReleaseNoticeTests(unittest.TestCase):
         records = data["compiled_inputs"]
         actual_units = {record["source_path"] for record in records}
         self.assertEqual(actual_units, expected_units)
-        self.assertEqual(len(records), 65)
+        self.assertEqual(len(records), 66)
         required_fields = {
             "source_path",
             "origin",

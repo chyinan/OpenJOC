@@ -24,10 +24,12 @@ from release_packaging_core import (
 )
 
 
-CANONICAL_RELEASE_VERSION = "0.15.0"
+CANONICAL_RELEASE_VERSION = "0.16.0"
 LAV_UPSTREAM_BASE = "fefb6987994ed56e4525e8a125f5fbb53707bc52"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",
+    "common/baseclasses/wxutil.cpp",
+    "common/baseclasses/wxutil.h",
     "common/genversion.bat",
     "common/includes/common_defines.h",
     "decoder/LAVAudio/AudioSettingsProp.cpp",
@@ -37,6 +39,7 @@ LAV_MODIFIED_FILES = (
     "decoder/LAVAudio/LAVAudio.rc",
     "decoder/LAVAudio/LAVAudio.vcxproj",
     "decoder/LAVAudio/LAVAudio.vcxproj.filters",
+    "decoder/LAVAudio/Media.cpp",
     "decoder/LAVAudio/PostProcessor.cpp",
     "decoder/LAVAudio/dllmain.cpp",
     "decoder/LAVAudio/resource.h",
@@ -56,6 +59,9 @@ LAV_NEW_FILES = (
     "decoder/LAVAudio/OpenJocDecoder.cpp",
     "decoder/LAVAudio/OpenJocDecoder.h",
     "decoder/LAVAudio/OpenJocDecoderSmoke.cpp",
+    "decoder/LAVAudio/OpenJocDiagnostic.cpp",
+    "decoder/LAVAudio/OpenJocDiagnostic.h",
+    "decoder/LAVAudio/OpenJocDiagnosticTests.cpp",
     "decoder/LAVAudio/OpenJocDialnorm.h",
     "decoder/LAVAudio/OpenJocDialnormPolicyTests.cpp",
     "decoder/LAVAudio/OpenJocDirectShowNegotiationSmoke.cpp",
