@@ -96,7 +96,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" "/I%~2\decoder\LAVAudio
 if errorlevel 1 exit /b %errorlevel%
 
 call cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX /DUNICODE /D_UNICODE ^
-  "/I%~2\include" "/I%~2\decoder\LAVAudio" ^
+  "/I%~2\include" "/I%~2\decoder\LAVAudio" "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocPolicyControl.cpp" ^
   /Fe:OpenJocPolicyControl.exe /link advapi32.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%

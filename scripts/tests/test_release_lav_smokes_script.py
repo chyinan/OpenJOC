@@ -74,6 +74,13 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         text = POLICY_CONTROL_SOURCE.read_text(encoding="utf-8")
         self.assertIn('#include "OpenJocOutput.h"', text)
 
+    def test_policy_control_smoke_compilation_supplies_ffmpeg_headers(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            '"/I%~2\\include" "/I%~2\\decoder\\LAVAudio" "/I%~2\\ffmpeg" ^',
+            text,
+        )
+
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(
             ["cmd.exe", "/d", "/c", str(SCRIPT)],
