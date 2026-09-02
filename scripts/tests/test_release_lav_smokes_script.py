@@ -13,6 +13,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "release_lav_smokes.cmd"
 NOOP_LIFECYCLE_SOURCE = ROOT / "scripts" / "tests" / "LavSmokeNoopLifecycle.cpp"
+POLICY_CONTROL_SOURCE = pathlib.Path(r"D:\Programs\LAVFilters-OpenJOC\decoder\LAVAudio\OpenJocPolicyControl.cpp")
 
 
 class ReleaseLavSmokesScriptTests(unittest.TestCase):
@@ -68,6 +69,10 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertIn("SPDX-License-Identifier: GPL-2.0-or-later", text)
         self.assertIn("pattern: Imperative Shell", text)
         self.assertIn("int wmain()", text)
+
+    def test_policy_control_smoke_includes_its_output_contract_definition(self) -> None:
+        text = POLICY_CONTROL_SOURCE.read_text(encoding="utf-8")
+        self.assertIn('#include "OpenJocOutput.h"', text)
 
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(
