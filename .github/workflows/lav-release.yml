@@ -355,7 +355,9 @@ jobs:
         run: |
           $archive = Join-Path '${{ steps.package.outputs.package_dir }}' "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip"
           $available = $false
-          for ($attempt = 1; $attempt -le 36; $attempt++) {
+          # The main Release workflow builds several platform artifacts before it
+          # becomes available; allow the full 25-minute publication window.
+          for ($attempt = 1; $attempt -le 150; $attempt++) {
             gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
             if ($LASTEXITCODE -eq 0) { $available = $true; break }
             Start-Sleep -Seconds 10
