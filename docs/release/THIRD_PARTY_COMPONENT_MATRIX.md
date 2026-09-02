@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 | Component | Exact version/revision | Binary form | Corresponding source | Classification | Status |
 |---|---|---|---|---|---|
-| LAV Audio Decoder + OpenJOC glue | downstream `f673c326...` on LAV 0.83 / upstream base `fefb698...` + recorded changes | `LAVAudio.ax` | Full snapshot, patch, new files | Effective GPL-3.0-only combined work | COMPLETE |
+| LAV Audio Decoder + OpenJOC glue | downstream `e12452e...` on LAV 0.83 / upstream base `fefb698...` + recorded changes | `LAVAudio.ax` | Full snapshot, patch, new files | Effective GPL-3.0-only combined work | COMPLETE |
 | FFmpeg LAV runtime | `599d3a1...` | Six DLLs | Full snapshot + sanitized config evidence | GPL-3.0-or-later | COMPLETE |
 | DirectShow Base Classes | Microsoft sample `d59e5f1...`, LAV lineage | Linked in AX | Full source + per-file census | MIT; seven units also GPL-2.0-or-later | COMPLETE |
 | MPC-HC CSS units | MPC-HC `dcbf6bf...`, LAV import `bd86f1c...` | Linked in AX | Full source + ancestry evidence | GPL-3.0-only | COMPLETE |
