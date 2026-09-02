@@ -55,14 +55,14 @@ Windows 适配器只提供以下七种固定的 48 kHz IEEE-float PCM 输出策�
 **OpenJOC 输出**选择的是 OpenJOC 渲染并发送给下游音频渲染器/设备的 PCM 扬声器布局。请选择下游端点实际支持的布局。选择不受支持的多声道布局可能导致播放失败、卡顿或下游转换。使用立体声耳机或 2.0 音箱时请选择 **Stereo**。
 
 选择 Binaural 后，OpenJOC 页面还提供 HRTF 来源设置。默认值为
-**Built-in SADIE II D1 (Recommended)**。**Custom SOFA...** 会打开标准 Windows
+**Built-in SADIE II D1 (Default)**。**Custom SOFA...** 会打开标准 Windows
 文件选择框，用于选择一个本地 `.sofa` 文件；Apply 前会通过与独立 SOFA
 流程相同的严格 OpenJOC 加载器验证数据集。无效选择会被拒绝，之前已知有效的
 HRTF 保持不变。如果已持久化的自定义文件后来被移动、删除、拒绝访问或变为
 无效，重新打开 Binaural 时会报告有界的 HRTF 配置错误，用户可改选内置来源或
 另一个有效文件恢复。
 
-Binaural 页面还可选择虚拟扬声器布局：**7.1.4 (Recommended)** 或
+Binaural 页面还可选择虚拟扬声器布局：**7.1.4 (Default)** 或
 **9.1.6 (Experimental)**。两者都使用现有的虚拟扬声器阶段，再进入相同的
 SOFA/HRTF 后端；最终输出仍是双声道双耳 PCM。9.1.6 不宣称更好或达到参考
 质量，增加的虚拟声道可能带来更高 CPU 成本。

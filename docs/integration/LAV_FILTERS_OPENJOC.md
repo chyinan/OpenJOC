@@ -107,7 +107,7 @@ OpenJOC's existing decoder configuration; LAV does not multiply rendered PCM.
 Dialnorm policy is not normalization, DRC, a quality mode, or mastering gain.
 
 For **Binaural (Headphones)**, the page also exposes the additive HRTF source
-and virtual-layout settings. Built-in SADIE II D1 with **7.1.4 (Recommended)**
+and virtual-layout settings. Built-in SADIE II D1 with **7.1.4 (Default)**
 is the default; **Custom SOFA** is an explicit validated local-file choice; and
 **9.1.6 (Experimental)** selects the larger virtual speaker field while the
 delivered PCM remains two-channel.
