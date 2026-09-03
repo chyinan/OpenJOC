@@ -370,6 +370,11 @@ impl OpenJocConfig {
                     .to_owned(),
             ));
         }
+        if self.render_mode != RenderMode::Binaural && self.binaural.is_some() {
+            return Err(OpenJocError::InvalidConfig(
+                "BinauralConfig is only valid for binaural render mode".to_owned(),
+            ));
+        }
         if self.render_mode != RenderMode::Stereo && self.downmix != DownmixPolicy::Auto {
             return Err(OpenJocError::InvalidConfig(
                 "explicit downmix policy is only valid for stereo output".to_owned(),
@@ -571,6 +576,7 @@ pub struct OpenJocDiagnostics {
 pub struct OpenJocStageTiming {
     pub decode: Duration,
     pub render: Duration,
+    pub binaural: Duration,
     pub total: Duration,
 }
 
@@ -975,13 +981,25 @@ impl OpenJocSession {
         let render_start = self.stage_timing_enabled.then(clock_now_ms);
         let rendered = self.speaker.render_frame_aligned(&frame, &pcm_planes)?;
         let render_elapsed = render_start.map(elapsed_since_ms);
+        let binaural_start = self.stage_timing_enabled.then(clock_now_ms);
         self.emit_rendered(rendered)?;
-        if let (Some(total_start), Some(decode), Some(render)) =
-            (total_start, decode_elapsed, render_elapsed)
-        {
+        let binaural_elapsed = binaural_start.map(elapsed_since_ms).map(|elapsed| {
+            if self.config.render_mode == RenderMode::Binaural {
+                elapsed
+            } else {
+                Duration::ZERO
+            }
+        });
+        if let (Some(total_start), Some(decode), Some(render), Some(binaural)) = (
+            total_start,
+            decode_elapsed,
+            render_elapsed,
+            binaural_elapsed,
+        ) {
             self.last_stage_timing = OpenJocStageTiming {
                 decode,
                 render,
+                binaural,
                 total: elapsed_since_ms(total_start),
             };
         }

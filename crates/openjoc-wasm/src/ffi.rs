@@ -5,7 +5,7 @@
 
 #![allow(unsafe_code)]
 
-use super::{Decoder, DecoderStatus, performance::PerformanceSummary};
+use super::{Decoder, DecoderStatus, WasmRenderer, performance::PerformanceSummary};
 use openjoc_api::DialnormMode;
 use std::{
     alloc::{Layout, alloc, dealloc},
@@ -79,12 +79,25 @@ pub extern "C" fn openjoc_wasm_decoder_create() -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_wasm_decoder_create_with_dialnorm(mode: u32) -> u32 {
-    let dialnorm = match mode {
+    openjoc_wasm_decoder_create_with_renderer(mode, WasmRenderer::Stereo.code())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_create_with_renderer(
+    dialnorm_mode: u32,
+    renderer_mode: u32,
+) -> u32 {
+    let dialnorm = match dialnorm_mode {
         0 => DialnormMode::Default,
         1 => DialnormMode::Analog,
         _ => return 0,
     };
-    let Ok(decoder) = Decoder::new_with_dialnorm(dialnorm) else {
+    let renderer = match renderer_mode {
+        0 => WasmRenderer::Stereo,
+        1 => WasmRenderer::Binaural,
+        _ => return 0,
+    };
+    let Ok(decoder) = Decoder::new_with_dialnorm_and_renderer(dialnorm, renderer) else {
         return 0;
     };
     DECODERS.with(|decoders| {
@@ -328,6 +341,19 @@ pub extern "C" fn openjoc_wasm_decoder_channel_count(handle: u32) -> u32 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_renderer(handle: u32) -> u32 {
+    with_decoder(handle, |decoder| decoder.renderer_code()).unwrap_or(u32::MAX)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_latency_samples(handle: u32) -> u32 {
+    with_decoder(handle, |decoder| {
+        u32::try_from(decoder.latency_samples()).unwrap_or(u32::MAX)
+    })
+    .unwrap_or(u32::MAX)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn openjoc_wasm_decoder_queued_audio_ms(handle: u32) -> f64 {
     with_decoder(handle, |decoder| decoder.status().queued_audio_ms).unwrap_or(0.0)
 }
@@ -457,6 +483,21 @@ pub extern "C" fn openjoc_wasm_decoder_render_p95_ms(handle: u32) -> f64 {
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_wasm_decoder_render_max_ms(handle: u32) -> f64 {
     performance_value(handle, |summary| summary.render_max_ms)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_binaural_mean_ms(handle: u32) -> f64 {
+    performance_value(handle, |summary| summary.binaural_mean_ms)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_binaural_p95_ms(handle: u32) -> f64 {
+    performance_value(handle, |summary| summary.binaural_p95_ms)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_binaural_max_ms(handle: u32) -> f64 {
+    performance_value(handle, |summary| summary.binaural_max_ms)
 }
 
 #[unsafe(no_mangle)]

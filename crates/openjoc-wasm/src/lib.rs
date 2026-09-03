@@ -7,8 +7,8 @@ mod performance;
 mod stream;
 
 use openjoc_api::{
-    DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig, OpenJocError, OpenJocPcmFrame,
-    OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
+    BinauralConfig, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig, OpenJocError,
+    OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
 };
 use performance::{TimingSample, summarize};
 use std::collections::VecDeque;
@@ -16,6 +16,31 @@ use stream::{ElementaryStreamFramer, FramingError, FramingStatus};
 
 const MAX_QUEUED_PCM_FRAMES: usize = 8;
 const MAX_TIMING_SAMPLES: usize = 4096;
+
+pub const BINAURAL_VIRTUAL_LAYOUT: &str = "7.1.4";
+pub const BINAURAL_HRTF_SOURCE: &str = "Built-in SADIE II D1";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WasmRenderer {
+    Stereo,
+    Binaural,
+}
+
+impl WasmRenderer {
+    fn render_mode(self) -> RenderMode {
+        match self {
+            Self::Stereo => RenderMode::Stereo,
+            Self::Binaural => RenderMode::Binaural,
+        }
+    }
+
+    pub const fn code(self) -> u32 {
+        match self {
+            Self::Stereo => 0,
+            Self::Binaural => 1,
+        }
+    }
+}
 
 /// Result categories intentionally stay small and stable at the browser boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +78,9 @@ pub struct DecoderStatusSnapshot {
     pub objects: Option<u16>,
     pub complexity_index: Option<u8>,
     pub renderer: &'static str,
+    pub virtual_layout: Option<&'static str>,
+    pub hrtf: Option<&'static str>,
+    pub latency_samples: usize,
     pub sample_rate: Option<u32>,
     pub output_channels: usize,
     pub queued_audio_ms: f64,
@@ -69,6 +97,9 @@ pub struct DecoderStatusSnapshot {
     pub render_mean_ms: f64,
     pub render_p95_ms: f64,
     pub render_max_ms: f64,
+    pub binaural_mean_ms: f64,
+    pub binaural_p95_ms: f64,
+    pub binaural_max_ms: f64,
     pub total_mean_ms: f64,
     pub total_p95_ms: f64,
     pub total_max_ms: f64,
@@ -94,20 +125,35 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    /// Creates the fixed Phase-0 Stereo (Speakers) session.
+    /// Creates the default Stereo (Speakers) session.
     pub fn new() -> Result<Self, DecoderError> {
-        Self::new_with_dialnorm(DialnormMode::Default)
+        Self::new_with_dialnorm_and_renderer(DialnormMode::Default, WasmRenderer::Stereo)
     }
 
-    /// Creates the fixed Stereo session with the existing OpenJOC dialnorm policy.
+    /// Creates a Stereo session with the existing OpenJOC dialnorm policy.
     pub fn new_with_dialnorm(dialnorm: DialnormMode) -> Result<Self, DecoderError> {
+        Self::new_with_dialnorm_and_renderer(dialnorm, WasmRenderer::Stereo)
+    }
+
+    /// Creates a renderer session with fixed Browser-safe configuration.
+    pub fn new_with_dialnorm_and_renderer(
+        dialnorm: DialnormMode,
+        renderer: WasmRenderer,
+    ) -> Result<Self, DecoderError> {
+        let render_mode = renderer.render_mode();
         let config = OpenJocConfig {
-            render_mode: RenderMode::Stereo,
-            speaker_layout: String::from("2.0"),
+            render_mode,
+            speaker_layout: if renderer == WasmRenderer::Binaural {
+                BINAURAL_VIRTUAL_LAYOUT.to_owned()
+            } else {
+                String::from("2.0")
+            },
             downmix: DownmixPolicy::Auto,
             drc: DrcPolicy::Line,
             dialnorm,
             validation_profile: ValidationProfile::Auto,
+            binaural: (renderer == WasmRenderer::Binaural)
+                .then(|| BinauralConfig::builtin_generic(BINAURAL_VIRTUAL_LAYOUT)),
             ..OpenJocConfig::default()
         };
         let mut session = OpenJocSession::new(config).map_err(|error| map_openjoc_error(&error))?;
@@ -241,6 +287,14 @@ impl Decoder {
     #[must_use]
     pub fn status(&self) -> DecoderStatusSnapshot {
         let info = self.session.output_info();
+        let (renderer, virtual_layout, hrtf) = match info.render_mode {
+            RenderMode::Binaural => (
+                "Binaural (Headphones)",
+                Some(BINAURAL_VIRTUAL_LAYOUT),
+                Some(BINAURAL_HRTF_SOURCE),
+            ),
+            RenderMode::Stereo | RenderMode::Speaker => ("Stereo (Speakers)", None, None),
+        };
         let queued_samples = self
             .output
             .iter()
@@ -261,9 +315,12 @@ impl Decoder {
             profile: self.profile.clone(),
             objects: self.objects,
             complexity_index: self.complexity_index,
-            renderer: "Stereo (Speakers)",
+            renderer,
+            virtual_layout,
+            hrtf,
+            latency_samples: info.latency_samples,
             sample_rate: info.sample_rate,
-            output_channels: 2,
+            output_channels: info.channel_count,
             queued_audio_ms,
             underrun_count: 0,
             preroll_ms: 128,
@@ -278,6 +335,9 @@ impl Decoder {
             render_mean_ms: performance.render_mean_ms,
             render_p95_ms: performance.render_p95_ms,
             render_max_ms: performance.render_max_ms,
+            binaural_mean_ms: performance.binaural_mean_ms,
+            binaural_p95_ms: performance.binaural_p95_ms,
+            binaural_max_ms: performance.binaural_max_ms,
             total_mean_ms: performance.total_mean_ms,
             total_p95_ms: performance.total_p95_ms,
             total_max_ms: performance.total_max_ms,
@@ -362,6 +422,7 @@ impl Decoder {
             self.timing_samples.push(TimingSample {
                 decode: stage_timing.decode.as_secs_f64() * 1000.0,
                 render: stage_timing.render.as_secs_f64() * 1000.0,
+                binaural: stage_timing.binaural.as_secs_f64() * 1000.0,
                 total: stage_timing.total.as_secs_f64() * 1000.0,
                 audio: 1536.0 * 1000.0 / f64::from(sample_rate),
             });
@@ -427,6 +488,17 @@ impl Decoder {
 
     pub(crate) fn complexity_index(&self) -> Option<u8> {
         self.session.diagnostics().complexity_index
+    }
+
+    pub(crate) fn renderer_code(&self) -> u32 {
+        match self.session.output_info().render_mode {
+            RenderMode::Binaural => WasmRenderer::Binaural.code(),
+            RenderMode::Speaker | RenderMode::Stereo => WasmRenderer::Stereo.code(),
+        }
+    }
+
+    pub(crate) fn latency_samples(&self) -> usize {
+        self.session.output_info().latency_samples
     }
 
     pub(crate) fn performance_summary(&self) -> performance::PerformanceSummary {
