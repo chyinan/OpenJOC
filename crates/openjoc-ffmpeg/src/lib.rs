@@ -4899,7 +4899,15 @@ mod tests {
         [size.to_be_bytes().as_slice(), b"dec3", payload.as_slice()].concat()
     }
 
-    fn cmaf_audio_sample_entry(dec3: &[u8]) -> Vec<u8> {
+    fn cmaf_init_segment_for_e2e(dec3: &[u8]) -> Vec<u8> {
+        cmaf_init_segment_for_e2e_with_entry(Some(dec3))
+    }
+
+    fn cmaf_init_segment_without_dec3_for_e2e() -> Vec<u8> {
+        cmaf_init_segment_for_e2e_with_entry(None)
+    }
+
+    fn cmaf_audio_sample_entry(dec3: Option<&[u8]>) -> Vec<u8> {
         let mut payload = vec![0_u8; 6];
         payload.extend_from_slice(&1_u16.to_be_bytes());
         payload.extend_from_slice(&[0_u8; 8]);
@@ -4907,11 +4915,13 @@ mod tests {
         payload.extend_from_slice(&16_u16.to_be_bytes());
         payload.extend_from_slice(&[0_u8; 4]);
         payload.extend_from_slice(&(48_000_u32 << 16).to_be_bytes());
-        payload.extend_from_slice(dec3);
+        if let Some(dec3) = dec3 {
+            payload.extend_from_slice(dec3);
+        }
         cmaf_bmff_box(*b"ec-3", &payload)
     }
 
-    fn cmaf_init_segment_for_e2e(dec3: &[u8]) -> Vec<u8> {
+    fn cmaf_init_segment_for_e2e_with_entry(dec3: Option<&[u8]>) -> Vec<u8> {
         let mut ftyp = Vec::new();
         ftyp.extend_from_slice(b"cmfc");
         ftyp.extend_from_slice(&0_u32.to_be_bytes());
@@ -5184,27 +5194,25 @@ mod tests {
         let directory =
             std::env::temp_dir().join(format!("openjoc-cmaf-demux-{}-{nonce}", std::process::id()));
         fs::create_dir(&directory).expect("create temp directory");
-        let raw = directory.join("joc.ec3");
         let first = standard_flat7x_access_unit(1);
         let second = standard_flat7x_access_unit(2);
-        fs::write(&raw, [first.as_slice(), second.as_slice()].concat()).expect("write JOC source");
         let container = directory.join("joc.mp4");
-        let status = Command::new("ffmpeg")
-            .args(["-v", "error", "-y", "-f", "eac3", "-i"])
-            .arg(&raw)
-            .args(["-map", "0:a:0", "-c:a", "copy", "-f", "mp4"])
-            .arg(&container)
-            .status()
-            .expect("run FFmpeg CMAF fixture packaging");
-        assert!(status.success(), "FFmpeg could not package synthetic JOC");
-
-        let track = synthetic_cmaf_joc_track(true);
+        // Keep dec3 absent so this test also covers explicit metadata failure;
+        // the validated track below is supplied independently by the caller.
+        let fixture = [
+            cmaf_init_segment_without_dec3_for_e2e(),
+            cmaf_fragment_for_e2e(&first, 1, 0),
+            cmaf_fragment_for_e2e(&second, 2, 1536),
+        ]
+        .concat();
+        fs::write(&container, fixture).expect("write deterministic CMAF fixture");
         let config = OpenJocConfig {
             render_mode: RenderMode::Speaker,
             speaker_layout: "7.1.4".to_owned(),
             validation_profile: ValidationProfile::EtsiStrict,
             ..OpenJocConfig::default()
         };
+        let track = synthetic_cmaf_joc_track(true);
         let metadata_demux = Demuxer::open(container.to_str().expect("UTF-8 container path"))
             .expect("open metadata fixture");
         assert!(metadata_demux.cmaf_joc_track().is_err());
@@ -5226,10 +5234,8 @@ mod tests {
                     &track,
                     PacketRef {
                         data: validated.bytes,
-                        // FFmpeg's stream-copy MP4 muxer uses backend-specific
-                        // timestamp origins/time bases. Normalize at the
-                        // decoder seam so this test covers sample carriage
-                        // without depending on that external fixture detail.
+                        // Normalize container timestamps at the decoder seam so
+                        // this test covers sample carriage only.
                         pts: Some(packet_index),
                         dts: Some(packet_index),
                         duration: packet.duration,
