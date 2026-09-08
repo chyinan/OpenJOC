@@ -2108,7 +2108,7 @@ mod tests {
     }
 
     #[test]
-    fn programme_layout_names_keep_lfe_outside_reconstruction_inputs() {
+    fn programme_layout_names_cover_idx0_to_idx4_and_keep_lfe_outside_reconstruction_inputs() {
         let five = vec![
             ChannelLocation::Left,
             ChannelLocation::Right,
@@ -2138,6 +2138,16 @@ mod tests {
         assert_eq!(
             programme_layout_name(&flat_seven, Some(ChannelLocation::Lfe(0))),
             "7.1"
+        );
+        assert_eq!(
+            programme_layout_name(&height_seven, Some(ChannelLocation::Lfe(0))),
+            "5.1.2"
+        );
+        // idx0/idx3 share the five-input programme layout; idx2/idx4 share
+        // the seven-input height programme layout.
+        assert_eq!(
+            programme_layout_name(&five, Some(ChannelLocation::Lfe(0))),
+            "5.1"
         );
         assert_eq!(
             programme_layout_name(&height_seven, Some(ChannelLocation::Lfe(0))),
