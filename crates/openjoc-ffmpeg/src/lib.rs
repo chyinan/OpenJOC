@@ -1398,6 +1398,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use openjoc_api::{BinauralConfig, ValidationProfile};
+    use openjoc_inspect::{InspectionOptions, inspect_reader};
     use std::collections::HashSet;
     use std::thread;
     use std::{
@@ -5436,5 +5437,61 @@ mod tests {
             }
         }
         assert_eq!(decoder.live_inspection_snapshot().coverage, "partial");
+    }
+
+    #[test]
+    fn live_final_snapshot_matches_offline_inspector_semantics() {
+        let access_unit = standard_flat7x_access_unit(1);
+        let offline = inspect_reader(access_unit.as_slice(), InspectionOptions::default());
+        let mut decoder = FfmpegDecoder::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            ..OpenJocConfig::default()
+        })
+        .expect("decoder");
+        decoder
+            .send_packet(packet(&access_unit, Some(0)))
+            .expect("send AU");
+        while decoder.drain().expect("drain AU") != BridgeStatus::EndOfStream {
+            while matches!(
+                decoder.receive_frame().expect("receive AU"),
+                ReceiveOutcome::Frame(_)
+            ) {}
+        }
+        let live = decoder.live_inspection_snapshot();
+        assert_eq!(live.joc_present, offline.joc.present);
+        assert_eq!(
+            live.current_profile
+                .as_ref()
+                .map(|value| value.profile_index),
+            offline
+                .joc
+                .profiles
+                .first()
+                .map(|value| value.value.profile_index)
+        );
+        assert_eq!(live.programme_topology, offline.eac3.topologies[0].value);
+        assert_eq!(live.block_partition, offline.eac3.block_partitions[0].value);
+        assert_eq!(
+            live.lfe_semantics.as_deref(),
+            Some(offline.eac3.lfe_ownership[0].value.as_str())
+        );
+        assert_eq!(
+            live.joc_owner.as_deref(),
+            offline.carriage.joc_owners.first().map(String::as_str)
+        );
+        assert_eq!(
+            live.object_count,
+            offline.joc.coded_object_counts.first().copied()
+        );
+        assert_eq!(
+            live.emdf_payloads,
+            offline
+                .emdf
+                .payloads
+                .iter()
+                .map(|value| value.id)
+                .collect::<Vec<_>>()
+        );
     }
 }
