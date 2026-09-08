@@ -9,6 +9,11 @@
 5. Follow `POTPLAYER-QUICKSTART.md`.
 6. Play your JOC file.
 
+Open the filter's **JOC Stream** property page during playback for a read-only
+view of OpenJOC-derived in-band semantics. Its counters describe the current
+decode session and observed-so-far coverage; they may differ from a generic
+media-information tool or the offline `openjoc inspect` full-stream report.
+
 Installation and PotPlayer filter selection are separate. Installing OpenJOC
 LAV does not silently change PotPlayer, stock LAV, K-Lite, PATH, or PowerShell
 execution policy.

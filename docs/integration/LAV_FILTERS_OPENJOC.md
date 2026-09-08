@@ -88,6 +88,22 @@ eight-policy output selector lives on that page without changing its persisted
 numeric values or strict output contracts. Stock LAV has no OpenJOC page or
 OpenJOC settings interfaces.
 
+It also adds a separate read-only **JOC Stream** page. The page polls a
+versioned live snapshot about every 500 ms and displays the actual in-band
+profile/carriers, programme topology, dependent IDs, block partition, LFE/JOC
+ownership, coded object count, complexity, EMDF payloads, validation status,
+dynamic-scene observation, malformed-observed count, AU count, timestamp, and
+coverage. `Copy JSON` exports a sanitized `live_decode_snapshot` document
+without media paths or host-private data. Opening the page does not rescan a
+file, start a CLI process, alter OpenJOC settings, or decode a second stream.
+Ordinary E-AC-3 remains clearly labeled as E-AC-3 with JOC not detected; its
+JOC-only fields are not inferred.
+
+The page's live/observed-so-far scope differs from the offline Inspector JSON:
+the latter is the full-file forensic tool, while the LAV page reports only the
+current decoder epoch. Seek/flush/discontinuity increments that epoch and
+clears old counters; EOS after a seek remains partial.
+
 **OpenJOC output** is the PCM speaker layout rendered and sent downstream. It
 is a renderer target layout, not physical-endpoint detection or automatic
 downmix. Select a layout supported by the downstream renderer/device: use

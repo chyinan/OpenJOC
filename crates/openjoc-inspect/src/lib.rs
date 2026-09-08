@@ -5,10 +5,12 @@
 
 mod aggregate;
 mod container_metadata;
+mod live;
 mod model;
 mod reader;
 mod text;
 pub use aggregate::InspectionAccumulator;
+pub use live::{LiveInspectionObserver, LiveInspectionSnapshot};
 pub use model::*;
 pub use reader::{inspect_path, inspect_reader};
 pub use text::format_summary;

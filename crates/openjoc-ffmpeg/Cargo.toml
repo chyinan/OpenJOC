@@ -17,6 +17,7 @@ openjoc-api = { version = "0.16.0", path = "../openjoc-api" }
 openjoc-container = { version = "0.16.0", path = "../openjoc-container" }
 openjoc-eac3 = { version = "0.16.0", path = "../openjoc-eac3" }
 openjoc-emdf = { version = "0.16.0", path = "../openjoc-emdf" }
+openjoc-inspect = { version = "0.16.0", path = "../openjoc-inspect" }
 openjoc-joc = { version = "0.16.0", path = "../openjoc-joc" }
 openjoc-scene = { version = "0.16.0", path = "../openjoc-scene" }
 openjoc-wave = { version = "0.16.0", path = "../openjoc-wave", optional = true }

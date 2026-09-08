@@ -12,7 +12,7 @@ artifact, not the primary C consumer library.
 
 ## ABI policy
 
-The ABI is `1.4-experimental`, independent of the OpenJOC package version.
+The ABI is `1.5-experimental`, independent of the OpenJOC package version.
 Major changes may break layout or ownership rules and require an ABI-major
 increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
@@ -39,6 +39,19 @@ initializer: it never writes the ABI 1.4 appended field, so a real ABI 1.3
 caller may link it against the ABI 1.4 library without a struct over-write.
 ABI 1.4 callers should use `openjoc_decoder_config_init_v1_4()` when they need
 the complete current struct or custom geometry.
+
+ABI 1.5 adds the read-only `openjoc_live_inspection_snapshot` surface for
+`openjoc_stream_decoder`. `openjoc_stream_decoder_get_live_inspection_snapshot`
+returns bounded semantic fields observed by the same in-band decoder path:
+profile/carriers, programme topology, block partition, dependent IDs, LFE and
+JOC ownership, coded object/complexity values, EMDF payload IDs, dynamic-scene
+observation, malformed and AU counters, timestamps, and an observation epoch.
+The snapshot explicitly reports `live_decode_snapshot`, `live_decode`, and
+`partial`/`complete_continuous` coverage. A seek/flush/reset starts a new epoch;
+EOS is not full-stream proof unless the session began at sample PTS zero without
+a discontinuity. `openjoc_stream_decoder_copy_live_inspection_json` performs
+bounded JSON serialization only when the caller requests it, so the decode
+observer does not serialize JSON on the audio path.
 
 Experimental means the C surface may evolve during OpenJOC 0.x integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
@@ -126,6 +139,10 @@ The CLI's
 final rendered file to a requested sample peak after decoder and renderer
 processing, and is not dialnorm, DRC, a limiter, compressor, LUFS, or true-peak
 normalization.
+
+The live snapshot is not the offline Inspector JSON contract. It describes the
+current decoder session and observed-so-far coverage; it must not be presented
+as a whole-file census or used to infer unavailable container metadata.
 
 ## Failure containment
 

@@ -292,6 +292,7 @@ pub struct AuDetail {
     pub object_counts: Vec<u8>,
     pub complexity_indices: Vec<u8>,
     pub payload_ids: Vec<u64>,
+    pub lfe_ownership: Option<String>,
     pub status: String,
 }
 

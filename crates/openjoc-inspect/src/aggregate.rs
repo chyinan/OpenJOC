@@ -16,6 +16,7 @@ const MAX_VARIANTS: usize = 256;
 /// One-AU working state plus bounded full-stream aggregates.
 pub struct InspectionAccumulator {
     report: StreamInspection,
+    latest_au: Option<AuDetail>,
     options: InspectionOptions,
     previous_objects: BTreeMap<usize, ObjectUpdate>,
     previous_metadata_sample: Option<u64>,
@@ -123,7 +124,7 @@ impl InspectionAccumulator {
                     "Unknown container fields are null; raw timestamps are derived from programme samples.".into(),
                     "Distinct summary variants are capped at 256; diagnostic examples at 64.".into(),
                 ], ..Diagnostics::default() }, access_units: Vec::new(),
-            }, options, previous_objects: BTreeMap::new(), previous_metadata_sample: None,
+            }, latest_au: None, options, previous_objects: BTreeMap::new(), previous_metadata_sample: None,
             object_stats: BTreeMap::new(), offset: 0, pending_objects: Vec::new(),
             validation_au: [None;2], validation_failed_au: [None;2], deviation_seen: BTreeSet::new(), future_events: BTreeMap::new(),
         }
@@ -131,6 +132,16 @@ impl InspectionAccumulator {
 
     pub fn report_mut(&mut self) -> &mut StreamInspection {
         &mut self.report
+    }
+
+    #[must_use]
+    pub fn report(&self) -> &StreamInspection {
+        &self.report
+    }
+
+    #[must_use]
+    pub fn latest_au(&self) -> Option<&AuDetail> {
+        self.latest_au.as_ref()
     }
 
     pub fn next_au_index(&self) -> u64 {
@@ -205,6 +216,7 @@ impl InspectionAccumulator {
             object_counts: Vec::new(),
             complexity_indices: Vec::new(),
             payload_ids: Vec::new(),
+            lfe_ownership: None,
             status: "pass".into(),
         };
         let grouping = eac3::group_access_units(frames).and_then(|units| {
@@ -270,7 +282,7 @@ impl InspectionAccumulator {
                     detail.block_partition.push(entry.header.audio_blocks);
                 }
                 if !information.is_empty() {
-                    self.programme(&information);
+                    detail.lfe_ownership = Some(self.programme(&information));
                     information.clear();
                 }
             }
@@ -351,7 +363,7 @@ impl InspectionAccumulator {
             }
         }
         if !information.is_empty() {
-            self.programme(&information);
+            detail.lfe_ownership = Some(self.programme(&information));
         }
         self.objects(
             start_sample,
@@ -453,6 +465,7 @@ impl InspectionAccumulator {
         } else if self.report.carriage.skip_unresolved > starting_unresolved {
             detail.status = "partial".into();
         }
+        self.latest_au = Some(detail.clone());
         if self.options.aus
             && self
                 .options
@@ -544,7 +557,7 @@ impl InspectionAccumulator {
         }
     }
 
-    fn programme(&mut self, infos: &[eac3::BitstreamInformation]) {
+    fn programme(&mut self, infos: &[eac3::BitstreamInformation]) -> String {
         let au = self.next_au_index();
         let first = &infos[0];
         if let Err(error) = eac3::inspect_programme_channels(first, &infos[1..]) {
@@ -555,7 +568,7 @@ impl InspectionAccumulator {
                 "ambiguous_invalid".into(),
                 au,
             );
-            return;
+            return "ambiguous_invalid".into();
         }
         let independent_lfe = eac3::inspect_channel_locations(first)
             .ok()
@@ -572,7 +585,8 @@ impl InspectionAccumulator {
             (true, Some(info)) => format!("dependent_replacement:{}", owner(info.header)),
         };
         self.report.diagnostics.aggregation_truncated |=
-            !observe(&mut self.report.eac3.lfe_ownership, semantics, au);
+            !observe(&mut self.report.eac3.lfe_ownership, semantics.clone(), au);
+        semantics
     }
 
     #[allow(clippy::too_many_arguments)]

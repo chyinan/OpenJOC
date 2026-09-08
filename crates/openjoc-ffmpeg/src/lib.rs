@@ -26,6 +26,7 @@ use openjoc_eac3::{
     validate_joc_access_unit_decoder_contract,
 };
 use openjoc_emdf::JocValidationProfile;
+pub use openjoc_inspect::{LiveInspectionObserver, LiveInspectionSnapshot};
 use openjoc_scene::SpeakerLayoutPreset;
 use sha2::{Digest, Sha256};
 use std::{
@@ -494,6 +495,7 @@ pub struct FfmpegDecoder {
     session_drained: bool,
     poisoned: bool,
     timings: BridgeTimings,
+    inspection: LiveInspectionObserver,
 }
 
 impl fmt::Debug for FfmpegDecoder {
@@ -547,6 +549,7 @@ impl FfmpegDecoder {
             session_drained: false,
             poisoned: false,
             timings: BridgeTimings::default(),
+            inspection: LiveInspectionObserver::new(),
         })
     }
 
@@ -604,6 +607,11 @@ impl FfmpegDecoder {
 
     pub fn take_traces(&mut self) -> Vec<AccessUnitTrace> {
         std::mem::take(&mut self.traces)
+    }
+
+    #[must_use]
+    pub fn live_inspection_snapshot(&self) -> LiveInspectionSnapshot {
+        self.inspection.snapshot()
     }
 
     pub fn send_packet(&mut self, packet: PacketRef<'_>) -> Result<BridgeStatus, BridgeError> {
@@ -738,6 +746,12 @@ impl FfmpegDecoder {
         let timestamp = raw_timestamp
             .map(|value| rescale_q_checked(value, packet.time_base, Rational::SAMPLE_TIME_BASE))
             .transpose()?;
+        self.inspection.begin_stream(
+            self.next_au_index == 0
+                && self.staging.is_empty()
+                && timestamp == Some(0)
+                && !packet.preroll,
+        );
         self.boundaries.push_back(Boundary {
             byte_offset: self.staging.len(),
             timestamp,
@@ -774,12 +788,16 @@ impl FfmpegDecoder {
         if !self.output.is_empty() {
             return Ok(BridgeStatus::WouldBlock);
         }
-        match self.pump()? {
-            PumpResult::Frame => Ok(BridgeStatus::FrameAvailable),
-            PumpResult::NotJoc => Ok(BridgeStatus::NotJoc),
-            PumpResult::Eof => Ok(BridgeStatus::EndOfStream),
-            PumpResult::Idle => Ok(BridgeStatus::NeedMoreInput),
+        let result = match self.pump()? {
+            PumpResult::Frame => BridgeStatus::FrameAvailable,
+            PumpResult::NotJoc => BridgeStatus::NotJoc,
+            PumpResult::Eof => BridgeStatus::EndOfStream,
+            PumpResult::Idle => BridgeStatus::NeedMoreInput,
+        };
+        if result == BridgeStatus::EndOfStream {
+            self.inspection.mark_end_of_stream();
         }
+        Ok(result)
     }
 
     fn pump(&mut self) -> Result<PumpResult, BridgeError> {
@@ -792,15 +810,25 @@ impl FfmpegDecoder {
         loop {
             if !self.staging.is_empty() {
                 let assembly_started = Instant::now();
-                let size = match parse_access_unit(&self.staging, self.drain_requested)? {
-                    AccessUnitParse::NeedMore => {
+                let size = match parse_access_unit(&self.staging, self.drain_requested) {
+                    Err(error) => {
+                        self.inspection.record_malformed(&error.to_string());
+                        return Err(error);
+                    }
+                    Ok(AccessUnitParse::NeedMore) => {
                         self.timings.add_assembly(assembly_started.elapsed());
                         return Ok(PumpResult::Idle);
                     }
-                    AccessUnitParse::Complete(size) => size,
+                    Ok(AccessUnitParse::Complete(size)) => size,
                 };
                 let bytes = self.staging[..size].to_vec();
-                let inspection = inspect_complete_access_unit(&bytes)?;
+                let inspection = match inspect_complete_access_unit(&bytes) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.inspection.record_malformed(&error.to_string());
+                        return Err(error);
+                    }
+                };
                 match inspection.classification {
                     JocClassification::ConfirmedJoc => {
                         if self.classification == JocClassification::Unknown {
@@ -815,12 +843,26 @@ impl FfmpegDecoder {
                                 "JOC metadata disappeared after stream admission",
                             ));
                         }
+                        let (pts_samples, _) =
+                            self.resolve_timestamp(size, inspection.unit.samples, &bytes)?;
+                        self.inspection.observe_access_unit(
+                            &bytes,
+                            &inspection.frames,
+                            inspection.unit.sample_rate,
+                            pts_samples.map_or(0.0, |value| {
+                                value as f64 / f64::from(inspection.unit.sample_rate)
+                            }),
+                            self.next_au_index,
+                        );
                         self.classification = JocClassification::ConfirmedNonJoc;
                         self.staging.clear();
                         self.boundaries.clear();
                         return Ok(PumpResult::NotJoc);
                     }
                     JocClassification::InvalidOrUnsupported | JocClassification::Unknown => {
+                        self.inspection.record_malformed(
+                            "E-AC-3 access unit is malformed or uses an unsupported JOC profile",
+                        );
                         self.classification = JocClassification::InvalidOrUnsupported;
                         return Err(BridgeError::new(
                             BridgeErrorKind::InvalidData,
@@ -851,6 +893,15 @@ impl FfmpegDecoder {
                         preroll,
                     })
                     .map_err(|error| map_openjoc_error(&error))?;
+                self.inspection.observe_access_unit(
+                    &bytes,
+                    &inspection.frames,
+                    inspection.unit.sample_rate,
+                    pts_samples.map_or(0.0, |value| {
+                        value as f64 / f64::from(inspection.unit.sample_rate)
+                    }),
+                    self.next_au_index,
+                );
                 let mut frames = Vec::new();
                 while let Some(frame) = session.receive_frame() {
                     frames.push(frame);
@@ -1025,12 +1076,14 @@ impl FfmpegDecoder {
         self.session_drained = false;
         self.poisoned = false;
         self.timings = BridgeTimings::default();
+        self.inspection.reset_for_discontinuity();
     }
 }
 
 struct InspectedAccessUnit {
     classification: JocClassification,
     unit: AccessUnitIndex,
+    frames: Vec<openjoc_eac3::SyncframeIndexEntry>,
     independent_frame_count: usize,
     dependent_frame_count: usize,
 }
@@ -1113,11 +1166,13 @@ fn inspect_complete_access_unit(bytes: &[u8]) -> Result<InspectedAccessUnit, Bri
             )
         })
         .count();
+    let dependent_frame_count = frames.len().saturating_sub(independent_frame_count);
     Ok(InspectedAccessUnit {
         classification: admitted,
         unit,
+        frames,
         independent_frame_count,
-        dependent_frame_count: frames.len().saturating_sub(independent_frame_count),
+        dependent_frame_count,
     })
 }
 
@@ -5259,5 +5314,127 @@ mod tests {
         drop(demuxer);
         drop(metadata_demux);
         fs::remove_dir_all(&directory).expect("remove CMAF temp directory");
+    }
+
+    #[test]
+    fn live_inspection_snapshot_tracks_decoded_joc_and_resets_on_seek() {
+        let mut decoder = FfmpegDecoder::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            ..OpenJocConfig::default()
+        })
+        .expect("decoder");
+        let access_unit = standard_flat7x_access_unit(1);
+
+        decoder
+            .send_packet(packet(&access_unit, Some(0)))
+            .expect("send JOC access unit");
+        decoder.drain().expect("drain JOC access unit");
+        while !matches!(
+            decoder.receive_frame().expect("receive frame"),
+            ReceiveOutcome::NeedMoreInput | ReceiveOutcome::EndOfStream
+        ) {}
+
+        let snapshot = decoder.live_inspection_snapshot();
+        assert!(snapshot.stream_present);
+        assert!(snapshot.joc_present);
+        assert_eq!(snapshot.observed_au_count, 1);
+        assert_eq!(snapshot.observation_epoch, 1);
+        assert_eq!(snapshot.current_decode_sequence, 0);
+        assert_eq!(snapshot.format, "eac3_joc");
+        assert_eq!(snapshot.sample_rate_hz, Some(48_000));
+        assert_eq!(
+            snapshot.current_profile.as_ref().map(|p| p.profile_index),
+            Some(1)
+        );
+        assert_eq!(
+            snapshot.reconstruction_carriers,
+            ["L", "R", "C", "Ls", "Rs", "Lrs", "Rrs"]
+        );
+        assert_eq!(snapshot.programme_topology, ["I0", "D0"]);
+        assert_eq!(snapshot.dependent_ids, [0]);
+        assert_eq!(snapshot.block_partition, [6]);
+        assert_eq!(snapshot.lfe_owner.as_deref(), Some("I0"));
+        assert_eq!(snapshot.joc_owner.as_deref(), Some("D0"));
+        assert_eq!(snapshot.object_count, Some(15));
+        assert_eq!(snapshot.complexity, Some(16));
+        assert_eq!(snapshot.emdf_payloads, [11, 14]);
+        assert_eq!(snapshot.dynamic_scene_observed, Some(false));
+        assert_eq!(snapshot.malformed_observed_count, 0);
+
+        decoder.reset();
+        let reset = decoder.live_inspection_snapshot();
+        assert_eq!(reset.observation_epoch, 2);
+        assert!(!reset.stream_present);
+        assert_eq!(reset.observed_au_count, 0);
+    }
+
+    #[test]
+    fn live_inspection_snapshot_distinguishes_ordinary_eac3() {
+        let mut decoder = FfmpegDecoder::new(OpenJocConfig::default()).expect("decoder");
+        let ordinary = ordinary_eac3_frame();
+
+        decoder
+            .send_packet(packet(&ordinary, Some(0)))
+            .expect("send ordinary E-AC-3");
+        assert_eq!(
+            decoder.drain().expect("drain ordinary E-AC-3"),
+            BridgeStatus::NotJoc
+        );
+
+        let snapshot = decoder.live_inspection_snapshot();
+        assert!(snapshot.stream_present);
+        assert!(!snapshot.joc_present);
+        assert_eq!(snapshot.format, "eac3");
+        assert_eq!(snapshot.observed_au_count, 1);
+    }
+
+    #[test]
+    fn live_inspection_snapshot_marks_eos_complete_only_after_continuous_zero_start() {
+        let mut decoder = FfmpegDecoder::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "7.1.4".to_owned(),
+            ..OpenJocConfig::default()
+        })
+        .expect("decoder");
+        let access_unit = standard_flat7x_access_unit(1);
+        decoder
+            .send_packet(packet(&access_unit, Some(0)))
+            .expect("send JOC access unit");
+
+        loop {
+            match decoder.drain().expect("drain continuous stream") {
+                BridgeStatus::FrameAvailable | BridgeStatus::WouldBlock => {
+                    while matches!(
+                        decoder.receive_frame().expect("receive drained frame"),
+                        ReceiveOutcome::Frame(_)
+                    ) {}
+                }
+                BridgeStatus::EndOfStream => break,
+                other => panic!("unexpected drain status: {other:?}"),
+            }
+        }
+        assert_eq!(
+            decoder.live_inspection_snapshot().coverage,
+            "complete_continuous"
+        );
+
+        decoder.reset();
+        decoder
+            .send_packet(packet(&access_unit, Some(1536)))
+            .expect("send seeked JOC access unit");
+        loop {
+            match decoder.drain().expect("drain seeked stream") {
+                BridgeStatus::FrameAvailable | BridgeStatus::WouldBlock => {
+                    while matches!(
+                        decoder.receive_frame().expect("receive seeked frame"),
+                        ReceiveOutcome::Frame(_)
+                    ) {}
+                }
+                BridgeStatus::EndOfStream => break,
+                other => panic!("unexpected seeked drain status: {other:?}"),
+            }
+        }
+        assert_eq!(decoder.live_inspection_snapshot().coverage, "partial");
     }
 }

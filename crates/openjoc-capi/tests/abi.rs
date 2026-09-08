@@ -6,7 +6,7 @@ use std::ptr;
 
 #[test]
 fn version_and_struct_initialization_are_stable() {
-    assert_eq!(openjoc_get_abi_version(), 0x0001_0004);
+    assert_eq!(openjoc_get_abi_version(), 0x0001_0005);
     assert_eq!(std::mem::size_of::<openjoc_decoder_config>() as u32, {
         let mut config = std::mem::MaybeUninit::uninit();
         assert_eq!(
@@ -161,6 +161,56 @@ fn packet_stream_bridge_is_independent_bounded_and_reports_semantics() {
 
     openjoc_stream_decoder_destroy(first);
     openjoc_stream_decoder_destroy(second);
+}
+
+#[test]
+fn live_inspection_snapshot_abi_is_versioned_and_has_explicit_live_json() {
+    let mut config = std::mem::MaybeUninit::uninit();
+    assert_eq!(
+        openjoc_decoder_config_init_v1_4(config.as_mut_ptr()),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let config = unsafe { config.assume_init() };
+    let mut decoder = ptr::null_mut();
+    assert_eq!(
+        openjoc_stream_decoder_create(&config, &mut decoder),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+
+    let mut snapshot = std::mem::MaybeUninit::uninit();
+    assert_eq!(
+        openjoc_live_inspection_snapshot_init(snapshot.as_mut_ptr()),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let mut snapshot = unsafe { snapshot.assume_init() };
+    assert_eq!(
+        openjoc_stream_decoder_get_live_inspection_snapshot(decoder, &mut snapshot),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    assert_eq!(snapshot.schema_version, 1);
+    assert_eq!(snapshot.observation_epoch, 1);
+    assert_eq!(snapshot.stream_present, 0);
+
+    let mut json = vec![0_i8; 4096];
+    let mut required = 0_usize;
+    assert_eq!(
+        openjoc_stream_decoder_copy_live_inspection_json(
+            decoder,
+            json.as_mut_ptr(),
+            json.len(),
+            &mut required,
+        ),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    assert!(required > 1);
+    let json = unsafe { std::ffi::CStr::from_ptr(json.as_ptr()) }
+        .to_str()
+        .expect("live JSON");
+    assert!(json.contains("\"inspection_kind\":\"live_decode_snapshot\""));
+    assert!(json.contains("\"observation_scope\":\"live_decode\""));
+    assert!(json.contains("\"coverage\":\"partial\""));
+
+    openjoc_stream_decoder_destroy(decoder);
 }
 
 #[test]

@@ -2,6 +2,15 @@
 
 `openjoc inspect` reads observable E-AC-3, JOC, EMDF, and OAMD syntax without modifying input media or synthesizing PCM. It accepts ordinary E-AC-3 as well as JOC. File extensions and external codec labels do not establish JOC presence.
 
+The Windows LAV integration also exposes a read-only **JOC Stream** property
+page. Its values come from E-AC-3/JOC bytes observed by OpenJOC during the
+current DirectShow decode session, not from MediaInfo, ffprobe, a filename, or
+a reopened source file. Live counters are labeled observed-so-far. A seek,
+flush, or media change starts a new observation epoch; EOS is marked
+`complete_continuous` only when continuous coverage from the beginning is
+proven. The page is therefore a playback diagnostic view, while
+`openjoc inspect` remains the authoritative offline/full-stream tool.
+
 ## Commands
 
 ```sh

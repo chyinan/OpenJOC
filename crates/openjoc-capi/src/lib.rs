@@ -23,21 +23,26 @@ use openjoc_api::{
 };
 use openjoc_ffmpeg::{
     BridgeError, BridgeErrorKind, BridgeStatus, FfmpegDecoder, FfmpegFrame, JocClassification,
-    JocClassifier, PacketRef, Rational, ReceiveOutcome,
+    JocClassifier, LiveInspectionSnapshot, PacketRef, Rational, ReceiveOutcome,
 };
 use std::{
     ffi::{CStr, CString},
     os::raw::c_char,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr, slice,
+    sync::Mutex,
 };
 
 /// Major C ABI version. It is intentionally independent from the package
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 4;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 5;
 const NO_PTS: i64 = i64::MIN;
+const LIVE_TEXT_CAPACITY: usize = 512;
+const LIVE_SHORT_TEXT_CAPACITY: usize = 128;
+const LIVE_TINY_TEXT_CAPACITY: usize = 64;
+const LIVE_FORMAT_CAPACITY: usize = 32;
 
 #[repr(C)]
 pub struct openjoc_decoder {
@@ -64,6 +69,221 @@ pub struct openjoc_stream_decoder {
     config_descriptor: CString,
     config_fingerprint: CString,
     last_frame: Option<FfmpegFrame>,
+    live_snapshot: Mutex<LiveInspectionSnapshot>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct openjoc_live_inspection_snapshot {
+    pub struct_size: u32,
+    pub schema_version: u32,
+    pub observation_epoch: u64,
+    pub stream_present: u8,
+    pub joc_present: u8,
+    pub dynamic_scene_observed: u8,
+    pub lfe_presence: u8,
+    pub has_sample_rate: u8,
+    pub has_timestamp: u8,
+    pub has_object_count: u8,
+    pub has_complexity: u8,
+    pub has_first_change: u8,
+    pub reserved: [u8; 3],
+    pub sample_rate_hz: u32,
+    pub object_count: u16,
+    pub complexity: u16,
+    pub observed_au_count: u64,
+    pub malformed_observed_count: u64,
+    pub current_decode_sequence: u64,
+    pub current_timestamp_seconds: f64,
+    pub first_change_au: u64,
+    pub first_change_sample: u64,
+    pub first_change_seconds: f64,
+    pub profile_index: i32,
+    pub inspection_kind: [c_char; LIVE_TINY_TEXT_CAPACITY],
+    pub observation_scope: [c_char; LIVE_TINY_TEXT_CAPACITY],
+    pub coverage: [c_char; LIVE_FORMAT_CAPACITY],
+    pub format: [c_char; LIVE_FORMAT_CAPACITY],
+    pub profile_display_name: [c_char; LIVE_SHORT_TEXT_CAPACITY],
+    pub reconstruction_carriers: [c_char; LIVE_TEXT_CAPACITY],
+    pub programme_topology: [c_char; LIVE_TEXT_CAPACITY],
+    pub dependent_ids: [c_char; LIVE_SHORT_TEXT_CAPACITY],
+    pub block_partition: [c_char; LIVE_SHORT_TEXT_CAPACITY],
+    pub lfe_owner: [c_char; LIVE_TINY_TEXT_CAPACITY],
+    pub lfe_semantics: [c_char; LIVE_SHORT_TEXT_CAPACITY],
+    pub joc_owner: [c_char; LIVE_TINY_TEXT_CAPACITY],
+    pub carriage_locations: [c_char; LIVE_TEXT_CAPACITY],
+    pub etsi_strict: [c_char; LIVE_FORMAT_CAPACITY],
+    pub deployed_compatibility: [c_char; LIVE_FORMAT_CAPACITY],
+    pub emdf_payloads: [c_char; LIVE_SHORT_TEXT_CAPACITY],
+    pub last_error_summary: [c_char; LIVE_TEXT_CAPACITY],
+}
+
+const LIVE_SNAPSHOT_SIZE: u32 = std::mem::size_of::<openjoc_live_inspection_snapshot>() as u32;
+
+#[allow(clippy::cast_possible_wrap)]
+fn copy_live_text<const N: usize>(destination: &mut [c_char; N], value: &str) {
+    destination.fill(0);
+    let length = value.len().min(N.saturating_sub(1));
+    for (target, source) in destination
+        .iter_mut()
+        .take(length)
+        .zip(value.as_bytes().iter().copied())
+    {
+        *target = source as c_char;
+    }
+}
+
+fn joined<T: ToString>(values: &[T], separator: &str) -> String {
+    values
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+fn c_snapshot(snapshot: &LiveInspectionSnapshot) -> openjoc_live_inspection_snapshot {
+    let mut output = openjoc_live_inspection_snapshot {
+        struct_size: LIVE_SNAPSHOT_SIZE,
+        schema_version: snapshot.schema_version,
+        observation_epoch: snapshot.observation_epoch,
+        stream_present: u8::from(snapshot.stream_present),
+        joc_present: u8::from(snapshot.joc_present),
+        dynamic_scene_observed: match snapshot.dynamic_scene_observed {
+            Some(false) => 1,
+            Some(true) => 2,
+            None => 0,
+        },
+        lfe_presence: match snapshot.lfe_presence {
+            Some(false) => 1,
+            Some(true) => 2,
+            None => 0,
+        },
+        has_sample_rate: u8::from(snapshot.sample_rate_hz.is_some()),
+        has_timestamp: u8::from(snapshot.current_timestamp_seconds.is_some()),
+        has_object_count: u8::from(snapshot.object_count.is_some()),
+        has_complexity: u8::from(snapshot.complexity.is_some()),
+        has_first_change: u8::from(snapshot.first_observed_metadata_change.is_some()),
+        reserved: [0; 3],
+        sample_rate_hz: snapshot.sample_rate_hz.unwrap_or(0),
+        object_count: u16::from(snapshot.object_count.unwrap_or(0)),
+        complexity: u16::from(snapshot.complexity.unwrap_or(0)),
+        observed_au_count: snapshot.observed_au_count,
+        malformed_observed_count: snapshot.malformed_observed_count,
+        current_decode_sequence: snapshot.current_decode_sequence,
+        current_timestamp_seconds: snapshot.current_timestamp_seconds.unwrap_or(0.0),
+        first_change_au: snapshot
+            .first_observed_metadata_change
+            .as_ref()
+            .map_or(0, |value| value.au),
+        first_change_sample: snapshot
+            .first_observed_metadata_change
+            .as_ref()
+            .map_or(0, |value| value.sample),
+        first_change_seconds: snapshot
+            .first_observed_metadata_change
+            .as_ref()
+            .map_or(0.0, |value| value.seconds),
+        profile_index: snapshot
+            .current_profile
+            .as_ref()
+            .map_or(-1, |value| i32::from(value.profile_index)),
+        inspection_kind: [0; LIVE_TINY_TEXT_CAPACITY],
+        observation_scope: [0; LIVE_TINY_TEXT_CAPACITY],
+        coverage: [0; LIVE_FORMAT_CAPACITY],
+        format: [0; LIVE_FORMAT_CAPACITY],
+        profile_display_name: [0; LIVE_SHORT_TEXT_CAPACITY],
+        reconstruction_carriers: [0; LIVE_TEXT_CAPACITY],
+        programme_topology: [0; LIVE_TEXT_CAPACITY],
+        dependent_ids: [0; LIVE_SHORT_TEXT_CAPACITY],
+        block_partition: [0; LIVE_SHORT_TEXT_CAPACITY],
+        lfe_owner: [0; LIVE_TINY_TEXT_CAPACITY],
+        lfe_semantics: [0; LIVE_SHORT_TEXT_CAPACITY],
+        joc_owner: [0; LIVE_TINY_TEXT_CAPACITY],
+        carriage_locations: [0; LIVE_TEXT_CAPACITY],
+        etsi_strict: [0; LIVE_FORMAT_CAPACITY],
+        deployed_compatibility: [0; LIVE_FORMAT_CAPACITY],
+        emdf_payloads: [0; LIVE_SHORT_TEXT_CAPACITY],
+        last_error_summary: [0; LIVE_TEXT_CAPACITY],
+    };
+    copy_live_text(&mut output.inspection_kind, &snapshot.inspection_kind);
+    copy_live_text(&mut output.observation_scope, &snapshot.observation_scope);
+    copy_live_text(&mut output.coverage, &snapshot.coverage);
+    copy_live_text(&mut output.format, &snapshot.format);
+    copy_live_text(
+        &mut output.profile_display_name,
+        snapshot
+            .current_profile
+            .as_ref()
+            .map_or("", |value| value.display_name.as_str()),
+    );
+    copy_live_text(
+        &mut output.reconstruction_carriers,
+        &snapshot.reconstruction_carriers.join(" "),
+    );
+    copy_live_text(
+        &mut output.programme_topology,
+        &snapshot.programme_topology.join(" + "),
+    );
+    copy_live_text(
+        &mut output.dependent_ids,
+        &joined(&snapshot.dependent_ids, ","),
+    );
+    copy_live_text(
+        &mut output.block_partition,
+        &joined(&snapshot.block_partition, "+"),
+    );
+    copy_live_text(
+        &mut output.lfe_owner,
+        snapshot.lfe_owner.as_deref().unwrap_or(""),
+    );
+    copy_live_text(
+        &mut output.lfe_semantics,
+        snapshot.lfe_semantics.as_deref().unwrap_or(""),
+    );
+    copy_live_text(
+        &mut output.joc_owner,
+        snapshot.joc_owner.as_deref().unwrap_or(""),
+    );
+    copy_live_text(
+        &mut output.carriage_locations,
+        &snapshot
+            .carriage_locations
+            .iter()
+            .map(|value| format!("{}@{}", value.owner, value.location))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    copy_live_text(&mut output.etsi_strict, &snapshot.etsi_strict);
+    copy_live_text(
+        &mut output.deployed_compatibility,
+        &snapshot.deployed_compatibility,
+    );
+    copy_live_text(
+        &mut output.emdf_payloads,
+        &joined(&snapshot.emdf_payloads, ","),
+    );
+    copy_live_text(
+        &mut output.last_error_summary,
+        snapshot.last_error_summary.as_deref().unwrap_or(""),
+    );
+    output
+}
+
+fn refresh_live_snapshot(decoder: &mut openjoc_stream_decoder) {
+    let mut snapshot = decoder.decoder.live_inspection_snapshot();
+    if !decoder.last_error.as_bytes().is_empty() {
+        snapshot.last_error_summary = Some(decoder.last_error.to_string_lossy().into_owned());
+    }
+    if let Ok(mut target) = decoder.live_snapshot.lock() {
+        *target = snapshot;
+    }
+}
+
+fn current_live_snapshot(decoder: &openjoc_stream_decoder) -> LiveInspectionSnapshot {
+    decoder.live_snapshot.lock().map_or_else(
+        |poisoned| poisoned.into_inner().clone(),
+        |snapshot| snapshot.clone(),
+    )
 }
 
 /// Framework-neutral compressed-stream classifier. It never creates a
@@ -582,6 +802,7 @@ fn set_stream_error(decoder: &mut openjoc_stream_decoder, error: BridgeError) ->
     let result = stream_error_status(&error);
     decoder.last_error = CString::new(error.to_string())
         .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
+    refresh_live_snapshot(decoder);
     result
 }
 
@@ -591,12 +812,14 @@ fn set_stream_message(
 ) -> openjoc_status {
     decoder.last_error = CString::new(message.to_string())
         .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
+    refresh_live_snapshot(decoder);
     openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT
 }
 
 fn stream_panic_status(decoder: &mut openjoc_stream_decoder) -> openjoc_status {
     decoder.last_error =
         CString::new("panic contained at OpenJOC C ABI boundary").expect("static error");
+    refresh_live_snapshot(decoder);
     openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR
 }
 
@@ -1022,6 +1245,7 @@ pub extern "C" fn openjoc_stream_decoder_create(
                 )
             })?;
         let stream = Box::new(openjoc_stream_decoder {
+            live_snapshot: Mutex::new(decoder.live_inspection_snapshot()),
             decoder,
             last_error: CString::new("").expect("empty CString"),
             layout_name,
@@ -1086,7 +1310,10 @@ pub extern "C" fn openjoc_stream_decoder_send_chunk(
             .map(stream_status)
     }));
     match result {
-        Ok(Ok(value)) => value,
+        Ok(Ok(value)) => {
+            refresh_live_snapshot(decoder);
+            value
+        }
         Ok(Err(error)) => set_stream_error(decoder, error),
         Err(_) => stream_panic_status(decoder),
     }
@@ -1134,7 +1361,10 @@ pub extern "C" fn openjoc_stream_decoder_receive_frame(
         }
     }));
     match result {
-        Ok(Ok(value)) => value,
+        Ok(Ok(value)) => {
+            refresh_live_snapshot(decoder);
+            value
+        }
         Ok(Err(error)) => set_stream_error(decoder, error),
         Err(_) => stream_panic_status(decoder),
     }
@@ -1154,7 +1384,10 @@ pub extern "C" fn openjoc_stream_decoder_drain(
         decoder.decoder.drain().map(stream_status)
     }));
     match result {
-        Ok(Ok(value)) => value,
+        Ok(Ok(value)) => {
+            refresh_live_snapshot(decoder);
+            value
+        }
         Ok(Err(error)) => set_stream_error(decoder, error),
         Err(_) => stream_panic_status(decoder),
     }
@@ -1173,6 +1406,8 @@ pub extern "C" fn openjoc_stream_decoder_flush(
     let result = catch_unwind(AssertUnwindSafe(|| {
         decoder.last_frame = None;
         decoder.decoder.flush();
+        decoder.last_error = CString::new("").expect("empty CString");
+        refresh_live_snapshot(decoder);
         openjoc_status::OPENJOC_STATUS_OK
     }));
     result.unwrap_or_else(|_| stream_panic_status(decoder))
@@ -1221,6 +1456,82 @@ pub extern "C" fn openjoc_stream_decoder_get_output_info(
     output.channel_labels = decoder.channel_label_ptrs.as_ptr();
     output.channel_label_count = decoder.channel_labels.len();
     openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Initializes the versioned caller-owned live inspection snapshot.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_live_inspection_snapshot_init(
+    output: *mut openjoc_live_inspection_snapshot,
+) -> openjoc_status {
+    if output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: output was checked and is caller-owned for the advertised size.
+    unsafe {
+        ptr::write_bytes(output, 0, 1);
+        (*output).struct_size = LIVE_SNAPSHOT_SIZE;
+    }
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Copies the latest bounded live semantic snapshot without touching the
+/// decoder or media source. The snapshot is safe to read while decode updates
+/// the underlying observer.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_live_inspection_snapshot(
+    decoder: *const openjoc_stream_decoder,
+    output: *mut openjoc_live_inspection_snapshot,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointers were checked and remain caller-owned.
+    let output = unsafe { &mut *output };
+    if output.struct_size < LIVE_SNAPSHOT_SIZE {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: decoder was checked and remains valid for the caller.
+    let snapshot = unsafe { &*decoder };
+    *output = c_snapshot(&current_live_snapshot(snapshot));
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Copies a sanitized, versioned JSON representation of the live snapshot.
+/// Serialization happens on the caller's thread and is never performed by the
+/// decode observer update path.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_copy_live_inspection_json(
+    decoder: *const openjoc_stream_decoder,
+    output: *mut c_char,
+    output_capacity: usize,
+    required_size: *mut usize,
+) -> openjoc_status {
+    if decoder.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: decoder was checked and remains valid for the caller.
+        let decoder = unsafe { &*decoder };
+        let json = serde_json::to_string(&current_live_snapshot(decoder))
+            .map_err(|_| openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR)?;
+        let required = json.len().saturating_add(1);
+        if !required_size.is_null() {
+            // SAFETY: the caller provided storage for one size value.
+            unsafe { *required_size = required };
+        }
+        if output.is_null() || output_capacity < required {
+            return Err(openjoc_status::OPENJOC_STATUS_OUTPUT_PENDING);
+        }
+        // SAFETY: the caller provided an output buffer of output_capacity bytes.
+        let bytes = unsafe { slice::from_raw_parts_mut(output.cast::<u8>(), output_capacity) };
+        bytes[..json.len()].copy_from_slice(json.as_bytes());
+        bytes[json.len()] = 0;
+        Ok(openjoc_status::OPENJOC_STATUS_OK)
+    }));
+    match result {
+        Ok(Ok(value) | Err(value)) => value,
+        Err(_) => openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR,
+    }
 }
 
 /// Returns one semantic channel label in packed PCM order.

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define OPENJOC_ABI_VERSION_MAJOR 1u
-#define OPENJOC_ABI_VERSION_MINOR 4u
+#define OPENJOC_ABI_VERSION_MINOR 5u
 #define OPENJOC_NO_PTS INT64_MIN
 
 typedef struct openjoc_decoder openjoc_decoder;
@@ -144,6 +144,58 @@ typedef struct openjoc_output_info {
     size_t channel_label_count;
 } openjoc_output_info;
 
+#define OPENJOC_LIVE_INSPECTION_SCHEMA_VERSION 1u
+#define OPENJOC_LIVE_INSPECTION_TEXT_CAPACITY 512u
+#define OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY 128u
+#define OPENJOC_LIVE_INSPECTION_TINY_TEXT_CAPACITY 64u
+#define OPENJOC_LIVE_INSPECTION_FORMAT_CAPACITY 32u
+
+typedef struct openjoc_live_inspection_snapshot {
+    uint32_t struct_size;
+    uint32_t schema_version;
+    uint64_t observation_epoch;
+    uint8_t stream_present;
+    uint8_t joc_present;
+    /* 0 unknown, 1 no dynamic metadata observed, 2 dynamic metadata observed. */
+    uint8_t dynamic_scene_observed;
+    /* 0 unknown, 1 absent, 2 present. */
+    uint8_t lfe_presence;
+    uint8_t has_sample_rate;
+    uint8_t has_timestamp;
+    uint8_t has_object_count;
+    uint8_t has_complexity;
+    uint8_t has_first_change;
+    uint8_t reserved[3];
+    uint32_t sample_rate_hz;
+    uint16_t object_count;
+    uint16_t complexity;
+    uint64_t observed_au_count;
+    uint64_t malformed_observed_count;
+    uint64_t current_decode_sequence;
+    double current_timestamp_seconds;
+    uint64_t first_change_au;
+    uint64_t first_change_sample;
+    double first_change_seconds;
+    int32_t profile_index;
+    char inspection_kind[OPENJOC_LIVE_INSPECTION_TINY_TEXT_CAPACITY];
+    char observation_scope[OPENJOC_LIVE_INSPECTION_TINY_TEXT_CAPACITY];
+    char coverage[OPENJOC_LIVE_INSPECTION_FORMAT_CAPACITY];
+    char format[OPENJOC_LIVE_INSPECTION_FORMAT_CAPACITY];
+    char profile_display_name[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
+    char reconstruction_carriers[OPENJOC_LIVE_INSPECTION_TEXT_CAPACITY];
+    char programme_topology[OPENJOC_LIVE_INSPECTION_TEXT_CAPACITY];
+    char dependent_ids[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
+    char block_partition[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
+    char lfe_owner[OPENJOC_LIVE_INSPECTION_TINY_TEXT_CAPACITY];
+    char lfe_semantics[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
+    char joc_owner[OPENJOC_LIVE_INSPECTION_TINY_TEXT_CAPACITY];
+    char carriage_locations[OPENJOC_LIVE_INSPECTION_TEXT_CAPACITY];
+    char etsi_strict[OPENJOC_LIVE_INSPECTION_FORMAT_CAPACITY];
+    char deployed_compatibility[OPENJOC_LIVE_INSPECTION_FORMAT_CAPACITY];
+    char emdf_payloads[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
+    char last_error_summary[OPENJOC_LIVE_INSPECTION_TEXT_CAPACITY];
+} openjoc_live_inspection_snapshot;
+
 uint32_t openjoc_get_abi_version(void);
 /* Legacy-safe ABI 1.3 prefix initializer. ABI 1.4 callers that need the
  * appended custom_speaker_layout field must use openjoc_decoder_config_init_v1_4. */
@@ -179,6 +231,9 @@ const char *openjoc_stream_decoder_get_channel_label(const openjoc_stream_decode
 const char *openjoc_stream_decoder_get_config_descriptor(const openjoc_stream_decoder *decoder);
 const char *openjoc_stream_decoder_get_config_fingerprint(const openjoc_stream_decoder *decoder);
 size_t openjoc_stream_decoder_get_staged_bytes(const openjoc_stream_decoder *decoder);
+openjoc_status openjoc_live_inspection_snapshot_init(openjoc_live_inspection_snapshot *output);
+openjoc_status openjoc_stream_decoder_get_live_inspection_snapshot(const openjoc_stream_decoder *decoder, openjoc_live_inspection_snapshot *output);
+openjoc_status openjoc_stream_decoder_copy_live_inspection_json(const openjoc_stream_decoder *decoder, char *output, size_t output_capacity, size_t *required_size);
 
 /* ABI 1.3 decode-free compressed-stream classifier. It shares the bounded
  * access-unit parser and positive admission rules with the stream decoder,
