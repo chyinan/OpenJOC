@@ -3785,6 +3785,84 @@ mod tests {
         }
     }
 
+    fn flat7_one_hot(location: ChannelLocation) -> DecodedAccessUnitPcm {
+        let locations = [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        let values = locations
+            .iter()
+            .map(|candidate| if *candidate == location { 1.0 } else { 0.0 })
+            .collect::<Vec<_>>();
+        stereo_base(&locations, &values, None, DownmixMetadata::default())
+    }
+
+    fn flat7_decoded_frame(samples: usize) -> DecodedPayloadFrame {
+        let mut frame = decoded_frame(0, 0, samples);
+        frame.joc.header.downmix_index = 1;
+        frame.joc.header.channel_count = 7;
+        frame
+    }
+
+    fn render_flat7_one_hot(location: ChannelLocation) -> Vec<Vec<f64>> {
+        let identities = ["FL", "FR", "FC", "Ls", "Rs", "Lb", "Rb", "FC"];
+        let mut renderer = JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+            "2.0",
+            control_with_identities(false, &identities),
+            SpatialContributionMode::BaseOnly,
+            false,
+        )
+        .expect("Flat-7.X Speaker 2.0 renderer");
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .expect("Lo/Ro policy");
+        renderer
+            .render_frame(0, &flat7_decoded_frame(1), &flat7_one_hot(location))
+            .expect("Flat-7.X one-hot Speaker 2.0 render")
+            .channels
+    }
+
+    fn render_flat7_lfe_one_hot() -> Vec<Vec<f64>> {
+        let locations = [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        let base = stereo_base(
+            &locations,
+            &[0.0; 7],
+            Some(1.0),
+            DownmixMetadata {
+                lfe_mix_level_code: Some(31),
+                ..DownmixMetadata::default()
+            },
+        );
+        let identities = ["FL", "FR", "FC", "Ls", "Rs", "Lb", "Rb", "FC"];
+        let mut renderer = JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+            "2.0",
+            control_with_identities(false, &identities),
+            SpatialContributionMode::BaseOnly,
+            false,
+        )
+        .expect("Flat-7.X Speaker 2.0 LFE renderer");
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .expect("Lo/Ro policy");
+        renderer
+            .render_frame(0, &flat7_decoded_frame(1), &base)
+            .expect("Flat-7.X LFE-only Speaker 2.0 render")
+            .channels
+    }
+
     fn peak_metrics(channels: &[Vec<f64>]) -> (f64, f64) {
         let peak = channels
             .iter()
@@ -4004,15 +4082,91 @@ mod tests {
     }
 
     #[test]
-    fn stereo_downmix_rejects_unmapped_back_or_height_base_channels() {
+    fn stereo_downmix_rejects_unmapped_height_base_channels() {
         let base = stereo_base(
-            &[ChannelLocation::LeftBack],
+            &[ChannelLocation::TopFrontLeft],
             &[1.0],
             None,
             DownmixMetadata::default(),
         );
         let mut active = vec![vec![0.0], vec![0.0]];
         assert!(add_stereo_base_downmix(&mut active, &base, StereoDownmixPolicy::LoRo).is_err());
+    }
+
+    #[test]
+    fn speaker2_audio_semantic_identity_renders_every_flat7_carrier() {
+        let carriers = [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        let rendered = carriers
+            .iter()
+            .copied()
+            .map(|location| (location, render_flat7_one_hot(location)))
+            .collect::<Vec<_>>();
+
+        for (location, channels) in &rendered {
+            assert_eq!(
+                channels.len(),
+                2,
+                "{} output channel count",
+                location.label()
+            );
+            assert!(
+                channels.iter().flatten().all(|sample| sample.is_finite()),
+                "{} output must be finite",
+                location.label()
+            );
+            assert!(
+                channels.iter().flatten().any(|sample| *sample != 0.0),
+                "{} output must be nonzero",
+                location.label()
+            );
+        }
+
+        let output_for = |location| {
+            rendered
+                .iter()
+                .find(|(candidate, _)| *candidate == location)
+                .map(|(_, channels)| channels)
+                .expect("carrier output")
+        };
+        for (left, right) in [
+            (ChannelLocation::Left, ChannelLocation::Right),
+            (
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ),
+            (ChannelLocation::LeftBack, ChannelLocation::RightBack),
+        ] {
+            let left_output = output_for(left);
+            let right_output = output_for(right);
+            assert_eq!(left_output[0], right_output[1], "{left:?}/{right:?} mirror");
+            assert_eq!(left_output[1], right_output[0], "{left:?}/{right:?} mirror");
+        }
+        let centre = output_for(ChannelLocation::Centre);
+        assert_eq!(centre[0], centre[1], "C must remain centered");
+
+        let full_band_scale = 1.0 / 3.121;
+        let surround = 0.707 * full_band_scale;
+        assert!((output_for(ChannelLocation::Left)[0][0] - full_band_scale).abs() < 1.0e-12);
+        assert!((output_for(ChannelLocation::Centre)[0][0] - surround).abs() < 1.0e-12);
+        assert!((output_for(ChannelLocation::LeftBack)[0][0] - surround).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn speaker2_lfe_semantics_remain_equal_power_dual_mono_when_admitted() {
+        let channels = render_flat7_lfe_one_hot();
+        assert_eq!(channels.len(), 2);
+        assert!(channels.iter().flatten().all(|sample| sample.is_finite()));
+        assert!(channels.iter().flatten().any(|sample| *sample != 0.0));
+        assert_eq!(channels[0], channels[1]);
+        assert!((channels[0][0] - 0.016725571877612835).abs() < 1.0e-12);
     }
 
     #[test]

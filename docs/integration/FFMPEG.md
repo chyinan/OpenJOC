@@ -162,11 +162,14 @@ claim about every historical Dolby MP4.
 For standards-defined flat-7.X JOC, downmix index 1 is admitted only with the
 seven-input Table-47 order `L R C Ls Rs Lrs Rrs`. The bridge retains two
 separate internal PCM meanings: I0-only compatibility PCM and assembled
-I0+D0..Dn JOC reconstruction-input PCM. Stereo uses the existing I0 compatibility
-Lo/Ro or Lt/Rt matrix, including its normative `1 / max_sum` overflow scale;
-the rear D0 pair is not directly downmixed. Expanded speaker rendering keeps
-using all seven reconstruction inputs. With original-syntax I0, compatibility
-PCM is the AC-3 core alone and reconstruction input is the AC-3 core plus D0.
+I0+D0..Dn JOC reconstruction-input PCM. Admitted common-profile Stereo keeps
+using the independent I0 compatibility Lo/Ro or Lt/Rt matrix. When the
+assembled Flat-7.X plane is selected for Stereo, that same canonical matrix
+also admits the distinct Lrs/Rrs rear-surround pair using the existing
+same-side surround rule, including its normative `1 / max_sum` overflow scale;
+the pair is never relabelled as Ls/Rs. Expanded speaker rendering keeps using
+all seven reconstruction inputs. With original-syntax I0, compatibility PCM
+is the AC-3 core alone and reconstruction input is the AC-3 core plus D0.
 
 Raw E-AC-3, MP4 EC-3, and Matroska packetization may differ by demuxer and
 file. The same assembler handles all three. Automated acceptance covers a

@@ -4,6 +4,8 @@
 //! implementation.  It deliberately separates unscaled public equations from
 //! the uniform overload-protection scale applied to the complete matrix.
 
+// pattern: Functional Core
+
 use crate::{ChannelLocation, DecodedAccessUnitPcm, DownmixMetadata};
 use std::fmt;
 
@@ -422,12 +424,16 @@ pub fn stereo_downmix_matrix(
             ChannelLocation::Left => (1.0, 0.0),
             ChannelLocation::Right => (0.0, 1.0),
             ChannelLocation::Centre => (center, center),
-            ChannelLocation::LeftSurround => match selected {
+            // Flat-7.X rear surrounds are a distinct codec topology, but a
+            // physical 2.0 target has no rear output identity.  Preserve the
+            // existing same-side surround matrix rule without relabelling
+            // Lrs/Rrs as Ls/Rs.
+            ChannelLocation::LeftSurround | ChannelLocation::LeftBack => match selected {
                 StereoDownmixMode::LoRo => (surround, 0.0),
                 StereoDownmixMode::LtRt => (-surround, surround),
                 StereoDownmixMode::Auto => unreachable!("Auto is resolved above"),
             },
-            ChannelLocation::RightSurround => match selected {
+            ChannelLocation::RightSurround | ChannelLocation::RightBack => match selected {
                 StereoDownmixMode::LoRo => (0.0, surround),
                 StereoDownmixMode::LtRt => (-surround, surround),
                 StereoDownmixMode::Auto => unreachable!("Auto is resolved above"),
@@ -626,5 +632,90 @@ mod tests {
             .unwrap();
         assert_close(active[0][0], with_lfe.lfe_coefficient().unwrap());
         assert_eq!(active[0], active[1]);
+    }
+
+    #[test]
+    fn flat7x_lrs_rrs_render_to_speaker_2() {
+        let locations = [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        let matrix = stereo_downmix_matrix(
+            StereoDownmixMode::LoRo,
+            DownmixMetadata::default(),
+            &locations,
+        )
+        .expect("Flat-7.X rear surrounds are valid stereo inputs");
+        assert_close(matrix.unscaled_maximum_coherent_sum(), 3.121);
+        let mut left_only = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: locations.to_vec(),
+            channels: vec![vec![0.0]; locations.len()],
+            lfe_location: None,
+            lfe: None,
+            downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
+        };
+        left_only.channels[5][0] = 1.0;
+        let mut right_only = left_only.clone();
+        right_only.channels[5][0] = 0.0;
+        right_only.channels[6][0] = 1.0;
+
+        let mut left_output = vec![vec![0.0], vec![0.0]];
+        matrix.apply(&left_only, &mut left_output).unwrap();
+        let mut right_output = vec![vec![0.0], vec![0.0]];
+        matrix.apply(&right_only, &mut right_output).unwrap();
+
+        assert!(left_output[0][0] > 0.0);
+        assert_eq!(left_output[1][0], 0.0);
+        assert_eq!(right_output[0][0], 0.0);
+        assert!(right_output[1][0] > 0.0);
+        assert_eq!(left_output[0][0], right_output[1][0]);
+        assert_close(left_output[0][0], 0.707 / 3.121);
+    }
+
+    #[test]
+    fn flat7x_lrs_rrs_are_admitted_for_ltrt_without_silence() {
+        let locations = [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ];
+        let matrix = stereo_downmix_matrix(
+            StereoDownmixMode::LtRt,
+            DownmixMetadata::default(),
+            &locations,
+        )
+        .expect("Flat-7.X rear surrounds are valid Lt/Rt inputs");
+        assert_close(matrix.unscaled_maximum_coherent_sum(), 4.535);
+
+        let mut input = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: locations.to_vec(),
+            channels: vec![vec![0.0]; locations.len()],
+            lfe_location: None,
+            lfe: None,
+            downmix: DownmixMetadata::default(),
+            dialnorm: DialnormState::default(),
+        };
+        for channel_index in [5, 6] {
+            input.channels[channel_index][0] = 1.0;
+            let mut output = vec![vec![0.0], vec![0.0]];
+            matrix.apply(&input, &mut output).unwrap();
+            assert!(output.iter().flatten().all(|sample| sample.is_finite()));
+            assert!(output.iter().flatten().any(|sample| *sample != 0.0));
+            input.channels[channel_index][0] = 0.0;
+        }
     }
 }

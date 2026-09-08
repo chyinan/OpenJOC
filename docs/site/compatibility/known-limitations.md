@@ -66,9 +66,11 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   in-band JOC classifier.
 - Standards-defined flat-7.X is identified narrowly by JOC downmix index 1,
   seven JOC inputs, and `L R C Ls Rs Lrs Rrs` Table-47 assembly. JOC
-  reconstruction consumes the assembled I0+D0..Dn seven-input plane, while 2.0
-  compatibility rendering consumes the independent I0 presentation. OpenJOC
-  does not invent direct Lrs/Rrs-to-Stereo coefficients.
+  reconstruction consumes the assembled I0+D0..Dn seven-input plane. Speaker
+  2.0 compatibility rendering still consumes the independent I0 presentation
+  for admitted common-profile frames; when the assembled Flat-7.X plane is the
+  selected stereo source, the canonical Lo/Ro or Lt/Rt matrix admits Lrs/Rrs
+  as distinct rear-surround inputs using the existing same-side surround rule.
 - Flat-7.X explicit `Lb/Rb` is not automatically folded into a 5.1 output
   policy. When the target has no exact `Lb/Rb` route, the semantic result is
   `UnsupportedRoute`.
