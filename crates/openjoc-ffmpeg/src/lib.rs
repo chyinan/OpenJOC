@@ -4903,6 +4903,7 @@ mod tests {
         cmaf_init_segment_for_e2e_with_entry(Some(dec3))
     }
 
+    #[cfg(feature = "ffmpeg")]
     fn cmaf_init_segment_without_dec3_for_e2e() -> Vec<u8> {
         cmaf_init_segment_for_e2e_with_entry(None)
     }
