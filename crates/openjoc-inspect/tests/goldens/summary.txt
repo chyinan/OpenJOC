@@ -1,0 +1,52 @@
+OpenJOC Stream Inspector
+
+Input
+  Filename               (reader)
+  Container              Raw E-AC-3
+  Format                 E-AC-3 JOC
+  Sample rates           [48000] Hz
+  Duration               0.032000 s
+  Access units           1
+  Total samples          1536
+  Total bitrate          1024.000 kbps
+
+E-AC-3 topology
+  Programme              I0 (1 AUs; first 0)
+  Frames per AU          [1]
+  Dependent IDs          []
+  Sequential IDs         Yes
+  Channel conflicts      0
+  Block partition        6 (1 AUs)
+  LFE ownership          absent
+
+JOC
+  Present                Yes
+  Profile                5.X (idx0)
+  Reconstruction inputs  L R C Ls Rs
+  Coded objects          [1]
+  Complexity index       [1]
+  JOC owner              I0
+
+Carriage / EMDF
+  frame-end auxdatae: 1 present, 0 absent
+  frame-end EMDF: 1 parsed, 0 non-EMDF, 0 malformed
+  audio-block skipfld: 0 observed in 6 reached prefixes; 0 blocks unresolved
+  I0  frame-end auxdatae (1 occurrences)
+  Payload 11  OAMD       1 occurrences / 1 AUs; 6..6 bytes; 1 unique lengths
+  Payload 14  JOC        1 occurrences / 1 AUs; 4..4 bytes; 1 unique lengths
+  Payload order          [11, 14] (1; first AU 0)
+
+Validation
+  Stream parse           PASS
+  ETSI Strict            PASS
+  Deployed Compatibility PASS
+  Malformed AUs          0
+  Decoder-admissible     Yes (structural)
+  PCM render verified    No
+  Frame timing           continuous
+  Metadata timing        continuous
+
+Object scene
+  Object metadata        Yes
+  Dynamic metadata       No change observed
+  Metadata updates       1

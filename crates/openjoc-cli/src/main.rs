@@ -10,6 +10,7 @@ mod oamd_oracle;
 mod performance;
 mod progress;
 mod render_scene;
+mod stream_inspect;
 mod terminal;
 
 use banner::{package_metadata, render_banner};
@@ -29,7 +30,7 @@ use openjoc_container::{
 };
 use openjoc_eac3::{
     ChannelLocation, DecodedAccessUnitPcm, DialnormMode, DynamicRangeControl, Eac3Error,
-    InternalBasePolicy, emit_coding_tool_inventory, extract_joc_addbsi_access_unit,
+    InternalBasePolicy, emit_coding_tool_inventory,
 };
 use openjoc_emdf::{JocProfileDeviation, JocValidationProfile};
 use openjoc_ffmpeg::{
@@ -60,7 +61,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE (--layout PRESET | --layout-file CUSTOM.json) --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE (--layout PRESET | --layout-file CUSTOM.json) --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -152,10 +153,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         {
             print_command_help(command)
         }
-        Some("inspect") => {
-            let (input, trim_configuration_count) = parse_inspect(&arguments[1..])?;
-            inspect(&input, trim_configuration_count)
-        }
+        Some("inspect") => stream_inspect::run(&arguments[1..]),
         Some("export-adm") => export_adm(&arguments[1..], terminal),
         Some("validate-adm") => validate_adm(&arguments[1..]),
         Some("self-test") => self_test(&arguments[1..]),
@@ -204,7 +202,7 @@ fn print_root_page(terminal: TerminalCapabilities, help: bool) -> Result<(), Box
 fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
-        "    openjoc inspect <FILE> [--trim-config-count N]\n",
+        "    openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]\n",
         "    openjoc decode <FILE> -o <DIR> [--validation-profile <PROFILE>] [--internal-base] [--streaming]\n",
         "    openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict]\n",
         "    openjoc validate-adm <FILE> [--json]\n",
@@ -228,7 +226,7 @@ fn append_home(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
 fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> {
     append_heading(output, "USAGE", color)?;
     output.push_str(concat!(
-        "    openjoc inspect <FILE> [--trim-config-count N]\n",
+        "    openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]\n",
         "    openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]\n",
         "    openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]\n",
         "    openjoc validate-adm <FILE> [--json]\n",
@@ -310,7 +308,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
 fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
     let help = match command {
         "inspect" => concat!(
-            "usage: openjoc inspect <FILE> [--trim-config-count N]\n\n",
+            "usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]\n\n",
             "Inspects raw EC3 or a seekable ordinary MP4/M4A E-AC-3 track. Reports both\n",
             "ETSI_STRICT and OBSERVED_VENDOR_COMPAT validation outcomes without fallback.\n",
         ),
@@ -1094,151 +1092,6 @@ mod help_tests {
     }
 }
 
-fn parse_inspect(values: &[String]) -> Result<(PathBuf, Option<NonZeroU8>), Box<dyn Error>> {
-    let input = values.first().filter(|value| !value.starts_with('-'));
-    let mut trim_configuration_count = None;
-    let mut index = 1;
-    while index < values.len() {
-        let flag = &values[index];
-        if flag != "--trim-config-count" {
-            return Err(usage_error().into());
-        }
-        let value = values.get(index + 1).ok_or_else(usage_error)?;
-        trim_configuration_count = Some(parse_trim_configuration_count(value)?);
-        index += 2;
-    }
-    Ok((
-        PathBuf::from(input.ok_or_else(usage_error)?),
-        trim_configuration_count,
-    ))
-}
-
-fn inspect(
-    input: &Path,
-    trim_configuration_count: Option<NonZeroU8>,
-) -> Result<(), Box<dyn Error>> {
-    let oamd_config = OamdDecoderConfig::with_trim_configuration_count(trim_configuration_count);
-    let media = load_eac3(input)?;
-    let frames = openjoc_eac3::index_syncframes(&media.bytes)?;
-    let units = openjoc_eac3::group_access_units(&frames)?;
-    println!("input: {}", media_kind_name(media.kind));
-    println!("frames: {}", frames.len());
-    println!("access units: {}", units.len());
-    let mut aux_present = 0_usize;
-    let mut aux_absent = 0_usize;
-    let mut emdf_attempts = 0_usize;
-    let mut emdf_parsed = 0_usize;
-    let mut skip_examined = 0_usize;
-    let mut skip_observed = 0_usize;
-    let mut skip_unresolved = 0_usize;
-    let mut skip_non_emdf = 0_usize;
-    let mut skip_valid_emdf = 0_usize;
-    let mut skip_malformed_emdf = 0_usize;
-    let mut frame_end_non_emdf = 0_usize;
-    let mut frame_end_malformed_emdf = 0_usize;
-    let mut skip_errors = Vec::new();
-    for entry in &frames {
-        let end = entry
-            .offset
-            .checked_add(entry.header.frame_size)
-            .ok_or_else(|| io::Error::other("E-AC-3 frame offset overflow"))?;
-        let frame = media.bytes.get(entry.offset..end).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "truncated indexed E-AC-3 frame",
-            )
-        })?;
-        match openjoc_eac3::classify_aux_emdf(frame)? {
-            Some(classification) => {
-                aux_present += 1;
-                emdf_attempts += 1;
-                match classification {
-                    openjoc_emdf::CarrierClassification::NonEmdf => frame_end_non_emdf += 1,
-                    openjoc_emdf::CarrierClassification::Parsed(_) => emdf_parsed += 1,
-                    openjoc_emdf::CarrierClassification::Malformed(_)
-                    | openjoc_emdf::CarrierClassification::TrailingData { .. } => {
-                        frame_end_malformed_emdf += 1;
-                    }
-                }
-            }
-            None => aux_absent += 1,
-        }
-        match openjoc_eac3::inspect_audio_block_carriers(frame, |value| {
-            skip_examined += 1;
-            if let Some(skip) = value.skip_field.as_ref() {
-                skip_observed += 1;
-                match openjoc_eac3::classify_skip_field_emdf(skip) {
-                    openjoc_emdf::CarrierClassification::NonEmdf => skip_non_emdf += 1,
-                    openjoc_emdf::CarrierClassification::Parsed(_) => skip_valid_emdf += 1,
-                    openjoc_emdf::CarrierClassification::Malformed(_)
-                    | openjoc_emdf::CarrierClassification::TrailingData { .. } => {
-                        skip_malformed_emdf += 1;
-                    }
-                }
-            }
-        }) {
-            Ok(carrier) => skip_unresolved += carrier.unresolved_blocks,
-            Err(error) => {
-                skip_unresolved += usize::from(entry.header.audio_blocks);
-                skip_errors.push(error.to_string());
-            }
-        }
-    }
-    println!("carrier paths examined:");
-    println!("  frame-end auxdatae: {aux_present} present, {aux_absent} absent");
-    println!(
-        "  frame-end EMDF: {emdf_parsed} parsed, {frame_end_non_emdf} non-EMDF, {frame_end_malformed_emdf} malformed from {emdf_attempts} bounded attempts"
-    );
-    println!(
-        "  audio-block skipfld: {skip_observed} observed in {skip_examined} reached prefixes; {skip_unresolved} blocks unresolved"
-    );
-    println!(
-        "  skipfld EMDF candidates: {skip_valid_emdf} parsed, {skip_non_emdf} non-EMDF, {skip_malformed_emdf} malformed"
-    );
-    if !skip_errors.is_empty() {
-        println!(
-            "  audio-block carrier traversal errors: {}",
-            skip_errors.len()
-        );
-        for error in skip_errors.iter().take(3) {
-            println!("    {error}");
-        }
-    }
-    for (unit_index, unit) in units.iter().copied().enumerate() {
-        println!("access unit {unit_index}:");
-        println!("  sample rate: {} Hz", unit.sample_rate);
-        println!("  samples: {}", unit.samples);
-        match openjoc_eac3::parse_joc_access_unit(&media.bytes, &frames, unit) {
-            Ok(Some(parsed)) => {
-                println!("  carrier frame: {}", parsed.carrier_frame);
-                println!("  complexity index: {}", parsed.complexity_index);
-                for profile in [
-                    JocValidationProfile::EtsiStrict,
-                    JocValidationProfile::ObservedVendorCompat,
-                ] {
-                    print_profile_validation(&parsed, profile, oamd_config);
-                }
-            }
-            Ok(None) => {
-                if let Some(extension) =
-                    extract_joc_addbsi_access_unit(&media.bytes, &frames, unit)?
-                {
-                    println!(
-                        "  JOC extension signaled: complexity index {}; EMDF profile absent (examined frame-end/skipfld carrier candidates)",
-                        extension.complexity_index
-                    );
-                } else {
-                    println!("  JOC profile: absent");
-                }
-            }
-            Err(error) => {
-                println!("  JOC profile candidate parsing failed in examined carriers: {error}");
-            }
-        }
-    }
-    Ok(())
-}
-
 fn diagnose_tools(values: &[String]) -> Result<(), Box<dyn Error>> {
     let input = values
         .first()
@@ -1314,130 +1167,6 @@ fn diagnose_tools(values: &[String]) -> Result<(), Box<dyn Error>> {
     }
     fs::write(output, serde_json::to_vec_pretty(&document)?)?;
     Ok(())
-}
-
-fn print_profile_validation(
-    parsed: &openjoc_eac3::ParsedJocAccessUnit,
-    profile: JocValidationProfile,
-    oamd_config: OamdDecoderConfig,
-) {
-    println!("  profile: {}", profile.as_str());
-    match openjoc_eac3::validate_joc_access_unit(parsed, profile) {
-        Ok(metadata) => {
-            println!("    result: {}", metadata.validation_status.as_str());
-            println!("    OAMD bytes: {}", metadata.oamd.len());
-            println!("    JOC bytes: {}", metadata.joc.len());
-            for deviation in &metadata.deviations {
-                println!(
-                    "    deviation: payload {} {}={} expected_by_etsi={}",
-                    deviation.payload_id,
-                    deviation.field,
-                    deviation.actual,
-                    deviation.expected_by_etsi
-                );
-            }
-            print_oamd_profile_status(&metadata.oamd, profile, oamd_config);
-        }
-        Err(openjoc_eac3::Eac3Error::JocProfileValidation(failure)) => {
-            println!("    result: failed");
-            println!("    reason: {failure}");
-            for deviation in &failure.deviations {
-                println!(
-                    "    deviation: payload {} {}={} expected_by_etsi={}",
-                    deviation.payload_id,
-                    deviation.field,
-                    deviation.actual,
-                    deviation.expected_by_etsi
-                );
-            }
-        }
-        Err(error) => {
-            println!("    result: failed");
-            println!("    reason: {error}");
-        }
-    }
-}
-
-fn print_oamd_profile_status(
-    payload: &[u8],
-    profile: JocValidationProfile,
-    config: OamdDecoderConfig,
-) {
-    let parsed = match profile {
-        JocValidationProfile::EtsiStrict => {
-            openjoc_oamd::parse_oamd_payload_with_config(payload, config)
-        }
-        JocValidationProfile::ObservedVendorCompat => {
-            openjoc_oamd::parse_oamd_payload_with_profile(
-                payload,
-                config,
-                OamdParseProfile::ObservedVendorCompat,
-                openjoc_oamd::OAMD_PAYLOAD_ID,
-            )
-        }
-    };
-    match parsed {
-        Ok(parsed) => {
-            let object_element = parsed
-                .elements
-                .iter()
-                .find(|metadata| matches!(metadata.element, openjoc_oamd::OamdElement::Objects(_)));
-            let opaque_trim = parsed.elements.iter().find_map(|metadata| {
-                if let openjoc_oamd::OamdElement::OpaqueObservedKnownElement(opaque) =
-                    &metadata.element
-                {
-                    Some(opaque)
-                } else {
-                    None
-                }
-            });
-            println!(
-                "    OAMD result: {}",
-                if opaque_trim.is_some() {
-                    "accepted_with_deviation"
-                } else {
-                    "accepted"
-                }
-            );
-            println!(
-                "    OAMD object element: {}",
-                if object_element.is_some() {
-                    "parsed"
-                } else {
-                    "blocked"
-                }
-            );
-            if let Some(opaque) = opaque_trim {
-                println!(
-                    "    OAMD trim element: opaque unresolved; raw warp={} payload-relative bits=[{},{}] deviation={}",
-                    opaque.raw_warp,
-                    opaque.warp_payload_start_bit,
-                    opaque.warp_payload_end_bit,
-                    opaque.deviation_code,
-                );
-                println!(
-                    "    vendor continuation: status={} payload-relative bits=[{},{}] length_bits={} sha256={} provenance={} interpretation={}",
-                    opaque.preservation_status,
-                    opaque.continuation_payload_start_bit,
-                    opaque.continuation_payload_end_bit,
-                    opaque
-                        .continuation_element_relative_end_bit
-                        .saturating_sub(opaque.continuation_element_relative_start_bit),
-                    opaque.continuation_sha256,
-                    opaque.provenance,
-                    opaque.interpretation_status,
-                );
-                println!("    OAMD trim timeline: unavailable");
-                println!("    OAMD renderer fidelity: ineligible");
-            } else {
-                println!("    OAMD trim element: parsed or absent");
-            }
-        }
-        Err(error) => {
-            println!("    OAMD result: failed");
-            println!("    OAMD reason: {error}");
-        }
-    }
 }
 
 fn run_census(values: &[String]) -> Result<(), Box<dyn Error>> {

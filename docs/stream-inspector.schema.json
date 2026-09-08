@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openjoc:stream-inspector:1",
+  "title": "OpenJOC Stream Inspection v1",
+  "type": "object",
+  "required": ["schema_version", "input", "container", "eac3", "joc", "carriage", "emdf", "scene", "validation", "diagnostics", "access_units"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "input": {"type": "object", "required": ["filename", "format", "classification_authority"], "properties": {"filename": {"type": ["string", "null"]}, "format": {"type": "string"}, "classification_authority": {"const": "in_band_syntax"}}},
+    "container": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["raw_eac3", "iso_bmff"]}}},
+    "eac3": {"type": "object", "required": ["access_unit_count", "frame_count", "total_samples", "duration_seconds", "topologies", "block_partitions", "components"], "properties": {"access_unit_count": {"type": "integer", "minimum": 0}, "frame_count": {"type": "integer", "minimum": 0}, "total_samples": {"type": "integer", "minimum": 0}, "duration_seconds": {"type": "number", "minimum": 0}, "topologies": {"type": "array"}, "block_partitions": {"type": "array"}, "components": {"type": "array"}}},
+    "joc": {"type": "object", "required": ["present", "presence_status", "profiles"], "properties": {"present": {"type": "boolean"}, "presence_status": {"enum": ["present", "not_present", "malformed_payload", "unavailable"]}, "profiles": {"type": "array"}}},
+    "carriage": {"type": "object", "required": ["locations", "joc_owners", "oamd_owners"], "properties": {"locations": {"type": "array"}, "joc_owners": {"type": "array"}, "oamd_owners": {"type": "array"}}},
+    "emdf": {"type": "object", "required": ["containers", "payloads", "payload_orders", "configurations"], "properties": {"containers": {"type": "integer", "minimum": 0}, "payloads": {"type": "array"}, "payload_orders": {"type": "array"}, "configurations": {"type": "array"}}},
+    "scene": {"type": "object", "required": ["metadata_present", "dynamic_metadata_detected", "original_authored_identity_recovered", "objects"], "properties": {"metadata_present": {"type": "boolean"}, "dynamic_metadata_detected": {"type": ["boolean", "null"]}, "original_authored_identity_recovered": {"const": false}, "objects": {"type": "array"}}},
+    "validation": {"type": "object", "required": ["stream_parse", "etsi_strict", "deployed_compatibility", "malformed_aus", "decoder_admissible", "render_verified"], "properties": {"stream_parse": {"enum": ["pass", "partial", "fail"]}, "etsi_strict": {"$ref": "#/$defs/profileValidation"}, "deployed_compatibility": {"$ref": "#/$defs/profileValidation"}, "malformed_aus": {"type": "integer", "minimum": 0}, "decoder_admissible": {"type": ["boolean", "null"]}, "render_verified": {"const": false}}},
+    "diagnostics": {"type": "object", "required": ["complete", "first_failure", "issues", "aggregation_truncated"], "properties": {"complete": {"type": "boolean"}, "first_failure": {"type": ["object", "null"]}, "issues": {"type": "array"}, "aggregation_truncated": {"type": "boolean"}}},
+    "access_units": {"type": "array"}
+  },
+  "$defs": {
+    "profileValidation": {"type": "object", "required": ["status", "tested_aus", "failed_aus", "first_failing_au", "deviations"], "properties": {"status": {"enum": ["pass", "fail", "not_applicable"]}, "tested_aus": {"type": "integer", "minimum": 0}, "failed_aus": {"type": "integer", "minimum": 0}, "first_failing_au": {"type": ["integer", "null"]}, "deviations": {"type": "array"}}}
+  }
+}

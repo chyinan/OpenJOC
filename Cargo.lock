@@ -678,6 +678,7 @@ dependencies = [
  "openjoc-eac3",
  "openjoc-emdf",
  "openjoc-ffmpeg",
+ "openjoc-inspect",
  "openjoc-joc",
  "openjoc-oamd",
  "openjoc-render",
@@ -731,6 +732,19 @@ dependencies = [
  "openjoc-wave",
  "pkg-config",
  "sha2",
+]
+
+[[package]]
+name = "openjoc-inspect"
+version = "0.16.0"
+dependencies = [
+ "openjoc-container",
+ "openjoc-eac3",
+ "openjoc-emdf",
+ "openjoc-joc",
+ "openjoc-oamd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

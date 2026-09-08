@@ -10,6 +10,53 @@ use std::{
 
 static ADM_EXPORT_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn stream_inspector_json_is_stable_and_in_band() {
+    let root =
+        std::env::temp_dir().join(format!("openjoc-inspector-schema-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("synthetic.bin");
+    fs::write(
+        &input,
+        joc_frame(&joc_emdf(&inactive_oamd(), &absent_joc()), 1),
+    )
+    .unwrap();
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_openjoc"))
+            .arg("inspect")
+            .arg(&input)
+            .args(["--json", "--aus", "--objects", "--emdf"])
+            .output()
+            .unwrap()
+    };
+    let first = run();
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, run().stdout);
+    let report: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(report["schema_version"], 1);
+    for key in [
+        "input",
+        "container",
+        "eac3",
+        "joc",
+        "carriage",
+        "emdf",
+        "scene",
+        "validation",
+        "diagnostics",
+    ] {
+        assert!(report[key].is_object(), "missing {key}");
+    }
+    assert_eq!(report["joc"]["present"], true);
+    assert_eq!(report["eac3"]["total_samples"], 1536);
+    assert!(!String::from_utf8_lossy(&first.stdout).contains(&root.to_string_lossy().to_string()));
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[derive(Default)]
 struct Bits(Vec<bool>);
 
@@ -715,14 +762,13 @@ fn inspect_command_reports_timing_profile_payloads_and_complexity() {
         String::from_utf8_lossy(&result.stderr)
     );
     let output = String::from_utf8(result.stdout).expect("UTF-8 output");
-    assert!(output.contains("frames: 1"));
-    assert!(output.contains("access units: 1"));
-    assert!(output.contains("sample rate: 48000 Hz"));
-    assert!(output.contains("samples: 1536"));
-    assert!(output.contains("carrier frame: 0"));
-    assert!(output.contains("complexity index: 2"));
-    assert!(output.contains("OAMD bytes: 1"));
-    assert!(output.contains("JOC bytes: 1"));
+    assert!(output.contains("Access units           1"));
+    assert!(output.contains("Sample rates           [48000] Hz"));
+    assert!(output.contains("Total samples          1536"));
+    assert!(output.contains("Complexity index       [2]"));
+    assert!(output.contains("Payload 11"));
+    assert!(output.contains("Payload 14"));
+    assert!(output.contains("1..1 bytes"));
     assert!(
         output
             .contains("audio-block skipfld: 0 observed in 0 reached prefixes; 6 blocks unresolved")
@@ -795,12 +841,10 @@ fn inspect_distinguishes_normative_failure_from_vendor_compatibility() {
         String::from_utf8_lossy(&result.stderr)
     );
     let output = String::from_utf8(result.stdout).expect("UTF-8 output");
-    assert!(output.contains("profile: ETSI_STRICT"));
-    assert!(output.contains("result: failed"));
-    assert!(output.contains("payload 11 codecdatae=0 where ETSI requires 1"));
-    assert!(output.contains("profile: OBSERVED_VENDOR_COMPAT"));
-    assert!(output.contains("result: accepted_with_deviation"));
-    assert!(output.contains("deviation: payload 14 codecdatae=0 expected_by_etsi=1"));
+    assert!(output.contains("ETSI Strict            FAIL"));
+    assert!(output.contains("payload 11 codecdatae: observed 0, expected 1"));
+    assert!(output.contains("Deployed Compatibility PASS"));
+    assert!(output.contains("payload 14 codecdatae: observed 0, expected 1"));
     assert!(output.contains("OAMD trim element: opaque unresolved"));
     assert!(!output.contains("not_attempted_without_trim_config_count"));
 

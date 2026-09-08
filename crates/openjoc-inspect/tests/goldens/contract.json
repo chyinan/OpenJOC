@@ -1,0 +1,46 @@
+{
+  "deployed_compatibility": "pass",
+  "dynamic_metadata_detected": false,
+  "etsi_strict": "pass",
+  "format": "eac3_joc",
+  "partitions": [
+    {
+      "first_au": 0,
+      "occurrences": 1,
+      "value": [
+        6
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "first_au": 0,
+      "occurrences": 1,
+      "value": {
+        "carriers": [
+          "L",
+          "R",
+          "C",
+          "Ls",
+          "Rs"
+        ],
+        "display_name": "5.X (idx0)",
+        "phase_signaling": false,
+        "profile": "five_x",
+        "profile_index": 0,
+        "reconstruction_input_count": 5
+      }
+    }
+  ],
+  "retained_au_details": 0,
+  "schema_version": 1,
+  "topology": [
+    {
+      "first_au": 0,
+      "occurrences": 1,
+      "value": [
+        "I0"
+      ]
+    }
+  ]
+}

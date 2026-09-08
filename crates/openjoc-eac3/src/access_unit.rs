@@ -1068,6 +1068,24 @@ fn assembled_channel_topology(
     Ok((channels, lfe_location))
 }
 
+/// Returns the decoder's existing channel-map interpretation without decoding audio.
+pub fn inspect_channel_locations(
+    info: &BitstreamInformation,
+) -> Result<Vec<ChannelLocation>, Eac3Error> {
+    let full_bandwidth = standard_channel_locations(info.audio_coding_mode, false)?.len() as u8;
+    validate_channel_description(info, full_bandwidth)?;
+    channel_locations(info)
+}
+
+/// Validates existing dependent ownership and LFE rules without decoding audio.
+pub fn inspect_programme_channels(
+    independent: &BitstreamInformation,
+    dependents: &[BitstreamInformation],
+) -> Result<(Vec<ChannelLocation>, Option<ChannelLocation>), Eac3Error> {
+    validate_dependent_channel_semantics(dependents)?;
+    assembled_channel_topology(independent, dependents)
+}
+
 fn validate_dependent_channel_semantics<'a>(
     dependents: impl IntoIterator<Item = &'a BitstreamInformation>,
 ) -> Result<(), Eac3Error> {

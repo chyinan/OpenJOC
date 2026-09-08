@@ -38,6 +38,18 @@ Use `openjoc inspect input.ec3` to inspect a carrier before rendering. The [quic
 
 For custom geometry, use `--layout-file LAYOUT.json`; the documented limit is 64 output channels.
 
+## Stream Inspector
+
+Inspect ordinary E-AC-3 or JOC without rendering audio:
+
+```sh
+openjoc inspect input.ec3
+openjoc inspect input.mp4 --json
+openjoc inspect input.ec3 --aus --objects --emdf
+```
+
+The inspector reports in-band topology, block partitions, JOC profiles, EMDF payload census, strict and deployed compatibility results, and observed object metadata changes. Versioned JSON can be attached to bug reports or consumed by tools. See the [Stream Inspector guide](docs/stream-inspector.md) for the schema, Rust API, and inspection limits.
+
 ## Windows playback
 
 The optional Windows package provides an isolated OpenJOC-enabled LAV Audio Decoder. It installs beside stock LAV and does not change PotPlayer automatically:
