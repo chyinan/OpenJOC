@@ -90,6 +90,7 @@ OpenJOC settings interfaces.
 
 It also adds a separate read-only **JOC Stream** page. The page polls a
 versioned live snapshot about every 500 ms and displays the actual in-band
+programme layout separately from the JOC reconstruction carriers, plus
 profile/carriers, programme topology, dependent IDs, block partition, LFE/JOC
 ownership, coded object count, complexity, EMDF payloads, validation status,
 dynamic-scene observation, malformed-observed count, AU count, timestamp, and

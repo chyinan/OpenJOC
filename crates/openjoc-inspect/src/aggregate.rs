@@ -6,7 +6,7 @@ use crate::model::{
     InspectionOptions, JocSummary, ObjectStatistics, Observation, PayloadConfiguration,
     PayloadSummary, ProfileSummary, SceneSummary, StreamInspection, ValidationSummary,
 };
-use openjoc_eac3::{self as eac3, StreamType, SyncframeIndexEntry};
+use openjoc_eac3::{self as eac3, StreamType, SyncframeIndexEntry, programme_layout_name};
 use openjoc_emdf::{CarrierClassification, EmdfContainer, JocValidationProfile};
 use openjoc_oamd::{OamdElement, ObjectUpdate};
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,6 +33,11 @@ struct SceneEvent {
     update: ObjectUpdate,
     class: Option<openjoc_oamd::ObjectClass>,
     when: ChangeLocation,
+}
+
+struct ProgrammeObservation {
+    lfe_ownership: String,
+    layout: String,
 }
 
 fn unique<T: PartialEq + Ord>(values: &mut Vec<T>, value: T) {
@@ -217,6 +222,7 @@ impl InspectionAccumulator {
             complexity_indices: Vec::new(),
             payload_ids: Vec::new(),
             lfe_ownership: None,
+            programme_layout: None,
             status: "pass".into(),
         };
         let grouping = eac3::group_access_units(frames).and_then(|units| {
@@ -282,7 +288,9 @@ impl InspectionAccumulator {
                     detail.block_partition.push(entry.header.audio_blocks);
                 }
                 if !information.is_empty() {
-                    detail.lfe_ownership = Some(self.programme(&information));
+                    let observation = self.programme(&information);
+                    detail.lfe_ownership = Some(observation.lfe_ownership);
+                    detail.programme_layout = Some(observation.layout);
                     information.clear();
                 }
             }
@@ -363,7 +371,9 @@ impl InspectionAccumulator {
             }
         }
         if !information.is_empty() {
-            detail.lfe_ownership = Some(self.programme(&information));
+            let observation = self.programme(&information);
+            detail.lfe_ownership = Some(observation.lfe_ownership);
+            detail.programme_layout = Some(observation.layout);
         }
         self.objects(
             start_sample,
@@ -557,7 +567,7 @@ impl InspectionAccumulator {
         }
     }
 
-    fn programme(&mut self, infos: &[eac3::BitstreamInformation]) -> String {
+    fn programme(&mut self, infos: &[eac3::BitstreamInformation]) -> ProgrammeObservation {
         let au = self.next_au_index();
         let first = &infos[0];
         if let Err(error) = eac3::inspect_programme_channels(first, &infos[1..]) {
@@ -568,8 +578,13 @@ impl InspectionAccumulator {
                 "ambiguous_invalid".into(),
                 au,
             );
-            return "ambiguous_invalid".into();
+            return ProgrammeObservation {
+                lfe_ownership: "ambiguous_invalid".into(),
+                layout: "Extended (ambiguous programme channels)".into(),
+            };
         }
+        let (full_band, lfe_location) = eac3::inspect_programme_channels(first, &infos[1..])
+            .expect("programme channels were validated above");
         let independent_lfe = eac3::inspect_channel_locations(first)
             .ok()
             .is_some_and(|v| v.iter().any(|l| matches!(l, eac3::ChannelLocation::Lfe(_))));
@@ -584,9 +599,15 @@ impl InspectionAccumulator {
             (false, Some(info)) => format!("dependent_supplementation:{}", owner(info.header)),
             (true, Some(info)) => format!("dependent_replacement:{}", owner(info.header)),
         };
+        let layout = programme_layout_name(&full_band, lfe_location);
         self.report.diagnostics.aggregation_truncated |=
             !observe(&mut self.report.eac3.lfe_ownership, semantics.clone(), au);
-        semantics
+        self.report.diagnostics.aggregation_truncated |=
+            !observe(&mut self.report.eac3.programme_layouts, layout.clone(), au);
+        ProgrammeObservation {
+            lfe_ownership: semantics,
+            layout,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

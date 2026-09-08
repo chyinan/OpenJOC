@@ -5471,6 +5471,14 @@ mod tests {
                 .map(|value| value.value.profile_index)
         );
         assert_eq!(live.programme_topology, offline.eac3.topologies[0].value);
+        assert_eq!(
+            live.programme_layout.as_deref(),
+            offline
+                .eac3
+                .programme_layouts
+                .first()
+                .map(|value| value.value.as_str())
+        );
         assert_eq!(live.block_partition, offline.eac3.block_partitions[0].value);
         assert_eq!(
             live.lfe_semantics.as_deref(),

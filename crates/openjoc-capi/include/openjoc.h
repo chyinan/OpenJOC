@@ -194,6 +194,7 @@ typedef struct openjoc_live_inspection_snapshot {
     char deployed_compatibility[OPENJOC_LIVE_INSPECTION_FORMAT_CAPACITY];
     char emdf_payloads[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
     char last_error_summary[OPENJOC_LIVE_INSPECTION_TEXT_CAPACITY];
+    char programme_layout[OPENJOC_LIVE_INSPECTION_SHORT_TEXT_CAPACITY];
 } openjoc_live_inspection_snapshot;
 
 uint32_t openjoc_get_abi_version(void);

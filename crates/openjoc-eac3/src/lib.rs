@@ -49,7 +49,7 @@ use ac3::validate_ac3_crc;
 pub use access_unit::{
     ChannelLocation, DecodedAccessUnitPcm, DecodedJocAccessUnitPcm, JocAccessUnitPcmDecoder,
     JocAccessUnitProfile, inspect_channel_locations, inspect_programme_channels,
-    validate_joc_access_unit_decoder_contract,
+    programme_layout_name, validate_joc_access_unit_decoder_contract,
     validate_joc_access_unit_decoder_contract_for_profile,
 };
 pub use aht::{

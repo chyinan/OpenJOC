@@ -23,6 +23,7 @@ pub struct LiveInspectionSnapshot {
     pub current_profile: Option<ProfileSummary>,
     pub reconstruction_carriers: Vec<String>,
     pub programme_topology: Vec<String>,
+    pub programme_layout: Option<String>,
     pub dependent_ids: Vec<u8>,
     pub block_partition: Vec<u8>,
     pub lfe_presence: Option<bool>,
@@ -187,6 +188,7 @@ impl LiveInspectionObserver {
                 })
                 .map_or_else(Vec::new, |value| value.value.carriers.clone()),
             programme_topology: latest_au.map_or_else(Vec::new, |value| value.topology.clone()),
+            programme_layout: latest_au.and_then(|value| value.programme_layout.clone()),
             dependent_ids: report.eac3.dependent_ids.clone(),
             block_partition: latest_au.map_or_else(Vec::new, |value| value.block_partition.clone()),
             lfe_presence: current_lfe.map(|value| value != "absent"),

@@ -396,6 +396,65 @@ impl ChannelLocation {
     }
 }
 
+/// Returns the canonical observed programme layout while keeping LFE outside
+/// the JOC reconstruction-input channel set.
+#[must_use]
+pub fn programme_layout_name(
+    full_band: &[ChannelLocation],
+    lfe: Option<ChannelLocation>,
+) -> String {
+    let base = match full_band {
+        [ChannelLocation::Left, ChannelLocation::Right] => Some("2.0"),
+        [ChannelLocation::Centre] => Some("1.0"),
+        [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+        ] => Some("5.0"),
+        [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::LeftBack,
+            ChannelLocation::RightBack,
+        ] => Some("7.0"),
+        [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+            ChannelLocation::TopFrontLeft,
+            ChannelLocation::TopFrontRight,
+        ] => Some("5.0.2"),
+        _ => None,
+    };
+    match (base, lfe) {
+        (Some(base), None) => base.to_owned(),
+        (Some("2.0"), Some(ChannelLocation::Lfe(0))) => "2.1".to_owned(),
+        (Some("1.0"), Some(ChannelLocation::Lfe(0))) => "1.1".to_owned(),
+        (Some(base), Some(ChannelLocation::Lfe(0))) => base.replacen(".0", ".1", 1),
+        _ => {
+            let mut labels = full_band
+                .iter()
+                .map(|location| location.label().to_owned())
+                .collect::<Vec<_>>();
+            if let Some(location) = lfe {
+                labels.push(format!("+ {}", location.label()));
+            }
+            if labels.is_empty() {
+                "Unknown".to_owned()
+            } else {
+                format!("Extended ({})", labels.join(" "))
+            }
+        }
+    }
+}
+
 /// Stateful decoder for the bounded I0 plus D0..D7 JOC elementary-stream shape.
 ///
 /// General TS 102 366 carriage permits up to eight sequential dependents. The
@@ -2046,5 +2105,47 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn programme_layout_names_keep_lfe_outside_reconstruction_inputs() {
+        let five = vec![
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::Centre,
+            ChannelLocation::LeftSurround,
+            ChannelLocation::RightSurround,
+        ];
+        let flat_seven = [
+            five.clone(),
+            vec![ChannelLocation::LeftBack, ChannelLocation::RightBack],
+        ]
+        .concat();
+        let height_seven = [
+            five.clone(),
+            vec![
+                ChannelLocation::TopFrontLeft,
+                ChannelLocation::TopFrontRight,
+            ],
+        ]
+        .concat();
+
+        assert_eq!(programme_layout_name(&five, None), "5.0");
+        assert_eq!(
+            programme_layout_name(&five, Some(ChannelLocation::Lfe(0))),
+            "5.1"
+        );
+        assert_eq!(
+            programme_layout_name(&flat_seven, Some(ChannelLocation::Lfe(0))),
+            "7.1"
+        );
+        assert_eq!(
+            programme_layout_name(&height_seven, Some(ChannelLocation::Lfe(0))),
+            "5.1.2"
+        );
+        assert_eq!(
+            programme_layout_name(&five, Some(ChannelLocation::Lfe(1))),
+            "Extended (L R C Ls Rs + LFE2)"
+        );
     }
 }

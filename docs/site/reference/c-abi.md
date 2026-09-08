@@ -44,7 +44,7 @@ ABI 1.5 adds the read-only `openjoc_live_inspection_snapshot` surface for
 `openjoc_stream_decoder`. `openjoc_stream_decoder_get_live_inspection_snapshot`
 returns bounded semantic fields observed by the same in-band decoder path:
 profile/carriers, programme topology, block partition, dependent IDs, LFE and
-JOC ownership, coded object/complexity values, EMDF payload IDs, dynamic-scene
+JOC ownership, programme layout, coded object/complexity values, EMDF payload IDs, dynamic-scene
 observation, malformed and AU counters, timestamps, and an observation epoch.
 The snapshot explicitly reports `live_decode_snapshot`, `live_decode`, and
 `partial`/`complete_continuous` coverage. A seek/flush/reset starts a new epoch;

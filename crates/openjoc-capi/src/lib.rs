@@ -116,6 +116,7 @@ pub struct openjoc_live_inspection_snapshot {
     pub deployed_compatibility: [c_char; LIVE_FORMAT_CAPACITY],
     pub emdf_payloads: [c_char; LIVE_SHORT_TEXT_CAPACITY],
     pub last_error_summary: [c_char; LIVE_TEXT_CAPACITY],
+    pub programme_layout: [c_char; LIVE_SHORT_TEXT_CAPACITY],
 }
 
 const LIVE_SNAPSHOT_SIZE: u32 = std::mem::size_of::<openjoc_live_inspection_snapshot>() as u32;
@@ -204,6 +205,7 @@ fn c_snapshot(snapshot: &LiveInspectionSnapshot) -> openjoc_live_inspection_snap
         deployed_compatibility: [0; LIVE_FORMAT_CAPACITY],
         emdf_payloads: [0; LIVE_SHORT_TEXT_CAPACITY],
         last_error_summary: [0; LIVE_TEXT_CAPACITY],
+        programme_layout: [0; LIVE_SHORT_TEXT_CAPACITY],
     };
     copy_live_text(&mut output.inspection_kind, &snapshot.inspection_kind);
     copy_live_text(&mut output.observation_scope, &snapshot.observation_scope);
@@ -265,6 +267,10 @@ fn c_snapshot(snapshot: &LiveInspectionSnapshot) -> openjoc_live_inspection_snap
     copy_live_text(
         &mut output.last_error_summary,
         snapshot.last_error_summary.as_deref().unwrap_or(""),
+    );
+    copy_live_text(
+        &mut output.programme_layout,
+        snapshot.programme_layout.as_deref().unwrap_or(""),
     );
     output
 }

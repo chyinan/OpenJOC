@@ -55,6 +55,7 @@ pub struct Eac3Summary {
     pub sample_rates_hz: Vec<u32>,
     pub topologies: Vec<Observation<Vec<String>>>,
     pub block_partitions: Vec<Observation<Vec<u8>>>,
+    pub programme_layouts: Vec<Observation<String>>,
     pub frames_per_au: Vec<usize>,
     pub components: Vec<ComponentSummary>,
     pub dependent_ids: Vec<u8>,
@@ -293,6 +294,7 @@ pub struct AuDetail {
     pub complexity_indices: Vec<u8>,
     pub payload_ids: Vec<u64>,
     pub lfe_ownership: Option<String>,
+    pub programme_layout: Option<String>,
     pub status: String,
 }
 
