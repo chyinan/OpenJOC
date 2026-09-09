@@ -64,6 +64,7 @@ EXPECTED_LAV_NEW_FILES = {
     "decoder/LAVAudio/OpenJocStrictOutput.cpp",
     "decoder/LAVAudio/OpenJocStrictOutput.h",
     "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
+    "include/LAVOpenJocInspection.h",
     "include/LAVOpenJocSettings.h",
 }
 EXPECTED_LAV_MODIFIED_FILES = {
@@ -88,8 +89,8 @@ EXPECTED_LAV_MODIFIED_FILES = {
 
 
 class ReleasePackagingTests(unittest.TestCase):
-    def test_canonical_release_version_is_v016(self) -> None:
-        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.16.0")
+    def test_canonical_release_version_is_v017(self) -> None:
+        self.assertEqual(CANONICAL_RELEASE_VERSION, "0.17.0")
 
     def test_reproducibility_manifest_uses_frozen_lav_upstream_base(self) -> None:
         self.assertEqual(

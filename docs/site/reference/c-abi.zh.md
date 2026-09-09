@@ -7,11 +7,12 @@
 
 ## ABI 策略
 
-ABI 版本为 `1.4-experimental`，与 OpenJOC 软件包版本彼此独立。重大改动可能破坏结构布局或所有权规则，需要增加 ABI 主版本号。小版本新增内容必须追加字段或函数，并保持已有字段的含义不变。配置、PCM 帧和输出信息结构体都包含 `struct_size`；调用方必须初始化它们，生产者必须拒绝尺寸更小的结构体。ABI 次版本 1 追加了 `dialnorm_mode` 字段。使用 ABI 1.0 配置结构大小的调用方仍会被接受，并收到 `OPENJOC_DIALNORM_DEFAULT`。ABI 1.2 追加了函数和状态码，但没有改变已有结构体布局。`openjoc_get_abi_version()` 返回 `(major << 16) | minor`。
+ABI 版本为 `1.5-experimental`，与 OpenJOC 软件包版本彼此独立。重大改动可能破坏结构布局或所有权规则，需要增加 ABI 主版本号。小版本新增内容必须追加字段或函数，并保持已有字段的含义不变。配置、PCM 帧和输出信息结构体都包含 `struct_size`；调用方必须初始化它们，生产者必须拒绝尺寸更小的结构体。ABI 次版本 1 追加了 `dialnorm_mode` 字段。使用 ABI 1.0 配置结构大小的调用方仍会被接受，并收到 `OPENJOC_DIALNORM_DEFAULT`。ABI 1.2 追加了函数和状态码，但没有改变已有结构体布局。`openjoc_get_abi_version()` 返回 `(major << 16) | minor`。
 
 ABI 1.4 在 `openjoc_decoder_config` 中追加了 `custom_speaker_layout`。需要使用自定义几何时，把它设为内存中的 `openjoc_custom_speaker_layout`；其中有序的 `openjoc_custom_speaker` 数组包含有限的方位角/仰角（单位为度），以及 `OPENJOC_SPEAKER_FULL_RANGE` 或 `OPENJOC_SPEAKER_LFE` 角色。描述结构和其中的所有字符串只在 `openjoc_decoder_create` 调用期间借用；解码器会复制经过验证的布局，并通过输出标签报告相同的顺序。原有调用方将此字段留空即可继续使用预设行为。自定义布局的约定、坐标规则、校验限制以及 WAV/CAF 元数据边界，记录在[自定义扬声器布局](../using/custom-speaker-layouts.md)中。
 
 `openjoc_decoder_config_init()` 仍是对旧版本安全的 ABI 1.3 前缀初始化函数：它永远不会写入 ABI 1.4 新增的字段，因此真正的 ABI 1.3 调用方可以把它链接到 ABI 1.4 库，而不会发生结构体越界写入。需要完整当前结构或自定义几何的 ABI 1.4 调用方，应使用 `openjoc_decoder_config_init_v1_4()`。
+ABI 1.5 新增了 `openjoc_stream_decoder` 的只读 `openjoc_live_inspection_snapshot`。它报告同一条带内解码路径观察到的 programme 布局、重建载体、验证状态、对象/复杂度、EMDF、动态场景、AU 和时间戳信息；实时覆盖明确区分 `partial` 与 `complete_continuous`，seek、flush 或 reset 会开始新的观察 epoch。
 
 “实验性”表示 C 接口可能会在 OpenJOC 0.x 集成过程中继续演进，并不表示现有的解码器正确性声明被撤回。
 

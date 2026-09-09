@@ -2,7 +2,7 @@
 
 The canonical current capability matrix is maintained in the [OpenJOC documentation site](site/project/capabilities.md).
 
-The current embedding surface includes Versioned C ABI 1.4 and custom geometry
+The current embedding surface includes Versioned C ABI 1.5 and custom geometry
 up to 64 output channels. The canonical CLI entry point is:
 
 ```text

@@ -46,6 +46,6 @@ These items are speculative and have no committed schedule:
 - an automatic 3D topology generator, but only as a separately bounded module
   that does not change caller-declared `LayoutRenderer3d` topology semantics.
 
-Completed speaker presets, custom 64-channel geometry, C ABI 1.4, FFmpeg,
+Completed speaker presets, custom 64-channel geometry, C ABI 1.5, FFmpeg,
 GStreamer, mpv/player packaging, DirectShow/LAV/PotPlayer onboarding, and
 release automation are intentionally absent from this future-work list.

@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.17.0] — 2026-09-09
+
+OpenJOC v0.17 is a feature release centered on standards-aware inspection and
+the LAV **JOC Stream** live inspector.
+
+### Added
+
+- Added the versioned offline Stream Inspector and JSON contract for bounded
+  raw/container traversal, ETSI Strict and Deployed Compatibility semantics,
+  JOC profiles/carriers, EMDF/OAMD observations, and partial reports.
+- Added a read-only LAV **JOC Stream** property page backed by the same
+  in-band decoder path, with sanitized live JSON export.
+- Added the C ABI 1.5 live inspection snapshot and JSON functions.
+- Added WASM/Chromium Stereo bridging, timestamped CMAF packet input, and
+  OpenJOC binaural rendering with the built-in SADIE II D1 HRTF.
+
+### Changed
+
+- Reported programme layout separately from JOC reconstruction carriers,
+  including the validated Flat-7.X profile mapping.
+- Labeled live inspection values as observed-so-far and scoped them to a
+  decode epoch; seek, flush, and discontinuity begin a new epoch, and EOS
+  after a seek remains partial.
+- Updated the Windows LAV release contract to the JOC Stream-capable
+  downstream revision `147c24fe1489ded5473c2a09987430ca1070a412`.
+
+### Fixed
+
+- Closed Flat-7.X Speaker 2.0 routing for distinct rear-surround inputs while
+  preserving the existing same-side rule and overflow scaling.
+- Retained the LAV admission prefix across live DirectShow chunking and
+  removed live-inspector receive-lock starvation.
+- Made CMAF fixture generation deterministic and isolated host media tools
+  from the FFmpeg SDK environment in CI and release jobs.
+
+### Scope
+
+- The offline Inspector remains the full-stream forensic tool. The LAV page
+  reports only the current decoder epoch and does not claim full-stream proof.
+- Flat-7.X Speaker 2.0 closure does not add automatic fold-down to physical
+  5.1. Existing LAV endpoint and hardware limitations remain in force.
+
 ## [0.16.0] — 2026-09-02
 
 OpenJOC v0.16 focuses on the playback experience after v0.15's ETSI profile

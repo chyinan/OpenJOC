@@ -128,7 +128,7 @@ let report = inspect_reader(compressed_bytes.as_slice(), options);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`InspectionAccumulator` also accepts locally indexed bounded AU candidates for Rust integrations. C ABI, Browser, and JOCForge interfaces are unchanged in this milestone.
+`InspectionAccumulator` also accepts locally indexed bounded AU candidates for Rust integrations. C ABI 1.5 exposes a corresponding bounded live snapshot; Browser and JOCForge interfaces are unchanged in this milestone.
 
 ## Validation and resource limits
 

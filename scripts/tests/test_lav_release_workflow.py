@@ -19,7 +19,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
             "workflow_dispatch:",
             "tags: ['v*']",
             "repository: chyinan/LAVFilters-OpenJOC",
-            "e330b1f8eb209e393bb4efcab21187b041b2749b",
+            "147c24fe1489ded5473c2a09987430ca1070a412",
             "scripts/package_lav_release.py",
             "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip",
             "gh release upload",
@@ -47,6 +47,8 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("$complete = $true", text)
         self.assertIn("vcruntime140_threads.dll", text)
         self.assertIn("OpenJocDiagnosticTests.exe", text)
+        self.assertIn("OpenJocPropertyPageSmoke.exe", text)
+        self.assertIn("JOC Stream property-page resource", text)
         self.assertIn("$attempt -le 150", text)
         self.assertIn("Start-Sleep -Seconds 10", text)
 

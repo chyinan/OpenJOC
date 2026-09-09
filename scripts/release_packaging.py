@@ -24,7 +24,7 @@ from release_packaging_core import (
 )
 
 
-CANONICAL_RELEASE_VERSION = "0.16.0"
+CANONICAL_RELEASE_VERSION = "0.17.0"
 LAV_UPSTREAM_BASE = "fefb6987994ed56e4525e8a125f5fbb53707bc52"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",
@@ -79,6 +79,7 @@ LAV_NEW_FILES = (
     "decoder/LAVAudio/OpenJocStrictOutput.cpp",
     "decoder/LAVAudio/OpenJocStrictOutput.h",
     "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
+    "include/LAVOpenJocInspection.h",
     "include/LAVOpenJocSettings.h",
 )
 LAV_METADATA_FILES = ("README.md",)
@@ -215,7 +216,7 @@ def _collect_reproducibility_metadata(
     return {
         "openjoc_revision": _git_output(git, workspace, ("rev-parse", "HEAD")).strip(),
         "openjoc_branch": _git_output(git, workspace, ("branch", "--show-current")).strip(),
-        "openjoc_capi_abi": "1.4",
+        "openjoc_capi_abi": "1.5",
         "openjoc_rustc": rustc_version,
         "lav_revision": _git_output(git, lav, ("rev-parse", "HEAD")).strip(),
         "lav_branch": _git_output(git, lav, ("branch", "--show-current")).strip(),

@@ -179,7 +179,7 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 
 ## APIs and integrations
 
-- C ABI 1.4 is experimental during the OpenJOC 0.x line. The public header,
+- C ABI 1.5 is experimental during the OpenJOC 0.x line. The public header,
   structure sizes, ownership rules, numeric statuses, and compatibility
   initializers are the contract; ABI evolution remains possible.
 - The external FFmpeg bridge is an embedding surface, not an out-of-tree

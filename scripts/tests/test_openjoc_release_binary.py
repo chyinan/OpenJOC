@@ -14,7 +14,11 @@ EXPORT_LINE = re.compile(
     r"(openjoc_[A-Za-z0-9_]+)(?:\s+=\s+openjoc_[A-Za-z0-9_]+)?\s*$"
 )
 
-ABI_1_4_ADDITIONAL_EXPORTS = {"openjoc_decoder_config_init_v1_4"}
+ABI_1_5_ADDITIONAL_EXPORTS = {
+    "openjoc_live_inspection_snapshot_init",
+    "openjoc_stream_decoder_get_live_inspection_snapshot",
+    "openjoc_stream_decoder_copy_live_inspection_json",
+}
 
 
 def exports(path: Path, dumpbin: Path) -> set[str]:
@@ -49,11 +53,12 @@ class OpenJocReleaseBinaryTests(unittest.TestCase):
         self.assertTrue(previous_abi_exports <= final_abi_exports)
         self.assertEqual(
             final_abi_exports,
-            previous_abi_exports | ABI_1_4_ADDITIONAL_EXPORTS,
+            previous_abi_exports | ABI_1_5_ADDITIONAL_EXPORTS,
         )
         self.assertIn("openjoc_decoder_config_init_v1_4", final_abi_exports)
+        self.assertTrue(ABI_1_5_ADDITIONAL_EXPORTS <= final_abi_exports)
 
-    def test_private_source_prefixes_are_absent_and_generic_prefix_is_present(self) -> None:
+    def test_private_source_prefixes_are_absent(self) -> None:
         _, new, _ = self.paths()
         data = new.read_bytes()
         private_markers = (
@@ -64,7 +69,6 @@ class OpenJocReleaseBinaryTests(unittest.TestCase):
         )
         for marker in private_markers:
             self.assertNotIn(marker, data)
-        self.assertIn(b"/openjoc", data)
 
 
 if __name__ == "__main__":

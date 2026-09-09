@@ -8,11 +8,11 @@ on:
       release_tag:
         description: OpenJOC release tag to receive the LAV asset
         required: true
-        default: v0.16.0
+        default: v0.17.0
       lav_ref:
         description: Full LAVFilters-OpenJOC commit to build
         required: true
-        default: e330b1f8eb209e393bb4efcab21187b041b2749b
+        default: 147c24fe1489ded5473c2a09987430ca1070a412
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || 'e330b1f8eb209e393bb4efcab21187b041b2749b' }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '147c24fe1489ded5473c2a09987430ca1070a412' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # Keep build tooling at the workflow revision, while compiling CAPI from
@@ -336,12 +336,19 @@ jobs:
           $archive = Join-Path '${{ steps.package.outputs.package_dir }}' "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip"
           $extract = Join-Path $env:RUNNER_TEMP 'openjoc-lav-package-validation'
           Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $lavAudio = Join-Path $extract 'runtime\LAVAudio.ax'
+          $lavAudioBytes = [IO.File]::ReadAllBytes($lavAudio)
+          $lavAudioAscii = [Text.Encoding]::ASCII.GetString($lavAudioBytes)
+          $lavAudioUnicode = [Text.Encoding]::Unicode.GetString($lavAudioBytes)
+          if (-not ($lavAudioAscii.Contains('JOC Stream') -or $lavAudioUnicode.Contains('JOC Stream'))) {
+            throw 'LAVAudio.ax does not contain the JOC Stream property-page resource.'
+          }
           Import-Module (Join-Path $extract 'scripts\OpenJoc.Onboarding.Shell.psm1') -Force
           $session = New-OpenJocSession -Operation 'validate' -PackageRoot $extract -InstallRoot (Join-Path $env:RUNNER_TEMP 'openjoc-lav-install-validation') -LogPath (Join-Path $env:RUNNER_TEMP 'openjoc-lav-validation.log')
           $preflight = Test-OpenJocPackage $session
           if (-not $preflight.Success) { throw $preflight.Detail }
           $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
-          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
+          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocPropertyPageSmoke.exe', 'OpenJocShippedLayoutsTests.exe')) {
             & (Join-Path $smokes $name)
             if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: $name ($LASTEXITCODE)" }
           }

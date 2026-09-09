@@ -3,15 +3,15 @@ SPDX-FileCopyrightText: 2026 OpenJOC contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenJOC LAV 0.16.0 distribution closure
+# OpenJOC LAV 0.17.0 distribution closure
 
-Status: `PASS_PUBLIC_RELEASE`
+Status: `PENDING_LOCAL_RELEASE_GATES`
 
-The frozen local candidates completed the factual security, provenance,
-license-notice, corresponding-source, and technical gates. The accepted
-downstream source is now public at `chyinan/LAVFilters-OpenJOC`, branch
-`openjoc-main`, intended immutable tag `openjoc-0.16.0`. The exact downstream
-revision is `e330b1f8eb209e393bb4efcab21187b041b2749b`.
+The local release candidate is prepared for the factual security, provenance,
+license-notice, corresponding-source, and technical gates. The intended
+downstream source is `chyinan/LAVFilters-OpenJOC`, branch `openjoc-main`,
+intended immutable tag `openjoc-0.17.0`. The exact downstream revision is
+`147c24fe1489ded5473c2a09987430ca1070a412`.
 
 The compiled `LAVAudio.ax` inputs are fully classified. The LAV/OpenJOC glue
 is GPL-2.0-or-later, two inherited MPC-HC CSS units are GPL-3.0-only, and the
@@ -24,6 +24,6 @@ modified and newly created source, complete OpenJOC Cargo workspace, authentic
 sanitized FFmpeg configuration evidence, dependency source archives, and the
 exact MSYS2 GCC 16.2.0-3 source-only package for `libgcc_s_seh-1.dll`.
 
-The main OpenJOC v0.16.0 release will attach the validated binary and
+The main OpenJOC v0.17.0 release will attach the validated binary and
 corresponding-source candidates. Repeat independent distribution review if
 any binary, source, notice, or license input changes.

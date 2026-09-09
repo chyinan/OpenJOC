@@ -262,6 +262,7 @@ jobs:
       - name: Re-run the Windows release quality contract
         shell: pwsh
         run: |
+          $env:RUSTFLAGS = "--remap-path-prefix=$env:GITHUB_WORKSPACE=/openjoc --remap-path-prefix=$env:USERPROFILE\.cargo=/cargo"
           cargo fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo check --workspace --all-targets --locked

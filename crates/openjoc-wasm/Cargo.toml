@@ -11,8 +11,8 @@ rust-version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-openjoc-api = { version = "0.16.0", path = "../openjoc-api" }
-openjoc-eac3 = { version = "0.16.0", path = "../openjoc-eac3" }
+openjoc-api = { version = "0.17.0", path = "../openjoc-api" }
+openjoc-eac3 = { version = "0.17.0", path = "../openjoc-eac3" }
 
 [lints]
 workspace = true

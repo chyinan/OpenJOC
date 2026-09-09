@@ -10,7 +10,7 @@ or FFmpeg release announcement. The product wording is deliberately
 The closed playback stack is:
 
 ```text
-OpenJOC renderer and C ABI 1.4
+OpenJOC renderer and C ABI 1.5
         ↓
 patched FFmpeg 9.0.1 native libavcodec wrapper (libopenjoc)
         ↓
@@ -29,7 +29,7 @@ The canonical contract is
 It pins FFmpeg `n9.0.1` at
 `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa`, mpv `v0.41.0` at
 `41f6a645068483470267271e1d09966ca3b9f413`, both OpenJOC patch hashes, ABI
-1.4, archive names, profiles, loader policy, and external-runtime policy.
+1.5, archive names, profiles, loader policy, and external-runtime policy.
 
 ## Qualified artifact surface
 

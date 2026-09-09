@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 OpenJOC contributors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenJOC LAV 0.16.0 source and license boundaries
+# OpenJOC LAV 0.17.0 source and license boundaries
 
 OpenJOC core and `openjoc_capi.dll` remain Apache-2.0. The downstream LAV
 integration code is separately marked GPL-2.0-or-later and does not copy the
@@ -12,7 +12,7 @@ OpenJOC Apache header into the LAV license boundary.
 The public source is the downstream fork
 [`chyinan/LAVFilters-OpenJOC`](https://github.com/chyinan/LAVFilters-OpenJOC),
 branch `openjoc-main`, downstream revision
-`e330b1f8eb209e393bb4efcab21187b041b2749b`,
+`147c24fe1489ded5473c2a09987430ca1070a412`,
 based on LAV Filters 0.83. The corresponding-source ZIP remains attached to
 the OpenJOC release because it contains the full recursive closure, including
 components outside the public LAV fork.

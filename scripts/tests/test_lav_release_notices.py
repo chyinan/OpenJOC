@@ -42,6 +42,7 @@ NEW_LAV_FILES = (
     "decoder/LAVAudio/OpenJocStrictOutput.cpp",
     "decoder/LAVAudio/OpenJocStrictOutput.h",
     "decoder/LAVAudio/OpenJocStrictOutputTests.cpp",
+    "include/LAVOpenJocInspection.h",
     "include/LAVOpenJocSettings.h",
 )
 MODIFIED_UPSTREAM_FILES = (
