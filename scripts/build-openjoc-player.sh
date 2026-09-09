@@ -144,7 +144,11 @@ fetch_checkout() {
     git -C "$destination" init -q
     git -C "$destination" remote add origin "$url" 2>/dev/null || true
     attempt=1
-    while ! git -C "$destination" fetch --depth=1 origin "$commit"; do
+    while ! git -C "$destination" \
+        -c http.version=HTTP/1.1 \
+        -c http.lowSpeedLimit=1000 \
+        -c http.lowSpeedTime=60 \
+        fetch --depth=1 --no-tags origin "$commit"; do
         if [ "$attempt" -ge 3 ]; then
             echo "failed to fetch pinned source after $attempt attempts: $url @ $commit" >&2
             exit 1
