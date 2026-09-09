@@ -50,6 +50,16 @@ openjoc inspect input.ec3 --aus --objects --emdf
 
 The inspector reports in-band topology, block partitions, JOC profiles, EMDF payload census, strict and deployed compatibility results, and observed object metadata changes. Versioned JSON can be attached to bug reports or consumed by tools. See the [Stream Inspector guide](docs/stream-inspector.md) for the schema, Rust API, and inspection limits.
 
+## Interoperability / conformance evidence
+
+In the published 20-probe JOCForge census using OpenJOC commit
+`a52c35d21e68e18dbaa8fa18accfbfea44087367`, OpenJOC fully parsed all probes
+classified `SUPPORTED_PASS` in JOCForge's modeled public capability
+space and passed the inspection/render-or-container-decode gate: 19 raw probes
+rendered and 1 CMAF probe passed container decode. The canonical detailed
+report is maintained in the JOCForge repository at
+`docs/interop-census.md`; this README does not duplicate the corpus table.
+
 ## Windows playback
 
 The optional Windows package provides an isolated OpenJOC-enabled LAV Audio Decoder. It installs beside stock LAV and does not change PotPlayer automatically:
