@@ -586,12 +586,10 @@ impl InspectionAccumulator {
         let (full_band, lfe_location) = eac3::inspect_programme_channels(first, &infos[1..])
             .expect("programme channels were validated above");
         let independent_lfe = eac3::inspect_channel_locations(first)
-            .ok()
-            .is_some_and(|v| v.iter().any(|l| matches!(l, eac3::ChannelLocation::Lfe(_))));
+            .is_ok_and(|v| v.iter().any(|l| matches!(l, eac3::ChannelLocation::Lfe(_))));
         let dependent_owner = infos.iter().skip(1).find(|info| {
             eac3::inspect_channel_locations(info)
-                .ok()
-                .is_some_and(|v| v.iter().any(|l| matches!(l, eac3::ChannelLocation::Lfe(_))))
+                .is_ok_and(|v| v.iter().any(|l| matches!(l, eac3::ChannelLocation::Lfe(_))))
         });
         let semantics = match (independent_lfe, dependent_owner) {
             (false, None) => "absent".into(),
