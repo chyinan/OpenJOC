@@ -273,3 +273,65 @@ jobs:
             ${{ runner.temp }}/openjoc-dev-macos/openjoc-*-aarch64-apple-darwin.tar.gz
             ${{ runner.temp }}/openjoc-dev-macos/openjoc-*-aarch64-apple-darwin.manifest.json
             ${{ runner.temp }}/openjoc-dev-macos/openjoc-dev-macos-arm64.SHA256SUMS
+
+  build-linux:
+    name: build-linux-x86_64-development-artifact
+    needs: quality
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Select the current stable Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          uname -m
+          ldd --version | head -n 1
+          rustc -vV
+          cargo -Vv
+
+      - name: Build the release workspace
+        run: cargo build --workspace --release --locked
+
+      - name: Package the Linux development artifact
+        run: |
+          python3 scripts/package-platform-release.py \
+            --target x86_64-unknown-linux-gnu \
+            --output "${RUNNER_TEMP}/openjoc-dev-linux"
+
+      - name: Audit the Linux artifact inventory
+        run: |
+          set -euo pipefail
+          release_dir="${RUNNER_TEMP}/openjoc-dev-linux"
+          archive=$(find "$release_dir" -maxdepth 1 -name '*.tar.gz' -type f -print)
+          manifest=$(find "$release_dir" -maxdepth 1 -name '*.manifest.json' -type f -print)
+          test -n "$archive"
+          test -n "$manifest"
+          python3 - "$archive" "$manifest" <<'PY'
+          import json
+          import pathlib
+          import sys
+          import tarfile
+
+          archive = pathlib.Path(sys.argv[1])
+          manifest = pathlib.Path(sys.argv[2])
+          data = json.loads(manifest.read_text(encoding="utf-8"))
+          assert data["version"] == "0.17.0"
+          with tarfile.open(archive, "r:gz") as handle:
+              names = handle.getnames()
+          assert any(name.endswith("/bin/openjoc") for name in names)
+          assert all("/target/" not in name and "\\\\target\\\\" not in name for name in names)
+          assert all("/debug/" not in name and "\\\\debug\\\\" not in name for name in names)
+          PY
+
+      - name: Upload the Linux CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjoc-dev-linux-x86_64-${{ inputs.artifact_label || 'build' }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-dev-linux/*.tar.gz
+            ${{ runner.temp }}/openjoc-dev-linux/*.manifest.json
