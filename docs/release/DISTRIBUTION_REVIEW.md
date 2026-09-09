@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # OpenJOC LAV 0.17.0 distribution closure
 
-Status: `PENDING_LOCAL_RELEASE_GATES`
+Status: `READY_TO_TAG`
 
 The local release candidate is prepared for the factual security, provenance,
 license-notice, corresponding-source, and technical gates. The intended

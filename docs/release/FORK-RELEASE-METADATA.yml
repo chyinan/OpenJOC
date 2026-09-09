@@ -30,4 +30,4 @@ publication:
   upload: planned public GitHub Release v0.17.0
   push: false
   tag: v0.17.0
-  distribution_gate: PENDING_LOCAL_RELEASE_GATES
+  distribution_gate: READY_TO_TAG
