@@ -34,8 +34,21 @@ jobs:
 
       - name: Install media-framework development packages
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes \
+          apt_sourceparts="$RUNNER_TEMP/openjoc-apt-sourceparts"
+          mkdir -p "$apt_sourceparts"
+          shopt -s nullglob
+          for source in /etc/apt/sources.list.d/*; do
+            if [[ -f "$source" ]] && ! grep -q 'dl.google.com/linux/chrome-stable' "$source"; then
+              cp "$source" "$apt_sourceparts/"
+            fi
+          done
+          apt_options=(
+            -o Dir::Etc::sourcelist=/dev/null
+            -o Dir::Etc::sourceparts="$apt_sourceparts"
+            -o Acquire::Retries=3
+          )
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install --yes \
             gstreamer1.0-tools \
             gstreamer1.0-plugins-good \
             libgstreamer1.0-dev \
