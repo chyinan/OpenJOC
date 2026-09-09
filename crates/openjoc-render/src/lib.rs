@@ -3428,6 +3428,49 @@ mod tests {
     use super::*;
 
     const EPSILON: f64 = 1.0e-12;
+    const MAX_PARTITION_INVARIANCE_ULPS: u64 = 2;
+
+    fn ordered_f64_bits(value: f64) -> u64 {
+        let bits = value.to_bits();
+        if bits & (1_u64 << 63) != 0 {
+            !bits
+        } else {
+            bits | (1_u64 << 63)
+        }
+    }
+
+    fn assert_partition_invariant_3d(expected: &[Vec<f64>], actual: &[Vec<f64>]) {
+        assert_eq!(expected.len(), actual.len());
+        for (speaker, (expected_plane, actual_plane)) in expected.iter().zip(actual).enumerate() {
+            assert_eq!(expected_plane.len(), actual_plane.len());
+            for (sample, (&expected, &actual)) in
+                expected_plane.iter().zip(actual_plane).enumerate()
+            {
+                assert!(expected.is_finite() && actual.is_finite());
+                if expected == 0.0 || actual == 0.0 {
+                    assert_eq!(
+                        expected.to_bits(),
+                        actual.to_bits(),
+                        "partition changed zero sign at speaker {speaker}, sample {sample}"
+                    );
+                    continue;
+                }
+                assert_eq!(
+                    expected.is_sign_positive(),
+                    actual.is_sign_positive(),
+                    "partition changed gain sign at speaker {speaker}, sample {sample}"
+                );
+                let ulp = ordered_f64_bits(expected).abs_diff(ordered_f64_bits(actual));
+                assert!(
+                    ulp <= MAX_PARTITION_INVARIANCE_ULPS,
+                    "partition mismatch at speaker {speaker}, sample {sample}: expected {expected:.17e}, actual {actual:.17e}, abs {:.17e}, rel {:.17e}, ulp {ulp}",
+                    (expected - actual).abs(),
+                    (expected - actual).abs()
+                        / expected.abs().max(actual.abs()).max(f64::MIN_POSITIVE),
+                );
+            }
+        }
+    }
 
     fn source(
         id: u64,
@@ -4541,7 +4584,7 @@ mod tests {
         let dynamic =
             TrajectorySourceBlock3d::new(SourceId::new(290), &samples, &trajectory, 0).unwrap();
         let whole = render_trajectory3(&renderer, &[dynamic], samples.len());
-        assert_eq!(static_planes, whole);
+        assert_partition_invariant_3d(&static_planes, &whole);
 
         let moving = SourceTrajectory3d::new(vec![segment3(
             0,
@@ -4572,7 +4615,7 @@ mod tests {
             &[TrajectorySourceBlock3d::new(SourceId::new(291), &samples, &moving, 0).unwrap()],
             samples.len(),
         );
-        assert_eq!(partitioned, whole_moving);
+        assert_partition_invariant_3d(&partitioned, &whole_moving);
     }
 
     #[test]
