@@ -48,6 +48,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("vcruntime140_threads.dll", text)
         self.assertIn("OpenJocDiagnosticTests.exe", text)
         self.assertIn("OpenJocPropertyPageSmoke.exe", text)
+        self.assertIn("OpenJocPropertyPageSmoke.exe') $lavAudio", text)
         self.assertIn("JOC Stream property-page resource", text)
         self.assertIn("$attempt -le 150", text)
         self.assertIn("Start-Sleep -Seconds 10", text)

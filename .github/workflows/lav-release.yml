@@ -348,10 +348,12 @@ jobs:
           $preflight = Test-OpenJocPackage $session
           if (-not $preflight.Success) { throw $preflight.Detail }
           $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
-          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocPropertyPageSmoke.exe', 'OpenJocShippedLayoutsTests.exe')) {
+          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
             & (Join-Path $smokes $name)
             if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: $name ($LASTEXITCODE)" }
           }
+          & (Join-Path $smokes 'OpenJocPropertyPageSmoke.exe') $lavAudio
+          if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: OpenJocPropertyPageSmoke.exe ($LASTEXITCODE)" }
           & (Join-Path $smokes 'LAVAudioIdentitySmoke.exe') (Join-Path $extract 'runtime\LAVAudio.ax')
           if ($LASTEXITCODE -ne 0) { throw "LAVAudio identity smoke failed: $LASTEXITCODE" }
 
