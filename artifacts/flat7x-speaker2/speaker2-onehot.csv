@@ -1,9 +1,0 @@
-carrier,left_rms,right_rms,finite,nonzero,symmetry_pair
-L,0.32041012495994875,0,true,true,L/R
-R,0.0,0.32041012495994875,true,true,L/R
-C,0.22652995834668374,0.22652995834668374,true,true,center
-Ls,0.22652995834668374,0.0,true,true,Ls/Rs
-Rs,0.0,0.22652995834668374,true,true,Ls/Rs
-Lrs,0.22652995834668374,0.0,true,true,Lrs/Rrs
-Rrs,0.0,0.22652995834668374,true,true,Lrs/Rrs
-LFE,0.016725571877612835,0.016725571877612835,true,true,dual-mono
