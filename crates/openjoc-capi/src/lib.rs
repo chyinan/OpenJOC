@@ -1042,7 +1042,7 @@ pub extern "C" fn openjoc_decoder_receive_frame(
         output.sample_count = frame.sample_count;
         output.pts_samples = frame.pts_samples.unwrap_or(NO_PTS);
         output.data = frame.interleaved_f32.as_ptr();
-        output.data_len = frame.interleaved_f32.len();
+        output.data_len = frame.interleaved_f32.len() * std::mem::size_of::<f32>();
         output.layout_name = decoder.layout_name.as_c_str().as_ptr();
         output.channel_labels = decoder.channel_label_ptrs.as_ptr();
         output.channel_label_count = decoder.channel_labels.len();
@@ -1355,7 +1355,7 @@ pub extern "C" fn openjoc_stream_decoder_receive_frame(
                 output.sample_count = frame.nb_samples;
                 output.pts_samples = frame.pts.unwrap_or(NO_PTS);
                 output.data = frame.interleaved_f32.as_ptr();
-                output.data_len = frame.interleaved_f32.len();
+                output.data_len = frame.interleaved_f32.len() * std::mem::size_of::<f32>();
                 output.layout_name = decoder.layout_name.as_c_str().as_ptr();
                 output.channel_labels = decoder.channel_label_ptrs.as_ptr();
                 output.channel_label_count = decoder.channel_labels.len();

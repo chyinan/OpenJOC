@@ -885,7 +885,7 @@ impl FfmpegDecoder {
                         })?);
                 }
                 let session = self.session.as_mut().expect("session was initialized");
-                session
+                let push_status = session
                     .push_packet(OpenJocPacket {
                         data: &bytes,
                         pts_samples,
@@ -893,6 +893,36 @@ impl FfmpegDecoder {
                         preroll,
                     })
                     .map_err(|error| map_openjoc_error(&error))?;
+                if push_status == openjoc_api::OpenJocStatus::OutputPending {
+                    // `OpenJocSession::push_packet` REFUSES a packet - it does not
+                    // queue it - while its own output queue is non-empty, and
+                    // reports `OutputPending`. The access unit therefore was NOT
+                    // consumed, so it must stay in staging and be retried after the
+                    // frames produced so far have been handed to the caller.
+                    //
+                    // Discarding this status while still calling
+                    // `consume_staging()` silently dropped the access unit. That
+                    // truncated decoded audio to a quarter of the programme
+                    // (measured: 49 160 of 196 640 frames for a 4.096 s stream),
+                    // deterministically and independently of chunk size.
+                    let mut pending = Vec::new();
+                    while let Some(frame) = session.receive_frame() {
+                        pending.push(frame);
+                    }
+                    self.timings.add_session(session_started.elapsed());
+                    let reorder_started = Instant::now();
+                    for frame in pending {
+                        self.output.push_back(reorder_frame(frame, &self.layout)?);
+                    }
+                    self.timings.add_reorder(reorder_started.elapsed());
+                    if !self.output.is_empty() {
+                        return Ok(PumpResult::Frame);
+                    }
+                    // Nothing to hand back yet. The session queue has just been
+                    // drained, so the retry below will be accepted; `continue`
+                    // cannot spin.
+                    continue;
+                }
                 self.inspection.observe_access_unit(
                     &bytes,
                     &inspection.frames,
