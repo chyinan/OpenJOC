@@ -4,6 +4,7 @@ This page was audited against the v0.17.0 executable output from:
 
 ```sh
 cargo run -p openjoc-cli --locked -- --help
+cargo run -p openjoc-cli --locked -- inspect --help
 cargo run -p openjoc-cli --locked -- render-joc --help
 cargo run -p openjoc-cli --locked -- export-adm --help
 ```
@@ -13,7 +14,7 @@ The CLI source in `crates/openjoc-cli/src/main.rs` remains the source of truth. 
 ## Commands
 
 ```text
-openjoc inspect <FILE> [--trim-config-count N]
+openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au N | --au-range START:END] [--trim-config-count N]
 openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]
 openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]
 openjoc validate-adm <FILE> [--json]
@@ -27,6 +28,24 @@ openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>
 openjoc sofa inspect <FILE> [--json]
 openjoc --version
 ```
+
+## `inspect`
+
+```text
+usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]
+```
+
+`inspect` reads raw EC-3 or a seekable ordinary MP4/M4A E-AC-3 track without writing audio. It reports the full stream census even when detail output is limited to selected access units.
+
+- `--json` writes one schema-versioned JSON document to stdout. The JSON contract is version 1.
+- `--aus` includes access-unit details. `--au N` is the short form for selecting one zero-based access unit.
+- `--au-range START:END` selects an inclusive zero-based access-unit range and also enables access-unit details. Selection does not reduce the full-stream census.
+- `--objects` includes per-OAMD-slot activity and position statistics.
+- `--emdf` expands human-readable EMDF configuration details. JSON always includes the EMDF census and configurations.
+- `--verbose` adds component configuration and bounded diagnostic explanations.
+- `--trim-config-count N` overrides the normative OAMD trim configuration count; the default is 9.
+
+`inspect` exits zero when traversal completes, including when the report contains malformed metadata. Consumers should inspect `validation` and `diagnostics`, not only the exit code. A truncated or unreadable compressed stream emits its safely known partial report and exits nonzero.
 
 ## `render-joc`
 

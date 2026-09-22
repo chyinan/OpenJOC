@@ -7,6 +7,7 @@
 
 ```sh
 cargo run -p openjoc-cli --locked -- --help
+cargo run -p openjoc-cli --locked -- inspect --help
 cargo run -p openjoc-cli --locked -- render-joc --help
 cargo run -p openjoc-cli --locked -- export-adm --help
 ```
@@ -16,7 +17,7 @@ CLI 源码 `crates/openjoc-cli/src/main.rs` 仍是唯一准确信息来源。命
 ## 命令
 
 ```text
-openjoc inspect <FILE> [--trim-config-count N]
+openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au N | --au-range START:END] [--trim-config-count N]
 openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]
 openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]
 openjoc validate-adm <FILE> [--json]
@@ -30,6 +31,24 @@ openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>
 openjoc sofa inspect <FILE> [--json]
 openjoc --version
 ```
+
+## `inspect`
+
+```text
+usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]
+```
+
+`inspect` 读取原始 EC-3，或可定位的普通 MP4/M4A E-AC-3 音轨，不写出音频文件。即使详细输出只选择部分访问单元，它仍会统计完整输入流。
+
+- `--json` 向标准输出写入一个带 schema 版本的 JSON 文档；JSON 合约版本为 1。
+- `--aus` 包含访问单元明细；`--au N` 是选择一个从零开始计数的访问单元的简写。
+- `--au-range START:END` 选择包含首尾的、从零开始计数的访问单元范围，并自动启用访问单元明细。选择范围不会缩小完整流统计。
+- `--objects` 包含每个 OAMD 槽位的活动和位置统计。
+- `--emdf` 展开人类可读的 EMDF 配置细节。JSON 始终包含 EMDF 统计和配置。
+- `--verbose` 增加组件配置和有界诊断解释。
+- `--trim-config-count N` 覆盖规范中的 OAMD trim 配置数量；默认值为 9。
+
+当遍历完整结束时，`inspect` 返回零，即使报告中包含格式错误的元数据。调用方应检查 `validation` 和 `diagnostics`，不要只看退出码。压缩流被截断或无法读取时，程序会输出安全可知的部分报告并返回非零。
 
 ## `render-joc`
 

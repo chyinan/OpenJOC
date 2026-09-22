@@ -13,6 +13,17 @@ openjoc inspect input.ec3
 
 `inspect` 会报告访问单元结构、JOC 元数据、配置选择和受限解析结果，但不会写出最终音频文件。
 
+如果需要机器可读输出或更多检查细节：
+
+```sh
+openjoc inspect input.ec3 --json
+openjoc inspect input.ec3 --aus --objects --emdf
+openjoc inspect input.ec3 --au-range 10:20 --json
+openjoc inspect input.ec3 --verbose
+```
+
+`--json` 会向标准输出写入带版本的报告。`--aus` 包含访问单元明细。`--au N` 选择一个从零开始计数的访问单元，`--au-range START:END` 选择包含首尾的范围；这两种选择都不会缩小完整流统计。`--objects` 增加每个 OAMD 槽位的统计，`--emdf` 展开人类可读的 EMDF 配置细节，`--verbose` 增加有界诊断解释。完整语法见 [CLI 参考](../reference/cli-reference.zh.md#inspect)。
+
 ## 捕获解码器诊断输出
 
 ```sh

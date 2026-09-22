@@ -10,6 +10,17 @@ openjoc inspect input.ec3
 
 `inspect` reports access-unit structure, JOC metadata, profile selection, and bounded parser results. It does not write a final audio render.
 
+For machine-readable output or additional detail:
+
+```sh
+openjoc inspect input.ec3 --json
+openjoc inspect input.ec3 --aus --objects --emdf
+openjoc inspect input.ec3 --au-range 10:20 --json
+openjoc inspect input.ec3 --verbose
+```
+
+`--json` writes the versioned report to stdout. `--aus` includes access-unit details. `--au N` selects one zero-based access unit, while `--au-range START:END` selects an inclusive range; either selection leaves the full-stream census intact. `--objects` adds per-OAMD-slot statistics, `--emdf` expands human-readable EMDF configuration details, and `--verbose` adds bounded diagnostic explanations. Use the [CLI reference](../reference/cli-reference.md#inspect) for the complete syntax.
+
 ## Capture diagnostic decoder output
 
 ```sh
