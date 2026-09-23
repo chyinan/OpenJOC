@@ -9,7 +9,7 @@ OpenJOC 提供两套通用内置配置：`SADIE II — KU100`（默认/参考配
 `SADIE II — KEMAR`，同时继续支持 Custom SOFA。不同听音者可能偏好不同的非个体 HRTF，因为 HRTF 感知强烈依赖
 个体解剖结构；不应把任何一套宣传为适合所有人的最佳配置。
 
-来源、许可证、哈希和可复现的预处理记录见[内置 HRTF 库](../../hrtf.md)。
+来源、许可证、哈希和可复现的预处理记录见[内置 HRTF 记录](https://github.com/chyinan/OpenJOC/blob/master/docs/hrtf.md)。
 
 ```sh
 openjoc render-joc input.m4a \\

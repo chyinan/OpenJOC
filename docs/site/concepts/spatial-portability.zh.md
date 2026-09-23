@@ -33,7 +33,7 @@ SADIE II D1/D2 各保留 8,802 个实测方向，并增加 15 个精确的 canon
 
 离线生成流程先用 `tools/generate-builtin-hrtf.py` 生成 CDF-1 中间文件，再运行 Rust `pack-hrtf-asset` example 生成 `.ojhrtf` v2。原生渲染不需要 HDF5 或网络；Browser Standard 随包提供 D1 和 D2，两套资源均无需运行时网络。
 
-每套数据的官方来源、作者/机构、许可证、转换说明和 SHA-256 见[内置 HRTF 记录](../../hrtf.md)。
+每套数据的官方来源、作者/机构、许可证、转换说明和 SHA-256 见[内置 HRTF 记录](https://github.com/chyinan/OpenJOC/blob/master/docs/hrtf.md)。
 
 标准默认虚拟布局是 `7.1.4`。该资源原生采样率为 48 kHz，因此不会额外引入只供内置资源使用的重采样器。这个来源中的 HRIR 延迟为零，但渲染器仍会遵循通用的、能够处理延迟的 SOFA 约定。
 

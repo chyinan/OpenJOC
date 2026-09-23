@@ -7,8 +7,8 @@ default/reference profile) and `SADIE II — KEMAR`. Custom SOFA files remain su
 different non-individual HRTFs because HRTF perception depends strongly on
 individual anatomy; no profile is claimed to be best for everyone.
 
-See [Built-in HRTF library](../../hrtf.md) for provenance, license, source
-hashes, and the exact preparation record.
+See the [built-in HRTF record](https://github.com/chyinan/OpenJOC/blob/master/docs/hrtf.md)
+for provenance, license, source hashes, and the preparation record.
 
 ```sh
 openjoc render-joc input.m4a \\
