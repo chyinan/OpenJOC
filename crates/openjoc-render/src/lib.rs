@@ -4845,7 +4845,7 @@ mod tests {
             .map(|index| {
                 let angle = std::f64::consts::TAU * index as f64 / 4_096.0;
                 hrir_entry_test(
-                    index as u64 + 100,
+                    u64::try_from(index).expect("range index must be non-negative") + 100,
                     CartesianPosition::new(0.0, angle.cos(), angle.sin()),
                     &[1.0],
                     &[1.0],
