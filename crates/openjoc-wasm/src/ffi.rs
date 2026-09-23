@@ -143,10 +143,9 @@ fn create_decoder(
         _ => return 0,
     };
     let hrtf = match hrtf_mode {
-        0 => BuiltinHrtf::SadieD1Ku100,
         1 => BuiltinHrtf::SadieD2Kemar,
         // Preset code 2 was used by the retired Aachen profile; preserve old callers as D1.
-        2 => BuiltinHrtf::SadieD1Ku100,
+        0 | 2 => BuiltinHrtf::SadieD1Ku100,
         _ => return 0,
     };
     let decoder_result = match asset {

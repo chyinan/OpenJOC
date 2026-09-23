@@ -328,7 +328,7 @@ impl Decoder {
                 Some(BINAURAL_VIRTUAL_LAYOUT),
                 Some(match self.hrtf.unwrap_or(BuiltinHrtf::SadieD1Ku100) {
                     BuiltinHrtf::SadieD1Ku100 => BINAURAL_HRTF_SOURCE,
-                    preset => preset.display_name(),
+                    preset @ BuiltinHrtf::SadieD2Kemar => preset.display_name(),
                 }),
             ),
             RenderMode::Stereo | RenderMode::Speaker => ("Stereo (Speakers)", None, None),
