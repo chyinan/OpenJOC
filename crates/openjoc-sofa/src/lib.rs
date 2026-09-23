@@ -10,6 +10,15 @@ use std::{fmt, fs, path::Path};
 
 use openjoc_render::{CartesianPosition, HrirBank, HrirEar, HrirEntry, HrirEntryId, HrirPair};
 
+mod builtin_hrtf;
+
+pub use builtin_hrtf::{
+    BUILTIN_HRTF_REGISTRY, BuiltinHrirF32Bank, BuiltinHrtf, BuiltinHrtfAssetMetadata,
+    BuiltinHrtfMetadata, LoadedBuiltinHrirF32Bank, builtin_hrtf_asset_bytes, load_builtin_hrir,
+    load_builtin_hrir_f32, load_builtin_hrir_f32_from_asset, load_builtin_hrir_from_asset,
+    pack_builtin_hrir_asset,
+};
+
 const MAX_COORDINATE_TOLERANCE: f64 = 1.0e-9;
 const NC_DIMENSION_TAG: u32 = 10;
 const NC_ATTRIBUTE_TAG: u32 = 12;
@@ -74,24 +83,14 @@ pub struct LoadedSofaHrirBank {
 
 /// Official dataset identity for the offline default renderer resource.
 pub const BUILTIN_GENERIC_HRTF_DATASET: &str = "SADIE II D1 (KU100), v2-2";
-/// The built-in resource is the official D1 48 kHz, 256-tap HRIR set converted
-/// to the CDF-1 subset already used by the portable SOFA loader.
+/// The built-in resource is the official D1 48 kHz, 256-tap HRIR set packed
+/// into the versioned direct-record asset; Custom SOFA remains CDF-1 input.
 pub const BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const BUILTIN_GENERIC_HRTF_TAP_COUNT: usize = 256;
 
-/// Loads the bundled, offline generic HRTF through the same SOFA parser used
-/// for caller-provided files. The larger measurement limit is specific to the
-/// authorized SADIE II D1 grid; it does not weaken user-file defaults.
+/// Compatibility wrapper for the original single built-in API.
 pub fn load_builtin_generic_hrir() -> Result<LoadedSofaHrirBank, SofaError> {
-    let limits = SofaLoadLimits {
-        max_measurements: 16_384,
-        max_file_bytes: 32 * 1024 * 1024,
-        ..SofaLoadLimits::default()
-    };
-    parse_simple_free_field_hrir(
-        include_bytes!("../assets/sadie-ii-d1-48k-256tap.sofa"),
-        limits,
-    )
+    load_builtin_hrir(BuiltinHrtf::SadieD1Ku100)
 }
 
 /// Result of resolving one virtual-speaker direction against a SOFA bank.
@@ -126,6 +125,7 @@ pub enum SofaError {
         value: f64,
     },
     InvalidImpulseResponse(String),
+    InvalidBuiltinHrtfAsset(&'static str),
     InsufficientInterpolationData {
         required: usize,
         available: usize,
@@ -174,6 +174,9 @@ impl fmt::Display for SofaError {
             ),
             Self::InvalidImpulseResponse(message) => {
                 write!(f, "invalid SOFA impulse response: {message}")
+            }
+            Self::InvalidBuiltinHrtfAsset(message) => {
+                write!(f, "invalid built-in HRTF asset: {message}")
             }
             Self::InsufficientInterpolationData {
                 required,
@@ -355,25 +358,47 @@ impl<'a> NetcdfFile<'a> {
         }
         let mut values = Vec::with_capacity(variable.elements);
         for chunk in bytes[..expected].chunks_exact(width) {
-            let value = match variable.ty {
-                NC_BYTE => f64::from(i8::from_be_bytes([chunk[0]])),
-                NC_SHORT => f64::from(i16::from_be_bytes([chunk[0], chunk[1]])),
-                NC_INT => f64::from(i32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])),
-                NC_FLOAT => f64::from(f32::from_bits(u32::from_be_bytes(
-                    chunk
-                        .try_into()
-                        .map_err(|_| SofaError::TruncatedContainer)?,
-                ))),
-                NC_DOUBLE => f64::from_bits(u64::from_be_bytes(
-                    chunk
-                        .try_into()
-                        .map_err(|_| SofaError::TruncatedContainer)?,
-                )),
-                _ => return Err(SofaError::UnsupportedAttributeType(variable.name.clone())),
-            };
-            values.push(value);
+            values.push(netcdf_number(variable.ty, chunk, &variable.name)?);
         }
         Ok(values)
+    }
+
+    fn copy_values_into(
+        &self,
+        variable: &Variable,
+        first_value: usize,
+        output: &mut [f64],
+    ) -> Result<(), SofaError> {
+        let width = type_width(variable.ty)
+            .ok_or(SofaError::UnsupportedAttributeType(variable.name.clone()))?;
+        let byte_start = first_value
+            .checked_mul(width)
+            .ok_or(SofaError::ResourceLimitExceeded("variable values"))?;
+        let byte_count = output
+            .len()
+            .checked_mul(width)
+            .ok_or(SofaError::ResourceLimitExceeded("variable values"))?;
+        let byte_end = byte_start
+            .checked_add(byte_count)
+            .ok_or(SofaError::ResourceLimitExceeded("variable values"))?;
+        if byte_end > variable.bytes {
+            return Err(SofaError::TruncatedContainer);
+        }
+        let begin = variable
+            .begin
+            .checked_add(byte_start)
+            .ok_or(SofaError::TruncatedContainer)?;
+        let end = begin
+            .checked_add(byte_count)
+            .ok_or(SofaError::TruncatedContainer)?;
+        let bytes = self
+            .data
+            .get(begin..end)
+            .ok_or(SofaError::TruncatedContainer)?;
+        for (value, chunk) in output.iter_mut().zip(bytes.chunks_exact(width)) {
+            *value = netcdf_number(variable.ty, chunk, &variable.name)?;
+        }
+        Ok(())
     }
 
     fn shape(&self, variable: &Variable) -> Vec<usize> {
@@ -533,6 +558,27 @@ fn type_width(ty: u32) -> Option<usize> {
     }
 }
 
+fn netcdf_number(ty: u32, bytes: &[u8], name: &str) -> Result<f64, SofaError> {
+    match ty {
+        NC_BYTE => Ok(f64::from(i8::from_be_bytes([bytes[0]]))),
+        NC_SHORT => Ok(f64::from(i16::from_be_bytes([bytes[0], bytes[1]]))),
+        NC_INT => Ok(f64::from(i32::from_be_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3],
+        ]))),
+        NC_FLOAT => Ok(f64::from(f32::from_bits(u32::from_be_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| SofaError::TruncatedContainer)?,
+        )))),
+        NC_DOUBLE => Ok(f64::from_bits(u64::from_be_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| SofaError::TruncatedContainer)?,
+        ))),
+        _ => Err(SofaError::UnsupportedAttributeType(name.to_owned())),
+    }
+}
+
 fn validate_and_build(
     file: &NetcdfFile<'_>,
     limits: SofaLoadLimits,
@@ -581,16 +627,10 @@ fn validate_and_build(
     if taps == 0 || taps > limits.max_fir_samples {
         return Err(SofaError::ResourceLimitExceeded("FIR samples"));
     }
-    let ir_values = file.values(ir)?;
-    if ir_values.len() != measurements * receivers * taps {
+    if ir.elements != measurements * receivers * taps {
         return Err(SofaError::InvalidImpulseResponse(
             "Data.IR element count".to_string(),
         ));
-    }
-    if let Some(index) = ir_values.iter().position(|value| !value.is_finite()) {
-        return Err(SofaError::InvalidImpulseResponse(format!(
-            "non-finite tap at {index}"
-        )));
     }
 
     let sample_rate_var = file.variable("Data.SamplingRate")?;
@@ -662,10 +702,7 @@ fn validate_and_build(
         }
     }
 
-    let delays = read_delays(file, measurements, receivers, limits)?;
-    let mut entries: Vec<HrirEntry> = Vec::with_capacity(measurements);
-    let mut max_expanded_taps = 0usize;
-    let mut expanded_total = 0usize;
+    let mut directions = Vec::with_capacity(measurements);
     for measurement in 0..measurements {
         let azimuth = source_values[measurement * 3].to_radians();
         let elevation = source_values[measurement * 3 + 1].to_radians();
@@ -688,16 +725,25 @@ fn validate_and_build(
         let direction = normalize(local).ok_or_else(|| {
             SofaError::InvalidCoordinate(format!("zero source direction at {measurement}"))
         })?;
-        if measurement > 0 {
-            for (first, entry) in entries.iter().enumerate() {
-                if same_direction(entry.direction(), direction) {
-                    return Err(SofaError::DuplicateDirection {
-                        first,
-                        second: measurement,
-                    });
-                }
-            }
+        directions.push(direction);
+    }
+    HrirBank::validate_unique_canonical_hrir_directions(directions.len(), |index| {
+        let direction = directions[index];
+        [direction.x, direction.y, direction.z]
+    })
+    .map_err(|error| match error {
+        openjoc_render::RenderError::DuplicateHrirDirection { first, second } => {
+            SofaError::DuplicateDirection { first, second }
         }
+        _ => SofaError::InvalidCoordinate("canonical source direction".to_string()),
+    })?;
+
+    let delays = read_delays(file, measurements, receivers, limits)?;
+    let mut entries: Vec<HrirEntry> = Vec::with_capacity(measurements);
+    let mut max_expanded_taps = 0usize;
+    let mut expanded_total = 0usize;
+    for measurement in 0..measurements {
+        let direction = directions[measurement];
         let left_delay = delays[measurement * receivers + left_receiver];
         let right_delay = delays[measurement * receivers + right_receiver];
         let left_len = left_delay
@@ -724,14 +770,16 @@ fn validate_and_build(
         }
         let mut left = vec![0.0; pair_len];
         let mut right = vec![0.0; pair_len];
-        left[left_delay..left_len].copy_from_slice(
-            &ir_values[(measurement * receivers + left_receiver) * taps
-                ..(measurement * receivers + left_receiver + 1) * taps],
-        );
-        right[right_delay..right_len].copy_from_slice(
-            &ir_values[(measurement * receivers + right_receiver) * taps
-                ..(measurement * receivers + right_receiver + 1) * taps],
-        );
+        file.copy_values_into(
+            ir,
+            (measurement * receivers + left_receiver) * taps,
+            &mut left[left_delay..left_len],
+        )?;
+        file.copy_values_into(
+            ir,
+            (measurement * receivers + right_receiver) * taps,
+            &mut right[right_delay..right_len],
+        )?;
         let pair = HrirPair::new_with_delays(sample_rate, left, right, [left_delay, right_delay])
             .map_err(|_| {
             SofaError::InvalidImpulseResponse("HrirPair validation".to_string())
@@ -744,8 +792,12 @@ fn validate_and_build(
     if expanded_total > limits.max_total_coefficients {
         return Err(SofaError::ResourceLimitExceeded("total FIR coefficients"));
     }
-    let bank = HrirBank::new(sample_rate, entries)
-        .map_err(|_| SofaError::InvalidImpulseResponse("HrirBank validation".to_string()))?;
+    let bank = HrirBank::new(sample_rate, entries).map_err(|error| match error {
+        openjoc_render::RenderError::DuplicateHrirDirection { first, second } => {
+            SofaError::DuplicateDirection { first, second }
+        }
+        _ => SofaError::InvalidImpulseResponse("HrirBank validation".to_string()),
+    })?;
     let metadata = SofaHrirMetadata {
         convention_version: version,
         title: file
@@ -812,29 +864,95 @@ pub fn resolve_hrir(
             neighbor_count: 1,
         });
     }
-    if bank.entries().len() < 2 {
-        return Err(SofaError::InsufficientInterpolationData {
-            required: 2,
-            available: bank.entries().len(),
+    let neighborhood = find_interpolation_neighborhood(target, bank.entries().len(), |index| {
+        bank.entries()[index].direction()
+    })?;
+    build_resolved_interpolation(bank, &neighborhood.indices, &neighborhood.weights)
+}
+
+/// Resolves a built-in f32-resident bank. Only the selected measurement taps
+/// or the small interpolated kernel are widened to the renderer's f64 format.
+pub fn resolve_hrir_f32(
+    bank: &BuiltinHrirF32Bank,
+    direction: CartesianPosition,
+) -> Result<ResolvedHrir, SofaError> {
+    let target = normalize(direction).ok_or_else(|| {
+        SofaError::InvalidCoordinate("binaural direction must be finite and nonzero".to_string())
+    })?;
+    let target = [target.x, target.y, target.z];
+    if let Some((index, record)) = bank
+        .records()
+        .iter()
+        .enumerate()
+        .find(|(_, record)| directions_match(target, record.direction))
+    {
+        let left = bank
+            .ear_taps(index, 0)
+            .ok_or(SofaError::InvalidImpulseResponse(
+                "left tap range".to_owned(),
+            ))?
+            .iter()
+            .copied()
+            .map(f64::from)
+            .collect();
+        let right = bank
+            .ear_taps(index, 1)
+            .ok_or(SofaError::InvalidImpulseResponse(
+                "right tap range".to_owned(),
+            ))?
+            .iter()
+            .copied()
+            .map(f64::from)
+            .collect();
+        let delays = [
+            usize::try_from(record.delays[0]).map_err(|_| {
+                SofaError::InvalidImpulseResponse("packed delay overflow".to_owned())
+            })?,
+            usize::try_from(record.delays[1]).map_err(|_| {
+                SofaError::InvalidImpulseResponse("packed delay overflow".to_owned())
+            })?,
+        ];
+        let pair = HrirPair::new_with_delays(bank.sample_rate_hz(), left, right, delays)
+            .map_err(|error| SofaError::InvalidImpulseResponse(error.to_string()))?;
+        return Ok(ResolvedHrir {
+            pair,
+            exact_entry: Some(HrirEntryId::new(index as u64)),
+            neighbor_count: 1,
         });
     }
 
-    let mut candidates = bank
-        .entries()
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| Candidate {
-            index,
-            angle: angular_distance(target, entry.direction()),
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| {
-        left.angle
-            .total_cmp(&right.angle)
-            .then_with(|| left.index.cmp(&right.index))
-    });
-    candidates.truncate(MAX_LOCAL_INTERPOLATION_CANDIDATES.min(candidates.len()));
+    let neighborhood = find_interpolation_neighborhood(target, bank.direction_count(), |index| {
+        bank.records()[index].direction
+    })?;
+    let pair = interpolate_f32_pair(bank, &neighborhood.indices, &neighborhood.weights)?;
+    Ok(ResolvedHrir {
+        pair,
+        exact_entry: None,
+        neighbor_count: neighborhood.indices.len(),
+    })
+}
 
+#[derive(Debug)]
+struct InterpolationNeighborhood {
+    indices: Vec<usize>,
+    weights: Vec<f64>,
+}
+
+fn find_interpolation_neighborhood(
+    target: [f64; 3],
+    direction_count: usize,
+    direction_at: impl Fn(usize) -> [f64; 3],
+) -> Result<InterpolationNeighborhood, SofaError> {
+    if direction_count < 2 {
+        return Err(SofaError::InsufficientInterpolationData {
+            required: 2,
+            available: direction_count,
+        });
+    }
+    let candidates = nearest_candidates(
+        target,
+        (0..direction_count).map(|index| (index, direction_at(index))),
+    );
     for first in 0..candidates.len() {
         for second in first + 1..candidates.len() {
             for third in second + 1..candidates.len() {
@@ -845,38 +963,40 @@ pub fn resolve_hrir(
                 {
                     continue;
                 }
-                if let Some(weights) = spherical_triangle_weights(
-                    target,
-                    selected.map(|candidate| bank.entries()[candidate.index].direction()),
-                ) {
-                    return build_resolved_interpolation(
-                        bank,
-                        &selected.map(|candidate| candidate.index),
-                        &weights,
-                    );
+                let ordered = selected.map(|candidate| direction_at(candidate.index));
+                if let Some(weights) = spherical_triangle_weights(target, ordered) {
+                    return Ok(InterpolationNeighborhood {
+                        indices: selected.map(|candidate| candidate.index).to_vec(),
+                        weights: weights.to_vec(),
+                    });
                 }
             }
         }
     }
-
     for first in 0..candidates.len() {
         for second in first + 1..candidates.len() {
             let left = candidates[first];
             let right = candidates[second];
-            if let Some(weights) = great_circle_segment_weights(
-                target,
-                bank.entries()[left.index].direction(),
-                bank.entries()[right.index].direction(),
-            ) {
-                return build_resolved_interpolation(bank, &[left.index, right.index], &weights);
+            let first_direction = direction_at(left.index);
+            let second_direction = direction_at(right.index);
+            if let Some(weights) =
+                great_circle_segment_weights(target, first_direction, second_direction)
+            {
+                return Ok(InterpolationNeighborhood {
+                    indices: vec![left.index, right.index],
+                    weights: weights.to_vec(),
+                });
             }
         }
     }
-
     Err(SofaError::InterpolationOutsideCoverage(format!(
         "nearest measurement is {:.2} degrees away and no local spherical segment/triangle contains the request",
         candidates[0].angle.to_degrees()
     )))
+}
+
+fn directions_match(first: [f64; 3], second: [f64; 3]) -> bool {
+    (1.0 - dot_array(first, second)).abs() <= 1.0e-12
 }
 
 const MAX_LOCAL_INTERPOLATION_CANDIDATES: usize = 8;
@@ -888,6 +1008,38 @@ const INTERPOLATION_WEIGHT_TOLERANCE: f64 = 1.0e-8;
 struct Candidate {
     index: usize,
     angle: f64,
+    dot: f64,
+}
+
+fn nearest_candidates(
+    target: [f64; 3],
+    directions: impl Iterator<Item = (usize, [f64; 3])>,
+) -> Vec<Candidate> {
+    let mut candidates = Vec::with_capacity(MAX_LOCAL_INTERPOLATION_CANDIDATES);
+    for (index, direction) in directions {
+        let dot = dot_array(target, direction).clamp(-1.0, 1.0);
+        let candidate = Candidate {
+            index,
+            angle: 0.0,
+            dot,
+        };
+        let position = candidates
+            .iter()
+            .position(|existing: &Candidate| {
+                dot > existing.dot || (dot == existing.dot && index < existing.index)
+            })
+            .unwrap_or(candidates.len());
+        if position < MAX_LOCAL_INTERPOLATION_CANDIDATES {
+            candidates.insert(position, candidate);
+            if candidates.len() > MAX_LOCAL_INTERPOLATION_CANDIDATES {
+                candidates.pop();
+            }
+        }
+    }
+    for candidate in &mut candidates {
+        candidate.angle = candidate.dot.acos();
+    }
+    candidates
 }
 
 fn build_resolved_interpolation(
@@ -900,6 +1052,16 @@ fn build_resolved_interpolation(
             "weight/index cardinality".to_string(),
         ));
     }
+    let normalized_weights = normalize_interpolation_weights(weights)?;
+    let pair = interpolate_pair(bank, indices, &normalized_weights)?;
+    Ok(ResolvedHrir {
+        pair,
+        exact_entry: None,
+        neighbor_count: indices.len(),
+    })
+}
+
+fn normalize_interpolation_weights(weights: &[f64]) -> Result<Vec<f64>, SofaError> {
     let mut weight_sum = 0.0;
     for weight in weights {
         if !weight.is_finite() || *weight < -INTERPOLATION_WEIGHT_TOLERANCE {
@@ -914,16 +1076,91 @@ fn build_resolved_interpolation(
             "invalid interpolation weight sum".to_string(),
         ));
     }
-    let normalized_weights = weights
+    Ok(weights
         .iter()
         .map(|weight| (*weight).max(0.0) / weight_sum)
-        .collect::<Vec<_>>();
-    let pair = interpolate_pair(bank, indices, &normalized_weights)?;
-    Ok(ResolvedHrir {
-        pair,
-        exact_entry: None,
-        neighbor_count: indices.len(),
-    })
+        .collect::<Vec<_>>())
+}
+
+fn interpolate_f32_pair(
+    bank: &BuiltinHrirF32Bank,
+    indices: &[usize],
+    weights: &[f64],
+) -> Result<HrirPair, SofaError> {
+    if indices.len() != weights.len() || indices.len() < 2 {
+        return Err(SofaError::InvalidInterpolationResult(
+            "weight/index cardinality".to_string(),
+        ));
+    }
+    let weights = normalize_interpolation_weights(weights)?;
+    let mut max_aligned_taps = 0usize;
+    let mut delay_values = [0.0; 2];
+    for (&index, &weight) in indices.iter().zip(&weights) {
+        let record = bank
+            .records()
+            .get(index)
+            .ok_or_else(|| SofaError::InvalidInterpolationResult("neighbor index".to_string()))?;
+        for (ear_index, compact_delay) in record.delays.into_iter().enumerate() {
+            let delay = usize::try_from(compact_delay).map_err(|_| {
+                SofaError::InvalidInterpolationResult("packed delay overflow".to_string())
+            })?;
+            let taps = bank.ear_taps(index, ear_index).ok_or_else(|| {
+                SofaError::InvalidInterpolationResult("neighbor tap range".to_string())
+            })?;
+            if delay > taps.len() {
+                return Err(SofaError::InvalidInterpolationResult(format!(
+                    "ear {ear_index} delay exceeds tap count"
+                )));
+            }
+            max_aligned_taps = max_aligned_taps.max(taps.len() - delay);
+            delay_values[ear_index] += weight * delay as f64;
+        }
+    }
+    if max_aligned_taps == 0 {
+        return Err(SofaError::InvalidInterpolationResult(
+            "empty delay-aligned HRIR".to_string(),
+        ));
+    }
+    let delays = [
+        rounded_delay(delay_values[0])?,
+        rounded_delay(delay_values[1])?,
+    ];
+    let output_len = delays
+        .iter()
+        .copied()
+        .max()
+        .and_then(|delay| delay.checked_add(max_aligned_taps))
+        .ok_or_else(|| SofaError::InvalidInterpolationResult("tap length overflow".to_string()))?;
+    let mut output = [vec![0.0; output_len], vec![0.0; output_len]];
+    for (&index, &weight) in indices.iter().zip(&weights) {
+        let record = bank
+            .records()
+            .get(index)
+            .ok_or_else(|| SofaError::InvalidInterpolationResult("neighbor index".to_string()))?;
+        for ear_index in 0..2 {
+            let taps = bank.ear_taps(index, ear_index).ok_or_else(|| {
+                SofaError::InvalidInterpolationResult("neighbor tap range".to_string())
+            })?;
+            let source_delay = usize::try_from(record.delays[ear_index]).map_err(|_| {
+                SofaError::InvalidInterpolationResult("packed delay overflow".to_string())
+            })?;
+            for (tap_index, tap) in taps[source_delay..].iter().enumerate() {
+                output[ear_index][delays[ear_index] + tap_index] += weight * f64::from(*tap);
+            }
+        }
+    }
+    if output
+        .iter()
+        .flat_map(|taps| taps.iter())
+        .any(|tap| !tap.is_finite())
+    {
+        return Err(SofaError::InvalidInterpolationResult(
+            "non-finite interpolated tap".to_string(),
+        ));
+    }
+    let [left, right] = output;
+    HrirPair::new_with_delays(bank.sample_rate_hz(), left, right, delays)
+        .map_err(|error| SofaError::InvalidInterpolationResult(error.to_string()))
 }
 
 fn interpolate_pair(
@@ -1322,9 +1559,14 @@ fn transform(value: CartesianPosition, basis: [CartesianPosition; 3]) -> Cartesi
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod builtin_tests {
-    use super::{BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, load_builtin_generic_hrir, resolve_hrir};
-    use super::{SofaLoadLimits, parse_simple_free_field_hrir};
-    use openjoc_render::CartesianPosition;
+    use super::{
+        BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, BuiltinHrtf, load_builtin_generic_hrir,
+        load_builtin_hrir, resolve_hrir,
+    };
+    use openjoc_render::{
+        BinauralRenderer, BinauralSourceBlock, CartesianPosition, HrirBank, HrirEntry, HrirEntryId,
+        SourceId, StaticBinauralSource,
+    };
 
     #[test]
     fn bundled_generic_resource_round_trips_through_the_strict_sofa_path() {
@@ -1386,24 +1628,35 @@ mod builtin_tests {
     }
 
     #[test]
+    fn built_in_registry_has_stable_ids_and_all_resources_load() {
+        let ids = BuiltinHrtf::all()
+            .iter()
+            .map(|preset| preset.id())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["sadie-ii-d1-ku100", "sadie-ii-d2-kemar"]);
+        for preset in BuiltinHrtf::all() {
+            let metadata = preset.metadata();
+            let loaded = load_builtin_hrir(*preset).expect("built-in HRTF resource");
+            assert_eq!(loaded.metadata.sample_rate_hz, metadata.sample_rate_hz);
+            assert_eq!(loaded.metadata.original_fir_length, metadata.ir_length);
+            let expected_entries = metadata.measurement_count + 15;
+            assert_eq!(loaded.metadata.measurement_count, expected_entries);
+            assert!(
+                loaded
+                    .bank
+                    .entries()
+                    .iter()
+                    .flat_map(|entry| entry.pair().left_taps())
+                    .all(|sample| sample.is_finite())
+            );
+        }
+    }
+
+    #[test]
     #[ignore = "manual release performance harness"]
     fn builtin_hrtf_performance_harness() {
         use std::{hint::black_box, mem::size_of, time::Instant};
 
-        let builtin_started = Instant::now();
-        let builtin = load_builtin_generic_hrir().expect("built-in HRTF");
-        let builtin_setup = builtin_started.elapsed();
-        let external_started = Instant::now();
-        let external = parse_simple_free_field_hrir(
-            include_bytes!("../assets/sadie-ii-d1-48k-256tap.sofa"),
-            SofaLoadLimits {
-                max_measurements: 16_384,
-                max_file_bytes: 32 * 1024 * 1024,
-                ..SofaLoadLimits::default()
-            },
-        )
-        .expect("representative external CDF-1 SOFA");
-        let external_setup = external_started.elapsed();
         let directions = [
             CartesianPosition::new(0.0, 1.0, 0.0),
             CartesianPosition::new(-1.0, 1.0, 0.0),
@@ -1414,30 +1667,95 @@ mod builtin_tests {
             CartesianPosition::new(-1.0, -1.0, 1.0),
             CartesianPosition::new(0.0, 0.0, 1.0),
         ];
-        let resolve_started = Instant::now();
-        for direction in directions {
-            black_box(resolve_hrir(&builtin.bank, direction).expect("built-in coverage"));
-            black_box(resolve_hrir(&external.bank, direction).expect("external coverage"));
+        for preset in BuiltinHrtf::all() {
+            let load_started = Instant::now();
+            let loaded = load_builtin_hrir(*preset).expect("built-in HRTF");
+            let load_ms = load_started.elapsed().as_secs_f64() * 1_000.0;
+            let resolve_started = Instant::now();
+            for direction in directions {
+                black_box(resolve_hrir(&loaded.bank, direction).expect("built-in coverage"));
+            }
+            let resolve_ms = resolve_started.elapsed().as_secs_f64() * 1_000.0;
+            let mut entries = Vec::new();
+            let mut sources = Vec::new();
+            for (index, direction) in directions.into_iter().enumerate() {
+                let resolved = resolve_hrir(&loaded.bank, direction).expect("render coverage");
+                let entry = HrirEntry::new(
+                    HrirEntryId::new(index as u64 + 1_000),
+                    direction,
+                    resolved.pair,
+                )
+                .expect("render entry");
+                let source = StaticBinauralSource::new(
+                    SourceId::new(index as u64 + 1),
+                    direction,
+                    1.0,
+                    entry.id(),
+                )
+                .expect("render source");
+                entries.push(entry);
+                sources.push(source);
+            }
+            let bank = HrirBank::new(loaded.bank.sample_rate_hz(), entries).expect("render bank");
+            let mut renderer = BinauralRenderer::new(48_000, bank, sources).expect("renderer");
+            let input = [0.0; 256];
+            let mut left = [0.0; 256];
+            let mut right = [0.0; 256];
+            let blocks = directions
+                .into_iter()
+                .enumerate()
+                .map(|(index, _)| BinauralSourceBlock::new(SourceId::new(index as u64 + 1), &input))
+                .collect::<Vec<_>>();
+            let render_started = Instant::now();
+            for _ in 0..200 {
+                renderer
+                    .render_block(&blocks, &mut left, &mut right)
+                    .expect("render block");
+            }
+            let render_ms = render_started.elapsed().as_secs_f64() * 1_000.0;
+            let estimated_tap_bytes = loaded
+                .bank
+                .entries()
+                .iter()
+                .map(|entry| entry.pair().tap_count() * 2 * size_of::<f64>())
+                .sum::<usize>();
+            println!(
+                "preset={} load_ms={load_ms:.3} resolve_8_directions_ms={resolve_ms:.3} render_51200_samples_8_sources_ms={render_ms:.3} entries={} estimated_hrir_tap_bytes={estimated_tap_bytes}",
+                preset.id(),
+                loaded.bank.entries().len(),
+            );
         }
-        let resolve_elapsed = resolve_started.elapsed();
-        let estimated_tap_bytes = builtin.bank.entries().len() * 2 * 256 * size_of::<f64>();
-        println!(
-            "builtin_setup_ms={} external_setup_ms={} resolve_16_directions_ms={} entries={} estimated_hrir_tap_bytes={estimated_tap_bytes}",
-            builtin_setup.as_secs_f64() * 1_000.0,
-            external_setup.as_secs_f64() * 1_000.0,
-            resolve_elapsed.as_secs_f64() * 1_000.0,
-            builtin.bank.entries().len(),
-        );
     }
 }
-fn same_direction(current: [f64; 3], direction: CartesianPosition) -> bool {
-    (current[0] * direction.x + current[1] * direction.y + current[2] * direction.z - 1.0).abs()
-        <= 1.0e-12
-}
-
 struct Cursor<'a> {
     data: &'a [u8],
     pos: usize,
+}
+
+#[cfg(test)]
+mod nearest_candidate_tests {
+    use super::nearest_candidates;
+
+    #[test]
+    fn nearest_candidate_selection_orders_by_dot_and_stable_index() {
+        let directions = vec![
+            (9, [0.0, 1.0, 0.0]),
+            (2, [0.0, 1.0, 0.0]),
+            (3, [0.0, 0.8, 0.6]),
+            (4, [0.0, 0.0, 1.0]),
+            (5, [0.0, -1.0, 0.0]),
+            (6, [1.0, 0.0, 0.0]),
+            (7, [-1.0, 0.0, 0.0]),
+            (8, [0.0, -0.8, -0.6]),
+            (10, [0.0, 0.6, 0.8]),
+        ];
+        let selected = nearest_candidates([0.0, 1.0, 0.0], directions.into_iter());
+        let indices = selected
+            .iter()
+            .map(|candidate| candidate.index)
+            .collect::<Vec<_>>();
+        assert_eq!(indices, [2, 9, 3, 10, 4, 6, 7, 8]);
+    }
 }
 impl<'a> Cursor<'a> {
     fn new(data: &'a [u8]) -> Self {

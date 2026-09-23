@@ -908,35 +908,51 @@ impl HrirBank {
             }
         }
         let mut ids = HashSet::with_capacity(entries.len());
-        let mut direction_grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
-        for (index, entry) in entries.iter().enumerate() {
+        for entry in &entries {
             if !ids.insert(entry.id) {
                 return Err(RenderError::DuplicateHrirEntryId { id: entry.id });
             }
-            let cell = hrir_direction_cell(entry.direction);
+        }
+        Self::validate_unique_canonical_hrir_directions(entries.len(), |index| {
+            entries[index].direction
+        })?;
+        Ok(Self {
+            sample_rate_hz,
+            entries,
+        })
+    }
+
+    /// Rejects duplicate unit directions using the bank's canonical tolerance.
+    ///
+    /// Directions must already be finite and normalized, as they are in [`HrirEntry::direction`].
+    pub fn validate_unique_canonical_hrir_directions(
+        direction_count: usize,
+        direction_at: impl Fn(usize) -> [f64; 3],
+    ) -> Result<(), RenderError> {
+        let mut direction_grid: HashMap<[i64; 3], Vec<usize>> =
+            HashMap::with_capacity(direction_count);
+        for second in 0..direction_count {
+            let direction = direction_at(second);
+            let cell = hrir_direction_cell(direction);
+            // The direction dot tolerance permits less than two grid cells of
+            // component-wise displacement; search the adjacent cells in 3D.
             for dx in -2..=2 {
                 for dy in -2..=2 {
                     for dz in -2..=2 {
                         let neighbor = [cell[0] + dx, cell[1] + dy, cell[2] + dz];
                         if let Some(candidates) = direction_grid.get(&neighbor) {
                             if let Some(&first) = candidates.iter().find(|&&candidate| {
-                                same_direction_3d(entries[candidate].direction, entry.direction)
+                                same_direction_3d(direction_at(candidate), direction)
                             }) {
-                                return Err(RenderError::DuplicateHrirDirection {
-                                    first,
-                                    second: index,
-                                });
+                                return Err(RenderError::DuplicateHrirDirection { first, second });
                             }
                         }
                     }
                 }
             }
-            direction_grid.entry(cell).or_default().push(index);
+            direction_grid.entry(cell).or_default().push(second);
         }
-        Ok(Self {
-            sample_rate_hz,
-            entries,
-        })
+        Ok(())
     }
 
     /// Returns the bank sample rate.
@@ -1152,6 +1168,33 @@ impl BinauralRenderer {
     #[must_use]
     pub fn source_count(&self) -> usize {
         self.sources.len()
+    }
+
+    /// Returns bytes currently owned by registered HRIR taps and FIR histories.
+    #[must_use]
+    pub fn hrir_tap_storage_bytes(&self) -> usize {
+        self.hrir_kernel_storage_bytes() + self.hrir_history_storage_bytes()
+    }
+
+    /// Returns bytes currently owned by the registered left/right FIR taps.
+    #[must_use]
+    pub fn hrir_kernel_storage_bytes(&self) -> usize {
+        self.sources
+            .iter()
+            .map(|source| {
+                (source.left_taps.capacity() + source.right_taps.capacity())
+                    * std::mem::size_of::<f64>()
+            })
+            .sum()
+    }
+
+    /// Returns bytes currently owned by registered input-history state.
+    #[must_use]
+    pub fn hrir_history_storage_bytes(&self) -> usize {
+        self.sources
+            .iter()
+            .map(|source| source.history.capacity() * std::mem::size_of::<f64>())
+            .sum()
     }
 
     /// Returns the fixed source definitions in registration order.
@@ -4770,10 +4813,49 @@ mod tests {
                 &[1.0],
             ),
         ];
-        assert!(matches!(
-            HrirBank::new(48_000, duplicate_direction),
-            Err(RenderError::DuplicateHrirDirection { .. })
-        ));
+        assert_eq!(
+            HrirBank::new(48_000, duplicate_direction).unwrap_err(),
+            RenderError::DuplicateHrirDirection {
+                first: 0,
+                second: 1,
+            }
+        );
+        let close_directions = vec![
+            hrir_entry_test(
+                13,
+                CartesianPosition::new(0.000_000_999_95, 1.0, 0.0),
+                &[1.0],
+                &[1.0],
+            ),
+            hrir_entry_test(
+                14,
+                CartesianPosition::new(0.000_001_000_15, 1.0, 0.0),
+                &[1.0],
+                &[1.0],
+            ),
+        ];
+        assert_eq!(
+            HrirBank::new(48_000, close_directions).unwrap_err(),
+            RenderError::DuplicateHrirDirection {
+                first: 0,
+                second: 1,
+            }
+        );
+        let same_x_plane = (0..4_096)
+            .map(|index| {
+                let angle = std::f64::consts::TAU * index as f64 / 4_096.0;
+                hrir_entry_test(
+                    index as u64 + 100,
+                    CartesianPosition::new(0.0, angle.cos(), angle.sin()),
+                    &[1.0],
+                    &[1.0],
+                )
+            })
+            .collect();
+        assert_eq!(
+            HrirBank::new(48_000, same_x_plane).unwrap().entries().len(),
+            4_096
+        );
         let bank = binaural_test_bank();
         assert_eq!(
             bank.resolve_exact(CartesianPosition::new(0.0, 1.0, 0.0))
@@ -4815,6 +4897,10 @@ mod tests {
         .unwrap();
         let samples = [1.0, -0.5, 0.25];
         let mut renderer = BinauralRenderer::new(48_000, bank, vec![source]).unwrap();
+        assert_eq!(
+            renderer.hrir_tap_storage_bytes(),
+            8 * std::mem::size_of::<f64>()
+        );
         let (left, right) = render_binaural_partitioned(
             &mut renderer,
             &[(&samples, SourceId::new(20))],

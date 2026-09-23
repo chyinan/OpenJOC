@@ -809,6 +809,7 @@ name = "openjoc-sofa"
 version = "0.17.0"
 dependencies = [
  "openjoc-render",
+ "sha2",
 ]
 
 [[package]]

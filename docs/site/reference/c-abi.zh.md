@@ -47,7 +47,7 @@ ABI 1.3 增加了 `openjoc_classifier`，这是一个不解码、与框架无关
 
 语义标签可以通过 `openjoc_decoder_get_channel_label` 以及输出/帧描述结构获取。canonical PCM 采样格式值为 `1`（交错的 float32）。
 
-把 `render_mode` 设为 `OPENJOC_RENDER_BINAURAL`，并把 `sofa_data` / `sofa_size` 设置为空/零，即可使用内置的离线 SADIE II 通用 HRTF。提供非空 SOFA 缓冲区时，会选择现有的严格用户数据集路径。如果 `virtual_layout` 为空，虚拟布局默认使用已配置的扬声器布局。设置 `speaker_layout = "22.2"` 可以选择原生 22.2 扬声器会话；其输出提供 24 个有序语义标签，包括 `LFE1` 和 `LFE2`。
+把 `render_mode` 设为 `OPENJOC_RENDER_BINAURAL`，并把 `sofa_data` / `sofa_size` 设置为空/零，即可使用 `hrtf_preset` 选择的内置离线 HRTF（默认 `OPENJOC_HRTF_SADIE_D1_KU100`）。提供非空 SOFA 缓冲区时，会选择现有的严格用户数据集路径。如果 `virtual_layout` 为空，虚拟布局默认使用已配置的扬声器布局。设置 `speaker_layout = "22.2"` 可以选择原生 22.2 扬声器会话；其输出提供 24 个有序语义标签，包括 `LFE1` 和 `LFE2`。
 
 C 适配器继承共享会话经过校准的默认 E-AC-3 Dialnorm 节目校准，除非显式把 `dialnorm_mode` 设为 `OPENJOC_DIALNORM_DIGITAL` 或 `OPENJOC_DIALNORM_ANALOG`。Default 推荐用于普通播放/解码。Digital 明确选择编码后的数字节目级校准。Analog 使用单位 Dialnorm 增益，是高级兼容/诊断策略，不是推荐的增大音量方式，也不是母带制作模式。Dialnorm 来自元数据，与现有 DRC 字段彼此独立；DRC 改变的是编码后的动态范围行为。FinalLinkedGain 是内部渲染器余量处理，不是用户的母带制作控制。
 

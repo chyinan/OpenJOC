@@ -41,7 +41,7 @@ canonical 格式是交错的 IEEE-754 `f32`。每个 `OpenJocPcmFrame` 都拥有
 
 物理扬声器会话也可以使用 `SpeakerLayout::custom(...)` 和 `OpenJocConfig::with_speaker_layout(...)`。自定义布局保留调用方扬声器数组的顺序，作为 PCM/声道顺序；它会校验有限的球面几何，并把 LFE 声道排除在空间投影器之外。JSON/CLI 形式记录在[自定义扬声器布局](../using/custom-speaker-layouts.md)中；这是高级功能，不会扩大下游主机/设备的声道布局支持。
 
-对于双耳会话，`BinauralConfig::builtin_generic("7.1.4")` 会选择离线内置的 SADIE II 通用 HRTF，不需要文件系统路径。显式使用用户 SOFA 时，请使用 `BinauralConfig::from_sofa_bytes(...)`；严格 SOFA 校验和超出覆盖范围时拒绝的行为不变。
+对于双耳会话，`BinauralConfig::builtin_generic("7.1.4")` 会选择默认的离线 SADIE II D1/KU100 HRTF。可以使用 `BinauralConfig::builtin(BuiltinHrtf::SadieD2Kemar, "7.1.4")` 选择 SADIE II D2/KEMAR；显式使用用户 SOFA 时，请使用 `BinauralConfig::from_sofa_bytes(...)`。严格 SOFA 校验和超出覆盖范围时拒绝的行为不变。
 
 `output_info()` 可以在第一个数据包之前调用。直到第一个访问单元确定流格式之前，采样率都是 `None`。
 

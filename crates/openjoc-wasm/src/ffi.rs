@@ -6,6 +6,7 @@
 #![allow(unsafe_code)]
 
 use super::{Decoder, DecoderStatus, WasmRenderer, performance::PerformanceSummary};
+use openjoc_api::BuiltinHrtf;
 use openjoc_api::DialnormMode;
 use std::{
     alloc::{Layout, alloc, dealloc},
@@ -21,6 +22,7 @@ const STATUS_END_OF_STREAM: i32 = 3;
 const STATUS_ERROR: i32 = -1;
 const NO_PTS_SAMPLES: i64 = i64::MIN;
 const MAX_WASM_ALLOCATION_BYTES: usize = 4 * 1024 * 1024;
+const MAX_WASM_HRTF_ASSET_BYTES: usize = 256 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct WasmAllocation {
@@ -87,6 +89,49 @@ pub extern "C" fn openjoc_wasm_decoder_create_with_renderer(
     dialnorm_mode: u32,
     renderer_mode: u32,
 ) -> u32 {
+    openjoc_wasm_decoder_create_with_renderer_and_hrtf(dialnorm_mode, renderer_mode, 0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_create_with_renderer_and_hrtf(
+    dialnorm_mode: u32,
+    renderer_mode: u32,
+    hrtf_mode: u32,
+) -> u32 {
+    create_decoder(dialnorm_mode, renderer_mode, hrtf_mode, None)
+}
+
+/// Creates a decoder from one caller-provided, versioned HRTF asset.
+/// The asset is borrowed only for this synchronous call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn openjoc_wasm_decoder_create_with_renderer_and_hrtf_asset(
+    dialnorm_mode: u32,
+    renderer_mode: u32,
+    hrtf_mode: u32,
+    pointer: u32,
+    length: u32,
+) -> u32 {
+    let Ok(length) = usize::try_from(length) else {
+        return 0;
+    };
+    if length == 0 || pointer == 0 || !known_allocation(pointer, length) {
+        return 0;
+    }
+    if !wasm_memory_range_valid(pointer, length) {
+        return 0;
+    }
+    // SAFETY: the allocation registry confirms this exact live region, and
+    // the parser borrows it only until decoder initialization returns.
+    let asset = unsafe { slice::from_raw_parts(pointer as usize as *const u8, length) };
+    create_decoder(dialnorm_mode, renderer_mode, hrtf_mode, Some(asset))
+}
+
+fn create_decoder(
+    dialnorm_mode: u32,
+    renderer_mode: u32,
+    hrtf_mode: u32,
+    asset: Option<&[u8]>,
+) -> u32 {
     let dialnorm = match dialnorm_mode {
         0 => DialnormMode::Default,
         1 => DialnormMode::Analog,
@@ -97,7 +142,20 @@ pub extern "C" fn openjoc_wasm_decoder_create_with_renderer(
         1 => WasmRenderer::Binaural,
         _ => return 0,
     };
-    let Ok(decoder) = Decoder::new_with_dialnorm_and_renderer(dialnorm, renderer) else {
+    let hrtf = match hrtf_mode {
+        0 => BuiltinHrtf::SadieD1Ku100,
+        1 => BuiltinHrtf::SadieD2Kemar,
+        // Preset code 2 was used by the retired Aachen profile; preserve old callers as D1.
+        2 => BuiltinHrtf::SadieD1Ku100,
+        _ => return 0,
+    };
+    let decoder_result = match asset {
+        Some(asset) => {
+            Decoder::new_with_dialnorm_renderer_and_hrtf_asset(dialnorm, renderer, hrtf, asset)
+        }
+        None => Decoder::new_with_dialnorm_renderer_and_hrtf(dialnorm, renderer, hrtf),
+    };
+    let Ok(decoder) = decoder_result else {
         return 0;
     };
     DECODERS.with(|decoders| {
@@ -135,10 +193,20 @@ pub extern "C" fn openjoc_wasm_alloc(length: u32) -> u32 {
     let Ok(length) = usize::try_from(length) else {
         return 0;
     };
-    if length == 0 {
+    allocate_wasm_buffer(length, MAX_WASM_ALLOCATION_BYTES)
+}
+
+/// Allocates a bounded region for one packaged built-in HRTF asset.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_hrtf_asset_alloc(length: u32) -> u32 {
+    let Ok(length) = usize::try_from(length) else {
         return 0;
-    }
-    if length > MAX_WASM_ALLOCATION_BYTES {
+    };
+    allocate_wasm_buffer(length, MAX_WASM_HRTF_ASSET_BYTES)
+}
+
+fn allocate_wasm_buffer(length: usize, maximum: usize) -> u32 {
+    if length == 0 || length > maximum {
         return 0;
     }
     let Ok(layout) = Layout::array::<u8>(length) else {

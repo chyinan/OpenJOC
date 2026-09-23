@@ -16,7 +16,7 @@ Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest
 
 - E-AC-3 JOC decoding with bounded reconstruction;
 - supported speaker presets from `2.0` through `22.2` and custom geometry up to 64 output channels;
-- two-channel virtual-speaker binaural rendering with the bundled SADIE II D1 HRTF or a supported local SOFA file;
+- two-channel virtual-speaker binaural rendering with SADIE II D1/KU100 (default) and D2/KEMAR built-in profiles, or a supported local SOFA file;
 - reconstructed ADM BWF interoperability output with decoded JOC/OAMD binding within a documented profile;
 - Rust and versioned C ABI embedding surfaces;
 - project-provided FFmpeg, GStreamer, mpv, and Windows DirectShow/LAV integrations.

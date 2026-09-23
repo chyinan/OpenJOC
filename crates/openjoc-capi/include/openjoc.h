@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define OPENJOC_ABI_VERSION_MAJOR 1u
-#define OPENJOC_ABI_VERSION_MINOR 5u
+#define OPENJOC_ABI_VERSION_MINOR 6u
 #define OPENJOC_NO_PTS INT64_MIN
 
 typedef struct openjoc_decoder openjoc_decoder;
@@ -76,6 +76,11 @@ typedef enum openjoc_lfe_policy {
     OPENJOC_LFE_EQUAL_POWER_DUAL_MONO = 1
 } openjoc_lfe_policy;
 
+typedef enum openjoc_hrtf_preset {
+    OPENJOC_HRTF_SADIE_D1_KU100 = 0,
+    OPENJOC_HRTF_SADIE_D2_KEMAR = 1
+} openjoc_hrtf_preset;
+
 typedef enum openjoc_speaker_role {
     OPENJOC_SPEAKER_FULL_RANGE = 0,
     OPENJOC_SPEAKER_LFE = 1
@@ -117,6 +122,8 @@ typedef struct openjoc_decoder_config {
     uint32_t dialnorm_mode;
     /* Appended in ABI minor 4; NULL retains preset-name behavior. */
     const openjoc_custom_speaker_layout *custom_speaker_layout;
+    /* Appended in ABI minor 6; 0 preserves the SADIE II D1 default. */
+    uint32_t hrtf_preset;
 } openjoc_decoder_config;
 
 typedef struct openjoc_pcm_frame {
@@ -202,6 +209,7 @@ uint32_t openjoc_get_abi_version(void);
  * appended custom_speaker_layout field must use openjoc_decoder_config_init_v1_4. */
 openjoc_status openjoc_decoder_config_init(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_config_init_v1_4(openjoc_decoder_config *config);
+openjoc_status openjoc_decoder_config_init_v1_6(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_create(const openjoc_decoder_config *config, openjoc_decoder **output);
 void openjoc_decoder_destroy(openjoc_decoder *decoder);
 openjoc_status openjoc_decoder_send_packet(openjoc_decoder *decoder, const uint8_t *data, size_t data_len, int64_t pts_samples, uint32_t flags);

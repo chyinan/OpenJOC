@@ -35,7 +35,7 @@ QUICKSTART_PATH = REPOSITORY / "packaging/player/QUICKSTART.md"
 PROFILES_PATH = REPOSITORY / "packaging/player/profiles.conf"
 OPENJOC_LICENSE = REPOSITORY / "LICENSE"
 OPENJOC_NOTICES = REPOSITORY / "THIRD_PARTY_NOTICES.md"
-BUILTIN_HRTF = REPOSITORY / "crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa"
+BUILTIN_HRTF = REPOSITORY / "crates/openjoc-sofa/assets/sadie-ii-d1-ku100.ojhrtf"
 PRIVATE_MARKERS = (
     "/Users/",
     "/Users/runner/",
@@ -148,7 +148,7 @@ def builtin_hrtf_evidence() -> dict[str, str]:
         raise SystemExit(f"built-in HRTF resource is missing: {BUILTIN_HRTF}")
     return {
         "dataset": "SADIE II D1 (KU100), v2-2",
-        "source": "crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa",
+        "source": "crates/openjoc-sofa/assets/sadie-ii-d1-ku100.ojhrtf",
         "sha256": sha256(BUILTIN_HRTF),
     }
 

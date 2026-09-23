@@ -7,8 +7,8 @@ mod performance;
 mod stream;
 
 use openjoc_api::{
-    BinauralConfig, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig, OpenJocError,
-    OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
+    BinauralConfig, BuiltinHrtf, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig,
+    OpenJocError, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
 };
 use performance::{TimingSample, summarize};
 use std::collections::VecDeque;
@@ -109,6 +109,7 @@ pub struct DecoderStatusSnapshot {
 /// Stateful, bounded raw-E-AC-3/CMAF-sample-to-Stereo bridge.
 pub struct Decoder {
     session: OpenJocSession,
+    hrtf: Option<BuiltinHrtf>,
     framer: ElementaryStreamFramer,
     output: VecDeque<OpenJocPcmFrame>,
     current_pcm: Option<OpenJocPcmFrame>,
@@ -140,7 +141,37 @@ impl Decoder {
         dialnorm: DialnormMode,
         renderer: WasmRenderer,
     ) -> Result<Self, DecoderError> {
+        Self::new_with_dialnorm_renderer_and_hrtf(dialnorm, renderer, BuiltinHrtf::SadieD1Ku100)
+    }
+
+    /// Creates a renderer session with an explicit built-in HRTF preset.
+    pub fn new_with_dialnorm_renderer_and_hrtf(
+        dialnorm: DialnormMode,
+        renderer: WasmRenderer,
+        hrtf: BuiltinHrtf,
+    ) -> Result<Self, DecoderError> {
+        Self::new_with_hrtf_asset(dialnorm, renderer, hrtf, None)
+    }
+
+    /// Creates a renderer session using an externally supplied built-in asset.
+    pub fn new_with_dialnorm_renderer_and_hrtf_asset(
+        dialnorm: DialnormMode,
+        renderer: WasmRenderer,
+        hrtf: BuiltinHrtf,
+        asset: &[u8],
+    ) -> Result<Self, DecoderError> {
+        Self::new_with_hrtf_asset(dialnorm, renderer, hrtf, Some(asset))
+    }
+
+    fn new_with_hrtf_asset(
+        dialnorm: DialnormMode,
+        renderer: WasmRenderer,
+        hrtf: BuiltinHrtf,
+        asset: Option<&[u8]>,
+    ) -> Result<Self, DecoderError> {
         let render_mode = renderer.render_mode();
+        let binaural = (renderer == WasmRenderer::Binaural)
+            .then(|| BinauralConfig::builtin(hrtf, BINAURAL_VIRTUAL_LAYOUT));
         let config = OpenJocConfig {
             render_mode,
             speaker_layout: if renderer == WasmRenderer::Binaural {
@@ -152,14 +183,18 @@ impl Decoder {
             drc: DrcPolicy::Line,
             dialnorm,
             validation_profile: ValidationProfile::Auto,
-            binaural: (renderer == WasmRenderer::Binaural)
-                .then(|| BinauralConfig::builtin_generic(BINAURAL_VIRTUAL_LAYOUT)),
+            binaural,
             ..OpenJocConfig::default()
         };
-        let mut session = OpenJocSession::new(config).map_err(|error| map_openjoc_error(&error))?;
+        let mut session = match asset {
+            Some(asset) => OpenJocSession::new_with_hrtf_asset(config, asset),
+            None => OpenJocSession::new(config),
+        }
+        .map_err(|error| map_openjoc_error(&error))?;
         session.enable_stage_timing();
         Ok(Self {
             session,
+            hrtf: (renderer == WasmRenderer::Binaural).then_some(hrtf),
             framer: ElementaryStreamFramer::new(),
             output: VecDeque::new(),
             current_pcm: None,
@@ -291,7 +326,10 @@ impl Decoder {
             RenderMode::Binaural => (
                 "Binaural (Headphones)",
                 Some(BINAURAL_VIRTUAL_LAYOUT),
-                Some(BINAURAL_HRTF_SOURCE),
+                Some(match self.hrtf.unwrap_or(BuiltinHrtf::SadieD1Ku100) {
+                    BuiltinHrtf::SadieD1Ku100 => BINAURAL_HRTF_SOURCE,
+                    preset => preset.display_name(),
+                }),
             ),
             RenderMode::Stereo | RenderMode::Speaker => ("Stereo (Speakers)", None, None),
         };

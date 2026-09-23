@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Convert an authorized SADIE II HDF5 SOFA source to OpenJOC's CDF-1 subset.
+"""Convert an authorized HDF5 SOFA source to a CDF-1 SOFA intermediate.
 
 This is an offline packaging tool. It does not run during rendering and does
-not fetch network resources. The source file must be the official SADIE II D1
-48 kHz / 256-tap KU100 HRIR file recorded in the provenance document.
+not fetch network resources. It preserves all measured directions and FIR
+samples. The optional virtual-speaker aliases are only for the SADIE grids;
+high-resolution sources can be converted without aliases.
+Run the Rust `pack-hrtf-asset` example on the result to create the versioned
+direct-record `.ojhrtf` release resource.
 """
 
 from __future__ import annotations
@@ -145,7 +148,46 @@ def append_virtual_aliases(
     return np.concatenate((source_position, added_positions)), np.concatenate((ir, added_ir))
 
 
-def build(source: Path, output: Path) -> None:
+def deduplicate_direction_rows(
+    source_position: np.ndarray, ir: np.ndarray, delay: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Collapse rows that describe the same unit direction at a spherical pole.
+
+    Some spherical measurement grids repeat the same direction at a pole.
+    Those rows cannot be represented as distinct entries by OpenJOC's
+    exact-direction bank. This removes only coordinate duplicates; it does not
+    downsample non-identical directions.
+    """
+    azimuth = np.deg2rad(source_position[:, 0])
+    elevation = np.deg2rad(source_position[:, 1])
+    directions = np.c_[
+        np.cos(elevation) * np.cos(azimuth),
+        np.cos(elevation) * np.sin(azimuth),
+        np.sin(elevation),
+    ]
+    _, keep = np.unique(np.round(directions, decimals=7), axis=0, return_index=True)
+    keep = np.sort(keep)
+    if len(keep) == len(source_position):
+        return source_position, ir, delay
+    if delay.ndim == 2 and delay.shape[0] == len(source_position):
+        delay = delay[keep]
+    return source_position[keep], ir[keep], delay
+
+
+def build(
+    source: Path,
+    output: Path,
+    add_virtual_aliases: bool,
+    cdf1_input: bool,
+) -> None:
+    resource = source.read_bytes() if cdf1_input else convert_sofa(source, add_virtual_aliases)
+    if not resource.startswith(b"CDF\x01"):
+        raise ValueError("expected a CDF-1 SOFA payload")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(resource)
+
+
+def convert_sofa(source: Path, add_virtual_aliases: bool) -> bytes:
     with h5py.File(source, "r") as sofa:
         source_position = np.asarray(sofa["SourcePosition"][...], dtype=np.float32)
         ir = np.asarray(sofa["Data.IR"][...], dtype=np.float32)
@@ -161,10 +203,12 @@ def build(source: Path, output: Path) -> None:
             for key, value in sofa.attrs.items()
         }
 
-    source_position, ir = append_virtual_aliases(source_position, ir, delay)
+    source_position, ir, delay = deduplicate_direction_rows(source_position, ir, delay)
+    if add_virtual_aliases:
+        source_position, ir = append_virtual_aliases(source_position, ir, delay)
 
-    if ir.ndim != 3 or ir.shape[1:] != (2, 256):
-        raise ValueError(f"expected Data.IR [M,2,256], got {ir.shape}")
+    if ir.ndim != 3 or ir.shape[1] != 2 or ir.shape[2] == 0:
+        raise ValueError(f"expected Data.IR [M,2,N], got {ir.shape}")
     if source_position.shape != (ir.shape[0], 3):
         raise ValueError("SourcePosition does not match Data.IR")
     if delay.shape == (1, 2):
@@ -177,7 +221,7 @@ def build(source: Path, output: Path) -> None:
     dimensions = [
         ("M", ir.shape[0]),
         ("R", 2),
-        ("N", 256),
+        ("N", ir.shape[2]),
         ("I", 1),
         ("C", 3),
         ("E", 1),
@@ -232,16 +276,30 @@ def build(source: Path, output: Path) -> None:
         while len(blob) % 4:
             blob.append(0)
         blob.extend(data)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(blob)
+    return bytes(blob)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--cdf1-input",
+        action="store_true",
+        help="copy an already prepared CDF-1 SOFA intermediate without modifying it",
+    )
+    parser.add_argument(
+        "--no-virtual-aliases",
+        action="store_true",
+        help="retain only the upstream direction set",
+    )
     args = parser.parse_args()
-    build(args.source, args.output)
+    build(
+        args.source,
+        args.output,
+        not args.no_virtual_aliases,
+        args.cdf1_input,
+    )
 
 
 if __name__ == "__main__":

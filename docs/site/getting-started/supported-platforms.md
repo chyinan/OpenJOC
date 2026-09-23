@@ -7,7 +7,7 @@ OpenJOC's core is a Rust workspace with platform-neutral decode, scene, renderer
 | CLI and Rust API | Build from the workspace on the targets supported by the current Rust toolchain and the selected optional dependencies. |
 | Release assets | macOS arm64, Windows x86_64, and GNU/Linux x86_64 are the current release targets. |
 | Speaker renderer | Preset and custom geometry render to OpenJOC-owned WAV/CAF output, subject to the [output contract](../reference/output-formats.md). |
-| Binaural renderer | Two-channel virtual-speaker output using the bundled SADIE II D1 resource or a supported local SOFA file. |
+| Binaural renderer | Two-channel virtual-speaker output using the built-in SADIE II D1/KU100 or SADIE II D2/KEMAR profile, or a supported local SOFA file. |
 | FFmpeg | External bridge and a separate native `libopenjoc` wrapper for custom FFmpeg builds; stock FFmpeg is not modified by installing OpenJOC. |
 | GStreamer | Optional native plugin with an OpenJOC-specific classification caps feature and a matching GStreamer runtime. |
 | mpv | Project-provided patched builds and player bundles; not official upstream mpv or FFmpeg distributions. |

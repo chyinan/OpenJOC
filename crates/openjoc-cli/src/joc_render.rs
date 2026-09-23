@@ -30,7 +30,7 @@ use openjoc_scene::{
 };
 #[cfg(test)]
 use openjoc_scene::{SPEAKER_LAYOUT_5_1_CHANNELS, SpatialLayout};
-use openjoc_sofa::{SofaError, resolve_hrir};
+use openjoc_sofa::{BuiltinHrirF32Bank, SofaError, resolve_hrir, resolve_hrir_f32};
 use openjoc_wave::{
     CafChannelDescription, CafError, CafWriter, Clipping, Dither, SampleFormat, WaveEncodeOptions,
     WaveError, WaveWriter,
@@ -1820,6 +1820,46 @@ impl JocBinauralRenderer {
             lfe_policy,
             control,
             SpatialContributionMode::Full,
+        )
+    }
+
+    /// Creates the existing virtual-speaker renderer from compact built-in
+    /// taps, widening only the small set of layout kernels it will render.
+    pub fn new_with_builtin_f32(
+        layout: &str,
+        source_bank: &BuiltinHrirF32Bank,
+        backend: BinauralBackend,
+        lfe_policy: Option<BinauralLfePolicy>,
+        control: Option<RenderControl>,
+        contribution_mode: SpatialContributionMode,
+    ) -> Result<Self, JocRenderError> {
+        let preset = SpeakerLayoutPreset::for_name(layout)?;
+        validate_binaural_layout_preset(layout, &preset)?;
+        let mut entries = Vec::with_capacity(preset.labels.len());
+        for (channel_index, label) in preset.labels.iter().enumerate() {
+            if preset.layout.channels()[channel_index].lfe {
+                continue;
+            }
+            let direction = virtual_speaker_direction(label).ok_or_else(|| {
+                JocRenderError::InvalidControl(format!(
+                    "no binaural direction is defined for public speaker {label}"
+                ))
+            })?;
+            let resolved = resolve_hrir_f32(source_bank, direction)?;
+            entries.push(HrirEntry::new(
+                HrirEntryId::new(channel_index as u64 + 1),
+                direction,
+                resolved.pair,
+            )?);
+        }
+        let prepared_bank = HrirBank::new(source_bank.sample_rate_hz(), entries)?;
+        Self::new_with_contribution(
+            layout,
+            prepared_bank,
+            backend,
+            lfe_policy,
+            control,
+            contribution_mode,
         )
     }
 

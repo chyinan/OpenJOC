@@ -40,9 +40,11 @@ use openjoc_scene::{
     SemanticChannelLayout, SpeakerLayout, SpeakerLayoutPreset,
 };
 use openjoc_sofa::{
-    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, SofaLoadLimits, load_builtin_generic_hrir,
-    parse_simple_free_field_hrir, resolve_hrir,
+    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, SofaLoadLimits, load_builtin_hrir_f32,
+    load_builtin_hrir_f32_from_asset, parse_simple_free_field_hrir, resolve_hrir, resolve_hrir_f32,
 };
+
+pub use openjoc_sofa::BuiltinHrtf;
 use sha2::{Digest, Sha256};
 use std::{collections::VecDeque, fmt, fmt::Write as _, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
@@ -160,24 +162,32 @@ pub enum BinauralLfePolicy {
 }
 
 /// In-memory binaural configuration. An empty `sofa_bytes` value selects the
-/// bundled SADIE II generic resource; non-empty bytes select an explicit user
-/// SOFA and retain the existing fail-closed parser behavior.
+/// selected built-in resource; non-empty bytes select an explicit user SOFA
+/// and retain the existing fail-closed parser behavior.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BinauralConfig {
     /// Explicit SOFA bytes, or empty to use [`Self::builtin_generic`].
     pub sofa_bytes: Vec<u8>,
     pub virtual_layout: String,
     pub lfe_policy: BinauralLfePolicy,
+    pub builtin_hrtf: BuiltinHrtf,
 }
 
 impl BinauralConfig {
-    /// Selects the offline built-in generic HRTF without a filesystem path.
+    /// Selects the default SADIE II D1 / KU100 resource.
     #[must_use]
     pub fn builtin_generic(virtual_layout: impl Into<String>) -> Self {
+        Self::builtin(BuiltinHrtf::SadieD1Ku100, virtual_layout)
+    }
+
+    /// Selects one checked-in built-in resource without a filesystem path.
+    #[must_use]
+    pub fn builtin(builtin_hrtf: BuiltinHrtf, virtual_layout: impl Into<String>) -> Self {
         Self {
             sofa_bytes: Vec::new(),
             virtual_layout: virtual_layout.into(),
             lfe_policy: BinauralLfePolicy::Exclude,
+            builtin_hrtf,
         }
     }
 
@@ -193,11 +203,12 @@ impl BinauralConfig {
             sofa_bytes,
             virtual_layout: virtual_layout.into(),
             lfe_policy,
+            builtin_hrtf: BuiltinHrtf::SadieD1Ku100,
         }
     }
 
     #[must_use]
-    fn is_builtin_generic(&self) -> bool {
+    fn is_builtin(&self) -> bool {
         self.sofa_bytes.is_empty()
     }
 }
@@ -330,10 +341,18 @@ impl OpenJocConfig {
             }
         }
         if let Some(binaural) = &self.binaural {
-            let (hrtf_source, hrtf_sha256) = if binaural.is_builtin_generic() {
+            let (hrtf_source, hrtf_sha256) = if binaural.is_builtin() {
+                let source = match binaural.builtin_hrtf {
+                    BuiltinHrtf::SadieD1Ku100 => "builtin:SADIE_II_D1_KU100_v2-2".to_owned(),
+                    preset => format!("builtin:{}", preset.id()),
+                };
                 (
-                    "builtin:SADIE_II_D1_KU100_v2-2".to_owned(),
-                    "builtin-resource".to_owned(),
+                    source,
+                    binaural
+                        .builtin_hrtf
+                        .asset_metadata()
+                        .asset_sha256
+                        .to_owned(),
                 )
             } else {
                 (
@@ -746,6 +765,19 @@ impl OpenJocSession {
     /// Creates a validated, independent session. No process-global state is
     /// touched; separate sessions can run concurrently on separate threads.
     pub fn new(config: OpenJocConfig) -> Result<Self, OpenJocError> {
+        Self::new_with_builtin_hrtf_asset(config, None)
+    }
+
+    /// Creates a session from a borrowed, external built-in HRTF asset.
+    /// The asset is validated synchronously and is not retained.
+    pub fn new_with_hrtf_asset(config: OpenJocConfig, asset: &[u8]) -> Result<Self, OpenJocError> {
+        Self::new_with_builtin_hrtf_asset(config, Some(asset))
+    }
+
+    fn new_with_builtin_hrtf_asset(
+        config: OpenJocConfig,
+        external_asset: Option<&[u8]>,
+    ) -> Result<Self, OpenJocError> {
         config.validate()?;
         let speaker_layout = config.effective_speaker_layout()?;
         let speaker = SpeakerRenderer::new_with_linked_gain(
@@ -757,7 +789,7 @@ impl OpenJocSession {
         let binaural = config
             .binaural
             .as_ref()
-            .map(BinauralState::new)
+            .map(|binaural| BinauralState::new(binaural, external_asset))
             .transpose()?;
         let mut audio_decoder = JocAccessUnitPcmDecoder::new();
         audio_decoder.set_dialnorm_mode(config.dialnorm);
@@ -1942,7 +1974,8 @@ fn add_stereo_base_downmix(
 
 #[derive(Debug)]
 struct BinauralState {
-    bank: HrirBank,
+    bank: Option<HrirBank>,
+    sample_rate_hz: u32,
     mappings: Vec<BinauralMapping>,
     lfe_index: Option<usize>,
     lfe_policy: BinauralLfePolicy,
@@ -1957,56 +1990,34 @@ struct BinauralMapping {
 }
 
 impl BinauralState {
-    fn new(config: &BinauralConfig) -> Result<Self, OpenJocError> {
-        let loaded = if config.is_builtin_generic() {
-            load_builtin_generic_hrir()?
-        } else {
-            parse_simple_free_field_hrir(&config.sofa_bytes, SofaLoadLimits::default())?
-        };
-        if loaded.metadata.sample_rate_hz != BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ {
-            return Err(OpenJocError::InvalidConfig(format!(
-                "binaural SOFA sampling rate must be {BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ} Hz, got {} Hz",
-                loaded.metadata.sample_rate_hz
-            )));
-        }
-        let preset = SpeakerLayoutPreset::for_name(&config.virtual_layout)
-            .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
-        let mut entries = loaded.bank.entries().to_vec();
-        let mut next_id = u64::MAX;
-        let mut mappings = Vec::new();
-        for (channel_index, label) in preset.labels.iter().enumerate() {
-            if preset.layout.channels()[channel_index].lfe {
-                continue;
-            }
-            let direction = virtual_speaker_direction(label).ok_or_else(|| {
-                OpenJocError::Unsupported(format!("no binaural direction for {label}"))
-            })?;
-            let resolved = resolve_hrir(&loaded.bank, direction)?;
-            let entry_id = if let Some(id) = resolved.exact_entry {
-                id
+    fn new(config: &BinauralConfig, external_asset: Option<&[u8]>) -> Result<Self, OpenJocError> {
+        let (bank, mappings, lfe_index, sample_rate_hz) = if config.is_builtin() {
+            let loaded = if let Some(asset) = external_asset {
+                load_builtin_hrir_f32_from_asset(config.builtin_hrtf, asset)?
             } else {
-                while entries
-                    .iter()
-                    .any(|entry| entry.id() == HrirEntryId::new(next_id))
-                {
-                    next_id = next_id.saturating_sub(1);
-                }
-                let id = HrirEntryId::new(next_id);
-                next_id = next_id.saturating_sub(1);
-                entries.push(HrirEntry::new(id, direction, resolved.pair)?);
-                id
+                load_builtin_hrir_f32(config.builtin_hrtf)?
             };
-            mappings.push(BinauralMapping {
-                channel_index,
-                source_id: SourceId::new(channel_index as u64 + 1),
-                hrir_entry: entry_id,
-            });
-        }
-        let bank = HrirBank::new(loaded.metadata.sample_rate_hz, entries)?;
+            validate_binaural_sample_rate(loaded.metadata.sample_rate_hz)?;
+            prepare_binaural_bank(
+                loaded.metadata.sample_rate_hz,
+                &config.virtual_layout,
+                |direction| resolve_hrir_f32(&loaded.bank, direction).map_err(Into::into),
+            )?
+        } else {
+            let loaded =
+                parse_simple_free_field_hrir(&config.sofa_bytes, SofaLoadLimits::default())?;
+            validate_binaural_sample_rate(loaded.metadata.sample_rate_hz)?;
+            prepare_binaural_bank(
+                loaded.metadata.sample_rate_hz,
+                &config.virtual_layout,
+                |direction| resolve_hrir(&loaded.bank, direction).map_err(Into::into),
+            )?
+        };
         Ok(Self {
-            bank,
+            bank: Some(bank),
+            sample_rate_hz,
             mappings,
-            lfe_index: preset.lfe_index(),
+            lfe_index,
             lfe_policy: config.lfe_policy,
             engine: None,
         })
@@ -2014,18 +2025,20 @@ impl BinauralState {
 
     fn ensure_engine(&mut self, sample_rate: u32) -> Result<&mut BinauralRenderer, OpenJocError> {
         if self.engine.is_none() {
-            if self.bank.sample_rate_hz() != sample_rate {
+            if self.sample_rate_hz != sample_rate {
                 return Err(OpenJocError::FormatChanged {
-                    expected: self.bank.sample_rate_hz(),
+                    expected: self.sample_rate_hz,
                     actual: sample_rate,
                 });
             }
+            let bank = self.bank.as_ref().ok_or_else(|| {
+                OpenJocError::Render("prepared HRIR bank is unavailable".to_owned())
+            })?;
             let sources = self
                 .mappings
                 .iter()
                 .map(|mapping| {
-                    let entry = self
-                        .bank
+                    let entry = bank
                         .entries()
                         .iter()
                         .find(|entry| entry.id() == mapping.hrir_entry)
@@ -2043,7 +2056,9 @@ impl BinauralState {
                     .map_err(OpenJocError::from)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let bank = self.bank.clone();
+            let bank = self.bank.take().ok_or_else(|| {
+                OpenJocError::Render("prepared HRIR bank is unavailable".to_owned())
+            })?;
             self.engine = Some(BinauralRenderer::new(sample_rate, bank, sources)?);
         }
         self.engine
@@ -2116,6 +2131,44 @@ impl BinauralState {
             engine.reset();
         }
     }
+}
+
+fn validate_binaural_sample_rate(sample_rate_hz: u32) -> Result<(), OpenJocError> {
+    if sample_rate_hz != BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ {
+        return Err(OpenJocError::InvalidConfig(format!(
+            "binaural SOFA sampling rate must be {BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ} Hz, got {sample_rate_hz} Hz"
+        )));
+    }
+    Ok(())
+}
+
+fn prepare_binaural_bank(
+    sample_rate_hz: u32,
+    layout_name: &str,
+    mut resolve: impl FnMut(CartesianPosition) -> Result<openjoc_sofa::ResolvedHrir, OpenJocError>,
+) -> Result<(HrirBank, Vec<BinauralMapping>, Option<usize>, u32), OpenJocError> {
+    let preset = SpeakerLayoutPreset::for_name(layout_name)
+        .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
+    let mut entries = Vec::with_capacity(preset.labels.len());
+    let mut mappings = Vec::new();
+    for (channel_index, label) in preset.labels.iter().enumerate() {
+        if preset.layout.channels()[channel_index].lfe {
+            continue;
+        }
+        let direction = virtual_speaker_direction(label).ok_or_else(|| {
+            OpenJocError::Unsupported(format!("no binaural direction for {label}"))
+        })?;
+        let resolved = resolve(direction)?;
+        let entry_id = HrirEntryId::new(channel_index as u64 + 1);
+        entries.push(HrirEntry::new(entry_id, direction, resolved.pair)?);
+        mappings.push(BinauralMapping {
+            channel_index,
+            source_id: SourceId::new(channel_index as u64 + 1),
+            hrir_entry: entry_id,
+        });
+    }
+    let bank = HrirBank::new(sample_rate_hz, entries)?;
+    Ok((bank, mappings, preset.lfe_index(), sample_rate_hz))
 }
 
 fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
@@ -2227,6 +2280,10 @@ mod tests {
 
     #[test]
     fn builtin_generic_binaural_is_available_without_sofa_bytes() {
+        assert_eq!(
+            BinauralConfig::builtin_generic("7.1.4").builtin_hrtf,
+            BuiltinHrtf::SadieD1Ku100
+        );
         let config = OpenJocConfig {
             render_mode: RenderMode::Binaural,
             speaker_layout: "7.1.4".to_owned(),
@@ -2238,6 +2295,55 @@ mod tests {
         let info = session.output_info();
         assert_eq!(info.layout_name, "Binaural stereo");
         assert_eq!(info.channel_labels, ["Left Ear", "Right Ear"]);
+    }
+
+    #[test]
+    fn external_builtin_asset_constructs_a_binaural_session() {
+        let asset = openjoc_sofa::builtin_hrtf_asset_bytes(BuiltinHrtf::SadieD1Ku100)
+            .expect("packaged D1 asset");
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin(BuiltinHrtf::SadieD1Ku100, "7.1.4")),
+            ..OpenJocConfig::default()
+        };
+
+        let session = OpenJocSession::new_with_hrtf_asset(config, asset)
+            .expect("externally supplied built-in asset");
+        assert_eq!(session.output_info().render_mode, RenderMode::Binaural);
+    }
+
+    #[test]
+    fn external_builtin_asset_rejects_corruption_before_session_creation() {
+        let mut asset = openjoc_sofa::builtin_hrtf_asset_bytes(BuiltinHrtf::SadieD1Ku100)
+            .expect("packaged D1 asset")
+            .to_vec();
+        *asset.last_mut().expect("asset payload") ^= 1;
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin(BuiltinHrtf::SadieD1Ku100, "7.1.4")),
+            ..OpenJocConfig::default()
+        };
+
+        assert!(OpenJocSession::new_with_hrtf_asset(config, &asset).is_err());
+    }
+
+    #[test]
+    fn non_default_built_in_presets_are_valid_session_configurations() {
+        for preset in [BuiltinHrtf::SadieD2Kemar] {
+            let config = OpenJocConfig {
+                render_mode: RenderMode::Binaural,
+                speaker_layout: "7.1.4".to_owned(),
+                binaural: Some(BinauralConfig::builtin(preset, "7.1.4")),
+                ..OpenJocConfig::default()
+            };
+            let session = OpenJocSession::new(config).expect("built-in preset session");
+            assert_eq!(
+                session.output_info().channel_labels,
+                ["Left Ear", "Right Ear"]
+            );
+        }
     }
 
     #[test]

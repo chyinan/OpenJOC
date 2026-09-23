@@ -4,8 +4,9 @@ use gst::subclass::prelude::*;
 use gst_audio::prelude::*;
 use gst_audio::subclass::prelude::*;
 use openjoc_api::{
-    BinauralConfig, BinauralLfePolicy, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig,
-    OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
+    BinauralConfig, BinauralLfePolicy, BuiltinHrtf, DialnormMode, DownmixPolicy, DrcPolicy,
+    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
+    ValidationProfile,
 };
 use openjoc_eac3::{StreamType, parse_syncframe_header};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -132,6 +133,7 @@ impl Settings {
                 sofa_bytes: Vec::new(),
                 virtual_layout,
                 lfe_policy,
+                builtin_hrtf: BuiltinHrtf::SadieD1Ku100,
             }),
             OutputTarget::Speaker { .. } => None,
         };

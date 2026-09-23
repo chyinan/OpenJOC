@@ -10,7 +10,7 @@ OpenJOC 的核心是一个 Rust 工作区，包含与平台无关的解码、场
 | CLI 和 Rust API | 可在当前 Rust 工具链支持的目标平台上，从工作区构建；具体还取决于所选的可选依赖。 |
 | 发行版软件包 | 当前提供 macOS arm64、Windows x86_64 和 GNU/Linux x86_64 版本。 |
 | 扬声器渲染器 | 预设布局和自定义几何布局可以渲染为 OpenJOC 自有的 WAV/CAF 输出，但受[输出约定](../reference/output-formats.md)限制。 |
-| 双耳渲染器 | 使用内置 SADIE II D1 资源或受支持的本地 SOFA 文件，生成双声道虚拟扬声器输出。 |
+| 双耳渲染器 | 使用内置 SADIE II D1/KU100 或 SADIE II D2/KEMAR 配置，或受支持的本地 SOFA 文件，生成双声道虚拟扬声器输出。 |
 | FFmpeg | 提供外部桥接和单独的原生 `libopenjoc` 包装器，用于定制 FFmpeg 构建；安装 OpenJOC 不会修改系统自带的 FFmpeg。 |
 | GStreamer | 可选的原生插件，需要 OpenJOC 专用的分类 caps 特性和匹配的 GStreamer 运行时。 |
 | mpv | 项目提供打过补丁的构建和播放器软件包；不是官方上游的 mpv 或 FFmpeg 发行版。 |

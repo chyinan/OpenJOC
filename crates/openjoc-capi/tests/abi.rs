@@ -6,7 +6,7 @@ use std::ptr;
 
 #[test]
 fn version_and_struct_initialization_are_stable() {
-    assert_eq!(openjoc_get_abi_version(), 0x0001_0005);
+    assert_eq!(openjoc_get_abi_version(), 0x0001_0006);
     assert_eq!(std::mem::size_of::<openjoc_decoder_config>() as u32, {
         let mut config = std::mem::MaybeUninit::uninit();
         assert_eq!(
@@ -16,16 +16,48 @@ fn version_and_struct_initialization_are_stable() {
         // The legacy initializer writes only the ABI 1.3-sized prefix.
         assert_eq!(
             unsafe { config.assume_init().struct_size },
-            std::mem::size_of::<openjoc_decoder_config>() as u32
-                - std::mem::size_of::<*const openjoc_custom_speaker_layout>() as u32
+            std::mem::offset_of!(openjoc_decoder_config, custom_speaker_layout) as u32
         );
         let mut config = std::mem::MaybeUninit::uninit();
         assert_eq!(
             openjoc_decoder_config_init_v1_4(config.as_mut_ptr()),
             openjoc_status::OPENJOC_STATUS_OK
         );
+        assert_eq!(
+            unsafe { config.assume_init().struct_size },
+            std::mem::offset_of!(openjoc_decoder_config, hrtf_preset) as u32
+        );
+        let mut config = std::mem::MaybeUninit::uninit();
+        assert_eq!(
+            openjoc_decoder_config_init_v1_6(config.as_mut_ptr()),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
         unsafe { config.assume_init().struct_size }
     });
+}
+
+#[test]
+fn retired_aachen_preset_code_falls_back_to_default_d1() {
+    let mut config = std::mem::MaybeUninit::uninit();
+    assert_eq!(
+        openjoc_decoder_config_init_v1_6(config.as_mut_ptr()),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let mut config = unsafe { config.assume_init() };
+    config.render_mode = openjoc_render_mode::OPENJOC_RENDER_BINAURAL as u32;
+    config.hrtf_preset = 2;
+
+    let mut decoder = ptr::null_mut();
+    assert_eq!(
+        openjoc_stream_decoder_create(&config, &mut decoder),
+        openjoc_status::OPENJOC_STATUS_OK
+    );
+    let descriptor =
+        unsafe { std::ffi::CStr::from_ptr(openjoc_stream_decoder_get_config_descriptor(decoder)) }
+            .to_str()
+            .expect("configuration descriptor");
+    assert!(descriptor.contains("binaural_hrtf_source=builtin:SADIE_II_D1_KU100_v2-2"));
+    openjoc_stream_decoder_destroy(decoder);
 }
 
 #[test]

@@ -31,14 +31,23 @@ The Microsoft UCRT and VC runtime DLLs are app-local redistributables and are
 covered by the included Microsoft redistributable notice and applicable
 Microsoft terms.
 
-OpenJOC embeds a derived CDF-1 SADIE II D1 KU100 resource. The exact packaged
-file is `crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa`, generated
+OpenJOC distributes a versioned SADIE II D1 KU100 resource. The exact packaged
+file is `crates/openjoc-sofa/assets/sadie-ii-d1-ku100.ojhrtf`, generated
 from the authorized upstream D1 SOFA (upstream SHA-256
 `e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31`) by
-`tools/generate-builtin-hrtf.py`; the generated SHA-256 is
-`b9bcecd8a07e7eed4474a9b063c47672384339e83605bd245ff0adc098869fab`.
-The embedded metadata retains the Apache License 2.0 notice. University of
+`tools/generate-builtin-hrtf.py` followed by the version-2 direct-record asset
+packer. Its
+prepared CDF-1 intermediate SHA-256 is
+`b9bcecd8a07e7eed4474a9b063c47672384339e83605bd245ff0adc098869fab`; the
+version-2 asset is 18,374,724 bytes with SHA-256
+`78d048a68f84d34051578c262e401e35baa0e718901f85349afe0232f985d4df`.
+The asset metadata retains the Apache License 2.0 notice. University of
 York attribution and the transformation record remain in the corresponding
 source.
 
 This notice does not imply endorsement by any upstream project or vendor.
+
+The built-in HRTF library also includes SADIE II D2 / KEMAR under Apache
+License 2.0. The exact prepared-file hash, source URL, attribution, and
+transformation are in
+`docs/hrtf.md` and the repository-root `THIRD_PARTY_NOTICES.md`.

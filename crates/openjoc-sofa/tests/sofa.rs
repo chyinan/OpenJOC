@@ -9,8 +9,10 @@ use openjoc_render::{
     UniformPartitionedConvolver,
 };
 use openjoc_sofa::{
-    SofaError, SofaLoadLimits, load_builtin_generic_hrir, load_simple_free_field_hrir,
-    parse_simple_free_field_hrir, resolve_hrir,
+    BuiltinHrtf, BuiltinHrtfMetadata, SofaError, SofaLoadLimits, builtin_hrtf_asset_bytes,
+    load_builtin_generic_hrir, load_builtin_hrir, load_builtin_hrir_f32,
+    load_builtin_hrir_from_asset, load_simple_free_field_hrir, parse_simple_free_field_hrir,
+    resolve_hrir, resolve_hrir_f32,
 };
 
 #[test]
@@ -47,6 +49,57 @@ fn per_measurement_equal_delays_are_accepted() {
         loaded.bank.entries()[2].pair().right_taps(),
         &[9.0, 10.0, 0.0]
     );
+}
+
+#[test]
+fn builtin_hrtf_metadata_preserves_the_original_public_struct_shape() {
+    let metadata = BuiltinHrtfMetadata {
+        id: "legacy-preset",
+        display_name: "Legacy preset",
+        dataset: "Legacy dataset",
+        subject: "Legacy subject",
+        source: "https://example.invalid/source",
+        doi: None,
+        license: "Apache-2.0",
+        sample_rate_hz: 48_000,
+        measurement_count: 1,
+        ir_length: 256,
+        notes: "Legacy metadata literal",
+    };
+    assert_eq!(metadata.id, "legacy-preset");
+}
+
+#[test]
+fn duplicate_direction_error_reports_original_measurement_indices() {
+    let data = duplicate_direction_fixture();
+    assert!(matches!(
+        parse_simple_free_field_hrir(&data, SofaLoadLimits::default()),
+        Err(SofaError::DuplicateDirection {
+            first: 0,
+            second: 2
+        })
+    ));
+}
+
+#[test]
+fn duplicate_directions_are_rejected_before_expanded_tap_limits() {
+    let data = fixture_with_duplicate_direction(
+        "SimpleFreeFieldHRIR",
+        [1_000_000.0, 1_000_000.0],
+        false,
+        true,
+    );
+    let limits = SofaLoadLimits {
+        max_total_coefficients: 1,
+        ..SofaLoadLimits::default()
+    };
+    assert!(matches!(
+        parse_simple_free_field_hrir(&data, limits),
+        Err(SofaError::DuplicateDirection {
+            first: 0,
+            second: 2
+        })
+    ));
 }
 
 #[test]
@@ -119,6 +172,434 @@ fn built_in_and_synthetic_custom_hrtf_produce_distinct_finite_pcm() {
             .all(|sample| sample.is_finite())
     );
     assert_ne!(builtin_pcm, custom_pcm);
+}
+
+#[test]
+fn every_builtin_preset_runs_front_impulse_smoke() {
+    for preset in BuiltinHrtf::all() {
+        let asset = builtin_hrtf_asset_bytes(*preset).expect("packaged HRTF asset");
+        assert_eq!(asset.len(), preset.asset_metadata().asset_size_bytes);
+        let loaded = load_builtin_hrir_from_asset(*preset, asset).expect("external HRTF asset");
+        let direction = CartesianPosition::new(0.0, 1.0, 0.0);
+        for sanity_direction in [
+            direction,
+            CartesianPosition::new(-1.0, 0.0, 0.0),
+            CartesianPosition::new(1.0, 0.0, 0.0),
+            CartesianPosition::new(0.0, -1.0, 0.0),
+            CartesianPosition::new(0.0, 0.0, 1.0),
+        ] {
+            let pair = resolve_hrir(&loaded.bank, sanity_direction)
+                .expect("built-in direction coverage")
+                .pair;
+            assert!(
+                pair.left_taps()
+                    .iter()
+                    .chain(pair.right_taps())
+                    .all(|sample| sample.is_finite())
+            );
+            assert!(
+                pair.left_taps()
+                    .iter()
+                    .chain(pair.right_taps())
+                    .any(|sample| sample.abs() > 0.0)
+            );
+        }
+        let resolved = resolve_hrir(&loaded.bank, direction).expect("front direction");
+        let entry = HrirEntry::new(HrirEntryId::new(u64::MAX), direction, resolved.pair)
+            .expect("prepared front HRIR");
+        let source = StaticBinauralSource::new(SourceId::new(1), direction, 1.0, entry.id())
+            .expect("front source");
+        let bank = HrirBank::new(loaded.bank.sample_rate_hz(), vec![entry]).expect("front bank");
+        let mut renderer = BinauralRenderer::new(48_000, bank, vec![source]).expect("renderer");
+        let input = [1.0, 0.0, 0.0, 0.0];
+        let mut left = [0.0; 4];
+        let mut right = [0.0; 4];
+        renderer
+            .render_block(
+                &[BinauralSourceBlock::new(SourceId::new(1), &input)],
+                &mut left,
+                &mut right,
+            )
+            .expect("front impulse render");
+        assert!(left.iter().chain(&right).all(|sample| sample.is_finite()));
+        assert!(left.iter().chain(&right).any(|sample| sample.abs() > 0.0));
+    }
+}
+
+#[test]
+fn f32_resident_builtin_banks_match_f64_oracle_and_render_pcm() {
+    let reference_directions = [
+        CartesianPosition::new(0.0, 1.0, 0.0),
+        CartesianPosition::new(0.0, -1.0, 0.0),
+        CartesianPosition::new(-1.0, 0.0, 0.0),
+        CartesianPosition::new(1.0, 0.0, 0.0),
+        CartesianPosition::new(0.0, 0.0, 1.0),
+        CartesianPosition::new(0.0, 1.0, 1.0),
+    ];
+
+    for preset in BuiltinHrtf::all() {
+        let f64_oracle = load_builtin_hrir(*preset).expect("canonical f64 oracle");
+        let resident_f32 = load_builtin_hrir_f32(*preset).expect("f32-resident built-in");
+        assert_eq!(
+            resident_f32.bank.sample_rate_hz(),
+            f64_oracle.bank.sample_rate_hz()
+        );
+        assert_eq!(
+            resident_f32.bank.direction_count(),
+            f64_oracle.bank.entries().len()
+        );
+        assert_eq!(
+            resident_f32.bank.tap_storage_bytes(),
+            resident_f32.bank.tap_sample_count() * std::mem::size_of::<f32>()
+        );
+        assert!(
+            resident_f32.bank.tap_storage_bytes()
+                < resident_f32.bank.tap_sample_count() * std::mem::size_of::<f64>()
+        );
+
+        let mut directions = reference_directions.to_vec();
+        directions.push(midpoint_of_nearest_measurements(&f64_oracle.bank, 0));
+        directions.push(midpoint_of_nearest_measurements(&f64_oracle.bank, 1));
+        let mut max_error = 0.0_f64;
+        let mut square_error = 0.0_f64;
+        let mut error_count = 0_usize;
+        let mut max_ild_error_db = 0.0_f64;
+        let mut max_itd_error_samples = 0_i128;
+        let mut pcm_max_error = 0.0_f64;
+        let mut pcm_square_error = 0.0_f64;
+        let mut pcm_error_count = 0_usize;
+        let mut oracle_pairs = Vec::with_capacity(directions.len());
+        let mut resident_pairs = Vec::with_capacity(directions.len());
+        for direction in directions.iter().copied() {
+            let expected = resolve_hrir(&f64_oracle.bank, direction).expect("f64 oracle direction");
+            let actual = resolve_hrir_f32(&resident_f32.bank, direction).expect("f32 direction");
+            assert_eq!(
+                actual.pair,
+                expected.pair,
+                "{} HRIR must be bit-identical",
+                preset.id()
+            );
+            if oracle_pairs.len() >= reference_directions.len() {
+                assert_eq!(
+                    expected.exact_entry, None,
+                    "arbitrary target must use interpolation"
+                );
+            }
+            let expected_left_delay =
+                i128::try_from(expected.pair.delay_samples(openjoc_render::HrirEar::Left))
+                    .expect("test delay fits i128");
+            let expected_right_delay =
+                i128::try_from(expected.pair.delay_samples(openjoc_render::HrirEar::Right))
+                    .expect("test delay fits i128");
+            let actual_left_delay =
+                i128::try_from(actual.pair.delay_samples(openjoc_render::HrirEar::Left))
+                    .expect("test delay fits i128");
+            let actual_right_delay =
+                i128::try_from(actual.pair.delay_samples(openjoc_render::HrirEar::Right))
+                    .expect("test delay fits i128");
+            assert_eq!(actual_left_delay, expected_left_delay);
+            assert_eq!(actual_right_delay, expected_right_delay);
+            max_itd_error_samples = max_itd_error_samples.max(
+                ((expected_left_delay - expected_right_delay)
+                    - (actual_left_delay - actual_right_delay))
+                    .abs(),
+            );
+            assert_eq!(actual.neighbor_count, expected.neighbor_count);
+            assert_eq!(actual.exact_entry, expected.exact_entry);
+            assert_eq!(
+                actual.pair.left_taps().len(),
+                expected.pair.left_taps().len()
+            );
+            assert_eq!(
+                actual.pair.right_taps().len(),
+                expected.pair.right_taps().len()
+            );
+            for (reference, converted) in expected
+                .pair
+                .left_taps()
+                .iter()
+                .chain(expected.pair.right_taps())
+                .zip(
+                    actual
+                        .pair
+                        .left_taps()
+                        .iter()
+                        .chain(actual.pair.right_taps()),
+                )
+            {
+                let error = reference - converted;
+                max_error = max_error.max(error.abs());
+                square_error += error * error;
+                error_count += 1;
+            }
+            let energy =
+                |samples: &[f64]| samples.iter().map(|sample| sample * sample).sum::<f64>();
+            let ild_db =
+                |left: &[f64], right: &[f64]| 10.0 * (energy(left) / energy(right)).log10();
+            let ild_error = (ild_db(expected.pair.left_taps(), expected.pair.right_taps())
+                - ild_db(actual.pair.left_taps(), actual.pair.right_taps()))
+            .abs();
+            max_ild_error_db = max_ild_error_db.max(ild_error);
+            assert!(ild_error < 1.0e-10);
+            assert!(
+                actual
+                    .pair
+                    .left_taps()
+                    .iter()
+                    .chain(actual.pair.right_taps())
+                    .all(|tap| tap.is_finite())
+            );
+            oracle_pairs.push((direction, expected.pair));
+            resident_pairs.push((direction, actual.pair));
+        }
+        let rms_error = (square_error / error_count as f64).sqrt();
+        assert!(
+            max_error == 0.0,
+            "{} maximum tap error {max_error:e}",
+            preset.id()
+        );
+        assert!(
+            rms_error == 0.0,
+            "{} RMS tap error {rms_error:e}",
+            preset.id()
+        );
+        assert_eq!(
+            max_itd_error_samples,
+            0,
+            "{} ITD must be bit-identical",
+            preset.id()
+        );
+        assert_eq!(
+            max_ild_error_db,
+            0.0,
+            "{} ILD must be bit-identical",
+            preset.id()
+        );
+
+        for object_count in [1, directions.len()] {
+            let oracle_pcm = render_fixed_source_layout(&oracle_pairs, object_count);
+            let resident_pcm = render_fixed_source_layout(&resident_pairs, object_count);
+            assert_eq!(oracle_pcm.len(), resident_pcm.len());
+            let (pcm_max, pcm_square_sum) = oracle_pcm.iter().zip(&resident_pcm).fold(
+                (0.0_f64, 0.0_f64),
+                |(maximum, sum), (reference, actual)| {
+                    let error = reference - actual;
+                    (maximum.max(error.abs()), sum + error * error)
+                },
+            );
+            let pcm_rms = (pcm_square_sum / oracle_pcm.len() as f64).sqrt();
+            pcm_max_error = pcm_max_error.max(pcm_max);
+            pcm_square_error += pcm_square_sum;
+            pcm_error_count += oracle_pcm.len();
+            assert!(pcm_max == 0.0, "{} PCM max error {pcm_max:e}", preset.id());
+            assert!(pcm_rms == 0.0, "{} PCM RMS error {pcm_rms:e}", preset.id());
+            assert!(resident_pcm.iter().all(|sample| sample.is_finite()));
+        }
+        let moving_oracle_pcm = render_moving_hrir_trajectory(&oracle_pairs);
+        let moving_resident_pcm = render_moving_hrir_trajectory(&resident_pairs);
+        assert_eq!(moving_oracle_pcm, moving_resident_pcm);
+        assert!(moving_resident_pcm.iter().all(|sample| sample.is_finite()));
+        let moving_pcm_max_error = moving_oracle_pcm
+            .iter()
+            .zip(&moving_resident_pcm)
+            .map(|(expected, actual)| (expected - actual).abs())
+            .fold(0.0_f64, f64::max);
+        let moving_pcm_square_error = moving_oracle_pcm
+            .iter()
+            .zip(&moving_resident_pcm)
+            .map(|(expected, actual)| (expected - actual).powi(2))
+            .sum::<f64>();
+        let moving_pcm_rms_error =
+            (moving_pcm_square_error / moving_oracle_pcm.len() as f64).sqrt();
+        assert_eq!(moving_pcm_max_error, 0.0);
+        assert_eq!(moving_pcm_rms_error, 0.0);
+        let pcm_rms_error = (pcm_square_error / pcm_error_count as f64).sqrt();
+        println!(
+            "f32_oracle preset={} max_tap_error={max_error:.12e} rms_tap_error={rms_error:.12e} max_pcm_error={pcm_max_error:.12e} rms_pcm_error={pcm_rms_error:.12e} moving_pcm_max_error={moving_pcm_max_error:.12e} moving_pcm_rms_error={moving_pcm_rms_error:.12e} max_itd_error_samples={max_itd_error_samples} max_ild_error_db={max_ild_error_db:.12e}",
+            preset.id(),
+        );
+    }
+}
+
+fn midpoint_of_nearest_measurements(bank: &HrirBank, first_index: usize) -> CartesianPosition {
+    let first = bank.entries()[first_index].direction();
+    let second = bank
+        .entries()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != first_index)
+        .max_by(|(_, left), (_, right)| {
+            dot3(first, left.direction()).total_cmp(&dot3(first, right.direction()))
+        })
+        .expect("neighbor measurement")
+        .1
+        .direction();
+    let midpoint = [
+        first[0] + second[0],
+        first[1] + second[1],
+        first[2] + second[2],
+    ];
+    let length =
+        (midpoint[0] * midpoint[0] + midpoint[1] * midpoint[1] + midpoint[2] * midpoint[2]).sqrt();
+    CartesianPosition::new(
+        midpoint[0] / length,
+        midpoint[1] / length,
+        midpoint[2] / length,
+    )
+}
+
+fn dot3(left: [f64; 3], right: [f64; 3]) -> f64 {
+    left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+}
+
+fn render_fixed_source_layout(
+    resolved: &[(CartesianPosition, HrirPair)],
+    object_count: usize,
+) -> Vec<f64> {
+    let selected = &resolved[..object_count];
+    let entries = selected
+        .iter()
+        .enumerate()
+        .map(|(index, (direction, pair))| {
+            HrirEntry::new(HrirEntryId::new(index as u64 + 1), *direction, pair.clone())
+                .expect("resolved renderer entry")
+        })
+        .collect::<Vec<_>>();
+    let sources = selected
+        .iter()
+        .enumerate()
+        .map(|(index, (direction, _))| {
+            StaticBinauralSource::new(
+                SourceId::new(index as u64 + 1),
+                *direction,
+                1.0,
+                HrirEntryId::new(index as u64 + 1),
+            )
+            .expect("resolved renderer source")
+        })
+        .collect::<Vec<_>>();
+    let bank = HrirBank::new(48_000, entries).expect("resolved renderer bank");
+    let mut renderer = BinauralRenderer::new(48_000, bank, sources).expect("binaural renderer");
+    let mut output = Vec::new();
+    for block_index in 0..8 {
+        let samples = (0..object_count)
+            .map(|source_index| {
+                (0..128)
+                    .map(|sample_index| {
+                        if source_index == block_index % object_count {
+                            if sample_index == 0 { 1.0 } else { 0.0 }
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let blocks = samples
+            .iter()
+            .enumerate()
+            .map(|(index, input)| BinauralSourceBlock::new(SourceId::new(index as u64 + 1), input))
+            .collect::<Vec<_>>();
+        let mut left = vec![0.0; 128];
+        let mut right = vec![0.0; 128];
+        renderer
+            .render_block(&blocks, &mut left, &mut right)
+            .expect("render trajectory block");
+        output.extend(
+            left.into_iter()
+                .zip(right)
+                .flat_map(|(left, right)| [left, right]),
+        );
+    }
+    output
+}
+
+fn render_moving_hrir_trajectory(resolved: &[(CartesianPosition, HrirPair)]) -> Vec<f64> {
+    const BLOCK_SAMPLES: usize = 128;
+    let sample_count = resolved.len() * BLOCK_SAMPLES;
+    let input = (0..sample_count)
+        .map(|sample| match sample % BLOCK_SAMPLES {
+            0 => 1.0,
+            64 => -0.5,
+            _ => 0.0,
+        })
+        .collect::<Vec<_>>();
+    let mut output = Vec::with_capacity(sample_count * 2);
+    for sample in 0..sample_count {
+        let pair = &resolved[sample / BLOCK_SAMPLES].1;
+        let left = pair
+            .left_taps()
+            .iter()
+            .enumerate()
+            .take(sample + 1)
+            .map(|(tap, coefficient)| input[sample - tap] * coefficient)
+            .sum::<f64>();
+        let right = pair
+            .right_taps()
+            .iter()
+            .enumerate()
+            .take(sample + 1)
+            .map(|(tap, coefficient)| input[sample - tap] * coefficient)
+            .sum::<f64>();
+        output.extend([left, right]);
+    }
+    output
+}
+
+#[test]
+fn builtin_lateral_acoustic_sanity_preserves_left_right_cues() {
+    for preset in BuiltinHrtf::all() {
+        let loaded = load_builtin_hrir(*preset).expect("built-in HRTF");
+        for (label, direction, left_dominant) in [
+            ("left", CartesianPosition::new(-1.0, 0.0, 0.0), true),
+            ("right", CartesianPosition::new(1.0, 0.0, 0.0), false),
+        ] {
+            let pair = resolve_hrir(&loaded.bank, direction)
+                .unwrap_or_else(|error| panic!("{} {label}: {error}", preset.id()))
+                .pair;
+            let left_energy = pair
+                .left_taps()
+                .iter()
+                .map(|sample| sample * sample)
+                .sum::<f64>();
+            let right_energy = pair
+                .right_taps()
+                .iter()
+                .map(|sample| sample * sample)
+                .sum::<f64>();
+            let left_peak = pair
+                .left_taps()
+                .iter()
+                .enumerate()
+                .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
+                .map_or(0, |(index, _)| index);
+            let right_peak = pair
+                .right_taps()
+                .iter()
+                .enumerate()
+                .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
+                .map_or(0, |(index, _)| index);
+            assert!(left_energy.is_finite() && right_energy.is_finite());
+            assert!(left_energy > 0.0 && right_energy > 0.0);
+            if left_dominant {
+                assert!(
+                    left_energy > right_energy,
+                    "{} left energy mapping",
+                    preset.id()
+                );
+            } else {
+                assert!(
+                    right_energy > left_energy,
+                    "{} right energy mapping",
+                    preset.id()
+                );
+            }
+            println!(
+                "preset={} direction={label} left_energy={left_energy:.6e} right_energy={right_energy:.6e} left_peak={left_peak} right_peak={right_peak}",
+                preset.id(),
+            );
+        }
+    }
 }
 
 #[test]
@@ -285,6 +766,19 @@ fn azimuth(degrees: f64) -> CartesianPosition {
 }
 
 fn fixture(convention: &str, delays: [f64; 2], per_measurement_delay: bool) -> Vec<u8> {
+    fixture_with_duplicate_direction(convention, delays, per_measurement_delay, false)
+}
+
+fn duplicate_direction_fixture() -> Vec<u8> {
+    fixture_with_duplicate_direction("SimpleFreeFieldHRIR", [0.0, 1.0], false, true)
+}
+
+fn fixture_with_duplicate_direction(
+    convention: &str,
+    delays: [f64; 2],
+    per_measurement_delay: bool,
+    duplicate_direction: bool,
+) -> Vec<u8> {
     let dimensions = vec![("M", 3usize), ("R", 2), ("N", 2), ("C", 3), ("One", 1)];
     let dim_id = |name: &str| {
         dimensions
@@ -293,11 +787,14 @@ fn fixture(convention: &str, delays: [f64; 2], per_measurement_delay: bool) -> V
             .expect("dimension")
     };
     let listener_position = [10.0, 0.0, 0.0];
-    let source = [
+    let mut source = [
         (1.0_f64.atan2(10.0).to_degrees(), 0.0, 101.0_f64.sqrt()),
         (0.0, 0.0, 11.0),
         (0.0, 1.0_f64.atan2(10.0).to_degrees(), 101.0_f64.sqrt()),
     ];
+    if duplicate_direction {
+        source[2] = source[0];
+    }
     let receiver = [10.1, 0.0, 0.0, 9.9, 0.0, 0.0];
     let delay_values = if per_measurement_delay {
         vec![

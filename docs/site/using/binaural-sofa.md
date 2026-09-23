@@ -2,6 +2,14 @@
 
 `--binaural` renders an OpenJOC speaker field to two-channel headphone output. It is virtual-speaker rendering; it is not a direct-object or proprietary renderer-fidelity claim.
 
+OpenJOC provides two generic built-in profiles: `SADIE II — KU100` (the
+default/reference profile) and `SADIE II — KEMAR`. Custom SOFA files remain supported. Different listeners may prefer
+different non-individual HRTFs because HRTF perception depends strongly on
+individual anatomy; no profile is claimed to be best for everyone.
+
+See [Built-in HRTF library](../../hrtf.md) for provenance, license, source
+hashes, and the exact preparation record.
+
 ```sh
 openjoc render-joc input.m4a \\
   --binaural \\

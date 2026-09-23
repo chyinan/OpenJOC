@@ -105,6 +105,7 @@ struct RenderJocArgs {
     output: PathBuf,
     binaural: bool,
     binaural_sofa: Option<PathBuf>,
+    binaural_hrtf: openjoc_sofa::BuiltinHrtf,
     binaural_backend: joc_render::BinauralBackend,
     binaural_backend_requested: bool,
     lfe_policy: Option<joc_render::BinauralLfePolicy>,
@@ -242,7 +243,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses]\n",
         "                         [--adm-reference PATH] [--json PATH] [--force]\n",
         "    openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf> [--downmix auto|loro|ltrt]\n",
-        "                         [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>] [--backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
+        "                         [--binaural [--binaural-hrtf <ID>] [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>] [--backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono]\n",
         "                         [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
@@ -358,7 +359,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf>\n",
             "       [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
             "       [--dialnorm default|digital|analog] [--normalize-peak <TARGET_DBFS>]\n",
-            "       [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]\n",
+            "       [--binaural [--binaural-hrtf <ID>] [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]\n",
             "       [--backend direct|partitioned --partition-size N]\n",
             "       [--lfe-policy exclude|equal-power-dual-mono]\n",
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
@@ -378,7 +379,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "CUSTOM LAYOUT: advanced users may supply versioned spherical geometry with --layout-file; preset names remain the recommended ordinary-user path.\n",
             "Without --topology, bridge control is assembled from decoded real JOC/OAMD state.\n",
             "With --topology, the complete sidecar is an explicit override/test input; sources are not merged.\n",
-            "With --binaural, the default virtual layout is 7.1.4 and the output is always two-channel L/R-ear stereo. Without --sofa, the bundled generic HRTF is used; --sofa selects a user SOFA.\n",
+            "With --binaural, the default virtual layout is 7.1.4 and the output is always two-channel L/R-ear stereo. Without --sofa, SADIE II D1 / KU100 is used unless --binaural-hrtf selects another built-in profile; --sofa selects a user SOFA.\n",
             "--virtual-layout selects the internal field; --layout remains physical output unless used as a legacy binaural alias.\n",
             "HRIRs use exact lookup when available and deterministic delay-aligned spherical interpolation when safely covered by SOFA measurements.\n",
             "The simple binaural form defaults to virtual layout 7.1.4 and LFE policy exclude; output remains two-channel L/R-ear stereo.\n",
@@ -1369,6 +1370,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut virtual_layout = None;
     let mut output = None;
     let mut binaural_sofa = None;
+    let mut binaural_hrtf = openjoc_sofa::BuiltinHrtf::SadieD1Ku100;
     let mut binaural_requested = false;
     let mut binaural_backend = joc_render::BinauralBackend::Direct;
     let mut binaural_backend_requested = false;
@@ -1421,6 +1423,15 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
             "--sofa" | "--binaural-sofa" => {
                 binaural_requested = true;
                 binaural_sofa = Some(PathBuf::from(value));
+            }
+            "--binaural-hrtf" => {
+                binaural_requested = true;
+                binaural_hrtf = openjoc_sofa::BuiltinHrtf::from_id(value).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "unknown built-in HRTF; use sadie-ii-d1-ku100 or sadie-ii-d2-kemar",
+                    )
+                })?;
             }
             "--backend" => {
                 binaural_backend_requested = true;
@@ -1607,6 +1618,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         output: output.ok_or_else(usage_error)?,
         binaural,
         binaural_sofa,
+        binaural_hrtf,
         binaural_backend,
         binaural_backend_requested,
         lfe_policy,
@@ -2134,39 +2146,42 @@ fn run_legacy_render_pass(
     let mut render_timing = performance::RenderStageTiming::default();
     let dither = deterministic_dither_values();
     if arguments.binaural {
-        let (sofa, builtin_hrtf) = if let Some(sofa_path) = &arguments.binaural_sofa {
-            (
-                openjoc_sofa::load_simple_free_field_hrir(
-                    sofa_path,
-                    openjoc_sofa::SofaLoadLimits::default(),
-                )
-                .map_err(joc_render::JocRenderError::from)?,
-                false,
-            )
-        } else {
-            (
-                openjoc_sofa::load_builtin_generic_hrir()
-                    .map_err(joc_render::JocRenderError::from)?,
-                true,
-            )
-        };
         let control = arguments
             .topology
             .as_ref()
             .map(|path| joc_render::RenderControl::from_path(path))
             .transpose()?;
-        let mut renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-            joc_render::JocBinauralRenderer::new(
-                &arguments.layout,
-                sofa.bank,
-                arguments.binaural_backend,
-                arguments.lfe_policy,
-                control,
-            )?
+        let builtin_hrtf = arguments.binaural_sofa.is_none();
+        let mut renderer = if let Some(sofa_path) = &arguments.binaural_sofa {
+            let sofa = openjoc_sofa::load_simple_free_field_hrir(
+                sofa_path,
+                openjoc_sofa::SofaLoadLimits::default(),
+            )
+            .map_err(joc_render::JocRenderError::from)?;
+            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                joc_render::JocBinauralRenderer::new(
+                    &arguments.layout,
+                    sofa.bank,
+                    arguments.binaural_backend,
+                    arguments.lfe_policy,
+                    control,
+                )?
+            } else {
+                joc_render::JocBinauralRenderer::new_with_contribution(
+                    &arguments.layout,
+                    sofa.bank,
+                    arguments.binaural_backend,
+                    arguments.lfe_policy,
+                    control,
+                    arguments.diagnostic_contribution,
+                )?
+            }
         } else {
-            joc_render::JocBinauralRenderer::new_with_contribution(
+            let loaded = openjoc_sofa::load_builtin_hrir_f32(arguments.binaural_hrtf)
+                .map_err(joc_render::JocRenderError::from)?;
+            joc_render::JocBinauralRenderer::new_with_builtin_f32(
                 &arguments.layout,
-                sofa.bank,
+                &loaded.bank,
                 arguments.binaural_backend,
                 arguments.lfe_policy,
                 control,
@@ -2551,39 +2566,43 @@ fn render_joc(
         terminal.width,
     );
     if arguments.binaural {
-        let (sofa, builtin_hrtf) = if let Some(sofa_path) = &arguments.binaural_sofa {
-            (
-                openjoc_sofa::load_simple_free_field_hrir(
-                    sofa_path,
-                    openjoc_sofa::SofaLoadLimits::default(),
-                )
-                .map_err(joc_render::JocRenderError::from)?,
-                false,
-            )
-        } else {
-            (
-                openjoc_sofa::load_builtin_generic_hrir()
-                    .map_err(joc_render::JocRenderError::from)?,
-                true,
-            )
-        };
         let control = arguments
             .topology
             .as_ref()
             .map(|path| joc_render::RenderControl::from_path(path))
             .transpose()?;
-        let mut renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-            joc_render::JocBinauralRenderer::new(
-                &arguments.layout,
-                sofa.bank,
-                arguments.binaural_backend,
-                arguments.lfe_policy,
-                control,
-            )?
+        let builtin_hrtf = arguments.binaural_sofa.is_none();
+        let mut renderer = if let Some(sofa_path) = &arguments.binaural_sofa {
+            let sofa = openjoc_sofa::load_simple_free_field_hrir(
+                sofa_path,
+                openjoc_sofa::SofaLoadLimits::default(),
+            )
+            .map_err(joc_render::JocRenderError::from)?;
+            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                joc_render::JocBinauralRenderer::new(
+                    &arguments.layout,
+                    sofa.bank,
+                    arguments.binaural_backend,
+                    arguments.lfe_policy,
+                    control,
+                )?
+            } else {
+                joc_render::JocBinauralRenderer::new_with_contribution(
+                    &arguments.layout,
+                    sofa.bank,
+                    arguments.binaural_backend,
+                    arguments.lfe_policy,
+                    control,
+                    arguments.diagnostic_contribution,
+                )?
+            }
         } else {
-            joc_render::JocBinauralRenderer::new_with_contribution(
+            let loaded =
+                openjoc_sofa::load_builtin_hrir_f32(openjoc_sofa::BuiltinHrtf::SadieD1Ku100)
+                    .map_err(joc_render::JocRenderError::from)?;
+            joc_render::JocBinauralRenderer::new_with_builtin_f32(
                 &arguments.layout,
-                sofa.bank,
+                &loaded.bank,
                 arguments.binaural_backend,
                 arguments.lfe_policy,
                 control,
@@ -2939,7 +2958,8 @@ fn render_joc_with_embedded_session(
         Some(if let Some(path) = &arguments.binaural_sofa {
             BinauralConfig::from_sofa_bytes(fs::read(path)?, arguments.layout.clone(), lfe_policy)
         } else {
-            let mut config = BinauralConfig::builtin_generic(arguments.layout.clone());
+            let mut config =
+                BinauralConfig::builtin(arguments.binaural_hrtf, arguments.layout.clone());
             config.lfe_policy = lfe_policy;
             config
         })
@@ -5067,6 +5087,17 @@ mod profile_name_tests {
         assert_eq!(
             parsed.lfe_policy,
             Some(joc_render::BinauralLfePolicy::EqualPowerDualMono)
+        );
+        let mut builtin = base.to_vec();
+        builtin.extend([
+            "--binaural".to_owned(),
+            "--binaural-hrtf".to_owned(),
+            "sadie-ii-d2-kemar".to_owned(),
+        ]);
+        let parsed = parse_render_joc(&builtin).expect("D2 built-in HRTF selection");
+        assert_eq!(
+            parsed.binaural_hrtf,
+            openjoc_sofa::BuiltinHrtf::SadieD2Kemar
         );
     }
 

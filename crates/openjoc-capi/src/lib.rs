@@ -17,9 +17,9 @@
 #![allow(non_camel_case_types)]
 
 use openjoc_api::{
-    BinauralConfig, BinauralLfePolicy, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig,
-    OpenJocError, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
-    ValidationProfile,
+    BinauralConfig, BinauralLfePolicy, BuiltinHrtf, DialnormMode, DownmixPolicy, DrcPolicy,
+    OpenJocConfig, OpenJocError, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus,
+    RenderMode, ValidationProfile,
 };
 use openjoc_ffmpeg::{
     BridgeError, BridgeErrorKind, BridgeStatus, FfmpegDecoder, FfmpegFrame, JocClassification,
@@ -37,7 +37,7 @@ use std::{
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 5;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 6;
 const NO_PTS: i64 = i64::MIN;
 const LIVE_TEXT_CAPACITY: usize = 512;
 const LIVE_SHORT_TEXT_CAPACITY: usize = 128;
@@ -376,6 +376,15 @@ pub enum openjoc_lfe_policy {
     OPENJOC_LFE_EQUAL_POWER_DUAL_MONO = 1,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum openjoc_hrtf_preset {
+    OPENJOC_HRTF_SADIE_D1_KU100 = 0,
+    OPENJOC_HRTF_SADIE_D2_KEMAR = 1,
+}
+
+const RETIRED_AACHEN_HRTF_PRESET_CODE: u32 = 2;
+
 /// Role values for [`openjoc_custom_speaker`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -431,6 +440,8 @@ pub struct openjoc_decoder_config {
     pub dialnorm_mode: u32,
     /// Appended in ABI minor 4; null retains preset-name behavior.
     pub custom_speaker_layout: *const openjoc_custom_speaker_layout,
+    /// Appended in ABI minor 6; zero retains the SADIE II D1 default.
+    pub hrtf_preset: u32,
 }
 
 #[repr(C)]
@@ -463,9 +474,12 @@ pub struct openjoc_output_info {
 }
 
 const CONFIG_SIZE: u32 = std::mem::size_of::<openjoc_decoder_config>() as u32;
-const CONFIG_SIZE_BEFORE_CUSTOM: u32 = CONFIG_SIZE - std::mem::size_of::<*const u8>() as u32;
+const CONFIG_SIZE_BEFORE_HRTF: u32 =
+    std::mem::offset_of!(openjoc_decoder_config, hrtf_preset) as u32;
+const CONFIG_SIZE_BEFORE_CUSTOM: u32 =
+    std::mem::offset_of!(openjoc_decoder_config, custom_speaker_layout) as u32;
 const CONFIG_SIZE_BEFORE_DIALNORM: u32 =
-    CONFIG_SIZE_BEFORE_CUSTOM - std::mem::size_of::<u32>() as u32;
+    std::mem::offset_of!(openjoc_decoder_config, dialnorm_mode) as u32;
 const FRAME_SIZE: u32 = std::mem::size_of::<openjoc_pcm_frame>() as u32;
 const INFO_SIZE: u32 = std::mem::size_of::<openjoc_output_info>() as u32;
 const CUSTOM_LAYOUT_SIZE: u32 = std::mem::size_of::<openjoc_custom_speaker_layout>() as u32;
@@ -541,9 +555,12 @@ fn config_from_c(config: *const openjoc_decoder_config) -> Result<OpenJocConfig,
         if struct_size >= CONFIG_SIZE_BEFORE_CUSTOM {
             owned.dialnorm_mode = ptr::read_unaligned(ptr::addr_of!((*config).dialnorm_mode));
         }
-        if struct_size >= CONFIG_SIZE {
+        if struct_size >= CONFIG_SIZE_BEFORE_HRTF {
             owned.custom_speaker_layout =
                 ptr::read_unaligned(ptr::addr_of!((*config).custom_speaker_layout));
+        }
+        if struct_size >= CONFIG_SIZE {
+            owned.hrtf_preset = ptr::read_unaligned(ptr::addr_of!((*config).hrtf_preset));
         }
     }
     owned.struct_size = struct_size;
@@ -630,7 +647,7 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
             "config.struct_size is too small".to_owned(),
         ));
     }
-    let dialnorm = if config.struct_size >= CONFIG_SIZE {
+    let dialnorm = if config.struct_size >= CONFIG_SIZE_BEFORE_CUSTOM {
         match config.dialnorm_mode {
             value if value == openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32 => {
                 DialnormMode::Default
@@ -650,12 +667,13 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
     } else {
         DialnormMode::Default
     };
-    let custom_layout =
-        if config.struct_size >= CONFIG_SIZE && !config.custom_speaker_layout.is_null() {
-            Some(custom_layout_from_c(config.custom_speaker_layout)?)
-        } else {
-            None
-        };
+    let custom_layout = if config.struct_size >= CONFIG_SIZE_BEFORE_HRTF
+        && !config.custom_speaker_layout.is_null()
+    {
+        Some(custom_layout_from_c(config.custom_speaker_layout)?)
+    } else {
+        None
+    };
     let speaker_layout = if let Some(layout) = &custom_layout {
         layout.name().to_owned()
     } else if config.speaker_layout.is_null() {
@@ -734,6 +752,25 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
         } else {
             c_string(config.virtual_layout, "virtual_layout")?
         };
+        let hrtf_preset = if config.struct_size >= CONFIG_SIZE {
+            config.hrtf_preset
+        } else {
+            openjoc_hrtf_preset::OPENJOC_HRTF_SADIE_D1_KU100 as u32
+        };
+        let builtin_hrtf = match hrtf_preset {
+            value if value == openjoc_hrtf_preset::OPENJOC_HRTF_SADIE_D1_KU100 as u32 => {
+                BuiltinHrtf::SadieD1Ku100
+            }
+            value if value == openjoc_hrtf_preset::OPENJOC_HRTF_SADIE_D2_KEMAR as u32 => {
+                BuiltinHrtf::SadieD2Kemar
+            }
+            RETIRED_AACHEN_HRTF_PRESET_CODE => BuiltinHrtf::SadieD1Ku100,
+            _ => {
+                return Err(OpenJocError::InvalidConfig(
+                    "unknown HRTF preset".to_owned(),
+                ));
+            }
+        };
         Some(BinauralConfig {
             sofa_bytes: bytes,
             virtual_layout,
@@ -746,6 +783,7 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
                 }
                 _ => return Err(OpenJocError::InvalidConfig("unknown LFE policy".to_owned())),
             },
+            builtin_hrtf,
         })
     } else {
         None
@@ -879,6 +917,7 @@ fn default_decoder_config(struct_size: u32) -> openjoc_decoder_config {
         lfe_policy: openjoc_lfe_policy::OPENJOC_LFE_EXCLUDE as u32,
         dialnorm_mode: openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32,
         custom_speaker_layout: ptr::null(),
+        hrtf_preset: openjoc_hrtf_preset::OPENJOC_HRTF_SADIE_D1_KU100 as u32,
     }
 }
 
@@ -917,11 +956,30 @@ pub extern "C" fn openjoc_decoder_config_init_v1_4(
     if config.is_null() {
         return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
     }
-    // SAFETY: null was checked and the ABI 1.4 caller supplied full writable
-    // storage for the current configuration structure.
+    // SAFETY: null was checked and the ABI 1.4 caller supplied writable
+    // storage through the custom-layout field. The HRTF field was appended
+    // later and is initialized by `openjoc_decoder_config_init_v1_6`.
     unsafe {
-        *config = default_decoder_config(CONFIG_SIZE);
+        let defaults = default_decoder_config(CONFIG_SIZE_BEFORE_HRTF);
+        ptr::copy_nonoverlapping(
+            (&raw const defaults).cast::<u8>(),
+            config.cast::<u8>(),
+            CONFIG_SIZE_BEFORE_HRTF as usize,
+        );
     }
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Initializes the complete ABI 1.6 configuration structure.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_decoder_config_init_v1_6(
+    config: *mut openjoc_decoder_config,
+) -> openjoc_status {
+    if config.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: null was checked and the caller supplies the current structure.
+    unsafe { *config = default_decoder_config(CONFIG_SIZE) };
     openjoc_status::OPENJOC_STATUS_OK
 }
 

@@ -64,8 +64,9 @@ advanced functionality and does not widen downstream host/device channel
 layout support.
 
 For binaural sessions, `BinauralConfig::builtin_generic("7.1.4")` selects the
-offline bundled SADIE II generic HRTF without a filesystem path. Use
-`BinauralConfig::from_sofa_bytes(...)` for an explicit user SOFA; strict SOFA
+default offline SADIE II D1/KU100 HRTF. Use
+`BinauralConfig::builtin(BuiltinHrtf::SadieD2Kemar, "7.1.4")` for D2/KEMAR,
+and `BinauralConfig::from_sofa_bytes(...)` for an explicit user SOFA; strict SOFA
 validation and fail-closed coverage behavior are unchanged.
 
 `output_info()` is available before the first packet. Sample rate is `None`

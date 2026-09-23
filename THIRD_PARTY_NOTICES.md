@@ -22,15 +22,29 @@ KU100 HRIR set (48 kHz, 256 taps, 8,802 measured directions).
   <https://doi.org/10.3390/app8112029>.
 
 The bundled data is not OpenJOC source code and is not relabeled Apache-2.0
-OpenJOC code. The packaged file is
-`crates/openjoc-sofa/assets/sadie-ii-d1-48k-256tap.sofa`, generated from
+OpenJOC code. The packaged resource is
+`crates/openjoc-sofa/assets/sadie-ii-d1-ku100.ojhrtf`, generated from
 `https://sofacoustics.org/data/database/sadie/D1_48K_24bit_256tap_FIR_SOFA.sofa`
 (upstream SHA-256 `e6c72a84dd947b5ef75438ab96a9c2a32ed10f033472b9c4c11a49aff00a8a31`)
-by `tools/generate-builtin-hrtf.py`; its generated SHA-256 is
-`b9bcecd8a07e7eed4474a9b063c47672384339e83605bd245ff0adc098869fab`.
+by `tools/generate-builtin-hrtf.py` and the version-2 direct-record asset packer.
+The prepared CDF-1 intermediate SHA-256 is
+`b9bcecd8a07e7eed4474a9b063c47672384339e83605bd245ff0adc098869fab`; the
+version-2 `.ojhrtf` file is 18,374,724 bytes with SHA-256
+`78d048a68f84d34051578c262e401e35baa0e718901f85349afe0232f985d4df`.
 Its embedded metadata retains the Apache 2.0 notice and University of York
 attribution. The conversion and generated hashes are also recorded in
 `docs/site/concepts/spatial-portability.md`.
+
+## Additional built-in HRTF profiles
+
+OpenJOC also bundles the prepared SADIE II D2 / KEMAR resource. Its
+provenance, conversion record, hash, attribution, and license terms are
+documented in [`docs/hrtf.md`](docs/hrtf.md).
+
+- SADIE II D2 is Copyright 2018, University of York and licensed under Apache
+  License 2.0.
+- This data file remains third-party data. It is not relabeled as OpenJOC
+  source code or as an endorsement by the source institutions.
 
 ## GStreamer integration dependencies
 
