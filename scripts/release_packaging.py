@@ -216,7 +216,7 @@ def _collect_reproducibility_metadata(
     return {
         "openjoc_revision": _git_output(git, workspace, ("rev-parse", "HEAD")).strip(),
         "openjoc_branch": _git_output(git, workspace, ("branch", "--show-current")).strip(),
-        "openjoc_capi_abi": "1.5",
+        "openjoc_capi_abi": "1.6",
         "openjoc_rustc": rustc_version,
         "lav_revision": _git_output(git, lav, ("rev-parse", "HEAD")).strip(),
         "lav_branch": _git_output(git, lav, ("branch", "--show-current")).strip(),

@@ -205,8 +205,8 @@ typedef struct openjoc_live_inspection_snapshot {
 } openjoc_live_inspection_snapshot;
 
 uint32_t openjoc_get_abi_version(void);
-/* Legacy-safe ABI 1.3 prefix initializer. ABI 1.4 callers that need the
- * appended custom_speaker_layout field must use openjoc_decoder_config_init_v1_4. */
+/* Legacy-safe ABI 1.3 prefix initializer. Use openjoc_decoder_config_init_v1_4
+ * for custom_speaker_layout and openjoc_decoder_config_init_v1_6 for hrtf_preset. */
 openjoc_status openjoc_decoder_config_init(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_config_init_v1_4(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_config_init_v1_6(openjoc_decoder_config *config);

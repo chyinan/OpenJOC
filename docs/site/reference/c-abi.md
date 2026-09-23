@@ -12,7 +12,7 @@ artifact, not the primary C consumer library.
 
 ## ABI policy
 
-The ABI is `1.5-experimental`, independent of the OpenJOC package version.
+The ABI is `1.6-experimental`, independent of the OpenJOC package version.
 Major changes may break layout or ownership rules and require an ABI-major
 increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
@@ -35,10 +35,11 @@ metadata boundary are documented in
 [custom speaker layouts](../using/custom-speaker-layouts.md).
 
 `openjoc_decoder_config_init()` remains the legacy-safe ABI 1.3 prefix
-initializer: it never writes the ABI 1.4 appended field, so a real ABI 1.3
-caller may link it against the ABI 1.4 library without a struct over-write.
-ABI 1.4 callers should use `openjoc_decoder_config_init_v1_4()` when they need
-the complete current struct or custom geometry.
+initializer: it never writes fields appended in ABIs 1.4 or 1.6, so an ABI 1.3
+caller may link it against a newer library without a struct over-write. ABI
+1.4 callers use `openjoc_decoder_config_init_v1_4()` for the custom-layout
+field. ABI 1.6 callers use `openjoc_decoder_config_init_v1_6()` for the full
+current struct and explicit HRTF selection.
 
 ABI 1.5 adds the read-only `openjoc_live_inspection_snapshot` surface for
 `openjoc_stream_decoder`. `openjoc_stream_decoder_get_live_inspection_snapshot`
@@ -53,6 +54,11 @@ a discontinuity. `openjoc_stream_decoder_copy_live_inspection_json` performs
 bounded JSON serialization only when the caller requests it, so the decode
 observer does not serialize JSON on the audio path.
 
+ABI 1.6 appends `hrtf_preset` to `openjoc_decoder_config`. Value `0` selects
+SADIE II D1/KU100, the default; value `1` selects SADIE II D2/KEMAR. Callers
+with an older `struct_size` continue to use D1. The retired Aachen value `2`
+is accepted as D1 for compatibility with earlier callers.
+
 Experimental means the C surface may evolve during OpenJOC 0.x integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
 
@@ -60,7 +66,7 @@ does not mean that existing decoder correctness claims are withdrawn.
 
 ```c
 openjoc_decoder_config config;
-openjoc_decoder_config_init_v1_4(&config);
+openjoc_decoder_config_init_v1_6(&config);
 
 openjoc_decoder *decoder = NULL;
 openjoc_decoder_create(&config, &decoder);
