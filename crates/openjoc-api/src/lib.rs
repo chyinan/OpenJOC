@@ -344,7 +344,7 @@ impl OpenJocConfig {
             let (hrtf_source, hrtf_sha256) = if binaural.is_builtin() {
                 let source = match binaural.builtin_hrtf {
                     BuiltinHrtf::SadieD1Ku100 => "builtin:SADIE_II_D1_KU100_v2-2".to_owned(),
-                    preset => format!("builtin:{}", preset.id()),
+                    preset @ BuiltinHrtf::SadieD2Kemar => format!("builtin:{}", preset.id()),
                 };
                 (
                     source,
@@ -2331,19 +2331,17 @@ mod tests {
 
     #[test]
     fn non_default_built_in_presets_are_valid_session_configurations() {
-        for preset in [BuiltinHrtf::SadieD2Kemar] {
-            let config = OpenJocConfig {
-                render_mode: RenderMode::Binaural,
-                speaker_layout: "7.1.4".to_owned(),
-                binaural: Some(BinauralConfig::builtin(preset, "7.1.4")),
-                ..OpenJocConfig::default()
-            };
-            let session = OpenJocSession::new(config).expect("built-in preset session");
-            assert_eq!(
-                session.output_info().channel_labels,
-                ["Left Ear", "Right Ear"]
-            );
-        }
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin(BuiltinHrtf::SadieD2Kemar, "7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        let session = OpenJocSession::new(config).expect("built-in preset session");
+        assert_eq!(
+            session.output_info().channel_labels,
+            ["Left Ear", "Right Ear"]
+        );
     }
 
     #[test]
