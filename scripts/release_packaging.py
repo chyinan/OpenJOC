@@ -24,7 +24,7 @@ from release_packaging_core import (
 )
 
 
-CANONICAL_RELEASE_VERSION = "0.17.0"
+CANONICAL_RELEASE_VERSION = "0.18.0"
 LAV_UPSTREAM_BASE = "fefb6987994ed56e4525e8a125f5fbb53707bc52"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",
@@ -505,8 +505,11 @@ This binary candidate corresponds exactly to
 
 SHA-256: `{source_hash}`
 
-The release must publish this source archive together with the binary archive
-and preserve the immutable downstream LAV tag `openjoc-{release_version}`.
+The exact LAV source revision is recorded in the included
+`REPRODUCIBILITY-MANIFEST.txt` and can be checked out from the public
+LAVFilters-OpenJOC repository. Publish this source archive with the binary
+archive so the recorded revision and third-party license closure remain
+available.
 """.format(release_version=release_version, source_hash=source_hash)
 
 

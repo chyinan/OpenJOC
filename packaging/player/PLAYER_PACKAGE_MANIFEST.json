@@ -9,7 +9,7 @@
     "version_policy": "release archives use the project version; development archives append git<short-commit>; release naming is explicit"
   },
   "openjoc": {
-    "version": "0.17.0",
+    "version": "0.18.0",
     "c_abi": {
       "major": 1,
       "minor": 6,
@@ -23,7 +23,7 @@
       "automatic positive JOC decoder selection",
       "binaural rendering",
       "physical 2.0, 5.1, 7.1.4, 9.1.6, and 22.2 rendering",
-      "built-in SADIE II D1 KU100 HRTF"
+      "built-in SADIE II D1 KU100 default and SADIE II D2 KEMAR HRTFs"
     ]
   },
   "pinned_stack": {
@@ -56,8 +56,8 @@
   },
   "platforms": {
     "macos-arm64": {
-      "archive": "openjoc-mpv-0.17.0-macos-arm64.tar.gz",
-      "development_archive": "openjoc-mpv-0.17.0-git<short-commit>-macos-arm64.tar.gz",
+      "archive": "openjoc-mpv-0.18.0-macos-arm64.tar.gz",
+      "development_archive": "openjoc-mpv-0.18.0-git<short-commit>-macos-arm64.tar.gz",
       "loader": "Mach-O @rpath with @loader_path-relative library closure",
       "signing": "ad-hoc signed where required; no Developer ID or notarization claim",
       "system_external": [
@@ -67,8 +67,8 @@
       ]
     },
     "linux-x86_64": {
-      "archive": "openjoc-mpv-0.17.0-linux-x86_64.tar.gz",
-      "development_archive": "openjoc-mpv-0.17.0-git<short-commit>-linux-x86_64.tar.gz",
+      "archive": "openjoc-mpv-0.18.0-linux-x86_64.tar.gz",
+      "development_archive": "openjoc-mpv-0.18.0-git<short-commit>-linux-x86_64.tar.gz",
       "loader": "ELF $ORIGIN RUNPATH for bundled libraries",
       "glibc_baseline": "Ubuntu 24.04 runner baseline; record actual glibc symbol floor",
       "system_external": [
@@ -78,8 +78,8 @@
       ]
     },
     "windows-x64": {
-      "archive": "openjoc-mpv-0.17.0-windows-x64.zip",
-      "development_archive": "openjoc-mpv-0.17.0-git<short-commit>-windows-x64.zip",
+      "archive": "openjoc-mpv-0.18.0-windows-x64.zip",
+      "development_archive": "openjoc-mpv-0.18.0-git<short-commit>-windows-x64.zip",
       "loader": "adjacent DLL closure; no global PATH or MSYS2 requirement",
       "toolchain": "MSYS2 MinGW-w64",
       "system_external": [

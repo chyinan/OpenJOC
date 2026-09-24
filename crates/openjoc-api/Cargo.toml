@@ -12,17 +12,17 @@ default = ["embedded-builtin-hrtf"]
 embedded-builtin-hrtf = ["openjoc-sofa/embedded-builtin-hrtf"]
 
 [dependencies]
-openjoc-eac3 = { version = "0.17.0", path = "../openjoc-eac3" }
-openjoc-emdf = { version = "0.17.0", path = "../openjoc-emdf" }
-openjoc-joc = { version = "0.17.0", path = "../openjoc-joc" }
-openjoc-oamd = { version = "0.17.0", path = "../openjoc-oamd" }
-openjoc-render = { version = "0.17.0", path = "../openjoc-render" }
-openjoc-scene = { version = "0.17.0", path = "../openjoc-scene" }
-openjoc-sofa = { version = "0.17.0", path = "../openjoc-sofa", default-features = false }
+openjoc-eac3 = { version = "0.18.0", path = "../openjoc-eac3" }
+openjoc-emdf = { version = "0.18.0", path = "../openjoc-emdf" }
+openjoc-joc = { version = "0.18.0", path = "../openjoc-joc" }
+openjoc-oamd = { version = "0.18.0", path = "../openjoc-oamd" }
+openjoc-render = { version = "0.18.0", path = "../openjoc-render" }
+openjoc-scene = { version = "0.18.0", path = "../openjoc-scene" }
+openjoc-sofa = { version = "0.18.0", path = "../openjoc-sofa", default-features = false }
 sha2 = "0.10"
 
 [dev-dependencies]
-openjoc-container = { version = "0.17.0", path = "../openjoc-container" }
+openjoc-container = { version = "0.18.0", path = "../openjoc-container" }
 
 [lints]
 workspace = true

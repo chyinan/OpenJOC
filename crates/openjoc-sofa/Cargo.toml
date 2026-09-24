@@ -12,11 +12,11 @@ default = ["embedded-builtin-hrtf"]
 embedded-builtin-hrtf = []
 
 [dependencies]
-openjoc-render = { version = "0.17.0", path = "../openjoc-render" }
+openjoc-render = { version = "0.18.0", path = "../openjoc-render" }
 sha2 = "0.10"
 
 [dev-dependencies]
-openjoc-render = { version = "0.17.0", path = "../openjoc-render" }
+openjoc-render = { version = "0.18.0", path = "../openjoc-render" }
 
 [lints]
 workspace = true

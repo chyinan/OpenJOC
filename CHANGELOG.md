@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.18.0] — 2026-09-25
+
+OpenJOC v0.18 adds a second built-in HRTF and the WASM bridge needed by
+OpenJOC Browser's local Custom SOFA importer.
+
+### Added
+
+- Added SADIE II D2 / KEMAR as a built-in HRTF while retaining SADIE II D1 / KU100 as the default.
+- Added CLI selection for the built-in binaural HRTF preset.
+- Added a bounded WASM allocator and decoder constructor for supported local SimpleFreeFieldHRIR SOFA files.
+
+### Changed
+
+- Updated package metadata to C ABI 1.6 and refreshed built-in HRTF documentation and provenance.
+- Added the D1/D2 selector and Custom SOFA option to the LAV binaural settings.
+
+### Fixed
+
+- Made built-in HRTF preset matching exhaustive across the API and WASM renderer.
+- Kept SOFA parsing within explicit file, measurement, FIR, delay, and coefficient limits in WASM.
+
 ## [0.17.0] — 2026-09-09
 
 OpenJOC v0.17 is a feature release centered on standards-aware inspection and

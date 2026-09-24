@@ -19,7 +19,7 @@ class LavReleaseWorkflowTests(unittest.TestCase):
             "workflow_dispatch:",
             "tags: ['v*']",
             "repository: chyinan/LAVFilters-OpenJOC",
-            "147c24fe1489ded5473c2a09987430ca1070a412",
+            "8f32aad51aea24602f2175316a241568be5fc4a1",
             "scripts/package_lav_release.py",
             "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip",
             "gh release upload",

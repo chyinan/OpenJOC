@@ -59,7 +59,7 @@ class WindowsOnboardingTemplateTests(unittest.TestCase):
             TEMPLATE / "scripts" / "OpenJoc.Onboarding.Shell.psm1",
         )
         combined = "\n".join(path.read_text(encoding="utf-8") for path in current_files)
-        self.assertIn("0.17.0", combined)
+        self.assertIn("0.18.0", combined)
         self.assertNotIn("0.11.0", combined)
 
     def test_template_exposes_obvious_root_launchers_and_script_core(self) -> None:

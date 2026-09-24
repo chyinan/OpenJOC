@@ -8,12 +8,13 @@ Windows DirectShow ecosystem. The primary validated host is PotPlayer.
 The source is published as [LAVFilters-OpenJOC](https://github.com/chyinan/LAVFilters-OpenJOC),
 a downstream fork of [Nevcairiel/LAVFilters](https://github.com/Nevcairiel/LAVFilters).
 The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
-`fefb6987994ed56e4525e8a125f5fbb53707bc52`. Release source is frozen by the
-immutable downstream tag `openjoc-0.17.0`.
+`fefb6987994ed56e4525e8a125f5fbb53707bc52`. The OpenJOC 0.18.0 package is
+built from immutable LAV commit
+`8f32aad51aea24602f2175316a241568be5fc4a1`, pinned by the release workflow.
 
-The public release also includes the
-`openjoc-lav-0.17.0-corresponding-source.zip` asset, which carries the full
-recursive corresponding-source and third-party license closure.
+The public release includes `openjoc-lav-0.18.0-windows-x64.zip`. The pinned
+LAV source is available from the public repository at the commit above; the
+package carries its runtime notices and license files.
 
 ## Routing behavior
 
@@ -51,7 +52,8 @@ IEEE-float PCM policies:
 - Stereo (Speakers): 2 channels, mask `0x00000003`, conventional physical
   two-speaker rendering without HRTF;
 - Binaural (Headphones): 2 channels, mask `0x00000003`, OpenJOC virtual
-  speaker rendering through the embedded SADIE II D1 KU100 HRTF;
+  speaker rendering through the selected built-in SADIE II D1 KU100 or D2
+  KEMAR HRTF, or a supported local Custom SOFA dataset;
 - 5.1: 6 channels, mask `0x0000060f`;
 - 7.1: 8 channels, mask `0x0000063f`;
 - 5.1.2: 8 channels, mask `0x0000560f`;
