@@ -8,8 +8,8 @@ Subject: [PATCH] avcodec: add experimental libopenjoc decoder wrapper
  doc/decoders.texi          |  43 ++++
  libavcodec/Makefile        |   1 +
  libavcodec/allcodecs.c     |   3 +
- libavcodec/libopenjocdec.c | 476 +++++++++++++++++++++++++++++++++++++
- 5 files changed, 527 insertions(+)
+ libavcodec/libopenjocdec.c | 500 +++++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 551 insertions(+)
  create mode 100644 libavcodec/libopenjocdec.c
 
 diff --git a/configure b/configure
@@ -130,10 +130,10 @@ index 47eded261f..1dd3e68c41 100644
  extern const FFCodec ff_libopencore_amrnb_decoder;
 diff --git a/libavcodec/libopenjocdec.c b/libavcodec/libopenjocdec.c
 new file mode 100644
-index 0000000000..3bf536b515
+index 0000000000..e9cbbf1ab1
 --- /dev/null
 +++ b/libavcodec/libopenjocdec.c
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,500 @@
 +/*
 + * OpenJOC E-AC-3 JOC decoder wrapper
 + *
@@ -401,6 +401,25 @@ index 0000000000..3bf536b515
 +    return 0;
 +}
 +
++/* pattern: Functional Core - checked PCM sample and byte counts. */
++static int libopenjoc_pcm_payload_bytes(size_t sample_count,
++                                       size_t channel_count,
++                                       size_t *expected_samples,
++                                       size_t *expected_bytes)
++{
++    if (!expected_samples || !expected_bytes || !channel_count ||
++        sample_count > SIZE_MAX / channel_count)
++        return AVERROR_INVALIDDATA;
++
++    *expected_samples = sample_count * channel_count;
++    if (*expected_samples > SIZE_MAX / sizeof(float))
++        return AVERROR_INVALIDDATA;
++
++    *expected_bytes = *expected_samples * sizeof(float);
++    return 0;
++}
++
++/* pattern: Imperative Shell - maps OpenJOC PCM into an FFmpeg AVFrame. */
 +static int libopenjoc_output_frame(AVCodecContext *avctx, AVFrame *frame,
 +                                   const openjoc_pcm_frame *pcm)
 +{
@@ -409,6 +428,7 @@ index 0000000000..3bf536b515
 +                                  avctx->pkt_timebase.den ?
 +                                  avctx->pkt_timebase : sample_time_base;
 +    size_t expected_samples;
++    size_t expected_bytes;
 +    int ret;
 +
 +    if (pcm->sample_format != 1 || pcm->sample_rate != 48000 ||
@@ -416,12 +436,16 @@ index 0000000000..3bf536b515
 +        pcm->sample_count > INT_MAX)
 +        return AVERROR_INVALIDDATA;
 +
-+    if (pcm->sample_count > SIZE_MAX / pcm->channel_count)
++    if (!pcm->data ||
++        libopenjoc_pcm_payload_bytes(pcm->sample_count, pcm->channel_count,
++                                     &expected_samples, &expected_bytes) < 0)
 +        return AVERROR_INVALIDDATA;
-+    expected_samples = pcm->sample_count * (size_t)pcm->channel_count;
-+    if (!pcm->data || pcm->data_len != expected_samples ||
-+        expected_samples > SIZE_MAX / sizeof(*pcm->data))
++    if (pcm->data_len != expected_bytes) {
++        av_log(avctx, AV_LOG_ERROR,
++               "OpenJOC PCM payload length mismatch: expected %zu bytes, received %zu\n",
++               expected_bytes, pcm->data_len);
 +        return AVERROR_INVALIDDATA;
++    }
 +
 +    frame->format = AV_SAMPLE_FMT_FLT;
 +    frame->sample_rate = 48000;
@@ -433,7 +457,7 @@ index 0000000000..3bf536b515
 +    if (ret < 0)
 +        return ret;
 +
-+    memcpy(frame->data[0], pcm->data, expected_samples * sizeof(*pcm->data));
++    memcpy(frame->data[0], pcm->data, expected_bytes);
 +
 +    /* ff_get_buffer() propagates packet properties. OpenJOC owns the logical
 +     * sample timeline, so install its exact values after allocation without

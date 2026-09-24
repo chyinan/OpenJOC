@@ -31,7 +31,7 @@
       "tag": "n9.0.1",
       "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
       "patch_path": "integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch",
-      "patch_sha256": "cc7423eeeaf82a4777a3d8adac601644ea645910e2c4511fcb0adfe9462dccc1",
+      "patch_sha256": "e8921951af338c82edaa15766e2f2a1e7ee5b33ccd1e514733b93baa40d266a9",
       "configure_flags": [
         "--disable-autodetect",
         "--disable-static",
