@@ -17,7 +17,18 @@ openjoc render-joc input.m4a \\
   --output headphones.wav
 ```
 
-默认虚拟布局是 7.1.4。如果没有提供 SOFA 路径，会使用内置的离线 SADIE II D1 HRTF。指定自定义数据集时，会走受支持的本地 SOFA 流程：
+默认虚拟布局是 7.1.4。未指定 HRTF 时，CLI 使用内置的离线 SADIE II D1 / KU100。要显式选择内置配置，请使用 `--binaural-hrtf`：
+
+## 选择内置 HRTF
+
+`--binaural-hrtf` 后面填写稳定 ID，而不是界面显示名称。省略该选项时使用默认的 SADIE II D1 / KU100：
+
+```sh
+openjoc render-joc input.m4a --binaural --binaural-hrtf sadie-ii-d1-ku100 --output headphones-ku100.wav
+openjoc render-joc input.m4a --binaural --binaural-hrtf sadie-ii-d2-kemar --output headphones-kemar.wav
+```
+
+如果希望使用自己的 SOFA 文件，请改用 `--binaural-sofa listener.sofa`（或 `--sofa listener.sofa`）；提供 SOFA 时使用该文件，而不是内置 preset：
 
 ```sh
 openjoc render-joc input.m4a \\

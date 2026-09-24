@@ -53,7 +53,7 @@ usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] 
 usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf>
        [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)
        [--dialnorm default|digital|analog] [--normalize-peak <TARGET_DBFS>]
-       [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]
+       [--binaural [--binaural-hrtf <ID>] [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]
        [--backend direct|partitioned --partition-size N]
        [--lfe-policy exclude|equal-power-dual-mono]
        [--validation-profile auto|etsi-strict|observed-vendor-compat]
@@ -64,6 +64,8 @@ usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET>
 ```
 
 Supported presets are `2.0`, `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4`, `7.1.6`, `9.1`, `9.1.2`, `9.1.4`, `9.1.6`, and `22.2`. `--layout-file` accepts versioned custom spherical geometry; presets remain the ordinary path.
+
+In binaural mode, `--binaural-hrtf` selects a built-in profile: `sadie-ii-d1-ku100` (the default) or `sadie-ii-d2-kemar`. See [Binaural and SOFA](../using/binaural-sofa.md) for complete commands.
 
 `--drc` controls encoded E-AC-3 dynamic-range metadata. `--dialnorm` controls programme calibration. `--normalize-peak` applies one optional static file-output scalar after rendering. None of these options is a limiter or LUFS/true-peak normalizer.
 

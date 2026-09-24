@@ -16,7 +16,18 @@ openjoc render-joc input.m4a \\
   --output headphones.wav
 ```
 
-The default virtual layout is 7.1.4. The bundled offline SADIE II D1 HRTF is used when no SOFA path is supplied. A custom dataset selects the supported local SOFA path:
+The default virtual layout is 7.1.4. The CLI uses the bundled offline SADIE II D1 / KU100 profile unless you select another HRTF. Pass a built-in profile ID with `--binaural-hrtf`:
+
+## Select a built-in HRTF
+
+Pass a stable preset ID to `--binaural-hrtf`; the option accepts IDs, not display names. Omitting it keeps the default SADIE II D1 / KU100 profile:
+
+```sh
+openjoc render-joc input.m4a --binaural --binaural-hrtf sadie-ii-d1-ku100 --output headphones-ku100.wav
+openjoc render-joc input.m4a --binaural --binaural-hrtf sadie-ii-d2-kemar --output headphones-kemar.wav
+```
+
+To use your own SOFA file, pass `--binaural-sofa listener.sofa` (or `--sofa listener.sofa`) instead. When a SOFA path is supplied, that file is used instead of a built-in preset:
 
 ```sh
 openjoc render-joc input.m4a \\

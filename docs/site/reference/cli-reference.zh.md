@@ -56,7 +56,7 @@ usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] 
 usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET> | --layout-file <CUSTOM.json>) --output <OUTPUT.wav|OUTPUT.caf>
        [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)
        [--dialnorm default|digital|analog] [--normalize-peak <TARGET_DBFS>]
-       [--binaural [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]
+       [--binaural [--binaural-hrtf <ID>] [--sofa <HRTF.sofa>] [--virtual-layout <LAYOUT>] | --binaural-sofa <HRTF.sofa>]
        [--backend direct|partitioned --partition-size N]
        [--lfe-policy exclude|equal-power-dual-mono]
        [--validation-profile auto|etsi-strict|observed-vendor-compat]
@@ -67,6 +67,8 @@ usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET>
 ```
 
 支持的预设包括 `2.0`、`5.1`、`5.1.2`、`5.1.4`、`7.1`、`7.1.2`、`7.1.4`、`7.1.6`、`9.1`、`9.1.2`、`9.1.4`、`9.1.6` 和 `22.2`。`--layout-file` 接受带版本的自定义球面几何布局；预设布局仍是常规使用路径。
+
+双耳模式下，`--binaural-hrtf` 可选择内置 HRTF：`sadie-ii-d1-ku100`（默认）或 `sadie-ii-d2-kemar`。完整示例见[双耳与 SOFA](../using/binaural-sofa.zh.md)。
 
 `--drc` 控制 E-AC-3 中编码的动态范围元数据。`--dialnorm` 控制节目响度校准。`--normalize-peak` 在渲染后对文件输出应用一个可选的静态缩放系数。这些选项都不是限幅器，也不是 LUFS/真峰值归一化器。
 
