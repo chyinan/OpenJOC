@@ -5,7 +5,7 @@
 
 #![allow(unsafe_code)]
 
-use super::{Decoder, DecoderStatus, WasmRenderer, performance::PerformanceSummary};
+use super::{Decoder, DecoderError, DecoderStatus, WasmRenderer, performance::PerformanceSummary};
 use openjoc_api::BuiltinHrtf;
 use openjoc_api::DialnormMode;
 use std::{
@@ -23,6 +23,7 @@ const STATUS_ERROR: i32 = -1;
 const NO_PTS_SAMPLES: i64 = i64::MIN;
 const MAX_WASM_ALLOCATION_BYTES: usize = 4 * 1024 * 1024;
 const MAX_WASM_HRTF_ASSET_BYTES: usize = 256 * 1024 * 1024;
+const MAX_WASM_CUSTOM_SOFA_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct WasmAllocation {
@@ -126,6 +127,43 @@ pub unsafe extern "C" fn openjoc_wasm_decoder_create_with_renderer_and_hrtf_asse
     create_decoder(dialnorm_mode, renderer_mode, hrtf_mode, Some(asset))
 }
 
+/// Creates a binaural decoder from caller-provided SimpleFreeFieldHRIR SOFA bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn openjoc_wasm_decoder_create_with_renderer_and_custom_sofa(
+    dialnorm_mode: u32,
+    renderer_mode: u32,
+    pointer: u32,
+    length: u32,
+) -> u32 {
+    let Ok(length) = usize::try_from(length) else {
+        return 0;
+    };
+    if length == 0
+        || length > MAX_WASM_CUSTOM_SOFA_BYTES
+        || pointer == 0
+        || !known_allocation(pointer, length)
+        || !wasm_memory_range_valid(pointer, length)
+    {
+        return 0;
+    }
+    let dialnorm = match dialnorm_mode {
+        0 => DialnormMode::Default,
+        1 => DialnormMode::Analog,
+        _ => return 0,
+    };
+    let renderer = match renderer_mode {
+        0 => WasmRenderer::Stereo,
+        1 => WasmRenderer::Binaural,
+        _ => return 0,
+    };
+    // SAFETY: the allocation registry confirms this exact live region, and
+    // the SOFA parser borrows it only while the decoder is initialized.
+    let sofa_bytes = unsafe { slice::from_raw_parts(pointer as usize as *const u8, length) };
+    store_decoder(Decoder::new_with_dialnorm_renderer_and_custom_sofa(
+        dialnorm, renderer, sofa_bytes,
+    ))
+}
+
 fn create_decoder(
     dialnorm_mode: u32,
     renderer_mode: u32,
@@ -154,6 +192,10 @@ fn create_decoder(
         }
         None => Decoder::new_with_dialnorm_renderer_and_hrtf(dialnorm, renderer, hrtf),
     };
+    store_decoder(decoder_result)
+}
+
+fn store_decoder(decoder_result: Result<Decoder, DecoderError>) -> u32 {
     let Ok(decoder) = decoder_result else {
         return 0;
     };
@@ -202,6 +244,15 @@ pub extern "C" fn openjoc_wasm_hrtf_asset_alloc(length: u32) -> u32 {
         return 0;
     };
     allocate_wasm_buffer(length, MAX_WASM_HRTF_ASSET_BYTES)
+}
+
+/// Allocates a bounded region for one user-provided SOFA file.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_custom_sofa_alloc(length: u32) -> u32 {
+    let Ok(length) = usize::try_from(length) else {
+        return 0;
+    };
+    allocate_wasm_buffer(length, MAX_WASM_CUSTOM_SOFA_BYTES)
 }
 
 fn allocate_wasm_buffer(length: usize, maximum: usize) -> u32 {

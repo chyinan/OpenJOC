@@ -7,8 +7,9 @@ mod performance;
 mod stream;
 
 use openjoc_api::{
-    BinauralConfig, BuiltinHrtf, DialnormMode, DownmixPolicy, DrcPolicy, OpenJocConfig,
-    OpenJocError, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode, ValidationProfile,
+    BinauralConfig, BinauralLfePolicy, BuiltinHrtf, DialnormMode, DownmixPolicy, DrcPolicy,
+    OpenJocConfig, OpenJocError, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
+    SofaLoadLimits, ValidationProfile,
 };
 use performance::{TimingSample, summarize};
 use std::collections::VecDeque;
@@ -16,6 +17,14 @@ use stream::{ElementaryStreamFramer, FramingError, FramingStatus};
 
 const MAX_QUEUED_PCM_FRAMES: usize = 8;
 const MAX_TIMING_SAMPLES: usize = 4096;
+const WASM_CUSTOM_SOFA_LOAD_LIMITS: SofaLoadLimits = SofaLoadLimits {
+    max_file_bytes: 16 * 1024 * 1024,
+    max_measurements: 4096,
+    max_fir_samples: 8192,
+    max_delay_samples: 8192,
+    max_total_coefficients: 1_000_000,
+    max_metadata_bytes: 1_048_576,
+};
 
 pub const BINAURAL_VIRTUAL_LAYOUT: &str = "7.1.4";
 pub const BINAURAL_HRTF_SOURCE: &str = "Built-in SADIE II D1";
@@ -110,6 +119,7 @@ pub struct DecoderStatusSnapshot {
 pub struct Decoder {
     session: OpenJocSession,
     hrtf: Option<BuiltinHrtf>,
+    custom_hrtf: bool,
     framer: ElementaryStreamFramer,
     output: VecDeque<OpenJocPcmFrame>,
     current_pcm: Option<OpenJocPcmFrame>,
@@ -163,6 +173,39 @@ impl Decoder {
         Self::new_with_hrtf_asset(dialnorm, renderer, hrtf, Some(asset))
     }
 
+    /// Creates a binaural session from caller-owned SOFA bytes.
+    pub fn new_with_dialnorm_renderer_and_custom_sofa(
+        dialnorm: DialnormMode,
+        renderer: WasmRenderer,
+        sofa_bytes: &[u8],
+    ) -> Result<Self, DecoderError> {
+        if renderer != WasmRenderer::Binaural {
+            return Err(DecoderError {
+                category: FailureCategory::InvalidInput,
+                detail: String::from("custom SOFA requires the binaural renderer"),
+            });
+        }
+        let binaural = BinauralConfig::from_sofa_bytes(
+            sofa_bytes.to_vec(),
+            BINAURAL_VIRTUAL_LAYOUT,
+            BinauralLfePolicy::Exclude,
+        );
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: BINAURAL_VIRTUAL_LAYOUT.to_owned(),
+            downmix: DownmixPolicy::Auto,
+            drc: DrcPolicy::Line,
+            dialnorm,
+            validation_profile: ValidationProfile::Auto,
+            binaural: Some(binaural),
+            ..OpenJocConfig::default()
+        };
+        let session =
+            OpenJocSession::new_with_sofa_load_limits(config, WASM_CUSTOM_SOFA_LOAD_LIMITS)
+                .map_err(|error| map_openjoc_error(&error))?;
+        Ok(Self::from_session(session, None, true))
+    }
+
     fn new_with_hrtf_asset(
         dialnorm: DialnormMode,
         renderer: WasmRenderer,
@@ -186,15 +229,28 @@ impl Decoder {
             binaural,
             ..OpenJocConfig::default()
         };
-        let mut session = match asset {
+        let session = match asset {
             Some(asset) => OpenJocSession::new_with_hrtf_asset(config, asset),
             None => OpenJocSession::new(config),
         }
         .map_err(|error| map_openjoc_error(&error))?;
-        session.enable_stage_timing();
-        Ok(Self {
+        Ok(Self::from_session(
             session,
-            hrtf: (renderer == WasmRenderer::Binaural).then_some(hrtf),
+            (renderer == WasmRenderer::Binaural).then_some(hrtf),
+            false,
+        ))
+    }
+
+    fn from_session(
+        mut session: OpenJocSession,
+        hrtf: Option<BuiltinHrtf>,
+        custom_hrtf: bool,
+    ) -> Self {
+        session.enable_stage_timing();
+        Self {
+            session,
+            hrtf,
+            custom_hrtf,
             framer: ElementaryStreamFramer::new(),
             output: VecDeque::new(),
             current_pcm: None,
@@ -208,7 +264,7 @@ impl Decoder {
             input_seen: false,
             end_of_stream: false,
             last_error: None,
-        })
+        }
     }
 
     /// Adds raw E-AC-3 bytes and advances at most until one PCM frame is ready.
@@ -326,9 +382,13 @@ impl Decoder {
             RenderMode::Binaural => (
                 "Binaural (Headphones)",
                 Some(BINAURAL_VIRTUAL_LAYOUT),
-                Some(match self.hrtf.unwrap_or(BuiltinHrtf::SadieD1Ku100) {
-                    BuiltinHrtf::SadieD1Ku100 => BINAURAL_HRTF_SOURCE,
-                    preset @ BuiltinHrtf::SadieD2Kemar => preset.display_name(),
+                Some(if self.custom_hrtf {
+                    "Custom SOFA"
+                } else {
+                    match self.hrtf.unwrap_or(BuiltinHrtf::SadieD1Ku100) {
+                        BuiltinHrtf::SadieD1Ku100 => BINAURAL_HRTF_SOURCE,
+                        preset @ BuiltinHrtf::SadieD2Kemar => preset.display_name(),
+                    }
                 }),
             ),
             RenderMode::Stereo | RenderMode::Speaker => ("Stereo (Speakers)", None, None),

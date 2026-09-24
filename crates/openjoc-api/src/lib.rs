@@ -40,11 +40,11 @@ use openjoc_scene::{
     SemanticChannelLayout, SpeakerLayout, SpeakerLayoutPreset,
 };
 use openjoc_sofa::{
-    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, SofaLoadLimits, load_builtin_hrir_f32,
-    load_builtin_hrir_f32_from_asset, parse_simple_free_field_hrir, resolve_hrir, resolve_hrir_f32,
+    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, load_builtin_hrir_f32, load_builtin_hrir_f32_from_asset,
+    parse_simple_free_field_hrir, resolve_hrir, resolve_hrir_f32,
 };
 
-pub use openjoc_sofa::BuiltinHrtf;
+pub use openjoc_sofa::{BuiltinHrtf, SofaLoadLimits};
 use sha2::{Digest, Sha256};
 use std::{collections::VecDeque, fmt, fmt::Write as _, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
@@ -774,9 +774,26 @@ impl OpenJocSession {
         Self::new_with_builtin_hrtf_asset(config, Some(asset))
     }
 
+    /// Creates a session while applying caller-selected limits to explicit
+    /// custom SOFA parsing. Built-in HRTF asset loading is unchanged.
+    pub fn new_with_sofa_load_limits(
+        config: OpenJocConfig,
+        sofa_load_limits: SofaLoadLimits,
+    ) -> Result<Self, OpenJocError> {
+        Self::new_with_session_options(config, None, Some(sofa_load_limits))
+    }
+
     fn new_with_builtin_hrtf_asset(
         config: OpenJocConfig,
         external_asset: Option<&[u8]>,
+    ) -> Result<Self, OpenJocError> {
+        Self::new_with_session_options(config, external_asset, None)
+    }
+
+    fn new_with_session_options(
+        config: OpenJocConfig,
+        external_asset: Option<&[u8]>,
+        custom_sofa_load_limits: Option<SofaLoadLimits>,
     ) -> Result<Self, OpenJocError> {
         config.validate()?;
         let speaker_layout = config.effective_speaker_layout()?;
@@ -789,7 +806,7 @@ impl OpenJocSession {
         let binaural = config
             .binaural
             .as_ref()
-            .map(|binaural| BinauralState::new(binaural, external_asset))
+            .map(|binaural| BinauralState::new(binaural, external_asset, custom_sofa_load_limits))
             .transpose()?;
         let mut audio_decoder = JocAccessUnitPcmDecoder::new();
         audio_decoder.set_dialnorm_mode(config.dialnorm);
@@ -1990,7 +2007,11 @@ struct BinauralMapping {
 }
 
 impl BinauralState {
-    fn new(config: &BinauralConfig, external_asset: Option<&[u8]>) -> Result<Self, OpenJocError> {
+    fn new(
+        config: &BinauralConfig,
+        external_asset: Option<&[u8]>,
+        custom_sofa_load_limits: Option<SofaLoadLimits>,
+    ) -> Result<Self, OpenJocError> {
         let (bank, mappings, lfe_index, sample_rate_hz) = if config.is_builtin() {
             let loaded = if let Some(asset) = external_asset {
                 load_builtin_hrir_f32_from_asset(config.builtin_hrtf, asset)?
@@ -2004,8 +2025,10 @@ impl BinauralState {
                 |direction| resolve_hrir_f32(&loaded.bank, direction).map_err(Into::into),
             )?
         } else {
-            let loaded =
-                parse_simple_free_field_hrir(&config.sofa_bytes, SofaLoadLimits::default())?;
+            let loaded = parse_simple_free_field_hrir(
+                &config.sofa_bytes,
+                custom_sofa_load_limits.unwrap_or_default(),
+            )?;
             validate_binaural_sample_rate(loaded.metadata.sample_rate_hz)?;
             prepare_binaural_bank(
                 loaded.metadata.sample_rate_hz,
