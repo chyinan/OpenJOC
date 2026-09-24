@@ -134,7 +134,7 @@ typedef struct openjoc_pcm_frame {
     size_t sample_count;
     int64_t pts_samples;
     const float *data;
-    size_t data_len;
+    size_t data_len; /* byte length of the interleaved float32 payload */
     const char *layout_name;
     const char *const *channel_labels; /* reserved; use get_channel_label in ABI 1.0 */
     size_t channel_label_count;

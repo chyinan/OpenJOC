@@ -101,7 +101,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX /DUNICODE /D_UNICODE ^
   /Fe:OpenJocPolicyControl.exe /link advapi32.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
+call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 "/I%~2\include" ^
   "%~2\decoder\LAVAudio\OpenJocPropertyPageSmoke.cpp" ^
   /Fe:OpenJocPropertyPageSmoke.exe /link comctl32.lib ole32.lib oleaut32.lib strmiids.lib user32.lib
 if errorlevel 1 exit /b %errorlevel%
