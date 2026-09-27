@@ -4,7 +4,9 @@
 
 # OpenJOC
 
-OpenJOC is an independent, clean-room E-AC-3 JOC (EAC3 JOC) decoder and spatial renderer written in Rust. It performs E-AC-3 JOC object decoding on supported profiles by extracting in-band EMDF from the carrier, decoding the supported OAMD object-metadata prefix/timeline and JOC reconstruction data, and exposing decoded metadata plus carrier-local reconstructed object signals. Only streams admitted by the documented JOC/OAMD binding gate pair those decoder outputs as decoded JOC Objects. Speaker and binaural JOC rendering remain experimental and profile-bounded; reconstructed ADM BWF export has a separate scope. These decoded/reconstructed objects are not recovered authored Atmos objects or source stems.
+OpenJOC is an independent, clean-room E-AC-3 JOC decoder and spatial renderer written in Rust. It performs **E-AC-3 JOC object decoding directly from supported Dolby Atmos streams**, extracting in-band EMDF, decoding OAMD object metadata and JOC reconstruction data, and reconstructing carrier-local object signals for speaker, binaural, and ADM workflows.
+
+Decoded JOC Objects are carrier-local reconstruction outputs, not recovery of the original authored Atmos objects or source stems.
 
 Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest). OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby Laboratories.
 
@@ -72,7 +74,7 @@ The [Windows LAV / PotPlayer guide](docs/site/using/windows-lav-potplayer.md) do
 
 ## Important boundaries
 
-Reconstructed ADM is an interoperability-oriented representation of the decoded JOC object scene. It is not recovery of the original authored Atmos master. OpenJOC does not recover original authoring identity, source-stem PCM, unquantized automation, Dolby authoring provenance, or a lossless JOC-to-ADM round trip.
+The JOC speaker/binaural bridge remains experimental and profile-bounded; its codec-domain operator `T(t)` is unresolved. Reconstructed ADM is an interoperability-oriented representation of the decoded JOC object scene. It is not recovery of the original authored Atmos master. OpenJOC does not recover original authoring identity, source-stem PCM, unquantized automation, Dolby authoring provenance, or a lossless JOC-to-ADM round trip.
 
 The [decoded Objects vs authored Objects](docs/site/concepts/decoded-vs-authored-objects.md) page explains the identity boundary. The [renderer-equivalence limitation](docs/site/compatibility/renderer-equivalence.md) explains why a generic ADM renderer is not guaranteed to localize exactly like native JOC playback.
 

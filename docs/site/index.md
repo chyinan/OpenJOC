@@ -15,9 +15,9 @@ OpenJOC is an open-source, clean-room E-AC-3 JOC decoder and spatial renderer wr
 
 <div class="grid cards" markdown>
 
--   :material-waveform: **Decode JOC programmes**
+-   :material-waveform: **Decode JOC Objects**
 
-    Decode raw E-AC-3 or a seekable ordinary MP4/M4A containing E-AC-3, with bounded access-unit and profile handling.
+    Extract in-band EMDF, decode supported OAMD metadata and JOC reconstruction data, then reconstruct carrier-local object signals from supported E-AC-3 JOC streams.
 
 -   :material-speaker-multiple: **Render speaker layouts**
 
