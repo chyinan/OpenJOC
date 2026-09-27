@@ -19,9 +19,9 @@ OpenJOC 是一个使用 Rust 编写的开源、clean-room E-AC-3 JOC 解码器�
 
 <div class="grid cards" markdown>
 
--   :material-waveform: **解码 JOC 节目**
+-   :material-waveform: **解码 JOC 对象**
 
-    解码原始 E-AC-3，或包含 E-AC-3 且支持随机访问的普通 MP4/M4A；访问单元和配置范围都有明确边界。
+    从受支持的 E-AC-3 JOC 码流中提取带内 EMDF，解码 OAMD 对象元数据和 JOC 重建数据，并重建仅对应当前载波的对象信号。
 
 -   :material-speaker-multiple: **渲染扬声器布局**
 
