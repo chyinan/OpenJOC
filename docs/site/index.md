@@ -2,7 +2,7 @@
 
 # OpenJOC
 
-OpenJOC is an open-source, clean-room E-AC-3 JOC decoder and spatial renderer written in Rust. On supported Dolby Atmos E-AC-3 JOC carriers, OpenJOC decodes in-band object metadata and JOC reconstruction data directly from the stream: it extracts EMDF, parses the supported OAMD metadata prefix/timeline, and exposes decoded spatial metadata and carrier-local reconstructed signals. Only streams admitted by the documented JOC/OAMD binding gate associate those decoder outputs as decoded JOC Objects. Speaker/binaural JOC rendering is experimental and bounded; reconstructed ADM BWF export has a separate profile scope.
+OpenJOC is an open-source, clean-room **E-AC-3 JOC Object decoder and spatial renderer** written in Rust. It extracts EMDF and decodes OAMD object metadata and JOC reconstruction data directly from supported Dolby Atmos E-AC-3 JOC streams, then renders to speakers or binaural output, or exports reconstructed ADM.
 
 [Get started](getting-started/quick-start.md){ .md-button .md-button--primary }
 [Install](getting-started/installation.md){ .md-button }
