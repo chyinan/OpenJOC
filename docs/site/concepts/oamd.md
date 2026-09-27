@@ -2,6 +2,8 @@
 
 OAMD is the object audio metadata carried alongside the JOC reconstruction data. OpenJOC decodes the supported metadata prefix and timeline into a renderer-independent scene representation.
 
+In the supported E-AC-3 JOC path, OAMD arrives as a payload inside in-band EMDF. OpenJOC extracts that payload from the carrier and decodes the supported metadata prefix and timeline into renderer-independent spatial metadata. The separate JOC payload drives reconstruction of carrier-local object signals; OAMD itself is metadata, not object PCM. The JOC-signal-to-OAMD association is admitted only under the profiles listed in the [capability matrix](../project/capabilities.md).
+
 ## Profiles
 
 - `ETSI_STRICT` follows the published ETSI constraints and rejects reserved syntax.

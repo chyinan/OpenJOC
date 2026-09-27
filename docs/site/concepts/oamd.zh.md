@@ -5,6 +5,8 @@
 
 OAMD 是随 JOC 重建数据一起传输的对象音频元数据。OpenJOC 会把受支持的元数据前缀和时间线解码为与具体渲染器无关的场景表示。
 
+在受支持的 E-AC-3 JOC 路径中，OAMD 是带内 EMDF 中的一个载荷。OpenJOC 会从数据载体中提取该载荷，并把支持范围内的元数据前缀和时间线解码为空间元数据表示。另一个 JOC 载荷负责重建 carrier-local 对象信号；OAMD 本身是元数据，不是对象 PCM。只有[能力矩阵](../project/capabilities.md)列出的精确配置，才允许把 JOC 信号与 OAMD 元数据关联起来。
+
 ## 配置模式
 
 - `ETSI_STRICT` 遵循已发布的 ETSI 限制，并拒绝保留语法；

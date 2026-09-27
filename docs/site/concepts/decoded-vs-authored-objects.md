@@ -16,7 +16,7 @@ OpenJOC does not recover those properties from a lossy JOC delivery stream.
 
 ## Decoded JOC output Objects
 
-JOC reconstruction produces carrier-local decoder outputs. OpenJOC represents those signals as `ReconstructionBasis` rows. Within the exact admitted profile, each row can be paired with the corresponding decoded OAMD movement by typed carrier-local ordinals.
+OpenJOC obtains these decoder outputs from supported E-AC-3 JOC carriers: it extracts in-band EMDF, decodes the JOC reconstruction payload into carrier-local `ReconstructionBasis` PCM rows, and decodes the supported OAMD metadata prefix/timeline alongside it. Only the exact admitted profile pairs a row with corresponding decoded OAMD movement by typed carrier-local ordinals. This decoded JOC object view is not original-authored Object identity.
 
 That pair means:
 

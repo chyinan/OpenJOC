@@ -17,6 +17,10 @@
 - `NOT_ADMITTED` —— 有意排除在当前约定之外；
 - `EXPECTED_STRICT_REJECTION` —— 对该输入来说，拒绝才是正确结果。
 
+## E-AC-3 JOC 对象解码
+
+对于受支持的数据载体，OpenJOC 会提取并解析带内 EMDF，解码支持范围内的 OAMD 元数据前缀/时间线与 JOC 重建载荷，并输出 carrier-local `ReconstructionBasis` 信号。JOC/OAMD 的精确对象关联、实验性的空间渲染和重建 ADM 导出各有独立的范围门槛，详见下表。
+
 ## 当前矩阵
 
 | 领域 | 能力 | 状态 | 证据边界 | 重要范围 |
@@ -26,6 +30,8 @@
 | 基础 E-AC-3 | 普通基础解码及声道/LFE 标记 | `ADMITTED_WITH_SCOPE` | 公开语法、拓扑、TDAC 和状态测试 | 不是扬声器渲染器；跨解码器保真度仍不完整 |
 | 编码工具 | 耦合、SPX、AHT、重混矩阵 | `ADMITTED_WITH_SCOPE` | 规范/公开语法的数值和状态测试框架 | 一些真实制作工具的启用情况及完整 PCM 保真度仍待解决 |
 | 子流 | General E-AC-3 I0 加按顺序排列的 D0..D7 组装 | `ADMITTED_WITH_SCOPE` | 声道映射、原子组装、有界的逐 dependent 状态、分类器和合成端到端测试 | CMAF 与 legacy AC-3 组合仍为 D0-only；Type 2 仍不带 dependent；不声明真实多-dependent 媒体验证 |
+| E-AC-3 JOC | [带内对象解码](../concepts/eac3-joc-overview.md)：提取 EMDF、解码支持范围内的 OAMD 前缀/时间线和 JOC 重建载荷 | `ADMITTED_WITH_SCOPE` | 有界 E-AC-3 辅助数据/EMDF 提取与配置解析；OAMD 前缀/时间线测试；JOC 语法和完整/稀疏重建测试；合成端到端解码、场景、渲染与 ADM 校验 | 仅适用于受支持的数据载体和配置；厂商扩展尾部仅部分支持；JOC/OAMD 对象关联仅通过下方精确绑定门槛；不声称完整真实码流保真或恢复创作对象身份 |
+
 | OAMD | 规范元数据前缀和仅元数据时间线 | `ADMITTED_WITH_SCOPE` | 规范解析器和受控状态测试 | 完整的厂商扩展尾部不可用 |
 | OAMD | `ETSI_STRICT` 配置 | `ADMITTED` | 已发布的 ETSI 校验规则 | 观察到的原始 `warp=3` 会表示为 `ReservedWarpMode`，并被拒绝 |
 | OAMD | `OBSERVED_VENDOR_COMPAT` 配置 | `PARTIAL` | 明确的观测信令接受规则和偏差证据 | 扩展数据会原样保留，但不会解释其厂商语义 |

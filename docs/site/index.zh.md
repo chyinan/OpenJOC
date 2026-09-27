@@ -5,9 +5,8 @@
 
 # OpenJOC
 
-OpenJOC 是一个用 Rust 编写的开源 E-AC-3 JOC 解码器和空间渲染器，采用清洁室方式独立实现。
 
-它可以解码 E-AC-3 JOC 节目，重建解码得到的对象信号，并将这些信号渲染到受支持的扬声器布局或双声道双耳输出。它还可以把解码后的对象场导出为便于其他工具使用的 ADM BWF 文件。
+OpenJOC 是一个使用 Rust 编写的开源、clean-room E-AC-3 JOC 解码器和空间渲染器。对于受支持的 Dolby Atmos E-AC-3 JOC 数据，它会直接从码流中解码对象相关信息：提取带内 EMDF，解码支持范围内的 OAMD 对象元数据前缀/时间线与 JOC 重建载荷，并输出解码空间元数据和 carrier-local 重建信号。只有通过文档所列精确配置门槛的数据，才会把这些解码结果关联为 JOC 解码对象。扬声器/双耳 JOC 渲染仍是有范围限制的实验路径；重建 ADM BWF 导出另有独立配置范围。
 
 [快速开始](getting-started/quick-start.md){ .md-button .md-button--primary }
 [安装](getting-started/installation.md){ .md-button }

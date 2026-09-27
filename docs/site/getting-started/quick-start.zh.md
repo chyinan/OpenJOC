@@ -33,6 +33,14 @@ openjoc --help
 
 用 `inspect` 查看输入是否被识别为受支持的 JOC 数据，以及它适用的配置范围或拒绝边界。需要元数据清单（manifest）或诊断用 `ReconstructionBasis` 行 WAV，而不是最终扬声器文件时，使用 `decode`。
 
+## 检查 E-AC-3 JOC 对象元数据
+
+```sh
+openjoc inspect input.ec3 --aus --objects --emdf
+```
+
+`--objects` 会增加按 OAMD 槽位统计的信息，`--emdf` 会展开本次扫描载体中的 EMDF 配置信息。这些是检查元数据，不是解码后的对象 PCM，也不会导出对象音频。字段和限制见[解码与检查](../using/decode-inspect.md)。[E-AC-3 JOC 概览](../concepts/eac3-joc-overview.md)说明了受支持的 OAMD 元数据与 JOC 重建数据如何从同一数据载体中解码。
+
 ## 导出重建 ADM 文件
 
 ```sh

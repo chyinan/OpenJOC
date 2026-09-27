@@ -5,9 +5,7 @@ timeline, and output-level contract. Current support status belongs to
 [capability matrix](../project/capabilities.md); custom JSON/API geometry belongs to
 [custom speaker layouts](custom-speaker-layouts.md).
 
-`render-joc` decodes admitted E-AC-3 JOC input, aligns Base and
-ReconstructionBasis PCM, assembles bridge control from decoded JOC/OAMD state,
-and renders one semantic speaker layout or a binaural virtualization:
+`render-joc` decodes admitted E-AC-3 JOC input from the carrier: it extracts in-band EMDF, decodes the supported OAMD prefix/timeline and JOC reconstruction payload, and reconstructs carrier-local `ReconstructionBasis` PCM. It aligns Base and reconstruction PCM, assembles bridge control from decoded JOC/OAMD state, and renders one semantic speaker layout or a binaural virtualization:
 
 ```text
 raw EC-3 / seekable ordinary ISO BMFF

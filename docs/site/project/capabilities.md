@@ -23,6 +23,10 @@ renderer.
 - `NOT_ADMITTED` — deliberately outside the current contract.
 - `EXPECTED_STRICT_REJECTION` — rejection is the correct result for the input.
 
+## E-AC-3 JOC Object decoding
+
+For supported carriers, OpenJOC extracts and parses in-band EMDF, decodes the supported OAMD metadata prefix/timeline and JOC reconstruction payload, and emits carrier-local `ReconstructionBasis` signals. The exact carrier-local JOC/OAMD object association, experimental spatial rendering, and reconstructed ADM export each have separate scope gates below.
+
 ## Current matrix
 
 | Area | Capability | Status | Evidence boundary | Important scope |
@@ -34,6 +38,8 @@ renderer.
 | Coding tools | Coupling, SPX, AHT, rematrix | `ADMITTED_WITH_SCOPE` | Normative/public-syntax numerical and state harnesses | Some real-producer activation and full PCM fidelity remain open |
 | Substreams | General E-AC-3 I0 plus ordered D0..D7 assembly | `ADMITTED_WITH_SCOPE` | Chanmap, atomic assembly, bounded per-dependent state, classifier, and synthetic end-to-end tests | CMAF and legacy AC-3 combinations remain D0-only; Type 2 remains without dependents; no real multi-dependent media claim |
 | Substreams | ETSI short-block frame-set grouping | `ADMITTED_WITH_SCOPE` | TS 102 366/TS 103 420 contract audit, `convsync` boundary checks, 1/2/3-block cumulative grouping, I0+D0..D7 state continuity, and synthetic end-to-end JOC tests | General carriage groups ordered programme sets until six cumulative blocks / 1,536 samples; CMAF Annex E remains six-block per syncframe and D0-only; validation is synthetic E2E |
+| E-AC-3 JOC | [In-band Object decoding](../concepts/eac3-joc-overview.md): EMDF extraction, supported OAMD prefix/timeline, and JOC reconstruction payloads | `ADMITTED_WITH_SCOPE` | Bounded E-AC-3 auxiliary/EMDF extraction and profile parsing; OAMD prefix/timeline tests; JOC syntax and full/sparse reconstruction tests; synthetic end-to-end decoder, scene, render, and ADM validation | Supported carriers and profiles only; vendor continuation is partial; JOC/OAMD pairing is admitted only under the exact binding gate below; full real-stream decoder fidelity and authored-object identity are not claimed |
+
 | OAMD | Normative metadata prefix and metadata-only timeline | `ADMITTED_WITH_SCOPE` | Normative parser and controlled state tests | Complete vendor trim continuation is unavailable |
 | OAMD | `ETSI_STRICT` profile | `ADMITTED` | Published ETSI validation rules | Observed raw `warp=3` is `ReservedWarpMode` and is rejected |
 | OAMD | `OBSERVED_VENDOR_COMPAT` profile | `PARTIAL` | Explicit observed-signaling acceptance and deviation evidence | Continuation is retained opaquely; no vendor semantic interpretation |

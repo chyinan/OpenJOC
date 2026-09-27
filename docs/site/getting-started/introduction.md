@@ -1,6 +1,6 @@
 # Introduction
 
-OpenJOC is an independent Rust implementation of an E-AC-3 JOC decode and rendering pipeline. It accepts supported raw E-AC-3 or seekable ordinary MP4/M4A input, decodes the base programme and JOC reconstruction data, and exposes the resulting scene to several output paths.
+OpenJOC is an independent Rust decoder for supported E-AC-3 JOC streams. It accepts supported raw E-AC-3 or seekable ordinary MP4/M4A input. It performs E-AC-3 JOC object decoding from in-band EMDF, decoding the supported OAMD metadata prefix/timeline and JOC reconstruction payload into separate decoder-domain spatial metadata and `ReconstructionBasis` audio rows. Its JOC/OAMD object association, experimental speaker/binaural bridge, and reconstructed ADM export each have a documented profile boundary.
 
 The main user-facing surfaces are:
 

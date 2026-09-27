@@ -5,7 +5,7 @@
 
 本页说明当前 `render-joc` 渲染器、输出容器、时间线和输出电平的约定。当前支持状态请看[能力矩阵](../project/capabilities.md)；自定义 JSON/API 几何布局请看[自定义扬声器布局](custom-speaker-layouts.md)。
 
-`render-joc` 会解码受支持的 E-AC-3 JOC 输入，对齐 Base 和 ReconstructionBasis PCM，根据解码后的 JOC/OAMD 状态组装桥接控制信息，然后渲染为一种语义扬声器布局或双耳虚拟扬声器输出：
+`render-joc` 会从受支持的 E-AC-3 JOC 数据载体中提取带内 EMDF，解码支持范围内的 OAMD 前缀/时间线与 JOC 重建载荷，生成 carrier-local `ReconstructionBasis` PCM。随后它会对齐 Base 和重建 PCM，根据解码后的 JOC/OAMD 状态组装桥接控制信息，再渲染为一种语义扬声器布局或双耳虚拟扬声器输出：
 
 ```text
 原始 EC-3 / 支持随机访问的普通 ISO BMFF

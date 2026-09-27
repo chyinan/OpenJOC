@@ -4,7 +4,7 @@
 
 # OpenJOC
 
-OpenJOC is an independent, clean-room E-AC-3 JOC decoder and spatial renderer written in Rust. It decodes supported E-AC-3/JOC input, reconstructs carrier-local object signals, and renders speaker or binaural output through one platform-neutral engine.
+OpenJOC is an independent, clean-room E-AC-3 JOC (EAC3 JOC) decoder and spatial renderer written in Rust. It performs E-AC-3 JOC object decoding on supported profiles by extracting in-band EMDF from the carrier, decoding the supported OAMD object-metadata prefix/timeline and JOC reconstruction data, and exposing decoded metadata plus carrier-local reconstructed object signals. Only streams admitted by the documented JOC/OAMD binding gate pair those decoder outputs as decoded JOC Objects. Speaker and binaural JOC rendering remain experimental and profile-bounded; reconstructed ADM BWF export has a separate scope. These decoded/reconstructed objects are not recovered authored Atmos objects or source stems.
 
 Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest). OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby Laboratories.
 
@@ -14,10 +14,10 @@ Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest
 
 ## What it supports
 
-- E-AC-3 JOC decoding with bounded reconstruction;
+- E-AC-3 JOC object decoding from supported in-band EMDF, including the supported OAMD metadata prefix/timeline, JOC reconstruction data, and carrier-local reconstructed object signals;
 - supported speaker presets from `2.0` through `22.2` and custom geometry up to 64 output channels;
 - two-channel virtual-speaker binaural rendering with SADIE II D1/KU100 (default) and D2/KEMAR built-in profiles, or a supported local SOFA file;
-- reconstructed ADM BWF interoperability output with decoded JOC/OAMD binding within a documented profile;
+- reconstructed ADM BWF interoperability export for decoded JOC Objects with supported OAMD movement, within an exact documented profile;
 - Rust and versioned C ABI embedding surfaces;
 - project-provided FFmpeg, GStreamer, mpv, and Windows DirectShow/LAV integrations.
 

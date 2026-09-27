@@ -19,7 +19,7 @@ OpenJOC 无法从有损的 JOC 传输流中恢复这些信息。
 
 ## JOC 解码输出对象
 
-JOC 解码后得到的是只对应当前 JOC 数据的输出对象。OpenJOC 用 `ReconstructionBasis` 行表示这些信号。在明确受支持的配置组合中，每一行都可以按照 JOC 数据内部的序号，与对应的解码 OAMD 运动信息配对：
+这些解码器输出来自受支持的 E-AC-3 JOC 数据载体：OpenJOC 提取带内 EMDF，把 JOC 重建载荷解码为 carrier-local `ReconstructionBasis` PCM 行，并同时解码支持范围内的 OAMD 元数据前缀/时间线。只有精确通过门槛的配置，才会按数据载体内部的类型化序号，把某一行与对应的解码 OAMD 运动信息关联起来。这是 JOC 解码对象视图，不是原始创作对象身份。
 
 ```text
 joc_ordinal = j

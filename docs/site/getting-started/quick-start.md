@@ -30,6 +30,14 @@ openjoc --help
 
 Use `inspect` to see whether the input is admitted as a JOC carrier and which profile or rejection boundary applies. Use `decode` when you need metadata manifests or diagnostic ReconstructionBasis row WAVs rather than a final speaker render.
 
+## Inspect E-AC-3 JOC object metadata
+
+```sh
+openjoc inspect input.ec3 --aus --objects --emdf
+```
+
+`--objects` adds per-OAMD-slot statistics and `--emdf` expands the parsed EMDF configuration for the traversed carrier. These are inspection metadata, not decoded object PCM or an object-audio export. See [Decode and inspect](../using/decode-inspect.md) for report fields and limits. The [E-AC-3 JOC overview](../concepts/eac3-joc-overview.md) explains how supported OAMD metadata and JOC reconstruction data are decoded from the same carrier.
+
 ## Export a reconstructed ADM file
 
 ```sh
