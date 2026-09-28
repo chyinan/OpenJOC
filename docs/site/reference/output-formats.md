@@ -2,13 +2,18 @@
 
 OpenJOC keeps renderer semantics and container semantics separate. The selected output extension controls the container, but it does not change the rendered PCM.
 
-| Output | Contract |
+For speaker-layout rendering, both `.wav` and `.caf` support `22.2`; the
+containers record its channel identities differently:
+
+| Layout | WAV (`.wav`) | CAF (`.caf`) |
+| --- | --- | --- |
+| Standard presets representable by a WAVEFORMATEXTENSIBLE mask | Truthful `WAVEFORMATEXTENSIBLE` identities and mask. | Semantic channel labels. |
+| `7.1.6` or `9.1.x` | Fails closed. | Semantic channel labels. |
+| `22.2` | Explicit unmasked 24-channel PCM in canonical order. | Semantic output using standard CAF channel labels where available and coordinate descriptions for remaining positions, preserving the complete 22.2 channel identity. |
+| Custom layout | Explicit unmasked PCM in the declared order. | Semantic channel descriptions; custom geometry uses coordinate descriptions. |
+
+| Other output | Contract |
 | --- | --- |
-| Standard preset to `.wav` | Truthful `WAVEFORMATEXTENSIBLE` identities and mask. |
-| `7.1.6` or `9.1.x` to `.wav` | Fails closed; use semantic CAF. |
-| `22.2` to `.wav` | Explicit unmasked 24-channel PCM in canonical order. |
-| Custom layout to `.wav` | Explicit unmasked PCM in the declared order. |
-| Preset or custom layout to `.caf` | Semantic channel descriptions; custom geometry can preserve coordinates. |
 | Binaural | Two-channel L/R-ear output. |
 | `export-adm` `.wav` / `.bw64` | Reconstructed ADM BWF with signed 24-bit PCM and an adjacent JSON report. |
 

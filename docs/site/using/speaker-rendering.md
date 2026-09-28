@@ -81,15 +81,15 @@ same arbitrary geometry.
 
 ## WAV and CAF truthfulness
 
-The destination extension selects the container:
+The destination extension selects the container. Both `.wav` and `.caf`
+support `22.2`; the table shows how each container records that layout:
 
-| Layout/output | Contract |
-|---|---|
-| Exact standard preset to `.wav` | WAVEFORMATEXTENSIBLE with truthful identities and mask |
-| `7.1.6` or `9.1` family | semantic CAF only; WAV fails closed |
-| `22.2` to `.wav` | explicit unmasked 24-channel PCM in canonical order |
-| Custom layout to `.wav` | explicit unmasked PCM in declared order |
-| Preset/custom layout to `.caf` | semantic labels; custom geometry uses coordinate channel descriptions |
+| Layout | WAV (`.wav`) | CAF (`.caf`) |
+|---|---|---|
+| Standard presets representable by a WAVEFORMATEXTENSIBLE mask | WAVEFORMATEXTENSIBLE with truthful identities and mask | Semantic channel labels |
+| `7.1.6` or `9.1.x` | Unsupported; WAV fails closed | Semantic channel labels |
+| `22.2` | 24-channel PCM in canonical order, with no channel mask | Semantic output: standard CAF channel labels where available and coordinate descriptions for remaining positions preserve the complete 22.2 channel identity |
+| Custom layout | Unmasked PCM in declared order | Semantic channel labels; custom geometry uses coordinate descriptions |
 
 No channel identity is substituted and no fabricated WAV mask is written.
 Container order never changes the renderer's canonical semantic order.
