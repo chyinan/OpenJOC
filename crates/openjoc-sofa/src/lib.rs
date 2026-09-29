@@ -520,7 +520,7 @@ fn resampler_phase_weights(phase: f64, cutoff: f64, radius: f64, half_width: usi
         };
         let window = if distance.abs() <= radius {
             let window_position = distance / radius;
-            0.5 * (1.0 + (std::f64::consts::PI * window_position).cos())
+            1.0_f64.midpoint((std::f64::consts::PI * window_position).cos())
         } else {
             0.0
         };
