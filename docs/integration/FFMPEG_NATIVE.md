@@ -167,7 +167,10 @@ integer-rescales packet PTS into that domain and rescales frame PTS/duration
 back into `AVCodecContext.pkt_timebase`, which is normal libavcodec frame
 representation. No floating-point time or latency PTS pre-subtraction is used.
 
-`AVCodecContext.delay` is 609 samples for speaker output and 577 for binaural.
+`AVCodecContext.delay` comes from OpenJOC's `latency_samples`: 609 samples for
+speaker output and 577 for built-in or 48 kHz custom binaural HRIRs. A custom
+SOFA at another rate adds the resampler's common causal filter delay. Source
+`Data.Delay` is not added to this reported latency.
 Normal libavcodec operation uses that value once to discard initial decoder
 priming. Bit-exact decoder/frontend comparisons use
 `AV_CODEC_FLAG2_SKIP_MANUAL` (`-flags2 +skip_manual`) so FFmpeg retains every

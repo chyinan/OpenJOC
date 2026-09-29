@@ -5,6 +5,64 @@ pub fn custom_sofa_fixture() -> Vec<u8> {
 }
 
 pub fn custom_sofa_fixture_with_delay(delay: f64) -> Vec<u8> {
+    let (dimensions, globals, mut variables) = fixture_parts(delay);
+    make_cdf1(&dimensions, &globals, &mut variables)
+}
+
+/// Same geometry and samples as the CDF fixture, using standard SOFA dimensions.
+#[allow(dead_code)] // Shared by native tests and the smoke fixture example.
+pub fn custom_hdf5_sofa_fixture(sample_rate: u32, oversized_chunk: bool) -> Vec<u8> {
+    use hdf5_pure::{AttrValue, FileBuilder};
+    let (dimensions, globals, variables) = fixture_parts(0.0);
+    let mut file = FileBuilder::new();
+    for attribute in globals {
+        file.set_attr(&attribute.name, AttrValue::String(attribute.value));
+    }
+    for variable in variables {
+        let values = if variable.name == "Data.SamplingRate" {
+            vec![f64::from(sample_rate)]
+        } else {
+            variable
+                .bytes
+                .chunks_exact(8)
+                .map(|bytes| f64::from_be_bytes(bytes.try_into().expect("f64 bytes")))
+                .collect()
+        };
+        let mut shape: Vec<u64> = variable
+            .dimensions
+            .iter()
+            .map(|index| dimensions[*index].1 as u64)
+            .collect();
+        match variable.name {
+            "ReceiverPosition" => shape.push(1), // RCI
+            "Data.Delay" | "ListenerPosition" | "ListenerView" | "ListenerUp" => shape.insert(0, 1), // IR / IC
+            "EmitterPosition" => shape = vec![1, 3, 1],
+            _ => {}
+        }
+        let dataset = file.create_dataset(variable.name);
+        dataset.with_f64_data(&values).with_shape(&shape);
+        if variable.name == "Data.IR" {
+            // Oversized case is 16 MiB + 32 bytes after decompression.
+            let rows = if oversized_chunk { 524_289 } else { 8 };
+            dataset
+                .with_chunks(&[rows, 2, 2])
+                .with_shuffle()
+                .with_deflate(6);
+        }
+        for attribute in variable.attributes {
+            dataset.set_attr(&attribute.name, AttrValue::String(attribute.value));
+        }
+    }
+    file.finish().expect("HDF5 smoke fixture")
+}
+
+type FixtureParts = (
+    Vec<(&'static str, usize)>,
+    Vec<FixtureAttribute>,
+    Vec<FixtureVariable>,
+);
+
+fn fixture_parts(delay: f64) -> FixtureParts {
     let mut source_positions = Vec::new();
     let mut impulse_responses = Vec::new();
     for elevation in (-75..=75).step_by(15) {
@@ -16,7 +74,7 @@ pub fn custom_sofa_fixture_with_delay(delay: f64) -> Vec<u8> {
     source_positions.extend([0.0, 90.0, 1.0]);
     impulse_responses.extend([1.0, 0.0, 0.75, 0.0]);
     let measurements = source_positions.len() / 3;
-    let dimensions = [
+    let dimensions = vec![
         ("M", measurements),
         ("R", 2),
         ("N", 2),
@@ -29,7 +87,7 @@ pub fn custom_sofa_fixture_with_delay(delay: f64) -> Vec<u8> {
             .position(|(dimension_name, _)| *dimension_name == name)
             .expect("fixture dimension")
     };
-    let mut variables =
+    let variables =
         vec![
             FixtureVariable::new(
                 "Data.IR",
@@ -80,14 +138,14 @@ pub fn custom_sofa_fixture_with_delay(delay: f64) -> Vec<u8> {
                     fixture_attribute("Units", "metre"),
                 ]),
         ];
-    let globals = [
+    let globals = vec![
         fixture_attribute("Conventions", "SOFA"),
         fixture_attribute("SOFAConventions", "SimpleFreeFieldHRIR"),
         fixture_attribute("SOFAConventionsVersion", "1.2"),
         fixture_attribute("DataType", "FIR"),
         fixture_attribute("RoomType", "free field"),
     ];
-    make_cdf1(&dimensions, &globals, &mut variables)
+    (dimensions, globals, variables)
 }
 
 struct FixtureAttribute {

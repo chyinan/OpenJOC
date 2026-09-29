@@ -50,7 +50,7 @@
       "patch_sha256": "49c8478083bbe6c4c9d2ddac0135f47d097acbd91a45518a9e72be6989caf9ca"
     },
     "rust": {
-      "minimum": "1.85",
+      "minimum": "1.89",
       "locked_dependencies": true
     }
   },

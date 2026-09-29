@@ -51,8 +51,9 @@ openjoc render-joc input.ec3 --binaural --output headphones.wav
 ```
 
 The bundled SADIE II D1 HRTF is generic. A custom local SOFA file must match
-the documented strict `SimpleFreeFieldHRIR` subset; HDF5/NetCDF-4 and automatic
-resampling are not supported. See [Binaural and SOFA](binaural-sofa.md).
+the documented `SimpleFreeFieldHRIR` CDF-1 or NetCDF-4/HDF5 subset. HRIRs are
+converted to 48 kHz before rendering; fractional source delays are rejected.
+See [Binaural and SOFA](binaural-sofa.md).
 
 ## The ADM export fails or objects are static
 

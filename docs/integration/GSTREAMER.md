@@ -29,12 +29,12 @@ The first adapter uses the stable GStreamer 1.x API baseline below:
 | Minimum GStreamer | 1.20 |
 | Tested target | 1.28.6 (Homebrew macOS SDK) |
 | gstreamer-rs | 0.24.5 |
-| Rust MSRV | OpenJOC workspace MSRV 1.85 |
+| Rust MSRV | OpenJOC workspace MSRV 1.89 |
 
 The `v1_20` Rust feature is sufficient for this adapter. GStreamer 1.28.6 is
 the locally tested stable-series target; no 1.28-only API is required. gstreamer-rs 0.24.5
-was selected to preserve OpenJOC's Rust 1.85 MSRV; the newer 0.25 line has a
-higher compiler requirement and is not needed by this plugin.
+was selected while OpenJOC supported Rust 1.85. Updating the binding line is a
+separate plugin compatibility change and is not required by this adapter.
 
 Install the matching GStreamer runtime and development packages for the host,
 including GStreamer core, GStreamer Base, and GStreamer Audio. The plugin does
@@ -242,7 +242,11 @@ with rational rounding; timestamps are never shifted by decoder latency. The
 decoder reports latency separately through `GstAudioDecoder::set_latency`:
 
 - speaker/stereo: 609 samples, 12,687,500 ns at 48 kHz;
-- binaural: 577 samples, 12,020,833 ns at 48 kHz.
+- binaural with the supported built-in HRIRs: 577 samples, 12,020,833 ns at 48 kHz.
+
+The core API also adds a common conversion delay for non-48 kHz custom SOFA
+HRIRs; this element does not yet expose custom SOFA properties. Source
+`Data.Delay` is not added to the API's reported latency.
 
 `drain` emits the reconstruction tail and the built-in binaural FIR tail. The
 tail is not added to steady-state latency. A flush clears pending parser state,

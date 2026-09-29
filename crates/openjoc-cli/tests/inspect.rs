@@ -446,11 +446,319 @@ fn synthetic_joc_compressed_input() -> Vec<u8> {
         .collect()
 }
 
+#[test]
+fn binaural_hrtf_selection_survives_profiling_and_backend_selection() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-hrtf-selection-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("input.ec3");
+    fs::write(&input, synthetic_joc_compressed_input()).expect("synthetic input");
+
+    let render = |hrtf: &str, backend: &str, report: bool| {
+        let name = format!("{hrtf}-{backend}-{report}");
+        let output = root.join(format!("{name}.wav"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_openjoc"));
+        command.arg("render-joc").arg(&input).args([
+            "--binaural-hrtf",
+            hrtf,
+            "--backend",
+            backend,
+            "--no-progress",
+        ]);
+        command.arg("--output").arg(&output);
+        if report {
+            command
+                .arg("--performance-report")
+                .arg(root.join(format!("{name}.json")));
+        }
+        let result = command.output().expect("render binaural fixture");
+        assert!(
+            result.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        fs::read(output).expect("rendered WAV")
+    };
+
+    let d1 = render("sadie-ii-d1-ku100", "direct", false);
+    let d2 = render("sadie-ii-d2-kemar", "direct", false);
+    assert_ne!(d1, d2, "fixture must distinguish the two HRTFs");
+    for (hrtf, reference) in [("sadie-ii-d1-ku100", d1), ("sadie-ii-d2-kemar", d2)] {
+        assert!(
+            render(hrtf, "direct", true) == reference,
+            "profiling must preserve the selected HRTF and PCM bits: {hrtf}"
+        );
+    }
+    // FFT and direct convolution have different rounding contracts; each
+    // backend must still preserve HRTF selection and its own PCM under profiling.
+    let partitioned_d1 = render("sadie-ii-d1-ku100", "partitioned", false);
+    let partitioned_d2 = render("sadie-ii-d2-kemar", "partitioned", false);
+    assert_ne!(partitioned_d1, partitioned_d2);
+    assert_eq!(
+        partitioned_d2,
+        render("sadie-ii-d2-kemar", "partitioned", true)
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
 fn out_of_range_joc_compressed_input() -> Vec<u8> {
     let emdf = joc_emdf(&inactive_oamd(), &one_object_joc());
     (0..2)
         .flat_map(|_| five_channel_audio_frame(&emdf))
         .collect()
+}
+
+#[test]
+fn render_reads_large_input_incrementally_and_preserves_existing_outputs_on_error() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-render-large-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+    let input = root.join("large.ec3");
+    fs::write(&input, synthetic_joc_compressed_input()).expect("valid prefix");
+    // A logical file larger than the former whole-programme cap. Its invalid
+    // suffix must be reached through the bounded framer, without loading it all.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&input)
+        .unwrap()
+        .set_len(openjoc_container::DEFAULT_MAX_EAC3_BYTES as u64 + 1)
+        .unwrap();
+    for mode in ["session", "profiling", "normalization"] {
+        let output = root.join(format!("{mode}.wav"));
+        let report = root.join(format!("{mode}.json"));
+        fs::write(&output, b"previous output").unwrap();
+        fs::write(&report, b"previous report").unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_openjoc"));
+        command
+            .arg("render-joc")
+            .arg(&input)
+            .args(["--layout", "7.1.4", "--overwrite", "--no-progress"])
+            .arg("--output")
+            .arg(&output);
+        if mode == "profiling" {
+            command.arg("--performance-report").arg(&report);
+        } else if mode == "normalization" {
+            command.args(["--normalize-peak", "-3"]);
+        }
+        let result = command.output().expect("large input render");
+        assert!(!result.status.success());
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(error.contains("syncword"), "{mode}: {error}");
+        assert_eq!(fs::read(output).unwrap(), b"previous output");
+        assert_eq!(fs::read(report).unwrap(), b"previous report");
+    }
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 7);
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn render_raw_and_iso_bmff_preserve_complete_pcm_bits() {
+    for tool in ["ffmpeg", "ffprobe"] {
+        if Command::new(tool).arg("-version").output().is_err() {
+            eprintln!("skipping container render parity: {tool} is required");
+            return;
+        }
+    }
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-render-container-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let raw = root.join("input.ec3");
+    let mp4 = root.join("input.mp4");
+    fs::write(&raw, synthetic_joc_compressed_input()).unwrap();
+    let mux = Command::new("ffmpeg")
+        .args(["-v", "error", "-nostdin", "-f", "eac3", "-i"])
+        .arg(&raw)
+        .args(["-c:a", "copy"])
+        .arg(&mp4)
+        .output()
+        .unwrap();
+    assert!(
+        mux.status.success(),
+        "{}",
+        String::from_utf8_lossy(&mux.stderr)
+    );
+    for mode in ["session", "profiling", "normalization"] {
+        let mut outputs = Vec::new();
+        for (kind, input) in [("raw", &raw), ("mp4", &mp4)] {
+            let output = root.join(format!("{mode}-{kind}.wav"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_openjoc"));
+            command
+                .arg("render-joc")
+                .arg(input)
+                .args(["--layout", "7.1.4", "--reference-f64", "--no-progress"])
+                .arg("--output")
+                .arg(&output);
+            if mode == "profiling" {
+                command
+                    .arg("--performance-report")
+                    .arg(root.join(format!("{kind}.json")));
+            } else if mode == "normalization" {
+                command.args(["--normalize-peak", "-3"]);
+            }
+            let result = command.output().unwrap();
+            assert!(
+                result.status.success(),
+                "{mode}/{kind}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            outputs.push(fs::read(output).unwrap());
+        }
+        assert!(
+            outputs[0] == outputs[1],
+            "complete PCM/tail differs for {mode}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn render_preflight_preserves_global_auto_and_late_error_indices() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-render-profile-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mixed.ec3");
+    let mut bytes = synthetic_joc_compressed_input();
+    bytes.extend(five_channel_audio_frame(&joc_emdf_for_profile(
+        &inactive_oamd(),
+        &bounded_one_object_joc(),
+        true,
+    )));
+    fs::write(&input, &bytes).unwrap();
+    let render = |profile: &str| {
+        let output = root.join(format!("{profile}.wav"));
+        let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+            .arg("render-joc")
+            .arg(&input)
+            .args([
+                "--layout",
+                "7.1.4",
+                "--validation-profile",
+                profile,
+                "--no-progress",
+                "--overwrite",
+            ])
+            .arg("--performance-report")
+            .arg(root.join(format!("{profile}.json")))
+            .arg("--output")
+            .arg(&output)
+            .output()
+            .unwrap();
+        (result, output)
+    };
+    let (auto, auto_output) = render("auto");
+    let (compat, compat_output) = render("observed-vendor-compat");
+    assert!(
+        auto.status.success(),
+        "{}",
+        String::from_utf8_lossy(&auto.stderr)
+    );
+    assert!(
+        compat.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compat.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&auto.stdout).contains("selected profile: OBSERVED_VENDOR_COMPAT")
+    );
+    assert!(fs::read(auto_output).unwrap() == fs::read(compat_output).unwrap());
+    let (strict, _) = render("etsi-strict");
+    assert!(!strict.status.success());
+
+    // A late missing carrier must retain the programme-wide frame index.
+    bytes.truncate(synthetic_joc_compressed_input().len());
+    bytes.extend(five_channel_audio_frame(&[]));
+    fs::write(&input, bytes).unwrap();
+    let (failed, _) = render("auto");
+    assert!(!failed.status.success());
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(error.contains("required frame 8"), "{error}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn render_reader_errors_keep_programme_frame_and_byte_offsets() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-render-error-offsets-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let original = include_bytes!("../../openjoc-wasm/testdata/joc.ec3");
+    let frames = openjoc_eac3::index_syncframes(original).unwrap();
+    assert_eq!(frames.len(), 8);
+    let mut dependent = original[..frames[0].header.frame_size].to_vec();
+    dependent[2] = (dependent[2] & 0x3f) | 0x40;
+    dependent[4] = (dependent[4] & 0x3f) | 0x40;
+    let mut mismatch = original.to_vec();
+    mismatch.extend(dependent);
+    let indexed = openjoc_eac3::index_syncframes(&mismatch).unwrap();
+    let expected_mismatch = openjoc_eac3::group_access_units(&indexed)
+        .expect_err("dependent frame must disagree with its independent frame")
+        .to_string();
+    assert!(expected_mismatch.contains("frame 8"));
+
+    let mut truncated = original.to_vec();
+    truncated.extend_from_slice(&original[..frames[0].header.frame_size - 1]);
+    let expected_truncation = openjoc_eac3::index_syncframes(&truncated)
+        .expect_err("last frame must be truncated")
+        .to_string();
+    for (name, bytes, expected) in [
+        ("mismatch", mismatch, expected_mismatch),
+        ("truncated", truncated, expected_truncation),
+    ] {
+        let input = root.join(format!("{name}.ec3"));
+        fs::write(&input, bytes).unwrap();
+        for mode in ["session", "profiling", "normalization"] {
+            let output = root.join(format!("{name}-{mode}.wav"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_openjoc"));
+            command
+                .arg("render-joc")
+                .arg(&input)
+                .args(["--layout", "7.1.4", "--no-progress"])
+                .arg("--output")
+                .arg(&output);
+            if mode == "profiling" {
+                command
+                    .arg("--performance-report")
+                    .arg(root.join(format!("{name}.json")));
+            } else if mode == "normalization" {
+                command.args(["--normalize-peak", "-3"]);
+            }
+            let result = command.output().unwrap();
+            assert!(!result.status.success());
+            let error = String::from_utf8_lossy(&result.stderr);
+            assert!(error.contains(&expected), "{name}/{mode}: {error}");
+            assert!(!output.exists());
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
 }
 
 fn collect_binaural_session_frames(

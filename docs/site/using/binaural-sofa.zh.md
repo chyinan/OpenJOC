@@ -40,7 +40,20 @@ openjoc render-joc input.m4a \\
 
 ## SOFA 支持范围
 
-加载器接受文档规定的 `SimpleFreeFieldHRIR` NetCDF classic CDF-1 子集。文件必须提供两个接收器、匹配的采样率，并为每个请求的非 LFE 虚拟方向提供精确覆盖或可安全插值的覆盖。HDF5/NetCDF-4、重采样、下载、写入、移动声源和任意方向覆盖均不受支持。
+加载器支持 NetCDF classic CDF-1 和 NetCDF-4/HDF5 容器中的 `SimpleFreeFieldHRIR`。它继续校验受支持的字段、两个接收器、坐标和方向覆盖。渲染前会使用有界的确定性窗函数 sinc 滤波器将 HRIR 转成 48 kHz。输入本身为 48 kHz 时，系数保持逐位不变。仍不接受分数采样延迟；转换后的整数延迟按最近的 48 kHz 采样点取整。
+
+转换按固定采样率比例补偿 FIR 卷积增益，分数时序保留在系数中。
+为保留完整的 sinc 滤波前沿，左右耳会增加相同的公共延迟。
+延迟为 `ceil(16 * max(输出采样率 / 源采样率, 1)) + 1` 个输出采样点。
+例如，44.1→48 kHz 增加 19 个采样点，96→48 kHz 增加 17 个。
+这个延迟保留在 HRIR 和完整尾部中，也计入渲染器的延迟报告。
+SOFA 原有的实测延迟仍不计入报告。
+源、目标采样率相同时不增加延迟。转换比例超过 16:1 时拒绝处理。
+使用 `equal-power-dual-mono` 时，LFE 也会延迟相同的时间并完整排空尾部，保持与空间声道的相对时序。
+
+加载器接受标准的固定 `ReceiverPosition [R,C,1]` 和 `Data.Delay [1,R]` 布局。
+单个 HDF5 chunk 解压后最多为 16 MiB，还受配置中的文件字节数和系数预算约束。
+超限 chunk 会在解压前被拒绝。
 
 使用前先检查文件：
 
@@ -48,7 +61,7 @@ openjoc render-joc input.m4a \\
 openjoc sofa inspect listener.sofa --json
 ```
 
-`direct` 是数值参考后端。`partitioned` 使用一个固定的二次幂分区大小，并保留完整输入和 FIR 尾部。如果覆盖范围或采样率不匹配，两种后端都会拒绝继续处理。
+`sofa inspect` 显示文件的源采样率；双耳渲染前会先把 HRIR 转成 48 kHz，再交给所选后端。`direct` 是数值参考后端。`partitioned` 使用一个固定的二次幂分区大小，并保留完整输入和 FIR 尾部。如果方向覆盖不足，两种后端都会拒绝继续处理。
 
 ## LFE 策略
 

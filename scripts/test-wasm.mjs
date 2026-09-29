@@ -74,11 +74,14 @@ function decode(handle, input, expectedUnits, expectedSamples) {
   return { bytes, frames };
 }
 
-function checkDecoder(label, tailSamples, create) {
+function checkDecoder(label, tailSamples, create, expectedLatency = 577) {
   const handle = create();
   assert(handle !== 0, `${label} constructor`);
+  assert.equal(api.openjoc_wasm_decoder_latency_samples(handle), expectedLatency,
+    `${label} reports the complete processing delay`);
+  let first;
   try {
-    const first = decode(handle, fixture, 8, 1536 + tailSamples);
+    first = decode(handle, fixture, 8, 1536 + tailSamples);
     assert.equal(api.openjoc_wasm_decoder_reset(handle), 0);
     assert.equal(api.openjoc_wasm_decoder_output_samples(handle), 0n);
     assert.equal(api.openjoc_wasm_decoder_total_mean_ms(handle), 0);
@@ -92,13 +95,14 @@ function checkDecoder(label, tailSamples, create) {
     api.openjoc_wasm_decoder_destroy(handle);
   }
   assert.equal(api.openjoc_wasm_decoder_receive_pcm(handle), -1, 'destroyed handle rejected');
+  return first;
 }
 
 assert.equal(api.openjoc_wasm_decoder_receive_pcm(0), -1);
 assert.equal(api.openjoc_wasm_custom_sofa_alloc(16 * 1024 * 1024 + 1), 0);
 assert.equal(withBytes(Buffer.from('invalid SOFA'), api.openjoc_wasm_custom_sofa_alloc,
   (p, n) => api.openjoc_wasm_decoder_create_with_renderer_and_custom_sofa(0, 1, p, n)), 0);
-checkDecoder('Stereo', 32, () => api.openjoc_wasm_decoder_create());
+checkDecoder('Stereo', 32, () => api.openjoc_wasm_decoder_create(), 609);
 for (const [index, name] of ['sadie-ii-d1-ku100', 'sadie-ii-d2-kemar'].entries()) {
   const asset = await readFile(new URL(`../crates/openjoc-sofa/assets/${name}.ojhrtf`, import.meta.url));
   checkDecoder(name, 255, () => mode === 'embedded'
@@ -106,5 +110,17 @@ for (const [index, name] of ['sadie-ii-d1-ku100', 'sadie-ii-d2-kemar'].entries()
     : withBytes(asset, api.openjoc_wasm_hrtf_asset_alloc,
       (p, n) => api.openjoc_wasm_decoder_create_with_renderer_and_hrtf_asset(0, 1, index, p, n)));
 }
-checkDecoder('Custom SOFA', 1, () => withBytes(sofa, api.openjoc_wasm_custom_sofa_alloc,
+const cdfOutput = checkDecoder('Custom SOFA', 1, () => withBytes(sofa, api.openjoc_wasm_custom_sofa_alloc,
   (p, n) => api.openjoc_wasm_decoder_create_with_renderer_and_custom_sofa(0, 1, p, n)));
+const hdf5 = await readFile(`${sofaPath}.hdf5.sofa`);
+const hdfOutput = checkDecoder('Custom HDF5 SOFA', 1, () => withBytes(hdf5, api.openjoc_wasm_custom_sofa_alloc,
+  (p, n) => api.openjoc_wasm_decoder_create_with_renderer_and_custom_sofa(0, 1, p, n)));
+assert.deepEqual(hdfOutput, cdfOutput, '48 kHz HDF5 and CDF preserve identical PCM bits and frame timing');
+const resampled = await readFile(`${sofaPath}.24k.sofa`);
+// Two source taps become 68 target taps, including the full causal sinc kernel.
+checkDecoder('Custom 24 kHz HDF5 SOFA', 67, () => withBytes(resampled, api.openjoc_wasm_custom_sofa_alloc,
+  (p, n) => api.openjoc_wasm_decoder_create_with_renderer_and_custom_sofa(0, 1, p, n)), 610);
+const oversized = await readFile(`${sofaPath}.largechunk.sofa`);
+assert.equal(withBytes(oversized, api.openjoc_wasm_custom_sofa_alloc,
+  (p, n) => api.openjoc_wasm_decoder_create_with_renderer_and_custom_sofa(0, 1, p, n)), 0,
+  'HDF5 chunk over the decompression budget is rejected');

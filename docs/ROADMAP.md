@@ -38,7 +38,6 @@ commitment or schedule. Implemented capability status belongs to
 
 These items are speculative and have no committed schedule:
 
-- broader SOFA convention/container support and sample-rate conversion;
 - additional Region fallback/tie behavior and richer presentation names;
 - live integration target/layout switching with explicit renderer-state
   transitions;

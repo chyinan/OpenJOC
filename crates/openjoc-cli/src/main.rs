@@ -9,6 +9,7 @@ mod oamd_forensics;
 mod oamd_oracle;
 mod performance;
 mod progress;
+mod render_input;
 mod render_scene;
 mod stream_inspect;
 mod terminal;
@@ -271,7 +272,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  census          Census bounded metadata carriers from external fixtures\n",
         "  diagnose-oamd   Emit bit-exact EMDF/OAMD entry evidence\n",
         "  decode-payload  Decode supplied downmix, JOC, and OAMD payloads\n",
-        "  sofa            Inspect strict SimpleFreeFieldHRIR/CDF-1 SOFA files\n",
+        "  sofa            Inspect supported SimpleFreeFieldHRIR CDF-1 or NetCDF-4/HDF5 SOFA files\n",
         "  render-scene    Render caller-bound static sources to transactional binaural WAV\n",
         "  render-joc      Render decoded JOC through the experimental speaker bridge or SOFA binaural virtualization\n",
         "\n",
@@ -304,7 +305,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "  ETSI strict is never auto-downgraded; explicit ETSI_STRICT is never downgraded; reserved syntax is an expected non-zero profile rejection\n",
         "  observed-vendor compatibility is explicit, partial, preserves opaque continuation, and assigns no semantics\n",
         "  non-seekable or fragmented MP4 streaming is not admitted; use a seekable ordinary MP4/M4A file\n",
-        "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR/CDF-1 SOFA; no interpolation or JOC bridge\n",
+        "  render-scene accepts only explicit static sources and strict SimpleFreeFieldHRIR CDF-1 or NetCDF-4/HDF5 SOFA; no interpolation or JOC bridge\n",
         "  render-joc SUPPORTED PRESETS: 2.0, 5.1, 5.1.2, 5.1.4, 7.1, 7.1.2, 7.1.4, 7.1.6, 9.1, 9.1.2, 9.1.4, 9.1.6, and 22.2; bridge control is automatic by default\n",
         "  CUSTOM LAYOUTS: use --layout-file for advanced versioned geometry; presets remain the ordinary path\n",
     ));
@@ -353,7 +354,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         ),
         "sofa" => concat!(
             "usage: openjoc sofa inspect <FILE> [--json]\n\n",
-            "Inspects the strict SimpleFreeFieldHRIR / NetCDF classic CDF-1 subset.\n",
+            "Inspects the supported SimpleFreeFieldHRIR CDF-1 or NetCDF-4/HDF5 subset.\n",
         ),
         "render-scene" => concat!(
             "usage: openjoc render-scene <SCENE> --binaural-sofa <FILE> --output <DIR>\n",
@@ -2140,7 +2141,7 @@ struct LegacyPassReport {
 
 fn run_legacy_render_pass(
     arguments: &RenderJocArgs,
-    stream: &[u8],
+    input: &render_input::RenderInput,
     config: PayloadDecoderConfig,
     selected_profile: JocValidationProfile,
     sink: &mut dyn PcmBlockSink,
@@ -2163,7 +2164,18 @@ fn run_legacy_render_pass(
                 openjoc_sofa::SofaLoadLimits::default(),
             )
             .map_err(joc_render::JocRenderError::from)?;
-            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            let lfe_delay = openjoc_sofa::hrir_resampling_delay_samples(
+                sofa.bank.sample_rate_hz(),
+                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+            )
+            .map_err(joc_render::JocRenderError::from)?;
+            let sofa = openjoc_sofa::resample_loaded_hrir_bank(
+                sofa,
+                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+                openjoc_sofa::SofaLoadLimits::default(),
+            )
+            .map_err(joc_render::JocRenderError::from)?;
+            let renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
                 joc_render::JocBinauralRenderer::new(
                     &arguments.layout,
                     sofa.bank,
@@ -2180,7 +2192,8 @@ fn run_legacy_render_pass(
                     control,
                     arguments.diagnostic_contribution,
                 )?
-            }
+            };
+            renderer.with_lfe_delay(lfe_delay)
         } else {
             let loaded = openjoc_sofa::load_builtin_hrir_f32(arguments.binaural_hrtf)
                 .map_err(joc_render::JocRenderError::from)?;
@@ -2201,7 +2214,7 @@ fn run_legacy_render_pass(
         }
         let result =
             eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
-                stream,
+                input.open()?,
                 config,
                 selected_profile,
                 &dither,
@@ -2303,7 +2316,7 @@ fn run_legacy_render_pass(
         }
         let result =
             eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
-                stream,
+                input.open()?,
                 config,
                 selected_profile,
                 &dither,
@@ -2357,7 +2370,7 @@ fn run_legacy_render_pass(
 
 fn render_joc_with_peak_normalization(
     arguments: &RenderJocArgs,
-    stream: &[u8],
+    input: &render_input::RenderInput,
     overwrite_authorized: bool,
     terminal: TerminalCapabilities,
 ) -> Result<(), Box<dyn Error>> {
@@ -2369,9 +2382,7 @@ fn render_joc_with_peak_normalization(
         oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
     };
     let profile_start = std::time::Instant::now();
-    let selected_profile =
-        eac3_decode::resolve_profile_for_stream(stream, config, arguments.validation_profile)?;
-    let timing = eac3_decode::stream_timing(stream)?;
+    let (timing, selected_profile) = input.preflight(config, arguments.validation_profile)?;
     let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
     let mut performance = arguments
         .performance_report
@@ -2403,7 +2414,7 @@ fn render_joc_with_peak_normalization(
         };
         run_legacy_render_pass(
             arguments,
-            stream,
+            input,
             config,
             selected_profile,
             &mut sink,
@@ -2511,14 +2522,14 @@ fn render_joc(
         .as_ref()
         .map(|_| performance::RenderPerformance::new());
     let input_start = std::time::Instant::now();
-    let media = load_eac3(&arguments.input)?;
+    let input = render_input::RenderInput::new(&arguments.input)?;
     if let Some(report) = performance.as_mut() {
         report.input_container += input_start.elapsed();
     }
     if arguments.normalize_peak.is_some() {
         return render_joc_with_peak_normalization(
             arguments,
-            &media.bytes,
+            &input,
             overwrite_authorized,
             terminal,
         );
@@ -2528,27 +2539,18 @@ fn render_joc(
         && arguments.diagnostic_contribution == SpatialContributionMode::Full
         && arguments.binaural_backend == joc_render::BinauralBackend::Direct
     {
-        return render_joc_with_embedded_session(
-            arguments,
-            &media.bytes,
-            overwrite_authorized,
-            terminal,
-        );
+        return render_joc_with_embedded_session(arguments, &input, overwrite_authorized, terminal);
     }
     let config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
     };
     let profile_start = std::time::Instant::now();
-    let selected_profile = eac3_decode::resolve_profile_for_stream(
-        &media.bytes,
-        config,
-        arguments.validation_profile,
-    )?;
+    let (input_timing, selected_profile) = input.preflight(config, arguments.validation_profile)?;
     let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
     let collect_timing = performance.is_some();
     let stream_timing = if progress_enabled || collect_timing {
-        Some(eac3_decode::stream_timing(&media.bytes)?)
+        Some(input_timing)
     } else {
         None
     };
@@ -2583,7 +2585,18 @@ fn render_joc(
                 openjoc_sofa::SofaLoadLimits::default(),
             )
             .map_err(joc_render::JocRenderError::from)?;
-            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            let lfe_delay = openjoc_sofa::hrir_resampling_delay_samples(
+                sofa.bank.sample_rate_hz(),
+                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+            )
+            .map_err(joc_render::JocRenderError::from)?;
+            let sofa = openjoc_sofa::resample_loaded_hrir_bank(
+                sofa,
+                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+                openjoc_sofa::SofaLoadLimits::default(),
+            )
+            .map_err(joc_render::JocRenderError::from)?;
+            let renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
                 joc_render::JocBinauralRenderer::new(
                     &arguments.layout,
                     sofa.bank,
@@ -2600,11 +2613,11 @@ fn render_joc(
                     control,
                     arguments.diagnostic_contribution,
                 )?
-            }
+            };
+            renderer.with_lfe_delay(lfe_delay)
         } else {
-            let loaded =
-                openjoc_sofa::load_builtin_hrir_f32(openjoc_sofa::BuiltinHrtf::SadieD1Ku100)
-                    .map_err(joc_render::JocRenderError::from)?;
+            let loaded = openjoc_sofa::load_builtin_hrir_f32(arguments.binaural_hrtf)
+                .map_err(joc_render::JocRenderError::from)?;
             joc_render::JocBinauralRenderer::new_with_builtin_f32(
                 &arguments.layout,
                 &loaded.bank,
@@ -2630,7 +2643,7 @@ fn render_joc(
         let dither = deterministic_dither_values();
         let result =
             eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
-                &media.bytes,
+                input.open()?,
                 config,
                 selected_profile,
                 &dither,
@@ -2793,7 +2806,7 @@ fn render_joc(
         let dither = deterministic_dither_values();
         let result =
             eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
-                &media.bytes,
+                input.open()?,
                 config,
                 selected_profile,
                 &dither,
@@ -2899,22 +2912,16 @@ fn render_joc(
 /// moved separately.
 fn render_joc_with_embedded_session(
     arguments: &RenderJocArgs,
-    stream: &[u8],
+    input: &render_input::RenderInput,
     overwrite_authorized: bool,
     terminal: TerminalCapabilities,
 ) -> Result<(), Box<dyn Error>> {
-    let frames = openjoc_eac3::index_syncframes(stream)?;
-    let units = openjoc_eac3::group_access_units(&frames)?;
-    let timing = eac3_decode::stream_timing(stream)?;
     let decode_config = PayloadDecoderConfig {
         reference_screen: None,
         oamd: OamdDecoderConfig::with_trim_configuration_count(arguments.trim_configuration_count),
     };
-    let selected_profile = eac3_decode::resolve_profile_for_stream(
-        stream,
-        decode_config,
-        arguments.validation_profile,
-    )?;
+    let (timing, selected_profile) =
+        input.preflight(decode_config, arguments.validation_profile)?;
     let render_mode = if arguments.binaural {
         ApiRenderMode::Binaural
     } else if arguments.layout == "2.0" {
@@ -3023,16 +3030,18 @@ fn render_joc_with_embedded_session(
         terminal.width,
     );
     let result = (|| -> Result<(), Box<dyn Error>> {
-        for (unit_index, unit) in units.iter().copied().enumerate() {
-            let first = frames[unit.first_frame];
-            let last = frames[unit.first_frame + unit.frame_count - 1];
-            let start = first.offset;
-            let end = last
-                .offset
-                .checked_add(last.header.frame_size)
-                .ok_or("access-unit byte range overflow")?;
+        let mut units = openjoc_container::RawEac3AccessUnitReader::new(
+            input.open()?,
+            openjoc_eac3::MAX_SYNCFRAME_BYTES,
+        );
+        let mut unit_index = 0_usize;
+        let mut frame_offset = 0_usize;
+        while let Some(au) = units
+            .next_access_unit()
+            .map_err(|error| eac3_decode::rebase_frame_error(error.into(), frame_offset))?
+        {
             let status = session.push_packet(OpenJocPacket {
-                data: &stream[start..end],
+                data: &au.bytes,
                 pts_samples: None,
                 discontinuity: false,
                 preroll: false,
@@ -3042,6 +3051,12 @@ fn render_joc_with_embedded_session(
                 return Err("embedded API output backpressure was not drained".into());
             }
             progress.update(unit_index, output.frames());
+            unit_index = unit_index
+                .checked_add(1)
+                .ok_or("access-unit index overflow")?;
+            frame_offset = frame_offset
+                .checked_add(au.unit.frame_count)
+                .ok_or("frame index overflow")?;
         }
         let _ = session.drain()?;
         write_embedded_session_frames(&mut session, &mut output)?;

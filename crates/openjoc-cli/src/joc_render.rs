@@ -1794,6 +1794,7 @@ pub struct JocBinauralRenderer {
     sample_rate: Option<u32>,
     pending_sources: Vec<Vec<f64>>,
     pending_lfe: Vec<f64>,
+    lfe_delay: openjoc_render::SampleDelay,
     pending_len: usize,
     finished: bool,
     stage_timings: RenderStageTiming,
@@ -1801,6 +1802,11 @@ pub struct JocBinauralRenderer {
 }
 
 impl JocBinauralRenderer {
+    /// Aligns the bypass LFE with the common delay added by HRIR resampling.
+    pub(crate) fn with_lfe_delay(mut self, samples: usize) -> Self {
+        self.lfe_delay = openjoc_render::SampleDelay::new(samples);
+        self
+    }
     /// Creates a preflighted JOC binaural renderer from a strict SOFA bank.
     ///
     /// Every non-LFE public speaker channel is resolved before any input PCM
@@ -1985,6 +1991,7 @@ impl JocBinauralRenderer {
             sample_rate: None,
             pending_sources: Vec::new(),
             pending_lfe: Vec::new(),
+            lfe_delay: openjoc_render::SampleDelay::new(0),
             pending_len: 0,
             finished: false,
             stage_timings: RenderStageTiming::default(),
@@ -2104,6 +2111,7 @@ impl JocBinauralRenderer {
             source.fill(0.0);
         }
         self.pending_lfe.fill(0.0);
+        self.lfe_delay.reset();
         self.pending_len = 0;
         self.finished = false;
         self.stage_timings = RenderStageTiming::default();
@@ -2164,6 +2172,7 @@ impl JocBinauralRenderer {
             self.stage_timings.binaural_render += start.elapsed();
         }
         let sample_rate = self.sample_rate.ok_or(JocRenderError::NoRenderedFrames)?;
+        let mut fir_tail_start = output.len();
         match self
             .engine
             .as_mut()
@@ -2188,6 +2197,7 @@ impl JocBinauralRenderer {
                     renderer.finish_input(&blocks, self.pending_len, &mut left, &mut right)?;
                     add_lfe(
                         self.lfe_policy,
+                        &mut self.lfe_delay,
                         &self.pending_lfe[..self.pending_len],
                         &mut left,
                         &mut right,
@@ -2208,8 +2218,41 @@ impl JocBinauralRenderer {
                     let mut right = Vec::new();
                     renderer.finish_input(&blocks, 0, &mut left, &mut right)?;
                 }
+                fir_tail_start = output.len();
                 drain_partitioned_tail(renderer, sample_rate, partition_size, &mut output)?;
             }
+        }
+        for block in &mut output[fir_tail_start..] {
+            for (left, right) in block
+                .left
+                .iter_mut()
+                .zip(&mut block.right)
+                .take(self.lfe_delay.remaining_samples())
+            {
+                let sample = self.lfe_delay.drain_sample() * std::f64::consts::FRAC_1_SQRT_2;
+                *left += sample;
+                *right += sample;
+                if !left.is_finite() || !right.is_finite() {
+                    return Err(JocRenderError::BinauralOutput(
+                        "non-finite LFE accumulation".to_owned(),
+                    ));
+                }
+            }
+        }
+        if self.lfe_delay.remaining_samples() > 0 {
+            let tail: Vec<_> = (0..self.lfe_delay.remaining_samples())
+                .map(|_| self.lfe_delay.drain_sample() * std::f64::consts::FRAC_1_SQRT_2)
+                .collect();
+            if tail.iter().any(|sample| !sample.is_finite()) {
+                return Err(JocRenderError::BinauralOutput(
+                    "non-finite LFE accumulation".to_owned(),
+                ));
+            }
+            output.push(BinauralRenderedBlock {
+                sample_rate,
+                left: tail.clone(),
+                right: tail,
+            });
         }
         self.finished = true;
         Ok(output)
@@ -2264,7 +2307,7 @@ impl JocBinauralRenderer {
         let algorithmic_latency = match self.backend {
             BinauralBackend::Direct => 0,
             BinauralBackend::Partitioned { partition_size } => partition_size,
-        };
+        } + self.lfe_delay.delay_samples();
         let mut extra = vec![
             "output mode: binaural stereo (L/R ears)".to_owned(),
             format!("virtual speaker layout: {}", self.layout),
@@ -2420,6 +2463,7 @@ impl JocBinauralRenderer {
         if let Some(lfe_index) = self.lfe_index {
             add_lfe(
                 self.lfe_policy,
+                &mut self.lfe_delay,
                 &rendered.channels[lfe_index],
                 &mut left,
                 &mut right,
@@ -2490,7 +2534,13 @@ impl JocBinauralRenderer {
             ));
         };
         renderer.render_partition(&blocks, &mut left, &mut right)?;
-        add_lfe(self.lfe_policy, &self.pending_lfe, &mut left, &mut right)?;
+        add_lfe(
+            self.lfe_policy,
+            &mut self.lfe_delay,
+            &self.pending_lfe,
+            &mut left,
+            &mut right,
+        )?;
         Ok(BinauralRenderedBlock {
             sample_rate,
             left,
@@ -2627,6 +2677,7 @@ pub fn validate_binaural_layout(layout: &str) -> Result<(), JocRenderError> {
 
 fn add_lfe(
     policy: Option<BinauralLfePolicy>,
+    delay: &mut openjoc_render::SampleDelay,
     lfe: &[f64],
     left: &mut [f64],
     right: &mut [f64],
@@ -2639,8 +2690,9 @@ fn add_lfe(
     if matches!(policy, Some(BinauralLfePolicy::EqualPowerDualMono)) {
         let gain = std::f64::consts::FRAC_1_SQRT_2;
         for index in 0..lfe.len() {
-            left[index] += lfe[index] * gain;
-            right[index] += lfe[index] * gain;
+            let sample = delay.process_sample(lfe[index]);
+            left[index] += sample * gain;
+            right[index] += sample * gain;
             if !left[index].is_finite() || !right[index].is_finite() {
                 return Err(JocRenderError::BinauralOutput(
                     "non-finite LFE accumulation".to_owned(),
@@ -5367,6 +5419,127 @@ mod tests {
         let dual_mono = collect_binaural(&mut dual, 0, &frame, &pcm);
         assert!((dual_mono[0].0 - excluded[0].0 - 99.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
         assert!((dual_mono[0].1 - excluded[0].1 - 99.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn resampled_hrir_delay_is_in_binaural_diagnostics() {
+        let summary = openjoc_scene::StreamingSceneSummary {
+            sample_rate: 48_000,
+            duration_samples: 0,
+            frames: 0,
+            object_count: 0,
+            max_reconstruction_rows: 0,
+            max_frame_samples: 0,
+            metadata_events: 0,
+            trim_events: 0,
+        };
+        for (backend, backend_latency) in [
+            (BinauralBackend::Direct, 0),
+            (BinauralBackend::Partitioned { partition_size: 32 }, 32),
+        ] {
+            for delay in [0, 33] {
+                let renderer = JocBinauralRenderer::new(
+                    "5.1",
+                    binaural_bank("5.1", 48_000),
+                    backend,
+                    Some(BinauralLfePolicy::EqualPowerDualMono),
+                    Some(control(false, 6)),
+                )
+                .unwrap()
+                .with_lfe_delay(delay);
+                let diagnostic = renderer.diagnostics(
+                    Path::new("custom.sofa"),
+                    crate::eac3_decode::ValidationProfileRequest::EtsiStrict,
+                    JocValidationProfile::EtsiStrict,
+                    &summary,
+                    Path::new("out.wav"),
+                    SampleFormat::F32,
+                );
+                assert!(diagnostic.contains(&format!(
+                    "algorithmic latency: {} samples",
+                    backend_latency + delay
+                )));
+                assert!(
+                    diagnostic.contains(&format!(
+                        "total reported latency: {} samples",
+                        openjoc_joc::ReconstructionOutputTimeline::qmf_latency_samples()
+                            + backend_latency
+                            + delay
+                    )),
+                    "{diagnostic}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn resampled_lfe_delay_survives_blocks_partial_tail_and_reset() {
+        for backend in [
+            BinauralBackend::Direct,
+            BinauralBackend::Partitioned { partition_size: 32 },
+        ] {
+            for length in [2, 32, 35, 70] {
+                let mut renderer = JocBinauralRenderer::new(
+                    "5.1",
+                    binaural_bank("5.1", 48_000),
+                    backend,
+                    Some(BinauralLfePolicy::EqualPowerDualMono),
+                    Some(control(false, 6)),
+                )
+                .unwrap()
+                .with_lfe_delay(33);
+                for _ in 0..2 {
+                    renderer.ensure_engine(48_000).unwrap();
+                    let mut actual = Vec::new();
+                    for start in (0..length).step_by(7) {
+                        let count = (length - start).min(7);
+                        let mut channels = vec![vec![0.0; count]; 6];
+                        for (offset, sample) in channels[3].iter_mut().enumerate() {
+                            if start + offset == 0 || start + offset == length - 1 {
+                                *sample = 1.0;
+                            }
+                        }
+                        let frame = RenderedBlock {
+                            sample_rate: 48_000,
+                            channels,
+                        };
+                        let blocks = match backend {
+                            BinauralBackend::Direct => renderer.render_direct_block(&frame),
+                            BinauralBackend::Partitioned { .. } => {
+                                renderer.render_partitioned_block(&frame)
+                            }
+                        }
+                        .unwrap();
+                        actual.extend(
+                            blocks
+                                .into_iter()
+                                .flat_map(|block| block.left.into_iter().zip(block.right)),
+                        );
+                    }
+                    actual.extend(
+                        renderer
+                            .finish_after_speaker_blocks(&[])
+                            .unwrap()
+                            .into_iter()
+                            .flat_map(|block| block.left.into_iter().zip(block.right)),
+                    );
+                    assert!(actual.len() >= length + 33);
+                    for (index, (left, right)) in actual.into_iter().enumerate() {
+                        let expected = if index == 33 || index == 33 + length - 1 {
+                            std::f64::consts::FRAC_1_SQRT_2
+                        } else {
+                            0.0
+                        };
+                        assert!(
+                            (left - expected).abs() < 1e-12,
+                            "{backend:?} length={length} index={index}"
+                        );
+                        assert!((right - expected).abs() < 1e-12);
+                    }
+                    renderer.reset();
+                }
+            }
+        }
     }
 
     #[test]

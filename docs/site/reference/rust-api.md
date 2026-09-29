@@ -79,8 +79,11 @@ logical sample `n` reports `P + n`; the PTS is not silently moved by the
 filterbank or final linked-gain delay. Speaker output reports a 609-sample
 delay: the 577-sample QMF/Base-RB delay
 plus the admitted 32-sample causal speaker-stage block. Binaural output reports
-577 samples because it does not use the speaker FinalLinkedGain stage. These
-are public synchronization contracts; dialnorm and offline static
+577 samples for built-in or 48 kHz custom HRIRs because it does not use the
+speaker FinalLinkedGain stage. For non-48 kHz custom SOFA, `latency_samples`
+also includes the resampler's common causal filter delay; source `Data.Delay`
+stays in the HRIR and is not added to the reported value. These are public
+synchronization contracts; dialnorm and offline static
 normalization add zero audio-sample latency.
 This makes availability delay explicit without forcing callers to reverse-
 engineer it from frame counts.

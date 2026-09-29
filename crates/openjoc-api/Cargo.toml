@@ -22,6 +22,7 @@ openjoc-sofa = { version = "0.18.0", path = "../openjoc-sofa", default-features 
 sha2 = "0.10"
 
 [dev-dependencies]
+hdf5-pure = "0.47.0"
 openjoc-container = { version = "0.18.0", path = "../openjoc-container" }
 
 [lints]

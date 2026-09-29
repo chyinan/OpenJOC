@@ -28,6 +28,6 @@ encoded DRC → programme dialnorm → JOC rendering
   → speaker FinalLinkedGain → optional static peak scalar → file
 ```
 
-Speaker output reports 609 samples of availability delay. Binaural output reports 577 samples before its finite FIR tail is drained. Logical PTS is not shifted to hide this delay.
+Speaker output reports 609 samples of availability delay. Binaural output reports 577 samples for built-in or 48 kHz custom HRIRs. Non-48 kHz custom SOFA adds the resampler's common causal filter delay. Source `Data.Delay` and the finite FIR tail are not added to the reported latency. Logical PTS is not shifted to hide this delay.
 
 `export-adm` keeps floating-point reconstruction until the integer boundary. Its signed-24-bit writer rejects non-finite or out-of-range samples instead of clipping, normalizing, or silently attenuating them. See [PCM24 headroom](../compatibility/pcm24-headroom.md).

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import unittest
@@ -30,6 +31,7 @@ class ReleaseLavMsbuildScriptTests(unittest.TestCase):
         self.assertIn("Verbosity=minimal", text)
         self.assertNotIn("Verbosity=diagnostic", text)
 
+    @unittest.skipUnless(os.name == "nt", "Windows cmd.exe is required")
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(
             ["cmd.exe", "/d", "/c", str(SCRIPT)],

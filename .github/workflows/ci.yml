@@ -18,6 +18,21 @@ env:
   CARGO_BUILD_JOBS: 1
 
 jobs:
+  scripts:
+    name: scripts-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Packaging, release, and onboarding regression tests
+        run: python -m unittest discover -s scripts/tests -v
+
   quality:
     name: quality
     runs-on: ubuntu-24.04
@@ -84,9 +99,7 @@ jobs:
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg9/lib" >> "$GITHUB_ENV"
 
       - name: Repository documentation and hygiene
-        run: |
-          python3 -m unittest scripts.tests.test_repository_hygiene
-          python3 scripts/check_repository_hygiene.py
+        run: python3 scripts/check_repository_hygiene.py
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -221,7 +234,7 @@ jobs:
         run: cargo build -p gst-plugin-openjoc --release --features gstreamer --locked
 
   msrv:
-    name: msrv-1.85
+    name: msrv-1.89
     runs-on: ubuntu-24.04
     steps:
       - name: Check out the committed source
@@ -251,9 +264,9 @@ jobs:
             libavcodec-dev \
             libavformat-dev \
             libavutil-dev
-          rustup toolchain install 1.85.0 --profile minimal
-          rustc +1.85.0 -vV
-          cargo +1.85.0 -Vv
+          rustup toolchain install 1.89.0 --profile minimal
+          rustc +1.89.0 -vV
+          cargo +1.89.0 -Vv
 
       - name: Build the minimum FFmpeg 9 SDK
         run: |
@@ -280,4 +293,4 @@ jobs:
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/ffmpeg9/lib" >> "$GITHUB_ENV"
 
       - name: Check all features at the documented Rust minimum
-        run: cargo +1.85.0 check --workspace --all-features --locked
+        run: cargo +1.89.0 check --workspace --all-features --locked

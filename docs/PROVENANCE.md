@@ -2827,7 +2827,8 @@ Release evidence is derived from a tracked-file `git archive`, Cargo's package
 file lists and package verification, isolated target/prefix directories,
 `shasum -a 256`, `cmp`, `file`, `otool -L`, the installed CLI help surface, and
 the existing Rust gates. The tested host is Apple-silicon macOS 26.6 with
-Homebrew Rust/Cargo 1.94.0. The workspace declares Rust 1.85 as its minimum but
+Homebrew Rust/Cargo 1.94.0. At the time of this provenance record, the workspace
+declared Rust 1.85 as its minimum but
 does not pin the exact compiler, so reproducibility is explicitly scoped to the
 recorded host/toolchain/environment.
 

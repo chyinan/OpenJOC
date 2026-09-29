@@ -40,7 +40,7 @@ openjoc render-joc input.ec3 --layout 2.0 --output stereo.wav
 openjoc render-joc input.ec3 --binaural --output headphones.wav
 ```
 
-内置 SADIE II D1 HRTF 是通用数据。自定义本地 SOFA 文件必须符合文档规定的严格 `SimpleFreeFieldHRIR` 子集；不支持 HDF5/NetCDF-4 和自动重采样。详见[双耳与 SOFA](binaural-sofa.md)。
+内置 SADIE II D1 HRTF 是通用数据。自定义 SOFA 支持 CDF-1 和 NetCDF-4/HDF5 的 SimpleFreeFieldHRIR 子集；HRIR 会转换到 48 kHz，分数采样延迟仍不受支持。详见[双耳与 SOFA](binaural-sofa.md)。
 
 ## ADM 导出失败，或导出的对象不移动
 

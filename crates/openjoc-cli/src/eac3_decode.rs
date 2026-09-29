@@ -68,6 +68,7 @@ pub(crate) struct AdmStreamPreflight {
     pub(crate) binding_reason: Option<String>,
 }
 
+#[cfg(test)]
 pub(crate) fn stream_timing(stream: &[u8]) -> Result<StreamTiming, DecodeEac3Error> {
     let frames = index_syncframes(stream)?;
     let units = group_access_units(&frames)?;
@@ -290,6 +291,35 @@ impl From<JocParseError> for DecodeEac3Error {
     fn from(value: JocParseError) -> Self {
         Self::JocPayload(value)
     }
+}
+
+/// Restores programme-relative diagnostics when a parser sees one local AU.
+/// Only frame indices are local; the raw reader already reports global byte offsets.
+pub(crate) fn rebase_frame_error(mut error: DecodeEac3Error, offset: usize) -> DecodeEac3Error {
+    if let DecodeEac3Error::Eac3(error)
+    | DecodeEac3Error::Input(InputMediaError::InvalidDemuxedEac3(error)) = &mut error
+    {
+        match error {
+            Eac3Error::MissingIndependentSubstreamZero { frame }
+            | Eac3Error::DependentAfterConvertedSubstream { frame }
+            | Eac3Error::SubstreamTimingMismatch { frame }
+            | Eac3Error::MissingJocAddbsi { frame }
+            | Eac3Error::MissingJocCarrier {
+                required_frame: frame,
+            } => {
+                *frame = frame.saturating_add(offset);
+            }
+            Eac3Error::InvalidJocCarrierPlacement {
+                carrier_frame,
+                required_frame,
+            } => {
+                *carrier_frame = carrier_frame.saturating_add(offset);
+                *required_frame = required_frame.saturating_add(offset);
+            }
+            _ => {}
+        }
+    }
+    error
 }
 
 fn required_metadata(
@@ -660,7 +690,7 @@ where
 /// remain owned by the existing decoder/renderer stages.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm<S, B>(
-    stream: &[u8],
+    stream: impl Read,
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
     dither_values: &[f64],
@@ -1124,7 +1154,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn decode_internal_eac3_core<S, B, C, R, F>(
-    stream: &[u8],
+    stream: impl Read,
     config: PayloadDecoderConfig,
     validation_profile: JocValidationProfile,
     dither_values: &[f64],
@@ -1148,11 +1178,7 @@ where
     ) -> Result<(), DecodeEac3Error>,
     F: FnOnce(PayloadDecoder) -> Result<R, PayloadDecodeError>,
 {
-    let frame_index = index_syncframes(stream)?;
-    let units = group_access_units(&frame_index)?;
-    if units.is_empty() {
-        return Err(DecodeEac3Error::EmptyStream);
-    }
+    let mut units = RawEac3AccessUnitReader::new(stream, openjoc_eac3::MAX_SYNCFRAME_BYTES);
     let mut audio_decoder = JocAccessUnitPcmDecoder::new();
     audio_decoder.set_dialnorm_mode(dialnorm_mode);
     let oamd_profile = match validation_profile {
@@ -1168,16 +1194,20 @@ where
         decoder.enable_reconstruction_timing();
         audio_decoder.enable_stage_timing();
     }
-    for (unit_index, unit) in units.into_iter().enumerate() {
+    let mut unit_index = 0;
+    let mut frame_offset = 0_usize;
+    while let Some(access_unit) = units
+        .next_access_unit()
+        .map_err(|error| rebase_frame_error(error.into(), frame_offset))?
+    {
+        let stream = access_unit.bytes.as_slice();
+        let frame_index = &access_unit.frames;
+        let unit = access_unit.unit;
         let frame_start = Instant::now();
         let decode_start = Instant::now();
-        let pcm_planes = audio_decoder.decode_pcm_planes_with_policy(
-            stream,
-            &frame_index,
-            unit,
-            dither_values,
-            base_policy,
-        )?;
+        let pcm_planes = audio_decoder
+            .decode_pcm_planes_with_policy(stream, frame_index, unit, dither_values, base_policy)
+            .map_err(|error| rebase_frame_error(error.into(), frame_offset))?;
         let pcm = &pcm_planes.joc_input_pcm;
         if let Some(timing) = timing.as_mut() {
             let elapsed = decode_start.elapsed();
@@ -1197,8 +1227,13 @@ where
                 expected: usize::from(unit.samples),
             });
         }
-        let metadata =
-            required_metadata(stream, &frame_index, unit, unit_index, validation_profile)?;
+        let mut metadata =
+            required_metadata(stream, frame_index, unit, unit_index, validation_profile)
+                .map_err(|error| rebase_frame_error(error, frame_offset))?;
+        metadata.carrier_frame = metadata
+            .carrier_frame
+            .checked_add(frame_offset)
+            .ok_or(DecodeEac3Error::FrameIndexOverflow)?;
         let parsed_joc = parse_joc_payload(&metadata.joc)?;
         pcm.validate_joc_downmix_topology(parsed_joc.header.downmix_index)?;
         let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
@@ -1243,6 +1278,15 @@ where
                 timing.frame_times.push(frame_start.elapsed());
             }
         }
+        unit_index = unit_index
+            .checked_add(1)
+            .ok_or(DecodeEac3Error::FrameIndexOverflow)?;
+        frame_offset = frame_offset
+            .checked_add(unit.frame_count)
+            .ok_or(DecodeEac3Error::FrameIndexOverflow)?;
+    }
+    if unit_index == 0 {
+        return Err(DecodeEac3Error::EmptyStream);
     }
     Ok(finish(decoder)?)
 }

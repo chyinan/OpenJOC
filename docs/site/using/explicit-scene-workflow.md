@@ -18,10 +18,10 @@ ReconstructionBasis rows, OAMD slots, or backend settings.
 ```
 
 Source paths are relative to the scene file. Absolute paths, parent traversal,
-symlink escapes, duplicate IDs, unknown fields, unsupported directions, and
-sample-rate mismatches are rejected before output promotion. Supported source
-WAVs are mono PCM16/24/32 and mono IEEE-float32; no resampling, normalization,
-clipping, or dither is applied.
+symlink escapes, duplicate IDs, unknown directions, and source-WAV sample-rate
+mismatches are rejected before output promotion. Supported source WAVs are mono
+PCM16/24/32 and mono IEEE-float32; they must match the scene rate. OpenJOC does
+not resample, normalize, clip, or dither source audio.
 
 Inspect a supported SOFA file first:
 
@@ -45,10 +45,17 @@ Output length is the scene input timeline plus the complete causal HRIR tail
 explicit and never automatic.
 
 The SOFA boundary is intentionally narrow: SimpleFreeFieldHRIR, admitted
-versions 1.0/1.1/1.2, and the portable NetCDF classic CDF-1 subset from J5R8.
-HDF5/NetCDF-4, other conventions, interpolation, nearest-direction fallback,
-moving sources, and downloads are not supported. Users remain responsible for
+versions 1.0/1.1/1.2, and the read-only NetCDF classic CDF-1 or NetCDF-4/HDF5
+subset. HRIRs are converted to the scene sample rate; inputs already at that
+rate retain their source coefficients bit-for-bit. Other SOFA conventions, interpolation,
+nearest-direction fallback, moving sources, and downloads are not supported.
+Users remain responsible for
 the licensing and provenance of locally supplied SOFA data.
+
+When rates differ, conversion preserves convolution gain and includes a common
+causal filter delay in both HRIRs and the output tail. The result manifest adds
+this delay to the backend's `algorithmic_latency_samples`. See the conversion delay
+and HDF5 chunk limits in [Binaural and SOFA](binaural-sofa.md#sofa-scope).
 
 The workflow is independent of unresolved JOC semantic binding:
 `joc_semantic_binding` is `unresolved_not_used` in the result manifest.

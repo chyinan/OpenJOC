@@ -112,10 +112,11 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   binaural parity. The bundled SADIE II dataset is generic; a custom SOFA may
   be more appropriate for a listener.
 - Custom SOFA support is a strict local `SimpleFreeFieldHRIR` NetCDF classic
-  CDF-1 subset with fixed listener pose, two receivers, common sample rate,
-  and bounded exact/interpolated directional coverage. HDF5/NetCDF-4,
-  resampling, downloads, writing, moving sources, and universal dataset
-  coverage are not supported.
+  CDF-1 or NetCDF-4/HDF5 subset with fixed listener pose, two receivers,
+  integer source delays, and bounded exact/interpolated direction coverage.
+  HRIRs are resampled to 48 kHz for binaural rendering. Fractional source
+  delays, external HDF5 filters, downloads, writing, moving sources, and
+  universal dataset coverage are not supported.
 
 ## Output level and synchronization
 
@@ -130,8 +131,10 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   not LUFS or true-peak normalization, a limiter, compressor, or DRC, and an
   inter-sample peak may exceed the requested value.
 - Speaker output reports 609 samples of availability delay (577 QMF/Base-RB
-  plus 32 FinalLinkedGain). Binaural reports 577 samples, excluding its finite
-  FIR tail. Logical PTS is not shifted to hide this delay.
+  plus 32 FinalLinkedGain). Binaural reports 577 samples for built-in or 48 kHz
+  custom HRIRs. Non-48 kHz custom SOFA adds the resampler's common causal
+  filter delay. The finite FIR tail and source `Data.Delay` are not added to
+  this latency. Logical PTS is not shifted to hide this delay.
 
 ## ADM interoperability
 

@@ -7,7 +7,10 @@ use openjoc_render::{
     BinauralRenderer, BinauralSourceBlock, CartesianPosition, PartitionedBinauralRenderer,
     StaticBinauralSource, UniformPartitionedConfig,
 };
-use openjoc_sofa::{LoadedSofaHrirBank, SofaError, SofaLoadLimits, load_simple_free_field_hrir};
+use openjoc_sofa::{
+    LoadedSofaHrirBank, SofaError, SofaLoadLimits, load_simple_free_field_hrir,
+    resample_loaded_hrir_bank,
+};
 use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveError, WaveWriter};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -294,12 +297,11 @@ pub fn render(request: &RenderRequest) -> Result<RenderResult, RenderSceneError>
     let sofa_bytes = fs::read(&request.sofa_path)?;
     let sofa_hash = hex_hash(&sofa_bytes);
     let sofa = openjoc_sofa::parse_simple_free_field_hrir(&sofa_bytes, SofaLoadLimits::default())?;
-    if sofa.metadata.sample_rate_hz != scene.sample_rate_hz {
-        return Err(RenderSceneError::SampleRateMismatch {
-            expected: scene.sample_rate_hz,
-            actual: sofa.metadata.sample_rate_hz,
-        });
-    }
+    let resampling_delay = openjoc_sofa::hrir_resampling_delay_samples(
+        sofa.bank.sample_rate_hz(),
+        scene.sample_rate_hz,
+    )?;
+    let sofa = resample_loaded_hrir_bank(sofa, scene.sample_rate_hz, SofaLoadLimits::default())?;
     let mut sources = Vec::with_capacity(scene.sources.len());
     let mut readers = Vec::with_capacity(scene.sources.len());
     let mut source_results = Vec::with_capacity(scene.sources.len());
@@ -356,6 +358,7 @@ pub fn render(request: &RenderRequest) -> Result<RenderResult, RenderSceneError>
         &scene,
         &mut readers,
         &sofa,
+        resampling_delay,
         &sources,
         scene_end,
         max_taps,
@@ -383,6 +386,7 @@ fn render_to_staging(
     scene: &RenderScene,
     readers: &mut [(openjoc_render::SourceId, StreamingWav)],
     sofa: &LoadedSofaHrirBank,
+    resampling_delay: usize,
     sources: &[StaticBinauralSource],
     scene_end: u64,
     max_taps: usize,
@@ -548,10 +552,10 @@ fn render_to_staging(
             RenderBackend::Direct => None,
             RenderBackend::Partitioned { partition_size } => Some(partition_size),
         },
-        algorithmic_latency_samples: match request.backend {
+        algorithmic_latency_samples: resampling_delay.saturating_add(match request.backend {
             RenderBackend::Direct => 0,
             RenderBackend::Partitioned { partition_size } => partition_size,
-        },
+        }),
         scene_input_length: scene_end,
         hrir_max_tap_count: max_taps,
         tail_samples: max_taps.saturating_sub(1),

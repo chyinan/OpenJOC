@@ -95,8 +95,8 @@ the renderer does not share convolution state between presets.
 
 ## Representation and measured cost
 
-Custom SOFA continues through the CDF-1 `SimpleFreeFieldHRIR` parser and its
-existing f64 representation. Built-in `.ojhrtf` v2 files instead decode a
+Custom SOFA uses the `SimpleFreeFieldHRIR` CDF-1 or NetCDF-4/HDF5 parser and
+retains the existing f64 representation. Built-in `.ojhrtf` v2 files instead decode a
 direct direction/tap record table and do not parse SOFA/NetCDF at runtime. The
 offline packer preserves the full direction set, ear order, integer sample
 delays, and original f32 taps; it performs no EQ, resampling, quantization, or

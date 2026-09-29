@@ -1,3 +1,5 @@
+// pattern: Mixed (unavoidable)
+// Reason: integration tests generate deterministic fixtures and render real files.
 use openjoc_render_scene::{RESULT_SCHEMA, RenderBackend, RenderRequest, SCENE_SCHEMA, render};
 use openjoc_sofa::{SofaLoadLimits, parse_simple_free_field_hrir};
 use std::{fs, path::Path, path::PathBuf};
@@ -118,6 +120,42 @@ fn scene_unknown_fields_and_parent_paths_are_rejected() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn converted_sofa_delay_is_included_in_both_backend_reports() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    write_pcm16_mono(&root.join("source.wav"), 48_000, &[0.25, -0.5]);
+    let bytes = sofa_fixture_with_rate(24_000.0);
+    let loaded = parse_simple_free_field_hrir(&bytes, SofaLoadLimits::default()).unwrap();
+    let direction = loaded.bank.entries()[0].direction();
+    fs::write(root.join("listener.sofa"), bytes).unwrap();
+    fs::write(root.join("scene.json"),format!(
+        r#"{{"schema":"{SCENE_SCHEMA}","sample_rate_hz":48000,"source_semantics":"explicit_spatial_sources","sources":[{{"id":"voice","input_wav":"source.wav","position":{{"x":{},"y":{},"z":{}}},"gain":1.0}}]}}"#,
+        direction[0],direction[1],direction[2],
+    )).unwrap();
+    for (name, backend, latency) in [
+        ("direct", RenderBackend::Direct, 33),
+        (
+            "partitioned",
+            RenderBackend::Partitioned { partition_size: 4 },
+            37,
+        ),
+    ] {
+        let result = render(&RenderRequest {
+            scene_path: root.join("scene.json"),
+            sofa_path: root.join("listener.sofa"),
+            output_dir: root.join(name),
+            backend,
+            block_size: 2,
+        })
+        .unwrap();
+        assert_eq!(result.algorithmic_latency_samples, latency);
+        assert_eq!(result.sofa_sample_rate_hz, 24_000);
+        assert_eq!(result.output_sample_count, 71);
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn temp_root() -> PathBuf {
     std::env::temp_dir().join(format!(
         "openjoc-render-scene-test-{}-{}",
@@ -159,6 +197,10 @@ fn read_f32_stereo(path: &Path) -> Vec<f32> {
 }
 
 fn sofa_fixture() -> Vec<u8> {
+    sofa_fixture_with_rate(48_000.0)
+}
+
+fn sofa_fixture_with_rate(rate: f64) -> Vec<u8> {
     let dimensions = vec![("M", 1usize), ("R", 2), ("N", 3), ("C", 3), ("One", 1)];
     let dim_id = |name: &str| dimensions.iter().position(|(n, _)| *n == name).unwrap();
     let mut variables = vec![
@@ -167,7 +209,7 @@ fn sofa_fixture() -> Vec<u8> {
             vec![dim_id("M"), dim_id("R"), dim_id("N")],
             &[1.0, 0.5, 0.0, 0.25, 0.0, 0.0],
         ),
-        Var::new("Data.SamplingRate", vec![dim_id("One")], &[48_000.0])
+        Var::new("Data.SamplingRate", vec![dim_id("One")], &[rate])
             .attr(text_attr("Units", "hertz")),
         Var::new("Data.Delay", vec![dim_id("R")], &[0.0, 0.0]).attr(text_attr("Units", "samples")),
         Var::new(

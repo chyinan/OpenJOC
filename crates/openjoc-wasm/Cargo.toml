@@ -21,5 +21,8 @@ crate-type = ["cdylib", "rlib"]
 openjoc-api = { version = "0.18.0", path = "../openjoc-api", default-features = false }
 openjoc-eac3 = { version = "0.18.0", path = "../openjoc-eac3" }
 
+[dev-dependencies]
+hdf5-pure = "0.47.0"
+
 [lints]
 workspace = true

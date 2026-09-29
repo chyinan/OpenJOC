@@ -7,7 +7,7 @@
 
 ## 状态定义
 
-显式的 `render-scene` 工作流支持调用方绑定的静态单声道声源、直接或均匀分区的双耳卷积，以及严格的 J5R8 SimpleFreeFieldHRIR/CDF-1 SOFA 子集。它不是 JOC 渲染器，也不是原始创作对象渲染器。
+显式的 `render-scene` 工作流支持调用方绑定的静态单声道声源、直接或均匀分区的双耳卷积，以及严格的 J5R8 SimpleFreeFieldHRIR CDF-1 或 NetCDF-4/HDF5 SOFA 子集。它不是 JOC 渲染器，也不是原始创作对象渲染器。
 
 - `ADMITTED` —— 在所声明的约定内受支持；
 - `ADMITTED_WITH_SCOPE` —— 只在明确限定的范围内受支持；
@@ -63,7 +63,7 @@
 | 渲染 | 显式场景三维扬声器拓扑、VBAP 三元组渲染器和采样精确轨迹 | `ADMITTED_WITH_SCOPE` | `openjoc-render` 检查过的 3×3 公开数学和独立大圆基准、四面体/八面体/部分覆盖/歧义、连续性和分块测试 | 调用方必须显式提供扬声器顺序和三元组；只使用最短大圆分段和线性增益；不自动三角剖分，不推断 Delaunay/外壳/距离/多普勒/听音者方向/LFE/HRTF/JOC 或原始创作对象身份 |
 | 渲染 | 静态显式声源双耳直接 FIR 渲染器 | `ADMITTED_WITH_SCOPE` | `openjoc-render` 精确方向 HRIR/提供者校验、独立完整卷积基准、耳朵顺序、历史、尾部、重置、失败原子性和输入/尾部分块测试 | 调用方提供有限值、等长的 HRIR 系数和精确静态方向；使用固定听音者方向和直接因果 f64 FIR 参考路径；SOFA 解析/插值由 `openjoc-sofa` 负责；不支持移动声源、房间、距离、HRTF 数据库或 JOC 桥接 |
 | 渲染 | 静态显式声源均匀分区双耳卷积 | `ADMITTED_WITH_SCOPE` | `openjoc-render` 固定 FFT 后端、直接 FIR 等价、多种分区大小/声源、部分输入、精确尾部和生命周期回归测试 | 调用方选择一个固定的二次幂 `P`；FFT 大小为 `2P`，输入是精确的 `P` 采样点分区加一次最终不完整分区，调度延迟明确为 `P` 个采样点；不支持自适应选择、非均匀分区、SOFA、插值、移动声源或 JOC 桥接 |
-| 渲染 | 严格的 `SimpleFreeFieldHRIR` SOFA 读取和受限 HRIR 插值 | `ADMITTED_WITH_SCOPE` | `openjoc-sofa` 合成 CDF-1 测试样本、坐标/耳朵/延迟/坏文件测试、精确身份、球面线段/三角形插值、延迟/ITD、方位角环绕、有限结果和稀疏覆盖测试，以及直接/分区构建集成 | 本地只读 NetCDF classic CDF-1 子集；SOFA 约定版本 1.0–1.2，恰好两个接收器，球面度/度/米声源位置和整数采样延迟；不支持 HDF5/NetCDF-4、重采样、下载、写入或任意覆盖声明；超出实测本地球面范围的插值会拒绝继续处理 |
+| 渲染 | 严格的 `SimpleFreeFieldHRIR` SOFA 读取和受限 HRIR 插值 | `ADMITTED_WITH_SCOPE` | `openjoc-sofa` 合成 CDF-1 样本、坐标/耳朵/延迟/坏文件覆盖、精确身份、球面线段/三角形插值、延迟/ITD、方位角环绕、有限结果和稀疏覆盖检查，以及直接/分区构建集成 | 本地只读 CDF-1 或 NetCDF-4/HDF5 SimpleFreeFieldHRIR 子集；SOFA 约定版本 1.0–1.2，恰好两个接收器，球面度/度/米声源位置和整数采样延迟；HRIR 会转换至渲染器采样率（源采样率与目标相同时保留原系数）；不支持外部 HDF5 滤镜、下载、写入或任意覆盖声明；超出实测本地球面范围的插值会拒绝继续处理 |
 | 渲染 | 绑定原始创作对象的 `ObjectScene` 或渲染器保真度 | `NOT_ADMITTED` | 范围受限的解码对象绑定无法识别原始声源，也无法复现专有渲染器 | 不声明原始创作对象身份、双耳等价或 Dolby 渲染器保真度 |
 | 发布 | OpenJOC 0.18.0 HRTF 库与 Custom SOFA WASM | `ADMITTED_WITH_SCOPE` | 发布源码/版本检查、原生平台质量门槛、软件包验证、C ABI 1.6 产物检查、汇总校验和验证、标准感知 Inspector JSON、LAV JOC Stream 页面验证、实时/离线一致性、Flat-7.X Speaker 2.0 完整验证，以及分层 DirectShow/LAV 传输证据 | 工作流面向 macOS arm64、Windows x86_64 和 GNU/Linux x86_64；LAV 实时覆盖是 observed-so-far，seek 后为 partial；9.1.6 仍是实验性布局，双耳最终输出为双声道；不声明物理多声道硬件和自动语义协商；精确的 OpenJOC ADM 不支持或不声明直接送入 DEE；不保证与原生渲染器完全等价 |
 

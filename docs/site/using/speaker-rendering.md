@@ -23,6 +23,23 @@ maturity. It does not resolve authored-object identity or the codec-domain
 operator `T(t)`. `ReconstructionBasis` rows remain decoder coordinates, not
 verified object stems.
 
+## Input memory and preflight
+
+The CLI scans raw EC-3 or seekable ordinary ISO BMFF input in bounded access
+units, then reopens the input for rendering. The complete preflight preserves
+profile selection and progress totals; output starts after that scan. This
+applies to ordinary rendering, profiling, partitioned binaural output, and
+peak normalization. Compressed programmes no longer have a 512 MiB total-size
+cap. ISO BMFF retains its 512 MiB limit per container sample.
+Output container limits still apply: ordinary WAV uses 32-bit RIFF sizes;
+use CAF for output that would exceed that limit.
+
+Incremental input preserves decoder state, DSP precision, operation order, and
+complete output tails. Peak normalization retains its existing renderer-native
+intermediate. Profiling still retains per-AU timing records, and FFprobe owns
+its container tables separately; the input bound is not a constant-memory
+claim for every process or optional report.
+
 ## Ordinary speaker workflow
 
 Use a preset for normal rendering:
@@ -118,11 +135,10 @@ openjoc render-joc input.m4a \
   --lfe-policy exclude -o custom-headphones.wav
 ```
 
-The loader accepts the documented local `SimpleFreeFieldHRIR` NetCDF classic
-CDF-1 subset. Every non-LFE virtual direction must be exact or safely
-interpolatable, the SOFA and input sample rates must match, and unsupported
-coverage fails closed. No resampling, download, HDF5/NetCDF-4 fallback, or
-omitted-channel substitution occurs.
+The loader accepts local `SimpleFreeFieldHRIR` in CDF-1 or NetCDF-4/HDF5
+files. Every non-LFE virtual direction must be exact or safely interpolatable.
+`sofa inspect` reports the source sample rate; HRIRs are converted to 48 kHz
+before rendering. Unsupported direction coverage fails closed.
 
 The LFE policy is explicit: `exclude` or `equal-power-dual-mono`. The CLI
 defaults to `exclude`. Binaural output is always two-channel speaker
@@ -172,8 +188,8 @@ hide renderer availability delay:
 
 - speaker output reports 609 samples: 577 samples of QMF/Base-RB alignment
   plus the admitted 32-sample causal FinalLinkedGain block;
-- binaural output reports 577 samples because it does not use speaker
-  FinalLinkedGain; the finite SOFA FIR tail is drained separately;
+- binaural output reports 577 samples plus the common HRIR conversion delay
+  when sample rates differ; the finite SOFA FIR tail is drained separately;
 - dialnorm and static file normalization add zero audio-sample latency.
 
 Drain emits all QMF/reconstruction, FinalLinkedGain, and binaural FIR tails.

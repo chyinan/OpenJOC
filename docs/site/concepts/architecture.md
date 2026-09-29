@@ -298,17 +298,17 @@ The separate `openjoc-sofa` crate is a construction-time, read-only adapter
 from a deliberately narrow `SimpleFreeFieldHRIR` SOFA contract into
 `HrirBank`. It depends on `openjoc-render`; the renderer remains independent
 of file parsing, NetCDF/HDF5 libraries, and OS-specific APIs. The current
-portable reader accepts the project-tested NetCDF classic CDF-1 subset, fixed
+portable reader accepts the project-tested NetCDF classic CDF-1 and NetCDF-4/HDF5 SOFA subsets, fixed
 listener pose, spherical degree/degree/metre source positions, exactly two
 receivers, common sample rate, and integer sample delays. Receiver geometry,
 not array order, determines left/right ear mapping. Exact lookup is preferred;
 non-exact requests use a deterministic local spherical segment/triangle with
 shared ear weights, while sparse/outside coverage fails closed. After
 construction no SOFA file handle is retained and neither renderer performs
-file I/O per audio block. HDF5/NetCDF-4 remains outside the portable runtime
-reader; the bundled SADIE II resource is converted offline to the same CDF-1
-path and needs no network access at render time. Resampling, moving sources,
-SOFA writing, and any JOC semantic bridge remain outside this boundary.
+file I/O per audio block. The SOFA adapter parses CDF-1 or HDF5 while it builds
+the bank. Custom HRIRs are resampled to the renderer rate once at setup; banks
+already at that rate retain their original taps. Moving sources, SOFA writing, and JOC semantic
+bridging remain outside this boundary.
 
 ### Capture and streaming
 

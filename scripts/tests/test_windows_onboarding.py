@@ -46,6 +46,8 @@ EXPECTED_RUNTIME_FILES = {
 
 
 def powershell_51() -> pathlib.Path:
+    if os.name != "nt":
+        raise unittest.SkipTest("Windows PowerShell 5.1 is required")
     return pathlib.Path(os.environ["WINDIR"]) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 
 
@@ -186,6 +188,7 @@ if(($desired | Where-Object ClassId -eq $stock).InprocPath -ne 'C:\live-stock.ax
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    @unittest.skipUnless(os.name == "nt", "Windows command-line parsing is required")
     def test_windows_command_line_quoting_roundtrips_difficult_arguments(self) -> None:
         core = TEMPLATE / "scripts" / "OpenJoc.Onboarding.Core.psm1"
         escaped_core = str(core).replace("'", "''")
@@ -548,6 +551,7 @@ if(-not (Test-Path -LiteralPath $env:OPENJOC_TEST_RESTORED)){exit 4}
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    @unittest.skipUnless(os.name == "nt", "Windows cmd.exe is required")
     def test_launcher_fallback_keeps_pre_ui_powershell_failure_visible(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             package = pathlib.Path(temporary) / "broken launcher package"
@@ -864,6 +868,7 @@ if($check.Detail -notlike '*points to the current OpenJOC installation*'){exit 2
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    @unittest.skipUnless(os.name == "nt", "Windows cmd.exe is required")
     def test_noninteractive_missing_package_is_actionable_from_difficult_paths(self) -> None:
         names = (
             "OpenJOC LAV spaces", "OpenJOC LAV (Test)", "OpenJOC 测试",

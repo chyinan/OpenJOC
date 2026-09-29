@@ -66,6 +66,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "cc"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -180,6 +186,7 @@ version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
+ "crc32fast",
  "miniz_oxide",
  "zlib-rs",
 ]
@@ -496,6 +503,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hdf5-pure"
+version = "0.47.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18a2ed6aa54b01776adf71049f7f776284c22d6febe772155ac040105ffbd126"
+dependencies = [
+ "byteorder",
+ "flate2",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -641,6 +658,7 @@ dependencies = [
 name = "openjoc-api"
 version = "0.18.0"
 dependencies = [
+ "hdf5-pure",
  "openjoc-container",
  "openjoc-eac3",
  "openjoc-emdf",
@@ -808,6 +826,7 @@ dependencies = [
 name = "openjoc-sofa"
 version = "0.18.0"
 dependencies = [
+ "hdf5-pure",
  "openjoc-render",
  "sha2",
 ]
@@ -816,6 +835,7 @@ dependencies = [
 name = "openjoc-wasm"
 version = "0.18.0"
 dependencies = [
+ "hdf5-pure",
  "openjoc-api",
  "openjoc-eac3",
 ]

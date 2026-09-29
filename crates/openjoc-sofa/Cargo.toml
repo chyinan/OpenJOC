@@ -13,6 +13,7 @@ embedded-builtin-hrtf = []
 
 [dependencies]
 openjoc-render = { version = "0.18.0", path = "../openjoc-render" }
+hdf5-pure = "0.47.0"
 sha2 = "0.10"
 
 [dev-dependencies]

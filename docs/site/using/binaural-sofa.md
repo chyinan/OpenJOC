@@ -45,7 +45,23 @@ final output remains two-channel binaural PCM. The default remains 7.1.4;
 
 ## SOFA scope
 
-The loader accepts the documented `SimpleFreeFieldHRIR` NetCDF classic CDF-1 subset. The file must provide two receivers, the matching sample rate, and exact or safely interpolatable coverage for every requested non-LFE virtual direction. HDF5/NetCDF-4, resampling, downloads, writing, moving sources, and universal coverage are not supported.
+The loader accepts `SimpleFreeFieldHRIR` in NetCDF classic CDF-1 or NetCDF-4/HDF5 files. It keeps the existing field, two-receiver, coordinate, and direction-coverage checks. HRIRs are resampled to 48 kHz with a bounded, deterministic windowed-sinc filter. The 48 kHz path keeps its original coefficients bit-for-bit. Fractional source delays remain unsupported; converted integer delays are rounded to the nearest 48 kHz sample.
+
+Rate conversion preserves FIR convolution gain with a fixed rate-ratio scale.
+It retains fractional timing in the coefficients and adds a common filter
+delay to both ears to preserve the complete sinc precursor. This delay is
+`ceil(16 * max(output_rate / source_rate, 1)) + 1` output samples: 19 samples
+for 44.1→48 kHz and 17 for 96→48 kHz. It remains in the HRIR and its complete
+tail. The reported renderer latency includes this added filter delay and
+continues to exclude the SOFA's original measured delays.
+Matching-rate input adds no delay. Conversion ratios above 16:1 are rejected.
+With `equal-power-dual-mono`, the LFE receives the same added delay, including
+its drained tail, to preserve timing relative to the spatial channels.
+
+Standard fixed `ReceiverPosition [R,C,1]` and `Data.Delay [1,R]` layouts are
+accepted. Each HDF5 chunk must decompress to at most 16 MiB, further limited
+by the configured file-byte and coefficient budgets. Oversized chunks are
+rejected before decompression.
 
 Inspect a file before using it:
 
@@ -53,7 +69,7 @@ Inspect a file before using it:
 openjoc sofa inspect listener.sofa --json
 ```
 
-`direct` is the numerical reference backend. `partitioned` uses one fixed power-of-two partition size and preserves the complete input and FIR tail. Both backends fail closed on unsupported coverage or sample-rate mismatch.
+`sofa inspect` reports the source sample rate; rendering converts HRIRs to 48 kHz before either binaural backend starts. `direct` is the numerical reference backend. `partitioned` uses one fixed power-of-two partition size and preserves the complete input and FIR tail. Both backends fail closed on unsupported coverage.
 
 ## LFE policy
 

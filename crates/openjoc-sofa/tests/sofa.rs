@@ -629,11 +629,11 @@ fn malformed_and_unsupported_inputs_are_rejected() {
 }
 
 #[test]
-fn hdf5_signature_is_rejected_without_native_dependencies() {
+fn truncated_hdf5_signature_is_rejected_as_invalid_container() {
     let hdf5 = [0x89, b'H', b'D', b'F', 0x0d, 0x0a, 0x1a, 0x0a];
     assert!(matches!(
         parse_simple_free_field_hrir(&hdf5, SofaLoadLimits::default()),
-        Err(SofaError::UnsupportedContainerOrEncoding)
+        Err(SofaError::InvalidContainer("HDF5 file image"))
     ));
 }
 

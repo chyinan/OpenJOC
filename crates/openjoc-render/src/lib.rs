@@ -30,6 +30,9 @@ use std::{
 
 mod final_linked_gain;
 mod partitioned;
+mod sample_delay;
+
+pub use sample_delay::SampleDelay;
 
 pub use final_linked_gain::{
     FINAL_LINKED_GAIN_BLOCK_SAMPLES, FinalLinkedGain, FinalLinkedGainAvailability,

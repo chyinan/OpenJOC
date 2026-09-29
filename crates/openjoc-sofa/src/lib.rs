@@ -1,12 +1,13 @@
 //! Strict, read-only ingestion for the `SimpleFreeFieldHRIR` SOFA subset.
 //!
-//! The reader intentionally implements the portable NetCDF classic CDF-1
-//! container subset used by the project-owned fixture.  It has no native
-//! dependency and rejects HDF5/NetCDF-4 containers explicitly.  This keeps
-//! the normal OpenJOC build portable while making the supported input contract
-//! honest and inspectable.  It is not a generic SOFA or NetCDF API.
+//! The reader accepts a bounded SimpleFreeFieldHRIR subset from NetCDF classic
+//! CDF-1 or NetCDF-4/HDF5 containers. It intentionally does not implement a
+//! general-purpose SOFA or HDF5 API.
 
-use std::{fmt, fs, path::Path};
+// pattern: Mixed (unavoidable)
+// Reason: the public adapter retains its thin local-file loader alongside the
+// in-memory parser and pure HRIR operations; rendering performs no file I/O.
+use std::{collections::HashMap, fmt, fs, path::Path};
 
 use openjoc_render::{CartesianPosition, HrirBank, HrirEar, HrirEntry, HrirEntryId, HrirPair};
 
@@ -29,6 +30,9 @@ const NC_SHORT: u32 = 3;
 const NC_INT: u32 = 4;
 const NC_FLOAT: u32 = 5;
 const NC_DOUBLE: u32 = 6;
+const MAX_HRIR_RATE_CONVERSION_RATIO: u32 = 16;
+const HRIR_RESAMPLER_LOBES: u128 = 16;
+const MAX_HRIR_RESAMPLER_PHASES: usize = 4096;
 
 /// Resource limits applied before any large allocation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,11 +149,11 @@ impl fmt::Display for SofaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(message) => write!(f, "SOFA I/O error: {message}"),
-            Self::UnsupportedContainerOrEncoding => {
-                f.write_str("unsupported SOFA container: only NetCDF classic CDF-1 is supported")
-            }
-            Self::TruncatedContainer => f.write_str("truncated NetCDF container"),
-            Self::InvalidContainer(message) => write!(f, "invalid NetCDF container: {message}"),
+            Self::UnsupportedContainerOrEncoding => f.write_str(
+                "unsupported SOFA container: expected NetCDF classic CDF-1 or NetCDF-4/HDF5",
+            ),
+            Self::TruncatedContainer => f.write_str("truncated SOFA container"),
+            Self::InvalidContainer(message) => write!(f, "invalid SOFA container: {message}"),
             Self::UnsupportedSofaConvention(value) => {
                 write!(f, "unsupported SOFA convention: {value}")
             }
@@ -213,7 +217,7 @@ impl fmt::Display for SofaError {
 
 impl std::error::Error for SofaError {}
 
-/// Loads a local, seekable CDF-1 `SimpleFreeFieldHRIR` file.
+/// Loads a bounded local CDF-1 or NetCDF-4/HDF5 SOFA file.
 pub fn load_simple_free_field_hrir<P: AsRef<Path>>(
     path: P,
     limits: SofaLoadLimits,
@@ -229,8 +233,313 @@ pub fn load_simple_free_field_hrir<P: AsRef<Path>>(
     parse_simple_free_field_hrir(&data, limits)
 }
 
-/// Parses a complete in-memory CDF-1 buffer.  This is public for callers that
-/// already own a bounded file buffer; no global cache or file handle is kept.
+/// Returns the common causal filter delay added by one HRIR rate conversion.
+///
+/// This is in target samples and excludes the SOFA's measured source delays.
+/// Callers mixing an unfiltered LFE path must delay it by this amount as well.
+/// Equal nonzero rates return zero. Conversion ratios are limited to 16:1.
+pub fn hrir_resampling_delay_samples(
+    source_sample_rate_hz: u32,
+    target_sample_rate_hz: u32,
+) -> Result<usize, SofaError> {
+    if source_sample_rate_hz == 0 || target_sample_rate_hz == 0 {
+        return Err(SofaError::InvalidSamplingRate("rate is zero".to_owned()));
+    }
+    if source_sample_rate_hz == target_sample_rate_hz {
+        return Ok(0);
+    }
+    let larger_rate = source_sample_rate_hz.max(target_sample_rate_hz);
+    let smaller_rate = source_sample_rate_hz.min(target_sample_rate_hz);
+    if u64::from(larger_rate) > u64::from(smaller_rate) * u64::from(MAX_HRIR_RATE_CONVERSION_RATIO)
+    {
+        return Err(SofaError::InvalidSamplingRate(
+            "sample-rate conversion ratio exceeds 16:1".to_owned(),
+        ));
+    }
+    usize::try_from(
+        (HRIR_RESAMPLER_LOBES * u128::from(larger_rate))
+            .div_ceil(u128::from(source_sample_rate_hz))
+            + 1,
+    )
+    .map_err(|_| SofaError::ResourceLimitExceeded("resampling filter delay"))
+}
+
+/// Resamples an HRIR bank while preserving its convolution gain.
+///
+/// Matching-rate banks are returned unchanged, including every coefficient bit.
+/// Other banks include a common causal filter delay of
+/// `ceil(16 * max(target_rate / source_rate, 1)) + 1` target samples. This keeps
+/// the complete sinc precursor, including for a nonzero first input tap. The
+/// extra sample also keeps every tap before the rounded source-delay metadata
+/// zero, so spatial interpolation can safely remove that prefix. The common
+/// filter delay stays in the FIR shape, not in the measured delay metadata.
+/// SOFA metadata retains the source rate; the bank records the target rate.
+pub fn resample_loaded_hrir_bank(
+    mut loaded: LoadedSofaHrirBank,
+    target_sample_rate_hz: u32,
+    limits: SofaLoadLimits,
+) -> Result<LoadedSofaHrirBank, SofaError> {
+    let source_sample_rate_hz = loaded.bank.sample_rate_hz();
+    let filter_delay = hrir_resampling_delay_samples(source_sample_rate_hz, target_sample_rate_hz)?;
+    if filter_delay == 0 {
+        return Ok(loaded);
+    }
+    let divisor = gcd(source_sample_rate_hz, target_sample_rate_hz);
+    let source_step = u64::from(source_sample_rate_hz / divisor);
+    let target_step = u64::from(target_sample_rate_hz / divisor);
+    let cutoff = (target_sample_rate_hz as f64 / source_sample_rate_hz as f64).min(1.0);
+    let radius = HRIR_RESAMPLER_LOBES as f64 / cutoff;
+    let half_width = usize::try_from(
+        (HRIR_RESAMPLER_LOBES * u128::from(target_step.max(source_step)))
+            .div_ceil(u128::from(target_step)),
+    )
+    .map_err(|_| SofaError::ResourceLimitExceeded("resampling kernel"))?;
+    let phases = (usize::try_from(target_step).ok())
+        .filter(|count| *count <= MAX_HRIR_RESAMPLER_PHASES)
+        .map(|count| {
+            (0..count)
+                .map(|phase| {
+                    resampler_phase_weights(phase as f64 / count as f64, cutoff, radius, half_width)
+                })
+                .collect::<Vec<_>>()
+        });
+    let mut entries = Vec::with_capacity(loaded.bank.entries().len());
+    let mut total_coefficients = 0_usize;
+    let expanded_tap_limit = limits
+        .max_fir_samples
+        .checked_add(limits.max_delay_samples)
+        .ok_or(SofaError::ResourceLimitExceeded("expanded taps"))?;
+    for entry in loaded.bank.entries() {
+        let pair = entry.pair();
+        let output_len = resampled_tap_count(pair.tap_count(), target_step, source_step)?
+            .checked_add(filter_delay)
+            .ok_or(SofaError::ResourceLimitExceeded("resampled FIR samples"))?;
+        if output_len > expanded_tap_limit {
+            return Err(SofaError::ResourceLimitExceeded("resampled FIR samples"));
+        }
+        let delays = [
+            resampled_delay(
+                pair.delay_samples(HrirEar::Left),
+                target_sample_rate_hz,
+                source_sample_rate_hz,
+                limits,
+            )?,
+            resampled_delay(
+                pair.delay_samples(HrirEar::Right),
+                target_sample_rate_hz,
+                source_sample_rate_hz,
+                limits,
+            )?,
+        ];
+        if delays.into_iter().any(|delay| delay > output_len) {
+            return Err(SofaError::ResourceLimitExceeded("resampled delay samples"));
+        }
+        let pair_coefficients =
+            output_len
+                .checked_mul(2)
+                .ok_or(SofaError::ResourceLimitExceeded(
+                    "resampled FIR coefficients",
+                ))?;
+        total_coefficients = total_coefficients.checked_add(pair_coefficients).ok_or(
+            SofaError::ResourceLimitExceeded("resampled FIR coefficients"),
+        )?;
+        if total_coefficients > limits.max_total_coefficients {
+            return Err(SofaError::ResourceLimitExceeded(
+                "resampled FIR coefficients",
+            ));
+        }
+        let left = resample_fir(
+            pair.left_taps(),
+            output_len,
+            target_step,
+            source_step,
+            cutoff,
+            half_width,
+            filter_delay,
+            phases.as_deref(),
+        )?;
+        let right = resample_fir(
+            pair.right_taps(),
+            output_len,
+            target_step,
+            source_step,
+            cutoff,
+            half_width,
+            filter_delay,
+            phases.as_deref(),
+        )?;
+        let pair = HrirPair::new_with_delays(target_sample_rate_hz, left, right, delays)
+            .map_err(|error| SofaError::InvalidImpulseResponse(error.to_string()))?;
+        let direction = entry.direction();
+        entries.push(
+            HrirEntry::new(
+                entry.id(),
+                CartesianPosition::new(direction[0], direction[1], direction[2]),
+                pair,
+            )
+            .map_err(|error| SofaError::InvalidCoordinate(error.to_string()))?,
+        );
+    }
+    loaded.bank = HrirBank::new(target_sample_rate_hz, entries)
+        .map_err(|error| SofaError::InvalidImpulseResponse(error.to_string()))?;
+    loaded.metadata.expanded_max_tap_length = loaded
+        .bank
+        .entries()
+        .iter()
+        .map(|entry| entry.pair().tap_count())
+        .max()
+        .unwrap_or(0);
+    Ok(loaded)
+}
+
+fn gcd(mut left: u32, mut right: u32) -> u32 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
+
+fn resampled_tap_count(
+    input_samples: usize,
+    target_step: u64,
+    source_step: u64,
+) -> Result<usize, SofaError> {
+    if input_samples == 0 || source_step == 0 {
+        return Err(SofaError::InvalidImpulseResponse(
+            "empty input HRIR".to_owned(),
+        ));
+    }
+    let input_last = u128::try_from(input_samples - 1)
+        .map_err(|_| SofaError::ResourceLimitExceeded("resampled FIR samples"))?;
+    let target = u128::from(target_step);
+    let source = u128::from(source_step);
+    let output_filter_tail = HRIR_RESAMPLER_LOBES * target.max(source);
+    let last_center_numerator = input_last
+        .checked_mul(target)
+        .and_then(|length| length.checked_add(output_filter_tail))
+        .ok_or(SofaError::ResourceLimitExceeded("resampled FIR samples"))?;
+    let count = last_center_numerator / source + 1;
+    usize::try_from(count).map_err(|_| SofaError::ResourceLimitExceeded("resampled FIR samples"))
+}
+
+fn resampled_delay(
+    delay: usize,
+    target_sample_rate_hz: u32,
+    source_sample_rate_hz: u32,
+    limits: SofaLoadLimits,
+) -> Result<usize, SofaError> {
+    if delay > limits.max_delay_samples {
+        return Err(SofaError::ResourceLimitExceeded("delay samples"));
+    }
+    let numerator = (delay as u128)
+        .checked_mul(u128::from(target_sample_rate_hz))
+        .and_then(|value| value.checked_add(u128::from(source_sample_rate_hz / 2)))
+        .ok_or(SofaError::ResourceLimitExceeded("resampled delay samples"))?;
+    let resampled = usize::try_from(numerator / u128::from(source_sample_rate_hz))
+        .map_err(|_| SofaError::ResourceLimitExceeded("resampled delay samples"))?;
+    if resampled > limits.max_delay_samples {
+        return Err(SofaError::ResourceLimitExceeded("resampled delay samples"));
+    }
+    Ok(resampled)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resample_fir(
+    input: &[f64],
+    output_len: usize,
+    target_step: u64,
+    source_step: u64,
+    cutoff: f64,
+    half_width: usize,
+    filter_delay: usize,
+    phases: Option<&[Vec<f64>]>,
+) -> Result<Vec<f64>, SofaError> {
+    let mut output = Vec::with_capacity(output_len);
+    // Audio sample interpolation preserves amplitude, whereas FIR resampling
+    // must preserve the discrete convolution gain (the sum of coefficients).
+    let fir_scale = source_step as f64 / target_step as f64;
+    for output_index in 0..output_len {
+        let position_numerator = (output_index as i128 - filter_delay as i128)
+            .checked_mul(i128::from(source_step))
+            .ok_or(SofaError::ResourceLimitExceeded("resampling phase"))?;
+        // Negative positions hold the precursor. Euclidean division keeps
+        // the fractional phase in [0, 1), including before source sample zero.
+        let base = position_numerator.div_euclid(i128::from(target_step));
+        let phase_index = usize::try_from(position_numerator.rem_euclid(i128::from(target_step)))
+            .map_err(|_| SofaError::ResourceLimitExceeded("resampling phase"))?;
+        let phase = phase_index as f64 / target_step as f64;
+        let temporary;
+        let weights = if let Some(phases) = phases {
+            phases
+                .get(phase_index)
+                .ok_or(SofaError::InvalidImpulseResponse(
+                    "resampling phase table".to_owned(),
+                ))?
+        } else {
+            temporary = resampler_phase_weights(
+                phase,
+                cutoff,
+                HRIR_RESAMPLER_LOBES as f64 / cutoff,
+                half_width,
+            );
+            &temporary
+        };
+        let mut sum = 0.0_f64;
+        for (kernel_index, weight) in weights.iter().enumerate() {
+            let offset = kernel_index as i128 - half_width as i128;
+            if let Ok(input_index) = usize::try_from(base + offset) {
+                if let Some(value) = input.get(input_index) {
+                    sum += value * weight;
+                }
+            }
+        }
+        sum *= fir_scale;
+        if !sum.is_finite() {
+            return Err(SofaError::InvalidImpulseResponse(
+                "non-finite resampled tap".to_owned(),
+            ));
+        }
+        output.push(sum);
+    }
+    Ok(output)
+}
+
+fn resampler_phase_weights(phase: f64, cutoff: f64, radius: f64, half_width: usize) -> Vec<f64> {
+    let mut weights = Vec::with_capacity(half_width.saturating_mul(2).saturating_add(1));
+    let mut sum = 0.0;
+    for offset in -(half_width as i128)..=(half_width as i128) {
+        let distance = phase - offset as f64;
+        let scaled_distance = cutoff * distance;
+        let sinc = if scaled_distance == 0.0 {
+            1.0
+        } else {
+            let angle = std::f64::consts::PI * scaled_distance;
+            angle.sin() / angle
+        };
+        let window = if distance.abs() <= radius {
+            let window_position = distance / radius;
+            0.5 * (1.0 + (std::f64::consts::PI * window_position).cos())
+        } else {
+            0.0
+        };
+        let weight = cutoff * sinc * window;
+        weights.push(weight);
+        sum += weight;
+    }
+    if sum.is_finite() && sum.abs() > f64::EPSILON {
+        for weight in &mut weights {
+            *weight /= sum;
+        }
+    }
+    weights
+}
+
+/// Parses a complete in-memory CDF-1 or NetCDF-4/HDF5 buffer.
+///
+/// The parser admits only the supported SimpleFreeFieldHRIR field profile,
+/// regardless of the underlying container.
 pub fn parse_simple_free_field_hrir(
     data: &[u8],
     limits: SofaLoadLimits,
@@ -238,7 +547,15 @@ pub fn parse_simple_free_field_hrir(
     if data.len() as u64 > limits.max_file_bytes {
         return Err(SofaError::ResourceLimitExceeded("file bytes"));
     }
-    let file = NetcdfFile::parse(data, limits)?;
+    let file = if data.starts_with(b"CDF") {
+        NetcdfFile::parse(data, limits)?
+    } else if hdf5_pure::is_hdf5_bytes(data) {
+        let hdf5 = hdf5_pure::File::from_bytes(data.to_vec())
+            .map_err(|_| SofaError::InvalidContainer("HDF5 file image"))?;
+        NetcdfFile::from_hdf5(data, &hdf5, limits)?
+    } else {
+        return Err(SofaError::UnsupportedContainerOrEncoding);
+    };
     validate_and_build(&file, limits)
 }
 
@@ -268,6 +585,7 @@ struct Variable {
     begin: usize,
     elements: usize,
     bytes: usize,
+    hdf5_dataset: Option<hdf5_pure::Dataset>,
 }
 
 #[derive(Clone, Debug)]
@@ -283,10 +601,7 @@ impl<'a> NetcdfFile<'a> {
         if data.len() < 8 {
             return Err(SofaError::TruncatedContainer);
         }
-        if &data[..3] != b"CDF" {
-            return Err(SofaError::UnsupportedContainerOrEncoding);
-        }
-        if data[3] != 1 {
+        if &data[..4] != b"CDF\x01" {
             return Err(SofaError::UnsupportedContainerOrEncoding);
         }
         let mut cursor = Cursor::new(data);
@@ -308,6 +623,142 @@ impl<'a> NetcdfFile<'a> {
             if end > data.len() {
                 return Err(SofaError::TruncatedContainer);
             }
+        }
+        Ok(Self {
+            data,
+            dimensions,
+            globals,
+            variables,
+        })
+    }
+
+    fn from_hdf5(
+        data: &'a [u8],
+        hdf5: &hdf5_pure::File,
+        limits: SofaLoadLimits,
+    ) -> Result<Self, SofaError> {
+        let root = hdf5.root();
+        let globals = read_hdf5_attributes(
+            root.attrs()
+                .map_err(|_| SofaError::InvalidContainer("HDF5 root attributes"))?,
+            limits,
+        )?;
+        let mut dimensions = Vec::new();
+        let mut variables = Vec::new();
+        for name in [
+            "Data.IR",
+            "Data.SamplingRate",
+            "Data.Delay",
+            "ListenerPosition",
+            "ListenerView",
+            "ListenerUp",
+            "ReceiverPosition",
+            "SourcePosition",
+            "EmitterPosition",
+        ] {
+            let candidate_paths: &[&str] = match name {
+                "Data.IR" => &["Data.IR", "Data/IR"],
+                "Data.SamplingRate" => &["Data.SamplingRate", "Data/SamplingRate"],
+                "Data.Delay" => &["Data.Delay", "Data/Delay"],
+                "ListenerPosition" => &["ListenerPosition", "Listener/Position"],
+                "ListenerView" => &["ListenerView", "Listener/View"],
+                "ListenerUp" => &["ListenerUp", "Listener/Up"],
+                "ReceiverPosition" => &["ReceiverPosition", "Receiver/Position"],
+                "SourcePosition" => &["SourcePosition", "Source/Position"],
+                "EmitterPosition" => &["EmitterPosition", "Emitter/Position"],
+                _ => &[],
+            };
+            let mut resolved = None;
+            for path in candidate_paths.iter().copied() {
+                if let Ok(dataset) = hdf5.dataset(path) {
+                    if resolved.is_some() {
+                        return Err(SofaError::InvalidContainer(
+                            "duplicate HDF5 variable aliases",
+                        ));
+                    }
+                    resolved = Some((path, dataset));
+                }
+            }
+            let Some((_path, dataset)) = resolved else {
+                continue;
+            };
+            let shape = dataset
+                .shape()
+                .map_err(|_| SofaError::InvalidContainer("HDF5 dataset dimensions"))?;
+            if shape.len() > 16 {
+                return Err(SofaError::ResourceLimitExceeded("dimensions"));
+            }
+            let elements = shape.iter().try_fold(1_usize, |total, &dimension| {
+                let dimension = usize::try_from(dimension)
+                    .map_err(|_| SofaError::ResourceLimitExceeded("dimension product"))?;
+                total
+                    .checked_mul(dimension)
+                    .ok_or(SofaError::ResourceLimitExceeded("dimension product"))
+            })?;
+            if elements > limits.max_total_coefficients {
+                return Err(SofaError::ResourceLimitExceeded("variable values"));
+            }
+            let ty = match dataset
+                .dtype()
+                .map_err(|_| SofaError::InvalidContainer("HDF5 dataset datatype"))?
+            {
+                hdf5_pure::DType::F32 => NC_FLOAT,
+                hdf5_pure::DType::F64 => NC_DOUBLE,
+                _ => return Err(SofaError::UnsupportedAttributeType(name.to_owned())),
+            };
+            // A compressed chunk may be much larger than the dataset's current
+            // extent. Row reads still decompress that entire chunk, so cap its
+            // allocation independently of the logical shape before reading data.
+            if let Some(chunk_shape) = dataset
+                .chunk_shape()
+                .map_err(|_| SofaError::InvalidContainer("HDF5 chunk dimensions"))?
+            {
+                let width = type_width(ty).expect("validated floating-point type") as u64;
+                let chunk_bytes = chunk_shape.iter().try_fold(width, |bytes, dimension| {
+                    bytes
+                        .checked_mul(*dimension)
+                        .ok_or(SofaError::ResourceLimitExceeded("HDF5 chunk bytes"))
+                })?;
+                let coefficient_bytes =
+                    (limits.max_total_coefficients as u64).saturating_mul(width);
+                let chunk_limit = limits
+                    .max_file_bytes
+                    .min(coefficient_bytes)
+                    .min(16 * 1024 * 1024);
+                if chunk_bytes > chunk_limit {
+                    return Err(SofaError::ResourceLimitExceeded("HDF5 chunk bytes"));
+                }
+            }
+            let attrs = read_hdf5_attributes(
+                dataset
+                    .attrs()
+                    .map_err(|_| SofaError::InvalidContainer("HDF5 variable attributes"))?,
+                limits,
+            )?;
+            let mut dims = Vec::with_capacity(shape.len());
+            for length in shape {
+                dims.push(dimensions.len());
+                dimensions.push(Dimension {
+                    len: usize::try_from(length)
+                        .map_err(|_| SofaError::ResourceLimitExceeded("dimension product"))?,
+                });
+            }
+            let bytes = elements
+                .checked_mul(
+                    type_width(ty)
+                        .ok_or_else(|| SofaError::UnsupportedAttributeType(name.to_owned()))?,
+                )
+                .ok_or(SofaError::ResourceLimitExceeded("variable bytes"))?;
+            variables.push(Variable {
+                name: name.to_owned(),
+                dims,
+                attrs,
+                ty,
+                begin: 0,
+                elements,
+                bytes,
+                hdf5_dataset: Some(dataset),
+            });
         }
         Ok(Self {
             data,
@@ -346,6 +797,11 @@ impl<'a> NetcdfFile<'a> {
     }
 
     fn values(&self, variable: &Variable) -> Result<Vec<f64>, SofaError> {
+        if let Some(dataset) = &variable.hdf5_dataset {
+            return dataset
+                .read_f64()
+                .map_err(|_| SofaError::InvalidContainer("HDF5 variable data"));
+        }
         let bytes = &self.data[variable.begin..variable.begin + variable.bytes];
         let width = type_width(variable.ty)
             .ok_or(SofaError::UnsupportedAttributeType(variable.name.clone()))?;
@@ -369,6 +825,38 @@ impl<'a> NetcdfFile<'a> {
         first_value: usize,
         output: &mut [f64],
     ) -> Result<(), SofaError> {
+        if let Some(dataset) = &variable.hdf5_dataset {
+            let shape = self.shape(variable);
+            if shape.len() != 3 || output.is_empty() {
+                return Err(SofaError::InvalidDimension(
+                    "Data.IR must have shape [M,R,N]".to_string(),
+                ));
+            }
+            let row_len = shape[1]
+                .checked_mul(shape[2])
+                .ok_or(SofaError::ResourceLimitExceeded("variable values"))?;
+            let row = first_value / row_len;
+            let within_row = first_value % row_len;
+            let end = within_row
+                .checked_add(output.len())
+                .ok_or(SofaError::ResourceLimitExceeded("variable values"))?;
+            if end > row_len {
+                return Err(SofaError::TruncatedContainer);
+            }
+            let row_values = dataset
+                .read_f64_rows(
+                    u64::try_from(row)
+                        .map_err(|_| SofaError::ResourceLimitExceeded("HDF5 row index"))?,
+                    1,
+                )
+                .map_err(|_| SofaError::InvalidContainer("HDF5 variable data"))?;
+            output.copy_from_slice(
+                row_values
+                    .get(within_row..end)
+                    .ok_or(SofaError::TruncatedContainer)?,
+            );
+            return Ok(());
+        }
         let width = type_width(variable.ty)
             .ok_or(SofaError::UnsupportedAttributeType(variable.name.clone()))?;
         let byte_start = first_value
@@ -408,6 +896,32 @@ impl<'a> NetcdfFile<'a> {
             .map(|index| self.dimensions[*index].len)
             .collect()
     }
+}
+
+fn read_hdf5_attributes(
+    attrs: HashMap<String, hdf5_pure::AttrValue>,
+    limits: SofaLoadLimits,
+) -> Result<Vec<Attribute>, SofaError> {
+    if attrs.len() > 65_536 {
+        return Err(SofaError::ResourceLimitExceeded("HDF5 attributes"));
+    }
+    attrs
+        .into_iter()
+        .map(|(name, value)| {
+            if name.len() > limits.max_metadata_bytes {
+                return Err(SofaError::ResourceLimitExceeded("metadata bytes"));
+            }
+            let value = if let Some(text) = value.as_str() {
+                if text.len() > limits.max_metadata_bytes {
+                    return Err(SofaError::ResourceLimitExceeded("metadata bytes"));
+                }
+                AttributeValue::Text(text.to_owned())
+            } else {
+                AttributeValue::Numbers
+            };
+            Ok(Attribute { name, value })
+        })
+        .collect()
 }
 
 fn parse_dimensions(cursor: &mut Cursor<'_>) -> Result<Vec<Dimension>, SofaError> {
@@ -543,6 +1057,7 @@ fn parse_variables(
             begin,
             elements,
             bytes: vsize,
+            hdf5_dataset: None,
         });
     }
     Ok(variables)
@@ -1352,7 +1867,7 @@ fn read_delays(
     require_float_variable(variable)?;
     let shape = file.shape(variable);
     let values = file.values(variable)?;
-    let values = if shape == vec![receivers] {
+    let values = if shape == vec![receivers] || shape == vec![1, receivers] {
         if values.len() != receivers {
             return Err(SofaError::InvalidDimension(
                 "Data.Delay element count".to_string(),
@@ -1372,7 +1887,7 @@ fn read_delays(
         values
     } else {
         return Err(SofaError::InvalidDimension(
-            "Data.Delay must be [R] or [M,R]".to_string(),
+            "Data.Delay must be [R], [1,R], or [M,R]".to_string(),
         ));
     };
     let units = NetcdfFile::attr_text(&variable.attrs, "Units")
@@ -1443,9 +1958,9 @@ fn read_fixed_matrix(
 ) -> Result<Vec<CartesianPosition>, SofaError> {
     require_float_variable(variable)?;
     let shape = file.shape(variable);
-    if shape != vec![rows, cols] {
+    if shape != vec![rows, cols] && shape != vec![rows, cols, 1] {
         return Err(SofaError::InvalidDimension(format!(
-            "{} must be [{rows},3]",
+            "{} must be [{rows},3] or [{rows},3,1]",
             variable.name
         )));
     }

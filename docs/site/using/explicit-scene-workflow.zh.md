@@ -17,7 +17,7 @@ OpenJOC 可以把调用方指定的单声道 WAV 声源和本地提供的 `Simpl
 }
 ```
 
-声源路径相对于场景文件。绝对路径、跳出父目录、符号链接逃逸、重复 ID、未知字段、不支持的方向和采样率不匹配，都会在正式生成输出前被拒绝。支持的声源 WAV 包括单声道 PCM16/24/32 和单声道 IEEE-float32；不会执行重采样、归一化、裁剪或抖动。
+声源路径相对于场景文件。绝对路径、跳出父目录、符号链接逃逸、重复 ID、未知字段、不支持的方向和声源 WAV 采样率不匹配，都会在正式生成输出前被拒绝。支持的声源 WAV 包括单声道 PCM16/24/32 和单声道 IEEE-float32，采样率必须与场景一致；OpenJOC 不会对声源音频执行重采样、归一化、裁剪或抖动。
 
 先检查受支持的 SOFA 文件：
 
@@ -36,6 +36,10 @@ openjoc render-scene scene.json --binaural-sofa listener.sofa \\
 
 输出目录采用事务式写入，包含 `binaural.wav`（立体声 IEEE-float32，先左耳后右耳）和 `render.json`（`openjoc.render-result.v1`）。输出长度等于场景输入时间线加上完整的因果 HRIR 尾部（`N + M - 1`）；不会隐藏开头延迟，也不会裁掉尾部。后端必须明确选择，永远不会自动切换。
 
-SOFA 的支持边界有意保持狭窄：只支持 SimpleFreeFieldHRIR、1.0/1.1/1.2 版本，以及来自 J5R8 的可移植 NetCDF classic CDF-1 子集。不支持 HDF5/NetCDF-4、其他约定、插值、最近方向回退、移动声源或下载。用户需要自行负责本地 SOFA 数据的许可和来源。
+SOFA 支持范围限定为 SimpleFreeFieldHRIR 1.0/1.1/1.2，以及只读 NetCDF classic CDF-1 和 NetCDF-4/HDF5 子集。HRIR 会转换到场景采样率；源采样率已匹配场景时，保留原系数不变。其他 SOFA 约定、插值、最近方向回退、移动声源和下载仍不受支持。用户需要自行负责本地 SOFA 数据的许可和来源。
+
+采样率不同时，转换会补偿卷积增益，并在两耳 HRIR 中保留相同的因果滤波延迟。
+输出尾部也会完整保留。结果清单的 `algorithmic_latency_samples` 包含这部分新增延迟。
+延迟计算方式和 HDF5 chunk 上限见[双耳与 SOFA](binaural-sofa.md#sofa-scope)。
 
 该工作流独立于尚未解决的 JOC 语义绑定；结果清单中的 `joc_semantic_binding` 为 `unresolved_not_used`。

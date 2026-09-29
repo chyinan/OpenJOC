@@ -85,6 +85,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 CARGO_BUILD_JOBS=1 cargo test --workspace --all-features -- --test-threads=1
 CARGO_BUILD_JOBS=1 cargo build --workspace --release --offline
 python scripts/check_repository_hygiene.py
+python -m unittest discover -s scripts/tests -v
 git diff --check
 ```
 
@@ -95,11 +96,16 @@ focused change.
 ## CI and release automation
 
 GitHub Actions validates pull requests and pushes to `master` with the Linux
-quality contract, the documented Rust 1.85 MSRV check, and platform-neutral
+quality contract, the documented Rust 1.89 MSRV check, and platform-neutral
 Windows x64 / macOS arm64 build and test jobs. Optional container tests that
 need `ffmpeg`, `ffprobe`, or MP4Box remain explicitly skipped when those tools
 or private fixtures are absent; no private Logic, ADM, DD+, EC-3, or evidence
 files are used by CI.
+
+The `scripts-ubuntu-24.04` and `scripts-windows-2025` jobs run the Python
+regressions. Windows command and PowerShell tests run on Windows; tests that
+inspect the external LAV fork require `OPENJOC_LAV_SOURCE_ROOT` to point to
+that checkout. Private runtime and fixture gates retain their explicit skips.
 
 Releases are human-authorized by pushing a stable `vMAJOR.MINOR.PATCH` tag.
 The release workflow validates the tag against Cargo metadata, checks the tag
@@ -107,5 +113,5 @@ commit and `Cargo.lock`, runs the configured platform/package verification,
 and publishes only the generated artifact set. It does not create tags,
 rewrite an existing release, or imply signing/notarization that was not
 performed. Configure branch protection only after hosted CI job names have
-stabilized; recommended required checks are `quality`, `msrv-1.85`,
+stabilized; recommended required checks are `quality`, `msrv-1.89`,
 `platform-windows`, and `platform-macos-arm64`.

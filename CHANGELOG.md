@@ -2,14 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added bounded local NetCDF-4/HDF5 `SimpleFreeFieldHRIR` SOFA loading through
+  a pure-Rust reader shared by native and WASM builds.
+- Resample custom HRIRs to the renderer sample rate during setup; matching-rate
+  banks retain their original coefficients bit-for-bit.
+
 ### Fixed
 
+- Preserve convolution gain and the complete sinc precursor when resampling
+  custom HRIRs, including delay-aware spatial interpolation. Converted banks
+  retain a documented common causal filter delay; matching-rate banks are unchanged.
+- Align bypass LFE with the HRIR conversion delay across API and CLI binaural
+  backends, including partial blocks, complete tails, and resets.
+- Accept standard singleton receiver and fixed-delay SOFA dimensions, and
+  bound HDF5 chunk decompression before allocation.
+- Honor the selected built-in binaural HRTF on the CLI profiling, topology,
+  diagnostic, and partitioned-render paths instead of silently selecting D1.
 - Keep WASM performance metrics current with a bounded rolling window and cache repeated reads.
 - Classify finite ADM PCM24 range errors as `output-range`, retaining sample diagnostics and safe output cleanup.
 - Correct the README's LAV policy count to include Binaural (Headphones), with a documentation consistency check.
 
 ### Changed
 
+- Raised the workspace minimum Rust version to 1.89 for the portable HDF5 reader.
+- Read `render-joc` input in bounded access units after a complete preflight,
+  including normalization and profiling, removing the 512 MiB programme cap
+  while preserving DSP precision, sample order, and drain behavior.
+- Run Python script regressions on Linux and Windows in PR CI. Platform and
+  external LAV source requirements are explicit; CMD/BAT checkouts use CRLF.
 - Remove two temporary allocations per API binaural render block while preserving direct-FIR arithmetic, PCM bits, timing, tail, and reset behavior.
 - Add actual WASM ABI smoke tests for embedded/external HRTFs and Custom SOFA to CI.
 

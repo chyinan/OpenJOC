@@ -278,7 +278,10 @@ then `decoder.reset()`, then delivery of preroll packets. Seeking the demuxer
 without resetting the wrapper is an application error.
 
 The verified steady-state latency is 609 samples for physical speaker output
-(577 QMF + 32 FinalLinkedGain) and 577 samples for binaural output. It is
+(577 QMF + 32 FinalLinkedGain) and 577 samples for built-in or 48 kHz custom
+binaural HRIRs. A custom SOFA at another rate adds the resampler's common
+causal filter delay; source `Data.Delay` remains part of the HRIR and is not
+added to the reported latency. The delay is
 reported separately as samples with a `1/48000` rational, never hidden in PTS.
 After a seek, an application should start decoding at least the reported delay
 before its desired audible sample when the container permits it, mark those

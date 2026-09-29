@@ -41,7 +41,7 @@ use openjoc_scene::{
 };
 use openjoc_sofa::{
     BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, load_builtin_hrir_f32, load_builtin_hrir_f32_from_asset,
-    parse_simple_free_field_hrir, resolve_hrir, resolve_hrir_f32,
+    parse_simple_free_field_hrir, resample_loaded_hrir_bank, resolve_hrir, resolve_hrir_f32,
 };
 
 pub use openjoc_sofa::{BuiltinHrtf, SofaLoadLimits};
@@ -163,7 +163,8 @@ pub enum BinauralLfePolicy {
 
 /// In-memory binaural configuration. An empty `sofa_bytes` value selects the
 /// selected built-in resource; non-empty bytes select an explicit user SOFA
-/// and retain the existing fail-closed parser behavior.
+/// and retain the strict SimpleFreeFieldHRIR parser behavior. Matching-rate
+/// taps are preserved; other rates are resampled for binaural output.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BinauralConfig {
     /// Explicit SOFA bytes, or empty to use [`Self::builtin_generic`].
@@ -849,11 +850,15 @@ impl OpenJocSession {
         }
     }
 
-    /// Returns the known deterministic decoder/reconstruction delay.
+    /// Returns the known decoder, reconstruction, and added HRIR conversion delay.
     #[must_use]
     pub fn latency_samples(&self) -> usize {
         if self.config.render_mode == RenderMode::Binaural {
             QMF_LATENCY_SAMPLES
+                + self
+                    .binaural
+                    .as_ref()
+                    .map_or(0, |state| state.lfe_delay.delay_samples())
         } else {
             QMF_LATENCY_SAMPLES + FINAL_LINKED_GAIN_LATENCY_SAMPLES
         }
@@ -1996,6 +2001,7 @@ struct BinauralState {
     mappings: Vec<BinauralMapping>,
     lfe_index: Option<usize>,
     lfe_policy: BinauralLfePolicy,
+    lfe_delay: openjoc_render::SampleDelay,
     engine: Option<BinauralRenderer>,
 }
 
@@ -2012,6 +2018,7 @@ impl BinauralState {
         external_asset: Option<&[u8]>,
         custom_sofa_load_limits: Option<SofaLoadLimits>,
     ) -> Result<Self, OpenJocError> {
+        let mut lfe_delay_samples = 0;
         let (bank, mappings, lfe_index, sample_rate_hz) = if config.is_builtin() {
             let loaded = if let Some(asset) = external_asset {
                 load_builtin_hrir_f32_from_asset(config.builtin_hrtf, asset)?
@@ -2025,13 +2032,19 @@ impl BinauralState {
                 |direction| resolve_hrir_f32(&loaded.bank, direction).map_err(Into::into),
             )?
         } else {
-            let loaded = parse_simple_free_field_hrir(
-                &config.sofa_bytes,
-                custom_sofa_load_limits.unwrap_or_default(),
+            let load_limits = custom_sofa_load_limits.unwrap_or_default();
+            let loaded = parse_simple_free_field_hrir(&config.sofa_bytes, load_limits)?;
+            lfe_delay_samples = openjoc_sofa::hrir_resampling_delay_samples(
+                loaded.bank.sample_rate_hz(),
+                BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
             )?;
-            validate_binaural_sample_rate(loaded.metadata.sample_rate_hz)?;
+            let loaded = resample_loaded_hrir_bank(
+                loaded,
+                BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+                load_limits,
+            )?;
             prepare_binaural_bank(
-                loaded.metadata.sample_rate_hz,
+                loaded.bank.sample_rate_hz(),
                 &config.virtual_layout,
                 |direction| resolve_hrir(&loaded.bank, direction).map_err(Into::into),
             )?
@@ -2042,6 +2055,7 @@ impl BinauralState {
             mappings,
             lfe_index,
             lfe_policy: config.lfe_policy,
+            lfe_delay: openjoc_render::SampleDelay::new(lfe_delay_samples),
             engine: None,
         })
     }
@@ -2117,8 +2131,9 @@ impl BinauralState {
                     for ((left_value, right_value), lfe_value) in
                         left.iter_mut().zip(&mut right).zip(lfe)
                     {
-                        *left_value += *lfe_value * std::f64::consts::FRAC_1_SQRT_2;
-                        *right_value += *lfe_value * std::f64::consts::FRAC_1_SQRT_2;
+                        let lfe_value = self.lfe_delay.process_sample(*lfe_value);
+                        *left_value += lfe_value * std::f64::consts::FRAC_1_SQRT_2;
+                        *right_value += lfe_value * std::f64::consts::FRAC_1_SQRT_2;
                     }
                 }
             }
@@ -2141,11 +2156,30 @@ impl BinauralState {
         };
         let mut output = Vec::new();
         let mut cursor = start;
-        while engine.remaining_tail_samples() > 0 {
-            let count = engine.remaining_tail_samples().min(1024);
+        while engine
+            .remaining_tail_samples()
+            .max(self.lfe_delay.remaining_samples())
+            > 0
+        {
+            let count = engine
+                .remaining_tail_samples()
+                .max(self.lfe_delay.remaining_samples())
+                .min(1024);
             let mut left = vec![0.0; count];
             let mut right = vec![0.0; count];
-            engine.drain_tail_block(&mut left, &mut right)?;
+            let fir_count = engine.remaining_tail_samples().min(count);
+            if fir_count > 0 {
+                engine.drain_tail_block(&mut left[..fir_count], &mut right[..fir_count])?;
+            }
+            for (left, right) in left
+                .iter_mut()
+                .zip(&mut right)
+                .take(self.lfe_delay.remaining_samples())
+            {
+                let lfe = self.lfe_delay.drain_sample() * std::f64::consts::FRAC_1_SQRT_2;
+                *left += lfe;
+                *right += lfe;
+            }
             output.push(RenderedBlock {
                 sample_rate,
                 logical_start_sample: cursor,
@@ -2158,6 +2192,7 @@ impl BinauralState {
     }
 
     fn reset(&mut self) {
+        self.lfe_delay.reset();
         if let Some(engine) = self.engine.as_mut() {
             engine.reset();
         }
@@ -2431,6 +2466,44 @@ mod tests {
     }
 
     #[test]
+    fn resampled_lfe_delay_survives_short_input_tail_and_reset() {
+        let mut config = BinauralConfig::builtin_generic("5.1");
+        config.lfe_policy = BinauralLfePolicy::EqualPowerDualMono;
+        let mut state = BinauralState::new(&config, None, None).unwrap();
+        state.lfe_delay = openjoc_render::SampleDelay::new(33);
+        for _ in 0..2 {
+            let mut actual = Vec::new();
+            for start in [0, 1] {
+                let mut channels = vec![vec![0.0]; 6];
+                channels[3][0] = 1.0;
+                let block = state
+                    .render(&RenderedBlock {
+                        sample_rate: 48_000,
+                        logical_start_sample: start,
+                        sample_count: 1,
+                        channels,
+                    })
+                    .unwrap();
+                actual.extend(block.channels[0].iter().copied());
+            }
+            for block in state.drain_tail(48_000, 2).unwrap() {
+                assert_eq!(block.channels[0], block.channels[1]);
+                actual.extend(block.channels[0].iter().copied());
+            }
+            assert!(actual.len() >= 35);
+            for (index, sample) in actual.into_iter().enumerate() {
+                let expected = if index == 33 || index == 34 {
+                    std::f64::consts::FRAC_1_SQRT_2
+                } else {
+                    0.0
+                };
+                assert!((sample - expected).abs() < 1e-12);
+            }
+            state.reset();
+        }
+    }
+
+    #[test]
     fn builtin_generic_binaural_is_available_without_sofa_bytes() {
         assert_eq!(
             BinauralConfig::builtin_generic("7.1.4").builtin_hrtf,
@@ -2443,6 +2516,7 @@ mod tests {
             ..OpenJocConfig::default()
         };
         let session = OpenJocSession::new(config).expect("built-in generic HRTF session");
+        assert_eq!(session.latency_samples(), QMF_LATENCY_SAMPLES);
         assert!(!session.speaker.common_profile_stereo_enabled);
         let info = session.output_info();
         assert_eq!(info.layout_name, "Binaural stereo");

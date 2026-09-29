@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 import unittest
@@ -15,7 +16,11 @@ SCRIPT = ROOT / "scripts" / "test_lav_directshow_negotiation.cmd"
 RELEASE_SMOKES = ROOT / "scripts" / "release_lav_smokes.cmd"
 FIXTURE_SCRIPT = ROOT / "scripts" / "generate-player-fixtures.sh"
 RUST_BRIDGE = ROOT / "crates" / "openjoc-ffmpeg" / "src" / "lib.rs"
-LAV_ROOT = pathlib.Path(r"D:\Programs\LAVFilters-OpenJOC")
+LAV_ROOT = pathlib.Path(os.environ.get("OPENJOC_LAV_SOURCE_ROOT", ""))
+REQUIRES_LAV_SOURCE = unittest.skipUnless(
+    os.environ.get("OPENJOC_LAV_SOURCE_ROOT"),
+    "set OPENJOC_LAV_SOURCE_ROOT to audit the LAV fork",
+)
 HARNESS = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocDirectShowNegotiationSmoke.cpp"
 POLICY_CONTROL = LAV_ROOT / "decoder" / "LAVAudio" / "OpenJocPolicyControl.cpp"
 DIAGNOSTICS = LAV_ROOT / "decoder" / "LAVAudio" / "LAVOpenJocDiagnostics.h"
@@ -139,6 +144,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertGreaterEqual(text.count("OpenJocRuntimeIdentity.tsv"), 2)
         self.assertIn("attrib +R", text)
 
+    @REQUIRES_LAV_SOURCE
     def test_builds_and_runs_isolated_persistent_policy_control(self) -> None:
         script_text = SCRIPT.read_text(encoding="utf-8")
         release_text = RELEASE_SMOKES.read_text(encoding="utf-8")
@@ -221,6 +227,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("shasum -a 256", fixture_text)
         self.assertNotIn('fixture generation requires sha256sum"', fixture_text)
 
+    @REQUIRES_LAV_SOURCE
     def test_task3_declares_live_diagnostics_and_nonsilent_stock_controls(self) -> None:
         fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
         harness_text = HARNESS.read_text(encoding="utf-8")
@@ -249,6 +256,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("-c:a copy", fixture_text)
         self.assertIn("aevalsrc", fixture_text)
 
+    @REQUIRES_LAV_SOURCE
     def test_task3_lifecycle_fixture_has_conserved_streaming_and_seekable_mp4_timing_gates(self) -> None:
         fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
         rust_text = RUST_BRIDGE.read_text(encoding="utf-8")
@@ -288,6 +296,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("stage=mixed-seek-outcomes", harness_text)
         self.assertIn("AM_SEEKING_CanSeekAbsolute", harness_text)
 
+    @REQUIRES_LAV_SOURCE
     def test_harness_declares_private_module_and_no_support_claim_self_test(self) -> None:
         text = HARNESS.read_text(encoding="utf-8")
 
@@ -316,6 +325,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("physical_subwoofer_count", text)
         self.assertNotIn("SetDllDirectory", text)
 
+    @REQUIRES_LAV_SOURCE
     def test_harness_runs_exact_controlled_sink_matrix_with_compiled_oracle(self) -> None:
         script_text = SCRIPT.read_text(encoding="utf-8")
         release_text = RELEASE_SMOKES.read_text(encoding="utf-8")
@@ -384,6 +394,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("UNSUPPORTED", controlled_matrix)
         self.assertNotIn("STREAM_PROVEN", controlled_matrix)
 
+    @REQUIRES_LAV_SOURCE
     def test_native_renderer_probe_runs_fail_closed_classifier_and_is_not_auto_run(self) -> None:
         script_text = SCRIPT.read_text(encoding="utf-8")
         harness_text = HARNESS.read_text(encoding="utf-8")
@@ -477,6 +488,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         ):
             self.assertIn(expected_case, pure_tests)
 
+    @REQUIRES_LAV_SOURCE
     def test_harness_can_inventory_exact_directshow_audio_renderer_monikers(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
 
@@ -501,6 +513,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("Realtek", inventory)
         self.assertNotIn("infer", inventory.lower())
 
+    @REQUIRES_LAV_SOURCE
     def test_harness_can_read_endpoint_formats_without_reconfiguration(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
 
@@ -525,6 +538,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("SetValue", inspection)
         self.assertNotIn("PropertyStore::Commit", inspection)
 
+    @REQUIRES_LAV_SOURCE
     def test_endpoint_format_blob_is_bounds_checked_before_serialization(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         serializer = harness_text[
@@ -543,6 +557,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("device_format.blob.cbSize", inspection)
         self.assertIn("SerializeWaveFormat(", inspection)
 
+    @REQUIRES_LAV_SOURCE
     def test_native_probe_accepts_directshow_intermediate_success_before_get_state(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         classifier = harness_text[
@@ -561,6 +576,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("SUCCEEDED(result->pause_call_status)", playback)
         self.assertIn("SUCCEEDED(result->run_call_status)", playback)
 
+    @REQUIRES_LAV_SOURCE
     def test_native_probe_records_midstream_renderer_delivery_witness(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         playback = harness_text[
@@ -584,6 +600,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("NativeProbeState::InitialStreamObserved", classifier)
         self.assertIn("CaptureNativeRendererStats", playback)
 
+    @REQUIRES_LAV_SOURCE
     def test_controlled_sink_emits_complete_exact_transport_contract(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         controlled = harness_text[
@@ -606,6 +623,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         ):
             self.assertIn(required, controlled)
 
+    @REQUIRES_LAV_SOURCE
     def test_task3_requires_isolated_stock_passthrough_lifecycle_and_live_status_evidence(self) -> None:
         script_text = SCRIPT.read_text(encoding="utf-8")
         harness_text = HARNESS.read_text(encoding="utf-8")
@@ -644,6 +662,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertNotIn("EnableOpenJOC=false", script_text)
         self.assertNotIn("STREAM_PROVEN", harness_text)
 
+    @REQUIRES_LAV_SOURCE
     def test_task3_same_filter_policy_probe_requires_explicit_exact_reconnection(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         begin = harness_text.index("HRESULT RunSameFilterPolicyRenegotiation")
@@ -670,6 +689,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertLess(connect, exact_graph)
         self.assertNotIn("graph->Connect(", probe)
 
+    @REQUIRES_LAV_SOURCE
     def test_task4_boundary_probe_uses_phase3_delivery_and_queue_seams(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         self.assertIn("bool TestTask4AllocatorBoundaries", harness_text)
@@ -710,6 +730,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
             self.assertIn(required, probe)
         self.assertNotIn("CheckedTask4ByteCount", probe)
 
+    @REQUIRES_LAV_SOURCE
     def test_task4_performance_probe_runs_real_graph_cycles_and_page_trends(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         self.assertIn("bool TestTask4WorkingSetTrends", harness_text)
@@ -812,6 +833,7 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("OpenJocStrictNegotiation.cpp", script_text)
         self.assertIn("OpenJocStrictNegotiation.cpp", release_text)
 
+    @unittest.skipUnless(os.name == "nt", "Windows cmd.exe is required")
     def test_rejects_missing_arguments(self) -> None:
         completed = subprocess.run(
             ["cmd.exe", "/d", "/c", str(SCRIPT)],
