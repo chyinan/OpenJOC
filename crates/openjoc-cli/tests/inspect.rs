@@ -684,7 +684,10 @@ fn render_preflight_preserves_global_auto_and_late_error_indices() {
     assert!(
         String::from_utf8_lossy(&auto.stdout).contains("selected profile: OBSERVED_VENDOR_COMPAT")
     );
-    assert!(fs::read(auto_output).unwrap() == fs::read(compat_output).unwrap());
+    assert_eq!(
+        fs::read(auto_output).unwrap(),
+        fs::read(compat_output).unwrap()
+    );
     let (strict, _) = render("etsi-strict");
     assert!(!strict.status.success());
 
