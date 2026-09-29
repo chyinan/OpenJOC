@@ -296,8 +296,7 @@ fn inverse_rotation_table(length: usize, stride: f64) -> Vec<Complex> {
 fn inverse_complex<const N: usize>(input: &[Complex; N], rotations: &[Complex]) -> [Complex; N] {
     debug_assert_eq!(rotations.len(), N * N);
     let mut output = [Complex::default(); N];
-    let rotation_rows = rotations.as_chunks::<N>().0;
-    for (value, row) in output.iter_mut().zip(rotation_rows) {
+    for (value, row) in output.iter_mut().zip(rotations.chunks_exact(N)) {
         for (input_value, rotation) in input.iter().zip(row) {
             value.real += input_value.real * rotation.real - input_value.imag * rotation.imag;
             value.imag += input_value.real * rotation.imag + input_value.imag * rotation.real;

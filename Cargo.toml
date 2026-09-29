@@ -55,3 +55,5 @@ unreadable_literal = "allow"
 # Raising MSRV enables these style-only migrations across existing DSP code.
 collapsible_if = "allow"
 manual_is_multiple_of = "allow"
+# Keep established DSP slice loops; this is an alternate-iteration style hint.
+chunks_exact_to_as_chunks = "allow"
