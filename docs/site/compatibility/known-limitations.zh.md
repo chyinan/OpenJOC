@@ -62,7 +62,7 @@ OpenJOC 是一个独立的实验性互操作项目。不声明得到 Dolby 的�
 - 外部 FFmpeg 桥接是供其他程序嵌入的接口，不是针对已安装 `ffmpeg` 可执行文件的独立插件。原生 `libopenjoc` 解码器需要使用打过补丁的定制 FFmpeg 构建，并且必须显式选择 JOC。
 - GStreamer 使用 OpenJOC 专用的实验性 caps 特性，需要匹配的主机运行时，不会全局修改已安装的 GStreamer。
 - mpv 和 OpenJOC Player Bundles 是项目提供的定制构建，不是官方上游的 mpv 或 FFmpeg 发行版。物理多声道播放仍需要音频输出和设备能够接受请求的声道映射。
-- Windows DirectShow/LAV 集成会主动接受 JOC，把普通 E-AC-3 留在原有的 LAV/FFmpeg 路径，并保持直通优先级。它固定提供 48 kHz IEEE-float PCM 输出方案：Stereo、5.1、7.1、5.1.2、5.1.4、7.1.2 和 7.1.4。每种方案只提出一种明确的 `WAVEFORMATEXTENSIBLE` 格式，不提供备用方案。Stereo 是兼容性立体声，不是双耳/HRTF 空间化；Stereo 是默认值，其他布局需要显式选择。物理多声道硬件尚未验证。OpenJOC 不会推断下游物理端点的扬声器数量或根据端点名称推断布局，不执行低频管理，也不会把物理低音炮数量转换成逻辑 LFE 声道。独立的 7.1.6、9.1.x、22.2、自定义渲染器支持，都不属于 LAV 输出声明。
+- Windows DirectShow/LAV 集成会主动接受 JOC，把普通 E-AC-3 留在原有的 LAV/FFmpeg 路径，并保持直通优先级。它固定提供 48 kHz IEEE-float PCM 输出方案：Stereo、Binaural (Headphones)、5.1、7.1、5.1.2、5.1.4、7.1.2 和 7.1.4。每种方案只提出一种明确的 `WAVEFORMATEXTENSIBLE` 格式，不提供备用方案。Stereo 是兼容性立体声，不是双耳/HRTF 空间化；Stereo 是默认值，其他布局需要显式选择。物理多声道硬件尚未验证。OpenJOC 不会推断下游物理端点的扬声器数量或根据端点名称推断布局，不执行低频管理，也不会把物理低音炮数量转换成逻辑 LFE 声道。独立的 7.1.6、9.1.x、22.2、自定义渲染器支持，都不属于 LAV 输出声明。
 
 ## 平台与发布范围
 

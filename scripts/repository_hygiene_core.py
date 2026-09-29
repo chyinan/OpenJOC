@@ -208,6 +208,15 @@ def documentation_consistency_errors(files: Mapping[str, str]) -> list[str]:
                 errors.append(f"{path} does not document the source custom-layout limit {limit}")
 
     readme = files.get("README.md", "")
+    # The canonical policy table includes the separate two-channel Binaural policy.
+    lav_guide = files.get("docs/site/using/windows-lav-potplayer.md", "")
+    policy_count = len(re.findall(r"^\|[^|]+\|\s*\d+\s*\|\s*`0x[0-9A-Fa-f]+`\s*\|", lav_guide, re.MULTILINE))
+    count_words = {"seven": 7, "eight": 8}
+    for match in re.finditer(r"\b(\d+|seven|eight) fixed PCM policies\b", readme):
+        value = match.group(1)
+        stated_count = count_words[value] if value in count_words else int(value)
+        if policy_count and stated_count != policy_count:
+            errors.append("README.md fixed PCM policy count disagrees with the canonical LAV table")
     if not re.search(
         r"\b(?:OpenJOC|release|version)\s+v?\d+\.\d+(?:\.\d+)?\b"
         r"|\bv\d+\.\d+(?:\.\d+)?\b",

@@ -117,6 +117,21 @@ class DocumentationConsistencyTests(unittest.TestCase):
     def test_accepts_consistent_current_contracts(self) -> None:
         self.assertEqual(documentation_consistency_errors(self.fixture_files()), [])
 
+    def test_rejects_lav_policy_count_that_disagrees_with_canonical_table(self) -> None:
+        files = self.fixture_files()
+        files["README.md"] += "The guide documents the seven fixed PCM policies.\n"
+        files["docs/site/using/windows-lav-potplayer.md"] = (
+            "The Windows adapter exposes exactly eight fixed PCM policies.\n"
+            "| Policy | Channels | Mask |\n| --- | --- | --- |\n"
+            + "".join(f"| {name} | 2 | `0x00000003` |\n" for name in (
+                "Stereo", "Binaural (Headphones)", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4"
+            ))
+        )
+        self.assertIn("README.md fixed PCM policy count disagrees with the canonical LAV table",
+                      documentation_consistency_errors(files))
+        files["README.md"] = files["README.md"].replace("seven fixed", "eight fixed")
+        self.assertEqual(documentation_consistency_errors(files), [])
+
     def test_rejects_missing_directshow_layout_or_evidence_boundaries(self) -> None:
         files = self.fixture_files()
         files["docs/KNOWN_LIMITATIONS.md"] = "DirectShow supports Stereo and 5.1.\n"

@@ -2092,17 +2092,25 @@ impl BinauralState {
     fn render(&mut self, frame: &RenderedBlock) -> Result<RenderedBlock, OpenJocError> {
         let sample_count = frame.sample_count;
         let sample_rate = frame.sample_rate;
-        let mappings = self.mappings.clone();
-        let blocks = mappings
-            .iter()
-            .map(|mapping| {
-                BinauralSourceBlock::new(mapping.source_id, &frame.channels[mapping.channel_index])
-            })
-            .collect::<Vec<_>>();
-        let engine = self.ensure_engine(sample_rate)?;
+        self.ensure_engine(sample_rate)?;
+        // Only these borrowed descriptors are temporary. Output PCM remains owned
+        // by the caller; keep the FIR computation and its accumulation order intact.
+        let mut storage =
+            [BinauralSourceBlock::new(SourceId::new(0), &[]); openjoc_scene::MAX_CUSTOM_SPEAKERS];
+        let blocks = storage.get_mut(..self.mappings.len()).ok_or_else(|| {
+            OpenJocError::Render("binaural source count exceeds the layout limit".to_owned())
+        })?;
+        for (block, mapping) in blocks.iter_mut().zip(&self.mappings) {
+            *block =
+                BinauralSourceBlock::new(mapping.source_id, &frame.channels[mapping.channel_index]);
+        }
+        let engine = self
+            .engine
+            .as_mut()
+            .ok_or_else(|| OpenJocError::Render("binaural engine not initialized".to_owned()))?;
         let mut left = vec![0.0; sample_count];
         let mut right = vec![0.0; sample_count];
-        engine.render_block(&blocks, &mut left, &mut right)?;
+        engine.render_block(blocks, &mut left, &mut right)?;
         if self.lfe_policy == BinauralLfePolicy::EqualPowerDualMono {
             if let Some(index) = self.lfe_index {
                 if let Some(lfe) = frame.channels.get(index) {
@@ -2220,6 +2228,127 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
 mod tests {
     use super::*;
     use openjoc_scene::SpeakerGeometry;
+
+    fn binaural_probe_frame(channels: usize, count: usize, start: u64) -> RenderedBlock {
+        RenderedBlock {
+            sample_rate: 48_000,
+            logical_start_sample: start,
+            sample_count: count,
+            channels: (0..channels)
+                .map(|channel| {
+                    (0..count)
+                        .map(|sample| {
+                            ((sample as u64 + start + channel as u64 * 17) % 127) as f64 / 127.0
+                                - 0.5
+                        })
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn binaural_block_adapter_preserves_exact_direct_pcm_tail_and_reset() {
+        for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
+            for layout in ["7.1.4", "9.1.6"] {
+                for lfe_policy in [
+                    BinauralLfePolicy::Exclude,
+                    BinauralLfePolicy::EqualPowerDualMono,
+                ] {
+                    let mut config = BinauralConfig::builtin(hrtf, layout);
+                    config.lfe_policy = lfe_policy;
+                    let mut state = BinauralState::new(&config, None, None).unwrap();
+                    let mut reference = state.ensure_engine(48_000).unwrap().clone();
+                    let channels = SpeakerLayoutPreset::for_name(layout).unwrap().labels.len();
+                    for _ in 0..2 {
+                        let mut start = 0;
+                        for count in [1, 97, 256, 1536, 17] {
+                            let frame = binaural_probe_frame(channels, count, start);
+                            let blocks: Vec<_> = state
+                                .mappings
+                                .iter()
+                                .map(|mapping| {
+                                    BinauralSourceBlock::new(
+                                        mapping.source_id,
+                                        &frame.channels[mapping.channel_index],
+                                    )
+                                })
+                                .collect();
+                            let mut left = vec![0.0; count];
+                            let mut right = vec![0.0; count];
+                            reference
+                                .render_block(&blocks, &mut left, &mut right)
+                                .unwrap();
+                            if lfe_policy == BinauralLfePolicy::EqualPowerDualMono {
+                                for i in 0..count {
+                                    let lfe = frame.channels[state.lfe_index.unwrap()][i]
+                                        * std::f64::consts::FRAC_1_SQRT_2;
+                                    left[i] += lfe;
+                                    right[i] += lfe;
+                                }
+                            }
+                            let actual = state.render(&frame).unwrap();
+                            for (actual, expected) in actual
+                                .channels
+                                .iter()
+                                .flatten()
+                                .zip(left.iter().chain(&right))
+                            {
+                                assert_eq!(actual.to_bits(), expected.to_bits());
+                            }
+                            assert_eq!(actual.logical_start_sample, start);
+                            assert_eq!(actual.sample_count, count);
+                            start += count as u64;
+                        }
+                        let count = reference.remaining_tail_samples();
+                        let mut left = vec![0.0; count];
+                        let mut right = vec![0.0; count];
+                        reference.drain_tail_block(&mut left, &mut right).unwrap();
+                        let tail = state.drain_tail(48_000, start).unwrap();
+                        for (channel, expected) in [left, right].iter().enumerate() {
+                            let actual: Vec<_> = tail
+                                .iter()
+                                .flat_map(|block| block.channels[channel].iter().copied())
+                                .collect();
+                            assert_eq!(actual.len(), expected.len());
+                            for (actual, expected) in actual.iter().zip(expected) {
+                                assert_eq!(actual.to_bits(), expected.to_bits());
+                            }
+                        }
+                        state.reset();
+                        reference.reset();
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual release-mode timing probe; no wall-clock CI threshold"]
+    fn binaural_adapter_benchmark() {
+        for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
+            for layout in ["7.1.4", "9.1.6"] {
+                let config = BinauralConfig::builtin(hrtf, layout);
+                let mut state = BinauralState::new(&config, None, None).unwrap();
+                let channels = SpeakerLayoutPreset::for_name(layout).unwrap().labels.len();
+                let frame = binaural_probe_frame(channels, 256, 0);
+                state.render(&frame).unwrap();
+                let start = std::time::Instant::now();
+                let mut digest = 0xcbf2_9ce4_8422_2325_u64;
+                for _ in 0..256 {
+                    let output =
+                        std::hint::black_box(state.render(std::hint::black_box(&frame)).unwrap());
+                    for sample in output.channels.iter().flatten() {
+                        digest = (digest ^ sample.to_bits()).wrapping_mul(0x0000_0100_0000_01b3);
+                    }
+                }
+                eprintln!(
+                    "{hrtf:?} {layout}: {:.3} ms; PCM digest {digest:016x}",
+                    start.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+        }
+    }
 
     fn push_bits(bytes: &mut [u8], cursor: &mut usize, value: u64, width: usize) {
         for shift in (0..width).rev() {

@@ -15,3 +15,17 @@ The repository keeps adapter-specific contracts in their natural locations rathe
 | Windows DirectShow/LAV | [Windows LAV / PotPlayer](../using/windows-lav-potplayer.md) |
 
 Stock FFmpeg and upstream mpv are not modified by installing OpenJOC. Project-provided patched builds are separate products with their own corresponding-source and third-party notice obligations.
+
+## WebAssembly bridge
+
+`openjoc-wasm` exposes the browser decoder ABI. Decode/render timing means,
+P95, maxima, and realtime factor cover the most recent 4096 decoded access
+units (about 131 seconds at 48 kHz). Access-unit, output-frame, and sample
+counters cover the whole session. Reset clears both. Repeated metric reads
+reuse a cached summary until another access unit is recorded.
+
+The WASM CI workflow builds both embedded and external HRTF configurations
+for `wasm32-unknown-unknown`. Its Node.js smoke test instantiates the actual
+module and checks Stereo, D1/D2 binaural, Custom SOFA, fragmented input,
+reset, drain, PCM ownership, and invalid-input rejection. Browser audio-device
+scheduling remains a separate host concern.

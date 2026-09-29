@@ -128,6 +128,11 @@ fn main() -> ExitCode {
         Err(error) => {
             let category = classify_cli_error(error.as_ref());
             eprintln!("openjoc[{}]: {error}", category.as_str());
+            if category == CliErrorCategory::OutputRange {
+                eprintln!(
+                    "hint: reconstructed PCM exceeds the ADM PCM24 storage range; no clipping or normalization was applied. Use render-joc WAV/CAF for floating-point speaker or binaural output."
+                );
+            }
             if category == CliErrorCategory::ProfileRejection {
                 eprintln!(
                     "hint: the requested profile was not relaxed; inspect reports both profiles, and observed-vendor-compat preserves only its documented partial/opaque scope"
@@ -4671,6 +4676,7 @@ enum CliErrorCategory {
     UnsupportedFeature,
     DecodeFailure,
     OutputFailure,
+    OutputRange,
     IoFailure,
 }
 
@@ -4685,6 +4691,7 @@ impl CliErrorCategory {
             Self::UnsupportedFeature => "unsupported-feature",
             Self::DecodeFailure => "decode-failure",
             Self::OutputFailure => "output-failure",
+            Self::OutputRange => "output-range",
             Self::IoFailure => "io-failure",
         }
     }
@@ -4737,11 +4744,30 @@ const fn classify_adm_error(error: &AdmError) -> CliErrorCategory {
         | AdmError::UnsupportedDynamicMetadata(_)
         | AdmError::NoReconstructionSignals
         | AdmError::SizeOverflow => CliErrorCategory::UnsupportedFeature,
-        AdmError::InvalidScene(_)
-        | AdmError::NonFiniteSample { .. }
-        | AdmError::SampleOutOfRange { .. } => CliErrorCategory::DecodeFailure,
+        AdmError::SampleOutOfRange { .. } => CliErrorCategory::OutputRange,
+        AdmError::InvalidScene(_) | AdmError::NonFiniteSample { .. } => {
+            CliErrorCategory::DecodeFailure
+        }
         AdmError::Io(_) => CliErrorCategory::IoFailure,
         AdmError::InvalidAdmBwf(_) => CliErrorCategory::MalformedInput,
+    }
+}
+
+#[cfg(test)]
+mod adm_error_tests {
+    use super::*;
+
+    #[test]
+    fn pcm24_range_failure_is_an_output_constraint() {
+        let error = AdmError::SampleOutOfRange {
+            track: 2,
+            sample: 42,
+            value: 1.25,
+        };
+        assert_eq!(classify_cli_error(&error).as_str(), "output-range");
+        let detail = error.to_string();
+        assert!(detail.contains("track 2, sample 42"));
+        assert!(detail.contains("1.25"));
     }
 }
 

@@ -1,0 +1,48 @@
+name: WASM
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wasm-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wasm:
+    name: wasm-${{ matrix.assets }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        assets: [embedded, external]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Rust and the actual WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+      - name: Native bridge regression tests and synthetic SOFA
+        run: |
+          cargo test -p openjoc-wasm --locked
+          cargo run -p openjoc-wasm --example smoke-sofa --locked -- "$RUNNER_TEMP/custom.sofa"
+      - name: Build the selected asset configuration
+        env:
+          ASSET_MODE: ${{ matrix.assets }}
+        run: |
+          if [ "$ASSET_MODE" = external ]; then
+            cargo build -p openjoc-wasm --release --locked --target wasm32-unknown-unknown --no-default-features --features external-builtin-hrtf-assets
+          else
+            cargo build -p openjoc-wasm --release --locked --target wasm32-unknown-unknown
+          fi
+      - name: Instantiate WASM and exercise the exported ABI
+        env:
+          ASSET_MODE: ${{ matrix.assets }}
+        run: node scripts/test-wasm.mjs target/wasm32-unknown-unknown/release/openjoc_wasm.wasm "$ASSET_MODE" "$RUNNER_TEMP/custom.sofa"

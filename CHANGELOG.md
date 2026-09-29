@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Keep WASM performance metrics current with a bounded rolling window and cache repeated reads.
+- Classify finite ADM PCM24 range errors as `output-range`, retaining sample diagnostics and safe output cleanup.
+- Correct the README's LAV policy count to include Binaural (Headphones), with a documentation consistency check.
+
+### Changed
+
+- Remove two temporary allocations per API binaural render block while preserving direct-FIR arithmetic, PCM bits, timing, tail, and reset behavior.
+- Add actual WASM ABI smoke tests for embedded/external HRTFs and Custom SOFA to CI.
+
 ## [0.18.0] — 2026-09-25
 
 OpenJOC v0.18 adds a second built-in HRTF and the WASM bridge needed by

@@ -193,7 +193,7 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   still requires an audio output and device that accepts the requested map.
 - The Windows DirectShow/LAV integration positively admits JOC, leaves
   ordinary E-AC-3 on stock LAV/FFmpeg, and preserves passthrough precedence.
-  Its fixed 48 kHz IEEE-float PCM policies are Stereo, 5.1, 7.1, 5.1.2,
+  Its fixed 48 kHz IEEE-float PCM policies are Stereo, Binaural (Headphones), 5.1, 7.1, 5.1.2,
   5.1.4, 7.1.2, and 7.1.4. Each makes one exact semantic
   `WAVEFORMATEXTENSIBLE` proposal with no fallback. Automatic downstream
   semantic layout discovery is `AUTO_NOT_RELIABLE`; Stereo is the default and

@@ -645,6 +645,17 @@ fn export_adm_out_of_range_failure_preserves_existing_outputs_and_cleans_staging
         .output()
         .expect("run failing compressed ADM export");
     assert!(!export.status.success());
+    let stderr = String::from_utf8_lossy(&export.stderr);
+    assert!(stderr.contains("openjoc[output-range]"), "{stderr}");
+    assert!(!stderr.contains("openjoc[decode-failure]"), "{stderr}");
+    assert!(
+        stderr.contains("no clipping or normalization was applied"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("track ") && stderr.contains("sample "),
+        "{stderr}"
+    );
     assert!(
         String::from_utf8_lossy(&export.stderr).contains("requires [-1, 1]"),
         "stderr={}",

@@ -23,6 +23,11 @@ The ADM exporter fails closed when a sample is non-finite or outside the signed 
 
 The adjacent ADM report includes a bounded headroom census with whole-programme and per-signal statistics when export succeeds.
 
+The CLI labels a finite out-of-range sample as `openjoc[output-range]` and
+reports its track, sample index, and value. This is a PCM24 storage constraint.
+Non-finite samples remain decoding failures. A failed export preserves existing
+output files and removes its staging files; no success report is published.
+
 This policy protects the meaning of the output. A real-media headroom case is not, by itself, a decoder failure; it means the valid floating reconstruction cannot be represented by the selected integer container without an explicit policy that the exporter intentionally does not invent.
 
 If you need a floating-point speaker or binaural file, use the WAV/CAF render path. If you need reconstructed ADM, treat a range error as an actionable export decision rather than as permission to clip.

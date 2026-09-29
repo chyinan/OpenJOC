@@ -18,3 +18,9 @@
 | Windows DirectShow/LAV | [Windows LAV / PotPlayer](../using/windows-lav-potplayer.md) |
 
 安装 OpenJOC 不会修改系统自带的 FFmpeg 或上游 mpv。项目提供的打过补丁的构建是独立产品，各自需要遵守对应源代码和第三方声明义务。
+
+## WebAssembly 桥接
+
+`openjoc-wasm` 提供浏览器解码器 ABI。解码与渲染耗时的均值、P95、最大值和实时倍率，统计最近 4096 个已解码访问单元（48 kHz 下约 131 秒）；访问单元、输出帧和采样计数则覆盖整个会话。Reset 会清空两类统计。在下一个访问单元被记录之前，多次读取性能指标会复用缓存的汇总结果。
+
+WASM CI 会分别为内嵌和外置 HRTF 配置构建 `wasm32-unknown-unknown` 模块。Node.js 冒烟测试会实例化实际模块，检查 Stereo、D1/D2 双耳、Custom SOFA、分片输入、reset、尾音排空、PCM 所有权与无效输入拒绝。浏览器音频设备调度仍属于主机侧验证范围。

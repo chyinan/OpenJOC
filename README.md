@@ -70,7 +70,7 @@ The optional Windows package provides an isolated OpenJOC-enabled LAV Audio Deco
 2. Run `install.bat`, then require `verify.bat` to report **PASS**.
 3. In PotPlayer, add **LAV Audio Decoder (OpenJOC)** in **Filter Control** → **Filter Priority (Overall)** and set it to **Prefer**.
 
-The [Windows LAV / PotPlayer guide](docs/site/using/windows-lav-potplayer.md) documents the seven fixed PCM policies, passthrough behavior, rollback, and hardware boundary.
+The [Windows LAV / PotPlayer guide](docs/site/using/windows-lav-potplayer.md) documents the eight fixed PCM policies, including Binaural (Headphones), passthrough behavior, rollback, and hardware boundary.
 
 ## Important boundaries
 

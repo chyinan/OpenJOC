@@ -12,7 +12,7 @@ use openjoc_api::{
     SofaLoadLimits, ValidationProfile,
 };
 use performance::{TimingSample, summarize};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::OnceLock};
 use stream::{ElementaryStreamFramer, FramingError, FramingStatus};
 
 const MAX_QUEUED_PCM_FRAMES: usize = 8;
@@ -100,6 +100,7 @@ pub struct DecoderStatusSnapshot {
     pub output_frames: usize,
     pub output_samples: u64,
     pub error: Option<DecoderError>,
+    /// Timing metrics cover the most recent 4096 access units; frame/sample counters are cumulative.
     pub decode_mean_ms: f64,
     pub decode_p95_ms: f64,
     pub decode_max_ms: f64,
@@ -130,6 +131,8 @@ pub struct Decoder {
     output_frames: usize,
     output_samples: u64,
     timing_samples: Vec<TimingSample>,
+    next_timing_sample: usize,
+    timing_summary: OnceLock<performance::PerformanceSummary>,
     input_seen: bool,
     end_of_stream: bool,
     last_error: Option<DecoderError>,
@@ -261,6 +264,8 @@ impl Decoder {
             output_frames: 0,
             output_samples: 0,
             timing_samples: Vec::new(),
+            next_timing_sample: 0,
+            timing_summary: OnceLock::new(),
             input_seen: false,
             end_of_stream: false,
             last_error: None,
@@ -369,6 +374,8 @@ impl Decoder {
         self.output_frames = 0;
         self.output_samples = 0;
         self.timing_samples.clear();
+        self.next_timing_sample = 0;
+        self.timing_summary.take();
         self.input_seen = false;
         self.end_of_stream = false;
         self.last_error = None;
@@ -406,7 +413,7 @@ impl Decoder {
         let queued_audio_ms = info.sample_rate.map_or(0.0, |sample_rate| {
             queued_samples as f64 * 1000.0 / f64::from(sample_rate)
         });
-        let performance = summarize(&self.timing_samples);
+        let performance = self.performance_summary();
         DecoderStatusSnapshot {
             decoder: "OpenJOC",
             input: "E-AC-3 JOC",
@@ -513,19 +520,28 @@ impl Decoder {
         self.objects = diagnostics.object_count;
         self.complexity_index = diagnostics.complexity_index;
         self.decoded_access_units = self.decoded_access_units.saturating_add(1);
-        if self.timing_samples.len() < MAX_TIMING_SAMPLES
-            && self.timing_samples.try_reserve(1).is_ok()
-        {
-            let sample_rate = self.session.output_info().sample_rate.unwrap_or(48_000);
-            self.timing_samples.push(TimingSample {
-                decode: stage_timing.decode.as_secs_f64() * 1000.0,
-                render: stage_timing.render.as_secs_f64() * 1000.0,
-                binaural: stage_timing.binaural.as_secs_f64() * 1000.0,
-                total: stage_timing.total.as_secs_f64() * 1000.0,
-                audio: 1536.0 * 1000.0 / f64::from(sample_rate),
-            });
-        }
+        let sample_rate = self.session.output_info().sample_rate.unwrap_or(48_000);
+        self.record_timing(TimingSample {
+            decode: stage_timing.decode.as_secs_f64() * 1000.0,
+            render: stage_timing.render.as_secs_f64() * 1000.0,
+            binaural: stage_timing.binaural.as_secs_f64() * 1000.0,
+            total: stage_timing.total.as_secs_f64() * 1000.0,
+            audio: 1536.0 * 1000.0 / f64::from(sample_rate),
+        });
         Ok(())
+    }
+
+    fn record_timing(&mut self, sample: TimingSample) {
+        if self.timing_samples.len() < MAX_TIMING_SAMPLES {
+            if self.timing_samples.try_reserve(1).is_err() {
+                return;
+            }
+            self.timing_samples.push(sample);
+        } else {
+            self.timing_samples[self.next_timing_sample] = sample;
+            self.next_timing_sample = (self.next_timing_sample + 1) % MAX_TIMING_SAMPLES;
+        }
+        self.timing_summary.take();
     }
 
     fn collect_session_output(&mut self) -> Result<(), DecoderError> {
@@ -600,7 +616,9 @@ impl Decoder {
     }
 
     pub(crate) fn performance_summary(&self) -> performance::PerformanceSummary {
-        summarize(&self.timing_samples)
+        *self
+            .timing_summary
+            .get_or_init(|| summarize(&self.timing_samples))
     }
 
     pub(crate) fn expose_current_pcm(&mut self) -> Option<&OpenJocPcmFrame> {
@@ -643,5 +661,70 @@ impl From<FramingError> for DecoderError {
             category: FailureCategory::InvalidInput,
             detail: bound_detail(&error.to_string()),
         }
+    }
+}
+
+#[cfg(test)]
+mod timing_tests {
+    use super::*;
+
+    #[test]
+    fn timing_window_evicts_old_samples_across_multiple_wraps() {
+        let mut decoder = Decoder::new().expect("decoder");
+        for value in 0..(MAX_TIMING_SAMPLES * 3 + 7) {
+            decoder.record_timing(TimingSample {
+                total: value as f64,
+                audio: 32.0,
+                ..TimingSample::default()
+            });
+        }
+        let summary = decoder.performance_summary();
+        let last = (MAX_TIMING_SAMPLES * 3 + 6) as f64;
+        assert_eq!(summary.sample_count, MAX_TIMING_SAMPLES);
+        assert_eq!(summary.total_max_ms, last);
+        assert_eq!(
+            summary.total_mean_ms,
+            last - (MAX_TIMING_SAMPLES - 1) as f64 / 2.0
+        );
+        assert_eq!(decoder.performance_summary(), summary);
+        decoder.record_timing(TimingSample {
+            total: 50_000.0,
+            ..TimingSample::default()
+        });
+        assert_eq!(decoder.performance_summary().total_max_ms, 50_000.0);
+    }
+
+    #[test]
+    fn performance_window_keeps_recording_after_capacity_and_resets() {
+        let mut decoder = Decoder::new().expect("decoder");
+        decoder.timing_samples = vec![
+            TimingSample {
+                decode: 1_000_000.0,
+                total: 1_000_000.0,
+                audio: 32.0,
+                ..TimingSample::default()
+            };
+            MAX_TIMING_SAMPLES
+        ];
+        let fixture = include_bytes!("../testdata/joc.ec3");
+        let openjoc_eac3::AccessUnitParse::Complete(length) =
+            openjoc_eac3::parse_access_unit_bounds(fixture, false).expect("framing")
+        else {
+            panic!("complete AU");
+        };
+        assert_ne!(
+            decoder.push_packet(&fixture[..length], None, false, false),
+            DecoderStatus::Error
+        );
+        assert_eq!(decoder.timing_samples.len(), MAX_TIMING_SAMPLES);
+        assert!(decoder.performance_summary().decode_mean_ms < 1_000_000.0);
+        decoder.reset();
+        assert_eq!(decoder.performance_summary().sample_count, 0);
+        assert_eq!(decoder.performance_summary().realtime_factor, None);
+        assert_ne!(
+            decoder.push_packet(&fixture[..length], None, false, false),
+            DecoderStatus::Error
+        );
+        assert_eq!(decoder.performance_summary().sample_count, 1);
     }
 }
