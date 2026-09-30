@@ -14,7 +14,7 @@ OpenJOC 的核心是一个 Rust 工作区，包含与平台无关的解码、场
 | FFmpeg | 提供外部桥接和单独的原生 `libopenjoc` 包装器，用于定制 FFmpeg 构建；安装 OpenJOC 不会修改系统自带的 FFmpeg。 |
 | GStreamer | 可选的原生插件，需要 OpenJOC 专用的分类 caps 特性和匹配的 GStreamer 运行时。 |
 | mpv | 项目提供打过补丁的构建和播放器软件包；不是官方上游的 mpv 或 FFmpeg 发行版。 |
-| Windows DirectShow/LAV | 可选的隔离式筛选器，提供七种明确的 48 kHz IEEE-float PCM 输出方案。 |
+| Windows DirectShow/LAV | 可选的隔离式筛选器，提供八种固定的 48 kHz IEEE-float PCM 输出方案：Stereo、Binaural、5.1、7.1、5.1.2、5.1.4、7.1.2 和 7.1.4。 |
 
 多声道 PCM 的生成和传输已经在文档规定的测试范围内完成验证。项目不承诺在任意物理硬件上都能播放多声道内容；自动发现音频端点或设备布局也不属于 OpenJOC 的接口约定。
 

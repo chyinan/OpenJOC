@@ -26,8 +26,9 @@ for listener-local XYZ coordinates, left/right channel order, f64 directions,
 f32 taps, and integer sample delays. Each row stores three little-endian f64
 unit-vector components, pair tap count, left/right delay samples, then all
 left-ear and right-ear taps as little-endian f32. Runtime no longer parses
-NetCDF/SOFA metadata for a built-in profile. Custom SOFA still uses the
-existing strict CDF-1 loader.
+NetCDF/SOFA metadata for a built-in profile. Custom SOFA continues to use the
+strict `SimpleFreeFieldHRIR` loader, which supports CDF-1 and NetCDF-4/HDF5
+containers.
 
 The offline pipeline is [`tools/generate-builtin-hrtf.py`](../tools/generate-builtin-hrtf.py)
 followed by `cargo run -p openjoc-sofa --example pack-hrtf-asset --

@@ -147,6 +147,6 @@ LFE 策略必须明确选择：`exclude` 或 `equal-power-dual-mono`。CLI 默�
 
 ## 集成边界
 
-Rust API 和受支持的框架适配器共享同一个会话渲染器，但每个主机负责自己的传输和布局协商。尤其需要注意，经过验证的 Windows DirectShow/LAV/PotPlayer 集成只输出 48 kHz 立体声浮点 PCM。64 声道渲染上限和独立的预设矩阵，都不属于 DirectShow/LAV 输出声明。
+Rust API 和受支持的框架适配器共享同一个会话渲染器，但每个主机负责自己的传输和布局协商。经过验证的 Windows DirectShow/LAV/PotPlayer 集成提供八种固定的 48 kHz IEEE-float PCM 策略：Stereo、Binaural、5.1、7.1、5.1.2、5.1.4、7.1.2 和 7.1.4。Stereo 与 Binaural 都使用双声道 PCM，但只有 Binaural 会通过 HRTF 虚拟扬声器场。64 声道渲染上限和独立的预设矩阵，都不属于 DirectShow/LAV 输出声明。
 
 当前不作出的保证请看[已知限制](../compatibility/known-limitations.md)，组件职责请看[生产架构](../concepts/architecture.md)。

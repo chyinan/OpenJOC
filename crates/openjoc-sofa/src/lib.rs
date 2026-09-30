@@ -88,7 +88,8 @@ pub struct LoadedSofaHrirBank {
 /// Official dataset identity for the offline default renderer resource.
 pub const BUILTIN_GENERIC_HRTF_DATASET: &str = "SADIE II D1 (KU100), v2-2";
 /// The built-in resource is the official D1 48 kHz, 256-tap HRIR set packed
-/// into the versioned direct-record asset; Custom SOFA remains CDF-1 input.
+/// into the versioned direct-record asset; Custom SOFA remains the supported
+/// `SimpleFreeFieldHRIR` import format in CDF-1 or NetCDF-4/HDF5 containers.
 pub const BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ: u32 = 48_000;
 pub const BUILTIN_GENERIC_HRTF_TAP_COUNT: usize = 256;
 
