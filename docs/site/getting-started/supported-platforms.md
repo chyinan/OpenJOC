@@ -11,7 +11,7 @@ OpenJOC's core is a Rust workspace with platform-neutral decode, scene, renderer
 | FFmpeg | External bridge and a separate native `libopenjoc` wrapper for custom FFmpeg builds; stock FFmpeg is not modified by installing OpenJOC. |
 | GStreamer | Optional native plugin with an OpenJOC-specific classification caps feature and a matching GStreamer runtime. |
 | mpv | Project-provided patched builds and player bundles; not official upstream mpv or FFmpeg distributions. |
-| Windows DirectShow/LAV | Optional isolated filter with seven explicit 48 kHz IEEE-float PCM policies. |
+| Windows DirectShow/LAV | Optional isolated filter with eight fixed 48 kHz IEEE-float PCM policies: Stereo, Binaural, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, and 7.1.4. |
 
 Multichannel PCM generation and transport are qualified within the documented test surfaces. Physical multichannel playback on arbitrary hardware is not claimed. Automatic endpoint or device layout discovery is not part of the OpenJOC contract.
 

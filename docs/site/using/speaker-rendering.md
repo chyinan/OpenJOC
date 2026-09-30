@@ -212,9 +212,11 @@ successful-looking canonical output.
 ## Integration boundary
 
 The Rust API and supported framework adapters share the same session renderer,
-but each host owns its transport and layout negotiation. In particular, the
-validated Windows DirectShow/LAV/PotPlayer integration outputs 48 kHz stereo
-float PCM only. The 64-channel renderer limit and standalone preset matrix are
+but each host owns its transport and layout negotiation. The validated Windows
+DirectShow/LAV/PotPlayer integration exposes eight fixed 48 kHz IEEE-float PCM
+policies: Stereo, Binaural, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, and 7.1.4. Stereo
+and Binaural both use two-channel PCM, but only Binaural applies HRTF
+virtualization. The 64-channel renderer limit and standalone preset matrix are
 not DirectShow/LAV output claims.
 
 See [known limitations](../compatibility/known-limitations.md) for current non-claims and
