@@ -63,13 +63,14 @@ renderers. Selecting an unsupported multichannel layout may cause playback
 failure, stuttering, or downstream conversion.
 
 When Binaural is selected, the OpenJOC page also provides an HRTF source. The
-default is **Built-in SADIE II D1 (Default)**. **Custom SOFA...** opens a
-normal Windows file picker for one local `.sofa` file; OpenJOC validates the
-selected dataset before Apply and uses the same strict loader as the standalone
-SOFA path. An invalid selection is rejected and the previous known-good HRTF
-remains active. If a persisted custom file is later moved, deleted, denied, or
-becomes invalid, reopening Binaural reports a bounded HRTF configuration error
-until the user selects the built-in source or another valid file.
+default is **Built-in SADIE II D1 (Default)**. The built-in selector also offers
+SADIE II D2 / KEMAR; D1 remains the default. **Custom SOFA...** opens a normal
+Windows file picker for one local `.sofa` file; OpenJOC validates the selected
+dataset before Apply and uses the same strict loader as the standalone SOFA
+path. An invalid selection is rejected and the previous known-good HRTF remains
+active. If a persisted custom file is later moved, deleted, denied, or becomes
+invalid, reopening Binaural reports a bounded HRTF configuration error until
+the user selects a built-in source or another valid file.
 
 The Binaural page also selects the virtual speaker layout: **7.1.4
 (Default)** or **9.1.6 (Experimental)**. This parameterizes the existing

@@ -40,6 +40,6 @@ SOFA 支持范围限定为 SimpleFreeFieldHRIR 1.0/1.1/1.2，以及只读 NetCDF
 
 采样率不同时，转换会补偿卷积增益，并在两耳 HRIR 中保留相同的因果滤波延迟。
 输出尾部也会完整保留。结果清单的 `algorithmic_latency_samples` 包含这部分新增延迟。
-延迟计算方式和 HDF5 chunk 上限见[双耳与 SOFA](binaural-sofa.md#sofa-scope)。
+延迟计算方式和 HDF5 chunk 上限见[双耳与 SOFA](binaural-sofa.zh.md#sofa-scope)。
 
 该工作流独立于尚未解决的 JOC 语义绑定；结果清单中的 `joc_semantic_binding` 为 `unresolved_not_used`。
