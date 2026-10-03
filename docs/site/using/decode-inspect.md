@@ -19,7 +19,7 @@ openjoc inspect input.ec3 --au-range 10:20 --json
 openjoc inspect input.ec3 --verbose
 ```
 
-`--json` writes the versioned report to stdout. `--aus` includes access-unit details. `--au N` selects one zero-based access unit, while `--au-range START:END` selects an inclusive range; either selection leaves the full-stream census intact. `--objects` adds per-OAMD-slot statistics, `--emdf` expands human-readable EMDF configuration details, and `--verbose` adds bounded diagnostic explanations. Use the [CLI reference](../reference/cli-reference.md#inspect) for the complete syntax.
+`--json` writes the versioned report to stdout. `--aus` includes access-unit details. `--au-range START:END` selects an inclusive zero-based range and leaves the full-stream census intact; the parser also accepts `--au N` as shorthand for the single-item range `N:N` (the help synopsis lists only `--au-range`). `--objects` adds per-OAMD-slot statistics, `--emdf` expands human-readable EMDF configuration details, and `--verbose` adds bounded diagnostic explanations. Use the [CLI reference](../reference/cli-reference.md#inspect) for the complete syntax.
 
 ## Capture diagnostic decoder output
 

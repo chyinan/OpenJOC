@@ -22,7 +22,7 @@ openjoc inspect input.ec3 --au-range 10:20 --json
 openjoc inspect input.ec3 --verbose
 ```
 
-`--json` 会向标准输出写入带版本的报告。`--aus` 包含访问单元明细。`--au N` 选择一个从零开始计数的访问单元，`--au-range START:END` 选择包含首尾的范围；这两种选择都不会缩小完整流统计。`--objects` 增加每个 OAMD 槽位的统计，`--emdf` 展开人类可读的 EMDF 配置细节，`--verbose` 增加有界诊断解释。完整语法见 [CLI 参考](../reference/cli-reference.zh.md#inspect)。
+`--json` 会向标准输出写入带版本的报告。`--aus` 包含访问单元明细。`--au-range START:END` 选择一个从零开始计数、包含首尾的范围，不会缩小完整流统计；解析器也接受 `--au N` 作为单个访问单元范围 `N:N` 的简写（help synopsis 只列出 `--au-range`）。`--objects` 增加每个 OAMD 槽位的统计，`--emdf` 展开人类可读的 EMDF 配置细节，`--verbose` 增加有界诊断解释。完整语法见 [CLI 参考](../reference/cli-reference.zh.md#inspect)。
 
 ## 捕获解码器诊断输出
 

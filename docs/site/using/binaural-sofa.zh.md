@@ -38,7 +38,7 @@ openjoc render-joc input.m4a \\
   --output custom-headphones.wav
 ```
 
-## SOFA 支持范围
+## SOFA 支持范围 {#sofa-scope}
 
 加载器支持 NetCDF classic CDF-1 和 NetCDF-4/HDF5 容器中的 `SimpleFreeFieldHRIR`。它继续校验受支持的字段、两个接收器、坐标和方向覆盖。渲染前会使用有界的确定性窗函数 sinc 滤波器将 HRIR 转成 48 kHz。输入本身为 48 kHz 时，系数保持逐位不变。仍不接受分数采样延迟；转换后的整数延迟按最近的 48 kHz 采样点取整。
 

@@ -3,21 +3,25 @@
 
 # CLI 参考
 
-本页根据 v0.17.0 可执行文件的输出进行核对，使用的命令是：
+本页根据 OpenJOC v0.18.0 官方 GNU/Linux x86_64 发布版可执行文件核对。压缩包
+`openjoc-0.18.0-x86_64-unknown-linux-gnu.tar.gz` 的 SHA-256 为
+`a238d881b25b8b5723d1d1a257a64705165d2b9749cc95d98d7ae62fe26cf9d8`，与该发布版的
+`SHA256SUMS` 一致；`openjoc --version` 输出 `OpenJOC 0.18.0`。本次核对没有在本地使用
+Cargo 构建。从压缩包解压目录运行了以下命令：
 
 ```sh
-cargo run -p openjoc-cli --locked -- --help
-cargo run -p openjoc-cli --locked -- inspect --help
-cargo run -p openjoc-cli --locked -- render-joc --help
-cargo run -p openjoc-cli --locked -- export-adm --help
+bin/openjoc --help
+bin/openjoc inspect --help
+bin/openjoc render-joc --help
+bin/openjoc export-adm --help
 ```
 
-CLI 源码 `crates/openjoc-cli/src/main.rs` 仍是唯一准确信息来源。命令语法发生变化时，请重新运行上述命令。
+CLI 源码 `crates/openjoc-cli/src/main.rs` 仍是唯一准确信息来源。语法发生变化时，请使用当前 CLI 可执行文件重新运行这些 help 命令。
 
 ## 命令
 
 ```text
-openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au N | --au-range START:END] [--trim-config-count N]
+openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]
 openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]
 openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]
 openjoc validate-adm <FILE> [--json]
@@ -41,8 +45,8 @@ usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] 
 `inspect` 读取原始 EC-3，或可定位的普通 MP4/M4A E-AC-3 音轨，不写出音频文件。即使详细输出只选择部分访问单元，它仍会统计完整输入流。
 
 - `--json` 向标准输出写入一个带 schema 版本的 JSON 文档；JSON 合约版本为 1。
-- `--aus` 包含访问单元明细；`--au N` 是选择一个从零开始计数的访问单元的简写。
-- `--au-range START:END` 选择包含首尾的、从零开始计数的访问单元范围，并自动启用访问单元明细。选择范围不会缩小完整流统计。
+- `--aus` 包含访问单元明细。
+- `--au-range START:END` 选择包含首尾的、从零开始计数的访问单元范围，并自动启用访问单元明细。选择范围不会缩小完整流统计。解析器也接受 `--au N` 作为 `--au-range N:N` 的简写，但 v0.18.0 help synopsis 只列出 `--au-range`。
 - `--objects` 包含每个 OAMD 槽位的活动和位置统计。
 - `--emdf` 展开人类可读的 EMDF 配置细节。JSON 始终包含 EMDF 统计和配置。
 - `--verbose` 增加组件配置和有界诊断解释。

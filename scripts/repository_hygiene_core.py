@@ -25,6 +25,17 @@ RETIRED_STALE_DOCUMENTS = (
     "docs/integration/FFMPEG_NATIVE_FUTURE.md",
 )
 
+CURRENT_DIRECTSHOW_POLICIES = frozenset(
+    {"Stereo", "Binaural", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4"}
+)
+DIRECTSHOW_POLICY_NAME = re.compile(
+    r"(?<![\w.])(?:Stereo|Binaural|\d+\.\d+(?:\.\d+)?)(?![\w]|\.\d)"
+)
+LAV_POLICY_TABLE_ROW = re.compile(
+    r"^\|\s*([^|]+?)\s*\|\s*\d+\s*\|\s*`0x[0-9A-Fa-f]+`\s*\|",
+    re.MULTILINE,
+)
+
 INLINE_LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK = re.compile(r"\b(?:href|src)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
@@ -66,7 +77,12 @@ def _anchors(markdown: str) -> set[str]:
     anchors: set[str] = set()
     occurrences: dict[str, int] = {}
     for match in HEADING.finditer(markdown):
-        base = _github_anchor(match.group(1))
+        heading = match.group(1)
+        explicit = re.search(r"\s+\{#([^}]+)\}\s*$", heading)
+        if explicit:
+            anchors.add(explicit.group(1))
+            continue
+        base = _github_anchor(heading)
         duplicate = occurrences.get(base, 0)
         occurrences[base] = duplicate + 1
         anchors.add(base if duplicate == 0 else f"{base}-{duplicate}")
@@ -144,6 +160,77 @@ def _required_match(files: Mapping[str, str], path: str, pattern: str) -> re.Mat
     return re.search(pattern, files.get(path, ""), re.MULTILINE)
 
 
+def _directshow_policy_names(text: str) -> set[str]:
+    """Extract the named layouts in a current DirectShow policy list."""
+
+    return set(DIRECTSHOW_POLICY_NAME.findall(text))
+
+
+def _policy_set_error(path: str, actual: set[str]) -> str | None:
+    if actual == CURRENT_DIRECTSHOW_POLICIES:
+        return None
+
+    missing = sorted(CURRENT_DIRECTSHOW_POLICIES - actual)
+    unexpected = sorted(actual - CURRENT_DIRECTSHOW_POLICIES)
+    details = []
+    if missing:
+        details.append(f"missing: {', '.join(missing)}")
+    if unexpected:
+        details.append(f"unexpected: {', '.join(unexpected)}")
+    return (
+        f"{path} fixed DirectShow policy names disagree with the current contract "
+        f"({'; '.join(details)})"
+    )
+
+
+def _known_limitations_policy_list(document: str) -> str | None:
+    return _delimited_policy_list(
+        document,
+        "The fixed DirectShow output contract covers exactly ",
+        "Automatic downstream layout discovery",
+    )
+
+
+def _delimited_policy_list(document: str, prefix: str, suffix: str) -> str | None:
+    normalized = " ".join(document.split())
+    start = normalized.find(prefix)
+    if start < 0:
+        return None
+    start += len(prefix)
+    end = normalized.find(suffix, start)
+    return normalized[start:end] if end >= 0 else None
+
+
+def _integration_policy_list(document: str) -> str | None:
+    return _delimited_policy_list(
+        document,
+        "The public DirectShow subset contains exactly ",
+        "Each policy makes one exact semantic",
+    )
+
+
+def _capability_policy_list(document: str, *, chinese: bool) -> str | None:
+    title = "Windows DirectShow / LAV Filters OpenJOC Audio Decoder"
+    for line in document.splitlines():
+        if not line.startswith("|") or title not in line:
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 4:
+            return None
+        evidence = cells[3]
+        if chinese:
+            match = re.search(
+                r"严格的原始/MP4 DirectShow 捕获，证明 (.*?) 的精确媒体类型与采样传递",
+                evidence,
+            )
+        else:
+            match = re.search(
+                r"sample delivery for (.*?); endpoint probes", evidence
+            )
+        return match.group(1) if match else None
+    return None
+
+
 def documentation_consistency_errors(files: Mapping[str, str]) -> list[str]:
     """Cross-check current docs against source and public package metadata."""
 
@@ -209,8 +296,87 @@ def documentation_consistency_errors(files: Mapping[str, str]) -> list[str]:
 
     readme = files.get("README.md", "")
     # The canonical policy table includes the separate two-channel Binaural policy.
-    lav_guide = files.get("docs/site/using/windows-lav-potplayer.md", "")
-    policy_count = len(re.findall(r"^\|[^|]+\|\s*\d+\s*\|\s*`0x[0-9A-Fa-f]+`\s*\|", lav_guide, re.MULTILINE))
+    canonical_lav_guides = (
+        "docs/site/using/windows-lav-potplayer.md",
+        "docs/site/using/windows-lav-potplayer.zh.md",
+    )
+    canonical_lav_rows: dict[str, list[str]] = {}
+    for path in canonical_lav_guides:
+        rows = LAV_POLICY_TABLE_ROW.findall(files.get(path, ""))
+        canonical_lav_rows[path] = rows
+        policy_names = [
+            name
+            for row in rows
+            for name in _directshow_policy_names(row)
+        ]
+        canonical_policy_error = _policy_set_error(path, set(policy_names))
+        if canonical_policy_error:
+            errors.append(canonical_policy_error)
+        elif len(policy_names) != len(CURRENT_DIRECTSHOW_POLICIES):
+            errors.append(f"{path} repeats a fixed DirectShow policy")
+
+    cli_hrtf_docs = (
+        "docs/site/project/capabilities.md",
+        "docs/site/project/capabilities.zh.md",
+        "docs/site/reference/cli-reference.md",
+        "docs/site/reference/cli-reference.zh.md",
+        "docs/site/using/binaural-sofa.md",
+        "docs/site/using/binaural-sofa.zh.md",
+    )
+    for path in cli_hrtf_docs:
+        document = files.get(path, "")
+        if "--binaural-hrtf" not in document or "sadie-ii-d2-kemar" not in document:
+            errors.append(f"{path} omits the D2/KEMAR CLI HRTF selector")
+    for path in (
+        "docs/site/reference/cli-reference.md",
+        "docs/site/reference/cli-reference.zh.md",
+    ):
+        document = files.get(path, "")
+        if (
+            "v0.18.0" not in document
+            or "SHA256SUMS" not in document
+            or "bin/openjoc --help" not in document
+            or "v0.17.0" in document
+            or "cargo run -p openjoc-cli --locked" in document
+        ):
+            errors.append(f"{path} does not record the current v0.18.0 CLI help audit")
+    for path in canonical_lav_guides:
+        if not re.search(r"SADIE II D2\s*/\s*KEMAR", files.get(path, "")):
+            errors.append(f"{path} omits the D2/KEMAR LAV HRTF selector")
+
+    current_policy_claims = {
+        "docs/KNOWN_LIMITATIONS.md": _known_limitations_policy_list(
+            files.get("docs/KNOWN_LIMITATIONS.md", "")
+        ),
+        "docs/site/project/capabilities.md": _capability_policy_list(
+            files.get("docs/site/project/capabilities.md", ""), chinese=False
+        ),
+        "docs/site/project/capabilities.zh.md": _capability_policy_list(
+            files.get("docs/site/project/capabilities.zh.md", ""), chinese=True
+        ),
+        "docs/site/compatibility/known-limitations.md": _delimited_policy_list(
+            files.get("docs/site/compatibility/known-limitations.md", ""),
+            "Its fixed 48 kHz IEEE-float PCM policies are ",
+            "Each makes one exact semantic",
+        ),
+        "docs/site/compatibility/known-limitations.zh.md": _delimited_policy_list(
+            files.get("docs/site/compatibility/known-limitations.zh.md", ""),
+            "它固定提供 48 kHz IEEE-float PCM 输出方案：",
+            "每种方案只提出",
+        ),
+        "docs/integration/LAV_FILTERS_OPENJOC.md": _integration_policy_list(
+            files.get("docs/integration/LAV_FILTERS_OPENJOC.md", "")
+        ),
+    }
+    for path, claim in current_policy_claims.items():
+        if claim is None:
+            errors.append(f"{path} does not expose a parseable fixed DirectShow policy list")
+            continue
+        policy_error = _policy_set_error(path, _directshow_policy_names(claim))
+        if policy_error:
+            errors.append(policy_error)
+
+    policy_count = len(canonical_lav_rows[canonical_lav_guides[0]])
     count_words = {"seven": 7, "eight": 8}
     for match in re.finditer(r"\b(\d+|seven|eight) fixed PCM policies\b", readme):
         value = match.group(1)
@@ -280,7 +446,7 @@ def documentation_consistency_errors(files: Mapping[str, str]) -> list[str]:
         if path in files:
             errors.append(f"retired stale document still exists: {path}")
 
-    directshow_layouts = ("Stereo", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4")
+    directshow_layouts = CURRENT_DIRECTSHOW_POLICIES
     for path in ("docs/KNOWN_LIMITATIONS.md", "docs/integration/LAV_FILTERS_OPENJOC.md"):
         document = files.get(path, "")
         normalized_document = " ".join(document.split())

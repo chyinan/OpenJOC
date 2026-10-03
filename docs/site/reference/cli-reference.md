@@ -1,20 +1,27 @@
 # CLI reference
 
-This page was audited against the v0.17.0 executable output from:
+This page was verified against the official OpenJOC v0.18.0 GNU/Linux x86_64
+release executable. The archive
+`openjoc-0.18.0-x86_64-unknown-linux-gnu.tar.gz` has SHA-256
+`a238d881b25b8b5723d1d1a257a64705165d2b9749cc95d98d7ae62fe26cf9d8`, matching
+the release's `SHA256SUMS`; `openjoc --version` reported `OpenJOC 0.18.0`. No
+local Cargo build was used for this audit. After extracting the bundle, these
+commands were run from its root:
 
 ```sh
-cargo run -p openjoc-cli --locked -- --help
-cargo run -p openjoc-cli --locked -- inspect --help
-cargo run -p openjoc-cli --locked -- render-joc --help
-cargo run -p openjoc-cli --locked -- export-adm --help
+bin/openjoc --help
+bin/openjoc inspect --help
+bin/openjoc render-joc --help
+bin/openjoc export-adm --help
 ```
 
-The CLI source in `crates/openjoc-cli/src/main.rs` remains the source of truth. Re-run those commands when command syntax changes.
+The CLI source in `crates/openjoc-cli/src/main.rs` remains the source of truth.
+When syntax changes, re-run these help commands with the current CLI executable.
 
 ## Commands
 
 ```text
-openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au N | --au-range START:END] [--trim-config-count N]
+openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]
 openjoc decode <FILE> -o <DIR> [--downmix <FILE> | --internal-base] [--streaming]
 openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--overwrite]
 openjoc validate-adm <FILE> [--json]
@@ -38,8 +45,8 @@ usage: openjoc inspect <FILE> [--json] [--aus] [--objects] [--emdf] [--verbose] 
 `inspect` reads raw EC-3 or a seekable ordinary MP4/M4A E-AC-3 track without writing audio. It reports the full stream census even when detail output is limited to selected access units.
 
 - `--json` writes one schema-versioned JSON document to stdout. The JSON contract is version 1.
-- `--aus` includes access-unit details. `--au N` is the short form for selecting one zero-based access unit.
-- `--au-range START:END` selects an inclusive zero-based access-unit range and also enables access-unit details. Selection does not reduce the full-stream census.
+- `--aus` includes access-unit details.
+- `--au-range START:END` selects an inclusive zero-based access-unit range and enables access-unit details. Selection does not reduce the full-stream census. The parser also accepts `--au N` as shorthand for `--au-range N:N`, although the v0.18.0 help synopsis lists only `--au-range`.
 - `--objects` includes per-OAMD-slot activity and position statistics.
 - `--emdf` expands human-readable EMDF configuration details. JSON always includes the EMDF census and configurations.
 - `--verbose` adds component configuration and bounded diagnostic explanations.
