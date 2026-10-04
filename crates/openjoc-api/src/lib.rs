@@ -30,9 +30,10 @@ use openjoc_oamd::{
     parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use openjoc_render::{
-    BinauralRenderer, BinauralSourceBlock, CartesianPosition, FINAL_LINKED_GAIN_BLOCK_SAMPLES,
-    FinalLinkedGain, FinalLinkedGainError, HrirBank, HrirEntry, HrirEntryId, SourceId,
-    StaticBinauralSource,
+    BinauralRenderer, BinauralSourceBlock, CartesianPosition,
+    DEFAULT_DYNAMIC_BINAURAL_TRANSITION_SAMPLES, DynamicBinauralRenderer, DynamicBinauralSource,
+    FINAL_LINKED_GAIN_BLOCK_SAMPLES, FinalLinkedGain, FinalLinkedGainError, HrirBank, HrirEntry,
+    HrirEntryId, MAX_DYNAMIC_BINAURAL_BLOCK_SAMPLES, SourceId, StaticBinauralSource,
 };
 use openjoc_scene::{
     BaseFullBandCoordinate, BindingCodecProfile, BridgeControlAssembler, DecodedPayloadFrame,
@@ -50,6 +51,16 @@ use std::{collections::VecDeque, fmt, fmt::Write as _, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{sync::OnceLock, time::Instant};
 
+pub mod listener_orientation;
+pub use listener_orientation::{
+    ListenerOrientation, ListenerOrientationError, ListenerOrientationPrepareError,
+    ListenerOrientationPreparer, MAX_DYNAMIC_HRIR_TAPS,
+};
+pub use openjoc_render::{
+    AppliedBinauralUpdate, BinauralResourceIdentity, BinauralUpdateAcceptance,
+    BinauralUpdateApplyFailure, PreparedBinauralKernel, PreparedBinauralUpdate, RenderError,
+};
+
 /// The first public C ABI is intentionally experimental. This is separate
 /// from the Rust package version and may evolve during the OpenJOC 0.x series.
 pub const API_MATURITY: &str = "experimental";
@@ -59,6 +70,10 @@ pub const QMF_LATENCY_SAMPLES: usize = ReconstructionOutputTimeline::qmf_latency
 pub const FINAL_LINKED_GAIN_LATENCY_SAMPLES: usize = FINAL_LINKED_GAIN_BLOCK_SAMPLES;
 /// The canonical v1 PCM sample format.
 pub const PCM_SAMPLE_FORMAT: PcmSampleFormat = PcmSampleFormat::F32;
+/// Maximum number of samples returned by one experimental listener-orientation
+/// pull call. Smaller caller-selected limits are supported.
+pub const MAX_LISTENER_ORIENTATION_PULL_SAMPLES: usize = 256;
+const MAX_DEFERRED_PULL_AU_SAMPLES: usize = 1536;
 
 /// Public rendering choice. Binaural is static SOFA virtualization of the
 /// selected virtual speaker layout; it does not claim direct-object fidelity.
@@ -746,6 +761,10 @@ pub struct OpenJocSession {
     speaker: SpeakerRenderer,
     binaural: Option<BinauralState>,
     output_queue: VecDeque<OpenJocPcmFrame>,
+    pending_binaural_inputs: VecDeque<RenderedBlock>,
+    current_binaural_input: Option<(RenderedBlock, usize)>,
+    pending_binaural_input_samples: usize,
+    binaural_pull_samples: Option<usize>,
     selected_profile: Option<JocValidationProfile>,
     core_stream_type: Option<StreamType>,
     legacy_core_configuration: Option<LegacyCoreConfiguration>,
@@ -760,6 +779,7 @@ pub struct OpenJocSession {
     stage_timing_enabled: bool,
     last_stage_timing: OpenJocStageTiming,
     drained: bool,
+    terminal_error: Option<String>,
 }
 
 impl OpenJocSession {
@@ -767,6 +787,78 @@ impl OpenJocSession {
     /// touched; separate sessions can run concurrently on separate threads.
     pub fn new(config: OpenJocConfig) -> Result<Self, OpenJocError> {
         Self::new_with_builtin_hrtf_asset(config, None)
+    }
+
+    /// Creates an explicitly opted-in binaural session with device-independent
+    /// listener-orientation preparation and bounded dynamic FIR updates.
+    ///
+    /// The default [`Self::new`] path remains static. This session expects the
+    /// host to prepare poses away from rendering and submit them between calls.
+    pub fn new_with_listener_orientation(config: OpenJocConfig) -> Result<Self, OpenJocError> {
+        Self::new_with_session_options(config, None, None, true, None, 0, None)
+    }
+
+    /// Creates an opt-in orientation session that exposes projected virtual-speaker
+    /// PCM through bounded pull-sized binaural output blocks.
+    ///
+    /// The session retains at most one decoded access unit of pre-binaural PCM;
+    /// `receive_binaural_frame` renders no more than `max_pull_samples` per call.
+    /// This makes pose updates eligible between those pulls without changing the
+    /// virtual-speaker projection, gain policy, or FIR kernels. It is an experimental
+    /// scheduling interface, not a sensor-to-sound latency guarantee.
+    pub fn new_with_listener_orientation_pull(
+        config: OpenJocConfig,
+        max_pull_samples: usize,
+    ) -> Result<Self, OpenJocError> {
+        Self::new_with_listener_orientation_pull_at_epoch(config, max_pull_samples, 0)
+    }
+
+    /// Creates an orientation pull session at a caller-maintained stream epoch.
+    /// This supports adapters that lazily discard and recreate their session
+    /// while continuing to reject pose updates prepared before a reset.
+    pub fn new_with_listener_orientation_pull_at_epoch(
+        config: OpenJocConfig,
+        max_pull_samples: usize,
+        stream_epoch: u64,
+    ) -> Result<Self, OpenJocError> {
+        if max_pull_samples == 0 || max_pull_samples > MAX_LISTENER_ORIENTATION_PULL_SAMPLES {
+            return Err(OpenJocError::InvalidConfig(format!(
+                "binaural pull block must be in 1..={MAX_LISTENER_ORIENTATION_PULL_SAMPLES} samples"
+            )));
+        }
+        Self::new_with_session_options(
+            config,
+            None,
+            None,
+            true,
+            Some(max_pull_samples),
+            stream_epoch,
+            None,
+        )
+    }
+
+    /// Pull-session constructor that reuses an immutable preparer captured by
+    /// an adapter or worker. Resource identity is validated before sharing.
+    pub fn new_with_listener_orientation_pull_using_preparer(
+        config: OpenJocConfig,
+        max_pull_samples: usize,
+        stream_epoch: u64,
+        preparer: ListenerOrientationPreparer,
+    ) -> Result<Self, OpenJocError> {
+        if max_pull_samples == 0 || max_pull_samples > MAX_LISTENER_ORIENTATION_PULL_SAMPLES {
+            return Err(OpenJocError::InvalidConfig(format!(
+                "binaural pull block must be in 1..={MAX_LISTENER_ORIENTATION_PULL_SAMPLES} samples"
+            )));
+        }
+        Self::new_with_session_options(
+            config,
+            None,
+            None,
+            true,
+            Some(max_pull_samples),
+            stream_epoch,
+            Some(preparer),
+        )
     }
 
     /// Creates a session from a borrowed, external built-in HRTF asset.
@@ -781,22 +873,36 @@ impl OpenJocSession {
         config: OpenJocConfig,
         sofa_load_limits: SofaLoadLimits,
     ) -> Result<Self, OpenJocError> {
-        Self::new_with_session_options(config, None, Some(sofa_load_limits))
+        Self::new_with_session_options(config, None, Some(sofa_load_limits), false, None, 0, None)
     }
 
     fn new_with_builtin_hrtf_asset(
         config: OpenJocConfig,
         external_asset: Option<&[u8]>,
     ) -> Result<Self, OpenJocError> {
-        Self::new_with_session_options(config, external_asset, None)
+        Self::new_with_session_options(config, external_asset, None, false, None, 0, None)
     }
 
     fn new_with_session_options(
         config: OpenJocConfig,
         external_asset: Option<&[u8]>,
         custom_sofa_load_limits: Option<SofaLoadLimits>,
+        listener_orientation_enabled: bool,
+        binaural_pull_samples: Option<usize>,
+        initial_stream_epoch: u64,
+        orientation_preparer: Option<ListenerOrientationPreparer>,
     ) -> Result<Self, OpenJocError> {
         config.validate()?;
+        if listener_orientation_enabled && config.render_mode != RenderMode::Binaural {
+            return Err(OpenJocError::InvalidConfig(
+                "listener orientation is only valid for binaural rendering".to_owned(),
+            ));
+        }
+        if binaural_pull_samples.is_some() && !listener_orientation_enabled {
+            return Err(OpenJocError::InvalidConfig(
+                "binaural pull rendering requires listener-orientation support".to_owned(),
+            ));
+        }
         let speaker_layout = config.effective_speaker_layout()?;
         let speaker = SpeakerRenderer::new_with_linked_gain(
             speaker_layout,
@@ -807,7 +913,19 @@ impl OpenJocSession {
         let binaural = config
             .binaural
             .as_ref()
-            .map(|binaural| BinauralState::new(binaural, external_asset, custom_sofa_load_limits))
+            .map(|binaural| {
+                if listener_orientation_enabled {
+                    BinauralState::new_with_listener_orientation_at_epoch(
+                        binaural,
+                        external_asset,
+                        custom_sofa_load_limits,
+                        initial_stream_epoch,
+                        orientation_preparer,
+                    )
+                } else {
+                    BinauralState::new(binaural, external_asset, custom_sofa_load_limits)
+                }
+            })
             .transpose()?;
         let mut audio_decoder = JocAccessUnitPcmDecoder::new();
         audio_decoder.set_dialnorm_mode(config.dialnorm);
@@ -817,6 +935,10 @@ impl OpenJocSession {
             speaker,
             binaural,
             output_queue: VecDeque::new(),
+            pending_binaural_inputs: VecDeque::new(),
+            current_binaural_input: None,
+            pending_binaural_input_samples: 0,
+            binaural_pull_samples,
             selected_profile: None,
             core_stream_type: None,
             legacy_core_configuration: None,
@@ -831,6 +953,7 @@ impl OpenJocSession {
             stage_timing_enabled: false,
             last_stage_timing: OpenJocStageTiming::default(),
             drained: false,
+            terminal_error: None,
             config,
         })
     }
@@ -864,6 +987,110 @@ impl OpenJocSession {
         }
     }
 
+    /// Returns the effective session descriptor, including the opt-in dynamic
+    /// orientation contract when this session was explicitly enabled.
+    #[must_use]
+    pub fn effective_config_descriptor(&self) -> String {
+        let mut descriptor = self.config.effective_config_descriptor();
+        if self
+            .binaural
+            .as_ref()
+            .is_some_and(BinauralState::listener_orientation_enabled)
+        {
+            let transition_samples = DEFAULT_DYNAMIC_BINAURAL_TRANSITION_SAMPLES;
+            let max_hrir_taps = MAX_DYNAMIC_HRIR_TAPS;
+            let max_block_samples = MAX_DYNAMIC_BINAURAL_BLOCK_SAMPLES;
+            let _ = write!(
+                descriptor,
+                "\nlistener_orientation=enabled\nlistener_orientation_transition_samples={transition_samples}\nlistener_orientation_max_hrir_taps={max_hrir_taps}\nlistener_orientation_max_block_samples={max_block_samples}",
+            );
+            if let Some(pull_samples) = self.binaural_pull_samples {
+                let _ = write!(
+                    descriptor,
+                    "\nlistener_orientation_pull=enabled\nlistener_orientation_pull_max_samples={pull_samples}"
+                );
+            }
+        }
+        descriptor
+    }
+
+    /// Returns a deterministic fingerprint of this session's effective
+    /// configuration, including orientation support only when opted in.
+    #[must_use]
+    pub fn effective_config_fingerprint(&self) -> String {
+        sha256_hex(self.effective_config_descriptor().as_bytes())
+    }
+
+    /// Returns a cloneable immutable preparation context when orientation was enabled.
+    #[must_use]
+    pub fn listener_orientation_preparer(&self) -> Option<ListenerOrientationPreparer> {
+        self.binaural
+            .as_ref()
+            .and_then(BinauralState::listener_orientation_preparer)
+    }
+
+    /// Returns the current stream epoch for updates prepared on a worker thread.
+    #[must_use]
+    pub fn listener_orientation_stream_epoch(&self) -> Option<u64> {
+        self.binaural
+            .as_ref()
+            .and_then(BinauralState::listener_orientation_stream_epoch)
+    }
+
+    /// Queues a complete prepared pose for the next not-yet-rendered binaural block.
+    ///
+    /// On validation failure, the returned error retains the caller's original
+    /// update. Successful receipts may also contain retired kernel buffers;
+    /// release those away from any audio callback.
+    pub fn apply_prepared_listener_orientation(
+        &mut self,
+        update: PreparedBinauralUpdate,
+    ) -> Result<BinauralUpdateAcceptance, BinauralUpdateApplyFailure> {
+        if self.terminal_error.is_some() {
+            return Err(BinauralUpdateApplyFailure {
+                error: openjoc_render::RenderError::BinauralRequiresReset,
+                update,
+            });
+        }
+        if self.drained {
+            return Err(BinauralUpdateApplyFailure {
+                error: openjoc_render::RenderError::BinauralInputAfterTailStart,
+                update,
+            });
+        }
+        match self.binaural.as_mut() {
+            Some(state) => state.apply_prepared_listener_orientation(update),
+            None => Err(BinauralUpdateApplyFailure {
+                error: openjoc_render::RenderError::BinauralOrientationNotEnabled,
+                update,
+            }),
+        }
+    }
+
+    /// Returns the most recently applied pose and its actual rendered sample boundary.
+    #[must_use]
+    pub fn last_applied_listener_orientation(&self) -> Option<AppliedBinauralUpdate> {
+        self.binaural
+            .as_ref()
+            .and_then(BinauralState::last_applied_listener_orientation)
+    }
+
+    /// Returns a target sequence that has not started affecting rendered PCM.
+    #[must_use]
+    pub fn pending_listener_orientation_sequence(&self) -> Option<u64> {
+        self.binaural
+            .as_ref()
+            .and_then(BinauralState::pending_listener_orientation_sequence)
+    }
+
+    /// Returns the number of projected virtual-speaker input samples still
+    /// waiting for pull-side binauralization. `None` means pull mode is disabled.
+    #[must_use]
+    pub fn pending_binaural_input_samples(&self) -> Option<usize> {
+        self.binaural_pull_samples
+            .map(|_| self.pending_binaural_input_samples)
+    }
+
     /// Returns the bounded profile/topology facts observed in decoded metadata.
     #[must_use]
     pub fn diagnostics(&self) -> OpenJocDiagnostics {
@@ -893,10 +1120,13 @@ impl OpenJocSession {
         packet: OpenJocPacket<'_>,
     ) -> Result<OpenJocStatus, OpenJocError> {
         let total_start = self.stage_timing_enabled.then(clock_now_ms);
+        if let Some(message) = &self.terminal_error {
+            return Err(OpenJocError::Render(message.clone()));
+        }
         if self.drained {
             return Err(OpenJocError::AlreadyDrained);
         }
-        if !self.output_queue.is_empty() {
+        if self.has_pending_output() {
             return Ok(OpenJocStatus::OutputPending);
         }
         if packet.data.is_empty() {
@@ -909,7 +1139,10 @@ impl OpenJocSession {
             )));
         }
         if packet.discontinuity {
-            self.reset_stream_state();
+            if let Err(error) = self.reset_stream_state() {
+                self.fail_closed(&error);
+                return Err(error);
+            }
         }
         self.check_timestamp(packet.pts_samples)?;
         let frames = index_syncframes(packet.data)?;
@@ -1063,65 +1296,207 @@ impl OpenJocSession {
         // adapters. It is decoded normally in this first ABI because the
         // decoder cannot discard a delayed frame without a caller policy.
         let _ = packet.preroll;
-        Ok(if self.output_queue.is_empty() {
-            OpenJocStatus::NeedMoreInput
-        } else {
+        Ok(if self.has_pending_output() {
             OpenJocStatus::FrameAvailable
+        } else {
+            OpenJocStatus::NeedMoreInput
         })
     }
 
     /// Receives one owned PCM frame. The queue is bounded to frames produced
     /// by one send/drain operation; callers should receive before pushing.
+    /// Returns `None` in pull-binaural sessions; use
+    /// [`Self::receive_binaural_frame`] there.
     pub fn receive_frame(&mut self) -> Option<OpenJocPcmFrame> {
+        if self.binaural_pull_samples.is_some() {
+            return None;
+        }
         self.output_queue.pop_front()
+    }
+
+    /// Renders and receives at most the configured pull size from a binaural
+    /// orientation session. A returned frame is one chunk of the current AU;
+    /// apply pose updates between calls to change the next not-yet-rendered chunk.
+    /// Reconstruction and FIR tails are also exposed incrementally after `drain`.
+    pub fn receive_binaural_frame(&mut self) -> Result<Option<OpenJocPcmFrame>, OpenJocError> {
+        if let Some(message) = &self.terminal_error {
+            return Err(OpenJocError::Render(message.clone()));
+        }
+        let Some(max_pull_samples) = self.binaural_pull_samples else {
+            return Err(OpenJocError::InvalidConfig(
+                "bounded binaural pull is not enabled for this session".to_owned(),
+            ));
+        };
+        if let Some((frame, offset)) = self.current_binaural_input.take().or_else(|| {
+            self.pending_binaural_inputs
+                .pop_front()
+                .map(|frame| (frame, 0))
+        }) {
+            let count = max_pull_samples.min(frame.sample_count.saturating_sub(offset));
+            if count == 0 {
+                self.fail_closed(&OpenJocError::Render(
+                    "empty deferred binaural input block".to_owned(),
+                ));
+                return Err(OpenJocError::Render(
+                    "empty deferred binaural input block".to_owned(),
+                ));
+            }
+            let binaural = self.binaural.as_mut().ok_or_else(|| {
+                OpenJocError::Render("binaural session state is unavailable".to_owned())
+            })?;
+            let rendered = match binaural.render_range(&frame, offset, count) {
+                Ok(rendered) => rendered,
+                Err(error) => {
+                    self.fail_closed(&error);
+                    return Err(error);
+                }
+            };
+            let result = self.to_pcm_frame(&rendered);
+            let pcm = match result {
+                Ok(pcm) => pcm,
+                Err(error) => {
+                    self.fail_closed(&error);
+                    return Err(error);
+                }
+            };
+            if offset + count < frame.sample_count {
+                self.current_binaural_input = Some((frame, offset + count));
+            }
+            self.pending_binaural_input_samples =
+                self.pending_binaural_input_samples.saturating_sub(count);
+            return Ok(Some(pcm));
+        }
+        if self.drained {
+            let start = self.last_output_end;
+            let tail = self
+                .binaural
+                .as_mut()
+                .ok_or_else(|| {
+                    OpenJocError::Render("binaural session state is unavailable".to_owned())
+                })?
+                .drain_tail_chunk(max_pull_samples, start);
+            match tail {
+                Ok(Some(frame)) => {
+                    self.last_output_end = self.last_output_end.max(
+                        frame
+                            .logical_start_sample
+                            .saturating_add(frame.sample_count as u64),
+                    );
+                    return match self.to_pcm_frame(&frame) {
+                        Ok(pcm) => Ok(Some(pcm)),
+                        Err(error) => {
+                            self.fail_closed(&error);
+                            Err(error)
+                        }
+                    };
+                }
+                Ok(None) => return Ok(None),
+                Err(error) => {
+                    self.fail_closed(&error);
+                    return Err(error);
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Whether `drain` has completed and no further frame can be received.
     #[must_use]
     pub fn is_drained(&self) -> bool {
-        self.drained && self.output_queue.is_empty()
+        self.drained
+            && (self.terminal_error.is_some()
+                || (self.output_queue.is_empty()
+                    && self.pending_binaural_inputs.is_empty()
+                    && self.current_binaural_input.is_none()
+                    && (self.binaural_pull_samples.is_none()
+                        || self
+                            .binaural
+                            .as_ref()
+                            .is_none_or(BinauralState::has_no_tail))))
     }
 
     /// Flushes delayed QMF/reconstruction and SOFA FIR tail output.
     pub fn drain(&mut self) -> Result<OpenJocStatus, OpenJocError> {
-        if self.drained {
-            return Ok(OpenJocStatus::EndOfStream);
+        if let Some(message) = &self.terminal_error {
+            return Err(OpenJocError::Render(message.clone()));
         }
-        if !self.output_queue.is_empty() {
+        if self.has_pending_output() {
             return Ok(OpenJocStatus::OutputPending);
         }
-        if self.sample_rate.is_none() {
-            self.drained = true;
+        if self.drained {
+            if self.has_unrendered_pull_tail() {
+                return Ok(OpenJocStatus::FrameAvailable);
+            }
             return Ok(OpenJocStatus::EndOfStream);
         }
-        let payload =
-            std::mem::replace(&mut self.payload_decoder, new_payload_decoder(&self.config));
-        let (_, reconstruction_tail) = payload.finish_streaming_with_reconstruction_tail()?;
-        let rendered = self
-            .speaker
-            .finish_with_reconstruction_tail(&reconstruction_tail)?;
-        self.emit_rendered(rendered)?;
-        if let Some(binaural) = self.binaural.as_mut() {
-            let mut tail_start = self.last_output_end;
-            for frame in binaural.drain_tail(self.sample_rate.unwrap_or(0), tail_start)? {
-                tail_start = tail_start.saturating_add(frame.sample_count as u64);
-                self.output_queue.push_back(self.to_pcm_frame(&frame)?);
+        self.drained = true;
+        let result = (|| {
+            if self.sample_rate.is_none() {
+                if let Some(binaural) = self.binaural.as_mut() {
+                    binaural.begin_drain()?;
+                }
+                return Ok(OpenJocStatus::EndOfStream);
+            }
+            if let Some(binaural) = self.binaural.as_mut() {
+                binaural.begin_drain()?;
+            }
+            let payload =
+                std::mem::replace(&mut self.payload_decoder, new_payload_decoder(&self.config));
+            let (_, reconstruction_tail) = payload.finish_streaming_with_reconstruction_tail()?;
+            let rendered = self
+                .speaker
+                .finish_with_reconstruction_tail(&reconstruction_tail)?;
+            self.emit_rendered(rendered)?;
+            if self.binaural_pull_samples.is_none() {
+                if let Some(binaural) = self.binaural.as_mut() {
+                    let mut tail_start = self.last_output_end;
+                    for frame in binaural.drain_tail(self.sample_rate.unwrap_or(0), tail_start)? {
+                        tail_start = tail_start.saturating_add(frame.sample_count as u64);
+                        self.output_queue.push_back(self.to_pcm_frame(&frame)?);
+                    }
+                }
+            }
+            Ok(
+                if !self.has_pending_output() && !self.has_unrendered_pull_tail() {
+                    OpenJocStatus::EndOfStream
+                } else {
+                    OpenJocStatus::FrameAvailable
+                },
+            )
+        })();
+        match result {
+            Ok(status) => Ok(status),
+            Err(error) => {
+                self.fail_closed(&error);
+                Err(error)
             }
         }
-        self.drained = true;
-        Ok(if self.output_queue.is_empty() {
-            OpenJocStatus::EndOfStream
-        } else {
-            OpenJocStatus::FrameAvailable
-        })
     }
 
     /// Discards pending output and all stream-derived decoder state while
     /// retaining the immutable configuration.
     pub fn flush(&mut self) {
-        self.reset_stream_state();
+        let _ = self.try_flush();
+    }
+
+    /// Fallible form of [`Self::flush`] that reports a fail-closed orientation
+    /// epoch overflow or other reset error.
+    pub fn try_flush(&mut self) -> Result<(), OpenJocError> {
         self.output_queue.clear();
-        self.drained = false;
+        self.pending_binaural_inputs.clear();
+        self.current_binaural_input = None;
+        self.pending_binaural_input_samples = 0;
+        match self.reset_stream_state() {
+            Ok(()) => {
+                self.drained = false;
+                self.terminal_error = None;
+                Ok(())
+            }
+            Err(error) => {
+                self.fail_closed(&error);
+                Err(error)
+            }
+        }
     }
 
     /// Resets state for a new timeline/seek. Configuration and SOFA data stay
@@ -1130,13 +1505,18 @@ impl OpenJocSession {
         self.flush();
     }
 
-    fn reset_stream_state(&mut self) {
+    /// Fallible form of [`Self::reset`].
+    pub fn try_reset(&mut self) -> Result<(), OpenJocError> {
+        self.try_flush()
+    }
+
+    fn reset_stream_state(&mut self) -> Result<(), OpenJocError> {
         self.audio_decoder.reset();
         self.audio_decoder.set_dialnorm_mode(self.config.dialnorm);
         self.payload_decoder = new_payload_decoder(&self.config);
         self.speaker.reset();
         if let Some(binaural) = self.binaural.as_mut() {
-            binaural.reset();
+            binaural.reset()?;
         }
         self.selected_profile = None;
         self.core_stream_type = None;
@@ -1148,6 +1528,16 @@ impl OpenJocSession {
         self.downmix_index = None;
         self.object_count = None;
         self.complexity_index = None;
+        Ok(())
+    }
+
+    fn fail_closed(&mut self, error: &OpenJocError) {
+        self.output_queue.clear();
+        self.pending_binaural_inputs.clear();
+        self.current_binaural_input = None;
+        self.pending_binaural_input_samples = 0;
+        self.drained = true;
+        self.terminal_error = Some(error.to_string());
     }
 
     fn check_timestamp(&mut self, pts: Option<i64>) -> Result<(), OpenJocError> {
@@ -1236,7 +1626,42 @@ impl OpenJocSession {
         }
     }
 
-    fn emit_rendered(&mut self, rendered: Vec<RenderedBlock>) -> Result<(), OpenJocError> {
+    fn emit_rendered(&mut self, mut rendered: Vec<RenderedBlock>) -> Result<(), OpenJocError> {
+        if self.binaural_pull_samples.is_some() {
+            // Push may enqueue only one access unit. Drain runs only after that
+            // AU has been pulled, and may then enqueue at most one delayed
+            // speaker-frame reconstruction tail. Validate the complete batch
+            // before moving any block into the persistent queue.
+            rendered.retain(|block| block.sample_count > 0);
+            let maximum = MAX_DEFERRED_PULL_AU_SAMPLES;
+            let mut batch_samples = 0_usize;
+            for block in &rendered {
+                let Some(next_samples) = batch_samples.checked_add(block.sample_count) else {
+                    let error =
+                        OpenJocError::Render("deferred binaural input size overflow".to_owned());
+                    self.fail_closed(&error);
+                    return Err(error);
+                };
+                batch_samples = next_samples;
+            }
+            if batch_samples > maximum || self.pending_binaural_input_samples != 0 {
+                let error = OpenJocError::Render(format!(
+                    "deferred binaural batch ({batch_samples} samples) exceeds the separate one-AU / one-delayed-frame {maximum}-sample bound or overlaps pending input"
+                ));
+                self.fail_closed(&error);
+                return Err(error);
+            }
+            self.pending_binaural_input_samples = batch_samples;
+            for block in rendered {
+                self.last_output_end = self.last_output_end.max(
+                    block
+                        .logical_start_sample
+                        .saturating_add(block.sample_count as u64),
+                );
+                self.pending_binaural_inputs.push_back(block);
+            }
+            return Ok(());
+        }
         for block in rendered {
             let frame = if let Some(binaural) = self.binaural.as_mut() {
                 binaural.render(&block)?
@@ -1251,6 +1676,21 @@ impl OpenJocSession {
             self.output_queue.push_back(self.to_pcm_frame(&frame)?);
         }
         Ok(())
+    }
+
+    fn has_pending_output(&self) -> bool {
+        !self.output_queue.is_empty()
+            || !self.pending_binaural_inputs.is_empty()
+            || self.current_binaural_input.is_some()
+    }
+
+    fn has_unrendered_pull_tail(&self) -> bool {
+        self.binaural_pull_samples.is_some()
+            && self.drained
+            && self
+                .binaural
+                .as_ref()
+                .is_some_and(|state| !state.has_no_tail())
     }
 
     fn to_pcm_frame(&self, frame: &RenderedBlock) -> Result<OpenJocPcmFrame, OpenJocError> {
@@ -2003,6 +2443,10 @@ struct BinauralState {
     lfe_policy: BinauralLfePolicy,
     lfe_delay: openjoc_render::SampleDelay,
     engine: Option<BinauralRenderer>,
+    orientation_preparer: Option<ListenerOrientationPreparer>,
+    dynamic_engine: Option<DynamicBinauralRenderer>,
+    last_orientation_receipt: Option<AppliedBinauralUpdate>,
+    drain_started: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2057,7 +2501,129 @@ impl BinauralState {
             lfe_policy: config.lfe_policy,
             lfe_delay: openjoc_render::SampleDelay::new(lfe_delay_samples),
             engine: None,
+            orientation_preparer: None,
+            dynamic_engine: None,
+            last_orientation_receipt: None,
+            drain_started: false,
         })
+    }
+
+    #[cfg(test)]
+    fn new_with_listener_orientation(
+        config: &BinauralConfig,
+        external_asset: Option<&[u8]>,
+        custom_sofa_load_limits: Option<SofaLoadLimits>,
+    ) -> Result<Self, OpenJocError> {
+        Self::new_with_listener_orientation_at_epoch(
+            config,
+            external_asset,
+            custom_sofa_load_limits,
+            0,
+            None,
+        )
+    }
+
+    fn new_with_listener_orientation_at_epoch(
+        config: &BinauralConfig,
+        external_asset: Option<&[u8]>,
+        custom_sofa_load_limits: Option<SofaLoadLimits>,
+        initial_stream_epoch: u64,
+        shared_preparer: Option<ListenerOrientationPreparer>,
+    ) -> Result<Self, OpenJocError> {
+        let preparer = if let Some(preparer) = shared_preparer {
+            preparer.validate_config(config)?;
+            preparer
+        } else {
+            ListenerOrientationPreparer::new_with_resource_inputs(
+                config,
+                external_asset,
+                custom_sofa_load_limits,
+            )?
+        };
+        let sample_rate_hz = BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ;
+        let (lfe_index, lfe_delay_samples) = preparer.lfe_info();
+        let initial = preparer
+            .prepare(ListenerOrientation::IDENTITY, initial_stream_epoch, 0)
+            .map_err(|error| OpenJocError::Render(error.to_string()))?;
+        let dynamic_sources = initial
+            .kernels()
+            .iter()
+            .map(|kernel| DynamicBinauralSource::new(kernel.source_id(), 1.0))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mappings = preparer
+            .source_bindings()
+            .map(|(channel_index, source_id)| BinauralMapping {
+                channel_index,
+                source_id,
+                hrir_entry: HrirEntryId::new(source_id.get()),
+            })
+            .collect::<Vec<_>>();
+        let dynamic_engine = DynamicBinauralRenderer::new(
+            sample_rate_hz,
+            initial,
+            dynamic_sources,
+            preparer.max_filter_taps(),
+            MAX_DYNAMIC_BINAURAL_BLOCK_SAMPLES,
+            DEFAULT_DYNAMIC_BINAURAL_TRANSITION_SAMPLES,
+        )?;
+        Ok(Self {
+            bank: None,
+            sample_rate_hz,
+            mappings,
+            lfe_index,
+            lfe_policy: config.lfe_policy,
+            lfe_delay: openjoc_render::SampleDelay::new(lfe_delay_samples),
+            engine: None,
+            orientation_preparer: Some(preparer),
+            dynamic_engine: Some(dynamic_engine),
+            last_orientation_receipt: None,
+            drain_started: false,
+        })
+    }
+
+    fn listener_orientation_enabled(&self) -> bool {
+        self.dynamic_engine.is_some()
+    }
+
+    fn listener_orientation_preparer(&self) -> Option<ListenerOrientationPreparer> {
+        self.orientation_preparer.clone()
+    }
+
+    fn listener_orientation_stream_epoch(&self) -> Option<u64> {
+        self.dynamic_engine
+            .as_ref()
+            .map(DynamicBinauralRenderer::stream_epoch)
+    }
+
+    fn apply_prepared_listener_orientation(
+        &mut self,
+        update: PreparedBinauralUpdate,
+    ) -> Result<BinauralUpdateAcceptance, BinauralUpdateApplyFailure> {
+        match self.dynamic_engine.as_mut() {
+            Some(engine) => engine.apply_prepared(update),
+            None => Err(BinauralUpdateApplyFailure {
+                error: openjoc_render::RenderError::BinauralOrientationNotEnabled,
+                update,
+            }),
+        }
+    }
+
+    fn last_applied_listener_orientation(&self) -> Option<AppliedBinauralUpdate> {
+        self.last_orientation_receipt
+    }
+
+    fn pending_listener_orientation_sequence(&self) -> Option<u64> {
+        self.dynamic_engine
+            .as_ref()
+            .and_then(DynamicBinauralRenderer::pending_sequence)
+    }
+
+    fn begin_drain(&mut self) -> Result<(), OpenJocError> {
+        if let Some(engine) = self.dynamic_engine.as_mut() {
+            engine.begin_drain()?;
+        }
+        self.drain_started = true;
+        Ok(())
     }
 
     fn ensure_engine(&mut self, sample_rate: u32) -> Result<&mut BinauralRenderer, OpenJocError> {
@@ -2104,9 +2670,32 @@ impl BinauralState {
     }
 
     fn render(&mut self, frame: &RenderedBlock) -> Result<RenderedBlock, OpenJocError> {
-        let sample_count = frame.sample_count;
+        self.render_range(frame, 0, frame.sample_count)
+    }
+
+    fn render_range(
+        &mut self,
+        frame: &RenderedBlock,
+        sample_offset: usize,
+        sample_count: usize,
+    ) -> Result<RenderedBlock, OpenJocError> {
         let sample_rate = frame.sample_rate;
-        self.ensure_engine(sample_rate)?;
+        if sample_rate != self.sample_rate_hz {
+            return Err(OpenJocError::FormatChanged {
+                expected: self.sample_rate_hz,
+                actual: sample_rate,
+            });
+        }
+        let range_end = sample_offset
+            .checked_add(sample_count)
+            .filter(|&end| end <= frame.sample_count)
+            .ok_or_else(|| {
+                OpenJocError::Render("binaural input slice is out of range".to_owned())
+            })?;
+        let logical_start_sample = frame
+            .logical_start_sample
+            .checked_add(sample_offset as u64)
+            .ok_or_else(|| OpenJocError::Render("binaural sample index overflow".to_owned()))?;
         // Only these borrowed descriptors are temporary. Output PCM remains owned
         // by the caller; keep the FIR computation and its accumulation order intact.
         let mut storage =
@@ -2115,19 +2704,69 @@ impl BinauralState {
             OpenJocError::Render("binaural source count exceeds the layout limit".to_owned())
         })?;
         for (block, mapping) in blocks.iter_mut().zip(&self.mappings) {
-            *block =
-                BinauralSourceBlock::new(mapping.source_id, &frame.channels[mapping.channel_index]);
+            let channel = frame
+                .channels
+                .get(mapping.channel_index)
+                .and_then(|samples| samples.get(sample_offset..range_end))
+                .ok_or_else(|| {
+                    OpenJocError::Render("binaural input channel is out of range".to_owned())
+                })?;
+            *block = BinauralSourceBlock::new(mapping.source_id, channel);
         }
-        let engine = self
-            .engine
-            .as_mut()
-            .ok_or_else(|| OpenJocError::Render("binaural engine not initialized".to_owned()))?;
         let mut left = vec![0.0; sample_count];
         let mut right = vec![0.0; sample_count];
-        engine.render_block(blocks, &mut left, &mut right)?;
+        let applied_receipt = if let Some(engine) = self.dynamic_engine.as_mut() {
+            let before = engine.last_applied_update();
+            let logical_count_before = engine.logical_sample_count();
+            if self.drain_started {
+                engine.render_reconstruction_tail_block(blocks, &mut left, &mut right)?;
+            } else {
+                engine.render_block(blocks, &mut left, &mut right)?;
+            }
+            let after = engine.last_applied_update();
+            if after == before {
+                None
+            } else {
+                after
+                    .map(|receipt| {
+                        let relative_start = receipt
+                            .logical_start_sample
+                            .checked_sub(logical_count_before)
+                            .ok_or_else(|| {
+                                OpenJocError::Render(
+                                    "listener-orientation sample receipt moved backwards"
+                                        .to_owned(),
+                                )
+                            })?;
+                        let actual_start = logical_start_sample
+                            .checked_add(relative_start)
+                            .ok_or_else(|| {
+                                OpenJocError::Render(
+                                    "listener-orientation sample receipt overflow".to_owned(),
+                                )
+                            })?;
+                        Ok::<AppliedBinauralUpdate, OpenJocError>(AppliedBinauralUpdate {
+                            sequence: receipt.sequence,
+                            logical_start_sample: actual_start,
+                        })
+                    })
+                    .transpose()?
+            }
+        } else {
+            self.ensure_engine(sample_rate)?
+                .render_block(blocks, &mut left, &mut right)?;
+            None
+        };
+        if let Some(receipt) = applied_receipt {
+            self.last_orientation_receipt = Some(receipt);
+        }
         if self.lfe_policy == BinauralLfePolicy::EqualPowerDualMono {
             if let Some(index) = self.lfe_index {
-                if let Some(lfe) = frame.channels.get(index) {
+                if let Some(lfe) = frame
+                    .channels
+                    .get(index)
+                    .and_then(|samples| samples.get(sample_offset..range_end))
+                {
                     for ((left_value, right_value), lfe_value) in
                         left.iter_mut().zip(&mut right).zip(lfe)
                     {
@@ -2140,10 +2779,68 @@ impl BinauralState {
         }
         Ok(RenderedBlock {
             sample_rate,
-            logical_start_sample: frame.logical_start_sample,
+            logical_start_sample,
             sample_count,
             channels: vec![left, right],
         })
+    }
+
+    fn has_no_tail(&self) -> bool {
+        let fir_remaining = self.dynamic_engine.as_ref().map_or_else(
+            || {
+                self.engine
+                    .as_ref()
+                    .map_or(0, BinauralRenderer::remaining_tail_samples)
+            },
+            DynamicBinauralRenderer::remaining_tail_samples,
+        );
+        fir_remaining == 0 && self.lfe_delay.remaining_samples() == 0
+    }
+
+    fn drain_tail_chunk(
+        &mut self,
+        max_samples: usize,
+        logical_start_sample: u64,
+    ) -> Result<Option<RenderedBlock>, OpenJocError> {
+        let fir_remaining = self.dynamic_engine.as_ref().map_or_else(
+            || {
+                self.engine
+                    .as_ref()
+                    .map_or(0, BinauralRenderer::remaining_tail_samples)
+            },
+            DynamicBinauralRenderer::remaining_tail_samples,
+        );
+        let lfe_remaining = self.lfe_delay.remaining_samples();
+        let remaining = fir_remaining.max(lfe_remaining);
+        if remaining == 0 {
+            return Ok(None);
+        }
+        let sample_count = remaining.min(max_samples);
+        let mut left = vec![0.0; sample_count];
+        let mut right = vec![0.0; sample_count];
+        let fir_count = fir_remaining.min(sample_count);
+        if fir_count > 0 {
+            if let Some(engine) = self.dynamic_engine.as_mut() {
+                engine.drain_tail_block(&mut left[..fir_count], &mut right[..fir_count])?;
+            } else if let Some(engine) = self.engine.as_mut() {
+                engine.drain_tail_block(&mut left[..fir_count], &mut right[..fir_count])?;
+            }
+        }
+        for (left_value, right_value) in left
+            .iter_mut()
+            .zip(&mut right)
+            .take(lfe_remaining.min(sample_count))
+        {
+            let lfe = self.lfe_delay.drain_sample() * std::f64::consts::FRAC_1_SQRT_2;
+            *left_value += lfe;
+            *right_value += lfe;
+        }
+        Ok(Some(RenderedBlock {
+            sample_rate: self.sample_rate_hz,
+            logical_start_sample,
+            sample_count,
+            channels: vec![left, right],
+        }))
     }
 
     fn drain_tail(
@@ -2151,25 +2848,34 @@ impl BinauralState {
         sample_rate: u32,
         start: u64,
     ) -> Result<Vec<RenderedBlock>, OpenJocError> {
-        let Some(engine) = self.engine.as_mut() else {
+        if self.engine.is_none() && self.dynamic_engine.is_none() {
             return Ok(Vec::new());
-        };
+        }
         let mut output = Vec::new();
         let mut cursor = start;
-        while engine
-            .remaining_tail_samples()
-            .max(self.lfe_delay.remaining_samples())
-            > 0
-        {
-            let count = engine
-                .remaining_tail_samples()
-                .max(self.lfe_delay.remaining_samples())
-                .min(1024);
+        loop {
+            let fir_remaining = self.dynamic_engine.as_ref().map_or_else(
+                || {
+                    self.engine
+                        .as_ref()
+                        .map_or(0, BinauralRenderer::remaining_tail_samples)
+                },
+                DynamicBinauralRenderer::remaining_tail_samples,
+            );
+            let remaining = fir_remaining.max(self.lfe_delay.remaining_samples());
+            if remaining == 0 {
+                break;
+            }
+            let count = remaining.min(1024);
             let mut left = vec![0.0; count];
             let mut right = vec![0.0; count];
-            let fir_count = engine.remaining_tail_samples().min(count);
+            let fir_count = fir_remaining.min(count);
             if fir_count > 0 {
-                engine.drain_tail_block(&mut left[..fir_count], &mut right[..fir_count])?;
+                if let Some(engine) = self.dynamic_engine.as_mut() {
+                    engine.drain_tail_block(&mut left[..fir_count], &mut right[..fir_count])?;
+                } else if let Some(engine) = self.engine.as_mut() {
+                    engine.drain_tail_block(&mut left[..fir_count], &mut right[..fir_count])?;
+                }
             }
             for (left, right) in left
                 .iter_mut()
@@ -2191,11 +2897,30 @@ impl BinauralState {
         Ok(output)
     }
 
-    fn reset(&mut self) {
+    fn reset(&mut self) -> Result<(), OpenJocError> {
         self.lfe_delay.reset();
+        if let Some(engine) = self.dynamic_engine.as_mut() {
+            let preparer = self.orientation_preparer.clone().ok_or_else(|| {
+                OpenJocError::Render("listener-orientation preparer is unavailable".to_owned())
+            })?;
+            let next_epoch = engine
+                .stream_epoch()
+                .checked_add(1)
+                .unwrap_or_else(|| engine.stream_epoch());
+            let update = preparer
+                .prepare(ListenerOrientation::IDENTITY, next_epoch, 0)
+                .map_err(|error| OpenJocError::Render(error.to_string()))?;
+            let retired = engine
+                .reset_to(update)
+                .map_err(|failure| OpenJocError::Render(failure.to_string()))?;
+            drop(retired);
+            self.last_orientation_receipt = None;
+        }
+        self.drain_started = false;
         if let Some(engine) = self.engine.as_mut() {
             engine.reset();
         }
+        Ok(())
     }
 }
 
@@ -2262,6 +2987,7 @@ fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use openjoc_render::{DynamicBinauralRenderer, DynamicBinauralSource};
     use openjoc_scene::SpeakerGeometry;
 
     fn binaural_probe_frame(channels: usize, count: usize, start: u64) -> RenderedBlock {
@@ -2280,6 +3006,38 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    fn listener_orientation_session_at_epoch_max() -> OpenJocSession {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        let mut session = OpenJocSession::new_with_listener_orientation(config).unwrap();
+        let state = session.binaural.as_mut().unwrap();
+        let preparer = state.orientation_preparer.clone().unwrap();
+        let initial = preparer
+            .prepare(ListenerOrientation::IDENTITY, u64::MAX, 0)
+            .unwrap();
+        let sources = initial
+            .kernels()
+            .iter()
+            .map(|kernel| DynamicBinauralSource::new(kernel.source_id(), 1.0).unwrap())
+            .collect();
+        state.dynamic_engine = Some(
+            DynamicBinauralRenderer::new(
+                48_000,
+                initial,
+                sources,
+                preparer.max_filter_taps(),
+                MAX_DYNAMIC_BINAURAL_BLOCK_SAMPLES,
+                DEFAULT_DYNAMIC_BINAURAL_TRANSITION_SAMPLES,
+            )
+            .unwrap(),
+        );
+        session
     }
 
     #[test]
@@ -2350,7 +3108,7 @@ mod tests {
                                 assert_eq!(actual.to_bits(), expected.to_bits());
                             }
                         }
-                        state.reset();
+                        state.reset().unwrap();
                         reference.reset();
                     }
                 }
@@ -2359,28 +3117,655 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_binaural_range_render_matches_static_across_pull_partitions() {
+        for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
+            for layout in ["7.1.4", "9.1.6"] {
+                for lfe_policy in [
+                    BinauralLfePolicy::Exclude,
+                    BinauralLfePolicy::EqualPowerDualMono,
+                ] {
+                    let mut config = BinauralConfig::builtin(hrtf, layout);
+                    config.lfe_policy = lfe_policy;
+                    let mut static_state = BinauralState::new(&config, None, None).unwrap();
+                    let mut dynamic_state =
+                        BinauralState::new_with_listener_orientation(&config, None, None).unwrap();
+                    let channels = SpeakerLayoutPreset::for_name(layout).unwrap().labels.len();
+                    let input = binaural_probe_frame(channels, 1536, 20_000);
+                    let reference = static_state.render(&input).unwrap();
+
+                    let mut actual_left = Vec::new();
+                    let mut actual_right = Vec::new();
+                    let partitions = [1, 17, 97, 128, 256];
+                    let mut offset = 0;
+                    let mut partition_index = 0;
+                    while offset < input.sample_count {
+                        let count = partitions[partition_index % partitions.len()]
+                            .min(input.sample_count - offset);
+                        let actual = dynamic_state.render_range(&input, offset, count).unwrap();
+                        assert_eq!(
+                            actual.logical_start_sample,
+                            input.logical_start_sample + offset as u64
+                        );
+                        actual_left.extend_from_slice(&actual.channels[0]);
+                        actual_right.extend_from_slice(&actual.channels[1]);
+                        offset += count;
+                        partition_index += 1;
+                    }
+                    for (actual, expected) in actual_left.iter().zip(&reference.channels[0]) {
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+                    for (actual, expected) in actual_right.iter().zip(&reference.channels[1]) {
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+
+                    let static_tail = static_state.drain_tail(48_000, 21_536).unwrap();
+                    let mut dynamic_tail = Vec::new();
+                    let mut tail_start = 21_536;
+                    while let Some(block) = dynamic_state.drain_tail_chunk(128, tail_start).unwrap()
+                    {
+                        tail_start += block.sample_count as u64;
+                        dynamic_tail.push(block);
+                    }
+                    for channel in 0..2 {
+                        let expected: Vec<_> = static_tail
+                            .iter()
+                            .flat_map(|block| block.channels[channel].iter().copied())
+                            .collect();
+                        let actual: Vec<_> = dynamic_tail
+                            .iter()
+                            .flat_map(|block| block.channels[channel].iter().copied())
+                            .collect();
+                        assert_eq!(actual.len(), expected.len());
+                        for (actual, expected) in actual.iter().zip(expected) {
+                            assert_eq!(actual.to_bits(), expected.to_bits());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn listener_orientation_is_explicit_opt_in_and_fingerprints_session_mode() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        let static_session = OpenJocSession::new(config.clone()).unwrap();
+        assert!(static_session.listener_orientation_preparer().is_none());
+        assert_eq!(
+            static_session.effective_config_descriptor(),
+            config.effective_config_descriptor()
+        );
+        let enabled = OpenJocSession::new_with_listener_orientation(config.clone()).unwrap();
+        assert!(enabled.listener_orientation_preparer().is_some());
+        assert_eq!(enabled.listener_orientation_stream_epoch(), Some(0));
+        assert!(
+            enabled
+                .effective_config_descriptor()
+                .contains("listener_orientation=enabled")
+        );
+        assert_ne!(
+            enabled.effective_config_fingerprint(),
+            static_session.effective_config_fingerprint()
+        );
+
+        assert!(matches!(
+            OpenJocSession::new_with_listener_orientation_pull(config.clone(), 0),
+            Err(OpenJocError::InvalidConfig(_))
+        ));
+        assert!(matches!(
+            OpenJocSession::new_with_listener_orientation_pull(
+                config.clone(),
+                MAX_LISTENER_ORIENTATION_PULL_SAMPLES + 1
+            ),
+            Err(OpenJocError::InvalidConfig(_))
+        ));
+        let mut pull =
+            OpenJocSession::new_with_listener_orientation_pull(config.clone(), 128).unwrap();
+        assert!(
+            pull.effective_config_descriptor()
+                .contains("listener_orientation_pull_max_samples=128")
+        );
+        assert!(pull.receive_frame().is_none());
+        assert!(pull.receive_binaural_frame().unwrap().is_none());
+
+        let preparer = enabled.listener_orientation_preparer().unwrap();
+        let update = preparer
+            .prepare(ListenerOrientation::IDENTITY, 0, 1)
+            .unwrap();
+        let mut enabled = enabled;
+        let receipt = enabled.apply_prepared_listener_orientation(update).unwrap();
+        assert_eq!(receipt.accepted_sequence, 1);
+        assert_eq!(enabled.drain().unwrap(), OpenJocStatus::EndOfStream);
+        let post_drain_update = preparer
+            .prepare(ListenerOrientation::IDENTITY, 0, 2)
+            .unwrap();
+        let failure = enabled
+            .apply_prepared_listener_orientation(post_drain_update)
+            .unwrap_err();
+        assert_eq!(
+            failure.error,
+            openjoc_render::RenderError::BinauralInputAfterTailStart
+        );
+        assert_eq!(failure.update.sequence(), 2);
+        enabled.try_flush().unwrap();
+        assert_eq!(enabled.listener_orientation_stream_epoch(), Some(1));
+        assert_eq!(enabled.last_applied_listener_orientation(), None);
+        assert!(matches!(
+            OpenJocSession::new_with_listener_orientation(OpenJocConfig::default()),
+            Err(OpenJocError::InvalidConfig(_))
+        ));
+    }
+
+    #[test]
+    fn failed_orientation_reset_clears_queued_pcm_and_fails_closed() {
+        let mut session = listener_orientation_session_at_epoch_max();
+        session.output_queue.push_back(OpenJocPcmFrame {
+            sample_format: PCM_SAMPLE_FORMAT,
+            sample_rate: 48_000,
+            channel_count: 2,
+            channel_labels: vec!["Left Ear".to_owned(), "Right Ear".to_owned()],
+            layout_name: "Binaural stereo".to_owned(),
+            render_mode: RenderMode::Binaural,
+            sample_count: 1,
+            pts_samples: Some(0),
+            interleaved_f32: vec![0.0, 0.0],
+        });
+        let error = session.try_flush().unwrap_err();
+        assert!(error.to_string().contains("epoch overflowed"));
+        assert!(session.receive_frame().is_none());
+        assert!(session.is_drained());
+        assert!(session.terminal_error.is_some());
+
+        let preparer = session.listener_orientation_preparer().unwrap();
+        let rejected = preparer
+            .prepare(ListenerOrientation::IDENTITY, u64::MAX, 1)
+            .unwrap();
+        let failure = session
+            .apply_prepared_listener_orientation(rejected)
+            .unwrap_err();
+        assert_eq!(
+            failure.error,
+            openjoc_render::RenderError::BinauralRequiresReset
+        );
+        assert_eq!(failure.update.sequence(), 1);
+    }
+
+    #[test]
+    fn pull_failure_clears_deferred_pcm_and_rejects_further_receives() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            ..OpenJocConfig::default()
+        };
+        let mut session = OpenJocSession::new_with_listener_orientation_pull(config, 128).unwrap();
+        session
+            .pending_binaural_inputs
+            .push_back(binaural_probe_frame(12, 4, 0));
+        session.pending_binaural_input_samples = 4;
+        session.current_binaural_input = Some((binaural_probe_frame(12, 8, 4), 0));
+        session.pending_binaural_input_samples += 8;
+
+        let failure = OpenJocError::Render("injected terminal pull failure".to_owned());
+        session.fail_closed(&failure);
+        assert_eq!(session.pending_binaural_input_samples(), Some(0));
+        assert!(session.pending_binaural_inputs.is_empty());
+        assert!(session.current_binaural_input.is_none());
+        assert!(session.is_drained());
+        assert!(
+            session
+                .receive_binaural_frame()
+                .unwrap_err()
+                .to_string()
+                .contains("injected terminal pull failure")
+        );
+        assert!(session.receive_frame().is_none());
+    }
+
+    #[test]
+    fn dynamic_session_identity_pcm_and_applied_receipts_match_static_timeline() {
+        let mut config = BinauralConfig::builtin(BuiltinHrtf::SadieD1Ku100, "7.1.4");
+        config.lfe_policy = BinauralLfePolicy::EqualPowerDualMono;
+        let mut static_state = BinauralState::new(&config, None, None).unwrap();
+        let mut dynamic_state =
+            BinauralState::new_with_listener_orientation(&config, None, None).unwrap();
+        let channels = SpeakerLayoutPreset::for_name("7.1.4").unwrap().labels.len();
+
+        let initial = binaural_probe_frame(channels, 128, 100_000);
+        let static_output = static_state.render(&initial).unwrap();
+        let dynamic_output = dynamic_state.render(&initial).unwrap();
+        for (dynamic, static_sample) in dynamic_output
+            .channels
+            .iter()
+            .flatten()
+            .zip(static_output.channels.iter().flatten())
+        {
+            assert_eq!(dynamic.to_bits(), static_sample.to_bits());
+        }
+        assert_eq!(
+            dynamic_state.last_applied_listener_orientation(),
+            Some(AppliedBinauralUpdate {
+                sequence: 0,
+                logical_start_sample: 100_000,
+            })
+        );
+
+        let preparer = dynamic_state.listener_orientation_preparer().unwrap();
+        let first_angle = 5.0_f64.to_radians();
+        let first = preparer
+            .prepare(
+                ListenerOrientation::new(
+                    0.0,
+                    0.0,
+                    (first_angle * 0.5).sin(),
+                    (first_angle * 0.5).cos(),
+                )
+                .unwrap(),
+                0,
+                1,
+            )
+            .unwrap();
+        let accepted = dynamic_state
+            .apply_prepared_listener_orientation(first)
+            .unwrap();
+        drop(accepted.retired_kernels);
+        let first_rotated = binaural_probe_frame(channels, 128, 100_128);
+        let _ = dynamic_state.render(&first_rotated).unwrap();
+        assert_eq!(
+            dynamic_state.last_applied_listener_orientation(),
+            Some(AppliedBinauralUpdate {
+                sequence: 1,
+                logical_start_sample: 100_128,
+            })
+        );
+
+        let second_angle = 10.0_f64.to_radians();
+        let second = preparer
+            .prepare(
+                ListenerOrientation::new(
+                    0.0,
+                    0.0,
+                    (second_angle * 0.5).sin(),
+                    (second_angle * 0.5).cos(),
+                )
+                .unwrap(),
+                0,
+                2,
+            )
+            .unwrap();
+        let accepted = dynamic_state
+            .apply_prepared_listener_orientation(second)
+            .unwrap();
+        drop(accepted.retired_kernels);
+        let second_rotated = binaural_probe_frame(channels, 256, 100_256);
+        let _ = dynamic_state.render(&second_rotated).unwrap();
+        assert_eq!(
+            dynamic_state.last_applied_listener_orientation(),
+            Some(AppliedBinauralUpdate {
+                sequence: 2,
+                logical_start_sample: 100_368,
+            })
+        );
+
+        dynamic_state.reset().unwrap();
+        assert_eq!(dynamic_state.listener_orientation_stream_epoch(), Some(1));
+        assert_eq!(dynamic_state.last_applied_listener_orientation(), None);
+        let stale = preparer
+            .prepare(ListenerOrientation::IDENTITY, 0, 3)
+            .unwrap();
+        let failure = dynamic_state
+            .apply_prepared_listener_orientation(stale)
+            .unwrap_err();
+        assert!(matches!(
+            failure.error,
+            openjoc_render::RenderError::BinauralUpdateEpochMismatch {
+                expected: 1,
+                actual: 0,
+            }
+        ));
+        assert_eq!(failure.update.sequence(), 3);
+    }
+
+    #[test]
+    fn binaural_state_reconstruction_tail_keeps_waiting_pose_pending() {
+        let config = BinauralConfig::builtin(BuiltinHrtf::SadieD1Ku100, "7.1.4");
+        let mut state = BinauralState::new_with_listener_orientation(&config, None, None).unwrap();
+        let preparer = state.listener_orientation_preparer().unwrap();
+        let target = preparer
+            .prepare(
+                ListenerOrientation::new(
+                    0.0,
+                    0.0,
+                    (2.0_f64.to_radians() * 0.5).sin(),
+                    (2.0_f64.to_radians() * 0.5).cos(),
+                )
+                .unwrap(),
+                0,
+                1,
+            )
+            .unwrap();
+        let accepted = state.apply_prepared_listener_orientation(target).unwrap();
+        drop(accepted.retired_kernels);
+        assert_eq!(state.pending_listener_orientation_sequence(), Some(1));
+
+        state.begin_drain().unwrap();
+        let channels = SpeakerLayoutPreset::for_name("7.1.4").unwrap().labels.len();
+        let reconstruction_tail = binaural_probe_frame(channels, 128, 8_192);
+        let _ = state.render(&reconstruction_tail).unwrap();
+        assert_eq!(state.pending_listener_orientation_sequence(), Some(1));
+        assert_eq!(
+            state.last_applied_listener_orientation(),
+            Some(AppliedBinauralUpdate {
+                sequence: 0,
+                logical_start_sample: 8_192,
+            })
+        );
+    }
+
+    fn timing_percentile_ns(samples: &mut [u128], percentile: usize) -> u128 {
+        samples.sort_unstable();
+        let rank = samples.len().saturating_mul(percentile).div_ceil(100);
+        samples[rank.saturating_sub(1).min(samples.len() - 1)]
+    }
+
+    fn print_timing_distribution(label: &str, samples: &mut [u128]) {
+        let total_ns: u128 = samples.iter().sum();
+        let average_ns = total_ns / samples.len() as u128;
+        let p50_ns = timing_percentile_ns(samples, 50);
+        let p95_ns = timing_percentile_ns(samples, 95);
+        let p99_ns = timing_percentile_ns(samples, 99);
+        let max_ns = *samples.last().unwrap_or(&0);
+        eprintln!(
+            "{label}: avg={:.3} us p50={:.3} us p95={:.3} us p99={:.3} us max={:.3} us",
+            average_ns as f64 / 1_000.0,
+            p50_ns as f64 / 1_000.0,
+            p95_ns as f64 / 1_000.0,
+            p99_ns as f64 / 1_000.0,
+            max_ns as f64 / 1_000.0,
+        );
+    }
+
+    fn print_setup_timing_summary(label: &str, samples: &mut [u128]) {
+        samples.sort_unstable();
+        let min_ns = samples.first().copied().unwrap_or(0);
+        let p50_ns = timing_percentile_ns(samples, 50);
+        let max_ns = samples.last().copied().unwrap_or(0);
+        eprintln!(
+            "{label}: n={} min={:.3} us p50={:.3} us max={:.3} us (descriptive setup sample only)",
+            samples.len(),
+            min_ns as f64 / 1_000.0,
+            p50_ns as f64 / 1_000.0,
+            max_ns as f64 / 1_000.0,
+        );
+    }
+
+    #[test]
     #[ignore = "manual release-mode timing probe; no wall-clock CI threshold"]
     fn binaural_adapter_benchmark() {
+        const PREP_RUNS: usize = 7;
+        const MEASURED_BLOCKS: usize = 1_024;
+        const INDEPENDENT_RUNS: usize = 3;
+        const BLOCK_SIZE_OPTIONS: [usize; 2] = [128, 256];
+
         for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
             for layout in ["7.1.4", "9.1.6"] {
                 let config = BinauralConfig::builtin(hrtf, layout);
-                let mut state = BinauralState::new(&config, None, None).unwrap();
                 let channels = SpeakerLayoutPreset::for_name(layout).unwrap().labels.len();
-                let frame = binaural_probe_frame(channels, 256, 0);
-                state.render(&frame).unwrap();
-                let start = std::time::Instant::now();
-                let mut digest = 0xcbf2_9ce4_8422_2325_u64;
-                for _ in 0..256 {
-                    let output =
-                        std::hint::black_box(state.render(std::hint::black_box(&frame)).unwrap());
-                    for sample in output.channels.iter().flatten() {
-                        digest = (digest ^ sample.to_bits()).wrapping_mul(0x0000_0100_0000_01b3);
+                let mut prepare_ns = Vec::with_capacity(PREP_RUNS);
+                let mut prepared_payload_bytes = 0;
+                for _ in 0..PREP_RUNS {
+                    let start = std::time::Instant::now();
+                    let state = BinauralState::new(&config, None, None).unwrap();
+                    prepare_ns.push(start.elapsed().as_nanos());
+                    prepared_payload_bytes = state.bank.as_ref().map_or(0, |bank| {
+                        bank.entries()
+                            .iter()
+                            .map(|entry| {
+                                (entry.pair().left_taps().len() + entry.pair().right_taps().len())
+                                    * std::mem::size_of::<f64>()
+                            })
+                            .sum()
+                    });
+                }
+                print_setup_timing_summary(
+                    &format!("{hrtf:?} {layout} prepare_binaural_state"),
+                    &mut prepare_ns,
+                );
+                eprintln!(
+                    "{hrtf:?} {layout}: selected-HRIR tap payload={prepared_payload_bytes} bytes (excludes transient full f32 bank, loader/allocator overhead, and peak init memory)"
+                );
+
+                for block_samples in BLOCK_SIZE_OPTIONS {
+                    for run in 0..INDEPENDENT_RUNS {
+                        let mut state = BinauralState::new(&config, None, None).unwrap();
+                        let first_frame = binaural_probe_frame(channels, block_samples, 0);
+                        let first_start = std::time::Instant::now();
+                        let _ = state.render(&first_frame).unwrap();
+                        let first_render_ns = first_start.elapsed().as_nanos();
+                        let renderer = state.engine.as_ref().expect("first render initializes FIR");
+                        let kernel_storage_bytes = renderer.hrir_kernel_storage_bytes();
+                        let history_storage_bytes = renderer.hrir_history_storage_bytes();
+                        let mut block_ns = Vec::with_capacity(MEASURED_BLOCKS);
+                        let mut digest = 0xcbf2_9ce4_8422_2325_u64;
+                        for block in 0..MEASURED_BLOCKS {
+                            let start_sample = ((block + 1) * block_samples) as u64;
+                            let frame = binaural_probe_frame(channels, block_samples, start_sample);
+                            let start = std::time::Instant::now();
+                            let output = std::hint::black_box(
+                                state.render(std::hint::black_box(&frame)).unwrap(),
+                            );
+                            block_ns.push(start.elapsed().as_nanos());
+                            for sample in output.channels.iter().flatten() {
+                                digest =
+                                    (digest ^ sample.to_bits()).wrapping_mul(0x0000_0100_0000_01b3);
+                            }
+                        }
+                        let average_ns: u128 =
+                            block_ns.iter().sum::<u128>() / block_ns.len() as u128;
+                        let block_period_ns =
+                            (block_samples as u128 * 1_000_000_000_u128) / 48_000_u128;
+                        let rtf = average_ns as f64 / block_period_ns as f64;
+                        let half_period_exceedances = block_ns
+                            .iter()
+                            .filter(|&&elapsed_ns| elapsed_ns > block_period_ns / 2)
+                            .count();
+                        let period_exceedances = block_ns
+                            .iter()
+                            .filter(|&&elapsed_ns| elapsed_ns > block_period_ns)
+                            .count();
+                        print_timing_distribution(
+                            &format!(
+                                "{hrtf:?} {layout} {block_samples}-sample run {} render_block",
+                                run + 1
+                            ),
+                            &mut block_ns,
+                        );
+                        eprintln!(
+                            "{hrtf:?} {layout} {block_samples}-sample run {}: first_render={:.3} us block_RTF={rtf:.4} block_period={:.3} us >50%_budget={half_period_exceedances}/{MEASURED_BLOCKS} >period={period_exceedances}/{MEASURED_BLOCKS} (timing exceedances, not device underruns) kernel_storage={kernel_storage_bytes} bytes history_storage={history_storage_bytes} bytes PCM digest={digest:016x}",
+                            run + 1,
+                            first_render_ns as f64 / 1_000.0,
+                            block_period_ns as f64 / 1_000.0,
+                        );
                     }
                 }
-                eprintln!(
-                    "{hrtf:?} {layout}: {:.3} ms; PCM digest {digest:016x}",
-                    start.elapsed().as_secs_f64() * 1000.0
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual release-mode comparison of static and dynamic direct FIR; no wall-clock CI threshold"]
+    fn dynamic_binaural_vs_static_release_probe() {
+        const BLOCKS: usize = 256;
+        const ACTIVE_BLOCKS: usize = 64;
+        const BLOCK_SIZES: [usize; 2] = [128, 256];
+        const FADE_SAMPLES: usize = 240;
+
+        for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
+            for layout in ["7.1.4", "9.1.6"] {
+                let config = BinauralConfig::builtin(hrtf, layout);
+                let preparer = ListenerOrientationPreparer::new(&config).unwrap();
+                let channels = SpeakerLayoutPreset::for_name(layout).unwrap().labels.len();
+                let source_count = preparer.source_count();
+
+                let mut prepared_updates = Vec::with_capacity(ACTIVE_BLOCKS);
+                let mut prepare_ns = Vec::with_capacity(ACTIVE_BLOCKS);
+                for sequence in 1..=ACTIVE_BLOCKS {
+                    let angle = sequence as f64 * 0.25_f64.to_radians();
+                    let orientation = ListenerOrientation::new(
+                        0.0,
+                        0.0,
+                        (angle * 0.5).sin(),
+                        (angle * 0.5).cos(),
+                    )
+                    .unwrap();
+                    let start = std::time::Instant::now();
+                    let update = preparer.prepare(orientation, 0, sequence as u64).unwrap();
+                    prepare_ns.push(start.elapsed().as_nanos());
+                    prepared_updates.push(update);
+                }
+                print_timing_distribution(
+                    &format!("{hrtf:?} {layout} HRIR preparation for active-transition probe"),
+                    &mut prepare_ns,
                 );
+
+                for block_samples in BLOCK_SIZES {
+                    let initial = preparer
+                        .prepare(ListenerOrientation::IDENTITY, 0, 0)
+                        .unwrap();
+                    let dynamic_sources = initial
+                        .kernels()
+                        .iter()
+                        .map(|kernel| DynamicBinauralSource::new(kernel.source_id(), 1.0).unwrap())
+                        .collect::<Vec<_>>();
+                    assert_eq!(dynamic_sources.len(), source_count);
+                    let mut static_state = BinauralState::new(&config, None, None).unwrap();
+                    let mappings = static_state.mappings.clone();
+                    let static_engine = static_state.ensure_engine(48_000).unwrap();
+                    let mut dynamic_engine = DynamicBinauralRenderer::new(
+                        48_000,
+                        initial,
+                        dynamic_sources,
+                        preparer.max_filter_taps(),
+                        block_samples,
+                        FADE_SAMPLES,
+                    )
+                    .unwrap();
+                    let frame = binaural_probe_frame(channels, block_samples, 0);
+                    let blocks = mappings
+                        .iter()
+                        .map(|mapping| {
+                            BinauralSourceBlock::new(
+                                mapping.source_id,
+                                &frame.channels[mapping.channel_index],
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    let mut static_left = vec![0.0; block_samples];
+                    let mut static_right = vec![0.0; block_samples];
+                    let mut dynamic_left = vec![0.0; block_samples];
+                    let mut dynamic_right = vec![0.0; block_samples];
+
+                    static_engine
+                        .render_block(&blocks, &mut static_left, &mut static_right)
+                        .unwrap();
+                    dynamic_engine
+                        .render_block(&blocks, &mut dynamic_left, &mut dynamic_right)
+                        .unwrap();
+                    assert_eq!(
+                        static_left, dynamic_left,
+                        "identity left PCM {hrtf:?} {layout}"
+                    );
+                    assert_eq!(
+                        static_right, dynamic_right,
+                        "identity right PCM {hrtf:?} {layout}"
+                    );
+
+                    let mut static_ns = Vec::with_capacity(BLOCKS);
+                    let mut dynamic_ns = Vec::with_capacity(BLOCKS);
+                    let mut static_digest = 0xcbf2_9ce4_8422_2325_u64;
+                    let mut dynamic_digest = 0xcbf2_9ce4_8422_2325_u64;
+                    for _ in 0..BLOCKS {
+                        let start = std::time::Instant::now();
+                        static_engine
+                            .render_block(
+                                std::hint::black_box(&blocks),
+                                std::hint::black_box(&mut static_left),
+                                std::hint::black_box(&mut static_right),
+                            )
+                            .unwrap();
+                        static_ns.push(start.elapsed().as_nanos());
+                        for sample in static_left.iter().chain(&static_right) {
+                            static_digest = (static_digest ^ sample.to_bits())
+                                .wrapping_mul(0x0000_0100_0000_01b3);
+                        }
+
+                        let start = std::time::Instant::now();
+                        dynamic_engine
+                            .render_block(
+                                std::hint::black_box(&blocks),
+                                std::hint::black_box(&mut dynamic_left),
+                                std::hint::black_box(&mut dynamic_right),
+                            )
+                            .unwrap();
+                        dynamic_ns.push(start.elapsed().as_nanos());
+                        for sample in dynamic_left.iter().chain(&dynamic_right) {
+                            dynamic_digest = (dynamic_digest ^ sample.to_bits())
+                                .wrapping_mul(0x0000_0100_0000_01b3);
+                        }
+                    }
+                    print_timing_distribution(
+                        &format!("{hrtf:?} {layout} {block_samples} direct static FIR"),
+                        &mut static_ns,
+                    );
+                    print_timing_distribution(
+                        &format!(
+                            "{hrtf:?} {layout} {block_samples} direct dynamic FIR, stable kernel"
+                        ),
+                        &mut dynamic_ns,
+                    );
+                    eprintln!(
+                        "{hrtf:?} {layout} {block_samples}: sources={source_count} taps_bound={} static_kernel_bytes={} dynamic_kernel_bytes={} dynamic_history_bytes={} static_digest={static_digest:016x} dynamic_digest={dynamic_digest:016x}",
+                        preparer.max_filter_taps(),
+                        static_engine.hrir_kernel_storage_bytes(),
+                        dynamic_engine.hrir_kernel_storage_bytes(),
+                        dynamic_engine.hrir_history_storage_bytes(),
+                    );
+
+                    let mut active_ns = Vec::with_capacity(ACTIVE_BLOCKS);
+                    for update in prepared_updates.iter().cloned() {
+                        let accepted = dynamic_engine.apply_prepared(update).unwrap();
+                        drop(accepted.retired_kernels);
+                        let start = std::time::Instant::now();
+                        dynamic_engine
+                            .render_block(
+                                std::hint::black_box(&blocks),
+                                std::hint::black_box(&mut dynamic_left),
+                                std::hint::black_box(&mut dynamic_right),
+                            )
+                            .unwrap();
+                        active_ns.push(start.elapsed().as_nanos());
+                    }
+                    print_timing_distribution(
+                        &format!(
+                            "{hrtf:?} {layout} {block_samples} direct dynamic FIR, active transitions"
+                        ),
+                        &mut active_ns,
+                    );
+                    let block_period_ns =
+                        (block_samples as u128 * 1_000_000_000_u128) / 48_000_u128;
+                    let over_period = active_ns
+                        .iter()
+                        .filter(|&&elapsed| elapsed > block_period_ns)
+                        .count();
+                    eprintln!(
+                        "{hrtf:?} {layout} {block_samples} active transitions: >period={over_period}/{ACTIVE_BLOCKS}, block_period={:.3} us (direct FIR only; no decode/device scheduling)",
+                        block_period_ns as f64 / 1_000.0
+                    );
+                }
             }
         }
     }
@@ -2499,7 +3884,7 @@ mod tests {
                 };
                 assert!((sample - expected).abs() < 1e-12);
             }
-            state.reset();
+            state.reset().unwrap();
         }
     }
 

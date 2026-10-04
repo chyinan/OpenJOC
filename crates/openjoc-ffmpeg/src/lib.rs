@@ -13,8 +13,10 @@
 // Reason: this existing crate keeps the production FFmpeg bridge and its test-only deterministic fixture exporters together.
 
 use openjoc_api::{
-    FINAL_LINKED_GAIN_LATENCY_SAMPLES, OpenJocConfig, OpenJocPacket, OpenJocPcmFrame,
-    OpenJocSession, QMF_LATENCY_SAMPLES, RenderMode,
+    AppliedBinauralUpdate, BinauralUpdateAcceptance, BinauralUpdateApplyFailure,
+    FINAL_LINKED_GAIN_LATENCY_SAMPLES, ListenerOrientationPreparer, OpenJocConfig, OpenJocError,
+    OpenJocPacket, OpenJocPcmFrame, OpenJocSession, PreparedBinauralUpdate, QMF_LATENCY_SAMPLES,
+    RenderError, RenderMode,
 };
 pub use openjoc_container::cmaf::{
     CmafJocTrack, CmafTrackMetadata, Ec3SpecificBox, Ec3SubstreamConfig, parse_ec3_specific_box,
@@ -327,6 +329,7 @@ pub enum BridgeErrorKind {
     EndOfStream,
     Ffmpeg,
     InternalPanic,
+    ResetRequired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -483,6 +486,11 @@ pub struct FfmpegDecoder {
     config_fingerprint: String,
     layout: FfmpegChannelLayout,
     timestamp_policy: TimestampPolicy,
+    orientation_pull_samples: Option<usize>,
+    orientation_preparer: Option<ListenerOrientationPreparer>,
+    orientation_stream_epoch: u64,
+    last_accepted_orientation_sequence: u64,
+    pending_orientation_update: Option<PreparedBinauralUpdate>,
     session: Option<OpenJocSession>,
     staging: Vec<u8>,
     boundaries: VecDeque<Boundary>,
@@ -513,31 +521,91 @@ impl fmt::Debug for FfmpegDecoder {
 
 impl FfmpegDecoder {
     pub fn new(config: OpenJocConfig) -> Result<Self, BridgeError> {
-        Self::with_timestamp_policy(config, TimestampPolicy::PtsOnly)
+        Self::with_options(config, TimestampPolicy::PtsOnly, None)
     }
 
     pub fn with_timestamp_policy(
         config: OpenJocConfig,
         timestamp_policy: TimestampPolicy,
     ) -> Result<Self, BridgeError> {
+        Self::with_options(config, timestamp_policy, None)
+    }
+
+    /// Creates a stream bridge with opt-in bounded pull-side binauralization.
+    pub fn new_with_listener_orientation_pull(
+        config: OpenJocConfig,
+        max_pull_samples: usize,
+    ) -> Result<Self, BridgeError> {
+        Self::with_options(config, TimestampPolicy::PtsOnly, Some(max_pull_samples))
+    }
+
+    /// Timestamp-policy variant of [`Self::new_with_listener_orientation_pull`].
+    pub fn with_timestamp_policy_and_listener_orientation_pull(
+        config: OpenJocConfig,
+        timestamp_policy: TimestampPolicy,
+        max_pull_samples: usize,
+    ) -> Result<Self, BridgeError> {
+        Self::with_options(config, timestamp_policy, Some(max_pull_samples))
+    }
+
+    fn with_options(
+        config: OpenJocConfig,
+        timestamp_policy: TimestampPolicy,
+        orientation_pull_samples: Option<usize>,
+    ) -> Result<Self, BridgeError> {
         config
             .validate()
             .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string()))?;
-        if config.render_mode == RenderMode::Binaural {
-            OpenJocSession::new(config.clone()).map_err(|error| {
-                BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
-            })?;
-        }
+        let (session, orientation_preparer, config_descriptor, config_fingerprint) =
+            if let Some(max_pull_samples) = orientation_pull_samples {
+                let binaural = config.binaural.as_ref().ok_or_else(|| {
+                    BridgeError::new(
+                        BridgeErrorKind::InvalidConfig,
+                        "listener-orientation pull requires a binaural configuration",
+                    )
+                })?;
+                let preparer = ListenerOrientationPreparer::new(binaural).map_err(|error| {
+                    BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+                })?;
+                let preflight = OpenJocSession::new_with_listener_orientation_pull_using_preparer(
+                    config.clone(),
+                    max_pull_samples,
+                    0,
+                    preparer.clone(),
+                )
+                .map_err(|error| {
+                    BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+                })?;
+                let descriptor = preflight.effective_config_descriptor();
+                let fingerprint = preflight.effective_config_fingerprint();
+                drop(preflight);
+                (None, Some(preparer), descriptor, fingerprint)
+            } else {
+                if config.render_mode == RenderMode::Binaural {
+                    OpenJocSession::new(config.clone()).map_err(|error| {
+                        BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+                    })?;
+                }
+                (
+                    None,
+                    None,
+                    config.effective_config_descriptor(),
+                    config.effective_config_fingerprint(),
+                )
+            };
         let layout = channel_layout_for_config(&config)?;
-        let config_descriptor = config.effective_config_descriptor();
-        let config_fingerprint = config.effective_config_fingerprint();
         Ok(Self {
             config,
             config_descriptor,
             config_fingerprint,
             layout,
             timestamp_policy,
-            session: None,
+            orientation_pull_samples,
+            orientation_preparer,
+            orientation_stream_epoch: 0,
+            last_accepted_orientation_sequence: 0,
+            pending_orientation_update: None,
+            session,
             staging: Vec::new(),
             boundaries: VecDeque::new(),
             output: VecDeque::new(),
@@ -550,6 +618,108 @@ impl FfmpegDecoder {
             poisoned: false,
             timings: BridgeTimings::default(),
             inspection: LiveInspectionObserver::new(),
+        })
+    }
+
+    #[must_use]
+    pub fn listener_orientation_preparer(&self) -> Option<ListenerOrientationPreparer> {
+        self.orientation_preparer.clone()
+    }
+
+    #[must_use]
+    pub const fn listener_orientation_stream_epoch(&self) -> Option<u64> {
+        if self.orientation_pull_samples.is_some() {
+            Some(self.orientation_stream_epoch)
+        } else {
+            None
+        }
+    }
+
+    pub fn apply_prepared_listener_orientation(
+        &mut self,
+        update: PreparedBinauralUpdate,
+    ) -> Result<BinauralUpdateAcceptance, BinauralUpdateApplyFailure> {
+        if self.poisoned {
+            return Err(BinauralUpdateApplyFailure {
+                error: RenderError::BinauralRequiresReset,
+                update,
+            });
+        }
+        if self.drain_requested || self.session_drained {
+            return Err(BinauralUpdateApplyFailure {
+                error: RenderError::BinauralInputAfterTailStart,
+                update,
+            });
+        }
+        let Some(preparer) = self.orientation_preparer.as_ref() else {
+            return match self.session.as_mut() {
+                Some(session) => session.apply_prepared_listener_orientation(update),
+                None => Err(BinauralUpdateApplyFailure {
+                    error: RenderError::BinauralOrientationNotEnabled,
+                    update,
+                }),
+            };
+        };
+        if let Some(session) = self.session.as_mut() {
+            return match session.apply_prepared_listener_orientation(update) {
+                Ok(accepted) => {
+                    self.last_accepted_orientation_sequence = accepted.accepted_sequence;
+                    Ok(accepted)
+                }
+                Err(failure) => Err(failure),
+            };
+        }
+        if let Err(error) = preparer.validate_prepared_update(
+            &update,
+            self.orientation_stream_epoch,
+            self.last_accepted_orientation_sequence,
+        ) {
+            return Err(BinauralUpdateApplyFailure { error, update });
+        }
+        let accepted_sequence = update.sequence();
+        let superseded_sequence = self
+            .pending_orientation_update
+            .as_ref()
+            .map(PreparedBinauralUpdate::sequence);
+        let retired_kernels = self
+            .pending_orientation_update
+            .take()
+            .map_or_else(Vec::new, PreparedBinauralUpdate::into_kernels);
+        self.pending_orientation_update = Some(update);
+        self.last_accepted_orientation_sequence = accepted_sequence;
+        Ok(BinauralUpdateAcceptance {
+            accepted_sequence,
+            superseded_sequence,
+            retired_kernels,
+        })
+    }
+
+    #[must_use]
+    pub fn last_applied_listener_orientation(&self) -> Option<AppliedBinauralUpdate> {
+        self.session
+            .as_ref()
+            .and_then(OpenJocSession::last_applied_listener_orientation)
+    }
+
+    #[must_use]
+    pub fn pending_listener_orientation_sequence(&self) -> Option<u64> {
+        self.session
+            .as_ref()
+            .and_then(OpenJocSession::pending_listener_orientation_sequence)
+            .or_else(|| {
+                self.pending_orientation_update
+                    .as_ref()
+                    .map(PreparedBinauralUpdate::sequence)
+            })
+    }
+
+    #[must_use]
+    pub fn pending_binaural_input_samples(&self) -> Option<usize> {
+        self.orientation_pull_samples.map(|_| {
+            self.session
+                .as_ref()
+                .and_then(OpenJocSession::pending_binaural_input_samples)
+                .unwrap_or(0)
         })
     }
 
@@ -678,6 +848,25 @@ impl FfmpegDecoder {
         self.reset_inner();
     }
 
+    /// Fallible reset used by the C ABI when an epoch can no longer advance.
+    pub fn try_reset(&mut self) -> Result<(), BridgeError> {
+        self.reset_inner();
+        if self.poisoned {
+            Err(BridgeError::new(
+                BridgeErrorKind::ResetRequired,
+                "orientation stream reset failed; recreate the wrapper",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Marks the bridge unusable after a panic was contained by an outer ABI
+    /// boundary rather than by this wrapper's own guarded entry point.
+    pub fn poison_after_outer_panic(&mut self) {
+        self.poisoned = true;
+    }
+
     fn guard<T>(
         &mut self,
         operation: impl FnOnce(&mut Self) -> Result<T, BridgeError>,
@@ -712,8 +901,17 @@ impl FfmpegDecoder {
         if !self.output.is_empty() {
             return Ok(BridgeStatus::WouldBlock);
         }
+        if self.pull_session_has_pending_input() {
+            return Ok(BridgeStatus::WouldBlock);
+        }
         if packet.discontinuity {
             self.reset_inner();
+            if self.poisoned {
+                return Err(BridgeError::new(
+                    BridgeErrorKind::InternalPanic,
+                    "orientation reset failed; wrapper requires re-creation",
+                ));
+            }
         }
         if packet.data.is_empty() {
             return Err(BridgeError::new(
@@ -808,6 +1006,13 @@ impl FfmpegDecoder {
             return Ok(PumpResult::NotJoc);
         }
         loop {
+            if self.pull_session_has_pending_input() {
+                return if self.pull_one_binaural_frame()? {
+                    Ok(PumpResult::Frame)
+                } else {
+                    Ok(PumpResult::Idle)
+                };
+            }
             if !self.staging.is_empty() {
                 let assembly_started = Instant::now();
                 let size = match parse_access_unit(&self.staging, self.drain_requested) {
@@ -879,10 +1084,42 @@ impl FfmpegDecoder {
                 self.timings.add_assembly(assembly_started.elapsed());
                 let session_started = Instant::now();
                 if self.session.is_none() {
-                    self.session =
-                        Some(OpenJocSession::new(self.config.clone()).map_err(|error| {
+                    let mut session = if let Some(max_pull_samples) = self.orientation_pull_samples
+                    {
+                        OpenJocSession::new_with_listener_orientation_pull_using_preparer(
+                            self.config.clone(),
+                            max_pull_samples,
+                            self.orientation_stream_epoch,
+                            self.orientation_preparer.clone().ok_or_else(|| {
+                                BridgeError::new(
+                                    BridgeErrorKind::InvalidConfig,
+                                    "listener-orientation preparer is unavailable",
+                                )
+                            })?,
+                        )
+                        .map_err(|error| {
                             BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
-                        })?);
+                        })?
+                    } else {
+                        OpenJocSession::new(self.config.clone()).map_err(|error| {
+                            BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+                        })?
+                    };
+                    if let Some(update) = self.pending_orientation_update.take() {
+                        match session.apply_prepared_listener_orientation(update) {
+                            Ok(accepted) => debug_assert_eq!(
+                                accepted.retired_kernels,
+                                [] as [openjoc_api::PreparedBinauralKernel; 0]
+                            ),
+                            Err(failure) => {
+                                self.pending_orientation_update = Some(failure.update);
+                                return Err(map_openjoc_error(&OpenJocError::Render(
+                                    failure.error.to_string(),
+                                )));
+                            }
+                        }
+                    }
+                    self.session = Some(session);
                 }
                 let session = self.session.as_mut().expect("session was initialized");
                 let push_status = session
@@ -905,6 +1142,22 @@ impl FfmpegDecoder {
                     // truncated decoded audio to a quarter of the programme
                     // (measured: 49 160 of 196 640 frames for a 4.096 s stream),
                     // deterministically and independently of chunk size.
+                    if self.orientation_pull_samples.is_some() {
+                        let frame = session
+                            .receive_binaural_frame()
+                            .map_err(|error| map_openjoc_error(&error))?;
+                        self.timings.add_session(session_started.elapsed());
+                        let Some(frame) = frame else {
+                            return Err(BridgeError::new(
+                                BridgeErrorKind::InternalPanic,
+                                "pull session reported OutputPending without a retrievable block",
+                            ));
+                        };
+                        let reorder_started = Instant::now();
+                        self.output.push_back(reorder_frame(frame, &self.layout)?);
+                        self.timings.add_reorder(reorder_started.elapsed());
+                        return Ok(PumpResult::Frame);
+                    }
                     let mut pending = Vec::new();
                     while let Some(frame) = session.receive_frame() {
                         pending.push(frame);
@@ -955,6 +1208,10 @@ impl FfmpegDecoder {
                     self.output.push_back(reorder_frame(frame, &self.layout)?);
                 }
                 self.timings.add_reorder(reorder_started.elapsed());
+                if self.orientation_pull_samples.is_some() && self.pull_session_has_pending_input()
+                {
+                    return Ok(PumpResult::Frame);
+                }
                 if !self.output.is_empty() {
                     return Ok(PumpResult::Frame);
                 }
@@ -967,13 +1224,33 @@ impl FfmpegDecoder {
             if self.session_drained {
                 return Ok(PumpResult::Eof);
             }
-            let Some(session) = self.session.as_mut() else {
+            if self.session.is_none() {
                 self.session_drained = true;
                 return Ok(PumpResult::Eof);
-            };
+            }
             let session_started = Instant::now();
-            session.drain().map_err(|error| map_openjoc_error(&error))?;
+            let drain_status = {
+                let session = self.session.as_mut().expect("session was initialized");
+                session.drain().map_err(|error| map_openjoc_error(&error))?
+            };
+            if self.orientation_pull_samples.is_some() {
+                self.timings.add_session(session_started.elapsed());
+                if self.pull_one_binaural_frame()? {
+                    return Ok(PumpResult::Frame);
+                }
+                if self
+                    .session
+                    .as_ref()
+                    .is_some_and(OpenJocSession::is_drained)
+                {
+                    self.session_drained = true;
+                    return Ok(PumpResult::Eof);
+                }
+                let _ = drain_status;
+                return Ok(PumpResult::Idle);
+            }
             let mut frames = Vec::new();
+            let session = self.session.as_mut().expect("session was initialized");
             while let Some(frame) = session.receive_frame() {
                 frames.push(frame);
             }
@@ -990,6 +1267,45 @@ impl FfmpegDecoder {
                 Ok(PumpResult::Frame)
             };
         }
+    }
+
+    fn pull_session_has_pending_input(&self) -> bool {
+        self.orientation_pull_samples.is_some()
+            && self
+                .session
+                .as_ref()
+                .and_then(OpenJocSession::pending_binaural_input_samples)
+                .is_some_and(|sample_count| sample_count > 0)
+    }
+
+    fn pull_one_binaural_frame(&mut self) -> Result<bool, BridgeError> {
+        let expected_frame = self.pull_session_has_pending_input();
+        let session_started = Instant::now();
+        let frame = self
+            .session
+            .as_mut()
+            .ok_or_else(|| {
+                BridgeError::new(
+                    BridgeErrorKind::InternalPanic,
+                    "pull session is unavailable after orientation opt-in",
+                )
+            })?
+            .receive_binaural_frame()
+            .map_err(|error| map_openjoc_error(&error))?;
+        self.timings.add_session(session_started.elapsed());
+        let Some(frame) = frame else {
+            if expected_frame {
+                return Err(BridgeError::new(
+                    BridgeErrorKind::InternalPanic,
+                    "orientation pull queue reported samples but returned no frame",
+                ));
+            }
+            return Ok(false);
+        };
+        let reorder_started = Instant::now();
+        self.output.push_back(reorder_frame(frame, &self.layout)?);
+        self.timings.add_reorder(reorder_started.elapsed());
+        Ok(true)
     }
 
     fn resolve_timestamp(
@@ -1091,10 +1407,35 @@ impl FfmpegDecoder {
     }
 
     fn reset_inner(&mut self) {
-        if let Some(session) = self.session.as_mut() {
-            session.reset();
+        let mut orientation_reset_failed = false;
+        if self.orientation_pull_samples.is_some() {
+            if let Some(session) = self.session.as_mut() {
+                match session.try_reset() {
+                    Ok(()) => {
+                        self.orientation_stream_epoch = session
+                            .listener_orientation_stream_epoch()
+                            .unwrap_or(self.orientation_stream_epoch);
+                        self.last_accepted_orientation_sequence = 0;
+                        self.pending_orientation_update = None;
+                    }
+                    Err(_) => orientation_reset_failed = true,
+                }
+            } else {
+                match self.orientation_stream_epoch.checked_add(1) {
+                    Some(epoch) => {
+                        self.orientation_stream_epoch = epoch;
+                        self.last_accepted_orientation_sequence = 0;
+                        drop(self.pending_orientation_update.take());
+                    }
+                    None => orientation_reset_failed = true,
+                }
+            }
+        } else {
+            if let Some(session) = self.session.as_mut() {
+                session.reset();
+            }
+            self.session = None;
         }
-        self.session = None;
         self.staging.clear();
         self.boundaries.clear();
         self.output.clear();
@@ -1104,7 +1445,7 @@ impl FfmpegDecoder {
         self.next_au_index = 0;
         self.drain_requested = false;
         self.session_drained = false;
-        self.poisoned = false;
+        self.poisoned = orientation_reset_failed;
         self.timings = BridgeTimings::default();
         self.inspection.reset_for_discontinuity();
     }
@@ -1427,7 +1768,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openjoc_api::{BinauralConfig, ValidationProfile};
+    use openjoc_api::{BinauralConfig, ListenerOrientation, OpenJocStatus, ValidationProfile};
     use openjoc_inspect::{InspectionOptions, inspect_reader};
     use std::collections::HashSet;
     use std::thread;
@@ -1889,7 +2230,7 @@ mod tests {
         sequence_count: u16,
         partition: &[u8],
     ) -> Vec<u8> {
-        assert!(!partition.is_empty());
+        assert_ne!(partition, &[] as &[u8]);
         assert_eq!(
             partition
                 .iter()
@@ -2054,6 +2395,432 @@ mod tests {
         five_channel_audio_frame(&joc_emdf(&inactive_oamd(), &one_object_joc()), true)
     }
 
+    #[test]
+    fn listener_orientation_session_preserves_output_pending_and_drain_contracts() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut static_session = OpenJocSession::new(config.clone()).unwrap();
+        let mut dynamic_session = OpenJocSession::new_with_listener_orientation(config).unwrap();
+        let fixture = synthetic_joc_lifecycle_stream();
+        assert_eq!(fixture.len() % 4096, 0);
+
+        let blocked = (0..8_usize)
+            .find_map(|index| {
+                let pts = i64::try_from(index * 1536).unwrap();
+                let start = index * 4096;
+                let frame = &fixture[start..start + 4096];
+                let packet = OpenJocPacket {
+                    data: frame,
+                    pts_samples: Some(pts),
+                    discontinuity: false,
+                    preroll: false,
+                };
+                let static_status = static_session.push_packet(packet).unwrap();
+                let dynamic_status = dynamic_session.push_packet(packet).unwrap();
+                assert_eq!(static_status, dynamic_status);
+                (dynamic_status == OpenJocStatus::OutputPending).then_some((frame, pts))
+            })
+            .expect("generated JOC access units should fill the bounded session output queue");
+        let (blocked_frame, blocked_pts) = blocked;
+
+        let preparer = dynamic_session.listener_orientation_preparer().unwrap();
+        let yaw = 4.0_f64.to_radians();
+        let first_update = preparer
+            .prepare(
+                ListenerOrientation::new(0.0, 0.0, (yaw * 0.5).sin(), (yaw * 0.5).cos()).unwrap(),
+                dynamic_session.listener_orientation_stream_epoch().unwrap(),
+                1,
+            )
+            .unwrap();
+        let accepted = dynamic_session
+            .apply_prepared_listener_orientation(first_update)
+            .unwrap();
+        drop(accepted.retired_kernels);
+        assert_eq!(
+            dynamic_session.pending_listener_orientation_sequence(),
+            Some(1)
+        );
+
+        let blocked_packet = OpenJocPacket {
+            data: blocked_frame,
+            pts_samples: Some(blocked_pts),
+            discontinuity: false,
+            preroll: false,
+        };
+        assert_eq!(
+            static_session.push_packet(blocked_packet).unwrap(),
+            OpenJocStatus::OutputPending
+        );
+        assert_eq!(
+            dynamic_session.push_packet(blocked_packet).unwrap(),
+            OpenJocStatus::OutputPending
+        );
+
+        let mut static_queued = Vec::new();
+        while let Some(frame) = static_session.receive_frame() {
+            static_queued.push(frame);
+        }
+        let mut dynamic_queued = Vec::new();
+        while let Some(frame) = dynamic_session.receive_frame() {
+            dynamic_queued.push(frame);
+        }
+        assert_ne!(static_queued, Vec::new());
+        assert_eq!(static_queued.len(), dynamic_queued.len());
+        for (static_frame, dynamic_frame) in static_queued.iter().zip(&dynamic_queued) {
+            assert_eq!(static_frame.pts_samples, dynamic_frame.pts_samples);
+            assert_eq!(static_frame.sample_count, dynamic_frame.sample_count);
+            assert_eq!(static_frame.interleaved_f32, dynamic_frame.interleaved_f32);
+        }
+        assert_eq!(
+            dynamic_session.pending_listener_orientation_sequence(),
+            Some(1)
+        );
+
+        // The AU whose earlier push returned OutputPending is still available
+        // and can be retried at the same PTS after the queued frames are read.
+        let static_status = static_session.push_packet(blocked_packet).unwrap();
+        let dynamic_status = dynamic_session.push_packet(blocked_packet).unwrap();
+        assert_eq!(static_status, dynamic_status);
+        assert_ne!(dynamic_status, OpenJocStatus::OutputPending);
+
+        let second_yaw = 8.0_f64.to_radians();
+        let second_update = preparer
+            .prepare(
+                ListenerOrientation::new(
+                    0.0,
+                    0.0,
+                    (second_yaw * 0.5).sin(),
+                    (second_yaw * 0.5).cos(),
+                )
+                .unwrap(),
+                dynamic_session.listener_orientation_stream_epoch().unwrap(),
+                2,
+            )
+            .unwrap();
+        let accepted = dynamic_session
+            .apply_prepared_listener_orientation(second_update)
+            .unwrap();
+        drop(accepted.retired_kernels);
+        assert_eq!(
+            dynamic_session.pending_listener_orientation_sequence(),
+            Some(2)
+        );
+
+        while static_session.receive_frame().is_some() {}
+        while dynamic_session.receive_frame().is_some() {}
+        let _ = static_session.drain().unwrap();
+        let _ = dynamic_session.drain().unwrap();
+        while static_session.receive_frame().is_some() {}
+        while dynamic_session.receive_frame().is_some() {}
+        assert_eq!(
+            dynamic_session.pending_listener_orientation_sequence(),
+            Some(2)
+        );
+        assert_eq!(
+            dynamic_session
+                .last_applied_listener_orientation()
+                .map(|receipt| receipt.sequence),
+            Some(1)
+        );
+        let rejected_after_drain = preparer
+            .prepare(
+                ListenerOrientation::IDENTITY,
+                dynamic_session.listener_orientation_stream_epoch().unwrap(),
+                3,
+            )
+            .unwrap();
+        assert_eq!(
+            dynamic_session
+                .apply_prepared_listener_orientation(rejected_after_drain)
+                .unwrap_err()
+                .error,
+            openjoc_api::RenderError::BinauralInputAfterTailStart
+        );
+    }
+
+    #[test]
+    fn listener_orientation_pull_preserves_static_pcm_and_one_au_backpressure() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut static_session = OpenJocSession::new(config.clone()).unwrap();
+        let mut pull_session =
+            OpenJocSession::new_with_listener_orientation_pull(config, 128).unwrap();
+        let fixture = synthetic_joc_lifecycle_stream();
+        let mut static_output = Vec::new();
+        let mut pull_output = Vec::new();
+        for index in 0..8_usize {
+            let pts = i64::try_from(index * 1536).unwrap();
+            let start = index * 4096;
+            let packet = OpenJocPacket {
+                data: &fixture[start..start + 4096],
+                pts_samples: Some(pts),
+                discontinuity: false,
+                preroll: false,
+            };
+            let static_status = static_session.push_packet(packet).unwrap();
+            let pull_status = pull_session.push_packet(packet).unwrap();
+            assert_eq!(static_status, pull_status);
+            if pull_status == OpenJocStatus::FrameAvailable {
+                // A second AU cannot overtake projected speaker PCM waiting for
+                // pull-side binauralization. Retry after every chunk is consumed.
+                assert_eq!(
+                    pull_session.push_packet(packet).unwrap(),
+                    OpenJocStatus::OutputPending
+                );
+            }
+            while let Some(frame) = static_session.receive_frame() {
+                static_output.push(frame);
+            }
+            while let Some(frame) = pull_session.receive_binaural_frame().unwrap() {
+                assert!(frame.sample_count <= 128);
+                pull_output.push(frame);
+            }
+        }
+
+        assert_eq!(
+            static_session.drain().unwrap(),
+            OpenJocStatus::FrameAvailable
+        );
+        assert_eq!(pull_session.drain().unwrap(), OpenJocStatus::FrameAvailable);
+        let queued_reconstruction_samples = pull_session
+            .pending_binaural_input_samples()
+            .expect("pull mode reports queued input size");
+        assert!(queued_reconstruction_samples <= 1536);
+        if queued_reconstruction_samples > 0 {
+            assert_eq!(pull_session.drain().unwrap(), OpenJocStatus::OutputPending);
+        }
+        while let Some(frame) = static_session.receive_frame() {
+            static_output.push(frame);
+        }
+        while pull_session.pending_binaural_input_samples().unwrap() > 0 {
+            let frame = pull_session
+                .receive_binaural_frame()
+                .unwrap()
+                .expect("queued reconstruction input is available");
+            assert!(frame.sample_count <= 128);
+            pull_output.push(frame);
+        }
+        assert_eq!(pull_session.drain().unwrap(), OpenJocStatus::FrameAvailable);
+        while let Some(frame) = pull_session.receive_binaural_frame().unwrap() {
+            assert!(frame.sample_count <= 128);
+            pull_output.push(frame);
+        }
+        assert!(pull_session.is_drained());
+        assert_eq!(pull_session.drain().unwrap(), OpenJocStatus::EndOfStream);
+
+        let index_frames = |frames: &[OpenJocPcmFrame]| {
+            let mut indexed = Vec::new();
+            for frame in frames {
+                assert_eq!(frame.channel_count, 2);
+                let start = frame.pts_samples.expect("synthetic stream has sample PTS");
+                for sample in 0..frame.sample_count {
+                    let offset = sample * 2;
+                    indexed.push((
+                        start + i64::try_from(sample).expect("bounded output sample index"),
+                        frame.interleaved_f32[offset].to_bits(),
+                        frame.interleaved_f32[offset + 1].to_bits(),
+                    ));
+                }
+            }
+            indexed
+        };
+        assert_ne!(static_output, Vec::new());
+        assert_eq!(index_frames(&pull_output), index_frames(&static_output));
+    }
+
+    #[test]
+    fn listener_orientation_pull_applies_pose_at_next_chunk_boundary() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut session = OpenJocSession::new_with_listener_orientation_pull(config, 128).unwrap();
+        let preparer = session.listener_orientation_preparer().unwrap();
+        let fixture = synthetic_joc_lifecycle_stream();
+        let mut first_end = None;
+        let mut receipt_confirmed = false;
+        for index in 0..8_usize {
+            let pts = i64::try_from(index * 1536).unwrap();
+            let start = index * 4096;
+            session
+                .push_packet(OpenJocPacket {
+                    data: &fixture[start..start + 4096],
+                    pts_samples: Some(pts),
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .unwrap();
+            while let Some(frame) = session.receive_binaural_frame().unwrap() {
+                if let Some(expected_end) = first_end {
+                    if session
+                        .last_applied_listener_orientation()
+                        .is_some_and(|receipt| receipt.sequence == 1)
+                    {
+                        let actual_start =
+                            frame.pts_samples.expect("synthetic stream has sample PTS");
+                        assert_eq!(actual_start, expected_end);
+                        receipt_confirmed = true;
+                        break;
+                    }
+                } else {
+                    first_end = Some(
+                        frame.pts_samples.expect("synthetic stream has sample PTS")
+                            + i64::try_from(frame.sample_count)
+                                .expect("bounded output frame sample count"),
+                    );
+                    let angle = 5.0_f64.to_radians();
+                    let update = preparer
+                        .prepare(
+                            ListenerOrientation::new(
+                                0.0,
+                                0.0,
+                                (angle * 0.5).sin(),
+                                (angle * 0.5).cos(),
+                            )
+                            .unwrap(),
+                            session.listener_orientation_stream_epoch().unwrap(),
+                            1,
+                        )
+                        .unwrap();
+                    let accepted = session.apply_prepared_listener_orientation(update).unwrap();
+                    assert_eq!(accepted.accepted_sequence, 1);
+                    drop(accepted.retired_kernels);
+                }
+            }
+            if receipt_confirmed {
+                break;
+            }
+        }
+        assert!(receipt_confirmed, "pose did not apply on a subsequent pull");
+        assert_eq!(
+            session
+                .last_applied_listener_orientation()
+                .map(|receipt| receipt.logical_start_sample),
+            first_end.map(|sample| u64::try_from(sample).expect("nonnegative synthetic PTS"))
+        );
+    }
+
+    #[test]
+    fn lazy_pull_bridge_transfers_one_queued_pose_and_fences_reset_epoch() {
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        };
+        let mut decoder = FfmpegDecoder::new_with_listener_orientation_pull(config, 128).unwrap();
+        assert!(decoder.session.is_none());
+        let preparer = decoder.listener_orientation_preparer().unwrap();
+        let first_update = preparer
+            .prepare(ListenerOrientation::IDENTITY, 0, 1)
+            .unwrap();
+        let first = decoder
+            .apply_prepared_listener_orientation(first_update)
+            .unwrap();
+        assert_eq!(first.superseded_sequence, None);
+        assert_eq!(
+            first.retired_kernels,
+            [] as [openjoc_api::PreparedBinauralKernel; 0]
+        );
+        let yaw = 7.0_f64.to_radians();
+        let second_update = preparer
+            .prepare(
+                ListenerOrientation::new(0.0, 0.0, (yaw * 0.5).sin(), (yaw * 0.5).cos()).unwrap(),
+                0,
+                2,
+            )
+            .unwrap();
+        let replaced = decoder
+            .apply_prepared_listener_orientation(second_update)
+            .unwrap();
+        assert_eq!(replaced.superseded_sequence, Some(1));
+        assert_eq!(replaced.retired_kernels.len(), preparer.source_count());
+        drop(replaced.retired_kernels);
+        assert_eq!(decoder.pending_listener_orientation_sequence(), Some(2));
+        assert!(decoder.session.is_none());
+
+        let fixture = synthetic_joc_lifecycle_stream();
+        let mut frame_available = false;
+        for index in 0..8_usize {
+            let start = index * 4096;
+            let data = &fixture[start..start + 4096];
+            match decoder
+                .send_packet(packet(data, Some(i64::try_from(index * 1536).unwrap())))
+                .unwrap()
+            {
+                BridgeStatus::FrameAvailable => {
+                    frame_available = true;
+                    break;
+                }
+                BridgeStatus::NeedMoreInput => {}
+                status => panic!("unexpected pull send status: {status:?}"),
+            }
+        }
+        assert!(frame_available);
+        assert!(
+            decoder.session.is_some(),
+            "JOC admission creates the session"
+        );
+        assert!(
+            decoder.output.is_empty(),
+            "send does not render a pull chunk"
+        );
+        assert!(decoder.pending_binaural_input_samples().unwrap() > 0);
+        assert_eq!(decoder.pending_listener_orientation_sequence(), Some(2));
+
+        let first_frame = match decoder.receive_frame().unwrap() {
+            ReceiveOutcome::Frame(frame) => frame,
+            outcome => panic!("expected a pull-rendered frame, got {outcome:?}"),
+        };
+        assert!(first_frame.nb_samples <= 128);
+        assert_eq!(
+            decoder
+                .last_applied_listener_orientation()
+                .map(|receipt| receipt.sequence),
+            Some(2)
+        );
+        assert_eq!(
+            decoder
+                .last_applied_listener_orientation()
+                .map(|receipt| receipt.logical_start_sample),
+            first_frame
+                .pts
+                .map(|pts| u64::try_from(pts).expect("nonnegative fixture PTS"))
+        );
+        assert_eq!(
+            decoder.pending_binaural_input_samples().unwrap(),
+            1536 - first_frame.nb_samples
+        );
+
+        let stale = preparer
+            .prepare(ListenerOrientation::IDENTITY, 0, 3)
+            .unwrap();
+        decoder.reset();
+        assert_eq!(decoder.listener_orientation_stream_epoch(), Some(1));
+        assert!(
+            decoder.session.is_some(),
+            "active pull session resets in place"
+        );
+        let failure = decoder
+            .apply_prepared_listener_orientation(stale)
+            .unwrap_err();
+        assert!(failure.error.to_string().contains("epoch mismatch"));
+    }
+
     fn active_object_oamd(x: u8, y: u8, z: i8) -> Vec<u8> {
         assert!(x <= 62 && y <= 62 && (-15..=15).contains(&z));
         let positions = [
@@ -2102,7 +2869,8 @@ mod tests {
             body.push(0, 1); // no additional table data
         }
         let body = body.padded_bytes();
-        assert!(!body.is_empty() && body.len() <= 31);
+        assert_ne!(body, [] as [u8; 0]);
+        assert!(body.len() <= 31);
 
         let mut payload = Bits::default();
         payload.push(0, 2); // syntax version
@@ -2239,7 +3007,10 @@ mod tests {
                         assert_eq!(frame.sample_range.start_sample, (index * 1536) as u64);
                         assert_eq!(frame.sample_range.end_sample, ((index + 1) * 1536) as u64);
                         assert!(!frame.decoded.state_reset);
-                        assert!(!frame.decoded.reconstruction_basis.rows.is_empty());
+                        assert_ne!(
+                            frame.decoded.reconstruction_basis.rows,
+                            Vec::<Vec<f64>>::new()
+                        );
                         assert!(
                             frame
                                 .decoded
@@ -2295,7 +3066,7 @@ mod tests {
                 output.push(frame);
             }
 
-            assert!(!output.is_empty(), "lifecycle fixture produced no PCM");
+            assert_ne!(output, Vec::new(), "lifecycle fixture produced no PCM");
             assert!(output.iter().all(|frame| {
                 frame.sample_rate == SAMPLE_RATE
                     && frame.channel_count == 2
@@ -2382,7 +3153,7 @@ mod tests {
             .expect("fingerprint fixture must produce PCM")
             .into_iter()
             .map(|bytes| {
-                assert!(!bytes.is_empty());
+                assert_ne!(bytes, [] as [u8; 0]);
                 sha256_hex(&bytes)
             })
             .collect()
@@ -3590,7 +4361,7 @@ mod tests {
             while let Some(frame) = session.receive_frame() {
                 rendered.extend(frame.interleaved_f32);
             }
-            assert!(!rendered.is_empty());
+            assert_ne!(rendered, Vec::<f32>::new());
             assert!(rendered.iter().all(|sample| sample.is_finite()));
         }
     }
@@ -3712,7 +4483,7 @@ mod tests {
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
         }
-        assert!(!output.is_empty());
+        assert_ne!(output, Vec::new());
         assert!(output.iter().all(|frame| {
             frame.channel_count == expected_channels
                 && frame.interleaved_f32.len() == frame.sample_count * expected_channels
@@ -3960,7 +4731,7 @@ mod tests {
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
         }
-        assert!(!output.is_empty());
+        assert_ne!(output, Vec::new());
         assert!(output.iter().all(|frame| {
             frame.channel_count == expected_channels
                 && frame.interleaved_f32.len() == frame.sample_count * expected_channels
@@ -4076,7 +4847,7 @@ mod tests {
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
         }
-        assert!(!output.is_empty());
+        assert_ne!(output, Vec::new());
         assert_eq!(
             output.iter().map(|frame| frame.sample_count).sum::<usize>(),
             1536 + FINAL_LINKED_GAIN_LATENCY_SAMPLES
@@ -4913,7 +5684,7 @@ mod tests {
                 ReceiveOutcome::NotJoc => panic!("stereo CMAF became non-JOC"),
             }
         }
-        assert!(!frames.is_empty());
+        assert_ne!(frames, Vec::new());
         assert!(frames.iter().all(|frame| {
             frame.channel_layout.openjoc_order.len() == 2
                 && frame

@@ -7,14 +7,16 @@
 
 ## ABI 策略
 
-ABI 版本为 `1.6-experimental`，与 OpenJOC 软件包版本彼此独立。重大改动可能破坏结构布局或所有权规则，需要增加 ABI 主版本号。小版本新增内容必须追加字段或函数，并保持已有字段的含义不变。配置、PCM 帧和输出信息结构体都包含 `struct_size`；调用方必须初始化它们，生产者必须拒绝尺寸更小的结构体。ABI 次版本 1 追加了 `dialnorm_mode` 字段。使用 ABI 1.0 配置结构大小的调用方仍会被接受，并收到 `OPENJOC_DIALNORM_DEFAULT`。ABI 1.2 追加了函数和状态码，但没有改变已有结构体布局。`openjoc_get_abi_version()` 返回 `(major << 16) | minor`。
+ABI 版本为 `1.7-experimental`，与 OpenJOC 软件包版本彼此独立。重大改动可能破坏结构布局或所有权规则，需要增加 ABI 主版本号。小版本新增内容必须追加字段或函数，并保持已有字段的含义不变。配置、PCM 帧和输出信息结构体都包含 `struct_size`；调用方必须初始化它们，生产者必须拒绝尺寸更小的结构体。ABI 次版本 1 追加了 `dialnorm_mode` 字段。使用 ABI 1.0 配置结构大小的调用方仍会被接受，并收到 `OPENJOC_DIALNORM_DEFAULT`。ABI 1.2 追加了函数和状态码，但没有改变已有结构体布局。`openjoc_get_abi_version()` 返回 `(major << 16) | minor`。
 
 ABI 1.4 在 `openjoc_decoder_config` 中追加了 `custom_speaker_layout`。需要使用自定义几何时，把它设为内存中的 `openjoc_custom_speaker_layout`；其中有序的 `openjoc_custom_speaker` 数组包含有限的方位角/仰角（单位为度），以及 `OPENJOC_SPEAKER_FULL_RANGE` 或 `OPENJOC_SPEAKER_LFE` 角色。描述结构和其中的所有字符串只在 `openjoc_decoder_create` 调用期间借用；解码器会复制经过验证的布局，并通过输出标签报告相同的顺序。原有调用方将此字段留空即可继续使用预设行为。自定义布局的约定、坐标规则、校验限制以及 WAV/CAF 元数据边界，记录在[自定义扬声器布局](../using/custom-speaker-layouts.md)中。
 
-`openjoc_decoder_config_init()` 仍是对旧版本安全的 ABI 1.3 前缀初始化函数：它不会写入 ABI 1.4 或 1.6 追加的字段，因此 ABI 1.3 调用方可以将其链接到较新库，而不会发生结构体越界写入。ABI 1.4 调用方使用 `openjoc_decoder_config_init_v1_4()` 初始化自定义布局字段；ABI 1.6 调用方使用 `openjoc_decoder_config_init_v1_6()` 初始化完整结构并选择 HRTF。
+`openjoc_decoder_config_init()` 仍是对旧版本安全的 ABI 1.3 前缀初始化函数，不会写入 ABI 1.4 或之后追加的字段。ABI 1.4 调用方使用 `openjoc_decoder_config_init_v1_4()` 初始化自定义布局字段；ABI 1.6 调用方使用 `openjoc_decoder_config_init_v1_6()` 初始化精确的 v1.6 前缀并选择 HRTF；ABI 1.7 调用方使用 `openjoc_decoder_config_init_v1_7()` 初始化完整结构。保留的 v1.6 对齐字段可防止旧结构尾部填充被误读为启用新功能。
 ABI 1.5 新增了 `openjoc_stream_decoder` 的只读 `openjoc_live_inspection_snapshot`。它报告同一条带内解码路径观察到的 programme 布局、重建载体、验证状态、对象/复杂度、EMDF、动态场景、AU 和时间戳信息；实时覆盖明确区分 `partial` 与 `complete_continuous`，seek、flush 或 reset 会开始新的观察 epoch。
 
 ABI 1.6 在 `openjoc_decoder_config` 末尾追加 `hrtf_preset`。值 `0` 选择默认 SADIE II D1/KU100，值 `1` 选择 SADIE II D2/KEMAR。旧版 `struct_size` 会继续使用 D1；已退役的 Aachen 值 `2` 也会为旧调用方映射到 D1。
+
+ABI 1.7 追加 `listener_orientation_pull_samples`。值 `0` 保持现有固定听音者姿态的双耳路径；`1..=256` 显式启用实验性的设备无关 3DoF 听音者姿态接口，并限制每次拉取的输出采样点数。CLI、WASM、DirectShow/LAV 和默认路径不变。
 
 “实验性”表示 C 接口可能会在 OpenJOC 0.x 集成过程中继续演进，并不表示现有的解码器正确性声明被撤回。
 
@@ -22,7 +24,7 @@ ABI 1.6 在 `openjoc_decoder_config` 末尾追加 `hrtf_preset`。值 `0` 选择
 
 ```c
 openjoc_decoder_config config;
-openjoc_decoder_config_init_v1_6(&config);
+openjoc_decoder_config_init_v1_7(&config);
 
 openjoc_decoder *decoder = NULL;
 openjoc_decoder_create(&config, &decoder);
@@ -50,6 +52,17 @@ ABI 1.3 增加了 `openjoc_classifier`，这是一个不解码、与框架无关
 语义标签可以通过 `openjoc_decoder_get_channel_label` 以及输出/帧描述结构获取。canonical PCM 采样格式值为 `1`（交错的 float32）。
 
 把 `render_mode` 设为 `OPENJOC_RENDER_BINAURAL`，并把 `sofa_data` / `sofa_size` 设置为空/零，即可使用 `hrtf_preset` 选择的内置离线 HRTF（默认 `OPENJOC_HRTF_SADIE_D1_KU100`）。提供非空 SOFA 缓冲区时，会选择现有的严格用户数据集路径。如果 `virtual_layout` 为空，虚拟布局默认使用已配置的扬声器布局。设置 `speaker_layout = "22.2"` 可以选择原生 22.2 扬声器会话；其输出提供 24 个有序语义标签，包括 `LFE1` 和 `LFE2`。
+
+### 实验性听音者姿态
+
+仅对双耳会话设置非零的 ABI 1.7 拉取上限。把解码器交给渲染线程前，先调用 `openjoc_decoder_get_listener_orientation_preparer()` 或对应的 stream 函数取得不可变的准备句柄。该句柄共享已验证的 HRTF/布局资源；姿态更新在工作线程准备，不需要在准备期间访问或锁住解码器。状态快照给出 `stream_epoch`，每个 epoch 内的序号必须递增；reset 会推进 epoch，旧更新会被拒绝且不会被消费。
+
+四元数结构采用带尺寸字段的 `(x, y, z, w)`，并对有限值做尺度稳定归一化。它表示从听音者局部坐标到场景坐标的主动旋转，坐标轴为 `+Y` 前方、`+X` 右方、`+Z` 上方。实现对固定虚拟扬声器方向应用逆旋转，然后为整组声道查询 HRIR。API 不读取传感器，也不接管任何音频设备。
+
+在拉取模式下，每次接收最多返回配置的采样点数。压缩流桥接会在第一次接收前保留渲染尚未开始的状态；`pending_binaural_input_samples` 报告等待双耳化的投影虚拟扬声器 PCM，上限为一个 1,536 采样点访问单元。调用方必须在喂入下一 AU 前取完当前 PCM。在两次接收之间接受的姿态目标会作用于尚未渲染的后续分块；若已有 240 采样点过渡正在进行，新过渡要等其完成，且最多保留一个等待目标。drain 后的重建尾部和 FIR 尾部也会分块返回。这是 PCM/控制边界，不代表传感器时间戳或端到端延迟保证。
+
+应用校验/生命周期错误时，原 update 句柄仍可使用。成功时 update 置空，`retired` 返回同一分配，即使没有旧滤波器也如此；请在音频回调之外销毁 retired。捕获到 panic 后解码器会被隔离，update 可能为空，应销毁且不要重试。同一个 preparer 句柄上的 prepare 与读取 last_error 必须串行；不同句柄可并行准备。准备错误可从 `openjoc_listener_orientation_preparer_last_error()` 读取。无姿态时的静态处理仍是默认行为。
+
 
 C 适配器继承共享会话经过校准的默认 E-AC-3 Dialnorm 节目校准，除非显式把 `dialnorm_mode` 设为 `OPENJOC_DIALNORM_DIGITAL` 或 `OPENJOC_DIALNORM_ANALOG`。Default 推荐用于普通播放/解码。Digital 明确选择编码后的数字节目级校准。Analog 使用单位 Dialnorm 增益，是高级兼容/诊断策略，不是推荐的增大音量方式，也不是母带制作模式。Dialnorm 来自元数据，与现有 DRC 字段彼此独立；DRC 改变的是编码后的动态范围行为。FinalLinkedGain 是内部渲染器余量处理，不是用户的母带制作控制。
 

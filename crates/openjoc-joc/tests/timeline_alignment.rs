@@ -179,12 +179,10 @@ fn r2_timeline_reset_discards_stale_tail_and_preserves_lfe_ranges() {
     };
     let lfe = vec![3.0; 640];
 
-    assert!(
-        timeline
-            .push_frame(0, 48_000, 0, 640, &base, &reconstruction, Some(&lfe), false,)
-            .expect("first frame")
-            .is_empty()
-    );
+    let first_frame = timeline
+        .push_frame(0, 48_000, 0, 640, &base, &reconstruction, Some(&lfe), false)
+        .expect("first frame");
+    assert_eq!(first_frame, Vec::new());
     let before_reset = timeline
         .push_frame(
             1,
@@ -214,7 +212,7 @@ fn r2_timeline_reset_discards_stale_tail_and_preserves_lfe_ranges() {
             true,
         )
         .expect("discontinuity frame");
-    assert!(after_reset.is_empty());
+    assert_eq!(after_reset, Vec::new());
     let after_reset = timeline
         .push_frame(
             3,

@@ -59,6 +59,30 @@ PTS 使用解码后的采样域。如果第一个数据包的 PTS 是 `P`，逻�
 
 输出队列有大小上限。调用方必须先接收等待中的 PCM，才能继续推送下一个数据包；否则会返回 `OpenJocStatus::OutputPending`。
 
+## 实验性听音者姿态
+
+`OpenJocSession::new_with_listener_orientation_pull(config, pull_samples)` 显式启用设备无关的 3DoF 双耳姿态路径；默认构造函数仍是固定姿态。`pull_samples` 限定在 `1..=256`。可克隆的 `ListenerOrientationPreparer` 可放到工作线程，它为所有非 LFE 虚拟扬声器准备完整 HRIR 更新，随后在渲染调用之间提交：
+
+```rust
+use openjoc_api::{BinauralConfig, ListenerOrientation, OpenJocConfig, OpenJocSession, RenderMode};
+
+let mut config = OpenJocConfig::default();
+config.render_mode = RenderMode::Binaural;
+config.binaural = Some(BinauralConfig::builtin_generic("7.1.4"));
+let mut session = OpenJocSession::new_with_listener_orientation_pull(config, 128)?;
+let preparer = session.listener_orientation_preparer().expect("已启用");
+let epoch = session.listener_orientation_stream_epoch().expect("已启用");
+let pose = ListenerOrientation::new(0.0, 0.0, 0.0, 1.0)?;
+let update = preparer.prepare(pose, epoch, 1)?;
+let receipt = session.apply_prepared_listener_orientation(update)
+    .map_err(|failure| failure.error)?;
+drop(receipt.retired_kernels); // 在实时回调之外释放或回收旧缓冲区
+```
+
+四元数是有限、尺度归一化的 `(x, y, z, w)`，表示从听音者局部坐标到场景坐标的主动旋转；坐标轴为 `+Y` 前方、`+X` 右方、`+Z` 上方。实现对固定世界声源方向应用逆旋转后查询 HRIR。序号必须在同一 stream epoch 内递增；reset 会推进 epoch，旧更新会被拒绝且保留原句柄。提交回执包含实际接受和被替代的序号以及待回收 FIR 缓冲区。
+
+拉取模式在双耳化前最多保留一个 1,536 采样点投影 AU，每次 `receive_binaural_frame()` 最多输出配置的采样数；`pending_binaural_input_samples()` 可查询剩余队列。在两次拉取之间接受的新目标会等待尚未渲染的 PCM；若已有 240 采样点过渡正在进行，新过渡会等它结束，且最多保留一个等待目标。排空后的重建/FIR 尾部也按块输出。虚拟扬声器投影、增益、通道顺序和 FIR 系数不变；identity 姿态 PCM 精确匹配静态路径。方向覆盖不足或 HRIR 对超过资源派生上限（最高 8,192 taps）时，整次更新失败，不会截断 taps。该接口不读取传感器或控制设备，也不保证硬实时、主观听感或端到端延迟。
+
 ## 策略
 
 `DrcPolicy` 直接映射到已有的 E-AC-3 `InternalBasePolicy`，支持 disabled、line、RF 和自定义 boost/cut。DRC 改变节目动态，不是最终音量或响度控制。`DownmixPolicy` 为立体声输出支持 auto、Lo/Ro 和 Lt/Rt。公共库类型不会复用 CLI 枚举。

@@ -10,7 +10,7 @@ or FFmpeg release announcement. The product wording is deliberately
 The closed playback stack is:
 
 ```text
-OpenJOC renderer and C ABI 1.6
+OpenJOC renderer and C ABI 1.7
         ↓
 patched FFmpeg 9.0.1 native libavcodec wrapper (libopenjoc)
         ↓

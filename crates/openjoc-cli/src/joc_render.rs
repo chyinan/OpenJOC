@@ -4407,7 +4407,7 @@ mod tests {
         let first = renderer
             .render_frame_aligned(0, &first_frame, &base(640, 1.0))
             .unwrap();
-        assert!(first.is_empty());
+        assert_eq!(first, [] as [RenderedBlock; 0]);
         let second = renderer
             .render_frame_aligned(1, &second_frame, &base(640, 1.0))
             .unwrap();

@@ -12,8 +12,8 @@
     "version": "0.18.0",
     "c_abi": {
       "major": 1,
-      "minor": 6,
-      "packed_hex": "0x00010006"
+      "minor": 7,
+      "packed_hex": "0x00010007"
     },
     "license": "Apache-2.0",
     "dsp_renderer": "OpenJOC shared renderer; platform-neutral",

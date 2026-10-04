@@ -28,18 +28,29 @@ use std::{
     fmt,
 };
 
+mod dynamic_binaural;
 mod final_linked_gain;
 mod partitioned;
+mod prepared_binaural;
 mod sample_delay;
 
 pub use sample_delay::SampleDelay;
 
+pub use dynamic_binaural::{
+    AppliedBinauralUpdate, BinauralResetFailure, BinauralUpdateAcceptance,
+    BinauralUpdateApplyFailure, DEFAULT_DYNAMIC_BINAURAL_TRANSITION_SAMPLES,
+    DynamicBinauralRenderer, DynamicBinauralSource, MAX_DYNAMIC_BINAURAL_BLOCK_SAMPLES,
+    MAX_DYNAMIC_BINAURAL_HRIR_TAPS, MAX_DYNAMIC_BINAURAL_SOURCES,
+};
 pub use final_linked_gain::{
     FINAL_LINKED_GAIN_BLOCK_SAMPLES, FinalLinkedGain, FinalLinkedGainAvailability,
     FinalLinkedGainError, final_linked_gain_availability,
 };
 pub use partitioned::{
     PartitionedBinauralRenderer, UniformPartitionedConfig, UniformPartitionedConvolver,
+};
+pub use prepared_binaural::{
+    BinauralResourceIdentity, PreparedBinauralKernel, PreparedBinauralUpdate,
 };
 
 /// The fixed output channel order for the J5R1 speaker renderer.
@@ -2863,6 +2874,38 @@ pub enum RenderError {
         remaining: usize,
     },
     EmptyBinauralSourceSet,
+    BinauralResourceIdentityMismatch,
+    BinauralUpdateEpochMismatch {
+        expected: u64,
+        actual: u64,
+    },
+    BinauralUpdateSequenceNotIncreasing {
+        previous: u64,
+        actual: u64,
+    },
+    BinauralOrientationNotEnabled,
+    BinauralUpdateSourceCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    BinauralUpdateSourceMismatch {
+        position: usize,
+        expected: SourceId,
+        actual: SourceId,
+    },
+    BinauralUpdateTapLimitExceeded {
+        id: SourceId,
+        actual: usize,
+        maximum: usize,
+    },
+    BinauralInvalidTransitionLength,
+    BinauralInvalidBlockLimit,
+    BinauralBlockLimitExceeded {
+        actual: usize,
+        maximum: usize,
+    },
+    BinauralDynamicResourceLimit,
+    BinauralStreamEpochOverflow,
     BinauralSourceCountMismatch {
         expected: usize,
         actual: usize,
@@ -3091,6 +3134,56 @@ impl fmt::Display for RenderError {
             Self::EmptyBinauralSourceSet => {
                 formatter.write_str("binaural renderer requires at least one source")
             }
+            Self::BinauralResourceIdentityMismatch => formatter.write_str(
+                "prepared binaural update belongs to a different HRTF or layout resource",
+            ),
+            Self::BinauralUpdateEpochMismatch { expected, actual } => write!(
+                formatter,
+                "prepared binaural update epoch mismatch: expected {expected}, actual {actual}"
+            ),
+            Self::BinauralUpdateSequenceNotIncreasing { previous, actual } => write!(
+                formatter,
+                "prepared binaural sequence must increase: previous {previous}, actual {actual}"
+            ),
+            Self::BinauralOrientationNotEnabled => formatter
+                .write_str("listener-orientation rendering was not enabled for this session"),
+            Self::BinauralUpdateSourceCountMismatch { expected, actual } => write!(
+                formatter,
+                "prepared binaural source count mismatch: expected {expected}, actual {actual}"
+            ),
+            Self::BinauralUpdateSourceMismatch {
+                position,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "prepared binaural source at position {position} mismatch: expected {}, actual {}",
+                expected.0, actual.0
+            ),
+            Self::BinauralUpdateTapLimitExceeded {
+                id,
+                actual,
+                maximum,
+            } => write!(
+                formatter,
+                "prepared HRIR for source {} has {actual} taps, exceeding the limit {maximum}",
+                id.0
+            ),
+            Self::BinauralInvalidTransitionLength => {
+                formatter.write_str("binaural transition length must be non-zero")
+            }
+            Self::BinauralInvalidBlockLimit => {
+                formatter.write_str("dynamic binaural block limit must be non-zero")
+            }
+            Self::BinauralBlockLimitExceeded { actual, maximum } => write!(
+                formatter,
+                "dynamic binaural block has {actual} samples, exceeding the limit {maximum}"
+            ),
+            Self::BinauralDynamicResourceLimit => {
+                formatter.write_str("dynamic binaural resource exceeds its explicit limit")
+            }
+            Self::BinauralStreamEpochOverflow => formatter
+                .write_str("dynamic binaural stream epoch overflowed; renderer is fail-closed"),
             Self::BinauralSourceCountMismatch { expected, actual } => write!(
                 formatter,
                 "binaural source block count mismatch: expected {expected}, actual {actual}"

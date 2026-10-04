@@ -27,7 +27,7 @@ fn profiles_are_parsed_without_reconstruction_or_filename_heuristics() {
         assert_eq!(p.carriers.len(), usize::from(channels));
         assert!(!p.carriers.iter().any(|c| c == "LFE"));
         assert_eq!(r.validation.etsi_strict.status, "pass");
-        assert!(r.access_units.is_empty());
+        assert!(matches!(r.access_units.as_slice(), []));
     }
 }
 
@@ -436,7 +436,7 @@ fn malformed_bit_mutations_return_reports_without_crashing() {
         bytes[index] ^= 0xff;
         let r = inspect_reader(bytes.as_slice(), InspectionOptions::default());
         assert!(r.diagnostics.issues.len() <= 64);
-        assert!(r.access_units.is_empty());
+        assert!(matches!(r.access_units.as_slice(), []));
     }
 }
 

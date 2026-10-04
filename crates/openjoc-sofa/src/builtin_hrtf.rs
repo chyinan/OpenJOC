@@ -112,6 +112,37 @@ impl BuiltinHrirF32Bank {
         self.direction_metadata_storage_bytes() + self.tap_storage_bytes()
     }
 
+    /// Returns a conservative upper bound for any interpolated HRIR tap
+    /// length from this bank. Interpolation output is bounded by the largest
+    /// source onset delay plus the largest delay-aligned source response.
+    pub fn max_resolved_tap_count(&self) -> Result<usize, SofaError> {
+        let mut max_delay = 0_usize;
+        let mut max_aligned_taps = 0_usize;
+        for record in &self.records {
+            let tap_count = usize::try_from(record.tap_count).map_err(|_| {
+                SofaError::InvalidImpulseResponse("packed tap count overflow".to_owned())
+            })?;
+            for compact_delay in record.delays {
+                let delay = usize::try_from(compact_delay).map_err(|_| {
+                    SofaError::InvalidImpulseResponse("packed delay overflow".to_owned())
+                })?;
+                if delay > tap_count {
+                    return Err(SofaError::InvalidImpulseResponse(
+                        "packed delay exceeds tap count".to_owned(),
+                    ));
+                }
+                max_delay = max_delay.max(delay);
+                max_aligned_taps = max_aligned_taps.max(tap_count - delay);
+            }
+        }
+        max_delay
+            .checked_add(max_aligned_taps)
+            .filter(|tap_count| *tap_count > 0)
+            .ok_or_else(|| {
+                SofaError::InvalidImpulseResponse("resolved tap bound overflow".to_owned())
+            })
+    }
+
     pub(crate) fn records(&self) -> &[BuiltinHrirF32Record] {
         &self.records
     }
@@ -804,7 +835,7 @@ mod asset_format_tests {
             let metadata = preset.metadata();
             let asset_metadata = preset.asset_metadata();
             assert_eq!(asset_metadata.asset_format_version, 2);
-            assert!(!asset_metadata.authors_institution.is_empty());
+            assert_ne!(asset_metadata.authors_institution, "");
             assert_eq!(metadata.id, preset.id());
             assert_eq!(asset_metadata.preset_id, preset.id());
         }

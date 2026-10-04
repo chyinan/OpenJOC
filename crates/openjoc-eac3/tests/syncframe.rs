@@ -3020,7 +3020,7 @@ fn parses_a_bounded_emdf_container_directly_from_auxdata() {
         .expect("valid carrier")
         .expect("EMDF present");
     assert_eq!(parsed.container.version, 0);
-    assert!(parsed.container.payloads.is_empty());
+    assert_eq!(parsed.container.payloads, Vec::new());
     assert_eq!(parsed.bytes_consumed, 7);
 }
 

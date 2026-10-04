@@ -28,7 +28,7 @@ fn process(signal: &[f64]) -> Vec<f64> {
 }
 
 fn process_partitioned(signal: &[f64], partition_blocks: &[usize]) -> Vec<f64> {
-    assert!(!partition_blocks.is_empty());
+    assert_ne!(partition_blocks, &[] as &[usize]);
     assert_eq!(
         signal.len() % QMF_BANDS,
         0,

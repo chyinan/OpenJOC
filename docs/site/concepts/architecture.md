@@ -310,6 +310,39 @@ the bank. Custom HRIRs are resampled to the renderer rate once at setup; banks
 already at that rate retain their original taps. Moving sources, SOFA writing, and JOC semantic
 bridging remain outside this boundary.
 
+#### Experimental device-independent listener orientation
+
+`openjoc-api` adds an explicit opt-in control path above the same virtual-
+speaker binaural renderer. A cloned `ListenerOrientationPreparer` owns shared,
+immutable HRTF/layout resources and resolves all non-LFE HRIRs away from the
+render call. It interprets a normalized `(x, y, z, w)` active listener-local-
+to-scene quaternion by inverse-rotating each fixed world-space speaker
+direction, then uses the orientation-specific bounded exact/interpolation
+resolver. This follows the public quaternion rotation identity and the
+existing SOFA spherical interpolation contract; the ordinary static resolver
+is unchanged.
+
+The prepared update contains the complete ordered speaker kernel set, a
+resource/layout fingerprint, stream epoch, and monotonic sequence. Admission
+checks these fields atomically. An active shared 240-sample linear crossfade
+(5 ms at 48 kHz) preserves each source's causal input history; one latest
+target may wait during the fade. The dynamic path retains full HRIR taps up to
+its resource-derived limit, capped at 8,192 taps, and rejects the whole update if any direction is
+uncovered or any pair exceeds it. It does not shorten a filter, resample an
+already-48-kHz built-in bank, reduce the virtual speaker set, or alter the
+speaker projection or gain policy. Identity-orientation PCM is regression-
+checked against the static path.
+
+An additional opt-in pull surface queues at most one 1,536-sample projected
+virtual-speaker AU and binauralizes at most 1–256 samples per receive. This
+lets a host submit pose targets between chunks; an active 240-sample
+crossfade can defer the next target. The compressed bridge retains its lazy
+positive-JOC admission. It does not read a sensor, timestamp poses,
+own an audio device, guarantee callback timing, or reduce the independent
+HRIR-preparation time. The default API, CLI, WASM and DirectShow/LAV output
+remain static. See the [Rust API](../reference/rust-api.md), [C ABI](../reference/c-abi.md),
+and [known limitations](../compatibility/known-limitations.md).
+
 ### Capture and streaming
 
 Capture mode may retain metadata and diagnostic artifacts. Streaming mode uses

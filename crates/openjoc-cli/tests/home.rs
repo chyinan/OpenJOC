@@ -35,7 +35,7 @@ fn version_is_a_script_safe_stdout_only_contract() {
         String::from_utf8(result.stdout).expect("UTF-8 version"),
         format!("OpenJOC {}\n", env!("CARGO_PKG_VERSION"))
     );
-    assert!(result.stderr.is_empty());
+    assert_eq!(result.stderr, [] as [u8; 0]);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn redirected_help_honors_all_banner_and_color_controls() {
 fn root_without_arguments_remains_script_safe_when_redirected() {
     let result = openjoc().output().expect("run openjoc");
     assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, [] as [u8; 0]);
     let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
     assert!(stderr.starts_with("openjoc[usage]: usage:"));
     assert!(!stderr.contains("\x1b["));
@@ -79,7 +79,7 @@ fn root_without_arguments_remains_script_safe_when_redirected() {
 fn actual_subcommand_error_output_is_not_polluted_by_a_banner() {
     let result = openjoc().arg("inspect").output().expect("run openjoc");
     assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, [] as [u8; 0]);
     let stderr = String::from_utf8(result.stderr).expect("UTF-8 stderr");
     assert!(stderr.starts_with("openjoc[usage]: usage:"));
     assert!(!stderr.contains("Open the objects"));
@@ -107,7 +107,7 @@ fn every_public_command_has_successful_scoped_help() {
         );
         let stdout = String::from_utf8(result.stdout).expect("UTF-8 help");
         assert!(stdout.starts_with(&format!("usage: openjoc {command}")));
-        assert!(result.stderr.is_empty());
+        assert_eq!(result.stderr, [] as [u8; 0]);
     }
 }
 

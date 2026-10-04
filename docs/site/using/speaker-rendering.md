@@ -150,6 +150,15 @@ Direct FIR is the numerical reference. Partitioned convolution uses the
 requested fixed power-of-two partition and preserves complete final partial
 input and FIR-tail behavior.
 
+The Rust API and C ABI also offer an explicit experimental, device-independent
+3DoF listener-orientation mode. It rotates the lookup directions of the fixed
+virtual speakers and updates their HRIRs; it does not track or move the
+speakers, change the projection/gain stage, read a sensor, or connect an audio
+device. The CLI, WASM and DirectShow/LAV paths remain static. Identity-pose
+regressions preserve the static HRIR set and PCM exactly. For enablement,
+sequencing, bounded pull behavior and measured limits, see the [Rust API](../reference/rust-api.md)
+and [C ABI](../reference/c-abi.md) references.
+
 ## DRC, dialnorm, and file level
 
 The recommended signal order is:

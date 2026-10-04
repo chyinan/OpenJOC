@@ -17,8 +17,9 @@
 #![allow(non_camel_case_types)]
 
 use openjoc_api::{
-    BinauralConfig, BinauralLfePolicy, BuiltinHrtf, DialnormMode, DownmixPolicy, DrcPolicy,
-    OpenJocConfig, OpenJocError, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus,
+    AppliedBinauralUpdate, BinauralConfig, BinauralLfePolicy, BuiltinHrtf, DialnormMode,
+    DownmixPolicy, DrcPolicy, ListenerOrientation, OpenJocConfig, OpenJocError, OpenJocPacket,
+    OpenJocPcmFrame, OpenJocSession, OpenJocStatus, PreparedBinauralKernel, PreparedBinauralUpdate,
     RenderMode, ValidationProfile,
 };
 use openjoc_ffmpeg::{
@@ -37,8 +38,9 @@ use std::{
 /// version and follows the compatibility policy in `docs/C_API.md`.
 pub const OPENJOC_ABI_VERSION_MAJOR: u32 = 1;
 /// Experimental ABI minor version.
-pub const OPENJOC_ABI_VERSION_MINOR: u32 = 6;
+pub const OPENJOC_ABI_VERSION_MINOR: u32 = 7;
 const NO_PTS: i64 = i64::MIN;
+const NO_ORIENTATION_SEQUENCE: u64 = u64::MAX;
 const LIVE_TEXT_CAPACITY: usize = 512;
 const LIVE_SHORT_TEXT_CAPACITY: usize = 128;
 const LIVE_TINY_TEXT_CAPACITY: usize = 64;
@@ -47,6 +49,7 @@ const LIVE_FORMAT_CAPACITY: usize = 32;
 #[repr(C)]
 pub struct openjoc_decoder {
     session: OpenJocSession,
+    poisoned: bool,
     last_error: CString,
     layout_name: CString,
     channel_labels: Vec<CString>,
@@ -70,6 +73,50 @@ pub struct openjoc_stream_decoder {
     config_fingerprint: CString,
     last_frame: Option<FfmpegFrame>,
     live_snapshot: Mutex<LiveInspectionSnapshot>,
+}
+
+/// Opaque prepared pose handle. A failed apply leaves this handle usable;
+/// destroy it on a control thread if the caller abandons the update.
+pub struct openjoc_listener_orientation_update {
+    update: Option<PreparedBinauralUpdate>,
+    retired_kernels: Vec<PreparedBinauralKernel>,
+}
+
+/// Successful apply reuses the update allocation as the retired-buffer
+/// handle, avoiding a new allocation or HRIR drop on the apply path.
+pub type openjoc_listener_orientation_retired = openjoc_listener_orientation_update;
+
+/// Immutable, shareable HRIR-preparation context captured from a decoder.
+pub struct openjoc_listener_orientation_preparer {
+    preparer: openjoc_api::ListenerOrientationPreparer,
+    last_error: Mutex<CString>,
+}
+
+/// Snapshot of the opt-in listener-orientation control state.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct openjoc_listener_orientation_state {
+    pub struct_size: u32,
+    pub has_last_applied: u32,
+    pub has_pending_update: u32,
+    pub reserved: u32,
+    pub stream_epoch: u64,
+    pub last_applied_sequence: u64,
+    pub last_applied_logical_start_sample: u64,
+    pub pending_sequence: u64,
+    pub pending_binaural_input_samples: usize,
+}
+
+/// ABI-stable quaternion input to the orientation preparer.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct openjoc_listener_orientation {
+    pub struct_size: u32,
+    pub reserved: u32,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub w: f64,
 }
 
 #[repr(C)]
@@ -442,6 +489,33 @@ pub struct openjoc_decoder_config {
     pub custom_speaker_layout: *const openjoc_custom_speaker_layout,
     /// Appended in ABI minor 6; zero retains the SADIE II D1 default.
     pub hrtf_preset: u32,
+    /// Reserves the ABI 1.6 trailing alignment bytes so the new field below
+    /// begins strictly after the old struct's sizeof on 64-bit targets.
+    pub reserved_v1_6_padding: u32,
+    /// Appended in ABI minor 7; 0 disables pull mode, 1..=256 selects the
+    /// maximum binaural samples returned per receive call.
+    pub listener_orientation_pull_samples: u32,
+}
+
+/// Exact ABI 1.6 prefix layout, retained to compute its historical sizeof on
+/// both 32-bit and 64-bit targets. Do not add orientation fields here.
+#[repr(C)]
+struct openjoc_decoder_config_v1_6 {
+    struct_size: u32,
+    render_mode: u32,
+    speaker_layout: *const c_char,
+    downmix: u32,
+    drc: u32,
+    drc_boost_percent: u8,
+    drc_cut_percent: u8,
+    validation_profile: u32,
+    sofa_data: *const u8,
+    sofa_size: usize,
+    virtual_layout: *const c_char,
+    lfe_policy: u32,
+    dialnorm_mode: u32,
+    custom_speaker_layout: *const openjoc_custom_speaker_layout,
+    hrtf_preset: u32,
 }
 
 #[repr(C)]
@@ -474,6 +548,8 @@ pub struct openjoc_output_info {
 }
 
 const CONFIG_SIZE: u32 = std::mem::size_of::<openjoc_decoder_config>() as u32;
+const CONFIG_SIZE_BEFORE_LISTENER_ORIENTATION: u32 =
+    std::mem::size_of::<openjoc_decoder_config_v1_6>() as u32;
 const CONFIG_SIZE_BEFORE_HRTF: u32 =
     std::mem::offset_of!(openjoc_decoder_config, hrtf_preset) as u32;
 const CONFIG_SIZE_BEFORE_CUSTOM: u32 =
@@ -481,6 +557,9 @@ const CONFIG_SIZE_BEFORE_CUSTOM: u32 =
 const CONFIG_SIZE_BEFORE_DIALNORM: u32 =
     std::mem::offset_of!(openjoc_decoder_config, dialnorm_mode) as u32;
 const FRAME_SIZE: u32 = std::mem::size_of::<openjoc_pcm_frame>() as u32;
+const ORIENTATION_STATE_SIZE: u32 =
+    std::mem::size_of::<openjoc_listener_orientation_state>() as u32;
+const ORIENTATION_SIZE: u32 = std::mem::size_of::<openjoc_listener_orientation>() as u32;
 const INFO_SIZE: u32 = std::mem::size_of::<openjoc_output_info>() as u32;
 const CUSTOM_LAYOUT_SIZE: u32 = std::mem::size_of::<openjoc_custom_speaker_layout>() as u32;
 const CUSTOM_SPEAKER_SIZE: u32 = std::mem::size_of::<openjoc_custom_speaker>() as u32;
@@ -493,6 +572,45 @@ fn status(status: OpenJocStatus) -> openjoc_status {
         OpenJocStatus::EndOfStream => openjoc_status::OPENJOC_STATUS_END_OF_STREAM,
         OpenJocStatus::OutputPending => openjoc_status::OPENJOC_STATUS_OUTPUT_PENDING,
     }
+}
+
+fn prepare_listener_orientation_update(
+    preparer: &openjoc_api::ListenerOrientationPreparer,
+    epoch: u64,
+    pose: openjoc_listener_orientation,
+    sequence: u64,
+) -> Result<PreparedBinauralUpdate, OpenJocError> {
+    let orientation = ListenerOrientation::new(pose.x, pose.y, pose.z, pose.w)
+        .map_err(|error| OpenJocError::InvalidConfig(error.to_string()))?;
+    preparer
+        .prepare(orientation, epoch, sequence)
+        .map_err(|error| OpenJocError::Render(error.to_string()))
+}
+
+fn fill_listener_orientation_state(
+    output: &mut openjoc_listener_orientation_state,
+    epoch: Option<u64>,
+    last_applied: Option<AppliedBinauralUpdate>,
+    pending_sequence: Option<u64>,
+    pending_samples: Option<usize>,
+) -> Result<(), OpenJocError> {
+    let stream_epoch = epoch.ok_or_else(|| {
+        OpenJocError::Unsupported("listener-orientation pull mode is not enabled".to_owned())
+    })?;
+    let pending_samples = pending_samples.ok_or_else(|| {
+        OpenJocError::Unsupported("listener-orientation pull mode is not enabled".to_owned())
+    })?;
+    output.has_last_applied = u32::from(last_applied.is_some());
+    output.has_pending_update = u32::from(pending_sequence.is_some());
+    output.reserved = 0;
+    output.stream_epoch = stream_epoch;
+    output.last_applied_sequence =
+        last_applied.map_or(NO_ORIENTATION_SEQUENCE, |receipt| receipt.sequence);
+    output.last_applied_logical_start_sample =
+        last_applied.map_or(0, |receipt| receipt.logical_start_sample);
+    output.pending_sequence = pending_sequence.unwrap_or(NO_ORIENTATION_SEQUENCE);
+    output.pending_binaural_input_samples = pending_samples;
+    Ok(())
 }
 
 fn error_status(error: &OpenJocError) -> openjoc_status {
@@ -515,6 +633,25 @@ fn set_error(decoder: &mut openjoc_decoder, error: OpenJocError) -> openjoc_stat
     decoder.last_error = CString::new(error.to_string())
         .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
     result
+}
+
+fn decoder_requires_reset(decoder: &mut openjoc_decoder) -> openjoc_status {
+    decoder.last_error = CString::new("OpenJOC decoder requires reset after a contained panic")
+        .expect("static error");
+    openjoc_status::OPENJOC_STATUS_REQUIRE_RESET
+}
+
+fn set_preparer_error(
+    preparer: &openjoc_listener_orientation_preparer,
+    error: &OpenJocError,
+) -> openjoc_status {
+    let mut last_error = preparer
+        .last_error
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *last_error = CString::new(error.to_string())
+        .unwrap_or_else(|_| CString::new("OpenJOC error contains NUL").expect("static error"));
+    error_status(error)
 }
 
 fn set_message(decoder: &mut openjoc_decoder, message: impl ToString) -> openjoc_status {
@@ -559,12 +696,26 @@ fn config_from_c(config: *const openjoc_decoder_config) -> Result<OpenJocConfig,
             owned.custom_speaker_layout =
                 ptr::read_unaligned(ptr::addr_of!((*config).custom_speaker_layout));
         }
-        if struct_size >= CONFIG_SIZE {
+        if struct_size >= CONFIG_SIZE_BEFORE_LISTENER_ORIENTATION {
             owned.hrtf_preset = ptr::read_unaligned(ptr::addr_of!((*config).hrtf_preset));
+        }
+        if struct_size >= CONFIG_SIZE {
+            owned.listener_orientation_pull_samples =
+                ptr::read_unaligned(ptr::addr_of!((*config).listener_orientation_pull_samples));
         }
     }
     owned.struct_size = struct_size;
     config_from_c_fields(&owned)
+}
+
+fn orientation_pull_samples_from_c(config: *const openjoc_decoder_config) -> Option<usize> {
+    let struct_size = unsafe { ptr::read_unaligned(ptr::addr_of!((*config).struct_size)) };
+    if struct_size < CONFIG_SIZE {
+        return None;
+    }
+    let max_samples =
+        unsafe { ptr::read_unaligned(ptr::addr_of!((*config).listener_orientation_pull_samples)) };
+    (max_samples > 0).then(|| usize::try_from(max_samples).unwrap_or(usize::MAX))
 }
 
 fn custom_layout_from_c(
@@ -752,7 +903,7 @@ fn config_from_c_fields(config: &openjoc_decoder_config) -> Result<OpenJocConfig
         } else {
             c_string(config.virtual_layout, "virtual_layout")?
         };
-        let hrtf_preset = if config.struct_size >= CONFIG_SIZE {
+        let hrtf_preset = if config.struct_size >= CONFIG_SIZE_BEFORE_LISTENER_ORIENTATION {
             config.hrtf_preset
         } else {
             openjoc_hrtf_preset::OPENJOC_HRTF_SADIE_D1_KU100 as u32
@@ -811,9 +962,10 @@ fn labels_for(session: &OpenJocSession) -> Vec<CString> {
 }
 
 fn panic_status(decoder: &mut openjoc_decoder) -> openjoc_status {
+    decoder.poisoned = true;
     decoder.last_error =
         CString::new("panic contained at OpenJOC C ABI boundary").expect("static error");
-    openjoc_status::OPENJOC_STATUS_DECODE_ERROR
+    openjoc_status::OPENJOC_STATUS_REQUIRE_RESET
 }
 
 fn stream_status(status: BridgeStatus) -> openjoc_status {
@@ -835,6 +987,7 @@ fn stream_error_status(error: &BridgeError) -> openjoc_status {
         BridgeErrorKind::Unsupported => openjoc_status::OPENJOC_STATUS_UNSUPPORTED,
         BridgeErrorKind::OutputPending => openjoc_status::OPENJOC_STATUS_OUTPUT_PENDING,
         BridgeErrorKind::EndOfStream => openjoc_status::OPENJOC_STATUS_END_OF_STREAM,
+        BridgeErrorKind::ResetRequired => openjoc_status::OPENJOC_STATUS_REQUIRE_RESET,
         BridgeErrorKind::Ffmpeg | BridgeErrorKind::InternalPanic => {
             openjoc_status::OPENJOC_STATUS_EXTERNAL_ERROR
         }
@@ -861,6 +1014,7 @@ fn set_stream_message(
 }
 
 fn stream_panic_status(decoder: &mut openjoc_stream_decoder) -> openjoc_status {
+    decoder.decoder.poison_after_outer_panic();
     decoder.last_error =
         CString::new("panic contained at OpenJOC C ABI boundary").expect("static error");
     refresh_live_snapshot(decoder);
@@ -901,6 +1055,53 @@ pub extern "C" fn openjoc_get_abi_version() -> u32 {
     (OPENJOC_ABI_VERSION_MAJOR << 16) | OPENJOC_ABI_VERSION_MINOR
 }
 
+/// Initializes a listener-orientation state output structure.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_state_init(
+    output: *mut openjoc_listener_orientation_state,
+) -> openjoc_status {
+    if output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: null was checked and the caller supplies writable current ABI storage.
+    unsafe {
+        *output = openjoc_listener_orientation_state {
+            struct_size: ORIENTATION_STATE_SIZE,
+            has_last_applied: 0,
+            has_pending_update: 0,
+            reserved: 0,
+            stream_epoch: 0,
+            last_applied_sequence: NO_ORIENTATION_SEQUENCE,
+            last_applied_logical_start_sample: 0,
+            pending_sequence: NO_ORIENTATION_SEQUENCE,
+            pending_binaural_input_samples: 0,
+        };
+    }
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Initializes a quaternion input structure to identity.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_init(
+    output: *mut openjoc_listener_orientation,
+) -> openjoc_status {
+    if output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: null was checked and the caller supplies current ABI storage.
+    unsafe {
+        *output = openjoc_listener_orientation {
+            struct_size: ORIENTATION_SIZE,
+            reserved: 0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
+        };
+    }
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
 fn default_decoder_config(struct_size: u32) -> openjoc_decoder_config {
     openjoc_decoder_config {
         struct_size,
@@ -918,6 +1119,8 @@ fn default_decoder_config(struct_size: u32) -> openjoc_decoder_config {
         dialnorm_mode: openjoc_dialnorm_mode::OPENJOC_DIALNORM_DEFAULT as u32,
         custom_speaker_layout: ptr::null(),
         hrtf_preset: openjoc_hrtf_preset::OPENJOC_HRTF_SADIE_D1_KU100 as u32,
+        reserved_v1_6_padding: 0,
+        listener_orientation_pull_samples: 0,
     }
 }
 
@@ -978,6 +1181,28 @@ pub extern "C" fn openjoc_decoder_config_init_v1_6(
     if config.is_null() {
         return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
     }
+    let defaults = default_decoder_config(CONFIG_SIZE_BEFORE_LISTENER_ORIENTATION);
+    // SAFETY: null was checked. Copy exactly the historical ABI 1.6 size; the
+    // caller may own only that prefix even though the current Rust type grew.
+    unsafe {
+        ptr::copy_nonoverlapping(
+            (&raw const defaults).cast::<u8>(),
+            config.cast::<u8>(),
+            CONFIG_SIZE_BEFORE_LISTENER_ORIENTATION as usize,
+        );
+    }
+    openjoc_status::OPENJOC_STATUS_OK
+}
+
+/// Initializes the complete ABI 1.7 configuration structure, including the
+/// experimental bounded listener-orientation pull block size.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_decoder_config_init_v1_7(
+    config: *mut openjoc_decoder_config,
+) -> openjoc_status {
+    if config.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
     // SAFETY: null was checked and the caller supplies the current structure.
     unsafe { *config = default_decoder_config(CONFIG_SIZE) };
     openjoc_status::OPENJOC_STATUS_OK
@@ -993,7 +1218,12 @@ pub extern "C" fn openjoc_decoder_create(
         return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
     }
     let result = catch_unwind(AssertUnwindSafe(|| {
-        let session = OpenJocSession::new(config_from_c(config)?)?;
+        let effective_config = config_from_c(config)?;
+        let session = if let Some(max_pull_samples) = orientation_pull_samples_from_c(config) {
+            OpenJocSession::new_with_listener_orientation_pull(effective_config, max_pull_samples)?
+        } else {
+            OpenJocSession::new(effective_config)?
+        };
         let layout_name =
             CString::new(session.output_info().layout_name).expect("layout name contains no NUL");
         let channel_labels = labels_for(&session);
@@ -1003,6 +1233,7 @@ pub extern "C" fn openjoc_decoder_create(
             .collect();
         let decoder = Box::new(openjoc_decoder {
             session,
+            poisoned: false,
             last_error: CString::new("").expect("empty CString"),
             layout_name,
             channel_labels,
@@ -1044,6 +1275,9 @@ pub extern "C" fn openjoc_decoder_send_packet(
     }
     // SAFETY: decoder was checked and remains owned by the caller.
     let decoder = unsafe { &mut *decoder };
+    if decoder.poisoned {
+        return decoder_requires_reset(decoder);
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         // SAFETY: caller guarantees a readable packet buffer for this call.
         let bytes = unsafe { slice::from_raw_parts(data, data_len) };
@@ -1077,6 +1311,9 @@ pub extern "C" fn openjoc_decoder_receive_frame(
     }
     // SAFETY: pointers were checked; output is caller-owned writable storage.
     let decoder = unsafe { &mut *decoder };
+    if decoder.poisoned {
+        return decoder_requires_reset(decoder);
+    }
     let result = catch_unwind(AssertUnwindSafe(|| {
         // SAFETY: output is valid for the advertised structure size.
         let output = unsafe { &mut *output };
@@ -1085,7 +1322,12 @@ pub extern "C" fn openjoc_decoder_receive_frame(
                 "pcm_frame.struct_size is too small".to_owned(),
             ));
         }
-        let Some(frame) = decoder.session.receive_frame() else {
+        let frame = if decoder.session.pending_binaural_input_samples().is_some() {
+            decoder.session.receive_binaural_frame()?
+        } else {
+            decoder.session.receive_frame()
+        };
+        let Some(frame) = frame else {
             return Ok(if decoder.session.is_drained() {
                 openjoc_status::OPENJOC_STATUS_END_OF_STREAM
             } else {
@@ -1113,6 +1355,264 @@ pub extern "C" fn openjoc_decoder_receive_frame(
     }
 }
 
+/// Reads the opt-in orientation control state for an independent decoder.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_decoder_get_listener_orientation_state(
+    decoder: *mut openjoc_decoder,
+    output: *mut openjoc_listener_orientation_state,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointers were checked and remain caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    let output_size = unsafe { ptr::read_unaligned(ptr::addr_of!((*output).struct_size)) };
+    if output_size < ORIENTATION_STATE_SIZE {
+        return set_message(
+            decoder,
+            "listener_orientation_state.struct_size is too small",
+        );
+    }
+    let output = unsafe { &mut *output };
+    if decoder.poisoned {
+        return decoder_requires_reset(decoder);
+    }
+    match fill_listener_orientation_state(
+        output,
+        decoder.session.listener_orientation_stream_epoch(),
+        decoder.session.last_applied_listener_orientation(),
+        decoder.session.pending_listener_orientation_sequence(),
+        decoder.session.pending_binaural_input_samples(),
+    ) {
+        Ok(()) => openjoc_status::OPENJOC_STATUS_OK,
+        Err(error) => set_error(decoder, error),
+    }
+}
+
+/// Captures a cloneable immutable preparer before sharing the decoder with a
+/// render thread. Pose preparation then uses the separate handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_decoder_get_listener_orientation_preparer(
+    decoder: *mut openjoc_decoder,
+    output: *mut *mut openjoc_listener_orientation_preparer,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    unsafe { *output = ptr::null_mut() };
+    // SAFETY: pointer was checked and remains caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    match decoder.session.listener_orientation_preparer() {
+        Some(preparer) => {
+            let handle = openjoc_listener_orientation_preparer {
+                preparer,
+                last_error: Mutex::new(CString::new("").expect("empty CString")),
+            };
+            unsafe { *output = Box::into_raw(Box::new(handle)) };
+            openjoc_status::OPENJOC_STATUS_OK
+        }
+        None => set_error(
+            decoder,
+            OpenJocError::Unsupported("listener-orientation pull mode is not enabled".to_owned()),
+        ),
+    }
+}
+
+/// Captures the orientation preparer from an opt-in stream bridge.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_listener_orientation_preparer(
+    decoder: *mut openjoc_stream_decoder,
+    output: *mut *mut openjoc_listener_orientation_preparer,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    unsafe { *output = ptr::null_mut() };
+    let decoder = unsafe { &mut *decoder };
+    match decoder.decoder.listener_orientation_preparer() {
+        Some(preparer) => {
+            let handle = openjoc_listener_orientation_preparer {
+                preparer,
+                last_error: Mutex::new(CString::new("").expect("empty CString")),
+            };
+            unsafe { *output = Box::into_raw(Box::new(handle)) };
+            openjoc_status::OPENJOC_STATUS_OK
+        }
+        None => set_stream_message(decoder, "listener-orientation pull mode is not enabled"),
+    }
+}
+
+/// Prepares a size-versioned quaternion using an immutable preparer handle.
+/// Supply the current stream epoch obtained from the decoder's state snapshot.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_prepare(
+    preparer: *const openjoc_listener_orientation_preparer,
+    orientation: *const openjoc_listener_orientation,
+    stream_epoch: u64,
+    sequence: u64,
+    output: *mut *mut openjoc_listener_orientation_update,
+) -> openjoc_status {
+    if preparer.is_null() || orientation.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    unsafe { *output = ptr::null_mut() };
+    let preparer = unsafe { &*preparer };
+    let pose_size = unsafe { ptr::read_unaligned(ptr::addr_of!((*orientation).struct_size)) };
+    if pose_size < ORIENTATION_SIZE {
+        return set_preparer_error(
+            preparer,
+            &OpenJocError::InvalidConfig(
+                "listener_orientation.struct_size is too small".to_owned(),
+            ),
+        );
+    }
+    let pose = unsafe { ptr::read_unaligned(orientation) };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        prepare_listener_orientation_update(&preparer.preparer, stream_epoch, pose, sequence)
+    }));
+    match result {
+        Ok(Ok(update)) => {
+            let handle = openjoc_listener_orientation_update {
+                update: Some(update),
+                retired_kernels: Vec::new(),
+            };
+            unsafe { *output = Box::into_raw(Box::new(handle)) };
+            *preparer
+                .last_error
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                CString::new("").expect("empty CString");
+            openjoc_status::OPENJOC_STATUS_OK
+        }
+        Ok(Err(error)) => set_preparer_error(preparer, &error),
+        Err(_) => {
+            let error =
+                OpenJocError::Render("panic contained during orientation preparation".to_owned());
+            set_preparer_error(preparer, &error)
+        }
+    }
+}
+
+/// Returns the last preparation error. The pointer remains valid until the
+/// next prepare call or preparer destruction.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_preparer_last_error(
+    preparer: *const openjoc_listener_orientation_preparer,
+) -> *const c_char {
+    if preparer.is_null() {
+        return c"invalid null listener-orientation preparer".as_ptr();
+    }
+    let preparer = unsafe { &*preparer };
+    let error = preparer
+        .last_error
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    error.as_ptr()
+}
+
+/// Destroys an immutable preparer handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_preparer_destroy(
+    preparer: *mut openjoc_listener_orientation_preparer,
+) {
+    if !preparer.is_null() {
+        unsafe { drop(Box::from_raw(preparer)) };
+    }
+}
+
+/// Applies one prepared update. Validation/lifecycle failures preserve the
+/// update handle unchanged. On success `*update` becomes NULL and the same
+/// allocation is returned as a retired handle (even if it contains no retired
+/// kernels). An unexpected panic poisons the decoder; the update may be empty
+/// and must be destroyed rather than retried.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_decoder_apply_listener_orientation(
+    decoder: *mut openjoc_decoder,
+    update: *mut *mut openjoc_listener_orientation_update,
+    accepted_sequence: *mut u64,
+    superseded_sequence: *mut u64,
+    retired: *mut *mut openjoc_listener_orientation_retired,
+) -> openjoc_status {
+    if decoder.is_null()
+        || update.is_null()
+        || accepted_sequence.is_null()
+        || superseded_sequence.is_null()
+        || retired.is_null()
+    {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    let decoder = unsafe { &mut *decoder };
+    if decoder.poisoned {
+        return decoder_requires_reset(decoder);
+    }
+    unsafe {
+        *accepted_sequence = 0;
+        *superseded_sequence = NO_ORIENTATION_SEQUENCE;
+        *retired = ptr::null_mut();
+    }
+    let handle = unsafe { *update };
+    if handle.is_null() {
+        return set_message(decoder, "listener-orientation update handle is null");
+    }
+    let Some(prepared) = (unsafe { &mut *handle }).update.take() else {
+        return set_message(decoder, "listener-orientation update handle is empty");
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        decoder
+            .session
+            .apply_prepared_listener_orientation(prepared)
+    }));
+    match result {
+        Ok(Ok(acceptance)) => {
+            unsafe {
+                *accepted_sequence = acceptance.accepted_sequence;
+                *superseded_sequence = acceptance
+                    .superseded_sequence
+                    .unwrap_or(NO_ORIENTATION_SEQUENCE);
+                *update = ptr::null_mut();
+                let handle_ref = &mut *handle;
+                handle_ref.update = None;
+                handle_ref.retired_kernels = acceptance.retired_kernels;
+                *retired = handle.cast::<openjoc_listener_orientation_retired>();
+            }
+            // Keep the previous diagnostic unchanged; clearing it would
+            // allocate a CString on the application path.
+            openjoc_status::OPENJOC_STATUS_OK
+        }
+        Ok(Err(failure)) => {
+            let error = OpenJocError::Render(failure.error.to_string());
+            unsafe { (&mut *handle).update = Some(failure.update) };
+            set_error(decoder, error)
+        }
+        Err(_) => {
+            decoder.poisoned = true;
+            panic_status(decoder)
+        }
+    }
+}
+
+/// Destroys an unapplied prepared update on the caller's control thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_update_destroy(
+    update: *mut openjoc_listener_orientation_update,
+) {
+    if !update.is_null() {
+        // SAFETY: the handle was returned by a prepare call and is consumed once.
+        unsafe { drop(Box::from_raw(update)) };
+    }
+}
+
+/// Releases retired HRIR allocations on the caller's control thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_retired_destroy(
+    retired: *mut openjoc_listener_orientation_retired,
+) {
+    if !retired.is_null() {
+        // SAFETY: the handle was returned by apply and is consumed once.
+        unsafe { drop(Box::from_raw(retired)) };
+    }
+}
+
 /// Drains QMF reconstruction and SOFA FIR tail state.
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_decoder_drain(decoder: *mut openjoc_decoder) -> openjoc_status {
@@ -1121,6 +1621,9 @@ pub extern "C" fn openjoc_decoder_drain(decoder: *mut openjoc_decoder) -> openjo
     }
     // SAFETY: pointer was checked and remains caller-owned.
     let decoder = unsafe { &mut *decoder };
+    if decoder.poisoned {
+        return decoder_requires_reset(decoder);
+    }
     let result = catch_unwind(AssertUnwindSafe(|| decoder.session.drain()));
     match result {
         Ok(Ok(value)) => status(value),
@@ -1139,8 +1642,14 @@ pub extern "C" fn openjoc_decoder_flush(decoder: *mut openjoc_decoder) -> openjo
     let decoder = unsafe { &mut *decoder };
     let result = catch_unwind(AssertUnwindSafe(|| {
         decoder.last_frame = None;
-        decoder.session.flush();
-        openjoc_status::OPENJOC_STATUS_OK
+        match decoder.session.try_flush() {
+            Ok(()) => {
+                decoder.poisoned = false;
+                decoder.last_error = CString::new("").expect("empty CString");
+                openjoc_status::OPENJOC_STATUS_OK
+            }
+            Err(error) => set_error(decoder, error),
+        }
     }));
     result.unwrap_or_else(|_| panic_status(decoder))
 }
@@ -1269,9 +1778,14 @@ pub extern "C" fn openjoc_stream_decoder_create(
         return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
     }
     let result = catch_unwind(AssertUnwindSafe(|| {
+        let orientation_pull_samples = orientation_pull_samples_from_c(config);
         let config = config_from_c(config)
             .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string()))?;
-        let decoder = FfmpegDecoder::new(config)?;
+        let decoder = if let Some(max_pull_samples) = orientation_pull_samples {
+            FfmpegDecoder::new_with_listener_orientation_pull(config, max_pull_samples)?
+        } else {
+            FfmpegDecoder::new(config)?
+        };
         let layout_name = CString::new(
             decoder
                 .channel_layout()
@@ -1434,6 +1948,125 @@ pub extern "C" fn openjoc_stream_decoder_receive_frame(
     }
 }
 
+/// Reads the opt-in orientation control state for a compressed-stream bridge.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_get_listener_orientation_state(
+    decoder: *mut openjoc_stream_decoder,
+    output: *mut openjoc_listener_orientation_state,
+) -> openjoc_status {
+    if decoder.is_null() || output.is_null() {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    // SAFETY: pointers were checked and remain caller-owned.
+    let decoder = unsafe { &mut *decoder };
+    let output_size = unsafe { ptr::read_unaligned(ptr::addr_of!((*output).struct_size)) };
+    if output_size < ORIENTATION_STATE_SIZE {
+        return set_stream_message(
+            decoder,
+            "listener_orientation_state.struct_size is too small",
+        );
+    }
+    let output = unsafe { &mut *output };
+    match fill_listener_orientation_state(
+        output,
+        decoder.decoder.listener_orientation_stream_epoch(),
+        decoder.decoder.last_applied_listener_orientation(),
+        decoder.decoder.pending_listener_orientation_sequence(),
+        decoder.decoder.pending_binaural_input_samples(),
+    ) {
+        Ok(()) => openjoc_status::OPENJOC_STATUS_OK,
+        Err(error) => set_stream_error(
+            decoder,
+            BridgeError::new(BridgeErrorKind::Unsupported, error.to_string()),
+        ),
+    }
+}
+
+/// Applies one prepared update. Validation/lifecycle failures preserve the
+/// update handle. Success reuses its allocation for a retired handle, avoiding
+/// an extra allocation or filter destruction on the calling path. A panic
+/// poisons the stream decoder; the handle remains allocated but its update
+/// may be empty and should be destroyed rather than retried.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_stream_decoder_apply_listener_orientation(
+    decoder: *mut openjoc_stream_decoder,
+    update: *mut *mut openjoc_listener_orientation_update,
+    accepted_sequence: *mut u64,
+    superseded_sequence: *mut u64,
+    retired: *mut *mut openjoc_listener_orientation_retired,
+) -> openjoc_status {
+    if decoder.is_null()
+        || update.is_null()
+        || accepted_sequence.is_null()
+        || superseded_sequence.is_null()
+        || retired.is_null()
+    {
+        return openjoc_status::OPENJOC_STATUS_INVALID_ARGUMENT;
+    }
+    let decoder = unsafe { &mut *decoder };
+    unsafe {
+        *accepted_sequence = 0;
+        *superseded_sequence = NO_ORIENTATION_SEQUENCE;
+        *retired = ptr::null_mut();
+    }
+    let handle = unsafe { *update };
+    if handle.is_null() {
+        return set_stream_message(decoder, "listener-orientation update handle is null");
+    }
+    let Some(prepared) = (unsafe { &mut *handle }).update.take() else {
+        return set_stream_message(decoder, "listener-orientation update handle is empty");
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        decoder
+            .decoder
+            .apply_prepared_listener_orientation(prepared)
+    }));
+    match result {
+        Ok(Ok(acceptance)) => {
+            unsafe {
+                *accepted_sequence = acceptance.accepted_sequence;
+                *superseded_sequence = acceptance
+                    .superseded_sequence
+                    .unwrap_or(NO_ORIENTATION_SEQUENCE);
+                *update = ptr::null_mut();
+                let handle_ref = &mut *handle;
+                handle_ref.update = None;
+                handle_ref.retired_kernels = acceptance.retired_kernels;
+                *retired = handle.cast::<openjoc_listener_orientation_retired>();
+            }
+            openjoc_status::OPENJOC_STATUS_OK
+        }
+        Ok(Err(failure)) => {
+            unsafe { (&mut *handle).update = Some(failure.update) };
+            let error_kind = if matches!(
+                &failure.error,
+                openjoc_api::RenderError::BinauralRequiresReset
+            ) {
+                BridgeErrorKind::ResetRequired
+            } else {
+                BridgeErrorKind::InvalidConfig
+            };
+            set_stream_error(
+                decoder,
+                BridgeError::new(error_kind, failure.error.to_string()),
+            )
+        }
+        Err(_) => stream_panic_status(decoder),
+    }
+}
+
+/// Returns the number of retired source kernels in a handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_listener_orientation_retired_count(
+    retired: *const openjoc_listener_orientation_retired,
+) -> usize {
+    if retired.is_null() {
+        return 0;
+    }
+    // SAFETY: pointer was checked and remains valid for the caller.
+    unsafe { (&*retired).retired_kernels.len() }
+}
+
 /// Requests complete reconstruction, gain, and binaural tail drain.
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_stream_decoder_drain(
@@ -1469,10 +2102,14 @@ pub extern "C" fn openjoc_stream_decoder_flush(
     let decoder = unsafe { &mut *decoder };
     let result = catch_unwind(AssertUnwindSafe(|| {
         decoder.last_frame = None;
-        decoder.decoder.flush();
-        decoder.last_error = CString::new("").expect("empty CString");
-        refresh_live_snapshot(decoder);
-        openjoc_status::OPENJOC_STATUS_OK
+        match decoder.decoder.try_reset() {
+            Ok(()) => {
+                decoder.last_error = CString::new("").expect("empty CString");
+                refresh_live_snapshot(decoder);
+                openjoc_status::OPENJOC_STATUS_OK
+            }
+            Err(error) => set_stream_error(decoder, error),
+        }
     }));
     result.unwrap_or_else(|_| stream_panic_status(decoder))
 }
@@ -1783,4 +2420,69 @@ pub extern "C" fn openjoc_classifier_get_inspected_bytes(
     }
     // SAFETY: classifier was checked and remains valid for the caller.
     unsafe { (&*classifier).classifier.inspected_bytes() }
+}
+
+#[cfg(test)]
+mod orientation_status_tests {
+    use super::*;
+
+    #[test]
+    fn poisoned_stream_apply_requires_reset_and_preserves_update() {
+        let layout = CString::new("7.1.4").expect("layout name");
+        let mut config = std::mem::MaybeUninit::uninit();
+        assert_eq!(
+            openjoc_decoder_config_init_v1_7(config.as_mut_ptr()),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
+        let mut config = unsafe { config.assume_init() };
+        config.render_mode = openjoc_render_mode::OPENJOC_RENDER_BINAURAL as u32;
+        config.speaker_layout = layout.as_ptr();
+        config.listener_orientation_pull_samples = 128;
+
+        let mut stream = ptr::null_mut();
+        assert_eq!(
+            openjoc_stream_decoder_create(&raw const config, &raw mut stream),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
+        let mut preparer = ptr::null_mut();
+        assert_eq!(
+            openjoc_stream_decoder_get_listener_orientation_preparer(stream, &raw mut preparer),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
+        let pose = openjoc_listener_orientation {
+            struct_size: ORIENTATION_SIZE,
+            reserved: 0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
+        };
+        let mut update = ptr::null_mut();
+        assert_eq!(
+            openjoc_listener_orientation_prepare(preparer, &raw const pose, 0, 1, &raw mut update),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
+
+        // Model a panic contained by the outer C boundary. A subsequent apply
+        // must report REQUIRE_RESET and return the original opaque update.
+        unsafe { (&mut *stream).decoder.poison_after_outer_panic() };
+        let mut accepted = 0;
+        let mut superseded = 0;
+        let mut retired = ptr::null_mut();
+        assert_eq!(
+            openjoc_stream_decoder_apply_listener_orientation(
+                stream,
+                &raw mut update,
+                &raw mut accepted,
+                &raw mut superseded,
+                &raw mut retired
+            ),
+            openjoc_status::OPENJOC_STATUS_REQUIRE_RESET
+        );
+        assert!(!update.is_null());
+        assert!(retired.is_null());
+        openjoc_listener_orientation_update_destroy(update);
+        openjoc_listener_orientation_preparer_destroy(preparer);
+        openjoc_stream_decoder_destroy(stream);
+    }
 }

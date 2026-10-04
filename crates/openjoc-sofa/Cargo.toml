@@ -8,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
+orientation-profile = []
 default = ["embedded-builtin-hrtf"]
 embedded-builtin-hrtf = []
 
