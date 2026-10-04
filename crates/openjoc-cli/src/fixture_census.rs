@@ -2329,7 +2329,7 @@ mod tests {
             return;
         };
         let report = run_census(std::path::Path::new(&path)).expect("external census");
-        assert!(!report.fixtures.is_empty());
+        assert!(matches!(report.fixtures.as_slice(), [_, ..]));
         assert!(
             report
                 .fixtures

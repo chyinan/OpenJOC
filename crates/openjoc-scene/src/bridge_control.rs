@@ -1053,9 +1053,9 @@ mod tests {
             scalar: 1.0,
             active: true,
         };
-        assert!(
-            super::selective_diff(std::slice::from_ref(&record), std::slice::from_ref(&record))
-                .is_empty()
+        assert_eq!(
+            super::selective_diff(std::slice::from_ref(&record), std::slice::from_ref(&record)),
+            Vec::new()
         );
     }
 

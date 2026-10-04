@@ -835,7 +835,7 @@ mod asset_format_tests {
             let metadata = preset.metadata();
             let asset_metadata = preset.asset_metadata();
             assert_eq!(asset_metadata.asset_format_version, 2);
-            assert!(!asset_metadata.authors_institution.is_empty());
+            assert_ne!(asset_metadata.authors_institution, "");
             assert_eq!(metadata.id, preset.id());
             assert_eq!(asset_metadata.preset_id, preset.id());
         }

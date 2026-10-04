@@ -2230,7 +2230,7 @@ mod tests {
         sequence_count: u16,
         partition: &[u8],
     ) -> Vec<u8> {
-        assert!(!partition.is_empty());
+        assert_ne!(partition, &[] as &[u8]);
         assert_eq!(
             partition
                 .iter()
@@ -2469,7 +2469,7 @@ mod tests {
         while let Some(frame) = dynamic_session.receive_frame() {
             dynamic_queued.push(frame);
         }
-        assert!(!static_queued.is_empty());
+        assert_ne!(static_queued, Vec::new());
         assert_eq!(static_queued.len(), dynamic_queued.len());
         for (static_frame, dynamic_frame) in static_queued.iter().zip(&dynamic_queued) {
             assert_eq!(static_frame.pts_samples, dynamic_frame.pts_samples);
@@ -2634,7 +2634,7 @@ mod tests {
             }
             indexed
         };
-        assert!(!static_output.is_empty());
+        assert_ne!(static_output, Vec::new());
         assert_eq!(index_frames(&pull_output), index_frames(&static_output));
     }
 
@@ -2866,7 +2866,8 @@ mod tests {
             body.push(0, 1); // no additional table data
         }
         let body = body.padded_bytes();
-        assert!(!body.is_empty() && body.len() <= 31);
+        assert_ne!(body, [] as [u8; 0]);
+        assert!(body.len() <= 31);
 
         let mut payload = Bits::default();
         payload.push(0, 2); // syntax version
@@ -3003,7 +3004,10 @@ mod tests {
                         assert_eq!(frame.sample_range.start_sample, (index * 1536) as u64);
                         assert_eq!(frame.sample_range.end_sample, ((index + 1) * 1536) as u64);
                         assert!(!frame.decoded.state_reset);
-                        assert!(!frame.decoded.reconstruction_basis.rows.is_empty());
+                        assert_ne!(
+                            frame.decoded.reconstruction_basis.rows,
+                            Vec::<Vec<f64>>::new()
+                        );
                         assert!(
                             frame
                                 .decoded
@@ -3059,7 +3063,7 @@ mod tests {
                 output.push(frame);
             }
 
-            assert!(!output.is_empty(), "lifecycle fixture produced no PCM");
+            assert_ne!(output, Vec::new(), "lifecycle fixture produced no PCM");
             assert!(output.iter().all(|frame| {
                 frame.sample_rate == SAMPLE_RATE
                     && frame.channel_count == 2
@@ -3146,7 +3150,7 @@ mod tests {
             .expect("fingerprint fixture must produce PCM")
             .into_iter()
             .map(|bytes| {
-                assert!(!bytes.is_empty());
+                assert_ne!(bytes, [] as [u8; 0]);
                 sha256_hex(&bytes)
             })
             .collect()
@@ -4354,7 +4358,7 @@ mod tests {
             while let Some(frame) = session.receive_frame() {
                 rendered.extend(frame.interleaved_f32);
             }
-            assert!(!rendered.is_empty());
+            assert_ne!(rendered, Vec::<f32>::new());
             assert!(rendered.iter().all(|sample| sample.is_finite()));
         }
     }
@@ -4476,7 +4480,7 @@ mod tests {
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
         }
-        assert!(!output.is_empty());
+        assert_ne!(output, Vec::new());
         assert!(output.iter().all(|frame| {
             frame.channel_count == expected_channels
                 && frame.interleaved_f32.len() == frame.sample_count * expected_channels
@@ -4724,7 +4728,7 @@ mod tests {
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
         }
-        assert!(!output.is_empty());
+        assert_ne!(output, Vec::new());
         assert!(output.iter().all(|frame| {
             frame.channel_count == expected_channels
                 && frame.interleaved_f32.len() == frame.sample_count * expected_channels
@@ -4840,7 +4844,7 @@ mod tests {
         while let Some(frame) = session.receive_frame() {
             output.push(frame);
         }
-        assert!(!output.is_empty());
+        assert_ne!(output, Vec::new());
         assert_eq!(
             output.iter().map(|frame| frame.sample_count).sum::<usize>(),
             1536 + FINAL_LINKED_GAIN_LATENCY_SAMPLES
@@ -5677,7 +5681,7 @@ mod tests {
                 ReceiveOutcome::NotJoc => panic!("stereo CMAF became non-JOC"),
             }
         }
-        assert!(!frames.is_empty());
+        assert_ne!(frames, Vec::new());
         assert!(frames.iter().all(|frame| {
             frame.channel_layout.openjoc_order.len() == 2
                 && frame

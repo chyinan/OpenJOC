@@ -1258,7 +1258,7 @@ fn decode_command_aligns_ec3_metadata_with_supplied_downmix_pcm() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, [] as [u8; 0]);
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/joc.txt").is_file());
@@ -1447,7 +1447,7 @@ fn decode_command_internal_base_reaches_object_scene_from_raw_eac3() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, [] as [u8; 0]);
     assert!(output.join("scene.json").is_file());
     assert!(output.join("metadata/timeline.json").is_file());
     assert!(output.join("debug/frame_000/reconstruction.txt").is_file());

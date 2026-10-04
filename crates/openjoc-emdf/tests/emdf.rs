@@ -491,7 +491,7 @@ fn vendor_profile_accepts_normative_streams_without_deviation_and_rejects_new_ha
         validate_joc_profile_for(&normative, JocValidationProfile::ObservedVendorCompat)
             .expect("normative profiles are a subset of vendor-compatible input");
     assert_eq!(compatible.status, JocValidationStatus::NormativeCompliant);
-    assert!(compatible.deviations.is_empty());
+    assert_eq!(compatible.deviations, Vec::new());
 
     let mut unknown_pattern = logic_vendor_profile_container();
     unknown_pattern.payloads[1].config.group_id = Some(8);

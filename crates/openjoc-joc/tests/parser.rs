@@ -166,7 +166,7 @@ fn absent_object_has_no_conditional_fields_or_data() {
 
     let frame = parse_joc_payload(&pack(bits)).expect("valid absent object");
     assert!(!frame.objects[0].present);
-    assert!(frame.objects[0].data_points.is_empty());
+    assert_eq!(frame.objects[0].data_points, Vec::new());
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn three_object_payload_retains_present_absent_present_ordinals() {
             .collect::<Vec<_>>(),
         [true, false, true]
     );
-    assert!(frame.objects[1].data_points.is_empty());
+    assert_eq!(frame.objects[1].data_points, Vec::new());
     for (object_index, expected_symbol) in [(0, 40), (2, 56)] {
         let JocPayloadData::Full { matrix_symbols } =
             &frame.objects[object_index].data_points[0].payload
