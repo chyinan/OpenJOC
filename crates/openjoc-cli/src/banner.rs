@@ -347,7 +347,7 @@ mod tests {
     fn hidden_and_no_color_rendering_never_emit_ansi() {
         let mut context = root_context(120);
         context.no_banner = true;
-        assert!(render_banner(context, METADATA).is_empty());
+        assert_eq!(render_banner(context, METADATA), String::new());
 
         context.no_banner = false;
         context.no_color = true;

@@ -15,6 +15,13 @@ fn pose(x: f64, y: f64, z: f64, w: f64) -> openjoc_listener_orientation {
     }
 }
 
+fn zeroed_config_backing() -> openjoc_decoder_config {
+    // ABI 1.3/1.4 initializers write only their historical prefixes. Every
+    // field in this C config is an integer scalar or nullable raw pointer, so
+    // the all-zero representation is valid for the unappended tail as well.
+    unsafe { std::mem::zeroed() }
+}
+
 #[repr(C)]
 struct LegacyDecoderConfigV1_6 {
     struct_size: u32,
@@ -440,12 +447,11 @@ fn custom_geometry_descriptor_is_owned_and_exposes_ordered_semantics() {
         speakers: speakers.as_ptr(),
         speaker_count: speakers.len(),
     };
-    let mut config = std::mem::MaybeUninit::uninit();
+    let mut config = zeroed_config_backing();
     assert_eq!(
-        openjoc_decoder_config_init_v1_4(config.as_mut_ptr()),
+        openjoc_decoder_config_init_v1_4(&mut config),
         openjoc_status::OPENJOC_STATUS_OK
     );
-    let mut config = unsafe { config.assume_init() };
     config.custom_speaker_layout = &layout;
     let mut decoder = ptr::null_mut();
     assert_eq!(
@@ -475,12 +481,11 @@ fn custom_geometry_descriptor_is_owned_and_exposes_ordered_semantics() {
 
 #[test]
 fn packet_stream_bridge_is_independent_bounded_and_reports_semantics() {
-    let mut config = std::mem::MaybeUninit::uninit();
+    let mut config = zeroed_config_backing();
     assert_eq!(
-        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_decoder_config_init(&mut config),
         openjoc_status::OPENJOC_STATUS_OK
     );
-    let config = unsafe { config.assume_init() };
     let mut first = ptr::null_mut();
     let mut second = ptr::null_mut();
     assert_eq!(
@@ -539,12 +544,11 @@ fn packet_stream_bridge_is_independent_bounded_and_reports_semantics() {
 
 #[test]
 fn live_inspection_snapshot_abi_is_versioned_and_has_explicit_live_json() {
-    let mut config = std::mem::MaybeUninit::uninit();
+    let mut config = zeroed_config_backing();
     assert_eq!(
-        openjoc_decoder_config_init_v1_4(config.as_mut_ptr()),
+        openjoc_decoder_config_init_v1_4(&mut config),
         openjoc_status::OPENJOC_STATUS_OK
     );
-    let config = unsafe { config.assume_init() };
     let mut decoder = ptr::null_mut();
     assert_eq!(
         openjoc_stream_decoder_create(&config, &mut decoder),
@@ -589,15 +593,15 @@ fn live_inspection_snapshot_abi_is_versioned_and_has_explicit_live_json() {
 
 #[test]
 fn pre_dialnorm_config_size_keeps_the_calibrated_default() {
-    let mut config = std::mem::MaybeUninit::uninit();
+    let mut config = zeroed_config_backing();
     assert_eq!(
-        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_decoder_config_init(&mut config),
         openjoc_status::OPENJOC_STATUS_OK
     );
-    let mut config = unsafe { config.assume_init() };
-    config.struct_size = std::mem::size_of::<openjoc_decoder_config>() as u32
-        - std::mem::size_of::<*const openjoc_custom_speaker_layout>() as u32
-        - 4;
+    // ABI 1.0 ends immediately before dialnorm_mode. The sentinel is outside
+    // the advertised prefix and must be ignored in favor of the default.
+    config.struct_size = std::mem::offset_of!(openjoc_decoder_config, dialnorm_mode) as u32;
+    config.dialnorm_mode = u32::MAX;
     let mut decoder = ptr::null_mut();
     assert_eq!(
         openjoc_decoder_create(&config, &mut decoder),
@@ -608,12 +612,11 @@ fn pre_dialnorm_config_size_keeps_the_calibrated_default() {
 
 #[test]
 fn create_destroy_multiple_instances_and_invalid_config() {
-    let mut config = std::mem::MaybeUninit::uninit();
+    let mut config = zeroed_config_backing();
     assert_eq!(
-        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_decoder_config_init(&mut config),
         openjoc_status::OPENJOC_STATUS_OK
     );
-    let config = unsafe { config.assume_init() };
 
     let mut first = ptr::null_mut();
     let mut second = ptr::null_mut();
@@ -652,12 +655,11 @@ fn create_destroy_multiple_instances_and_invalid_config() {
 
 #[test]
 fn malformed_packet_drain_flush_and_panic_containment() {
-    let mut config = std::mem::MaybeUninit::uninit();
+    let mut config = zeroed_config_backing();
     assert_eq!(
-        openjoc_decoder_config_init(config.as_mut_ptr()),
+        openjoc_decoder_config_init(&mut config),
         openjoc_status::OPENJOC_STATUS_OK
     );
-    let config = unsafe { config.assume_init() };
     let mut decoder = ptr::null_mut();
     assert_eq!(
         openjoc_decoder_create(&config, &mut decoder),
