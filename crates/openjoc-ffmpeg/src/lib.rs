@@ -2664,7 +2664,18 @@ mod tests {
                 })
                 .unwrap();
             while let Some(frame) = session.receive_binaural_frame().unwrap() {
-                if first_end.is_none() {
+                if let Some(expected_end) = first_end {
+                    if session
+                        .last_applied_listener_orientation()
+                        .is_some_and(|receipt| receipt.sequence == 1)
+                    {
+                        let actual_start =
+                            frame.pts_samples.expect("synthetic stream has sample PTS");
+                        assert_eq!(actual_start, expected_end);
+                        receipt_confirmed = true;
+                        break;
+                    }
+                } else {
                     first_end = Some(
                         frame.pts_samples.expect("synthetic stream has sample PTS")
                             + i64::try_from(frame.sample_count)
@@ -2687,14 +2698,6 @@ mod tests {
                     let accepted = session.apply_prepared_listener_orientation(update).unwrap();
                     assert_eq!(accepted.accepted_sequence, 1);
                     drop(accepted.retired_kernels);
-                } else if session
-                    .last_applied_listener_orientation()
-                    .is_some_and(|receipt| receipt.sequence == 1)
-                {
-                    let actual_start = frame.pts_samples.expect("synthetic stream has sample PTS");
-                    assert_eq!(actual_start, first_end.unwrap());
-                    receipt_confirmed = true;
-                    break;
                 }
             }
             if receipt_confirmed {
