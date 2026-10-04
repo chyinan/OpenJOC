@@ -1107,7 +1107,10 @@ impl FfmpegDecoder {
                     };
                     if let Some(update) = self.pending_orientation_update.take() {
                         match session.apply_prepared_listener_orientation(update) {
-                            Ok(accepted) => debug_assert!(accepted.retired_kernels.is_empty()),
+                            Ok(accepted) => debug_assert_eq!(
+                                accepted.retired_kernels,
+                                [] as [openjoc_api::PreparedBinauralKernel; 0]
+                            ),
                             Err(failure) => {
                                 self.pending_orientation_update = Some(failure.update);
                                 return Err(map_openjoc_error(&OpenJocError::Render(
@@ -2726,7 +2729,10 @@ mod tests {
             .apply_prepared_listener_orientation(first_update)
             .unwrap();
         assert_eq!(first.superseded_sequence, None);
-        assert!(first.retired_kernels.is_empty());
+        assert_eq!(
+            first.retired_kernels,
+            [] as [openjoc_api::PreparedBinauralKernel; 0]
+        );
         let yaw = 7.0_f64.to_radians();
         let second_update = preparer
             .prepare(

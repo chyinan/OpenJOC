@@ -54,7 +54,7 @@ fn decode_native() -> Vec<OpenJocPcmFrame> {
             }
         }
     }
-    assert!(pending.is_empty());
+    assert_eq!(pending, [] as [u8; 0]);
     session.drain().expect("native drain");
     collect_session(&mut session, &mut frames);
     frames
