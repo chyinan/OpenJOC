@@ -2942,3 +2942,49 @@ vendor encode. The known real mode21 file remains a negative fixture: its
 frozen SHA-256 matches, and the production classifier rejects AU0 because the
 EMDF declares 573 bytes while its enclosing range provides only 507. No skip,
 repair, padding, rescan or source fingerprint is implemented.
+
+## J1R34 — device-independent listener orientation for binaural output
+
+The 3DoF listener transform uses ordinary public quaternion algebra. For a
+normalized quaternion `q = (v, w)` and a world-space direction `d`, the active
+rotation is `R(q)d = d + 2w(v × d) + 2(v × (v × d))`. `ListenerOrientation`
+stores finite normalized `(x, y, z, w)` values with equivalent signs
+canonicalized; source directions are expressed in the existing listener basis
+(`+Y` forward, `+X` right, `+Z` up) and transformed by the inverse active
+rotation (`q*`) before HRTF lookup. No device pose convention, sensor metadata,
+or third-party renderer implementation is used. The measured HRTF data and
+its attribution remain those already recorded in
+[`spatial-portability`](site/concepts/spatial-portability.md).
+
+Orientation-dependent HRIR lookup first retains the existing exact-match
+behavior and public spherical interpolation. If its default local candidate
+window cannot form a valid interpolation segment/triangle, the orientation
+resolver expands only that query's nearest-measurement window through bounded
+sizes 8, 16, 32, 48, 64, 96, and 128, retaining deterministic distance/index
+tie ordering. It still rejects an unresolved/outside-coverage direction. The
+static `resolve_hrir` path and its eight-measurement search are unchanged.
+Built-in banks keep their existing `f32` resident representation; selected
+resolved HRIR taps are not shortened or resampled to force a fit.
+
+The dynamic renderer receives one complete ordered HRIR set tagged with HRTF
+and layout identity, stream epoch, sample rate, and sequence. It validates the
+whole update, preserves per-source causal history, and uses the existing
+direct-FIR sum with a shared 240-sample linear transition. It admits HRIR
+pairs up to the dynamic ceiling of 8,192 taps, further limited by the longest
+resolved pair in the configured resource, and rejects the entire update above
+that effective limit;
+static resources retain their separate original limit and behavior. LFE,
+virtual-speaker projection and gain policy are unchanged. Equal static and
+identity-pose HRIR sets, floating accumulation order, source order, and direct
+render digests are regression-checked exactly. The decoder's generated-AU
+pull bridge has separate synthetic lifecycle and bit-exact identity PCM
+coverage; it is not a real-media or device result.
+
+Implementation input was limited to repository-owned code/tests, public
+quaternion/DSP mathematics, and the admitted built-in/custom SOFA data path.
+No proprietary decoder source, decompiler output, private symbols/layouts,
+device SDK, private fixture, or competitor renderer was used. Release probes
+measure host CPU only and are summarized in the canonical
+[limitations](site/compatibility/known-limitations.md); they do not establish
+sensor-to-sound latency, earphone quality, long-duration behavior, or physical
+hardware support.

@@ -105,9 +105,11 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   WAVEFORMATEXTENSIBLE mask. `22.2` and custom WAV use explicit unmasked PCM;
   CAF is preferred when coordinates must be preserved.
 - OpenJOC performs no crossover, bass management, room correction, speaker
-  calibration, head tracking, distance model, Doppler, or device discovery.
+  calibration, sensor tracking, distance model, Doppler, or device discovery.
   LFE ownership is explicit and no physical device is inferred from a channel
-  count.
+  count. An experimental Rust/C API can accept host-supplied 3DoF listener
+  quaternions for virtual-speaker binaural rendering, but it does not read a
+  sensor or connect to an audio device.
 - Binaural output is virtual-speaker rendering, not proprietary direct-object
   binaural parity. The bundled SADIE II dataset is generic; a custom SOFA may
   be more appropriate for a listener.
@@ -117,6 +119,22 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   HRIRs are resampled to 48 kHz for binaural rendering. Fractional source
   delays, external HDF5 filters, downloads, writing, moving sources, and
   universal dataset coverage are not supported.
+- Orientation preparation is bounded to complete update sets whose HRIR pairs
+  fit the resource-derived limit, up to the explicit 8,192-tap ceiling; uncovered
+  directions or over-limit pairs reject the entire pose. No HRIR is truncated, the virtual speaker set is unchanged, and
+  orientation mode remains explicit opt-in. Its bounded pull API makes a pose
+  eligible between chunks but provides no sensor-to-sound latency or hard
+  real-time guarantee.
+- On the measured x86_64 Linux AMD EPYC 9V74 host with optimized Rust 1.89
+  builds, release preparation p95 ranged from 5.24 to 6.45 ms across built-in
+  D1/D2 HRTFs and 7.1.4/9.1.6 layouts, missing the 4 ms target. A separate
+  64-block direct-FIR probe showed active-transition p95 below each full block
+  period at 128 and 256 samples; 50% p95 headroom was not universal (for
+  example, D1 9.1.6 at 128 samples took 1.446 ms p95 against a 1.333 ms
+  half-period). These wall-clock microbenchmarks include host scheduling jitter/preemption, but
+  they did not exercise a real playback scheduler, underrun path, sensor
+  transport, or device output. They are not an end-to-end playback or
+  long-duration stability claim; no real earphones were tested.
 
 ## Output level and synchronization
 
@@ -182,7 +200,7 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
 
 ## APIs and integrations
 
-- C ABI 1.6 is experimental during the OpenJOC 0.x line. The public header,
+- C ABI 1.7 is experimental during the OpenJOC 0.x line. The public header,
   structure sizes, ownership rules, numeric statuses, and compatibility
   initializers are the contract; ABI evolution remains possible.
 - The external FFmpeg bridge is an embedding surface, not an out-of-tree

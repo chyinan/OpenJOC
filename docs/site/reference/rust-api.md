@@ -132,6 +132,71 @@ a virtual speaker layout, and an explicit LFE policy. The session does not
 retain a filesystem path. The public API currently uses direct convolution;
 partitioned convolution is deferred to a later ABI extension.
 
+## Experimental listener orientation
+
+`OpenJocSession::new_with_listener_orientation_pull(config, pull_samples)` is
+an explicit, opt-in device-independent 3DoF path. The default constructor and
+all existing callers keep static listener orientation. The opt-in constructor
+requires binaural mode and accepts `1..=256` output samples per pull. A
+`ListenerOrientationPreparer` can be cloned to a worker thread; it resolves
+every non-LFE virtual speaker's HRIR for the complete pose off the render path.
+Submit its immutable update between render/pull calls:
+
+```rust
+use openjoc_api::{
+    BinauralConfig, ListenerOrientation, OpenJocConfig, OpenJocSession, RenderMode,
+};
+
+let mut config = OpenJocConfig::default();
+config.render_mode = RenderMode::Binaural;
+config.binaural = Some(BinauralConfig::builtin_generic("7.1.4"));
+let mut session = OpenJocSession::new_with_listener_orientation_pull(config, 128)?;
+let preparer = session.listener_orientation_preparer().expect("enabled");
+let epoch = session.listener_orientation_stream_epoch().expect("enabled");
+let orientation = ListenerOrientation::new(0.0, 0.0, 0.0, 1.0)?;
+let update = preparer.prepare(orientation, epoch, 1)?;
+let receipt = session.apply_prepared_listener_orientation(update)
+    .map_err(|failure| failure.error)?;
+drop(receipt.retired_kernels); // Release/recycle away from a real-time callback.
+// After push_packet, call receive_binaural_frame repeatedly. A new pose may be
+// applied between returned chunks; each frame owns its interleaved f32 samples. An accepted target may wait for an active 240-sample fade to finish before its transition starts.
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The quaternion is finite, scale-normalized `(x, y, z, w)` and represents an
+active listener-local-to-scene rotation. Speaker axes are `+Y` forward, `+X`
+right and `+Z` up. Each fixed world-space speaker direction is transformed by
+the inverse rotation before HRIR lookup. Sequence numbers must increase within
+the stream epoch; reset advances that epoch, so an update prepared before reset
+is rejected without consuming it. The acceptance receipt reports the accepted
+and any superseded sequence plus retired FIR buffers; callers should release
+those buffers on a control thread.
+
+Pull mode retains at most one 1,536-sample projected virtual-speaker access
+unit before binauralization. The queue count is queryable through
+`pending_binaural_input_samples`. Apply before a pull to make the pose eligible for the next not-yet-rendered chunk; if a 240-sample shared crossfade is already active, the latest accepted target waits until it completes (and one waiting target may be superseded). After drain, reconstruction and FIR tails also arrive as bounded chunks. This changes when existing virtual-speaker PCM is
+binauralized; it does not change speaker projection, gain, output channel
+order, HRIR tap count, or sample rate. Identity-orientation regression output
+is bit-exact with the static path. Non-identity HRIR preparation can still
+reject uncovered directions, and overlong HRIR pairs reject the whole update;
+no taps are truncated. This API has no sensor/device adapter or hard-real-time,
+perceptual, or end-to-end latency guarantee. See [known limitations](../compatibility/known-limitations.md)
+for measured host-only bounds.
+
+For a runnable synthetic direct-FIR trajectory and waveform comparison, use:
+
+```sh
+cargo run -p openjoc-api --example listener_orientation_trajectory -- target/orientation-evidence/trajectory
+```
+
+It writes `listener-orientation-trajectory.wav`, a fixed-identity comparison
+WAV, and a summary with sequence-to-sample receipts. The example synthesizes
+independent tones for the 7.1.4 virtual speakers; it is not a JOC access unit,
+decoder integration, sensor capture, or headphone/device test. The recorded
+run reports an exact-zero identity prefix comparison and a nonzero yaw-interval
+RMS delta, demonstrating that the prepared direction updates change the
+waveform while leaving the preceding identity segment unchanged.
+
 For frontend parity audits, `OpenJocConfig::effective_config_descriptor()` and
 `effective_config_fingerprint()` expose the normalized session-boundary fields.
 `trace_access_units()` records each grouped AU's exact byte length, SHA-256,

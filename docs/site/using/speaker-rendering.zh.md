@@ -111,6 +111,8 @@ LFE 策略必须明确选择：`exclude` 或 `equal-power-dual-mono`。CLI 默�
 
 `--backend direct|partitioned` 选择受支持的卷积后端。直接 FIR 是数值参考；分区卷积使用请求的固定二次幂分区，并保留最终不完整输入和 FIR 尾部的处理行为。
 
+Rust API 和 C ABI 还提供显式启用的实验性设备无关 3DoF 听音者姿态模式。它会旋转固定虚拟扬声器的 HRTF 查询方向，不会移动声源或改变投影/增益阶段，也不会读取传感器或连接音频设备。CLI、WASM 和 DirectShow/LAV 路径保持静态。identity 姿态回归会精确比较静态 HRIR 与 PCM。启用方式、序号、有限拉取和实测限制详见 [Rust API](../reference/rust-api.md) 与 [C ABI](../reference/c-abi.md)。
+
 ## DRC、Dialnorm 与文件电平
 
 推荐的信号顺序是：

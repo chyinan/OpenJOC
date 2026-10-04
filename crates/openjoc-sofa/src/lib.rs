@@ -7,7 +7,12 @@
 // pattern: Mixed (unavoidable)
 // Reason: the public adapter retains its thin local-file loader alongside the
 // in-memory parser and pure HRIR operations; rendering performs no file I/O.
-use std::{collections::HashMap, fmt, fs, path::Path};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
+    fmt, fs,
+    path::Path,
+};
 
 use openjoc_render::{CartesianPosition, HrirBank, HrirEar, HrirEntry, HrirEntryId, HrirPair};
 
@@ -1386,6 +1391,35 @@ pub fn resolve_hrir(
     build_resolved_interpolation(bank, &neighborhood.indices, &neighborhood.weights)
 }
 
+/// Resolves one orientation-dependent direction using the same exact lookup
+/// and local spherical interpolation as [`resolve_hrir`], with a deterministic
+/// bounded expansion of the nearest-measurement window when the default local
+/// search finds no containing segment or triangle. It still rejects uncovered
+/// directions; the static resolver remains unchanged for compatibility.
+pub fn resolve_hrir_for_listener_orientation(
+    bank: &HrirBank,
+    direction: CartesianPosition,
+) -> Result<ResolvedHrir, SofaError> {
+    let target = normalize(direction).ok_or_else(|| {
+        SofaError::InvalidCoordinate("binaural direction must be finite and nonzero".to_string())
+    })?;
+    let target_position = CartesianPosition::new(target.x, target.y, target.z);
+    let target = [target.x, target.y, target.z];
+    if let Ok(entry) = bank.resolve_exact(target_position) {
+        return Ok(ResolvedHrir {
+            pair: entry.pair().clone(),
+            exact_entry: Some(entry.id()),
+            neighbor_count: 1,
+        });
+    }
+    let neighborhood = find_interpolation_neighborhood_for_listener_orientation(
+        target,
+        bank.entries().len(),
+        |index| bank.entries()[index].direction(),
+    )?;
+    build_resolved_interpolation(bank, &neighborhood.indices, &neighborhood.weights)
+}
+
 /// Resolves a built-in f32-resident bank. Only the selected measurement taps
 /// or the small interpolated kernel are widened to the renderer's f64 format.
 pub fn resolve_hrir_f32(
@@ -1448,6 +1482,71 @@ pub fn resolve_hrir_f32(
     })
 }
 
+/// Built-in f32-bank counterpart to
+/// [`resolve_hrir_for_listener_orientation`]. It preserves f32 resident-bank
+/// storage and only widens the selected or interpolated kernel.
+pub fn resolve_hrir_f32_for_listener_orientation(
+    bank: &BuiltinHrirF32Bank,
+    direction: CartesianPosition,
+) -> Result<ResolvedHrir, SofaError> {
+    let target = normalize(direction).ok_or_else(|| {
+        SofaError::InvalidCoordinate("binaural direction must be finite and nonzero".to_string())
+    })?;
+    let target = [target.x, target.y, target.z];
+    if let Some((index, record)) = bank
+        .records()
+        .iter()
+        .enumerate()
+        .find(|(_, record)| directions_match(target, record.direction))
+    {
+        let left = bank
+            .ear_taps(index, 0)
+            .ok_or(SofaError::InvalidImpulseResponse(
+                "left tap range".to_owned(),
+            ))?
+            .iter()
+            .copied()
+            .map(f64::from)
+            .collect();
+        let right = bank
+            .ear_taps(index, 1)
+            .ok_or(SofaError::InvalidImpulseResponse(
+                "right tap range".to_owned(),
+            ))?
+            .iter()
+            .copied()
+            .map(f64::from)
+            .collect();
+        let delays = [
+            usize::try_from(record.delays[0]).map_err(|_| {
+                SofaError::InvalidImpulseResponse("packed delay overflow".to_owned())
+            })?,
+            usize::try_from(record.delays[1]).map_err(|_| {
+                SofaError::InvalidImpulseResponse("packed delay overflow".to_owned())
+            })?,
+        ];
+        let pair = HrirPair::new_with_delays(bank.sample_rate_hz(), left, right, delays)
+            .map_err(|error| SofaError::InvalidImpulseResponse(error.to_string()))?;
+        return Ok(ResolvedHrir {
+            pair,
+            exact_entry: Some(HrirEntryId::new(index as u64)),
+            neighbor_count: 1,
+        });
+    }
+
+    let neighborhood = find_interpolation_neighborhood_for_listener_orientation(
+        target,
+        bank.direction_count(),
+        |index| bank.records()[index].direction,
+    )?;
+    let pair = interpolate_f32_pair(bank, &neighborhood.indices, &neighborhood.weights)?;
+    Ok(ResolvedHrir {
+        pair,
+        exact_entry: None,
+        neighbor_count: neighborhood.indices.len(),
+    })
+}
+
 #[derive(Debug)]
 struct InterpolationNeighborhood {
     indices: Vec<usize>,
@@ -1459,15 +1558,224 @@ fn find_interpolation_neighborhood(
     direction_count: usize,
     direction_at: impl Fn(usize) -> [f64; 3],
 ) -> Result<InterpolationNeighborhood, SofaError> {
+    find_interpolation_neighborhood_with_candidate_limit(
+        target,
+        direction_count,
+        direction_at,
+        MAX_LOCAL_INTERPOLATION_CANDIDATES,
+    )
+}
+
+fn find_interpolation_neighborhood_with_candidate_limit(
+    target: [f64; 3],
+    direction_count: usize,
+    direction_at: impl Fn(usize) -> [f64; 3],
+    candidate_limit: usize,
+) -> Result<InterpolationNeighborhood, SofaError> {
+    find_interpolation_neighborhood_with_options(
+        target,
+        direction_count,
+        direction_at,
+        candidate_limit,
+    )
+}
+
+fn find_interpolation_neighborhood_for_listener_orientation(
+    target: [f64; 3],
+    direction_count: usize,
+    direction_at: impl Fn(usize) -> [f64; 3],
+) -> Result<InterpolationNeighborhood, SofaError> {
+    const CANDIDATE_LIMITS: [usize; 7] = [8, 16, 32, 48, 64, 96, 128];
     if direction_count < 2 {
         return Err(SofaError::InsufficientInterpolationData {
             required: 2,
             available: direction_count,
         });
     }
-    let candidates = nearest_candidates(
+
+    // Rank once, then grow nested prefixes. The old implementation reranked
+    // the entire measurement bank at every tier, despite each tier being a
+    // strict prefix of the next one. Preserve deterministic dot/index ordering
+    // so a successful 8-candidate query still selects the same triangle.
+    let candidates = nearest_candidates_with_limit(
         target,
         (0..direction_count).map(|index| (index, direction_at(index))),
+        *CANDIDATE_LIMITS.last().expect("non-empty candidate limits"),
+    );
+    let candidate_directions = candidates
+        .iter()
+        .map(|candidate| direction_at(candidate.index))
+        .collect::<Vec<_>>();
+    let projection = TangentProjection::new(target);
+    let candidate_projections = projection.map(|projection| {
+        candidate_directions
+            .iter()
+            .copied()
+            .map(|direction| projection.project(target, direction))
+            .collect::<Vec<_>>()
+    });
+    let mut previous_limit = 0;
+    for candidate_limit in CANDIDATE_LIMITS {
+        let candidate_limit = candidate_limit.min(candidates.len());
+        if candidate_limit == previous_limit {
+            continue;
+        }
+        match find_interpolation_neighborhood_for_candidate_expansion(
+            target,
+            &candidates,
+            &candidate_directions,
+            candidate_projections.as_deref(),
+            previous_limit,
+            candidate_limit,
+        ) {
+            Ok(neighborhood) => return Ok(neighborhood),
+            Err(error @ SofaError::InterpolationOutsideCoverage(_)) => {
+                previous_limit = candidate_limit;
+                if candidate_limit == candidates.len() {
+                    return Err(error);
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(SofaError::InsufficientInterpolationData {
+        required: 2,
+        available: direction_count,
+    })
+}
+
+fn find_interpolation_neighborhood_for_candidate_expansion(
+    target: [f64; 3],
+    candidates: &[Candidate],
+    candidate_directions: &[[f64; 3]],
+    candidate_projections: Option<&[[f64; 2]]>,
+    previous_limit: usize,
+    candidate_limit: usize,
+) -> Result<InterpolationNeighborhood, SofaError> {
+    // All triples with their largest candidate index below previous_limit
+    // were already rejected at the preceding tier. Visit only newly possible
+    // triples, while retaining the same nested lexicographic order as a full
+    // scan of the current prefix.
+    for first in 0..candidate_limit {
+        for second in first + 1..candidate_limit {
+            for third in (second + 1).max(previous_limit)..candidate_limit {
+                let selected = [candidates[first], candidates[second], candidates[third]];
+                if selected
+                    .iter()
+                    .any(|candidate| candidate.angle > MAX_INTERPOLATION_ANGLE_RADIANS)
+                {
+                    continue;
+                }
+                if let Some(weights) = candidate_projections.and_then(|projected| {
+                    spherical_triangle_weights_from_projected([
+                        projected[first],
+                        projected[second],
+                        projected[third],
+                    ])
+                }) {
+                    return Ok(InterpolationNeighborhood {
+                        indices: selected.map(|candidate| candidate.index).to_vec(),
+                        weights: weights.to_vec(),
+                    });
+                }
+            }
+        }
+    }
+    for first in 0..candidate_limit {
+        for second in (first + 1).max(previous_limit)..candidate_limit {
+            let left = candidates[first];
+            let right = candidates[second];
+            if let Some(weights) = great_circle_segment_weights(
+                target,
+                candidate_directions[first],
+                candidate_directions[second],
+            ) {
+                return Ok(InterpolationNeighborhood {
+                    indices: vec![left.index, right.index],
+                    weights: weights.to_vec(),
+                });
+            }
+        }
+    }
+    Err(SofaError::InterpolationOutsideCoverage(format!(
+        "nearest measurement is {:.2} degrees away and no local spherical segment/triangle contains the request",
+        candidates[0].angle.to_degrees()
+    )))
+}
+
+#[derive(Clone, Copy)]
+struct TangentProjection {
+    basis_x: [f64; 3],
+    basis_y: [f64; 3],
+}
+
+impl TangentProjection {
+    fn new(target: [f64; 3]) -> Option<Self> {
+        let reference = if target[2].abs() < 0.9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let basis_x = normalize_array(cross_array(reference, target))?;
+        let basis_y = cross_array(target, basis_x);
+        Some(Self { basis_x, basis_y })
+    }
+
+    fn project(self, target: [f64; 3], vertex: [f64; 3]) -> [f64; 2] {
+        [
+            dot_array(
+                sub_array(vertex, scale_array(target, dot_array(vertex, target))),
+                self.basis_x,
+            ),
+            dot_array(
+                sub_array(vertex, scale_array(target, dot_array(vertex, target))),
+                self.basis_y,
+            ),
+        ]
+    }
+}
+
+fn spherical_triangle_weights_from_projected(projected: [[f64; 2]; 3]) -> Option<[f64; 3]> {
+    let a = projected[0][0] - projected[2][0];
+    let b = projected[1][0] - projected[2][0];
+    let c = projected[0][1] - projected[2][1];
+    let d = projected[1][1] - projected[2][1];
+    let determinant = a.mul_add(d, -b * c);
+    if !determinant.is_finite() || determinant.abs() <= INTERPOLATION_GEOMETRY_TOLERANCE {
+        return None;
+    }
+    let alpha = ((-projected[2][0]).mul_add(d, -b * -projected[2][1])) / determinant;
+    let beta = (a.mul_add(-projected[2][1], projected[2][0] * c)) / determinant;
+    let gamma = 1.0 - alpha - beta;
+    let weights = [alpha, beta, gamma];
+    weights
+        .iter()
+        .all(|weight| weight.is_finite() && *weight >= -INTERPOLATION_WEIGHT_TOLERANCE)
+        .then_some(weights.map(|weight| weight.max(0.0)))
+}
+
+fn find_interpolation_neighborhood_with_options(
+    target: [f64; 3],
+    direction_count: usize,
+    direction_at: impl Fn(usize) -> [f64; 3],
+    candidate_limit: usize,
+) -> Result<InterpolationNeighborhood, SofaError> {
+    if direction_count < 2 {
+        return Err(SofaError::InsufficientInterpolationData {
+            required: 2,
+            available: direction_count,
+        });
+    }
+    if candidate_limit < 2 {
+        return Err(SofaError::InsufficientInterpolationData {
+            required: 2,
+            available: candidate_limit,
+        });
+    }
+    let candidates = nearest_candidates_with_limit(
+        target,
+        (0..direction_count).map(|index| (index, direction_at(index))),
+        candidate_limit,
     );
     for first in 0..candidates.len() {
         for second in first + 1..candidates.len() {
@@ -1527,35 +1835,92 @@ struct Candidate {
     dot: f64,
 }
 
+#[cfg(test)]
 fn nearest_candidates(
     target: [f64; 3],
     directions: impl Iterator<Item = (usize, [f64; 3])>,
 ) -> Vec<Candidate> {
-    let mut candidates = Vec::with_capacity(MAX_LOCAL_INTERPOLATION_CANDIDATES);
+    nearest_candidates_with_limit(target, directions, MAX_LOCAL_INTERPOLATION_CANDIDATES)
+}
+
+fn nearest_candidates_with_limit(
+    target: [f64; 3],
+    directions: impl Iterator<Item = (usize, [f64; 3])>,
+    candidate_limit: usize,
+) -> Vec<Candidate> {
+    if candidate_limit == 0 {
+        return Vec::new();
+    }
+    let mut candidates = BinaryHeap::with_capacity(candidate_limit);
     for (index, direction) in directions {
         let dot = dot_array(target, direction).clamp(-1.0, 1.0);
-        let candidate = Candidate {
+        let candidate = CandidateHeapEntry(Candidate {
             index,
             angle: 0.0,
             dot,
-        };
-        let position = candidates
-            .iter()
-            .position(|existing: &Candidate| {
-                dot > existing.dot || (dot == existing.dot && index < existing.index)
-            })
-            .unwrap_or(candidates.len());
-        if position < MAX_LOCAL_INTERPOLATION_CANDIDATES {
-            candidates.insert(position, candidate);
-            if candidates.len() > MAX_LOCAL_INTERPOLATION_CANDIDATES {
-                candidates.pop();
-            }
+        });
+        if candidates.len() < candidate_limit {
+            candidates.push(candidate);
+        } else if candidates
+            .peek()
+            .is_some_and(|worst| is_better_candidate(&candidate.0, &worst.0))
+        {
+            candidates.pop();
+            candidates.push(candidate);
         }
     }
+    let mut candidates = candidates
+        .into_iter()
+        .map(|entry| entry.0)
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        if left.dot == right.dot {
+            left.index.cmp(&right.index)
+        } else {
+            right.dot.partial_cmp(&left.dot).unwrap_or(Ordering::Equal)
+        }
+    });
     for candidate in &mut candidates {
         candidate.angle = candidate.dot.acos();
     }
     candidates
+}
+
+fn is_better_candidate(candidate: &Candidate, other: &Candidate) -> bool {
+    candidate.dot > other.dot || (candidate.dot == other.dot && candidate.index < other.index)
+}
+
+/// A bounded max-heap whose head is the worst retained candidate. The public
+/// resolver still returns the same dot-descending, index-ascending ordering.
+#[derive(Clone, Copy, Debug)]
+struct CandidateHeapEntry(Candidate);
+
+impl PartialEq for CandidateHeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.index == other.0.index && self.0.dot == other.0.dot
+    }
+}
+
+impl Eq for CandidateHeapEntry {}
+
+impl PartialOrd for CandidateHeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CandidateHeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.0.dot == other.0.dot {
+            self.0.index.cmp(&other.0.index)
+        } else {
+            other
+                .0
+                .dot
+                .partial_cmp(&self.0.dot)
+                .unwrap_or(Ordering::Equal)
+        }
+    }
 }
 
 fn build_resolved_interpolation(
@@ -2250,7 +2615,16 @@ struct Cursor<'a> {
 
 #[cfg(test)]
 mod nearest_candidate_tests {
-    use super::nearest_candidates;
+    use super::{
+        BuiltinHrtf, Candidate, CartesianPosition, HrirBank, HrirEntry, HrirEntryId, HrirPair,
+        Ordering, TangentProjection, angular_distance, dot_array,
+        find_interpolation_neighborhood_for_candidate_expansion,
+        find_interpolation_neighborhood_for_listener_orientation,
+        find_interpolation_neighborhood_with_candidate_limit,
+        find_interpolation_neighborhood_with_options, interpolate_f32_pair, load_builtin_hrir_f32,
+        nearest_candidates, nearest_candidates_with_limit, normalize, resolve_hrir_f32,
+        resolve_hrir_f32_for_listener_orientation, resolve_hrir_for_listener_orientation,
+    };
 
     #[test]
     fn nearest_candidate_selection_orders_by_dot_and_stable_index() {
@@ -2271,6 +2645,405 @@ mod nearest_candidate_tests {
             .map(|candidate| candidate.index)
             .collect::<Vec<_>>();
         assert_eq!(indices, [2, 9, 3, 10, 4, 6, 7, 8]);
+    }
+
+    #[test]
+    fn bounded_heap_candidates_match_full_stable_sort() {
+        let target = [0.0, 1.0, 0.0];
+        let directions = vec![
+            (0, [0.0, 1.0, 0.0]),
+            (1, [0.0, -1.0, 0.0]),
+            (2, [1.0, 0.0, 0.0]),
+            (3, [-1.0, 0.0, 0.0]),
+            (4, [0.0, 0.6, 0.8]),
+            (5, [0.0, 0.6, -0.8]),
+            (6, [0.0, 0.6, 0.8]),
+            (7, [0.0, 0.0, 1.0]),
+            (8, [0.0, 0.0, -1.0]),
+            (9, [0.0, 0.8, 0.6]),
+        ];
+        for limit in [0, 1, 2, 3, 8, 16] {
+            let mut expected = directions
+                .iter()
+                .map(|(index, direction)| Candidate {
+                    index: *index,
+                    angle: 0.0,
+                    dot: dot_array(target, *direction).clamp(-1.0, 1.0),
+                })
+                .collect::<Vec<_>>();
+            expected.sort_by(|left, right| {
+                if left.dot == right.dot {
+                    left.index.cmp(&right.index)
+                } else {
+                    right.dot.partial_cmp(&left.dot).unwrap_or(Ordering::Equal)
+                }
+            });
+            expected.truncate(limit);
+            let actual = nearest_candidates_with_limit(target, directions.iter().copied(), limit);
+            assert_eq!(
+                actual
+                    .iter()
+                    .map(|candidate| candidate.index)
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|candidate| candidate.index)
+                    .collect::<Vec<_>>(),
+                "candidate limit {limit}"
+            );
+            assert_eq!(
+                actual
+                    .iter()
+                    .map(|candidate| candidate.dot)
+                    .collect::<Vec<_>>(),
+                expected
+                    .iter()
+                    .map(|candidate| candidate.dot)
+                    .collect::<Vec<_>>(),
+                "candidate limit {limit}"
+            );
+        }
+    }
+
+    #[test]
+    fn orientation_resolver_expands_the_search_without_changing_static_lookup() {
+        let targets = [
+            CartesianPosition::new(-1.017_300_101_593_674_7, 0.982_395_288_719_107_8, 1.0),
+            CartesianPosition::new(-1.0, 0.965_925_826_289_068_3, 0.258_819_045_102_520_74),
+        ];
+        for preset in BuiltinHrtf::all() {
+            let bank = load_builtin_hrir_f32(*preset)
+                .expect("built-in f32 HRTF")
+                .bank;
+            for target in targets {
+                assert!(resolve_hrir_f32(&bank, target).is_err());
+                let resolved = resolve_hrir_f32_for_listener_orientation(&bank, target)
+                    .expect("bounded orientation-only candidate expansion");
+                assert_eq!(resolved.neighbor_count, 3);
+                assert_eq!(resolved.pair.sample_rate_hz(), 48_000);
+                assert!(resolved.pair.tap_count() <= 512);
+                assert!(
+                    resolved
+                        .pair
+                        .left_taps()
+                        .iter()
+                        .chain(resolved.pair.right_taps())
+                        .all(|tap| tap.is_finite())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn orientation_expansion_matches_the_rescan_reference_bit_for_bit() {
+        const CANDIDATE_LIMITS: [usize; 7] = [8, 16, 32, 48, 64, 96, 128];
+        let mut targets = vec![
+            normalize(CartesianPosition::new(
+                -1.017_300_101_593_674_7,
+                0.982_395_288_719_107_8,
+                1.0,
+            ))
+            .unwrap(),
+            normalize(CartesianPosition::new(
+                -1.0,
+                0.965_925_826_289_068_3,
+                0.258_819_045_102_520_74,
+            ))
+            .unwrap(),
+        ];
+        // Deterministic spread over the sphere supplements the boundary cases
+        // above with continuous off-grid directions from many orientations.
+        let golden_angle = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
+        for sample in 0..16 {
+            let z = 1.0 - 2.0 * (sample as f64 + 0.5) / 16.0;
+            let radius = (1.0 - z * z).sqrt();
+            let azimuth = sample as f64 * golden_angle;
+            targets.push(CartesianPosition::new(
+                radius * azimuth.cos(),
+                radius * azimuth.sin(),
+                z,
+            ));
+        }
+
+        for preset in BuiltinHrtf::all() {
+            let bank = load_builtin_hrir_f32(*preset)
+                .expect("built-in f32 HRTF")
+                .bank;
+            for target in targets.iter().copied() {
+                let target = normalize(target).unwrap();
+                let target = [target.x, target.y, target.z];
+                let optimized = find_interpolation_neighborhood_for_listener_orientation(
+                    target,
+                    bank.direction_count(),
+                    |index| bank.records()[index].direction,
+                );
+                let mut reference = None;
+                for limit in CANDIDATE_LIMITS {
+                    match find_interpolation_neighborhood_with_options(
+                        target,
+                        bank.direction_count(),
+                        |index| bank.records()[index].direction,
+                        limit,
+                    ) {
+                        Ok(neighborhood) => {
+                            reference = Some(Ok(neighborhood));
+                            break;
+                        }
+                        Err(error @ super::SofaError::InterpolationOutsideCoverage(_)) => {
+                            reference = Some(Err(error));
+                        }
+                        Err(error) => {
+                            reference = Some(Err(error));
+                            break;
+                        }
+                    }
+                }
+                let reference = reference.expect("candidate tiers are non-empty");
+                match (optimized, reference) {
+                    (Ok(optimized), Ok(reference)) => {
+                        assert_eq!(optimized.indices, reference.indices);
+                        assert_eq!(optimized.weights, reference.weights);
+                        let optimized_pair =
+                            interpolate_f32_pair(&bank, &optimized.indices, &optimized.weights)
+                                .unwrap();
+                        let reference_pair =
+                            interpolate_f32_pair(&bank, &reference.indices, &reference.weights)
+                                .unwrap();
+                        assert_eq!(optimized_pair, reference_pair);
+                    }
+                    (Err(optimized), Err(reference)) => {
+                        assert_eq!(optimized.to_string(), reference.to_string());
+                    }
+                    (optimized, reference) => panic!(
+                        "optimized/reference coverage differs for {}: {optimized:?} vs {reference:?}",
+                        preset.id(),
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn orientation_resolver_still_rejects_uncovered_directions() {
+        let bank = HrirBank::new(
+            48_000,
+            vec![
+                HrirEntry::new(
+                    HrirEntryId::new(1),
+                    CartesianPosition::new(0.0, 1.0, 0.0),
+                    HrirPair::new(48_000, vec![1.0], vec![1.0]).unwrap(),
+                )
+                .unwrap(),
+                HrirEntry::new(
+                    HrirEntryId::new(2),
+                    CartesianPosition::new(1.0, 0.0, 0.0),
+                    HrirPair::new(48_000, vec![0.5], vec![0.5]).unwrap(),
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+        let error =
+            resolve_hrir_for_listener_orientation(&bank, CartesianPosition::new(-1.0, 0.0, 0.0))
+                .unwrap_err();
+        assert!(matches!(
+            error,
+            super::SofaError::InterpolationOutsideCoverage(_)
+        ));
+    }
+
+    #[test]
+    #[ignore = "manual diagnostic comparing bounded spherical-search candidate windows"]
+    fn builtin_orientation_candidate_window_probe() {
+        let targets = [
+            (
+                "top-front-left yaw -1 degree",
+                [-1.017_300_101_593_674_7, 0.982_395_288_719_107_8, 1.0],
+            ),
+            (
+                "top-front-left yaw +1 degree",
+                [-0.982_395_288_719_107_8, 1.017_300_101_593_674_7, 1.0],
+            ),
+            (
+                "front-left pitch +15 degrees",
+                [-1.0, 0.965_925_826_289_068_3, 0.258_819_045_102_520_74],
+            ),
+            (
+                "composite yaw30 pitch20 roll-15 source-1",
+                [
+                    -0.474_475_771_917_261_3,
+                    1.283_643_991_742_328,
+                    -0.356_554_125_382_586_8,
+                ],
+            ),
+        ];
+        for preset in BuiltinHrtf::all() {
+            let bank = load_builtin_hrir_f32(*preset)
+                .expect("built-in f32 HRTF")
+                .bank;
+            for (label, direction) in targets {
+                let direction = normalize(CartesianPosition::new(
+                    direction[0],
+                    direction[1],
+                    direction[2],
+                ))
+                .expect("finite nonzero direction");
+                let target = [direction.x, direction.y, direction.z];
+                for candidate_limit in [8, 16, 32, 48, 64, 96, 128, 192, 256] {
+                    let result = find_interpolation_neighborhood_with_candidate_limit(
+                        target,
+                        bank.direction_count(),
+                        |index| bank.records()[index].direction,
+                        candidate_limit,
+                    );
+                    match result {
+                        Ok(neighborhood) => {
+                            let vertices = neighborhood
+                                .indices
+                                .iter()
+                                .map(|&index| bank.records()[index].direction)
+                                .collect::<Vec<_>>();
+                            let max_edge_degrees = vertices
+                                .iter()
+                                .enumerate()
+                                .flat_map(|(first, direction)| {
+                                    vertices[first + 1..]
+                                        .iter()
+                                        .map(move |other| angular_distance(*direction, *other))
+                                })
+                                .fold(0.0_f64, f64::max)
+                                .to_degrees();
+                            let max_vertex_degrees = vertices
+                                .iter()
+                                .map(|vertex| angular_distance(target, *vertex))
+                                .fold(0.0_f64, f64::max)
+                                .to_degrees();
+                            let pair = interpolate_f32_pair(
+                                &bank,
+                                &neighborhood.indices,
+                                &neighborhood.weights,
+                            );
+                            match pair {
+                                Ok(pair) => eprintln!(
+                                    "candidate-window preset={} query={label} limit={candidate_limit} selected={:?} weights={:?} resolved_taps={} max_edge={:.2}deg max_vertex={:.2}deg",
+                                    preset.id(),
+                                    neighborhood.indices,
+                                    neighborhood.weights,
+                                    pair.tap_count(),
+                                    max_edge_degrees,
+                                    max_vertex_degrees,
+                                ),
+                                Err(error) => eprintln!(
+                                    "candidate-window preset={} query={label} limit={candidate_limit} geometry=found kernel=reject {error}",
+                                    preset.id(),
+                                ),
+                            }
+                        }
+                        Err(error) => eprintln!(
+                            "candidate-window preset={} query={label} limit={candidate_limit} reject {error}",
+                            preset.id(),
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "manual diagnostic separating orientation candidate ranking and geometry costs"]
+    fn profile_orientation_search_components() {
+        const CANDIDATE_LIMITS: [usize; 7] = [8, 16, 32, 48, 64, 96, 128];
+        let golden_angle = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
+        let targets = (0..48)
+            .map(|sample| {
+                let z = 1.0 - 2.0 * (sample as f64 + 0.5) / 48.0;
+                let radius = (1.0 - z * z).sqrt();
+                let azimuth = sample as f64 * golden_angle;
+                CartesianPosition::new(radius * azimuth.cos(), radius * azimuth.sin(), z)
+            })
+            .collect::<Vec<_>>();
+        for preset in BuiltinHrtf::all() {
+            let bank = load_builtin_hrir_f32(*preset)
+                .expect("built-in f32 HRTF")
+                .bank;
+            let mut ranking_ns = Vec::new();
+            let mut projection_ns = Vec::new();
+            let mut geometry_ns = Vec::new();
+            let mut deepest_window = 0;
+            for target in targets.iter().copied() {
+                let target = normalize(target).unwrap();
+                let target = [target.x, target.y, target.z];
+                let started = std::time::Instant::now();
+                let candidates = nearest_candidates_with_limit(
+                    target,
+                    (0..bank.direction_count())
+                        .map(|index| (index, bank.records()[index].direction)),
+                    128,
+                );
+                ranking_ns.push(started.elapsed().as_nanos());
+
+                let started = std::time::Instant::now();
+                let candidate_directions = candidates
+                    .iter()
+                    .map(|candidate| bank.records()[candidate.index].direction)
+                    .collect::<Vec<_>>();
+                let candidate_projections = TangentProjection::new(target).map(|projection| {
+                    candidate_directions
+                        .iter()
+                        .copied()
+                        .map(|direction| projection.project(target, direction))
+                        .collect::<Vec<_>>()
+                });
+                projection_ns.push(started.elapsed().as_nanos());
+
+                let started = std::time::Instant::now();
+                let mut previous_limit = 0;
+                for limit in CANDIDATE_LIMITS {
+                    let limit = limit.min(candidates.len());
+                    if limit == previous_limit {
+                        continue;
+                    }
+                    match find_interpolation_neighborhood_for_candidate_expansion(
+                        target,
+                        &candidates,
+                        &candidate_directions,
+                        candidate_projections.as_deref(),
+                        previous_limit,
+                        limit,
+                    ) {
+                        Ok(_) => {
+                            deepest_window = deepest_window.max(limit);
+                            break;
+                        }
+                        Err(_) => previous_limit = limit,
+                    }
+                }
+                geometry_ns.push(started.elapsed().as_nanos());
+            }
+            for (name, timings) in [
+                ("rank", &mut ranking_ns),
+                ("project", &mut projection_ns),
+                ("geometry", &mut geometry_ns),
+            ] {
+                timings.sort_unstable();
+                let sum = timings.iter().sum::<u128>();
+                eprintln!(
+                    "orientation profile {} {name}: n={} avg={:.3} us p50={:.3} us p95={:.3} us max={:.3} us",
+                    preset.id(),
+                    timings.len(),
+                    sum as f64 / timings.len() as f64 / 1_000.0,
+                    timings[timings.len() / 2] as f64 / 1_000.0,
+                    timings[(timings.len() * 95).div_ceil(100).saturating_sub(1)] as f64 / 1_000.0,
+                    timings[timings.len() - 1] as f64 / 1_000.0,
+                );
+            }
+            eprintln!(
+                "orientation profile {} candidate window maximum used={} of 128 across {} query directions",
+                preset.id(),
+                deepest_window,
+                targets.len(),
+            );
+        }
     }
 }
 impl<'a> Cursor<'a> {
