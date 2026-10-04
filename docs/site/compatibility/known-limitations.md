@@ -126,8 +126,14 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   eligible between chunks but provides no sensor-to-sound latency or hard
   real-time guarantee.
 - On the measured x86_64 Linux AMD EPYC 9V74 host with optimized Rust 1.89
-  builds, release preparation p95 ranged from 5.24 to 6.45 ms across built-in
-  D1/D2 HRTFs and 7.1.4/9.1.6 layouts, missing the 4 ms target. A separate
+  builds, the optimized preparation path measured 2.951–3.500 ms p95 across
+  built-in D1/D2 HRTFs and 7.1.4/9.1.6 on the original smooth trajectory
+  (2,000 calls per combination), meeting the 4 ms preparation p95 target for
+  that host/corpus. Worst samples still exceeded 4 ms; this is not general
+  low-latency acceptance. The 22.2 orientation preparer remains unsupported
+  (`BL` direction mapping is absent). See the
+  [dated benchmark and raw data](https://github.com/chyinan/OpenJOC/blob/master/docs/research/listener-orientation-performance/README.md).
+  A separate
   64-block direct-FIR probe showed active-transition p95 below each full block
   period at 128 and 256 samples; 50% p95 headroom was not universal (for
   example, D1 9.1.6 at 128 samples took 1.446 ms p95 against a 1.333 ms

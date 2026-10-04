@@ -1489,16 +1489,56 @@ pub fn resolve_hrir_f32_for_listener_orientation(
     bank: &BuiltinHrirF32Bank,
     direction: CartesianPosition,
 ) -> Result<ResolvedHrir, SofaError> {
+    resolve_orientation_f32(bank, direction, None)
+}
+
+/// Immutable built-in orientation query resources, constructed off the render path.
+/// The index is bound to its bank; it cannot be reused with a different resource.
+#[derive(Clone, Debug)]
+pub struct ListenerOrientationHrirBank {
+    bank: std::sync::Arc<BuiltinHrirF32Bank>,
+    index: OrientationDirectionIndex,
+}
+
+impl ListenerOrientationHrirBank {
+    pub fn new(bank: std::sync::Arc<BuiltinHrirF32Bank>) -> Self {
+        let index = OrientationDirectionIndex::new(&bank);
+        Self { bank, index }
+    }
+
+    pub fn resolve(&self, direction: CartesianPosition) -> Result<ResolvedHrir, SofaError> {
+        resolve_orientation_f32(&self.bank, direction, Some(&self.index))
+    }
+
+    pub fn tap_storage_bytes(&self) -> usize {
+        self.bank.tap_storage_bytes()
+    }
+}
+
+fn resolve_orientation_f32(
+    bank: &BuiltinHrirF32Bank,
+    direction: CartesianPosition,
+    index: Option<&OrientationDirectionIndex>,
+) -> Result<ResolvedHrir, SofaError> {
+    #[cfg(feature = "orientation-profile")]
+    let lookup_span = orientation_profile::Span::new(1);
     let target = normalize(direction).ok_or_else(|| {
         SofaError::InvalidCoordinate("binaural direction must be finite and nonzero".to_string())
     })?;
     let target = [target.x, target.y, target.z];
-    if let Some((index, record)) = bank
-        .records()
-        .iter()
-        .enumerate()
-        .find(|(_, record)| directions_match(target, record.direction))
-    {
+    let exact = if let Some(index) = index {
+        index.exact(bank, target)
+    } else {
+        bank.records()
+            .iter()
+            .position(|record| directions_match(target, record.direction))
+    };
+    if let Some(index) = exact {
+        let record = &bank.records()[index];
+        #[cfg(feature = "orientation-profile")]
+        drop(lookup_span);
+        #[cfg(feature = "orientation-profile")]
+        let _taps_span = orientation_profile::Span::new(4);
         let left = bank
             .ear_taps(index, 0)
             .ok_or(SofaError::InvalidImpulseResponse(
@@ -1534,11 +1574,35 @@ pub fn resolve_hrir_f32_for_listener_orientation(
         });
     }
 
-    let neighborhood = find_interpolation_neighborhood_for_listener_orientation(
-        target,
-        bank.direction_count(),
-        |index| bank.records()[index].direction,
-    )?;
+    #[cfg(feature = "orientation-profile")]
+    drop(lookup_span);
+    let neighborhood = if let Some(index) = index {
+        if bank.direction_count() < 2 {
+            return Err(SofaError::InsufficientInterpolationData {
+                required: 2,
+                available: bank.direction_count(),
+            });
+        }
+        #[cfg(feature = "orientation-profile")]
+        let ranking_span = orientation_profile::Span::new(2);
+        let candidates = index.nearest(bank, target, 128);
+        #[cfg(feature = "orientation-profile")]
+        drop(ranking_span);
+        orientation_neighborhood_from_candidates(
+            target,
+            bank.direction_count(),
+            &candidates,
+            |i| bank.records()[i].direction,
+        )?
+    } else {
+        find_interpolation_neighborhood_for_listener_orientation(
+            target,
+            bank.direction_count(),
+            |i| bank.records()[i].direction,
+        )?
+    };
+    #[cfg(feature = "orientation-profile")]
+    let _taps_span = orientation_profile::Span::new(4);
     let pair = interpolate_f32_pair(bank, &neighborhood.indices, &neighborhood.weights)?;
     Ok(ResolvedHrir {
         pair,
@@ -1597,11 +1661,27 @@ fn find_interpolation_neighborhood_for_listener_orientation(
     // the entire measurement bank at every tier, despite each tier being a
     // strict prefix of the next one. Preserve deterministic dot/index ordering
     // so a successful 8-candidate query still selects the same triangle.
+    #[cfg(feature = "orientation-profile")]
+    let ranking_span = orientation_profile::Span::new(2);
     let candidates = nearest_candidates_with_limit(
         target,
         (0..direction_count).map(|index| (index, direction_at(index))),
         *CANDIDATE_LIMITS.last().expect("non-empty candidate limits"),
     );
+    #[cfg(feature = "orientation-profile")]
+    drop(ranking_span);
+    orientation_neighborhood_from_candidates(target, direction_count, &candidates, direction_at)
+}
+
+fn orientation_neighborhood_from_candidates(
+    target: [f64; 3],
+    direction_count: usize,
+    candidates: &[Candidate],
+    direction_at: impl Fn(usize) -> [f64; 3],
+) -> Result<InterpolationNeighborhood, SofaError> {
+    const CANDIDATE_LIMITS: [usize; 7] = [8, 16, 32, 48, 64, 96, 128];
+    #[cfg(feature = "orientation-profile")]
+    let _geometry_span = orientation_profile::Span::new(3);
     let candidate_directions = candidates
         .iter()
         .map(|candidate| direction_at(candidate.index))
@@ -1622,7 +1702,7 @@ fn find_interpolation_neighborhood_for_listener_orientation(
         }
         match find_interpolation_neighborhood_for_candidate_expansion(
             target,
-            &candidates,
+            candidates,
             &candidate_directions,
             candidate_projections.as_deref(),
             previous_limit,
@@ -1645,7 +1725,7 @@ fn find_interpolation_neighborhood_for_listener_orientation(
 }
 
 fn find_interpolation_neighborhood_for_candidate_expansion(
-    target: [f64; 3],
+    _target: [f64; 3],
     candidates: &[Candidate],
     candidate_directions: &[[f64; 3]],
     candidate_projections: Option<&[[f64; 2]]>,
@@ -1656,7 +1736,18 @@ fn find_interpolation_neighborhood_for_candidate_expansion(
     // were already rejected at the preceding tier. Visit only newly possible
     // triples, while retaining the same nested lexicographic order as a full
     // scan of the current prefix.
+    // Reuse first/third terms across the second-vertex loop at larger tiers.
+    // Fixed bounded stack storage adds no query allocations or render work.
+    let mut first_terms = [TriangleFirstTerms::ZERO; 128];
     for first in 0..candidate_limit {
+        if candidate_limit >= 16 {
+            if let Some(projected) = candidate_projections {
+                for third in first + 2..candidate_limit {
+                    first_terms[third] =
+                        TriangleFirstTerms::new(projected[first], projected[third]);
+                }
+            }
+        }
         for second in first + 1..candidate_limit {
             for third in (second + 1).max(previous_limit)..candidate_limit {
                 let selected = [candidates[first], candidates[second], candidates[third]];
@@ -1667,11 +1758,15 @@ fn find_interpolation_neighborhood_for_candidate_expansion(
                     continue;
                 }
                 if let Some(weights) = candidate_projections.and_then(|projected| {
-                    spherical_triangle_weights_from_projected([
-                        projected[first],
-                        projected[second],
-                        projected[third],
-                    ])
+                    if candidate_limit >= 16 {
+                        first_terms[third].weights(projected[second], projected[third])
+                    } else {
+                        spherical_triangle_weights_from_projected([
+                            projected[first],
+                            projected[second],
+                            projected[third],
+                        ])
+                    }
                 }) {
                     return Ok(InterpolationNeighborhood {
                         indices: selected.map(|candidate| candidate.index).to_vec(),
@@ -1685,10 +1780,11 @@ fn find_interpolation_neighborhood_for_candidate_expansion(
         for second in (first + 1).max(previous_limit)..candidate_limit {
             let left = candidates[first];
             let right = candidates[second];
-            if let Some(weights) = great_circle_segment_weights(
-                target,
+            if let Some(weights) = great_circle_segment_weights_with_angles(
                 candidate_directions[first],
                 candidate_directions[second],
+                left.angle,
+                right.angle,
             ) {
                 return Ok(InterpolationNeighborhood {
                     indices: vec![left.index, right.index],
@@ -1735,23 +1831,54 @@ impl TangentProjection {
     }
 }
 
-fn spherical_triangle_weights_from_projected(projected: [[f64; 2]; 3]) -> Option<[f64; 3]> {
-    let a = projected[0][0] - projected[2][0];
-    let b = projected[1][0] - projected[2][0];
-    let c = projected[0][1] - projected[2][1];
-    let d = projected[1][1] - projected[2][1];
-    let determinant = a.mul_add(d, -b * c);
-    if !determinant.is_finite() || determinant.abs() <= INTERPOLATION_GEOMETRY_TOLERANCE {
-        return None;
+#[derive(Clone, Copy)]
+struct TriangleFirstTerms {
+    a: f64,
+    c: f64,
+    beta_numerator: f64,
+}
+
+impl TriangleFirstTerms {
+    const ZERO: Self = Self {
+        a: 0.0,
+        c: 0.0,
+        beta_numerator: 0.0,
+    };
+    fn new(first: [f64; 2], third: [f64; 2]) -> Self {
+        let a = first[0] - third[0];
+        let c = first[1] - third[1];
+        Self {
+            a,
+            c,
+            beta_numerator: a.mul_add(-third[1], third[0] * c),
+        }
     }
-    let alpha = ((-projected[2][0]).mul_add(d, -b * -projected[2][1])) / determinant;
-    let beta = (a.mul_add(-projected[2][1], projected[2][0] * c)) / determinant;
-    let gamma = 1.0 - alpha - beta;
-    let weights = [alpha, beta, gamma];
-    weights
-        .iter()
-        .all(|weight| weight.is_finite() && *weight >= -INTERPOLATION_WEIGHT_TOLERANCE)
-        .then_some(weights.map(|weight| weight.max(0.0)))
+    fn weights(self, second: [f64; 2], third: [f64; 2]) -> Option<[f64; 3]> {
+        let b = second[0] - third[0];
+        let d = second[1] - third[1];
+        let determinant = self.a.mul_add(d, -b * self.c);
+        if !determinant.is_finite() || determinant.abs() <= INTERPOLATION_GEOMETRY_TOLERANCE {
+            return None;
+        }
+        let alpha = ((-third[0]).mul_add(d, -b * -third[1])) / determinant;
+        if !alpha.is_finite() || alpha < -INTERPOLATION_WEIGHT_TOLERANCE {
+            return None;
+        }
+        let beta = self.beta_numerator / determinant;
+        if !beta.is_finite() || beta < -INTERPOLATION_WEIGHT_TOLERANCE {
+            return None;
+        }
+        let gamma = 1.0 - alpha - beta;
+        let weights = [alpha, beta, gamma];
+        weights
+            .iter()
+            .all(|weight| weight.is_finite() && *weight >= -INTERPOLATION_WEIGHT_TOLERANCE)
+            .then_some(weights.map(|weight| weight.max(0.0)))
+    }
+}
+
+fn spherical_triangle_weights_from_projected(projected: [[f64; 2]; 3]) -> Option<[f64; 3]> {
+    TriangleFirstTerms::new(projected[0], projected[2]).weights(projected[1], projected[2])
 }
 
 fn find_interpolation_neighborhood_with_options(
@@ -1869,6 +1996,10 @@ fn nearest_candidates_with_limit(
             candidates.push(candidate);
         }
     }
+    sorted_candidates(candidates)
+}
+
+fn sorted_candidates(candidates: BinaryHeap<CandidateHeapEntry>) -> Vec<Candidate> {
     let mut candidates = candidates
         .into_iter()
         .map(|entry| entry.0)
@@ -2184,6 +2315,27 @@ fn great_circle_segment_weights(
     }
     let first_part = angular_distance(first, target);
     let second_part = angular_distance(target, second);
+    if first_part + second_part > whole + INTERPOLATION_WEIGHT_TOLERANCE {
+        return None;
+    }
+    Some([second_part / whole, first_part / whole])
+}
+
+// Candidate angles use the same clamped dot and acos as the scalar reference.
+// Exchanging multiplication operands in dot_array does not change its FMA order.
+fn great_circle_segment_weights_with_angles(
+    first: [f64; 3],
+    second: [f64; 3],
+    first_part: f64,
+    second_part: f64,
+) -> Option<[f64; 2]> {
+    let whole = angular_distance(first, second);
+    if !whole.is_finite()
+        || whole <= INTERPOLATION_GEOMETRY_TOLERANCE
+        || whole >= std::f64::consts::PI
+    {
+        return None;
+    }
     if first_part + second_part > whole + INTERPOLATION_WEIGHT_TOLERANCE {
         return None;
     }
@@ -2754,8 +2906,8 @@ mod nearest_candidate_tests {
         // Deterministic spread over the sphere supplements the boundary cases
         // above with continuous off-grid directions from many orientations.
         let golden_angle = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
-        for sample in 0..16 {
-            let z = 1.0 - 2.0 * (sample as f64 + 0.5) / 16.0;
+        for sample in 0..96 {
+            let z = 1.0 - 2.0 * (sample as f64 + 0.5) / 96.0;
             let radius = (1.0 - z * z).sqrt();
             let azimuth = sample as f64 * golden_angle;
             targets.push(CartesianPosition::new(
@@ -3093,5 +3245,302 @@ impl<'a> Cursor<'a> {
             .map_err(|_| SofaError::InvalidContainer("UTF-8 string"))?;
         self.align4()?;
         Ok(text)
+    }
+}
+
+/// Opt-in diagnostic timing, excluded from ordinary builds and render paths.
+#[cfg(feature = "orientation-profile")]
+pub mod orientation_profile {
+    use std::{cell::Cell, time::Instant};
+    thread_local! { static TOTALS: Cell<[u64; 6]> = const { Cell::new([0; 6]) }; }
+    pub struct Span {
+        stage: usize,
+        start: Instant,
+    }
+    impl Span {
+        pub fn new(stage: usize) -> Self {
+            Self {
+                stage,
+                start: Instant::now(),
+            }
+        }
+    }
+    impl Drop for Span {
+        fn drop(&mut self) {
+            TOTALS.with(|totals| {
+                let mut values = totals.get();
+                values[self.stage] += self.start.elapsed().as_nanos() as u64;
+                totals.set(values);
+            });
+        }
+    }
+    /// Transform, exact lookup, ranking, geometry, taps, update construction (ns).
+    pub fn take() -> [u64; 6] {
+        TOTALS.with(|totals| totals.replace([0; 6]))
+    }
+}
+
+#[derive(Clone, Debug)]
+struct OrientationDirectionIndex {
+    order: Vec<usize>,
+    nodes: Vec<DirectionNode>,
+}
+
+#[derive(Clone, Debug)]
+struct DirectionNode {
+    lower: [f64; 3],
+    upper: [f64; 3],
+    range: std::ops::Range<usize>,
+    children: Option<[usize; 2]>,
+}
+
+impl OrientationDirectionIndex {
+    fn new(bank: &BuiltinHrirF32Bank) -> Self {
+        let mut index = Self {
+            order: (0..bank.direction_count()).collect(),
+            nodes: Vec::new(),
+        };
+        index.build(bank, 0..bank.direction_count());
+        index
+    }
+
+    fn build(&mut self, bank: &BuiltinHrirF32Bank, range: std::ops::Range<usize>) -> usize {
+        let mut lower = [f64::INFINITY; 3];
+        let mut upper = [f64::NEG_INFINITY; 3];
+        for &i in &self.order[range.clone()] {
+            for axis in 0..3 {
+                lower[axis] = lower[axis].min(bank.records()[i].direction[axis]);
+                upper[axis] = upper[axis].max(bank.records()[i].direction[axis]);
+            }
+        }
+        let node = self.nodes.len();
+        self.nodes.push(DirectionNode {
+            lower,
+            upper,
+            range: range.clone(),
+            children: None,
+        });
+        if range.len() > 24 {
+            let axis = (0..3)
+                .max_by(|&a, &b| (upper[a] - lower[a]).total_cmp(&(upper[b] - lower[b])))
+                .unwrap();
+            self.order[range.clone()].sort_unstable_by(|&a, &b| {
+                bank.records()[a].direction[axis]
+                    .total_cmp(&bank.records()[b].direction[axis])
+                    .then(a.cmp(&b))
+            });
+            let middle = range.start + range.len() / 2;
+            let left = self.build(bank, range.start..middle);
+            let right = self.build(bank, middle..range.end);
+            self.nodes[node].children = Some([left, right]);
+        }
+        node
+    }
+
+    fn upper_dot(&self, node: usize, target: [f64; 3]) -> f64 {
+        let node = &self.nodes[node];
+        let products = std::array::from_fn::<_, 3, _>(|axis| {
+            target[axis]
+                * if target[axis] >= 0.0 {
+                    node.upper[axis]
+                } else {
+                    node.lower[axis]
+                }
+        });
+        // Round outward conservatively for three products and two additions.
+        // Prune only on strict inequality; equal dots must retain lowest index.
+        products.iter().sum::<f64>()
+            + 16.0 * f64::EPSILON * (1.0 + products.iter().map(|x| x.abs()).sum::<f64>())
+    }
+
+    fn exact(&self, bank: &BuiltinHrirF32Bank, target: [f64; 3]) -> Option<usize> {
+        let mut found = None;
+        self.visit_exact(0, bank, target, &mut found);
+        found
+    }
+
+    fn visit_exact(
+        &self,
+        node: usize,
+        bank: &BuiltinHrirF32Bank,
+        target: [f64; 3],
+        found: &mut Option<usize>,
+    ) {
+        if self.upper_dot(node, target) < 1.0 - 1.0e-12 {
+            return;
+        }
+        if let Some([left, right]) = self.nodes[node].children {
+            self.visit_exact(left, bank, target, found);
+            self.visit_exact(right, bank, target, found);
+        } else {
+            for &i in &self.order[self.nodes[node].range.clone()] {
+                if found.is_none_or(|current| i < current)
+                    && directions_match(target, bank.records()[i].direction)
+                {
+                    *found = Some(i);
+                }
+            }
+        }
+    }
+
+    fn nearest(&self, bank: &BuiltinHrirF32Bank, target: [f64; 3], limit: usize) -> Vec<Candidate> {
+        let mut heap = BinaryHeap::with_capacity(limit);
+        self.visit(0, bank, target, limit, &mut heap);
+        sorted_candidates(heap)
+    }
+
+    fn visit(
+        &self,
+        node: usize,
+        bank: &BuiltinHrirF32Bank,
+        target: [f64; 3],
+        limit: usize,
+        heap: &mut BinaryHeap<CandidateHeapEntry>,
+    ) {
+        if heap.len() == limit
+            && heap
+                .peek()
+                .is_some_and(|worst| self.upper_dot(node, target) < worst.0.dot)
+        {
+            return;
+        }
+        if let Some([left, right]) = self.nodes[node].children {
+            let (first, second) = if self.upper_dot(left, target) >= self.upper_dot(right, target) {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            self.visit(first, bank, target, limit, heap);
+            self.visit(second, bank, target, limit, heap);
+        } else {
+            for &i in &self.order[self.nodes[node].range.clone()] {
+                let candidate = CandidateHeapEntry(Candidate {
+                    index: i,
+                    dot: dot_array(target, bank.records()[i].direction).clamp(-1.0, 1.0),
+                    angle: 0.0,
+                });
+                if heap.len() < limit {
+                    heap.push(candidate);
+                } else if heap
+                    .peek()
+                    .is_some_and(|worst| is_better_candidate(&candidate.0, &worst.0))
+                {
+                    heap.pop();
+                    heap.push(candidate);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod orientation_index_tests {
+    use super::*;
+
+    #[test]
+    fn indexed_exact_lookup_preserves_first_match_for_every_builtin_record() {
+        for preset in BuiltinHrtf::all() {
+            let bank = load_builtin_hrir_f32(*preset).unwrap().bank;
+            let index = OrientationDirectionIndex::new(&bank);
+            for record in bank.records() {
+                let direction = normalize(CartesianPosition::new(
+                    record.direction[0],
+                    record.direction[1],
+                    record.direction[2],
+                ))
+                .unwrap();
+                let target = [direction.x, direction.y, direction.z];
+                assert_eq!(
+                    index.exact(&bank, target),
+                    bank.records()
+                        .iter()
+                        .position(|r| directions_match(target, r.direction))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_ranking_and_complete_hrirs_match_scan_for_rapid_and_nearby_queries() {
+        for preset in BuiltinHrtf::all() {
+            let bank = std::sync::Arc::new(load_builtin_hrir_f32(*preset).unwrap().bank);
+            let indexed = ListenerOrientationHrirBank::new(bank.clone());
+            let mut targets = vec![
+                [1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, -1.0],
+            ];
+            // Existing exact directions include aliases: first matching index must survive.
+            targets.extend(bank.records().iter().step_by(97).map(|r| r.direction));
+            for i in 0..720 {
+                let z = 1.0 - 2.0 * (f64::from(i) + 0.5) / 720.0;
+                let angle = f64::from(i) * 2.399_963_229_728_653;
+                let radius = (1.0 - z * z).sqrt();
+                targets.push([radius * angle.cos(), radius * angle.sin(), z]);
+            }
+            // Repeated queries interleaved with nearby queries cannot depend on cache history.
+            for i in 0..40 {
+                let angle = 0.3 + f64::from(i % 4) * 0.00001;
+                targets.push([angle.cos(), angle.sin(), 0.0]);
+            }
+            for target in targets {
+                let expected = nearest_candidates_with_limit(
+                    target,
+                    bank.records()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, r)| (i, r.direction)),
+                    128,
+                );
+                let actual = indexed.index.nearest(&bank, target, 128);
+                assert_eq!(actual.len(), expected.len());
+                for (a, b) in actual.iter().zip(&expected) {
+                    assert_eq!(
+                        (a.index, a.dot.to_bits(), a.angle.to_bits()),
+                        (b.index, b.dot.to_bits(), b.angle.to_bits())
+                    );
+                }
+                let direction = CartesianPosition::new(target[0], target[1], target[2]);
+                let expected = resolve_hrir_f32_for_listener_orientation(&bank, direction);
+                let actual = indexed.resolve(direction);
+                match (actual, expected) {
+                    (Ok(a), Ok(b)) => {
+                        assert_eq!(a.exact_entry, b.exact_entry);
+                        assert_eq!(a.neighbor_count, b.neighbor_count);
+                        assert_eq!(a.pair, b.pair);
+                        for (a, b) in a
+                            .pair
+                            .left_taps()
+                            .iter()
+                            .chain(a.pair.right_taps())
+                            .zip(b.pair.left_taps().iter().chain(b.pair.right_taps()))
+                        {
+                            assert_eq!(a.to_bits(), b.to_bits());
+                        }
+                    }
+                    (Err(a), Err(b)) => assert_eq!(a.to_string(), b.to_string()),
+                    (a, b) => panic!("result mismatch {a:?} {b:?}"),
+                }
+            }
+            for direction in [
+                CartesianPosition::new(0.0, 0.0, 0.0),
+                CartesianPosition::new(f64::NAN, 1.0, 0.0),
+            ] {
+                assert_eq!(
+                    indexed.resolve(direction).unwrap_err().to_string(),
+                    resolve_hrir_f32_for_listener_orientation(&bank, direction)
+                        .unwrap_err()
+                        .to_string()
+                );
+            }
+            eprintln!(
+                "{preset:?} index capacity bytes={}",
+                indexed.index.order.capacity() * std::mem::size_of::<usize>()
+                    + indexed.index.nodes.capacity() * std::mem::size_of::<DirectionNode>()
+            );
+        }
     }
 }

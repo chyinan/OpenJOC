@@ -8,8 +8,9 @@ The fixed DirectShow output contract covers exactly Stereo, Binaural, 5.1,
 
 The explicit Rust/C listener-orientation API accepts host-supplied 3DoF poses
 for virtual-speaker binaural rendering; it does not read sensors or control a
-device. Preparation p95 exceeded its 4 ms target in the measured host probe,
-and no sensor-to-sound latency or real-earphone claim is established. See the
+device. Optimized preparation meets its 4 ms p95 target on the measured host
+and trajectory corpus only; no sensor-to-sound latency or real-earphone claim
+is established, and 22.2 orientation preparation remains unsupported. See the
 canonical limitations page for the benchmark scope and exact bounds.
 
 This repository path is retained as a short compatibility pointer for existing links.

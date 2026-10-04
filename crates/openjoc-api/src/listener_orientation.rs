@@ -7,9 +7,8 @@ use openjoc_render::{
 };
 use openjoc_scene::SpeakerLayoutPreset;
 use openjoc_sofa::{
-    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, BuiltinHrirF32Bank, load_builtin_hrir_f32,
-    load_builtin_hrir_f32_from_asset, parse_simple_free_field_hrir, resample_loaded_hrir_bank,
-    resolve_hrir_f32_for_listener_orientation, resolve_hrir_for_listener_orientation,
+    BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ, load_builtin_hrir_f32, load_builtin_hrir_f32_from_asset,
+    parse_simple_free_field_hrir, resample_loaded_hrir_bank, resolve_hrir_for_listener_orientation,
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -197,14 +196,15 @@ impl std::error::Error for ListenerOrientationPrepareError {}
 
 #[derive(Clone, Debug)]
 enum HrirQueryBank {
-    BuiltinF32(Arc<BuiltinHrirF32Bank>),
+    BuiltinF32(Arc<openjoc_sofa::ListenerOrientationHrirBank>),
     Custom(Arc<HrirBank>),
 }
 
 impl HrirQueryBank {
     fn resolve(&self, direction: CartesianPosition) -> Result<openjoc_render::HrirPair, String> {
         match self {
-            Self::BuiltinF32(bank) => resolve_hrir_f32_for_listener_orientation(bank, direction)
+            Self::BuiltinF32(bank) => bank
+                .resolve(direction)
                 .map(|resolved| resolved.pair)
                 .map_err(|error| error.to_string()),
             Self::Custom(bank) => resolve_hrir_for_listener_orientation(bank, direction)
@@ -294,7 +294,9 @@ impl ListenerOrientationPreparer {
                 };
                 let max_resolved_taps = loaded.bank.max_resolved_tap_count()?;
                 (
-                    HrirQueryBank::BuiltinF32(Arc::new(loaded.bank)),
+                    HrirQueryBank::BuiltinF32(Arc::new(
+                        openjoc_sofa::ListenerOrientationHrirBank::new(Arc::new(loaded.bank)),
+                    )),
                     loaded.metadata.sample_rate_hz,
                     0,
                     max_resolved_taps,
@@ -374,6 +376,8 @@ impl ListenerOrientationPreparer {
     ) -> Result<PreparedBinauralUpdate, ListenerOrientationPrepareError> {
         let mut kernels = Vec::with_capacity(self.resources.sources.len());
         for source in &self.resources.sources {
+            #[cfg(feature = "orientation-profile")]
+            let transform_span = openjoc_sofa::orientation_profile::Span::new(0);
             let world = [
                 source.world_direction.x,
                 source.world_direction.y,
@@ -381,6 +385,8 @@ impl ListenerOrientationPreparer {
             ];
             let listener = orientation.world_to_listener(world);
             let direction = CartesianPosition::new(listener[0], listener[1], listener[2]);
+            #[cfg(feature = "orientation-profile")]
+            drop(transform_span);
             let pair = self.resources.bank.resolve(direction).map_err(|reason| {
                 ListenerOrientationPrepareError::HrirResolutionFailure {
                     source_id: source.source_id.get(),
@@ -398,6 +404,8 @@ impl ListenerOrientationPreparer {
             }
             kernels.push(PreparedBinauralKernel::new(source.source_id, pair));
         }
+        #[cfg(feature = "orientation-profile")]
+        let _update_span = openjoc_sofa::orientation_profile::Span::new(5);
         PreparedBinauralUpdate::new(
             self.resources.resource_identity,
             stream_epoch,
