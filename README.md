@@ -19,6 +19,7 @@ Download the [latest release](https://github.com/chyinan/OpenJOC/releases/latest
 - E-AC-3 JOC object decoding from supported in-band EMDF, including the supported OAMD metadata prefix/timeline, JOC reconstruction data, and carrier-local reconstructed object signals;
 - supported speaker presets from `2.0` through `22.2` and custom geometry up to 64 output channels;
 - two-channel virtual-speaker binaural rendering with SADIE II D1/KU100 (default) and D2/KEMAR built-in profiles, or a supported local SOFA file;
+- experimental, device-independent 3DoF head-tracking interface for dynamic binaural rendering, accepting external head orientation through the Rust/C APIs (opt-in);
 - reconstructed ADM BWF interoperability export for decoded JOC Objects with supported OAMD movement, within an exact documented profile;
 - Rust and versioned C ABI embedding surfaces;
 - project-provided FFmpeg, GStreamer, mpv, and Windows DirectShow/LAV integrations.
