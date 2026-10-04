@@ -103,7 +103,7 @@ fn custom_sofa_decoder_renders_real_joc_frames_to_finite_stereo_pcm() {
             break;
         }
     }
-    assert!(!frames.is_empty());
+    assert_ne!(frames, [] as [openjoc_api::OpenJocPcmFrame; 0]);
     assert!(
         frames
             .iter()
