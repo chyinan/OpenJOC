@@ -76,7 +76,20 @@ until the first AU establishes the stream format.
 
 PTS uses the decoded sample domain. If a first packet has PTS `P`, output for
 logical sample `n` reports `P + n`; the PTS is not silently moved by the
-filterbank or final linked-gain delay. Speaker output reports a 609-sample
+filterbank or final linked-gain delay. If initial packets omit PTS, the first
+later packet with PTS anchors the segment by subtracting the input samples
+already decoded. Frames returned before that anchor remain untimestamped;
+frames returned afterward, including delayed PCM from earlier packets, use the
+inferred origin. Later supplied PTS must match the sample-count continuation;
+omitted PTS does not clear an established anchor. An origin or expected packet
+PTS outside the signed 64-bit range is rejected before decoding that packet.
+An unrepresentable output-frame PTS, including during drain, returns a render
+error rather than wrapping or clamping.
+Reset, flush, or a discontinuity starts a new segment. This complete-AU API
+permits late anchoring; the FFmpeg packet-stream wrapper retains its stricter
+[untimed-segment contract](../../integration/FFMPEG.md#timestamps).
+
+Speaker output reports a 609-sample
 delay: the 577-sample QMF/Base-RB delay
 plus the admitted 32-sample causal speaker-stage block. Binaural output reports
 577 samples for built-in or 48 kHz custom HRIRs because it does not use the

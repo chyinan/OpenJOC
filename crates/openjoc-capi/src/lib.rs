@@ -636,7 +636,7 @@ fn set_error(decoder: &mut openjoc_decoder, error: OpenJocError) -> openjoc_stat
 }
 
 fn decoder_requires_reset(decoder: &mut openjoc_decoder) -> openjoc_status {
-    decoder.last_error = CString::new("OpenJOC decoder requires reset after a contained panic")
+    decoder.last_error = CString::new("OpenJOC decoder requires reset after a terminal error")
         .expect("static error");
     openjoc_status::OPENJOC_STATUS_REQUIRE_RESET
 }
@@ -1334,6 +1334,16 @@ pub extern "C" fn openjoc_decoder_receive_frame(
                 openjoc_status::OPENJOC_STATUS_NEED_MORE_INPUT
             });
         };
+        if frame.pts_samples == Some(NO_PTS) {
+            // This is a real timestamp in Rust, but the C ABI reserves the
+            // value for absence. Do not return ambiguous PCM or allow a gap
+            // after consuming this unrepresentable frame.
+            decoder.last_frame = None;
+            decoder.poisoned = true;
+            return Err(OpenJocError::Render(
+                "output timestamp equals reserved OPENJOC_NO_PTS; reset required".to_owned(),
+            ));
+        }
         decoder.last_frame = Some(frame);
         let frame = decoder.last_frame.as_ref().expect("stored frame");
         output.sample_format = 1;

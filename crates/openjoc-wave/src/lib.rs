@@ -778,12 +778,15 @@ impl<W: Write + Seek> WaveWriter<W> {
         Ok(())
     }
 
-    /// Finalizes RIFF/data sizes, flushes, and returns the underlying writer.
+    /// Finalizes RIFF/data sizes, adds word-alignment padding when needed,
+    /// flushes, and returns the underlying writer. Padding is not audio data.
     pub fn finish(mut self) -> Result<W, WaveError> {
         let data_size = u32::try_from(self.data_bytes).map_err(|_| WaveError::SizeOverflow)?;
-        let riff_size = data_size
-            .checked_add(self.riff_size_base)
-            .ok_or(WaveError::SizeOverflow)?;
+        let riff_size = padded_riff_size(data_size, self.riff_size_base)?;
+        if data_size % 2 != 0 {
+            self.writer.seek(SeekFrom::End(0)).map_err(io_error)?;
+            self.writer.write_all(&[0]).map_err(io_error)?;
+        }
         self.writer.seek(SeekFrom::Start(4)).map_err(io_error)?;
         self.writer
             .write_all(&riff_size.to_le_bytes())
@@ -1042,7 +1045,7 @@ fn encode_planar(
     let data_size = sample_count
         .checked_mul(u32::try_from(bytes_per_sample).map_err(|_| WaveError::SizeOverflow)?)
         .ok_or(WaveError::SizeOverflow)?;
-    let riff_size = data_size.checked_add(36).ok_or(WaveError::SizeOverflow)?;
+    let riff_size = padded_riff_size(data_size, 36)?;
     let byte_rate = sample_rate
         .checked_mul(u32::from(block_align))
         .ok_or(WaveError::SizeOverflow)?;
@@ -1074,7 +1077,19 @@ fn encode_planar(
             encode_sample(&mut wav, sample(channel, frame), options, index)?;
         }
     }
+    if data_size % 2 != 0 {
+        wav.push(0);
+    }
     Ok(wav)
+}
+
+// RIFF chunks are word-aligned. Padding belongs to the RIFF size, but not
+// the data chunk size or the audio frame count.
+fn padded_riff_size(data_size: u32, header_size: u32) -> Result<u32, WaveError> {
+    data_size
+        .checked_add(data_size % 2)
+        .and_then(|size| size.checked_add(header_size))
+        .ok_or(WaveError::SizeOverflow)
 }
 
 impl SampleFormat {
@@ -1167,4 +1182,62 @@ fn next_dither(state: &mut u32) -> u32 {
     *state ^= *state >> 17;
     *state ^= *state << 5;
     *state
+}
+
+#[cfg(test)]
+mod riff_padding_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn padding_is_included_in_riff_overflow_checks() {
+        for header_size in [36, 60] {
+            assert_eq!(padded_riff_size(0, header_size).unwrap(), header_size);
+            assert_eq!(padded_riff_size(3, header_size).unwrap(), header_size + 4);
+            assert_eq!(padded_riff_size(6, header_size).unwrap(), header_size + 6);
+            let unpadded_limit = u32::MAX - header_size;
+            assert!(matches!(
+                padded_riff_size(unpadded_limit, header_size),
+                Err(WaveError::SizeOverflow)
+            ));
+            assert_eq!(
+                padded_riff_size(unpadded_limit - 1, header_size).unwrap(),
+                u32::MAX - 1
+            );
+            assert_eq!(
+                padded_riff_size(unpadded_limit - 2, header_size).unwrap(),
+                u32::MAX - 1
+            );
+            assert!(matches!(
+                padded_riff_size(u32::MAX, header_size),
+                Err(WaveError::SizeOverflow)
+            ));
+        }
+    }
+
+    #[test]
+    fn encoders_reject_padding_overflow_before_allocating_or_writing() {
+        let options = WaveEncodeOptions {
+            sample_format: SampleFormat::S24,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        };
+        let frames = usize::try_from((u32::MAX - 36) / 3).unwrap();
+        assert!(matches!(
+            encode_planar(48_000, 1, frames, options, |_, _| panic!(
+                "must reject before reading samples"
+            )),
+            Err(WaveError::SizeOverflow)
+        ));
+        for extensible in [false, true] {
+            let mut writer = if extensible {
+                WaveWriter::new_with_speaker_mask(Cursor::new(Vec::new()), 48_000, 1, options, 1)
+                    .unwrap()
+            } else {
+                WaveWriter::new(Cursor::new(Vec::new()), 48_000, 1, options).unwrap()
+            };
+            writer.data_bytes = u64::from(u32::MAX - writer.riff_size_base);
+            assert!(matches!(writer.finish(), Err(WaveError::SizeOverflow)));
+        }
+    }
 }

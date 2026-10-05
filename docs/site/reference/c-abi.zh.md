@@ -43,6 +43,8 @@ openjoc_decoder_destroy(decoder);
 
 解码器是一个不透明句柄。数据包内存只在 `openjoc_decoder_send_packet` 调用期间借用，不会被保留。PCM 内存由解码器拥有，在该句柄下一次 send、receive、flush、reset 或 destroy 之前保持有效。需要更长生命周期的应用必须复制帧数据。多个句柄彼此独立。
 
+对于 `openjoc_decoder_send_packet`，`pts_samples` 表示数据包第一个采样点的位置；`OPENJOC_NO_PTS` 表示省略该数据包的时间戳。即使前面的数据包没有时间戳，第一个提供的 PTS 仍会通过减去已解码的采样点数量来确定当前片段的时间原点。此前已返回或复制的帧时间戳保持不变；后续输出（包括先前数据包的延迟 PCM）使用该原点。后续提供的 PTS 必须与采样点数量的连续推进一致。原点或预期数据包 PTS 无法表示时，在解码之前拒绝输入；输出帧 PTS 无法表示时，返回渲染错误，不会回绕或钳位。reset、flush 或 discontinuity 清除时间锚点。`INT64_MIN` 专用于 `OPENJOC_NO_PTS`：如果后补的时间锚点使输出帧的实际 PTS 为 `INT64_MIN`，receive 返回 `OPENJOC_STATUS_RENDER_ERROR`，不改写输出帧；句柄必须经过 reset 或 flush 才能继续解码。Rust 的 `Option<i64>` 没有这一哨兵值限制。这是完整 AU 数据包 API 的约定；`openjoc_stream_decoder` 仍采用更严格的[数据包流时间戳约定](../../integration/FFMPEG.md#timestamps)。
+
 ABI 1.2 还提供 `openjoc_stream_decoder`，供数据包边界不是完整访问单元边界的适配器使用。它的 `openjoc_stream_decoder_send_chunk()` 接受任意压缩字节、可选的 1/48000 采样域 PTS，以及已有的不连续/预滚标志。这个句柄复用 FFmpeg 外部桥接的单个、上限为 131,072 字节的组装器、JOC 正向识别、时间戳模型、输出队列、语义声道置换和延迟创建的 `OpenJocSession`。它支持一个数据块包含拆分的访问单元和多个访问单元，但不会暴露任何框架专用类型。
 
 `openjoc_stream_decoder_receive_frame()` 按语义声道标签报告的顺序返回打包浮点 PCM。输出语义、精确的共享配置描述/指纹和当前受限的暂存大小，都可以在解码前或解码过程中获取。`OPENJOC_STATUS_NOT_JOC` 用来区分“已确认是普通 E-AC-3，因此拒绝交给 JOC”的情况；内存不足和外部库错误类别也各有专用数值状态码，方便主机映射错误。

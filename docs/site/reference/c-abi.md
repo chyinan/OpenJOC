@@ -98,6 +98,23 @@ the decoder and remains valid until the next send, receive, flush, reset, or
 destroy on that handle. Applications that need longer ownership copy the
 frame. Multiple handles are independent.
 
+For `openjoc_decoder_send_packet`, `pts_samples` describes the packet's first
+sample; `OPENJOC_NO_PTS` omits that packet's timestamp. The first provided PTS
+anchors the segment even if earlier packets were untimestamped, subtracting
+samples already decoded to obtain the origin. Previously returned or copied
+frame timestamps are unchanged; later output, including delayed earlier PCM,
+uses that origin. Further provided PTS must agree with sample-count
+continuation. Unrepresentable origins or expected packet PTS are rejected
+before decoding; an unrepresentable output-frame PTS returns a render error
+rather than wrapping or clamping. Reset, flush, or discontinuity clears the
+anchor. `INT64_MIN` is reserved for `OPENJOC_NO_PTS`: if a late anchor would
+produce an actual output-frame PTS of `INT64_MIN`, receive returns
+`OPENJOC_STATUS_RENDER_ERROR` without writing the output frame, and the handle
+requires reset or flush before further decoding. Rust's `Option<i64>` has no
+such sentinel restriction. This is the
+complete-AU packet API; `openjoc_stream_decoder` retains the stricter
+[packet-stream timestamp contract](../../integration/FFMPEG.md#timestamps).
+
 ABI 1.2 also provides `openjoc_stream_decoder`, a framework-neutral handle for
 adapters whose packet boundaries are not complete access-unit boundaries. Its
 `openjoc_stream_decoder_send_chunk()` call accepts arbitrary compressed bytes,

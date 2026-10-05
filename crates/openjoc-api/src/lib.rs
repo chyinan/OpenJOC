@@ -497,7 +497,11 @@ mod wasm_clock {
 pub struct OpenJocPacket<'a> {
     pub data: &'a [u8],
     /// Sample-domain PTS for the first sample in this packet. The sample time
-    /// base is the decoded stream rate; `None` means untimestamped input.
+    /// base is the decoded stream rate; `None` means no packet timestamp.
+    /// The first supplied PTS anchors the segment even after untimed packets:
+    /// its origin is this PTS minus the samples already decoded. Previously
+    /// returned frames are unchanged. Later supplied PTS must match that origin.
+    /// An unrepresentable origin or expected PTS is rejected before decode.
     pub pts_samples: Option<i64>,
     pub discontinuity: bool,
     pub preroll: bool,
@@ -1542,9 +1546,13 @@ impl OpenJocSession {
 
     fn check_timestamp(&mut self, pts: Option<i64>) -> Result<(), OpenJocError> {
         let Some(pts) = pts else { return Ok(()) };
+        let offset = i64::try_from(self.next_input_sample).map_err(|_| {
+            OpenJocError::InvalidPacket("timestamp sample offset exceeds i64".to_owned())
+        })?;
         if let Some(origin) = self.segment_pts {
-            let offset = i64::try_from(self.next_input_sample).unwrap_or(i64::MAX);
-            let expected = origin.saturating_add(offset);
+            let expected = origin.checked_add(offset).ok_or_else(|| {
+                OpenJocError::InvalidPacket("expected packet timestamp exceeds i64".to_owned())
+            })?;
             if expected != pts {
                 return Err(OpenJocError::TimestampDiscontinuity {
                     expected,
@@ -1552,7 +1560,10 @@ impl OpenJocSession {
                 });
             }
         } else {
-            self.segment_pts = Some(pts);
+            let origin = pts.checked_sub(offset).ok_or_else(|| {
+                OpenJocError::InvalidPacket("timestamp segment origin exceeds i64".to_owned())
+            })?;
+            self.segment_pts = Some(origin);
         }
         Ok(())
     }
@@ -1719,9 +1730,15 @@ impl OpenJocSession {
                 interleaved.push(value as f32);
             }
         }
-        let pts_samples = self.segment_pts.map(|origin| {
-            origin.saturating_add(i64::try_from(frame.logical_start_sample).unwrap_or(i64::MAX))
-        });
+        let pts_samples = self
+            .segment_pts
+            .map(|origin| {
+                i64::try_from(frame.logical_start_sample)
+                    .ok()
+                    .and_then(|offset| origin.checked_add(offset))
+                    .ok_or_else(|| OpenJocError::Render("output timestamp exceeds i64".to_owned()))
+            })
+            .transpose()?;
         Ok(OpenJocPcmFrame {
             sample_format: PCM_SAMPLE_FORMAT,
             sample_rate: frame.sample_rate,

@@ -336,3 +336,108 @@ fn f32_output_rejects_finite_overflow_without_clipping() {
         [2.0 * maximum, -2.0 * maximum]
     );
 }
+
+#[test]
+fn wav_chunk_padding_roundtrips_batch_and_streaming_formats() {
+    for format in [
+        SampleFormat::S24,
+        SampleFormat::S16,
+        SampleFormat::F32,
+        SampleFormat::F64,
+    ] {
+        let bytes_per_sample = match format {
+            SampleFormat::S24 => 3,
+            SampleFormat::S16 => 2,
+            SampleFormat::F32 => 4,
+            SampleFormat::F64 => 8,
+        };
+        let options = WaveEncodeOptions {
+            sample_format: format,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        };
+        for channel_count in 1..=5 {
+            for frame_count in 0..=3 {
+                let channels = (0..channel_count)
+                    .map(|channel| {
+                        (0..frame_count)
+                            .map(|frame| ((channel + frame) % 5) as f64 * 0.25 - 0.5)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let data_size = channel_count * frame_count * bytes_per_sample;
+                let batch = encode_channels(48_000, &channels, options).unwrap();
+                assert_wav_data_padding(&batch, 44, data_size, &channels);
+                for extensible in [false, true] {
+                    let mut writer = if extensible {
+                        WaveWriter::new_with_speaker_mask(
+                            Cursor::new(Vec::new()),
+                            48_000,
+                            channel_count,
+                            options,
+                            (1 << channel_count) - 1,
+                        )
+                        .unwrap()
+                    } else {
+                        WaveWriter::new(Cursor::new(Vec::new()), 48_000, channel_count, options)
+                            .unwrap()
+                    };
+                    writer.write_interleaved(&[]).unwrap();
+                    for frame in 0..frame_count {
+                        if frame % 2 == 0 {
+                            let planes = channels
+                                .iter()
+                                .map(|channel| &channel[frame..=frame])
+                                .collect::<Vec<_>>();
+                            writer.write_channels(&planes).unwrap();
+                        } else {
+                            let interleaved = channels
+                                .iter()
+                                .map(|channel| channel[frame])
+                                .collect::<Vec<_>>();
+                            writer.write_interleaved(&interleaved).unwrap();
+                        }
+                        assert_eq!(
+                            writer.data_bytes(),
+                            ((frame + 1) * channel_count * bytes_per_sample) as u64
+                        );
+                    }
+                    assert_eq!(writer.frames(), frame_count as u64);
+                    let bytes = writer.finish().unwrap().into_inner();
+                    assert_wav_data_padding(
+                        &bytes,
+                        if extensible { 68 } else { 44 },
+                        data_size,
+                        &channels,
+                    );
+                    if !extensible {
+                        assert_eq!(bytes, batch);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn assert_wav_data_padding(
+    bytes: &[u8],
+    data_start: usize,
+    data_size: usize,
+    channels: &[Vec<f64>],
+) {
+    let padding = data_size % 2;
+    assert_eq!(bytes.len(), data_start + data_size + padding);
+    assert_eq!(
+        u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize,
+        bytes.len() - 8
+    );
+    assert_eq!(&bytes[data_start - 8..data_start - 4], b"data");
+    assert_eq!(
+        u32::from_le_bytes(bytes[data_start - 4..data_start].try_into().unwrap()) as usize,
+        data_size
+    );
+    if padding != 0 {
+        assert_eq!(bytes.last(), Some(&0));
+    }
+    assert_eq!(decode(bytes).unwrap().channels, channels);
+}
