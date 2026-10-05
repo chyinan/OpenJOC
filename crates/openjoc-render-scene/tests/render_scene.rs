@@ -191,7 +191,10 @@ fn empty_source_reports_only_frames_actually_written() {
         assert_eq!(result.scene_input_length, 0);
         assert_eq!(result.tail_samples, 0);
         assert_eq!(result.output_sample_count, 0);
-        assert!(read_f32_stereo(&root.join(name).join("binaural.wav")).is_empty());
+        assert_eq!(
+            read_f32_stereo(&root.join(name).join("binaural.wav")),
+            [] as [f32; 0]
+        );
     }
     fs::remove_dir_all(root).unwrap();
 }
