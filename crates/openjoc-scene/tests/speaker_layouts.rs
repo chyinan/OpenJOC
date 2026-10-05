@@ -945,3 +945,67 @@ fn custom_semantic_lfe_count_uses_roles_not_names() {
         assert_eq!(semantic.labels, layout.channel_labels());
     }
 }
+
+#[test]
+fn binaural_directions_cover_all_presets_and_use_canonical_system_h_geometry() {
+    for name in SPEAKER_LAYOUT_PRESET_NAMES {
+        let preset = SpeakerLayoutPreset::for_name(name).unwrap();
+        for (index, label) in preset.labels.iter().enumerate() {
+            assert_eq!(
+                preset.virtual_speaker_direction(label).is_some(),
+                !preset.layout.channels()[index].lfe,
+                "{name} {label}"
+            );
+        }
+        assert!(preset.virtual_speaker_direction("unknown").is_none());
+    }
+    let preset = SpeakerLayoutPreset::for_name("22.2").unwrap();
+    // Canonical BS.2051 System H midpoint geometry, including the shared FL/FR labels.
+    let directions = [
+        ("FL", 52.5_f64, 0.0_f64),
+        ("FR", -52.5, 0.0),
+        ("FC", 0.0, 0.0),
+        ("BL", 122.5, 0.0),
+        ("BR", -122.5, 0.0),
+        ("FLc", 26.25, 0.0),
+        ("FRc", -26.25, 0.0),
+        ("BC", 180.0, 0.0),
+        ("SiL", 90.0, 0.0),
+        ("SiR", -90.0, 0.0),
+        ("TpFL", 52.5, 37.5),
+        ("TpFR", -52.5, 37.5),
+        ("TpFC", 0.0, 37.5),
+        ("TpC", 0.0, 90.0),
+        ("TpBL", 122.5, 37.5),
+        ("TpBR", -122.5, 37.5),
+        ("TpSiL", 90.0, 37.5),
+        ("TpSiR", -90.0, 37.5),
+        ("TpBC", 180.0, 37.5),
+        ("BtFL", 52.5, -22.5),
+        ("BtFR", -52.5, -22.5),
+        ("BtFC", 0.0, -22.5),
+    ];
+    assert_eq!(directions.len(), preset.layout.active_channel_count());
+    for (label, azimuth, elevation) in directions {
+        let direction = preset.virtual_speaker_direction(label).unwrap();
+        let (az, el) = (azimuth.to_radians(), elevation.to_radians());
+        for (actual, expected) in [
+            (direction.x, -az.sin() * el.cos()),
+            (direction.y, az.cos() * el.cos()),
+            (direction.z, el.sin()),
+        ] {
+            assert!((actual - expected).abs() < 1e-12, "{label}: {direction:?}");
+        }
+    }
+    assert!(preset.virtual_speaker_direction("LFE1").is_none());
+    assert!(preset.virtual_speaker_direction("LFE2").is_none());
+    let stereo = SpeakerLayoutPreset::for_name("2.0").unwrap();
+    assert_eq!(
+        stereo.virtual_speaker_direction("FL").unwrap(),
+        openjoc_scene::Position3 {
+            x: -1.0,
+            y: 1.0,
+            z: 0.0
+        }
+    );
+}

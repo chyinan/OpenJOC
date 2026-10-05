@@ -170,7 +170,14 @@ fn retired_aachen_preset_code_falls_back_to_default_d1() {
 
 #[test]
 fn c_orientation_handles_preserve_failures_and_fence_epochs() {
-    let layout = std::ffi::CString::new("7.1.4").unwrap();
+    exercise_orientation_handles("7.1.4", 0, 11);
+    for hrtf in [0, 1] {
+        exercise_orientation_handles("22.2", hrtf, 22);
+    }
+}
+
+fn exercise_orientation_handles(layout_name: &str, hrtf: u32, source_count: usize) {
+    let layout = std::ffi::CString::new(layout_name).unwrap();
     let mut config = std::mem::MaybeUninit::uninit();
     assert_eq!(
         openjoc_decoder_config_init_v1_7(config.as_mut_ptr()),
@@ -180,6 +187,7 @@ fn c_orientation_handles_preserve_failures_and_fence_epochs() {
     config.render_mode = openjoc_render_mode::OPENJOC_RENDER_BINAURAL as u32;
     config.speaker_layout = layout.as_ptr();
     config.listener_orientation_pull_samples = 128;
+    config.hrtf_preset = hrtf;
 
     let mut decoder = ptr::null_mut();
     assert_eq!(
@@ -297,7 +305,10 @@ fn c_orientation_handles_preserve_failures_and_fence_epochs() {
     );
     assert_eq!(accepted, 2);
     assert_eq!(superseded, 1);
-    assert_eq!(openjoc_listener_orientation_retired_count(retired), 11);
+    assert_eq!(
+        openjoc_listener_orientation_retired_count(retired),
+        source_count
+    );
     openjoc_listener_orientation_retired_destroy(retired);
 
     assert_eq!(

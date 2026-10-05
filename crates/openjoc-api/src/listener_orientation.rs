@@ -332,7 +332,7 @@ impl ListenerOrientationPreparer {
             if preset.layout.channels()[channel_index].lfe {
                 continue;
             }
-            let world_direction = virtual_speaker_direction(label).ok_or_else(|| {
+            let world_direction = virtual_speaker_direction(&preset, label).ok_or_else(|| {
                 OpenJocError::Unsupported(format!("no binaural direction for {label}"))
             })?;
             sources.push(OrientationSource {
@@ -782,12 +782,58 @@ mod tests {
     }
 
     #[test]
+    fn system_h_orientation_covers_non_lfe_sources_for_d1_and_d2() {
+        let preset = SpeakerLayoutPreset::for_name("22.2").unwrap();
+        let expected_ids: Vec<_> = preset
+            .labels
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !preset.layout.channels()[*index].lfe)
+            .map(|(index, _)| SourceId::new(index as u64 + 1))
+            .collect();
+        assert_eq!(expected_ids.len(), 22);
+        for hrtf in [
+            crate::BuiltinHrtf::SadieD1Ku100,
+            crate::BuiltinHrtf::SadieD2Kemar,
+        ] {
+            let preparer =
+                ListenerOrientationPreparer::new(&BinauralConfig::builtin(hrtf, "22.2")).unwrap();
+            assert_eq!(preparer.source_count(), 22);
+            for source in &preparer.resources.sources {
+                let label = preset.labels[source.channel_index];
+                assert!(!preset.layout.channels()[source.channel_index].lfe);
+                assert_eq!(
+                    source.world_direction,
+                    virtual_speaker_direction(&preset, label).unwrap()
+                );
+            }
+            for axis in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+                for degrees in [-30.0, -15.0, 0.0, 15.0, 30.0] {
+                    let update = preparer
+                        .prepare(axis_angle(axis, degrees), 0, 1)
+                        .unwrap_or_else(|error| {
+                            panic!("{hrtf:?} axis={axis:?} degrees={degrees}: {error}")
+                        });
+                    assert_eq!(
+                        update
+                            .kernels()
+                            .iter()
+                            .map(PreparedBinauralKernel::source_id)
+                            .collect::<Vec<_>>(),
+                        expected_ids
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn identity_prepared_kernels_equal_the_existing_static_hrir_selection() {
         for hrtf in [
             crate::BuiltinHrtf::SadieD1Ku100,
             crate::BuiltinHrtf::SadieD2Kemar,
         ] {
-            for layout in ["5.1", "7.1.4", "9.1.6"] {
+            for layout in ["5.1", "7.1.4", "9.1.6", "22.2"] {
                 let config = BinauralConfig::builtin(hrtf, layout);
                 let static_state = crate::BinauralState::new(&config, None, None).unwrap();
                 let bank = static_state.bank.as_ref().unwrap();

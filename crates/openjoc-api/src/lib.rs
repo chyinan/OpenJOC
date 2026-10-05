@@ -2518,7 +2518,20 @@ impl BinauralState {
             prepare_binaural_bank(
                 loaded.metadata.sample_rate_hz,
                 &config.virtual_layout,
-                |direction| resolve_hrir_f32(&loaded.bank, direction).map_err(Into::into),
+                |direction| {
+                    // System H includes canonical directions whose containing
+                    // triangle falls outside the legacy resolver's small window.
+                    // Use the same bounded coverage search as its identity pose.
+                    if config.virtual_layout == "22.2" {
+                        openjoc_sofa::resolve_hrir_f32_for_listener_orientation(
+                            &loaded.bank,
+                            direction,
+                        )
+                    } else {
+                        resolve_hrir_f32(&loaded.bank, direction)
+                    }
+                    .map_err(Into::into)
+                },
             )?
         } else {
             let load_limits = custom_sofa_load_limits.unwrap_or_default();
@@ -2991,7 +3004,7 @@ fn prepare_binaural_bank(
         if preset.layout.channels()[channel_index].lfe {
             continue;
         }
-        let direction = virtual_speaker_direction(label).ok_or_else(|| {
+        let direction = virtual_speaker_direction(&preset, label).ok_or_else(|| {
             OpenJocError::Unsupported(format!("no binaural direction for {label}"))
         })?;
         let resolved = resolve(direction)?;
@@ -3007,26 +3020,13 @@ fn prepare_binaural_bank(
     Ok((bank, mappings, preset.lfe_index(), sample_rate_hz))
 }
 
-fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
-    let (x, y, z) = match label {
-        "FL" => (-1.0, 1.0, 0.0),
-        "FR" => (1.0, 1.0, 0.0),
-        "FC" => (0.0, 1.0, 0.0),
-        "Ls" => (-1.0, 0.0, 0.0),
-        "Rs" => (1.0, 0.0, 0.0),
-        "Lb" => (-1.0, -1.0, 0.0),
-        "Rb" => (1.0, -1.0, 0.0),
-        "TFL" | "Ltf" => (-1.0, 1.0, 1.0),
-        "TFR" | "Rtf" => (1.0, 1.0, 1.0),
-        "TBL" | "Ltr" => (-1.0, -1.0, 1.0),
-        "TBR" | "Rtr" => (1.0, -1.0, 1.0),
-        "Ltm" => (-1.0, 0.0, 1.0),
-        "Rtm" => (1.0, 0.0, 1.0),
-        "Lw" => (-1.0, 0.67767333984375, 0.0),
-        "Rw" => (1.0, 0.67767333984375, 0.0),
-        _ => return None,
-    };
-    Some(CartesianPosition::new(x, y, z))
+fn virtual_speaker_direction(
+    preset: &SpeakerLayoutPreset,
+    label: &str,
+) -> Option<CartesianPosition> {
+    preset
+        .virtual_speaker_direction(label)
+        .map(|direction| CartesianPosition::new(direction.x, direction.y, direction.z))
 }
 
 #[cfg(test)]
@@ -3088,7 +3088,7 @@ mod tests {
     #[test]
     fn binaural_block_adapter_preserves_exact_direct_pcm_tail_and_reset() {
         for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
-            for layout in ["7.1.4", "9.1.6"] {
+            for layout in ["7.1.4", "9.1.6", "22.2"] {
                 for lfe_policy in [
                     BinauralLfePolicy::Exclude,
                     BinauralLfePolicy::EqualPowerDualMono,
@@ -3164,7 +3164,7 @@ mod tests {
     #[test]
     fn dynamic_binaural_range_render_matches_static_across_pull_partitions() {
         for hrtf in [BuiltinHrtf::SadieD1Ku100, BuiltinHrtf::SadieD2Kemar] {
-            for layout in ["7.1.4", "9.1.6"] {
+            for layout in ["7.1.4", "9.1.6", "22.2"] {
                 for lfe_policy in [
                     BinauralLfePolicy::Exclude,
                     BinauralLfePolicy::EqualPowerDualMono,
