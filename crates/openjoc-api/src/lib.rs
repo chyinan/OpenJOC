@@ -316,7 +316,8 @@ impl OpenJocConfig {
     /// Returns the stable, field-by-field representation of the settings that
     /// reach an OpenJOC session. Fields that are intentionally ignored by a
     /// selected mode are omitted, so frontends can compare effective rather
-    /// than merely user-visible configuration.
+    /// than merely user-visible configuration. Custom layouts include ordered
+    /// channel roles and fixed/named route vectors.
     #[must_use]
     pub fn effective_config_descriptor(&self) -> String {
         let mut descriptor = format!(
@@ -348,6 +349,33 @@ impl OpenJocConfig {
         if let Some(layout) = &self.speaker_layout_definition {
             descriptor.push_str("\ncustom_layout_channels=");
             descriptor.push_str(&layout.channel_labels().join(","));
+            descriptor.push_str("\ncustom_layout_roles=");
+            descriptor.push_str(
+                &layout
+                    .spatial()
+                    .channels()
+                    .iter()
+                    .map(|channel| if channel.lfe { "lfe" } else { "full_range" })
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            let mut routes = layout.spatial().route_vectors().iter().collect::<Vec<_>>();
+            routes.sort_by(|left, right| left.identity.cmp(&right.identity));
+            let _ = write!(descriptor, "\ncustom_layout_route_count={}", routes.len());
+            for (index, route) in routes.iter().enumerate() {
+                // Length framing permits opaque route identities; exact IEEE bits
+                // retain all validated gain precision and ordered output components.
+                let _ = write!(
+                    descriptor,
+                    "\ncustom_layout_route_{index}={}:{}:{}",
+                    route.identity.len(),
+                    route.identity,
+                    route.vector.len(),
+                );
+                for gain in &route.vector {
+                    let _ = write!(descriptor, ":{:016x}", gain.to_bits());
+                }
+            }
             for (index, coordinate) in layout.channel_coordinates().iter().enumerate() {
                 let _ = write!(
                     descriptor,

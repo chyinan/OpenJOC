@@ -11,6 +11,8 @@ ABI 版本为 `1.7-experimental`，与 OpenJOC 软件包版本彼此独立。重
 
 ABI 1.4 在 `openjoc_decoder_config` 中追加了 `custom_speaker_layout`。需要使用自定义几何时，把它设为内存中的 `openjoc_custom_speaker_layout`；其中有序的 `openjoc_custom_speaker` 数组包含有限的方位角/仰角（单位为度），以及 `OPENJOC_SPEAKER_FULL_RANGE` 或 `OPENJOC_SPEAKER_LFE` 角色。描述结构和其中的所有字符串只在 `openjoc_decoder_create` 调用期间借用；解码器会复制经过验证的布局，并通过输出标签报告相同的顺序。原有调用方将此字段留空即可继续使用预设行为。自定义布局的约定、坐标规则、校验限制以及 WAV/CAF 元数据边界，记录在[自定义扬声器布局](../using/custom-speaker-layouts.md)中。
 
+流式 API 的传输范围比直接 `openjoc_decoder` 更窄：`openjoc_stream_decoder_create` 要求自定义名称具有现有的 OpenJOC 到 FFmpeg 声道映射、映射后标识唯一，并且 LFE/全频角色一致。可表示的自定义定义保留原顺序并优先于预设字段；不支持的名称、别名冲突或角色不一致会在创建时、提交音频前返回 `OPENJOC_STATUS_INVALID_ARGUMENT`。流式 API 报告 FFmpeg 声道标签，不传输自定义角度。详见[自定义布局传输边界](rust-api.zh.md#custom-layout-transport-boundary)。
+
 `openjoc_decoder_config_init()` 仍是对旧版本安全的 ABI 1.3 前缀初始化函数，不会写入 ABI 1.4 或之后追加的字段。ABI 1.4 调用方使用 `openjoc_decoder_config_init_v1_4()` 初始化自定义布局字段；ABI 1.6 调用方使用 `openjoc_decoder_config_init_v1_6()` 初始化精确的 v1.6 前缀并选择 HRTF；ABI 1.7 调用方使用 `openjoc_decoder_config_init_v1_7()` 初始化完整结构。保留的 v1.6 对齐字段可防止旧结构尾部填充被误读为启用新功能。
 ABI 1.5 新增了 `openjoc_stream_decoder` 的只读 `openjoc_live_inspection_snapshot`。它报告同一条带内解码路径观察到的 programme 布局、重建载体、验证状态、对象/复杂度、EMDF、动态场景、AU 和时间戳信息；实时覆盖明确区分 `partial` 与 `complete_continuous`，seek、flush 或 reset 会开始新的观察 epoch。
 

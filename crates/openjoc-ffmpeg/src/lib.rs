@@ -1572,6 +1572,35 @@ fn channel_layout_for_config(config: &OpenJocConfig) -> Result<FfmpegChannelLayo
             &["BIL", "BIR"],
         );
     }
+    if config.render_mode == RenderMode::Speaker {
+        if let Some(layout) = &config.speaker_layout_definition {
+            let labels = layout.channel_labels();
+            let mut channels = Vec::with_capacity(labels.len());
+            for (label, role) in labels.iter().zip(layout.spatial().channels()) {
+                let channel = ffmpeg_channel_for_label(label).map_err(|error| {
+                    BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+                })?;
+                if role.lfe != matches!(channel, "LFE" | "LFE2") {
+                    return Err(BridgeError::new(
+                        BridgeErrorKind::InvalidConfig,
+                        format!(
+                            "custom speaker {label} has a role incompatible with FFmpeg {channel}"
+                        ),
+                    ));
+                }
+                if channels.contains(&channel) {
+                    return Err(BridgeError::new(
+                        BridgeErrorKind::InvalidConfig,
+                        format!("custom speakers map to duplicate FFmpeg channel {channel}"),
+                    ));
+                }
+                channels.push(channel);
+            }
+            // Arbitrary validated order is carried as AV_CHANNEL_ORDER_CUSTOM.
+            // Do not infer transport from the superseded preset field or name.
+            return build_layout(layout.name(), None, labels, &channels);
+        }
+    }
     let layout_name = if config.render_mode == RenderMode::Stereo {
         "2.0"
     } else {

@@ -1,0 +1,131 @@
+use openjoc_api::{OpenJocConfig, OpenJocPacket, OpenJocSession};
+use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
+
+fn custom_config(lfe: bool) -> OpenJocConfig {
+    let third = if lfe {
+        SpeakerGeometry::lfe("C", 0.0, -20.0)
+    } else {
+        SpeakerGeometry::full_range("C", 0.0, -20.0)
+    };
+    OpenJocConfig::default().with_speaker_layout(
+        SpeakerLayout::custom(
+            "studio",
+            vec![
+                SpeakerGeometry::full_range("A", -42.0, 0.0),
+                SpeakerGeometry::full_range("B", 51.0, 9.0),
+                third,
+            ],
+        )
+        .unwrap(),
+    )
+}
+
+fn render(config: OpenJocConfig) -> Vec<f32> {
+    let mut session = OpenJocSession::new(config).unwrap();
+    let mut pcm = Vec::new();
+    for au in include_bytes!("fixtures/timestamps.ec3")
+        .chunks_exact(4096)
+        .take(6)
+    {
+        session
+            .push_packet(OpenJocPacket {
+                data: au,
+                pts_samples: None,
+                discontinuity: false,
+                preroll: false,
+            })
+            .unwrap();
+        while let Some(frame) = session.receive_frame() {
+            pcm.extend(frame.interleaved_f32);
+        }
+    }
+    session.drain().unwrap();
+    while let Some(frame) = session.receive_frame() {
+        pcm.extend(frame.interleaved_f32);
+    }
+    pcm
+}
+
+#[test]
+fn custom_roles_distinguish_effective_fingerprints_and_rendered_pcm() {
+    let full_range = custom_config(false);
+    let lfe = custom_config(true);
+    full_range.validate().unwrap();
+    lfe.validate().unwrap();
+    assert_eq!(
+        full_range.effective_config_descriptor(),
+        custom_config(false).effective_config_descriptor()
+    );
+    assert_eq!(
+        full_range.effective_config_fingerprint(),
+        full_range.clone().effective_config_fingerprint()
+    );
+    assert!(
+        full_range
+            .effective_config_descriptor()
+            .contains("custom_layout_roles=full_range,full_range,full_range")
+    );
+    assert!(
+        lfe.effective_config_descriptor()
+            .contains("custom_layout_roles=full_range,full_range,lfe")
+    );
+    assert_ne!(
+        full_range.effective_config_fingerprint(),
+        lfe.effective_config_fingerprint()
+    );
+    let first = render(full_range);
+    let second = render(lfe);
+    assert_eq!(first.len(), second.len());
+    assert!(
+        first
+            .iter()
+            .zip(second)
+            .any(|(left, right)| (*left - right).abs() > 0.01)
+    );
+}
+
+#[test]
+fn ordinary_preset_descriptor_remains_unchanged() {
+    assert_eq!(
+        OpenJocConfig::default().effective_config_descriptor(),
+        "openjoc-effective-config-v1\nrender_mode=speaker\nlayout=5.1\ndownmix=auto\ndrc=line\ndialnorm=default\nvalidation_profile=auto\noamd_trim_configuration_count=9\nfinal_linked_gain=enabled"
+    );
+}
+
+#[test]
+fn custom_route_fingerprint_is_order_independent_and_gain_sensitive() {
+    use openjoc_scene::{FixedRouteKey, SpatialDescriptor, SpatialRouteVector};
+    let key = FixedRouteKey::new(6, 5).unwrap();
+    let first = SpatialRouteVector::fixed(key, vec![0.5, 0.25, 0.0]);
+    let other = SpatialRouteVector {
+        identity: "other:route".to_owned(),
+        vector: vec![0.0, 1.0, 0.0],
+    };
+    let layout = custom_config(false).speaker_layout_definition.unwrap();
+    let original = layout
+        .with_route_vectors(vec![first.clone(), other.clone()])
+        .unwrap();
+    let reordered = layout
+        .with_route_vectors(vec![other.clone(), first])
+        .unwrap();
+    let changed = layout
+        .with_route_vectors(vec![
+            SpatialRouteVector::fixed(key, vec![0.75, 0.25, 0.0]),
+            other,
+        ])
+        .unwrap();
+    let descriptor = SpatialDescriptor::fixed(key, vec![0.0; 3]);
+    assert_ne!(
+        original.spatial().project(&descriptor).unwrap(),
+        changed.spatial().project(&descriptor).unwrap()
+    );
+    let config = |layout| OpenJocConfig::default().with_speaker_layout(layout);
+    assert_eq!(
+        config(original.clone()).effective_config_fingerprint(),
+        config(reordered).effective_config_fingerprint()
+    );
+    assert_ne!(
+        config(original).effective_config_fingerprint(),
+        config(changed).effective_config_fingerprint()
+    );
+}

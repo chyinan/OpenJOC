@@ -34,6 +34,15 @@ layout contract, coordinate convention, validation limits, and WAV/CAF
 metadata boundary are documented in
 [custom speaker layouts](../using/custom-speaker-layouts.md).
 
+The stream API has a narrower transport boundary than direct `openjoc_decoder`:
+`openjoc_stream_decoder_create` requires custom names with existing OpenJOC-to-FFmpeg
+channel mappings, unique mapped identities, and matching LFE/full-range roles.
+Representable custom definitions preserve their order and override the preset
+field; unsupported names, alias collisions, or role mismatches return
+`OPENJOC_STATUS_INVALID_ARGUMENT` at creation, before any audio is submitted.
+The stream reports FFmpeg channel labels and does not transport custom angles.
+See the [custom-layout transport boundary](rust-api.md#custom-layout-transport-boundary).
+
 `openjoc_decoder_config_init()` remains the legacy-safe ABI 1.3 prefix
 initializer: it never writes fields appended in ABIs 1.4 or 1.6, so an ABI 1.3
 caller may link it against a newer library without a struct over-write. ABI

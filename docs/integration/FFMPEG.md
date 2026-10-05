@@ -244,6 +244,15 @@ FFmpeg's predefined 9.1.4/9.1.6 layouts contain FLC/FRC. OpenJOC's admitted
 9.1 family contains Wide identities, so the bridge deliberately uses custom
 WL/WR layouts instead of claiming false semantic equivalence.
 
+Explicit `speaker_layout_definition` takes precedence over the preset field.
+Custom definitions with uniquely mapped existing OpenJOC channel identities and
+matching LFE/full-range roles use ordered `AV_CHANNEL_ORDER_CUSTOM`; no preset
+layout is inferred from their name or channel count. Unknown names, duplicate
+mapped aliases, and role mismatches return `InvalidConfig` before decoding.
+Custom speaker angles are not transported by AVChannel metadata. See the
+[Rust API transport boundary](../site/reference/rust-api.md#custom-layout-transport-boundary)
+for the direct-session versus FFmpeg/C-stream distinction.
+
 OpenJOC 22.2 order is:
 
 ```text

@@ -629,6 +629,10 @@ pub struct WaveEncodeOptions {
 ///
 /// The header is written once with placeholder sizes, samples are appended in
 /// bounded chunks, and RIFF/data sizes are patched during [`Self::finish`].
+/// Writing starts at the sink's current position and overwrites only the WAV's
+/// span; callers must own that span. Existing bytes before and after it are
+/// neither moved nor truncated. `finish` leaves the sink at the WAV's end,
+/// including any final padding, rather than at the end of the whole sink.
 /// This is intentionally seekable-only; callers writing to non-seekable output
 /// must use an explicitly supported container instead of emitting invalid WAV.
 pub struct WaveWriter<W> {
@@ -641,6 +645,7 @@ pub struct WaveWriter<W> {
     sample_index: usize,
     interleaved_scratch: Vec<f64>,
     encoded_scratch: Vec<u8>,
+    riff_size_position: u64,
     data_size_position: u64,
     riff_size_base: u32,
 }
@@ -678,8 +683,23 @@ impl<W: Write + Seek> WaveWriter<W> {
         channel_mask: Option<u32>,
     ) -> Result<Self, WaveError> {
         let channel_count = validate_writer_format(sample_rate, channels, options)?;
-        let (data_size_position, riff_size_base) = if let Some(channel_mask) = channel_mask {
+        let (data_size_offset, riff_size_base) = if let Some(channel_mask) = channel_mask {
             validate_speaker_mask(channels, channel_mask)?;
+            (64, 60)
+        } else {
+            (40, 36)
+        };
+        let header_position = writer.stream_position().map_err(io_error)?;
+        let riff_size_position = header_position
+            .checked_add(4)
+            .ok_or(WaveError::SizeOverflow)?;
+        let data_size_position = header_position
+            .checked_add(data_size_offset)
+            .ok_or(WaveError::SizeOverflow)?;
+        data_size_position
+            .checked_add(4)
+            .ok_or(WaveError::SizeOverflow)?;
+        if let Some(channel_mask) = channel_mask {
             write_placeholder_extensible_header(
                 &mut writer,
                 sample_rate,
@@ -687,11 +707,9 @@ impl<W: Write + Seek> WaveWriter<W> {
                 options,
                 channel_mask,
             )?;
-            (64, 60)
         } else {
             write_placeholder_header(&mut writer, sample_rate, channel_count, options)?;
-            (40, 36)
-        };
+        }
         Ok(Self {
             writer,
             sample_rate,
@@ -702,6 +720,7 @@ impl<W: Write + Seek> WaveWriter<W> {
             sample_index: 0,
             interleaved_scratch: Vec::new(),
             encoded_scratch: Vec::new(),
+            riff_size_position,
             data_size_position,
             riff_size_base,
         })
@@ -745,6 +764,14 @@ impl<W: Write + Seek> WaveWriter<W> {
             .len()
             .checked_mul(self.options.sample_format.bytes_per_sample())
             .ok_or(WaveError::SizeOverflow)?;
+        let data_bytes = self
+            .data_bytes
+            .checked_add(u64::try_from(encoded_len).map_err(|_| WaveError::SizeOverflow)?)
+            .ok_or(WaveError::SizeOverflow)?;
+        self.data_size_position
+            .checked_add(4)
+            .and_then(|position| position.checked_add(data_bytes))
+            .ok_or(WaveError::SizeOverflow)?;
         self.encoded_scratch.clear();
         self.encoded_scratch.reserve(encoded_len);
         for index in 0..self.interleaved_scratch.len() {
@@ -762,12 +789,7 @@ impl<W: Write + Seek> WaveWriter<W> {
         self.writer
             .write_all(&self.encoded_scratch)
             .map_err(io_error)?;
-        self.data_bytes = self
-            .data_bytes
-            .checked_add(
-                u64::try_from(self.encoded_scratch.len()).map_err(|_| WaveError::SizeOverflow)?,
-            )
-            .ok_or(WaveError::SizeOverflow)?;
+        self.data_bytes = data_bytes;
         self.frames = self
             .frames
             .checked_add(
@@ -783,11 +805,23 @@ impl<W: Write + Seek> WaveWriter<W> {
     pub fn finish(mut self) -> Result<W, WaveError> {
         let data_size = u32::try_from(self.data_bytes).map_err(|_| WaveError::SizeOverflow)?;
         let riff_size = padded_riff_size(data_size, self.riff_size_base)?;
+        let data_end = self
+            .data_size_position
+            .checked_add(4)
+            .and_then(|position| position.checked_add(self.data_bytes))
+            .ok_or(WaveError::SizeOverflow)?;
+        let wav_end = data_end
+            .checked_add(u64::from(data_size % 2))
+            .ok_or(WaveError::SizeOverflow)?;
         if data_size % 2 != 0 {
-            self.writer.seek(SeekFrom::End(0)).map_err(io_error)?;
+            self.writer
+                .seek(SeekFrom::Start(data_end))
+                .map_err(io_error)?;
             self.writer.write_all(&[0]).map_err(io_error)?;
         }
-        self.writer.seek(SeekFrom::Start(4)).map_err(io_error)?;
+        self.writer
+            .seek(SeekFrom::Start(self.riff_size_position))
+            .map_err(io_error)?;
         self.writer
             .write_all(&riff_size.to_le_bytes())
             .map_err(io_error)?;
@@ -797,7 +831,9 @@ impl<W: Write + Seek> WaveWriter<W> {
         self.writer
             .write_all(&data_size.to_le_bytes())
             .map_err(io_error)?;
-        self.writer.seek(SeekFrom::End(0)).map_err(io_error)?;
+        self.writer
+            .seek(SeekFrom::Start(wav_end))
+            .map_err(io_error)?;
         self.writer.flush().map_err(io_error)?;
         Ok(self.writer)
     }

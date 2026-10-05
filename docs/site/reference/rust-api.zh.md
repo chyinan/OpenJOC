@@ -61,6 +61,12 @@ PTS 使用解码后的采样域。如果第一个数据包的 PTS 是 `P`，逻�
 
 输出队列有大小上限。调用方必须先接收等待中的 PCM，才能继续推送下一个数据包；否则会返回 `OpenJocStatus::OutputPending`。
 
+## 可寻址 WAV 输出
+
+`openjoc_wave::WaveWriter` 从底层文件或 `Cursor` 的当前字节位置开始写入，支持非零起始位置。基本格式和扩展格式的写入器均相对该起点回填大小，并在实际音频数据末尾添加所需的奇数字节填充。`finish()` 返回的底层对象定位在 WAV 末尾（包括填充）。
+
+调用方必须拥有写入区域：区域内已有字节会被覆盖，不会插入或移动后续内容。前缀以及完整 WAV 之后已有的后缀保持不变；写入器不会截断底层对象。头部、数据写入和最终完成前都会检查偏移运算是否溢出。
+
 ## 实验性听音者姿态
 
 `OpenJocSession::new_with_listener_orientation_pull(config, pull_samples)` 显式启用设备无关的 3DoF 双耳姿态路径；默认构造函数仍是固定姿态。`pull_samples` 限定在 `1..=256`。可克隆的 `ListenerOrientationPreparer` 可放到工作线程，它为所有非 LFE 虚拟扬声器准备完整 HRIR 更新，随后在渲染调用之间提交：
@@ -97,8 +103,16 @@ drop(receipt.retired_kernels); // 在实时回调之外释放或回收旧缓冲�
 
 如果需要审计不同前端的配置是否一致，`OpenJocConfig::effective_config_descriptor()` 和 `effective_config_fingerprint()` 会公开经过归一化的会话边界字段。`trace_access_units()` 会记录每组访问单元的精确字节长度、SHA-256、采样域 PTS、采样率，以及独立/从属帧数量。
 
+自定义布局的描述包含按输出顺序排列的声道角色，以及按标识排序的 Fixed/Named 路由向量。路由标识使用长度定界，增益使用精确的 IEEE-754 位表示。因此已有自定义布局的指纹会有意改变；普通预设配置的描述和指纹保持不变。
+
 ## 错误与状态
 
 状态码是数值型的非错误生命周期结果：`NeedMoreInput`、`FrameAvailable`、`OutputPending` 和 `EndOfStream`。Rust 错误是带类型的 `OpenJocError` 值。C 适配器会把它们映射为数值状态码和归属于当前实例的诊断消息。
 
 格式错误的数据包、格式变化、时间戳不连续、配置变化和渲染失败，都不会被悄悄转换成不匹配的 PCM。
+
+## 自定义布局的传输边界 {#custom-layout-transport-boundary}
+
+直接 Rust 会话保留任意经过验证的自定义扬声器名称和几何。FFmpeg 桥接和 C `openjoc_stream_decoder` 则要求每个名称都具有现有的 OpenJOC 到 AVChannel 映射。例如 `Ls`/`SiL` 映射为 `SL`，`Rs`/`SiR` 映射为 `SR`；不会自动接受 FFmpeg 的所有拼写。映射后的标识必须唯一，而且明确指定的 LFE/全频角色必须与对应声道一致。不支持的名称、别名冲突或角色不一致会在构造时、提交音频前被拒绝（Rust 为 `InvalidConfig`，C 流式 API 为 `OPENJOC_STATUS_INVALID_ARGUMENT`）。
+
+可表示的自定义定义优先于预设字符串，并使用保持原顺序的 FFmpeg CUSTOM 声道，即使自定义名称与预设相同或声道数不同也是如此。PCM 顺序不变；桥接不会宣称使用预定义布局，也不会传输自定义扬声器角度。直接 C `openjoc_decoder` 仍支持 Rust 会话所允许的更通用布局。

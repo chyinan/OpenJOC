@@ -20,7 +20,10 @@ impl Write for FailingSeekWriter {
 }
 
 impl Seek for FailingSeekWriter {
-    fn seek(&mut self, _position: SeekFrom) -> io::Result<u64> {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        if position == SeekFrom::Current(0) {
+            return Ok(self.bytes.len() as u64);
+        }
         Err(io::Error::other("seek intentionally failed"))
     }
 }
@@ -440,4 +443,157 @@ fn assert_wav_data_padding(
         assert_eq!(bytes.last(), Some(&0));
     }
     assert_eq!(decode(bytes).unwrap().channels, channels);
+}
+
+#[test]
+fn positioned_writers_preserve_prefix_suffix_and_return_at_wav_end() {
+    for format in [
+        SampleFormat::S24,
+        SampleFormat::S16,
+        SampleFormat::F32,
+        SampleFormat::F64,
+    ] {
+        let options = WaveEncodeOptions {
+            sample_format: format,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        };
+        for channel_count in 1..=3 {
+            for frames in 0..=3 {
+                for extensible in [false, true] {
+                    let encode = |sink: Cursor<Vec<u8>>| {
+                        let mut writer = if extensible {
+                            WaveWriter::new_with_speaker_mask(
+                                sink,
+                                48_000,
+                                channel_count,
+                                options,
+                                (1 << channel_count) - 1,
+                            )
+                            .unwrap()
+                        } else {
+                            WaveWriter::new(sink, 48_000, channel_count, options).unwrap()
+                        };
+                        for frame in 0..frames {
+                            let samples = (0..channel_count)
+                                .map(|channel| ((frame + channel) % 5) as f64 * 0.25 - 0.5)
+                                .collect::<Vec<_>>();
+                            if frame % 2 == 0 {
+                                writer.write_interleaved(&samples).unwrap();
+                            } else {
+                                let planes =
+                                    samples.iter().map(std::slice::from_ref).collect::<Vec<_>>();
+                                writer.write_channels(&planes).unwrap();
+                            }
+                        }
+                        writer.finish().unwrap()
+                    };
+                    let reference = encode(Cursor::new(Vec::new()));
+                    assert_eq!(reference.position(), reference.get_ref().len() as u64);
+                    let expected = reference.into_inner();
+                    for origin in [1, 16, 37] {
+                        for suffix_len in [0, 19] {
+                            let mut original = vec![0x55; origin];
+                            // Exercise both appending to a prefix and replacing an
+                            // owned span followed by unrelated existing data.
+                            if suffix_len != 0 {
+                                original.extend(vec![0xcc; expected.len()]);
+                                original.extend(vec![0x77; suffix_len]);
+                            }
+                            let mut sink = Cursor::new(original);
+                            sink.set_position(origin as u64);
+                            let result = encode(sink);
+                            let wav_end = origin + expected.len();
+                            assert_eq!(result.position(), wav_end as u64);
+                            let bytes = result.into_inner();
+                            assert_eq!(&bytes[..origin], vec![0x55; origin]);
+                            assert_eq!(&bytes[origin..wav_end], expected);
+                            assert_eq!(&bytes[wav_end..], vec![0x77; suffix_len]);
+                            assert_eq!(
+                                decode(&bytes[origin..wav_end]).unwrap().channels,
+                                decode(&expected).unwrap().channels
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct OffsetOnlySink {
+    position: u64,
+    writes: usize,
+}
+
+impl Write for OffsetOnlySink {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.position = self
+            .position
+            .checked_add(bytes.len() as u64)
+            .ok_or_else(|| io::Error::other("sink overflow"))?;
+        self.writes += 1;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Seek for OffsetOnlySink {
+    fn seek(&mut self, from: SeekFrom) -> io::Result<u64> {
+        self.position = match from {
+            SeekFrom::Start(position) => position,
+            SeekFrom::Current(0) => self.position,
+            _ => return Err(io::Error::other("unexpected seek")),
+        };
+        Ok(self.position)
+    }
+}
+
+#[test]
+fn writer_positions_use_checked_arithmetic_before_io() {
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::S24,
+        clipping: Clipping::Reject,
+        dither: Dither::None,
+    };
+    for extensible in [false, true] {
+        let header_len = if extensible { 68 } else { 44 };
+        let mut sink = OffsetOnlySink {
+            position: u64::MAX - header_len + 1,
+            writes: 0,
+        };
+        let result = if extensible {
+            WaveWriter::new_with_speaker_mask(&mut sink, 48_000, 1, options, 1)
+        } else {
+            WaveWriter::new(&mut sink, 48_000, 1, options)
+        };
+        assert!(matches!(result, Err(WaveError::SizeOverflow)));
+        assert_eq!(sink.writes, 0);
+        for room in [0, 3] {
+            let mut sink = OffsetOnlySink {
+                position: u64::MAX - header_len - room,
+                writes: 0,
+            };
+            let mut writer = if extensible {
+                WaveWriter::new_with_speaker_mask(&mut sink, 48_000, 1, options, 1).unwrap()
+            } else {
+                WaveWriter::new(&mut sink, 48_000, 1, options).unwrap()
+            };
+            if room == 0 {
+                assert!(matches!(
+                    writer.write_interleaved(&[0.25]),
+                    Err(WaveError::SizeOverflow)
+                ));
+                assert_eq!(writer.frames(), 0);
+                assert_eq!(writer.data_bytes(), 0);
+                assert_eq!(writer.finish().unwrap().position, u64::MAX);
+            } else {
+                writer.write_interleaved(&[0.25]).unwrap();
+                assert!(matches!(writer.finish(), Err(WaveError::SizeOverflow)));
+                assert_eq!(sink.position, u64::MAX);
+            }
+        }
+    }
 }
