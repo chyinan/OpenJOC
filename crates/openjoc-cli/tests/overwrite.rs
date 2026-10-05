@@ -144,3 +144,42 @@ fn overwrite_does_not_allow_input_output_aliasing_or_truncate_input() {
     );
     fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[test]
+fn export_adm_refuses_existing_sidecar_without_overwrite() {
+    let root = unique_root("adm-sidecar");
+    fs::create_dir_all(&root).unwrap();
+    let output = root.join("new.wav");
+    let report = root.join("new.adm-report.json");
+    fs::write(&report, b"keep this report").unwrap();
+    let input = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/adm/reconstructed-scene.json");
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .arg("export-adm")
+        .arg(input)
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(stderr.contains("new.adm-report.json"));
+    assert!(stderr.contains("--overwrite"));
+    assert_eq!(fs::read(&report).unwrap(), b"keep this report");
+    assert!(!output.exists());
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn export_adm_help_explains_sidecar_overwrite() {
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .args(["export-adm", "--help"])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(
+        stdout.contains("Existing audio or adjacent .adm-report.json files require --overwrite")
+    );
+}

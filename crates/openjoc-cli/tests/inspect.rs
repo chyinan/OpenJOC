@@ -858,8 +858,9 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
         "WAV-named ADM BWF output was not written"
     );
     assert!(report.is_file(), "adjacent ADM report was not written");
+    let report_bytes = fs::read(&report).expect("read report");
     let report_value: serde_json::Value =
-        serde_json::from_slice(&fs::read(&report).expect("read report")).expect("parse report");
+        serde_json::from_slice(&report_bytes).expect("parse report");
     assert_eq!(report_value["source_is_lossy_e_ac_3_joc"], true);
     assert_eq!(report_value["adm_bwf_container"], "RIFF");
     assert_eq!(
@@ -902,7 +903,19 @@ fn export_adm_compressed_input_writes_report_validates_and_cleans_decode_root() 
         );
     }
 
-    let bw64_export = run_export(&bw64_output);
+    // Changing only the extension still targets the same sidecar report.
+    let refused = run_export(&bw64_output);
+    assert!(!refused.status.success());
+    assert_eq!(fs::read(&report).unwrap(), report_bytes);
+    assert!(!bw64_output.exists());
+    let bw64_export = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .arg("export-adm")
+        .arg(&input)
+        .arg("-o")
+        .arg(&bw64_output)
+        .arg("--overwrite")
+        .output()
+        .expect("explicitly replace shared sidecar");
     assert!(
         bw64_export.status.success(),
         "stdout={} stderr={}",

@@ -178,7 +178,8 @@ def portable_runtime_environment(root: pathlib.Path, platform_name: str) -> dict
 
 def parse_macho_dependencies(path: pathlib.Path) -> list[str]:
     output = run(["otool", "-L", str(path)])
-    return [line.strip().split(" ", 1)[0] for line in output.splitlines()[1:] if line.strip()]
+    return [line.strip().split(" (compatibility version ", 1)[0]
+            for line in output.splitlines()[1:] if line.strip()]
 
 
 def parse_macho_rpaths(path: pathlib.Path) -> list[str]:
@@ -303,10 +304,10 @@ def parse_ldd(path: pathlib.Path) -> list[tuple[str, pathlib.Path | None]]:
             raise RuntimeError(f"unresolved ELF dependency {name} from {path}")
         if "=>" in line:
             name, rest = line.split("=>", 1)
-            candidate = rest.strip().split(" ", 1)[0]
+            candidate = re.sub(r"\s+\(0x[0-9a-fA-F]+\)$", "", rest.strip())
             values.append((name.strip(), pathlib.Path(candidate) if candidate.startswith("/") else None))
         else:
-            candidate = line.split(" ", 1)[0]
+            candidate = re.sub(r"\s+\(0x[0-9a-fA-F]+\)$", "", line)
             if candidate.startswith("/"):
                 values.append((pathlib.Path(candidate).name, pathlib.Path(candidate)))
     return values

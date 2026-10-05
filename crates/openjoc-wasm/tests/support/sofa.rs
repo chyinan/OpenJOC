@@ -126,7 +126,7 @@ fn fixture_parts(delay: f64) -> FixtureParts {
             FixtureVariable::new(
                 "ReceiverPosition",
                 vec![dimension("R"), dimension("C")],
-                &[0.09, 0.0, 0.0, -0.09, 0.0, 0.0],
+                &[0.0, -0.09, 0.0, 0.0, 0.09, 0.0],
             )
             .attributes(vec![
                 fixture_attribute("Type", "cartesian"),

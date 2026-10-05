@@ -156,6 +156,46 @@ fn converted_sofa_delay_is_included_in_both_backend_reports() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn empty_source_reports_only_frames_actually_written() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    write_pcm16_mono(&root.join("source.wav"), 48_000, &[]);
+    let bytes = sofa_fixture();
+    let direction = parse_simple_free_field_hrir(&bytes, SofaLoadLimits::default())
+        .unwrap()
+        .bank
+        .entries()[0]
+        .direction();
+    fs::write(root.join("listener.sofa"), bytes).unwrap();
+    fs::write(root.join("scene.json"), format!(
+        r#"{{"schema":"{SCENE_SCHEMA}","sample_rate_hz":48000,"source_semantics":"explicit_spatial_sources","sources":[{{"id":"empty","input_wav":"source.wav","position":{{"x":{},"y":{},"z":{}}},"gain":1.0}}]}}"#,
+        direction[0], direction[1], direction[2],
+    )).unwrap();
+    for (name, backend) in [
+        ("direct", RenderBackend::Direct),
+        (
+            "partitioned",
+            RenderBackend::Partitioned { partition_size: 4 },
+        ),
+    ] {
+        let result = render(&RenderRequest {
+            scene_path: root.join("scene.json"),
+            sofa_path: root.join("listener.sofa"),
+            output_dir: root.join(name),
+            backend,
+            block_size: 2,
+        })
+        .unwrap();
+        assert_eq!(result.hrir_max_tap_count, 3);
+        assert_eq!(result.scene_input_length, 0);
+        assert_eq!(result.tail_samples, 0);
+        assert_eq!(result.output_sample_count, 0);
+        assert!(read_f32_stereo(&root.join(name).join("binaural.wav")).is_empty());
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn temp_root() -> PathBuf {
     std::env::temp_dir().join(format!(
         "openjoc-render-scene-test-{}-{}",
@@ -236,7 +276,7 @@ fn sofa_fixture_with_rate(rate: f64) -> Vec<u8> {
         Var::new(
             "ReceiverPosition",
             vec![dim_id("R"), dim_id("C")],
-            &[0.1, 0.0, 0.0, -0.1, 0.0, 0.0],
+            &[0.0, -0.1, 0.0, 0.0, 0.1, 0.0],
         )
         .attrs(vec![
             text_attr("Type", "cartesian"),

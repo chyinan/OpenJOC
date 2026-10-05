@@ -516,7 +516,7 @@ fn render_to_staging(
     let output_bytes = fs::metadata(&output)?.len();
     let output_hash = hash_file(&output)?;
     let output_samples = scene_end
-        .checked_add(max_taps.saturating_sub(1) as u64)
+        .checked_add(tail as u64)
         .ok_or(RenderSceneError::SourceTimelineOverflow)?;
     let backend_name = match request.backend {
         RenderBackend::Direct => "direct",
@@ -558,7 +558,7 @@ fn render_to_staging(
         }),
         scene_input_length: scene_end,
         hrir_max_tap_count: max_taps,
-        tail_samples: max_taps.saturating_sub(1),
+        tail_samples: tail,
         output_sample_count: output_samples,
         output_wav: "binaural.wav",
         output_format: "IEEE-float32 stereo WAV, FL then FR",

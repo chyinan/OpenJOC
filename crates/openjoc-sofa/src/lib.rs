@@ -1185,9 +1185,12 @@ fn validate_and_build(
     let basis = listener_basis(listener_view, listener_up)?;
     let receiver_var = file.variable("ReceiverPosition")?;
     let receiver_positions = read_fixed_matrix(file, receiver_var, receivers, 3, "metre")?;
+    // SOFA receivers are already listener-local: +X is forward and +Y is
+    // left, regardless of the listener's world position or orientation.
+    // Convert only the axis convention to OpenJOC's +X right / +Y forward.
     let receiver_local = receiver_positions
         .iter()
-        .map(|position| transform(sub(*position, listener_position), basis))
+        .map(|position| CartesianPosition::new(-position.y, position.x, position.z))
         .collect::<Vec<_>>();
     let (left_receiver, right_receiver) = receiver_ears(&receiver_local)?;
 
@@ -2408,12 +2411,18 @@ fn read_delays(
             "Data.Delay must be [R], [1,R], or [M,R]".to_string(),
         ));
     };
-    let units = NetcdfFile::attr_text(&variable.attrs, "Units")
-        .ok_or(SofaError::MissingAttribute("Data.Delay:Units"))?;
-    if !units.to_ascii_lowercase().contains("sample") {
-        return Err(SofaError::InvalidCoordinate(
-            "Data.Delay units must be samples".to_string(),
-        ));
+    // FIR Data.Delay is defined in samples by the convention itself. Some
+    // writers add Units; validate that extension when present, but do not
+    // require it in otherwise standard SOFA files.
+    if let Some(units) = optional_coordinate_attribute(variable, "Units")? {
+        if !matches!(
+            units.trim().to_ascii_lowercase().as_str(),
+            "sample" | "samples"
+        ) {
+            return Err(SofaError::InvalidCoordinate(
+                "Data.Delay units must be samples".to_string(),
+            ));
+        }
     }
     values
         .into_iter()
@@ -2440,6 +2449,24 @@ fn read_delays(
         .collect()
 }
 
+fn optional_coordinate_attribute(
+    variable: &Variable,
+    name: &'static str,
+) -> Result<Option<String>, SofaError> {
+    if !variable
+        .attrs
+        .iter()
+        .any(|attribute| attribute.name == name)
+    {
+        return Ok(None);
+    }
+    NetcdfFile::attr_text(&variable.attrs, name)
+        .map(Some)
+        .ok_or_else(|| {
+            SofaError::InvalidCoordinate(format!("{}:{name} must be text", variable.name))
+        })
+}
+
 fn read_fixed_vec3(
     file: &NetcdfFile<'_>,
     name: &'static str,
@@ -2454,9 +2481,29 @@ fn read_fixed_vec3(
             "{name} must be [3] or [1,3]"
         )));
     }
+    // ListenerView's Type and Units describe both orientation vectors in
+    // SOFA. Accept the standard omission on ListenerUp, while validating any
+    // explicit ListenerUp attributes instead of silently discarding them.
+    let inherited = if name == "ListenerUp" {
+        Some(file.variable("ListenerView")?)
+    } else {
+        None
+    };
+    let attribute = |key| -> Result<Option<String>, SofaError> {
+        if let Some(value) = optional_coordinate_attribute(variable, key)? {
+            return Ok(Some(value));
+        }
+        inherited.map_or(Ok(None), |view| optional_coordinate_attribute(view, key))
+    };
+    if let Some(kind) = attribute("Type")? {
+        if !kind.eq_ignore_ascii_case("cartesian") {
+            return Err(SofaError::InvalidCoordinate(format!(
+                "{name} type must be cartesian"
+            )));
+        }
+    }
     if !required_units.is_empty() {
-        let units = NetcdfFile::attr_text(&variable.attrs, "Units")
-            .ok_or(SofaError::MissingAttribute("listener units"))?;
+        let units = attribute("Units")?.ok_or(SofaError::MissingAttribute("listener units"))?;
         if !units_metre(&units) {
             return Err(SofaError::InvalidCoordinate(format!("{name} units")));
         }

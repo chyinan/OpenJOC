@@ -32,7 +32,7 @@ impl fmt::Display for WaveError {
             Self::OutOfRangeSample { index } => {
                 write!(
                     formatter,
-                    "WAV integer sample is outside [-1, 1] at index {index}"
+                    "WAV sample is outside the output format range at index {index}"
                 )
             }
             Self::SizeOverflow => formatter.write_str("WAV data exceeds RIFF size limits"),
@@ -78,7 +78,7 @@ impl fmt::Display for CafError {
             Self::OutOfRangeSample { index } => {
                 write!(
                     formatter,
-                    "CAF integer sample is outside [-1, 1] at index {index}"
+                    "CAF sample is outside the output format range at index {index}"
                 )
             }
             Self::SizeOverflow => formatter.write_str("CAF data exceeds size limits"),
@@ -1109,7 +1109,13 @@ fn encode_sample(
         return Err(WaveError::NonFiniteSample { index });
     }
     match options.sample_format {
-        SampleFormat::F32 => output.extend_from_slice(&(value as f32).to_le_bytes()),
+        SampleFormat::F32 => {
+            let sample = value as f32;
+            if !sample.is_finite() {
+                return Err(WaveError::OutOfRangeSample { index });
+            }
+            output.extend_from_slice(&sample.to_le_bytes());
+        }
         SampleFormat::F64 => output.extend_from_slice(&value.to_le_bytes()),
         SampleFormat::S16 => {
             let value = quantize_integer(value, 16, options, index)?;

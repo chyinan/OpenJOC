@@ -112,13 +112,18 @@ def run_binary(
     arguments: tuple[str, ...] = ("-version",),
     check: bool = True,
 ) -> tuple[int, str]:
+    environment = hermetic_environment(root, platform_name)
+    if platform_name == "linux-x86_64":
+        # Exercise the shipped public launcher, not a verifier-only setup.
+        environment.pop("LD_LIBRARY_PATH", None)
+        environment.pop("DYLD_LIBRARY_PATH", None)
     completed = subprocess.run(
         [str(path), *arguments],
         cwd=root,
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        env=hermetic_environment(root, platform_name),
+        env=environment,
     )
     output = completed.stdout.decode("utf-8", errors="replace")
     if check and completed.returncode != 0:

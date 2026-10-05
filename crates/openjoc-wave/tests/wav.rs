@@ -298,3 +298,41 @@ fn rejects_invalid_rate_and_nonfinite_samples() {
         Err(WaveError::NonFiniteSample { index: 0 })
     );
 }
+
+#[test]
+fn f32_output_rejects_finite_overflow_without_clipping() {
+    let maximum = f64::from(f32::MAX);
+    for clipping in [Clipping::Reject, Clipping::Hard] {
+        let options = WaveEncodeOptions {
+            sample_format: SampleFormat::F32,
+            clipping,
+            dither: Dither::None,
+        };
+        for value in [2.0 * maximum, -2.0 * maximum] {
+            assert!(matches!(
+                encode_channels(48_000, &[vec![0.0, value]], options),
+                Err(WaveError::OutOfRangeSample { index: 1 })
+            ));
+            let mut writer = WaveWriter::new(Cursor::new(Vec::new()), 48_000, 1, options).unwrap();
+            writer.write_interleaved(&[0.0]).unwrap();
+            assert!(matches!(
+                writer.write_channels(&[&[value]]),
+                Err(WaveError::OutOfRangeSample { index: 1 })
+            ));
+            assert_eq!(writer.frames(), 1);
+            assert_eq!(
+                decode(&writer.finish().unwrap().into_inner())
+                    .unwrap()
+                    .channels[0],
+                [0.0]
+            );
+        }
+        let bytes = encode_channels(48_000, &[vec![maximum, -maximum]], options).unwrap();
+        assert_eq!(decode(&bytes).unwrap().channels[0], [maximum, -maximum]);
+    }
+    let bytes = encode_f64_mono(48_000, &[2.0 * maximum, -2.0 * maximum]).unwrap();
+    assert_eq!(
+        decode(&bytes).unwrap().channels[0],
+        [2.0 * maximum, -2.0 * maximum]
+    );
+}

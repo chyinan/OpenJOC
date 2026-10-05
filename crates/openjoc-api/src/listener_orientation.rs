@@ -650,7 +650,7 @@ mod tests {
         }
         let receivers = file.create_dataset("ReceiverPosition");
         receivers
-            .with_f64_data(&[0.09, 0.0, 0.0, -0.09, 0.0, 0.0])
+            .with_f64_data(&[0.0, -0.09, 0.0, 0.0, 0.09, 0.0])
             .with_shape(&[2, 3]);
         receivers.set_attr("Type", AttrValue::String("cartesian".to_owned()));
         receivers.set_attr("Units", AttrValue::String("metre".to_owned()));

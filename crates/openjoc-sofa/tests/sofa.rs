@@ -795,7 +795,8 @@ fn fixture_with_duplicate_direction(
     if duplicate_direction {
         source[2] = source[0];
     }
-    let receiver = [10.1, 0.0, 0.0, 9.9, 0.0, 0.0];
+    // Receivers are listener-local, even with this translated and rotated listener.
+    let receiver = [0.0, -0.1, 0.0, 0.0, 0.1, 0.0];
     let delay_values = if per_measurement_delay {
         vec![
             delays[0], delays[1], delays[0], delays[1], delays[0], delays[1],
@@ -858,7 +859,8 @@ fn fixture_with_duplicate_direction(
             "ListenerUp",
             vec![dim_id("C")],
             &doubles(&[0.0, 0.0, 1.0]),
-            vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
+            // SOFA shares ListenerView's coordinate metadata with ListenerUp.
+            vec![],
         ),
         Var::new(
             "ReceiverPosition",
@@ -980,7 +982,7 @@ fn dense_binaural_fixture() -> Vec<u8> {
         Var::new(
             "ReceiverPosition",
             vec![dim_id("R"), dim_id("C")],
-            &[-0.1, 0.0, 0.0, 0.1, 0.0, 0.0],
+            &[0.0, 0.1, 0.0, 0.0, -0.1, 0.0],
             vec![text_attr("Type", "cartesian"), text_attr("Units", "metre")],
         ),
         Var::new(

@@ -335,6 +335,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "usage: openjoc export-adm <INPUT|SCENE_DIR> -o <OUTPUT.wav|OUTPUT.bw64> [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n\n",
             "Exports a reconstructed RIFF/RF64 ADM BWF interoperability representation. It does not and cannot recover the original ADM master.\n",
             "Compressed EC3/MP4 input uses production-scale bounded-memory streaming; explicit JSON/scene-directory inputs retain their diagnostic in-memory model.\n",
+            "Existing audio or adjacent .adm-report.json files require --overwrite; .wav and .bw64 with the same stem share that report.\n",
             "When the scene's audio-to-spatial-metadata binding is unresolved, best-effort emits neutral reconstructed signals and records the omission; strict rejects.\n",
         ),
         "validate-adm" => concat!(
@@ -450,15 +451,17 @@ fn export_adm(arguments: &[String], terminal: TerminalCapabilities) -> Result<()
     let input = input.ok_or_else(usage_error)?;
     let output = output.ok_or_else(usage_error)?;
     let report_path = output.with_extension("adm-report.json");
-    if output.exists() && !overwrite {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!(
-                "refusing to overwrite ADM output {}; pass --overwrite explicitly",
-                output.display()
-            ),
-        )
-        .into());
+    for path in [&output, &report_path] {
+        if path.symlink_metadata().is_ok() && !overwrite {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!(
+                    "refusing to overwrite ADM output {}; pass --overwrite explicitly",
+                    path.display()
+                ),
+            )
+            .into());
+        }
     }
     if paths_alias(&input, &output)? || paths_alias(&input, &report_path)? {
         return Err(io::Error::new(
@@ -719,12 +722,20 @@ fn commit_adm_pair(
     report: &Path,
     overwrite: bool,
 ) -> Result<(), Box<dyn Error>> {
-    if !overwrite && output.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "ADM output appeared while export was running",
-        )
-        .into());
+    if !overwrite {
+        // Never replace a destination created after preflight. Hard links make
+        // individual files visible atomically where supported; the portable
+        // create-new/copy fallback can expose a partial file while copying.
+        publish_adm_no_replace(staged_output, output, |from, to| fs::hard_link(from, to))?;
+        if let Err(error) =
+            publish_adm_no_replace(staged_report, report, |from, to| fs::hard_link(from, to))
+        {
+            let _ = fs::remove_file(output);
+            return Err(error.into());
+        }
+        let _ = fs::remove_file(staged_output);
+        let _ = fs::remove_file(staged_report);
+        return Ok(());
     }
     let output_backup = output
         .exists()
@@ -771,6 +782,32 @@ fn commit_adm_pair(
         let _ = fs::remove_file(backup);
     }
     Ok(())
+}
+
+fn publish_adm_no_replace(
+    staged: &Path,
+    destination: &Path,
+    link: impl FnOnce(&Path, &Path) -> io::Result<()>,
+) -> io::Result<()> {
+    match link(staged, destination) {
+        Ok(()) => return Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => return Err(error),
+        Err(_) => {}
+    }
+    // FAT/exFAT and some network filesystems do not support hard links.
+    // create_new preserves no-clobber semantics there as well.
+    let mut source = fs::File::open(staged)?;
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)?;
+    let result = io::copy(&mut source, &mut output).and_then(|_| output.sync_all());
+    drop(output);
+    if result.is_err() {
+        // This destination was created by this call, never a pre-existing file.
+        let _ = fs::remove_file(destination);
+    }
+    result
 }
 
 fn restore_adm_backups(
@@ -5591,6 +5628,93 @@ mod adm_transaction_tests {
         ));
         fs::create_dir(&root).expect("test root");
         root
+    }
+
+    #[test]
+    fn no_replace_copy_fallback_supports_filesystems_without_hard_links() {
+        let root = root("copy-fallback");
+        let staged = root.join(".output.partial");
+        let output = root.join("output.wav");
+        let bytes = vec![42; 256 * 1024];
+        fs::write(&staged, &bytes).unwrap();
+        let unsupported = |_: &std::path::Path, _: &std::path::Path| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "no hard links",
+            ))
+        };
+        super::publish_adm_no_replace(&staged, &output, unsupported).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), bytes);
+        fs::write(&staged, b"replacement").unwrap();
+        let error = super::publish_adm_no_replace(&staged, &output, unsupported).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&output).unwrap(), bytes);
+        assert_eq!(fs::read(&staged).unwrap(), b"replacement");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn no_replace_copy_failure_cleans_only_its_new_destination() {
+        let root = root("copy-failure");
+        let staged = root.join("unreadable-as-file");
+        let output = root.join("output.wav");
+        fs::create_dir(&staged).unwrap();
+        let unsupported = |_: &std::path::Path, _: &std::path::Path| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "no hard links",
+            ))
+        };
+        assert!(super::publish_adm_no_replace(&staged, &output, unsupported).is_err());
+        assert!(!output.exists());
+        fs::write(&output, b"existing output").unwrap();
+        assert!(super::publish_adm_no_replace(&staged, &output, unsupported).is_err());
+        assert_eq!(fs::read(&output).unwrap(), b"existing output");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn no_overwrite_commit_preserves_either_destination_created_after_preflight() {
+        for existing_report in [false, true] {
+            let root = root(if existing_report {
+                "report-race"
+            } else {
+                "output-race"
+            });
+            let output = root.join("new.wav");
+            let report = root.join("new.adm-report.json");
+            let staged_output = root.join(".output.partial");
+            let staged_report = root.join(".report.partial");
+            fs::write(&staged_output, b"new output").unwrap();
+            fs::write(&staged_report, b"new report").unwrap();
+            let occupied = if existing_report { &report } else { &output };
+            fs::write(occupied, b"keep me").unwrap();
+            assert!(
+                commit_adm_pair(&staged_output, &output, &staged_report, &report, false).is_err()
+            );
+            assert_eq!(fs::read(occupied).unwrap(), b"keep me");
+            assert!(!(if existing_report { &output } else { &report }).exists());
+            assert_eq!(fs::read(&staged_output).unwrap(), b"new output");
+            assert_eq!(fs::read(&staged_report).unwrap(), b"new report");
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn no_overwrite_commit_publishes_both_staged_files() {
+        let root = root("no-overwrite-success");
+        let output = root.join("new.wav");
+        let report = root.join("new.adm-report.json");
+        let staged_output = root.join(".output.partial");
+        let staged_report = root.join(".report.partial");
+        fs::write(&staged_output, b"new output").unwrap();
+        fs::write(&staged_report, b"new report").unwrap();
+        commit_adm_pair(&staged_output, &output, &staged_report, &report, false).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), b"new output");
+        assert_eq!(fs::read(&report).unwrap(), b"new report");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

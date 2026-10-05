@@ -199,3 +199,32 @@ fn caf_sample_format_matrix_has_declared_flags_and_little_endian_payload() {
         assert_eq!(parsed.data.len(), 2 * bytes_per_sample);
     }
 }
+
+#[test]
+fn caf_f32_rejects_finite_overflow_and_preserves_maximum() {
+    let maximum = f64::from(f32::MAX);
+    let descriptions = [CafChannelDescription {
+        label: 1,
+        flags: 0,
+        coordinates: [0.0; 3],
+    }];
+    for clipping in [Clipping::Reject, Clipping::Hard] {
+        let mut options = options(SampleFormat::F32);
+        options.clipping = clipping;
+        let mut writer =
+            CafWriter::new(Cursor::new(Vec::new()), 48_000, 1, options, &descriptions).unwrap();
+        writer.write_channels(&[&[maximum, -maximum]]).unwrap();
+        for value in [2.0 * maximum, -2.0 * maximum] {
+            assert!(matches!(
+                writer.write_interleaved(&[value]),
+                Err(openjoc_wave::CafError::OutOfRangeSample { index: 2 })
+            ));
+            assert_eq!(writer.frames(), 2);
+        }
+        let bytes = writer.finish().unwrap().into_inner();
+        assert_eq!(
+            &bytes[bytes.len() - 8..],
+            [f32::MAX.to_le_bytes(), (-f32::MAX).to_le_bytes()].concat()
+        );
+    }
+}
