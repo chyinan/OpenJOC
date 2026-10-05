@@ -971,10 +971,21 @@ impl FfmpegDecoder {
             return Ok(ReceiveOutcome::Frame(frame));
         }
         match self.pump()? {
-            PumpResult::Frame => self.output.pop_front().map_or_else(
-                || Ok(ReceiveOutcome::NeedMoreInput),
-                |frame| Ok(ReceiveOutcome::Frame(frame)),
-            ),
+            PumpResult::Frame => {
+                // The pump can consume a staged AU and return `Frame` as a
+                // signal that its pull-side PCM is ready, before it has
+                // materialized a frame in `self.output`. Pull once here so a
+                // receive call never reports `NeedMoreInput` while bounded
+                // binaural input is queued. Keep this receive-side: send_packet
+                // must not render audio as a side effect.
+                if self.output.is_empty() && self.pull_session_has_pending_input() {
+                    self.pull_one_binaural_frame()?;
+                }
+                self.output.pop_front().map_or_else(
+                    || Ok(ReceiveOutcome::NeedMoreInput),
+                    |frame| Ok(ReceiveOutcome::Frame(frame)),
+                )
+            }
             PumpResult::NotJoc => Ok(ReceiveOutcome::NotJoc),
             PumpResult::Eof => Ok(ReceiveOutcome::EndOfStream),
             PumpResult::Idle => Ok(ReceiveOutcome::NeedMoreInput),
@@ -2636,6 +2647,141 @@ mod tests {
         };
         assert_ne!(static_output, Vec::new());
         assert_eq!(index_frames(&pull_output), index_frames(&static_output));
+    }
+
+    fn listener_orientation_pull_bridge_multiau_config() -> OpenJocConfig {
+        OpenJocConfig {
+            render_mode: RenderMode::Binaural,
+            speaker_layout: "7.1.4".to_owned(),
+            binaural: Some(BinauralConfig::builtin_generic("7.1.4")),
+            validation_profile: ValidationProfile::EtsiStrict,
+            ..OpenJocConfig::default()
+        }
+    }
+
+    fn collect_bridge_sample_pairs(
+        decoder: &mut FfmpegDecoder,
+        drained: bool,
+        max_frame_samples: Option<usize>,
+        backpressure_probe: Option<&[u8]>,
+    ) -> Vec<(i64, u32, u32)> {
+        let mut samples = Vec::new();
+        let mut checked_backpressure = false;
+        loop {
+            match decoder.receive_frame().unwrap() {
+                ReceiveOutcome::Frame(frame) => {
+                    let frame_start = i64::try_from(samples.len()).unwrap();
+                    assert_eq!(frame.pts, Some(frame_start));
+                    assert_eq!(frame.sample_rate, 48_000);
+                    assert_eq!(frame.duration, i64::try_from(frame.nb_samples).unwrap());
+                    if let Some(max_samples) = max_frame_samples {
+                        assert!(frame.nb_samples > 0 && frame.nb_samples <= max_samples);
+                    }
+                    assert_eq!(frame.interleaved_f32.len(), frame.nb_samples * 2);
+                    assert!(
+                        frame
+                            .interleaved_f32
+                            .iter()
+                            .all(|sample| sample.is_finite())
+                    );
+
+                    for (sample_index, pair) in frame.interleaved_f32.chunks_exact(2).enumerate() {
+                        let pts = frame_start + i64::try_from(sample_index).unwrap();
+                        samples.push((pts, pair[0].to_bits(), pair[1].to_bits()));
+                    }
+
+                    // At this point the first chunk for AU 2 was returned at
+                    // PTS 1536. Its remaining samples must still enforce the
+                    // pull queue's bounded input backpressure.
+                    if !checked_backpressure && frame_start == 1536 {
+                        if let Some(backpressure_probe) = backpressure_probe {
+                            assert_eq!(decoder.pending_binaural_input_samples(), Some(1536 - 128));
+                            let retry = decoder
+                                .send_packet(packet(backpressure_probe, Some(8 * 1536)))
+                                .unwrap();
+                            assert_eq!(retry, BridgeStatus::WouldBlock);
+                            checked_backpressure = true;
+                        }
+                    }
+                }
+                ReceiveOutcome::NeedMoreInput => {
+                    assert!(!drained, "drained pull stream stopped before EOF");
+                    if max_frame_samples.is_some() {
+                        assert_eq!(decoder.pending_binaural_input_samples(), Some(0));
+                    }
+                    break;
+                }
+                ReceiveOutcome::EndOfStream => {
+                    assert!(drained, "undrained stream reported EOF");
+                    break;
+                }
+                ReceiveOutcome::NotJoc => panic!("unexpected non-JOC bridge result"),
+            }
+        }
+        if backpressure_probe.is_some() {
+            assert!(checked_backpressure, "AU 2 was not pulled");
+        }
+        samples
+    }
+
+    fn assert_listener_orientation_pull_bridge_multiau_matches_static(drain: bool) {
+        let config = listener_orientation_pull_bridge_multiau_config();
+        let fixture = synthetic_joc_lifecycle_stream();
+        let eight_access_units = &fixture[..8 * 4096];
+        let ninth_access_unit = &fixture[8 * 4096..9 * 4096];
+        let mut static_decoder = FfmpegDecoder::new(config.clone()).unwrap();
+        let mut pull_decoder =
+            FfmpegDecoder::new_with_listener_orientation_pull(config, 128).unwrap();
+
+        assert_eq!(
+            static_decoder
+                .send_packet(packet(eight_access_units, Some(0)))
+                .unwrap(),
+            BridgeStatus::FrameAvailable
+        );
+        assert_eq!(
+            pull_decoder
+                .send_packet(packet(eight_access_units, Some(0)))
+                .unwrap(),
+            BridgeStatus::FrameAvailable
+        );
+        assert_eq!(
+            pull_decoder.output.len(),
+            0,
+            "send must not render pull PCM"
+        );
+        assert_eq!(pull_decoder.pending_binaural_input_samples(), Some(1536));
+
+        if drain {
+            assert_eq!(static_decoder.drain().unwrap(), BridgeStatus::WouldBlock);
+            assert_eq!(pull_decoder.drain().unwrap(), BridgeStatus::FrameAvailable);
+        }
+
+        let static_pcm = collect_bridge_sample_pairs(&mut static_decoder, drain, None, None);
+        let pull_pcm = collect_bridge_sample_pairs(
+            &mut pull_decoder,
+            drain,
+            Some(128),
+            (!drain).then_some(ninth_access_unit),
+        );
+        assert_ne!(pull_pcm.len(), 0);
+        assert_eq!(pull_pcm, static_pcm);
+        if drain {
+            assert!(
+                pull_pcm.len() > 8 * 1536,
+                "drain must emit the reconstruction tail after the submitted AUs"
+            );
+        }
+    }
+
+    #[test]
+    fn listener_orientation_pull_bridge_multiau_receive_preserves_pcm_pts_and_backpressure() {
+        assert_listener_orientation_pull_bridge_multiau_matches_static(false);
+    }
+
+    #[test]
+    fn listener_orientation_pull_bridge_multiau_drain_preserves_pcm_pts() {
+        assert_listener_orientation_pull_bridge_multiau_matches_static(true);
     }
 
     #[test]
