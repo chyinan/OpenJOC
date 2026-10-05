@@ -113,7 +113,7 @@ produce an actual output-frame PTS of `INT64_MIN`, receive returns
 requires reset or flush before further decoding. Rust's `Option<i64>` has no
 such sentinel restriction. This is the
 complete-AU packet API; `openjoc_stream_decoder` retains the stricter
-[packet-stream timestamp contract](../../integration/FFMPEG.md#timestamps).
+[packet-stream timestamp contract](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG.md#timestamps).
 
 ABI 1.2 also provides `openjoc_stream_decoder`, a framework-neutral handle for
 adapters whose packet boundaries are not complete access-unit boundaries. Its

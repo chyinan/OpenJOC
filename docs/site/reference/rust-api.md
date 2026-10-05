@@ -87,7 +87,7 @@ An unrepresentable output-frame PTS, including during drain, returns a render
 error rather than wrapping or clamping.
 Reset, flush, or a discontinuity starts a new segment. This complete-AU API
 permits late anchoring; the FFmpeg packet-stream wrapper retains its stricter
-[untimed-segment contract](../../integration/FFMPEG.md#timestamps).
+[untimed-segment contract](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG.md#timestamps).
 
 Speaker output reports a 609-sample
 delay: the 577-sample QMF/Base-RB delay
