@@ -61,6 +61,9 @@ PTS 使用解码后的采样域。如果第一个数据包的 PTS 是 `P`，逻�
 
 ## 实验性听音者姿态
 
+支持 canonical 22.2：24 声道布局中的 22 个非 LFE 虚拟声源。方向读取共用的 scene topology（包括 FL/FR 的 ±52.5°）；LFE1/LFE2 均不参与 HRIR 准备。内置 D1/D2 的 identity HRIR 与 PCM 精确匹配静态路径。已测姿态覆盖不代表任意姿态或设备延迟保证。
+
+
 `OpenJocSession::new_with_listener_orientation_pull(config, pull_samples)` 显式启用设备无关的 3DoF 双耳姿态路径；默认构造函数仍是固定姿态。`pull_samples` 限定在 `1..=256`。可克隆的 `ListenerOrientationPreparer` 可放到工作线程，它为所有非 LFE 虚拟扬声器准备完整 HRIR 更新，随后在渲染调用之间提交：
 
 ```rust

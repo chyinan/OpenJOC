@@ -809,6 +809,54 @@ impl SpeakerLayoutPreset {
         }
     }
 
+    /// Returns the shared virtual-speaker direction (+X right, +Y front, +Z up).
+    /// LFE outputs and labels outside this preset have no spatial direction.
+    /// Sound System H uses its canonical spherical topology; other presets
+    /// preserve their established binaural directions.
+    pub fn virtual_speaker_direction(&self, label: &str) -> Option<crate::Position3> {
+        let index = self
+            .labels
+            .iter()
+            .position(|candidate| *candidate == label)?;
+        if self.layout.channels()[index].lfe {
+            return None;
+        }
+        if self.name == "22.2" {
+            let anchor = self
+                .layout
+                .topology()
+                .layers
+                .iter()
+                .flat_map(|layer| &layer.rows)
+                .flat_map(|row| &row.anchors)
+                .find(|anchor| anchor.identity == label)?;
+            return Some(crate::Position3 {
+                x: 2.0 * anchor.x - 1.0,
+                y: 1.0 - 2.0 * anchor.y,
+                z: anchor.z / QMAX,
+            });
+        }
+        let (x, y, z) = match label {
+            "FL" => (-1.0, 1.0, 0.0),
+            "FR" => (1.0, 1.0, 0.0),
+            "FC" => (0.0, 1.0, 0.0),
+            "Ls" => (-1.0, 0.0, 0.0),
+            "Rs" => (1.0, 0.0, 0.0),
+            "Lb" => (-1.0, -1.0, 0.0),
+            "Rb" => (1.0, -1.0, 0.0),
+            "TFL" | "Ltf" => (-1.0, 1.0, 1.0),
+            "TFR" | "Rtf" => (1.0, 1.0, 1.0),
+            "TBL" | "Ltr" => (-1.0, -1.0, 1.0),
+            "TBR" | "Rtr" => (1.0, -1.0, 1.0),
+            "Ltm" => (-1.0, 0.0, 1.0),
+            "Rtm" => (1.0, 0.0, 1.0),
+            "Lw" => (-1.0, 0.67767333984375, 0.0),
+            "Rw" => (1.0, 0.67767333984375, 0.0),
+            _ => return None,
+        };
+        Some(crate::Position3 { x, y, z })
+    }
+
     /// Returns the ordered public channel labels.
     #[must_use]
     pub fn channel_labels(&self) -> Vec<&'static str> {

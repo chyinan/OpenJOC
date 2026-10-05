@@ -71,6 +71,13 @@ rendering behavior.
 Experimental means the C surface may evolve during OpenJOC 0.x integration work. It
 does not mean that existing decoder correctness claims are withdrawn.
 
+
+Canonical 22.2 is supported with 22 non-LFE virtual sources in the 24-channel
+layout. Its directions are read from the shared scene topology (including
+FL/FR at ±52.5°); LFE1/LFE2 are excluded from HRIR preparation. Built-in
+D1/D2 identity-pose HRIRs and PCM match the static path. Tested pose coverage
+does not guarantee arbitrary poses or device latency.
+
 ## Ownership and calls
 
 ```c

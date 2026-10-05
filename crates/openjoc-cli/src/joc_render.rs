@@ -1846,12 +1846,17 @@ impl JocBinauralRenderer {
             if preset.layout.channels()[channel_index].lfe {
                 continue;
             }
-            let direction = virtual_speaker_direction(label).ok_or_else(|| {
+            let direction = virtual_speaker_direction(&preset, label).ok_or_else(|| {
                 JocRenderError::InvalidControl(format!(
                     "no binaural direction is defined for public speaker {label}"
                 ))
             })?;
-            let resolved = resolve_hrir_f32(source_bank, direction)?;
+            // Match the API's System H identity-pose coverage search.
+            let resolved = if layout == "22.2" {
+                openjoc_sofa::resolve_hrir_f32_for_listener_orientation(source_bank, direction)?
+            } else {
+                resolve_hrir_f32(source_bank, direction)?
+            };
             entries.push(HrirEntry::new(
                 HrirEntryId::new(channel_index as u64 + 1),
                 direction,
@@ -1899,7 +1904,7 @@ impl JocBinauralRenderer {
             if preset.layout.channels()[channel_index].lfe {
                 continue;
             }
-            let Some(direction) = virtual_speaker_direction(label) else {
+            let Some(direction) = virtual_speaker_direction(&preset, label) else {
                 return Err(JocRenderError::InvalidControl(format!(
                     "no binaural direction is defined for public speaker {label}"
                 )));
@@ -2549,59 +2554,13 @@ impl JocBinauralRenderer {
     }
 }
 
-fn virtual_speaker_direction(label: &str) -> Option<CartesianPosition> {
-    let spherical = |azimuth_degrees: f64, elevation_degrees: f64| {
-        let azimuth = azimuth_degrees.to_radians();
-        let elevation = elevation_degrees.to_radians();
-        CartesianPosition::new(
-            -azimuth.sin() * elevation.cos(),
-            azimuth.cos() * elevation.cos(),
-            elevation.sin(),
-        )
-    };
-    Some(match label {
-        "FL" => CartesianPosition::new(-1.0, 1.0, 0.0),
-        "FR" => CartesianPosition::new(1.0, 1.0, 0.0),
-        "FC" => CartesianPosition::new(0.0, 1.0, 0.0),
-        "Ls" => CartesianPosition::new(-1.0, 0.0, 0.0),
-        "Rs" => CartesianPosition::new(1.0, 0.0, 0.0),
-        "Lb" => CartesianPosition::new(-1.0, -1.0, 0.0),
-        "Rb" => CartesianPosition::new(1.0, -1.0, 0.0),
-        "TFL" | "Ltf" => CartesianPosition::new(-1.0, 1.0, 1.0),
-        "TFR" | "Rtf" => CartesianPosition::new(1.0, 1.0, 1.0),
-        "Ltm" => CartesianPosition::new(-1.0, 0.0, 1.0),
-        "Rtm" => CartesianPosition::new(1.0, 0.0, 1.0),
-        "TBL" | "Ltr" => CartesianPosition::new(-1.0, -1.0, 1.0),
-        "TBR" | "Rtr" => CartesianPosition::new(1.0, -1.0, 1.0),
-        // The public 9.1 wide row is slightly forward of the side row.  Keep
-        // this renderer direction tied to the existing scene geometry's
-        // normalized coordinate convention (+Y front, -Y rear).
-        "Lw" => CartesianPosition::new(-1.0, 0.67767333984375, 0.0),
-        "Rw" => CartesianPosition::new(1.0, 0.67767333984375, 0.0),
-        // ITU-R BS.2051-3 Sound System H midpoint directions. These are the
-        // virtual speaker directions used by the same OpenJOC SOFA path as
-        // the established layouts.
-        "FLc" => spherical(26.25, 0.0),
-        "FRc" => spherical(-26.25, 0.0),
-        "SiL" => spherical(90.0, 0.0),
-        "SiR" => spherical(-90.0, 0.0),
-        "BL" => spherical(122.5, 0.0),
-        "BR" => spherical(-122.5, 0.0),
-        "BC" => spherical(180.0, 0.0),
-        "TpFL" => spherical(52.5, 37.5),
-        "TpFR" => spherical(-52.5, 37.5),
-        "TpFC" => spherical(0.0, 37.5),
-        "TpC" => spherical(0.0, 90.0),
-        "TpBL" => spherical(122.5, 37.5),
-        "TpBR" => spherical(-122.5, 37.5),
-        "TpSiL" => spherical(90.0, 37.5),
-        "TpSiR" => spherical(-90.0, 37.5),
-        "TpBC" => spherical(180.0, 37.5),
-        "BtFL" => spherical(52.5, -22.5),
-        "BtFR" => spherical(-52.5, -22.5),
-        "BtFC" => spherical(0.0, -22.5),
-        _ => return None,
-    })
+fn virtual_speaker_direction(
+    preset: &SpeakerLayoutPreset,
+    label: &str,
+) -> Option<CartesianPosition> {
+    preset
+        .virtual_speaker_direction(label)
+        .map(|direction| CartesianPosition::new(direction.x, direction.y, direction.z))
 }
 
 fn validate_binaural_layout_preset(
@@ -2614,7 +2573,7 @@ fn validate_binaural_layout_preset(
         .enumerate()
         .filter(|(index, _)| !preset.layout.channels()[*index].lfe)
         .filter_map(|(_, label)| {
-            virtual_speaker_direction(label)
+            virtual_speaker_direction(preset, label)
                 .is_none()
                 .then_some((*label).to_owned())
         })
@@ -3982,7 +3941,7 @@ mod tests {
                 Some(
                     HrirEntry::new(
                         HrirEntryId::new(index as u64 + 100),
-                        virtual_speaker_direction(label).unwrap(),
+                        virtual_speaker_direction(&preset, label).unwrap(),
                         HrirPair::new(
                             sample_rate,
                             vec![1.0, 0.25, 0.125],
@@ -4869,6 +4828,34 @@ mod tests {
     }
 
     #[test]
+    fn system_h_builtin_f32_uses_shared_geometry_and_excludes_both_lfes() {
+        for hrtf in [
+            openjoc_sofa::BuiltinHrtf::SadieD1Ku100,
+            openjoc_sofa::BuiltinHrtf::SadieD2Kemar,
+        ] {
+            let loaded = openjoc_sofa::load_builtin_hrir_f32(hrtf).unwrap();
+            let renderer = JocBinauralRenderer::new_with_builtin_f32(
+                "22.2",
+                &loaded.bank,
+                BinauralBackend::Direct,
+                Some(BinauralLfePolicy::Exclude),
+                Some(control(false, 6)),
+                SpatialContributionMode::Full,
+            )
+            .unwrap();
+            let preset = SpeakerLayoutPreset::for_name("22.2").unwrap();
+            assert_eq!(renderer.mappings.len(), 22);
+            for mapping in &renderer.mappings {
+                assert!(!preset.layout.channels()[mapping.channel_index].lfe);
+                assert_eq!(
+                    mapping.direction,
+                    virtual_speaker_direction(&preset, mapping.label).unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn binaural_mapping_uses_public_channel_order_for_every_preset() {
         for layout in JOC_RENDER_SUPPORTED_LAYOUTS
             .into_iter()
@@ -4901,7 +4888,7 @@ mod tests {
             for mapping in &renderer.mappings {
                 assert_eq!(
                     mapping.direction,
-                    virtual_speaker_direction(mapping.label).unwrap()
+                    virtual_speaker_direction(&preset, mapping.label).unwrap()
                 );
             }
         }
@@ -5191,7 +5178,7 @@ mod tests {
             vec![
                 HrirEntry::new(
                     HrirEntryId::new(1),
-                    virtual_speaker_direction("FL").unwrap(),
+                    virtual_speaker_direction(&preset, "FL").unwrap(),
                     HrirPair::new(48_000, vec![1.0], vec![1.0]).unwrap(),
                 )
                 .unwrap(),
