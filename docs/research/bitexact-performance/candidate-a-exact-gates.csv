@@ -1,0 +1,13 @@
+duration_seconds,case,input_sha256,mode,layout,paired_replicates,input_access_units,output_frames,output_samples_per_channel,tail_samples,channels,public_f32_pcm_bytes,core_f64_pcm_bytes,result
+30.016,joc30-2.0,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,speaker,2.0,1,938,939,1440800,1568,2,11526400,,exact PCM + manifest descriptors passed
+30.016,joc30-7.1.4,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,speaker,7.1.4,1,938,939,1440800,1568,12,69158400,,exact PCM + manifest descriptors passed
+30.016,joc30-22.2,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,speaker,22.2,1,938,939,1440800,1568,24,138316800,,exact PCM + manifest descriptors passed
+30.016,joc30-d1-7.1.4,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,binaural-d1,7.1.4,1,938,939,1441023,1791,2,11528184,,exact PCM + manifest descriptors passed
+30.016,core30,a6a22c1e5735bc5674734dc1ab40db735f69aff9fe202439b54a9aeaaf9d3fd9,ordinary-eac3-core,auto,1,938,938,1440768,0,6,34578432,69156864,exact PCM + manifest descriptors passed
+60.000,joc60-2.0,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,speaker,2.0,1,1875,1876,2880032,1568,2,23040256,,exact PCM + manifest descriptors passed
+60.000,joc60-7.1.4,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,speaker,7.1.4,1,1875,1876,2880032,1568,12,138241536,,exact PCM + manifest descriptors passed
+60.000,joc60-22.2,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,speaker,22.2,1,1875,1876,2880032,1568,24,276483072,,exact PCM + manifest descriptors passed
+60.000,joc60-d1-7.1.4,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,binaural-d1,7.1.4,1,1875,1876,2880255,1791,2,23042040,,exact PCM + manifest descriptors passed
+60.000,joc60-d2-22.2,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,binaural-d2,22.2,1,1875,1876,2880255,1791,2,23042040,,exact PCM + manifest descriptors passed
+60.000,joc60-orientation-d1,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,orientation-d1,7.1.4,1,1875,1876,2880255,1791,2,23042040,,exact PCM + manifest descriptors passed
+60.000,core60,0b98eb8c92ad542cbda37c402e420e74f8a9ddd25e72cd440788be110ce4a136,ordinary-eac3-core,auto,1,1875,1875,2880000,0,6,69120000,138240000,exact PCM + manifest descriptors passed

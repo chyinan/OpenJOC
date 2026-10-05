@@ -1,0 +1,106 @@
+{
+  "allocation_profile": {
+    "build": "separate counting-allocator run; not used as timing evidence",
+    "input": "128-AU checked-in lifecycle fixture",
+    "layout_cases": 6
+  },
+  "baseline_commit": "15aefe1baa7b40f37950df252b6dbf6179894d6d",
+  "candidate_change": {
+    "description": "Replace callback-captured DecodedPayloadFrame::clone with existing decode_frame_with_profile_and_binding_profile_to_frame helper; no arithmetic/reordering/profile/reset logic changed",
+    "file": "crates/openjoc-api/src/lib.rs",
+    "sha256": "f7c5f630021ec59eb2d5003a4f9bdf332fd23dcfd088caee9ab9cbd349128ee0"
+  },
+  "candidate_commit": "d3df6bbc7672eec06ccd4652f33806679200e10e",
+  "candidate_commit_created_after_measurement": true,
+  "commands": {
+    "allocations": "python3 scripts/verify_pcm_bitexact.py ... --output-dir \"$RUNS/candidateA-alloc128\" --allocations [six checked-in-fixture cases documented in README]",
+    "exact": "python3 scripts/verify_pcm_bitexact.py ... --output-dir \"$RUNS/candidateA-gate30\" / \"$RUNS/candidateA-gate60\" [case matrices documented in README]",
+    "timing_only": "python3 scripts/verify_pcm_bitexact.py --baseline-root \"$BASELINE\" --candidate-root \"$PWD\" --baseline-target \"$RUNS/target-baseline\" --candidate-target \"$RUNS/target-candidate\" --output-dir \"$RUNS/candidateA-timing60-5x\" --timing-only --repeats 5 [seven cases documented in README]"
+  },
+  "compact_data_files": [
+    "candidate-a-timing60s.csv",
+    "candidate-a-allocations.csv",
+    "candidate-a-exact-gates.csv"
+  ],
+  "date_utc": "2026-10-05",
+  "environment": {
+    "cpu_model": "unavailable; CPU topology is not exposed to the container",
+    "os": "Linux 6.18.44 x86_64",
+    "perf_profiler": "unavailable; perf executable not installed"
+  },
+  "exact_gate": {
+    "duration_30_seconds_cases": 5,
+    "duration_60_seconds_cases": 7,
+    "includes_ordinary_core_f64": true,
+    "integrated_one_bit_mutation_rejected": true,
+    "pcm_comparison": "full byte stream + manifest descriptors; no tolerances"
+  },
+  "external_raw_runs": {
+    "directories": [
+      "candidateA-gate30",
+      "candidateA-gate60",
+      "candidateA-alloc128",
+      "candidateA-timing60-5x"
+    ],
+    "pcm_files": "casewise temporary PCM captures were byte-compared and removed; no giant PCM output is tracked",
+    "relative_run_root": "../openjoc-perf-run"
+  },
+  "harness_commit": "69acffd00d031649f1cb8909954c21e41993042e",
+  "inputs": [
+    {
+      "access_units": 938,
+      "duration_seconds": 30.016,
+      "file": "joc.lifecycle.30s.ec3",
+      "sha256": "a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671"
+    },
+    {
+      "access_units": 1875,
+      "duration_seconds": 60.0,
+      "file": "joc.lifecycle.60s.ec3",
+      "sha256": "8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2"
+    },
+    {
+      "duration_seconds": 30.016,
+      "file": "ordinary.multitone.30s.eac3",
+      "sha256": "a6a22c1e5735bc5674734dc1ab40db735f69aff9fe202439b54a9aeaaf9d3fd9",
+      "syncframes": 938
+    },
+    {
+      "duration_seconds": 60.0,
+      "file": "ordinary.multitone.60s.eac3",
+      "sha256": "0b98eb8c92ad542cbda37c402e420e74f8a9ddd25e72cd440788be110ce4a136",
+      "syncframes": 1875
+    }
+  ],
+  "interpretation": {
+    "allocation_reduction": "consistent -64 alloc calls and -100795 requested bytes/AU across all six API layout/mode cases; reallocs unchanged",
+    "claim": "allocation reduction observed; no CPU speedup demonstrated; excluded from the final gate/report branch and not recommended for merge",
+    "cpu_gain": "not demonstrated; case medians mixed and ranges overlap materially"
+  },
+  "lockfile_sha256": "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7",
+  "record": "Candidate A allocation-focused owned-frame helper experiment; rejected for insufficient demonstrated CPU benefit",
+  "timing_only": {
+    "cases": [
+      "speaker 2.0",
+      "speaker 7.1.4",
+      "speaker 22.2",
+      "D1 binaural 7.1.4",
+      "D2 binaural 22.2",
+      "D1 orientation 7.1.4",
+      "ordinary E-AC-3 core"
+    ],
+    "interleaving": "serial; no overlapping builds or benchmarks",
+    "paired_order": "AB,BA,AB,BA,AB",
+    "repetitions_per_case": 5,
+    "workload": "60-second generated input; candidate and baseline input/config/output shape verified equal"
+  },
+  "toolchain": {
+    "builds": "baseline and candidate built independently in distinct target directories",
+    "cargo": "1.89.0 (c24e10642 2025-06-23)",
+    "cargo_encoded_rustflags": "",
+    "dependencies": "Cargo.lock pinned; no dependencies added",
+    "profile": "release",
+    "rustc": "1.89.0 (29483883e 2025-08-04)",
+    "rustflags": ""
+  }
+}

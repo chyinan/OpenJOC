@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [features]
 orientation-profile = ["openjoc-sofa/orientation-profile"]
+allocation-profile = []
 default = ["embedded-builtin-hrtf"]
 embedded-builtin-hrtf = ["openjoc-sofa/embedded-builtin-hrtf"]
 
