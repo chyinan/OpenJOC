@@ -43,25 +43,27 @@ class PcmBitexactGateTests(unittest.TestCase):
                 self.assertFalse((destination / (prefix.name + ".pcm64le")).exists())
 
     def _make_validator_worktrees(self, root: Path) -> tuple[Path, Path]:
-        baseline = root / "baseline"
-        candidate = root / "candidate"
+        # Match the real gate's canonical-root contract, including Windows
+        # temporary-directory aliases. Keep fixture manifests LF-exact rather
+        # than letting platform text I/O or Git convert their bytes to CRLF.
+        baseline = (root / "baseline").resolve()
+        candidate = (root / "candidate").resolve()
         for repo in (baseline, candidate):
             (repo / "crates/openjoc-api/examples").mkdir(parents=True)
             (repo / "crates/openjoc-api/src").mkdir(parents=True)
             (repo / "crates/openjoc-eac3/examples").mkdir(parents=True)
             (repo / "crates/openjoc-eac3/src").mkdir(parents=True)
             (repo / "crates/openjoc-render/examples").mkdir(parents=True)
-            (repo / "crates/openjoc-api/Cargo.toml").write_text(
-                '[package]\nname = "openjoc-api"\norientation-profile = ["openjoc-sofa/orientation-profile"]\n',
-                encoding="ascii",
+            (repo / "crates/openjoc-api/Cargo.toml").write_bytes(
+                b'[package]\nname = "openjoc-api"\norientation-profile = ["openjoc-sofa/orientation-profile"]\n',
             )
-            (repo / "crates/openjoc-eac3/Cargo.toml").write_text(
-                '[package]\nname = "openjoc-eac3"\nrust-version.workspace = true\n',
-                encoding="ascii",
+            (repo / "crates/openjoc-eac3/Cargo.toml").write_bytes(
+                b'[package]\nname = "openjoc-eac3"\nrust-version.workspace = true\n',
             )
             (repo / "crates/openjoc-api/src/lib.rs").write_text("// frozen API source\n", encoding="ascii")
             (repo / "crates/openjoc-eac3/src/lib.rs").write_text("// frozen core source\n", encoding="ascii")
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "core.autocrlf", "false"], check=True)
             subprocess.run(["git", "-C", str(repo), "config", "user.email", "gate-test@example.invalid"], check=True)
             subprocess.run(["git", "-C", str(repo), "config", "user.name", "Gate Test"], check=True)
             subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
