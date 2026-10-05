@@ -18,6 +18,13 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -c crates/openjoc-capi/examples/c_api_header.cpp \
   -o target/openjoc-c-api-header.o
 
+cc -std=c11 -Wall -Wextra -Werror \
+  -Icrates/openjoc-capi/include \
+  crates/openjoc-capi/tests/orientation_22_2_caller.c \
+  target/debug/libopenjoc_capi.a -ldl -lm \
+  -o target/openjoc-orientation-22-2-caller
+target/openjoc-orientation-22-2-caller
+
 fixture_dir=$(mktemp -d /tmp/openjoc-c-api-fixture.XXXXXX)
 trap 'rm -rf "$fixture_dir"' EXIT
 scripts/generate-player-fixtures.sh "$fixture_dir"
