@@ -369,11 +369,22 @@ def package_gstreamer(args: argparse.Namespace) -> None:
             copy_file(pathlib.Path(args.openjoc_library).resolve(), stage / "lib" / pathlib.Path(args.openjoc_library).name)
         package_notices(stage, "gstreamer-plugin", [{"name": "OpenJOC", "license": "Apache-2.0"}, {"name": "GStreamer runtime", "license": "runtime dependency; not shipped"}])
         write_build_info(stage, "gstreamer-plugin", args.platform, {"gstreamer_runtime_baseline": args.gstreamer_baseline, "plugin": plugin.name, "feature_enabled_build_required": True})
-        write_text(stage / "QUICKSTART.md", "Install the recorded GStreamer runtime, then set GST_PLUGIN_PATH to lib/gstreamer-1.0 and run gst-inspect-1.0 openjocclassify and openjocdec. This plugin is not compatible with arbitrary GStreamer ABI versions.\n")
+        instructions = "Install the recorded GStreamer runtime, then run gst-inspect-1.0 openjocclassify and openjocdec after activation. This plugin is not compatible with arbitrary GStreamer ABI versions.\n"
         if args.platform == "windows-x64":
             write_text(stage / "activate.ps1", "$env:GST_PLUGIN_PATH = (Join-Path $PSScriptRoot 'lib/gstreamer-1.0')\n")
+            instructions += "In PowerShell, run . '/absolute/path/to/package/activate.ps1' before using GStreamer.\n"
         else:
-            write_text(stage / "activate.sh", "#!/bin/sh\nexport GST_PLUGIN_PATH=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)/lib/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}\"\n")
+            write_text(stage / "activate.sh", """#!/usr/bin/env bash
+# Source this file from Bash so the export updates the calling shell.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    printf '%s\\n' 'Source this file in Bash: source "/path/to/package/activate.sh"' >&2
+    exit 1
+fi
+export GST_PLUGIN_PATH="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/lib/gstreamer-1.0${GST_PLUGIN_PATH:+:$GST_PLUGIN_PATH}"
+""")
+            (stage / "activate.sh").chmod(0o755)
+            instructions += 'In Bash, run source "/absolute/path/to/package/activate.sh" (also works from another directory). Executing it as a separate process cannot activate your shell.\n'
+        write_text(stage / "QUICKSTART.md", instructions)
         finish_package(stage, output, f"openjoc-gstreamer-plugin-{version()}-{args.platform}", args.platform, "gstreamer-plugin")
 
 
@@ -389,6 +400,18 @@ def package_ffmpeg(args: argparse.Namespace) -> None:
         copy_file(pathlib.Path(args.ffprobe).resolve(), stage / f"bin/openjoc-ffprobe{executable_suffix}")
         ffmpeg_prefix = pathlib.Path(args.ffmpeg).resolve().parent.parent
         copy_runtime_tree(ffmpeg_prefix / "lib", stage / "lib")
+        if args.platform == "linux-x86_64":
+            # Keep the public commands relocatable without relying on the
+            # caller or qualification harness to set a loader environment.
+            (stage / "libexec").mkdir()
+            for name in ("openjoc-ffmpeg", "openjoc-ffprobe"):
+                (stage / "bin" / name).rename(stage / "libexec" / name)
+                write_text(stage / "bin" / name, "#!/bin/sh\n"
+                           'here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd) || exit\n'
+                           'export LD_LIBRARY_PATH="$here/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\n'
+                           f'exec "$here/libexec/{name}" "$@"\n')
+                (stage / "bin" / name).chmod(0o755)
+
         runtime_closure: dict[str, object] = {"missing": 0, "non_system_dlls": []}
         if args.openjoc_prefix:
             prefix = pathlib.Path(args.openjoc_prefix).resolve()

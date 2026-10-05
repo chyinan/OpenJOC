@@ -72,6 +72,13 @@ replacement. Decode, range, validation, or I/O failure removes new staging and
 does not publish a successful-looking output/report. Existing files are
 preserved when an authorized replacement fails.
 
+`--overwrite` is required if either the audio file or its adjacent
+`.adm-report.json` already exists. Outputs with the same stem and different
+`.wav`/`.bw64` extensions share the report path. Without `--overwrite`,
+publication never replaces an existing destination. Where hard links are
+unavailable, publication copies into an exclusively created file; that file
+can be visible while the copy is in progress.
+
 JOC reconstruction is kept in decoder-domain floating-point form until the
 integer PCM boundary. The public JOC reconstruction equations are linear QMF
 matrix sums and do not establish a `[-1, 1]` PCM invariant; therefore a legal

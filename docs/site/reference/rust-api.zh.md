@@ -47,7 +47,9 @@ canonical 格式是交错的 IEEE-754 `f32`。每个 `OpenJocPcmFrame` 都拥有
 
 ## 时间、延迟、排空与跳转
 
-PTS 使用解码后的采样域。如果第一个数据包的 PTS 是 `P`，逻辑采样点 `n` 的输出会报告 `P + n`；滤波器组或最终联动增益的延迟不会悄悄移动 PTS。扬声器输出报告 609 个采样点的延迟：577 个采样点的 QMF/Base-RB 延迟，加上受支持的 32 采样点因果扬声器阶段块延迟。
+PTS 使用解码后的采样域。如果第一个数据包的 PTS 是 `P`，逻辑采样点 `n` 的输出会报告 `P + n`；滤波器组或最终联动增益的延迟不会悄悄移动 PTS。如果开头的数据包没有 PTS，随后第一个提供 PTS 的数据包会通过减去已解码的输入采样点数量，确定当前片段的时间原点。此前已返回的帧仍不带时间戳；此后返回的帧（包括先前数据包的延迟 PCM）使用推导出的原点。后续提供的 PTS 必须与采样点数量的连续推进一致；省略 PTS 不会清除已有的时间锚点。原点或预期数据包 PTS 超出有符号 64 位范围时，会在解码该数据包之前拒绝输入。输出帧 PTS 无法表示时（包括排空期间），返回渲染错误，不会回绕或钳位。reset、flush 或 discontinuity 会开始新的片段。此完整 AU API 允许后补时间锚点；FFmpeg 数据包流封装仍保留更严格的[无时间戳片段约定](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG.md#timestamps)。
+
+扬声器输出报告 609 个采样点的延迟：577 个采样点的 QMF/Base-RB 延迟，加上受支持的 32 采样点因果扬声器阶段块延迟。
 
 双耳输出不使用扬声器 FinalLinkedGain 阶段。使用内置 HRIR 或 48 kHz 自定义 SOFA 时，`latency_samples` 报告 577 个采样点；其他采样率的自定义 SOFA 会再加上转换滤波器的公共因果延迟。源文件的 `Data.Delay` 保留在 HRIR 中，不计入报告值。这些是公开的同步约定；Dialnorm 和离线静态归一化不会增加音频采样延迟。这样可以明确暴露可用性延迟，而不必让调用方从帧数反向推断。
 
@@ -58,6 +60,12 @@ PTS 使用解码后的采样域。如果第一个数据包的 PTS 是 `P`，逻�
 - `preroll = true` 可以用于预热解码器状态；第一版 ABI 不会自动隐藏这次预热产生的延迟帧。
 
 输出队列有大小上限。调用方必须先接收等待中的 PCM，才能继续推送下一个数据包；否则会返回 `OpenJocStatus::OutputPending`。
+
+## 可寻址 WAV 输出
+
+`openjoc_wave::WaveWriter` 从底层文件或 `Cursor` 的当前字节位置开始写入，支持非零起始位置。基本格式和扩展格式的写入器均相对该起点回填大小，并在实际音频数据末尾添加所需的奇数字节填充。`finish()` 返回的底层对象定位在 WAV 末尾（包括填充）。
+
+调用方必须拥有写入区域：区域内已有字节会被覆盖，不会插入或移动后续内容。前缀以及完整 WAV 之后已有的后缀保持不变；写入器不会截断底层对象。头部、数据写入和最终完成前都会检查偏移运算是否溢出。
 
 ## 实验性听音者姿态
 
@@ -98,8 +106,16 @@ drop(receipt.retired_kernels); // 在实时回调之外释放或回收旧缓冲�
 
 如果需要审计不同前端的配置是否一致，`OpenJocConfig::effective_config_descriptor()` 和 `effective_config_fingerprint()` 会公开经过归一化的会话边界字段。`trace_access_units()` 会记录每组访问单元的精确字节长度、SHA-256、采样域 PTS、采样率，以及独立/从属帧数量。
 
+自定义布局的描述包含按输出顺序排列的声道角色，以及按标识排序的 Fixed/Named 路由向量。路由标识使用长度定界，增益使用精确的 IEEE-754 位表示。因此已有自定义布局的指纹会有意改变；普通预设配置的描述和指纹保持不变。
+
 ## 错误与状态
 
 状态码是数值型的非错误生命周期结果：`NeedMoreInput`、`FrameAvailable`、`OutputPending` 和 `EndOfStream`。Rust 错误是带类型的 `OpenJocError` 值。C 适配器会把它们映射为数值状态码和归属于当前实例的诊断消息。
 
 格式错误的数据包、格式变化、时间戳不连续、配置变化和渲染失败，都不会被悄悄转换成不匹配的 PCM。
+
+## 自定义布局的传输边界 {#custom-layout-transport-boundary}
+
+直接 Rust 会话保留任意经过验证的自定义扬声器名称和几何。FFmpeg 桥接和 C `openjoc_stream_decoder` 则要求每个名称都具有现有的 OpenJOC 到 AVChannel 映射。例如 `Ls`/`SiL` 映射为 `SL`，`Rs`/`SiR` 映射为 `SR`；不会自动接受 FFmpeg 的所有拼写。映射后的标识必须唯一，而且明确指定的 LFE/全频角色必须与对应声道一致。不支持的名称、别名冲突或角色不一致会在构造时、提交音频前被拒绝（Rust 为 `InvalidConfig`，C 流式 API 为 `OPENJOC_STATUS_INVALID_ARGUMENT`）。
+
+可表示的自定义定义优先于预设字符串，并使用保持原顺序的 FFmpeg CUSTOM 声道，即使自定义名称与预设相同或声道数不同也是如此。PCM 顺序不变；桥接不会宣称使用预定义布局，也不会传输自定义扬声器角度。直接 C `openjoc_decoder` 仍支持 Rust 会话所允许的更通用布局。

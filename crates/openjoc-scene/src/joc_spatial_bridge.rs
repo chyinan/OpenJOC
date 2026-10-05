@@ -1280,6 +1280,12 @@ impl SpatialLayout {
         &self.channels
     }
 
+    /// Returns the validated fixed/named route registry in its configured order.
+    #[must_use]
+    pub fn route_vectors(&self) -> &[SpatialRouteVector] {
+        &self.route_vectors
+    }
+
     /// Returns the validated data-only topology consumed by the projector.
     #[must_use]
     pub fn topology(&self) -> &SpatialLayoutTopology {

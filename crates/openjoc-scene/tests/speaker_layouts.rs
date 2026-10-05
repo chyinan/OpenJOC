@@ -924,6 +924,29 @@ fn multilayer_layout_performance_harness() {
 }
 
 #[test]
+fn custom_semantic_lfe_count_uses_roles_not_names() {
+    for subs in 0..=2 {
+        let mut speakers = vec![
+            SpeakerGeometry::full_range("LFE", -30.0, 0.0),
+            SpeakerGeometry::full_range("LFE1", 30.0, 0.0),
+        ];
+        for index in 0..subs {
+            speakers.push(SpeakerGeometry::lfe(
+                format!("subwoofer-{index}"),
+                0.0,
+                -20.0,
+            ));
+        }
+        let layout = SpeakerLayout::custom("roles", speakers).unwrap();
+        let semantic = layout.semantic_channel_layout();
+        assert_eq!(semantic.lfe_count(), subs);
+        assert_eq!(semantic.lfe_index, (subs > 0).then_some(2));
+        assert_eq!(layout.lfe_indices(), (2..2 + subs).collect::<Vec<_>>());
+        assert_eq!(semantic.labels, layout.channel_labels());
+    }
+}
+
+#[test]
 fn binaural_directions_cover_all_presets_and_use_canonical_system_h_geometry() {
     for name in SPEAKER_LAYOUT_PRESET_NAMES {
         let preset = SpeakerLayoutPreset::for_name(name).unwrap();

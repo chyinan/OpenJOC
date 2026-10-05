@@ -76,7 +76,20 @@ until the first AU establishes the stream format.
 
 PTS uses the decoded sample domain. If a first packet has PTS `P`, output for
 logical sample `n` reports `P + n`; the PTS is not silently moved by the
-filterbank or final linked-gain delay. Speaker output reports a 609-sample
+filterbank or final linked-gain delay. If initial packets omit PTS, the first
+later packet with PTS anchors the segment by subtracting the input samples
+already decoded. Frames returned before that anchor remain untimestamped;
+frames returned afterward, including delayed PCM from earlier packets, use the
+inferred origin. Later supplied PTS must match the sample-count continuation;
+omitted PTS does not clear an established anchor. An origin or expected packet
+PTS outside the signed 64-bit range is rejected before decoding that packet.
+An unrepresentable output-frame PTS, including during drain, returns a render
+error rather than wrapping or clamping.
+Reset, flush, or a discontinuity starts a new segment. This complete-AU API
+permits late anchoring; the FFmpeg packet-stream wrapper retains its stricter
+[untimed-segment contract](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG.md#timestamps).
+
+Speaker output reports a 609-sample
 delay: the 577-sample QMF/Base-RB delay
 plus the admitted 32-sample causal speaker-stage block. Binaural output reports
 577 samples for built-in or 48 kHz custom HRIRs because it does not use the
@@ -99,6 +112,19 @@ engineer it from frame counts.
 
 The output queue is bounded. A caller must receive pending PCM before pushing
 another packet; `OpenJocStatus::OutputPending` is returned otherwise.
+
+## Seekable WAV output
+
+`openjoc_wave::WaveWriter` starts at the sink's current byte position, including
+nonzero positions in a file or `Cursor`. Basic and extensible writers patch
+sizes relative to that origin and place any odd-byte PCM padding at the actual
+audio-data end. `finish()` returns the sink positioned immediately after the
+WAV, including padding.
+
+The caller must own the span being written: existing bytes in that span are
+overwritten, not inserted or shifted. Prefix bytes and any existing suffix
+beyond the completed WAV stay untouched; the writer does not truncate the sink.
+Offset arithmetic is checked before header/data writes and finalization.
 
 ## Policies
 
@@ -206,6 +232,10 @@ waveform while leaving the preceding identity segment unchanged.
 
 For frontend parity audits, `OpenJocConfig::effective_config_descriptor()` and
 `effective_config_fingerprint()` expose the normalized session-boundary fields.
+Custom-layout descriptors include channel roles in output order and fixed/named
+route vectors sorted by identity, with length-framed identities and exact IEEE-754
+gain bits. This intentionally changes existing custom-layout fingerprints;
+ordinary preset configurations retain their previous descriptors/fingerprints.
 `trace_access_units()` records each grouped AU's exact byte length, SHA-256,
 sample-domain PTS, rate, and independent/dependent frame counts.
 
@@ -218,3 +248,20 @@ instance-owned diagnostic message.
 
 Malformed packets, format changes, timestamp discontinuities, profile changes,
 and render failures are not silently converted into mismatched PCM.
+
+## Custom-layout transport boundary
+
+Direct Rust sessions preserve arbitrary validated custom speaker names and geometry.
+The FFmpeg bridge (and C `openjoc_stream_decoder`) instead requires each name to
+have an existing OpenJOC-to-AVChannel mapping. For example `Ls`/`SiL` map to `SL`
+and `Rs`/`SiR` to `SR`; literal FFmpeg spellings are not automatically accepted.
+Mapped identities must be unique, and each explicit LFE/full-range role must
+agree with its mapped channel. Unsupported names, alias collisions, or conflicting
+roles fail at construction before audio is submitted (`InvalidConfig` in Rust;
+`OPENJOC_STATUS_INVALID_ARGUMENT` in the C stream API).
+
+Representable custom definitions take precedence over the preset string and use
+ordered FFmpeg CUSTOM channels, including when their name resembles a preset or
+their channel count differs. PCM order is preserved; the bridge does not claim a
+predefined layout or transmit the custom speaker angles. Direct C
+`openjoc_decoder` retains the more general Rust-session layout support.

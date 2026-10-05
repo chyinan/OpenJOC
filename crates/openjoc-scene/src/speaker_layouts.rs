@@ -168,6 +168,8 @@ pub struct SemanticChannelLayout {
     pub labels: Vec<String>,
     pub lfe_index: Option<usize>,
     wav_channel_mask: Option<u32>,
+    // Custom geometry supplies roles; legacy constructors retain label-based counting.
+    role_lfe_count: Option<usize>,
 }
 
 impl SemanticChannelLayout {
@@ -184,6 +186,7 @@ impl SemanticChannelLayout {
             labels: labels.into_iter().map(Into::into).collect(),
             lfe_index,
             wav_channel_mask: None,
+            role_lfe_count: None,
         }
     }
 
@@ -198,6 +201,7 @@ impl SemanticChannelLayout {
             labels: labels.into_iter().map(Into::into).collect(),
             lfe_index,
             wav_channel_mask: Some(wav_channel_mask),
+            role_lfe_count: None,
         }
     }
 
@@ -217,10 +221,12 @@ impl SemanticChannelLayout {
     /// layout. This remains independent of any container channel order.
     #[must_use]
     pub fn lfe_count(&self) -> usize {
-        self.labels
-            .iter()
-            .filter(|label| matches!(label.as_str(), "LFE" | "LFE1" | "LFE2" | "low-frequency"))
-            .count()
+        self.role_lfe_count.unwrap_or_else(|| {
+            self.labels
+                .iter()
+                .filter(|label| matches!(label.as_str(), "LFE" | "LFE1" | "LFE2" | "low-frequency"))
+                .count()
+        })
     }
 }
 
@@ -507,11 +513,12 @@ impl SpeakerLayout {
             .iter()
             .map(|position| [position[0] as f32, position[1] as f32, position[2] as f32])
             .collect::<Vec<_>>();
-        let semantic = SemanticChannelLayout::without_wav_mapping(
+        let mut semantic = SemanticChannelLayout::without_wav_mapping(
             name.clone(),
             labels.clone(),
             lfe_indices.first().copied(),
         );
+        semantic.role_lfe_count = Some(lfe_indices.len());
         Ok(Self {
             name,
             labels,

@@ -53,7 +53,16 @@ OpenJOC integration patch hash are mandatory manifest fields; Windows
 The plugin pack contains the authoritative feature-enabled `gst-plugin-openjoc`
 library. It does not bundle an arbitrary GStreamer runtime. The tested runtime
 baseline is recorded in `BUILD_INFO`; users install that matching runtime and
-activate the extracted plugin directory with `activate.sh` or `activate.ps1`.
+activate the extracted plugin directory in the shell you will use for GStreamer.
+On Linux and macOS, use Bash and source the script (do not execute it):
+
+```bash
+source "/absolute/path/to/extracted package/activate.sh"
+gst-inspect-1.0 openjocdec
+```
+
+This works from any directory and preserves existing `GST_PLUGIN_PATH` entries.
+On Windows, run `. 'C:\path\to\extracted package\activate.ps1'` in PowerShell.
 
 ## SDK
 

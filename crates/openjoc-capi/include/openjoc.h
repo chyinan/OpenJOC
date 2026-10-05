@@ -245,7 +245,14 @@ openjoc_status openjoc_decoder_config_init_v1_6(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_config_init_v1_7(openjoc_decoder_config *config);
 openjoc_status openjoc_decoder_create(const openjoc_decoder_config *config, openjoc_decoder **output);
 void openjoc_decoder_destroy(openjoc_decoder *decoder);
+/* PTS is the first sample of this complete AU; OPENJOC_NO_PTS omits it.
+ * The first provided PTS anchors the segment, subtracting previously decoded
+ * samples. Earlier returned timestamps stay unchanged. Later PTS must match
+ * sample-count continuation; an unrepresentable origin/expected PTS is rejected.
+ * Reset/flush/discontinuity clears the anchor. Stream-decoder rules differ. */
 openjoc_status openjoc_decoder_send_packet(openjoc_decoder *decoder, const uint8_t *data, size_t data_len, int64_t pts_samples, uint32_t flags);
+/* An actual output PTS equal to OPENJOC_NO_PTS is unrepresentable in C:
+ * receive returns RENDER_ERROR without writing output and requires reset/flush. */
 openjoc_status openjoc_decoder_receive_frame(openjoc_decoder *decoder, openjoc_pcm_frame *output);
 openjoc_status openjoc_decoder_drain(openjoc_decoder *decoder);
 openjoc_status openjoc_decoder_flush(openjoc_decoder *decoder);

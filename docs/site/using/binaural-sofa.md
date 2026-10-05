@@ -59,7 +59,15 @@ With `equal-power-dual-mono`, the LFE receives the same added delay, including
 its drained tail, to preserve timing relative to the spatial channels.
 
 Standard fixed `ReceiverPosition [R,C,1]` and `Data.Delay [1,R]` layouts are
-accepted. Each HDF5 chunk must decompress to at most 16 MiB, further limited
+accepted. Receiver positions are listener-local; rotating or translating the
+listener does not change the ear assignment. `ListenerUp` inherits coordinate
+type and units from `ListenerView` when its own attributes are omitted.
+`Data.Delay` is in samples even without a `Units` attribute. Explicit incompatible
+coordinate or delay units are rejected. Listener positions and orientation
+vectors must use Cartesian coordinates in metres; spherical listener metadata
+is not currently supported.
+
+Each HDF5 chunk must decompress to at most 16 MiB, further limited
 by the configured file-byte and coefficient budgets. Oversized chunks are
 rejected before decompression.
 

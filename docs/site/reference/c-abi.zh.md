@@ -11,6 +11,8 @@ ABI 版本为 `1.7-experimental`，与 OpenJOC 软件包版本彼此独立。重
 
 ABI 1.4 在 `openjoc_decoder_config` 中追加了 `custom_speaker_layout`。需要使用自定义几何时，把它设为内存中的 `openjoc_custom_speaker_layout`；其中有序的 `openjoc_custom_speaker` 数组包含有限的方位角/仰角（单位为度），以及 `OPENJOC_SPEAKER_FULL_RANGE` 或 `OPENJOC_SPEAKER_LFE` 角色。描述结构和其中的所有字符串只在 `openjoc_decoder_create` 调用期间借用；解码器会复制经过验证的布局，并通过输出标签报告相同的顺序。原有调用方将此字段留空即可继续使用预设行为。自定义布局的约定、坐标规则、校验限制以及 WAV/CAF 元数据边界，记录在[自定义扬声器布局](../using/custom-speaker-layouts.md)中。
 
+流式 API 的传输范围比直接 `openjoc_decoder` 更窄：`openjoc_stream_decoder_create` 要求自定义名称具有现有的 OpenJOC 到 FFmpeg 声道映射、映射后标识唯一，并且 LFE/全频角色一致。可表示的自定义定义保留原顺序并优先于预设字段；不支持的名称、别名冲突或角色不一致会在创建时、提交音频前返回 `OPENJOC_STATUS_INVALID_ARGUMENT`。流式 API 报告 FFmpeg 声道标签，不传输自定义角度。详见[自定义布局传输边界](rust-api.zh.md#custom-layout-transport-boundary)。
+
 `openjoc_decoder_config_init()` 仍是对旧版本安全的 ABI 1.3 前缀初始化函数，不会写入 ABI 1.4 或之后追加的字段。ABI 1.4 调用方使用 `openjoc_decoder_config_init_v1_4()` 初始化自定义布局字段；ABI 1.6 调用方使用 `openjoc_decoder_config_init_v1_6()` 初始化精确的 v1.6 前缀并选择 HRTF；ABI 1.7 调用方使用 `openjoc_decoder_config_init_v1_7()` 初始化完整结构。保留的 v1.6 对齐字段可防止旧结构尾部填充被误读为启用新功能。
 ABI 1.5 新增了 `openjoc_stream_decoder` 的只读 `openjoc_live_inspection_snapshot`。它报告同一条带内解码路径观察到的 programme 布局、重建载体、验证状态、对象/复杂度、EMDF、动态场景、AU 和时间戳信息；实时覆盖明确区分 `partial` 与 `complete_continuous`，seek、flush 或 reset 会开始新的观察 epoch。
 
@@ -42,6 +44,8 @@ openjoc_decoder_destroy(decoder);
 ```
 
 解码器是一个不透明句柄。数据包内存只在 `openjoc_decoder_send_packet` 调用期间借用，不会被保留。PCM 内存由解码器拥有，在该句柄下一次 send、receive、flush、reset 或 destroy 之前保持有效。需要更长生命周期的应用必须复制帧数据。多个句柄彼此独立。
+
+对于 `openjoc_decoder_send_packet`，`pts_samples` 表示数据包第一个采样点的位置；`OPENJOC_NO_PTS` 表示省略该数据包的时间戳。即使前面的数据包没有时间戳，第一个提供的 PTS 仍会通过减去已解码的采样点数量来确定当前片段的时间原点。此前已返回或复制的帧时间戳保持不变；后续输出（包括先前数据包的延迟 PCM）使用该原点。后续提供的 PTS 必须与采样点数量的连续推进一致。原点或预期数据包 PTS 无法表示时，在解码之前拒绝输入；输出帧 PTS 无法表示时，返回渲染错误，不会回绕或钳位。reset、flush 或 discontinuity 清除时间锚点。`INT64_MIN` 专用于 `OPENJOC_NO_PTS`：如果后补的时间锚点使输出帧的实际 PTS 为 `INT64_MIN`，receive 返回 `OPENJOC_STATUS_RENDER_ERROR`，不改写输出帧；句柄必须经过 reset 或 flush 才能继续解码。Rust 的 `Option<i64>` 没有这一哨兵值限制。这是完整 AU 数据包 API 的约定；`openjoc_stream_decoder` 仍采用更严格的[数据包流时间戳约定](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG.md#timestamps)。
 
 ABI 1.2 还提供 `openjoc_stream_decoder`，供数据包边界不是完整访问单元边界的适配器使用。它的 `openjoc_stream_decoder_send_chunk()` 接受任意压缩字节、可选的 1/48000 采样域 PTS，以及已有的不连续/预滚标志。这个句柄复用 FFmpeg 外部桥接的单个、上限为 131,072 字节的组装器、JOC 正向识别、时间戳模型、输出队列、语义声道置换和延迟创建的 `OpenJocSession`。它支持一个数据块包含拆分的访问单元和多个访问单元，但不会暴露任何框架专用类型。
 
