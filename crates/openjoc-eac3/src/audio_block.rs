@@ -3910,7 +3910,7 @@ fn parse_following_channel_bandwidths(
             codes.push(Some(code));
             ends.push(channel_end_mantissa(code)?);
         } else if coupled {
-            let end = coupling_end_mantissa(frame, coupling, channel)?;
+            let end = coupling_end_mantissa(coupling, channel)?;
             codes.push(None);
             ends.push(end);
         } else if spx_active {
@@ -3931,7 +3931,6 @@ fn parse_following_channel_bandwidths(
 }
 
 fn coupling_end_mantissa(
-    frame: &AudioFrameInformation,
     coupling: Option<&CouplingInformation>,
     channel: usize,
 ) -> Result<usize, Eac3Error> {
@@ -3945,28 +3944,17 @@ fn coupling_end_mantissa(
     if !active {
         return Err(Eac3Error::FrameSizeOverflow);
     }
-    match (frame.bsi.header.stream_type, coupling) {
-        (StreamType::LegacyIndependent, CouplingInformation::Standard(info)) => {
-            usize::from(info.begin_frequency_code)
-                .checked_mul(12)
-                .and_then(|value| value.checked_add(37))
-                .ok_or(Eac3Error::InvalidCouplingRange {
-                    begin: i16::from(info.begin_frequency_code),
-                    end: i16::from(info.end_frequency_code),
-                })
-        }
-        (_, CouplingInformation::Standard(info)) => {
-            let end_code = i16::from(info.end_frequency_code) + 3;
-            usize::try_from(end_code)
-                .ok()
-                .and_then(|value| value.checked_mul(12))
-                .and_then(|value| value.checked_add(37))
-                .ok_or(Eac3Error::InvalidCouplingRange {
-                    begin: i16::from(info.begin_frequency_code),
-                    end: i16::from(info.end_frequency_code),
-                })
-        }
-        (_, CouplingInformation::Enhanced(info)) => ENHANCED_COUPLING_SUBBAND_MANTISSA
+    match coupling {
+        // E.2.3.3 uses 6.1.3 for standard coupling: coupled full-bandwidth channel
+        // exponents stop at cplstrtmant, in both AC-3 and E-AC-3.
+        CouplingInformation::Standard(info) => usize::from(info.begin_frequency_code)
+            .checked_mul(12)
+            .and_then(|value| value.checked_add(37))
+            .ok_or(Eac3Error::InvalidCouplingRange {
+                begin: i16::from(info.begin_frequency_code),
+                end: i16::from(info.end_frequency_code),
+            }),
+        CouplingInformation::Enhanced(info) => ENHANCED_COUPLING_SUBBAND_MANTISSA
             .get(usize::from(info.end_subband))
             .copied()
             .ok_or(Eac3Error::InvalidCouplingRange {
