@@ -9,6 +9,7 @@ on:
       - "crates/openjoc-capi/**"
       - "crates/openjoc-ffmpeg/**"
       - "crates/openjoc-qmf/**"
+      - "crates/openjoc-render/**"
       - "integrations/ffmpeg/native/**"
 
 permissions:
