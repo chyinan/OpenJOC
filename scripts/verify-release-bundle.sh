@@ -95,7 +95,7 @@ case $(uname -m) in
         ;;
 esac
 
-help_output=$($bundle_root/bin/openjoc --help)
+help_output=$("$bundle_root/bin/openjoc" --help)
 case "$help_output" in
     "OpenJOC $version"*) ;;
     *)

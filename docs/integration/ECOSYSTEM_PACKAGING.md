@@ -72,3 +72,24 @@ direct compiler, pkg-config, and `find_package(OpenJOC CONFIG)` consumers; on
 Windows the C ABI and each compiled consumer receive a recursive PE closure
 audit and hermetic runtime smoke. The ABI is experimental 1.5 during the
 0.x release line; the package version does not change the ABI.
+
+### macOS FFmpeg relocation and signing
+
+The standalone FFmpeg packager rewrites bundled Mach-O dependencies to direct
+`@loader_path`-relative paths and removes build-time rpaths. Apple system library
+and framework dependencies remain external; an unbundled non-system dependency
+is a packaging error. Run packaging on macOS with `otool`, `install_name_tool`,
+and `codesign` available. Staged dylibs and executables are ad-hoc signed after
+all binary mutations and before checksums are generated. This replaces any input
+signature; it does not provide Developer ID signing or notarization.
+
+The extracted-package verifier checks dependency paths and signatures, then
+executes both public commands without `DYLD_LIBRARY_PATH` or `LD_LIBRARY_PATH`.
+The scripts CI macOS lane also compiles a native transitive dylib fixture,
+packages it, deletes its original build prefix, and runs the extracted commands
+from a path containing spaces. Fixture tests on Linux do not qualify a macOS
+release: the native macOS lane and real FFmpeg ecosystem smoke must pass.
+
+Source staging renders `openjoc.pc` from the resolved `openjoc-capi` Cargo package
+version, so the pkg-config version follows workspace version updates. This step
+requires Python 3 as well as Cargo.

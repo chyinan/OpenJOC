@@ -75,6 +75,14 @@ case "$(uname -s)" in
         ;;
 esac
 
-sed "s|@PREFIX@|$stage_prefix|g" \
-    "$repo_root/crates/openjoc-capi/openjoc.pc.in" \
-    > "$stage_prefix/lib/pkgconfig/openjoc.pc"
+# Use Cargo's resolved package version, including workspace inheritance.
+# Python replacement also preserves literal &, |, and backslashes in prefixes.
+cargo metadata --manifest-path "$repo_root/Cargo.toml" --format-version 1 --no-deps \
+    | python3 -c '
+import json, pathlib, sys
+metadata = json.load(sys.stdin)
+version = next(p["version"] for p in metadata["packages"] if p["name"] == "openjoc-capi")
+template = pathlib.Path(sys.argv[1]).read_text()
+pathlib.Path(sys.argv[3]).write_text(template.replace("@PREFIX@", sys.argv[2]).replace("@VERSION@", version))
+' "$repo_root/crates/openjoc-capi/openjoc.pc.in" "$stage_prefix" \
+    "$stage_prefix/lib/pkgconfig/openjoc.pc"

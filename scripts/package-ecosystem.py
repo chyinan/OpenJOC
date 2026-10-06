@@ -22,6 +22,15 @@ import tarfile
 import tempfile
 import zipfile
 
+_MACOS_SPEC = importlib.util.spec_from_file_location(
+    "openjoc_macos_package", pathlib.Path(__file__).with_name("macos_package.py")
+)
+if _MACOS_SPEC is None or _MACOS_SPEC.loader is None:
+    raise RuntimeError("unable to load Mach-O relocation implementation")
+_MACOS = importlib.util.module_from_spec(_MACOS_SPEC)
+_MACOS_SPEC.loader.exec_module(_MACOS)
+
+
 _PLAYER_PACKAGE_SPEC = importlib.util.spec_from_file_location(
     "openjoc_player_package", pathlib.Path(__file__).with_name("player-package.py")
 )
@@ -246,6 +255,9 @@ def write_zip(root: pathlib.Path, output: pathlib.Path) -> None:
 
 def finish_package(stage: pathlib.Path, output: pathlib.Path, base_name: str, platform: str, kind: str) -> None:
     sanitize_private(stage)
+    if platform == "macos-arm64" and kind == "ffmpeg":
+        _MACOS.verify(stage)
+        _MACOS.sign(stage)
     scan_private(stage)
     write_sha256sums(stage)
     extension = ".zip" if platform == "windows-x64" else ".tar.gz"
@@ -435,6 +447,10 @@ def package_ffmpeg(args: argparse.Namespace) -> None:
                 )
             else:
                 copy_runtime_tree(prefix / "bin", stage / "bin")
+        if args.platform == "macos-arm64":
+            _MACOS.relocate(stage)
+            runtime_closure = {"missing": 0, "relocation": "loader-relative",
+                               "signing": "ad-hoc; not Developer ID signed or notarized"}
         ffmpeg_source = pathlib.Path(args.ffmpeg_source).resolve()
         license_file = ffmpeg_source / "LICENSE.md"
         if not license_file.is_file():

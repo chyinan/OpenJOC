@@ -197,7 +197,8 @@ case "$platform" in
             --disable-doc --disable-debug --disable-autodetect \
             --disable-static --enable-shared --enable-version3 \
             --enable-libopenjoc --disable-ffplay --enable-ffmpeg --enable-ffprobe --disable-network \
-            --enable-videotoolbox --enable-audiotoolbox)
+            --enable-videotoolbox --enable-audiotoolbox \
+            --extra-ldflags="-Wl,-headerpad_max_install_names")
         make -C "$work/build" -j"${CARGO_BUILD_JOBS:-2}"
         make -C "$work/build" install
         echo '::endgroup::'

@@ -396,3 +396,19 @@ The instrumented FFmpeg 22.2 run attributed 83.683 s to `OpenJocSession`,
 to packet timestamp/staging work. These are single-run development numbers,
 not cross-machine performance guarantees. Compressed staging remains capped at
 128 KiB; the wrapper retains no whole-program PCM.
+
+## Diagnostic history and stream completion
+
+Rust bridges retain per-AU diagnostic traces by default for compatibility.
+Call `take_traces()` regularly to consume that history, or call
+`set_trace_collection_enabled(false)` to release it and stop collecting it.
+The setting survives reset; re-enabling starts a new history without restoring
+older entries. Disabling traces does not change PCM or aggregate live inspection.
+The C stream API disables this history because it exposes aggregate inspection,
+not a trace-consumption API, so normal C playback does not retain per-AU hashes.
+
+A single drain request followed by receives through `EndOfStream` finalizes live
+inspection coverage. A second drain is unnecessary; streams restarted at a
+nonzero timestamp after reset still report partial coverage. Reported bridge
+latency includes causal custom-SOFA
+resampling delay, including before the first packet and after reset.

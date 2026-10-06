@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        os: [ubuntu-24.04, windows-2025, macos-14]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

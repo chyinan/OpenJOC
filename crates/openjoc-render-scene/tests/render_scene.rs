@@ -5,6 +5,91 @@ use openjoc_sofa::{SofaLoadLimits, parse_simple_free_field_hrir};
 use std::{fs, path::Path, path::PathBuf};
 
 #[test]
+fn relative_scene_paths_resolve_sources_and_render_identically() {
+    const CHILD: &str = "OPENJOC_SCENE_PATH_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        // Isolate the working directory in a subprocess so parallel tests are unaffected.
+        let root = temp_root();
+        fs::create_dir_all(&root).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "relative_scene_paths_resolve_sources_and_render_identically",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        fs::remove_dir_all(root).unwrap();
+        assert!(
+            output.status.success(),
+            "child test failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    let root = std::env::current_dir().unwrap();
+    let sofa_bytes = sofa_fixture();
+    let direction = parse_simple_free_field_hrir(&sofa_bytes, SofaLoadLimits::default())
+        .unwrap()
+        .bank
+        .entries()[0]
+        .direction();
+    fs::write("listener.sofa", sofa_bytes).unwrap();
+    let scene_json = format!(
+        r#"{{"schema":"{SCENE_SCHEMA}","sample_rate_hz":48000,"source_semantics":"explicit_spatial_sources","sources":[{{"id":"voice","input_wav":"audio/source.wav","position":{{"x":{},"y":{},"z":{}}},"gain":1.0}}]}}"#,
+        direction[0], direction[1], direction[2]
+    );
+    for directory in [&root, &root.join("nested")] {
+        fs::create_dir_all(directory.join("audio")).unwrap();
+        write_pcm16_mono(&directory.join("audio/source.wav"), 48_000, &[0.25]);
+        fs::write(directory.join("scene.json"), &scene_json).unwrap();
+    }
+    let mut output_hashes = Vec::new();
+    for (index, scene_path) in [
+        PathBuf::from("scene.json"),
+        PathBuf::from("./scene.json"),
+        root.join("scene.json"),
+        PathBuf::from("nested/scene.json"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (_, sources, _) = openjoc_render_scene::load_scene(
+            &scene_path,
+            openjoc_render_scene::RenderSceneLoadLimits::default(),
+        )
+        .unwrap();
+        let expected_root = if index == 3 {
+            root.join("nested")
+        } else {
+            root.clone()
+        };
+        assert_eq!(
+            sources,
+            [expected_root
+                .join("audio/source.wav")
+                .canonicalize()
+                .unwrap()]
+        );
+        let result = render(&RenderRequest {
+            scene_path,
+            sofa_path: PathBuf::from("listener.sofa"),
+            output_dir: root.join(format!("output-{index}")),
+            backend: RenderBackend::Direct,
+            block_size: 2,
+        })
+        .unwrap();
+        assert_eq!(result.output_sample_count, 3);
+        output_hashes.push(result.output_sha256);
+    }
+    assert!(output_hashes.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
 fn direct_and_partitioned_render_same_scene_with_complete_tail() {
     let root = temp_root();
     fs::create_dir_all(&root).unwrap();
