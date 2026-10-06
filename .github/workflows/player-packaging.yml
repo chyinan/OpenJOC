@@ -36,6 +36,7 @@ on:
       - "integrations/mpv/**"
       - "crates/openjoc-capi/**"
       - "crates/openjoc-ffmpeg/**"
+      - "crates/openjoc-qmf/**"
 
 permissions:
   contents: read

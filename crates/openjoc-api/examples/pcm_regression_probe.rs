@@ -1,7 +1,7 @@
 //! Bit-exact API probe used by `scripts/verify_pcm_bitexact.py`.
 //!
 //! Usage: pcm_regression_probe INPUT MODE LAYOUT OUTPUT_PREFIX [--stage|--alloc] [--timing-only]
-//! Modes: speaker, binaural-d1, binaural-d2, orientation-d1, orientation-d2,
+//! Modes: speaker, stereo, binaural-d1, binaural-d2, orientation-d1, orientation-d2,
 //!        pull-d1, pull-d2. Output PCM is interleaved f32 little-endian.
 //!
 //! Timing-only mode black-boxes and drops returned PCM inside the measured
@@ -106,6 +106,7 @@ fn allocation_end() -> AllocationCounts {
 #[derive(Clone, Copy, Debug)]
 enum ProbeMode {
     Speaker,
+    Stereo,
     Binaural(BuiltinHrtf),
     Orientation(BuiltinHrtf),
     Pull(BuiltinHrtf),
@@ -115,6 +116,7 @@ impl ProbeMode {
     fn parse(value: &str) -> Result<Self, Box<dyn Error>> {
         match value {
             "speaker" => Ok(Self::Speaker),
+            "stereo" => Ok(Self::Stereo),
             "binaural-d1" => Ok(Self::Binaural(BuiltinHrtf::SadieD1Ku100)),
             "binaural-d2" => Ok(Self::Binaural(BuiltinHrtf::SadieD2Kemar)),
             "orientation-d1" => Ok(Self::Orientation(BuiltinHrtf::SadieD1Ku100)),
@@ -128,6 +130,7 @@ impl ProbeMode {
     fn name(self) -> &'static str {
         match self {
             Self::Speaker => "speaker",
+            Self::Stereo => "stereo",
             Self::Binaural(BuiltinHrtf::SadieD1Ku100) => "binaural-d1",
             Self::Binaural(BuiltinHrtf::SadieD2Kemar) => "binaural-d2",
             Self::Orientation(BuiltinHrtf::SadieD1Ku100) => "orientation-d1",
@@ -139,7 +142,7 @@ impl ProbeMode {
 
     fn binaural(self) -> Option<BuiltinHrtf> {
         match self {
-            Self::Speaker => None,
+            Self::Speaker | Self::Stereo => None,
             Self::Binaural(preset) | Self::Orientation(preset) | Self::Pull(preset) => Some(preset),
         }
     }
@@ -948,7 +951,13 @@ fn warmup(
 
 fn config_for(mode: ProbeMode, layout: &str) -> OpenJocConfig {
     let mut config = OpenJocConfig {
-        render_mode: RenderMode::Speaker,
+        // Keep `stereo` explicit for LAV parity. It uses the API's Stereo
+        // mode even though the `speaker,2.0` probe remains available.
+        render_mode: if matches!(mode, ProbeMode::Stereo) {
+            RenderMode::Stereo
+        } else {
+            RenderMode::Speaker
+        },
         speaker_layout: layout.to_owned(),
         validation_profile: ValidationProfile::Auto,
         ..OpenJocConfig::default()
@@ -1084,4 +1093,24 @@ fn process_cpu_ns() -> Option<u128> {
 #[cfg(not(all(target_os = "linux", target_pointer_width = "64")))]
 fn process_cpu_ns() -> Option<u128> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProbeMode, config_for};
+    use openjoc_api::RenderMode;
+
+    #[test]
+    fn explicit_stereo_selects_stereo_without_changing_speaker_mode() {
+        assert_eq!(
+            config_for(ProbeMode::parse("stereo").unwrap(), "2.0").render_mode,
+            RenderMode::Stereo
+        );
+        assert_eq!(
+            config_for(ProbeMode::parse("speaker").unwrap(), "2.0").render_mode,
+            RenderMode::Speaker
+        );
+        assert_eq!(ProbeMode::parse("stereo").unwrap().name(), "stereo");
+        assert_eq!(ProbeMode::parse("stereo").unwrap().binaural(), None);
+    }
 }

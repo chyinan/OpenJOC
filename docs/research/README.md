@@ -36,3 +36,7 @@ Files:
   acceptance gates for the 0.9.2 candidate.
 - [Historical requirements matrix](../archive/requirements/REQUIREMENTS_MATRIX.md)
   — archived evidence consolidation, not a current status owner.
+
+## Measured QMF phase-row optimization
+
+[QMF phase-row CPU investigation](qmf-phase-row/README.md) records released-route mapping, baseline noise, function attribution, exactness and paired timing evidence. [Reproduction](qmf-phase-row/REPRODUCE.md) uses the existing strict gate.

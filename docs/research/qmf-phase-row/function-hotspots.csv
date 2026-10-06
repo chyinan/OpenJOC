@@ -1,0 +1,173 @@
+case,exclusive_sampled_cpu_seconds,exclusive_percent,inclusive_sampled_cpu_seconds,inclusive_percent,function
+stereo60,7.300,100.00,7.300,100.00,<Total>
+stereo60,5.300,72.60,5.300,72.60,<openjoc_qmf::ReferenceQmf64F64>::analyze
+stereo60,1.000,13.70,1.000,13.70,openjoc_eac3::transform::inverse_long
+stereo60,0.300,4.11,0.300,4.11,<openjoc_scene::bridge::joc_spatial_bridge::JocSpatialBridge>::render_coordinates
+stereo60,0.200,2.74,0.200,2.74,<openjoc_qmf::ReferenceQmf64F64>::synthesize
+stereo60,0.100,1.37,0.100,1.37,<static>@0x161e67 (<libc.so.6>)
+stereo60,0.100,1.37,0.100,1.37,<static>@0x9de00 (<libc.so.6>)
+stereo60,0.100,1.37,0.200,2.74,<static>@0x9fc63 (<libc.so.6>)
+stereo60,0.100,1.37,0.100,1.37,openjoc_oamd::object_element::parse_object_element_reader
+stereo60,0.100,1.37,0.100,1.37,openjoc_render::final_linked_gain::f32_mul
+stereo60,0.,0.,5.400,73.97,"<alloc::vec::Vec<[num_complex::Complex<f64>; 64]> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<[num_complex::Complex<f64>; 64], core::iter::adapters::map::Map<core::slice::iter::ChunksExact<f64>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}::{closure#0}>>>::from_iter"
+stereo60,0.,0.,5.400,73.97,"<alloc::vec::Vec<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>, core::iter::adapters::map::Map<core::iter::adapters::zip::Zip<core::slice::iter::Iter<alloc::vec::Vec<f64>>, core::slice::iter::IterMut<openjoc_qmf::ReferenceQmf64F64>>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}>>>::from_iter"
+stereo60,0.,0.,0.100,1.37,<alloc::vec::Vec<openjoc_joc::parser::JocObjectFrame> as core::clone::Clone>::clone
+stereo60,0.,0.,7.300,100.00,<openjoc_api::OpenJocSession>::push_packet
+stereo60,0.,0.,0.100,1.37,<openjoc_api::OpenJocSession>::select_metadata
+stereo60,0.,0.,0.100,1.37,<openjoc_api::SpeakerRenderer>::apply_final_linked_gain
+stereo60,0.,0.,0.500,6.85,<openjoc_api::SpeakerRenderer>::render_aligned_block
+stereo60,0.,0.,0.500,6.85,<openjoc_api::SpeakerRenderer>::render_frame_aligned
+stereo60,0.,0.,1.000,13.70,<openjoc_eac3::access_unit::JocAccessUnitPcmDecoder>::decode_pcm_planes_with_policy
+stereo60,0.,0.,1.000,13.70,<openjoc_eac3::audio_block::AudioPcmSynthesizer>::synthesize_internal
+stereo60,0.,0.,0.200,2.74,<openjoc_joc::decoder::JocDecoderState>::decode_frame_inner
+stereo60,0.,0.,5.600,76.71,<openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame
+stereo60,0.,0.,0.100,1.37,<openjoc_render::final_linked_gain::FinalLinkedGain>::process
+stereo60,0.,0.,0.100,1.37,<openjoc_scene::payload_decoder::DecodedPayloadFrame as core::clone::Clone>::clone
+stereo60,0.,0.,5.600,76.71,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_inner
+stereo60,0.,0.,5.600,76.71,"<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile::<<openjoc_api::OpenJocSession>::push_packet::{closure#5}, openjoc_api::OpenJocError>"
+stereo60,0.,0.,5.600,76.71,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile_to_frame
+stereo60,0.,0.,7.300,100.00,<static>@0x29c21 (<libc.so.6>)
+stereo60,0.,0.,0.100,1.37,core::ptr::drop_glue::<openjoc_eac3::access_unit::DecodedAccessUnitPcm>
+stereo60,0.,0.,0.100,1.37,free
+stereo60,0.,0.,7.300,100.00,main
+stereo60,0.,0.,0.100,1.37,malloc
+stereo60,0.,0.,1.000,13.70,openjoc_eac3::access_unit::decode_frame
+stereo60,0.,0.,1.000,13.70,openjoc_eac3::audio_block::decode_audio_frame_pcm_with_policy_override_and_timing
+stereo60,0.,0.,1.000,13.70,openjoc_eac3::transform::inverse_transform
+stereo60,0.,0.,0.100,1.37,openjoc_oamd::payload::parse_oamd_payload_inner
+stereo60,0.,0.,0.100,1.37,openjoc_oamd::payload::parse_oamd_payload_with_config
+stereo60,0.,0.,7.300,100.00,pcm_regression_probe::main
+stereo60,0.,0.,7.300,100.00,"std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}"
+stereo60,0.,0.,7.300,100.00,std::rt::lang_start_internal
+stereo60,0.,0.,7.300,100.00,"std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>"
+stereo60-repeat,7.400,100.00,7.400,100.00,<Total>
+stereo60-repeat,5.500,74.32,5.500,74.32,<openjoc_qmf::ReferenceQmf64F64>::analyze
+stereo60-repeat,0.700,9.46,0.700,9.46,openjoc_eac3::transform::inverse_long
+stereo60-repeat,0.300,4.05,0.300,4.05,<openjoc_qmf::ReferenceQmf64F64>::synthesize
+stereo60-repeat,0.200,2.70,0.200,2.70,<static>@0x9fc63 (<libc.so.6>)
+stereo60-repeat,0.100,1.35,0.100,1.35,<openjoc_joc::timeline::ReconstructionOutputTimeline>::push_frame
+stereo60-repeat,0.100,1.35,0.100,1.35,<static>@0x161e67 (<libc.so.6>)
+stereo60-repeat,0.100,1.35,0.100,1.35,core::ptr::drop_glue::<openjoc_eac3::Eac3Error>
+stereo60-repeat,0.100,1.35,0.100,1.35,core::ptr::drop_glue::<openjoc_scene::bridge::joc_spatial_bridge::SpatialBindingRecord>
+stereo60-repeat,0.100,1.35,0.200,2.70,openjoc_eac3::bit_allocation::compute_bap_with_pointer
+stereo60-repeat,0.100,1.35,0.100,1.35,openjoc_eac3::bit_allocation::compute_excitation
+stereo60-repeat,0.100,1.35,0.100,1.35,openjoc_joc::reconstruction::reconstruct_objects
+stereo60-repeat,0.,0.,5.500,74.32,"<alloc::vec::Vec<[num_complex::Complex<f64>; 64]> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<[num_complex::Complex<f64>; 64], core::iter::adapters::map::Map<core::slice::iter::ChunksExact<f64>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}::{closure#0}>>>::from_iter"
+stereo60-repeat,0.,0.,5.500,74.32,"<alloc::vec::Vec<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>, core::iter::adapters::map::Map<core::iter::adapters::zip::Zip<core::slice::iter::Iter<alloc::vec::Vec<f64>>, core::slice::iter::IterMut<openjoc_qmf::ReferenceQmf64F64>>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}>>>::from_iter"
+stereo60-repeat,0.,0.,0.100,1.35,"<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<f64>>> as alloc::vec::spec_from_iter::SpecFromIter<alloc::vec::Vec<alloc::vec::Vec<f64>>, core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<alloc::vec::Vec<u16>>>, <openjoc_joc::decoder::JocDecoderState>::decode_frame_inner::{closure#8}>, core::result::Result<core::convert::Infallible, openjoc_joc::reconstruction::ReconstructionError>>>>::from_iter"
+stereo60-repeat,0.,0.,0.100,1.35,"<alloc::vec::Vec<alloc::vec::Vec<f64>> as alloc::vec::spec_from_iter::SpecFromIter<alloc::vec::Vec<f64>, core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<u16>>, <openjoc_joc::decoder::JocDecoderState>::decode_frame_inner::{closure#8}::{closure#0}>, core::result::Result<core::convert::Infallible, openjoc_joc::reconstruction::ReconstructionError>>>>::from_iter"
+stereo60-repeat,0.,0.,0.100,1.35,<alloc::vec::Vec<alloc::vec::Vec<f64>> as core::clone::Clone>::clone
+stereo60-repeat,0.,0.,0.100,1.35,"<core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<alloc::vec::Vec<u16>>>, <openjoc_joc::decoder::JocDecoderState>::decode_frame_inner::{closure#8}> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<alloc::vec::Vec<u16>>>, <openjoc_joc::decoder::JocDecoderState>::decode_frame_inner::{closure#8}>, core::result::Result<core::convert::Infallible, openjoc_joc::reconstruction::ReconstructionError>> as core::iter::traits::iterator::Iterator>::try_fold<(), core::iter::traits::iterator::Iterator::try_for_each::call<alloc::vec::Vec<alloc::vec::Vec<f64>>, core::ops::control_flow::ControlFlow<alloc::vec::Vec<alloc::vec::Vec<f64>>>, core::ops::control_flow::ControlFlow<alloc::vec::Vec<alloc::vec::Vec<f64>>>::Break>::{closure#0}, core::ops::control_flow::ControlFlow<alloc::vec::Vec<alloc::vec::Vec<f64>>>>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<alloc::vec::Vec<alloc::vec::Vec<f64>>>>>"
+stereo60-repeat,0.,0.,7.100,95.95,<openjoc_api::OpenJocSession>::push_packet
+stereo60-repeat,0.,0.,0.100,1.35,<openjoc_api::SpeakerRenderer>::render_aligned_block
+stereo60-repeat,0.,0.,0.200,2.70,<openjoc_api::SpeakerRenderer>::render_frame_aligned
+stereo60-repeat,0.,0.,0.900,12.16,<openjoc_eac3::access_unit::JocAccessUnitPcmDecoder>::decode_pcm_planes_with_policy
+stereo60-repeat,0.,0.,0.700,9.46,<openjoc_eac3::audio_block::AudioPcmSynthesizer>::synthesize_internal
+stereo60-repeat,0.,0.,0.500,6.76,<openjoc_joc::decoder::JocDecoderState>::decode_frame_inner
+stereo60-repeat,0.,0.,6.000,81.08,<openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame
+stereo60-repeat,0.,0.,0.100,1.35,<openjoc_scene::bridge_control::BridgeControlAssembler>::assemble_frame
+stereo60-repeat,0.,0.,6.000,81.08,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_inner
+stereo60-repeat,0.,0.,6.000,81.08,"<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile::<<openjoc_api::OpenJocSession>::push_packet::{closure#5}, openjoc_api::OpenJocError>"
+stereo60-repeat,0.,0.,6.000,81.08,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile_to_frame
+stereo60-repeat,0.,0.,7.100,95.95,<static>@0x29c21 (<libc.so.6>)
+stereo60-repeat,0.,0.,0.100,1.35,"core::iter::adapters::try_process::<core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<alloc::vec::Vec<u16>>>, <openjoc_joc::decoder::JocDecoderState>::decode_frame_inner::{closure#8}>, alloc::vec::Vec<alloc::vec::Vec<f64>>, core::result::Result<core::convert::Infallible, openjoc_joc::reconstruction::ReconstructionError>, <core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<f64>>>, openjoc_joc::reconstruction::ReconstructionError> as core::iter::traits::collect::FromIterator<core::result::Result<alloc::vec::Vec<alloc::vec::Vec<f64>>, openjoc_joc::reconstruction::ReconstructionError>>>::from_iter<core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<alloc::vec::Vec<u16>>>, <openjoc_joc::decoder::JocDecoderState>::decode_frame_inner::{closure#8}>>::{closure#0}, alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<f64>>>>"
+stereo60-repeat,0.,0.,0.100,1.35,core::ptr::drop_glue::<alloc::vec::Vec<openjoc_scene::bridge::joc_spatial_bridge::SpatialBindingRecord>>
+stereo60-repeat,0.,0.,7.100,95.95,main
+stereo60-repeat,0.,0.,0.100,1.35,malloc
+stereo60-repeat,0.,0.,0.900,12.16,openjoc_eac3::access_unit::decode_frame
+stereo60-repeat,0.,0.,0.300,4.05,openjoc_eac3::audio_block::decode_audio_blocks_until
+stereo60-repeat,0.,0.,0.900,12.16,openjoc_eac3::audio_block::decode_audio_frame_pcm_with_policy_override_and_timing
+stereo60-repeat,0.,0.,0.200,2.70,openjoc_eac3::audio_block::element_baps
+stereo60-repeat,0.,0.,0.200,2.70,openjoc_eac3::bit_allocation::compute_element_bap
+stereo60-repeat,0.,0.,0.700,9.46,openjoc_eac3::transform::inverse_transform
+stereo60-repeat,0.,0.,7.100,95.95,pcm_regression_probe::main
+stereo60-repeat,0.,0.,7.100,95.95,"std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}"
+stereo60-repeat,0.,0.,7.100,95.95,std::rt::lang_start_internal
+stereo60-repeat,0.,0.,7.100,95.95,"std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>"
+speaker714-60,8.300,100.00,8.300,100.00,<Total>
+speaker714-60,5.000,60.24,5.000,60.24,<openjoc_qmf::ReferenceQmf64F64>::analyze
+speaker714-60,1.400,16.87,1.400,16.87,openjoc_eac3::transform::inverse_long
+speaker714-60,0.700,8.43,0.800,9.64,<openjoc_scene::bridge::joc_spatial_bridge::JocSpatialBridge>::render_coordinates
+speaker714-60,0.200,2.41,0.200,2.41,<static>@0x161e67 (<libc.so.6>)
+speaker714-60,0.200,2.41,0.200,2.41,<static>@0x9fc63 (<libc.so.6>)
+speaker714-60,0.200,2.41,0.200,2.41,openjoc_render::final_linked_gain::f32_mul
+speaker714-60,0.100,1.20,0.100,1.20,<openjoc_api::OpenJocSession>::to_pcm_frame
+speaker714-60,0.100,1.20,0.100,1.20,<openjoc_qmf::ReferenceQmf64F64>::synthesize
+speaker714-60,0.100,1.20,0.300,3.61,<openjoc_render::final_linked_gain::FinalLinkedGain>::process
+speaker714-60,0.100,1.20,0.100,1.20,openjoc_eac3::bit_allocation::compute_masking_curve
+speaker714-60,0.100,1.20,1.500,18.07,openjoc_eac3::transform::inverse_transform
+speaker714-60,0.100,1.20,0.100,1.20,openjoc_joc::reconstruction::interpolate_matrix
+speaker714-60,0.,0.,5.000,60.24,"<alloc::vec::Vec<[num_complex::Complex<f64>; 64]> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<[num_complex::Complex<f64>; 64], core::iter::adapters::map::Map<core::slice::iter::ChunksExact<f64>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}::{closure#0}>>>::from_iter"
+speaker714-60,0.,0.,5.000,60.24,"<alloc::vec::Vec<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>, core::iter::adapters::map::Map<core::iter::adapters::zip::Zip<core::slice::iter::Iter<alloc::vec::Vec<f64>>, core::slice::iter::IterMut<openjoc_qmf::ReferenceQmf64F64>>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}>>>::from_iter"
+speaker714-60,0.,0.,0.100,1.20,<alloc::vec::Vec<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>> as core::clone::Clone>::clone
+speaker714-60,0.,0.,0.200,2.41,<alloc::vec::Vec<f64> as alloc::vec::spec_from_elem::SpecFromElem>::from_elem::<alloc::alloc::Global>
+speaker714-60,0.,0.,0.100,1.20,<alloc::vec::Vec<openjoc_scene::bridge::joc_spatial_bridge::SpatialBindingRecord> as core::clone::Clone>::clone
+speaker714-60,0.,0.,0.100,1.20,<openjoc_api::OpenJocSession>::emit_rendered
+speaker714-60,0.,0.,8.300,100.00,<openjoc_api::OpenJocSession>::push_packet
+speaker714-60,0.,0.,0.300,3.61,<openjoc_api::SpeakerRenderer>::apply_final_linked_gain
+speaker714-60,0.,0.,1.400,16.87,<openjoc_api::SpeakerRenderer>::render_aligned_block
+speaker714-60,0.,0.,1.400,16.87,<openjoc_api::SpeakerRenderer>::render_frame_aligned
+speaker714-60,0.,0.,1.600,19.28,<openjoc_eac3::access_unit::JocAccessUnitPcmDecoder>::decode_pcm_planes_with_policy
+speaker714-60,0.,0.,1.500,18.07,<openjoc_eac3::audio_block::AudioPcmSynthesizer>::synthesize_internal
+speaker714-60,0.,0.,0.200,2.41,<openjoc_joc::decoder::JocDecoderState>::decode_frame_inner
+speaker714-60,0.,0.,5.200,62.65,<openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame
+speaker714-60,0.,0.,0.100,1.20,<openjoc_scene::bridge::joc_spatial_bridge::SpatialBindingState>::apply
+speaker714-60,0.,0.,0.100,1.20,<openjoc_scene::payload_decoder::DecodedPayloadFrame as core::clone::Clone>::clone
+speaker714-60,0.,0.,5.200,62.65,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_inner
+speaker714-60,0.,0.,5.200,62.65,"<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile::<<openjoc_api::OpenJocSession>::push_packet::{closure#5}, openjoc_api::OpenJocError>"
+speaker714-60,0.,0.,5.200,62.65,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile_to_frame
+speaker714-60,0.,0.,8.300,100.00,<static>@0x29c21 (<libc.so.6>)
+speaker714-60,0.,0.,8.300,100.00,main
+speaker714-60,0.,0.,0.200,2.41,malloc
+speaker714-60,0.,0.,1.600,19.28,openjoc_eac3::access_unit::decode_frame
+speaker714-60,0.,0.,0.100,1.20,openjoc_eac3::audio_block::decode_audio_blocks_until
+speaker714-60,0.,0.,1.600,19.28,openjoc_eac3::audio_block::decode_audio_frame_pcm_with_policy_override_and_timing
+speaker714-60,0.,0.,0.100,1.20,openjoc_eac3::audio_block::element_baps
+speaker714-60,0.,0.,0.100,1.20,openjoc_eac3::bit_allocation::compute_element_bap
+speaker714-60,0.,0.,8.300,100.00,pcm_regression_probe::main
+speaker714-60,0.,0.,8.300,100.00,"std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}"
+speaker714-60,0.,0.,8.300,100.00,std::rt::lang_start_internal
+speaker714-60,0.,0.,8.300,100.00,"std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>"
+d1-714-60,35.600,100.00,35.600,100.00,<Total>
+d1-714-60,28.100,78.93,28.100,78.93,<openjoc_render::BinauralRenderer>::render_block
+d1-714-60,5.500,15.45,5.500,15.45,<openjoc_qmf::ReferenceQmf64F64>::analyze
+d1-714-60,0.900,2.53,0.900,2.53,openjoc_eac3::transform::inverse_long
+d1-714-60,0.500,1.40,0.500,1.40,<openjoc_qmf::ReferenceQmf64F64>::synthesize
+d1-714-60,0.200,0.56,0.200,0.56,<openjoc_scene::bridge::joc_spatial_bridge::JocSpatialBridge>::render_coordinates
+d1-714-60,0.100,0.28,0.100,0.28,<static>@0x161e67 (<libc.so.6>)
+d1-714-60,0.100,0.28,0.100,0.28,<static>@0x75c93 (<libm.so.6>)
+d1-714-60,0.100,0.28,0.100,0.28,__powidf2
+d1-714-60,0.100,0.28,0.100,0.28,calloc
+d1-714-60,0.,0.,5.500,15.45,"<alloc::vec::Vec<[num_complex::Complex<f64>; 64]> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<[num_complex::Complex<f64>; 64], core::iter::adapters::map::Map<core::slice::iter::ChunksExact<f64>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}::{closure#0}>>>::from_iter"
+d1-714-60,0.,0.,5.500,15.45,"<alloc::vec::Vec<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<[num_complex::Complex<f64>; 64]>, core::iter::adapters::map::Map<core::iter::adapters::zip::Zip<core::slice::iter::Iter<alloc::vec::Vec<f64>>, core::slice::iter::IterMut<openjoc_qmf::ReferenceQmf64F64>>, <openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame::{closure#2}>>>::from_iter"
+d1-714-60,0.,0.,0.100,0.28,<alloc::vec::Vec<alloc::vec::Vec<f64>> as core::clone::Clone>::clone
+d1-714-60,0.,0.,0.100,0.28,<bool as alloc::vec::spec_from_elem::SpecFromElem>::from_elem::<alloc::alloc::Global>
+d1-714-60,0.,0.,28.100,78.93,<openjoc_api::BinauralState>::render_range
+d1-714-60,0.,0.,28.100,78.93,<openjoc_api::OpenJocSession>::emit_rendered
+d1-714-60,0.,0.,35.600,100.00,<openjoc_api::OpenJocSession>::push_packet
+d1-714-60,0.,0.,0.300,0.84,<openjoc_api::SpeakerRenderer>::render_aligned_block
+d1-714-60,0.,0.,0.300,0.84,<openjoc_api::SpeakerRenderer>::render_frame_aligned
+d1-714-60,0.,0.,0.100,0.28,<openjoc_eac3::access_unit::DecodedAccessUnitPcm>::with_dialnorm_applied
+d1-714-60,0.,0.,1.200,3.37,<openjoc_eac3::access_unit::JocAccessUnitPcmDecoder>::decode_pcm_planes_with_policy
+d1-714-60,0.,0.,0.900,2.53,<openjoc_eac3::audio_block::AudioPcmSynthesizer>::synthesize_internal
+d1-714-60,0.,0.,0.100,0.28,"<openjoc_eac3::timing::Eac3DecodeStageTiming>::measure::<alloc::vec::Vec<f64>, openjoc_eac3::Eac3Error, openjoc_eac3::audio_block::decode_channel_mantissas::{closure#10}>"
+d1-714-60,0.,0.,0.500,1.40,<openjoc_joc::decoder::JocDecoderState>::decode_frame_inner
+d1-714-60,0.,0.,6.000,16.85,<openjoc_joc::decoder::JocDecoderState>::decode_pcm_frame
+d1-714-60,0.,0.,6.000,16.85,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_inner
+d1-714-60,0.,0.,6.000,16.85,"<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile::<<openjoc_api::OpenJocSession>::push_packet::{closure#5}, openjoc_api::OpenJocError>"
+d1-714-60,0.,0.,6.000,16.85,<openjoc_scene::payload_decoder::PayloadDecoder>::decode_frame_with_profile_and_binding_profile_to_frame
+d1-714-60,0.,0.,35.600,100.00,<static>@0x29c21 (<libc.so.6>)
+d1-714-60,0.,0.,35.600,100.00,main
+d1-714-60,0.,0.,1.100,3.09,openjoc_eac3::access_unit::decode_frame
+d1-714-60,0.,0.,0.100,0.28,openjoc_eac3::audio_block::decode_audio_blocks_until
+d1-714-60,0.,0.,1.000,2.81,openjoc_eac3::audio_block::decode_audio_frame_pcm_with_policy_override_and_timing
+d1-714-60,0.,0.,0.100,0.28,openjoc_eac3::audio_block::decode_element_mantissas
+d1-714-60,0.,0.,0.100,0.28,openjoc_eac3::mantissa::decode_mantissas_with_state_and_trace::<openjoc_bitio::BitReader>
+d1-714-60,0.,0.,0.100,0.28,openjoc_eac3::parse_audio_frame
+d1-714-60,0.,0.,0.900,2.53,openjoc_eac3::transform::inverse_transform
+d1-714-60,0.,0.,35.600,100.00,pcm_regression_probe::main
+d1-714-60,0.,0.,0.100,0.28,pcm_regression_probe::warmup
+d1-714-60,0.,0.,0.100,0.28,pow
+d1-714-60,0.,0.,35.600,100.00,"std::rt::lang_start::<core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>::{closure#0}"
+d1-714-60,0.,0.,35.600,100.00,std::rt::lang_start_internal
+d1-714-60,0.,0.,35.600,100.00,"std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>, core::result::Result<(), alloc::boxed::Box<dyn core::error::Error>>>"

@@ -114,8 +114,9 @@ impl ReferenceQmf64F64 {
         let mut subbands = [Complex64::ZERO; QMF_BANDS];
         let phases = analysis_phases();
         for (subband, output) in subbands.iter_mut().enumerate() {
-            for (index, sample) in folded.iter().copied().enumerate() {
-                let phase = phases[subband * (2 * QMF_BANDS) + index];
+            let start = subband * (2 * QMF_BANDS);
+            let row = &phases[start..start + 2 * QMF_BANDS];
+            for (sample, phase) in folded.iter().copied().zip(row.iter()) {
                 *output += Complex64::new(sample * phase.re, sample * phase.im);
             }
         }
@@ -157,5 +158,153 @@ impl ReferenceQmf64F64 {
 impl Default for ReferenceQmf64F64 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IMPULSE_POSITIONS: [usize; 5] = [0, 1, 31, 32, 63];
+
+    fn analyze_indexed_reference(
+        qmf: &mut ReferenceQmf64F64,
+        pcm: &[f64; QMF_BANDS],
+    ) -> [Complex64; QMF_BANDS] {
+        qmf.analysis_state
+            .copy_within(0..QMF_LENGTH - QMF_BANDS, QMF_BANDS);
+        for (destination, sample) in qmf.analysis_state[..QMF_BANDS]
+            .iter_mut()
+            .zip(pcm.iter().rev())
+        {
+            *destination = *sample;
+        }
+
+        let mut folded = [0.0; 2 * QMF_BANDS];
+        let prototype = prototype_f64();
+        for (index, value) in folded.iter_mut().enumerate() {
+            for fold in 0..QMF_LENGTH / (2 * QMF_BANDS) {
+                let window_index = index + fold * 2 * QMF_BANDS;
+                *value += qmf.analysis_state[window_index] * prototype[window_index];
+            }
+        }
+
+        let mut subbands = [Complex64::ZERO; QMF_BANDS];
+        let phases = analysis_phases();
+        for (subband, output) in subbands.iter_mut().enumerate() {
+            for (index, sample) in folded.iter().copied().enumerate() {
+                let phase = phases[subband * (2 * QMF_BANDS) + index];
+                *output += Complex64::new(sample * phase.re, sample * phase.im);
+            }
+        }
+        subbands
+    }
+
+    fn deterministic_block(block_index: usize) -> [f64; QMF_BANDS] {
+        std::array::from_fn(|sample_index| {
+            let residue = (block_index * 73 + sample_index * 19) % 503;
+            let value = (residue as f64 - 251.0) / 256.0;
+            if (block_index + sample_index) % 2 == 0 {
+                value
+            } else {
+                -value
+            }
+        })
+    }
+
+    fn compare_block(
+        candidate: &mut ReferenceQmf64F64,
+        reference: &mut ReferenceQmf64F64,
+        pcm: &[f64; QMF_BANDS],
+        block_index: usize,
+    ) {
+        let expected = analyze_indexed_reference(reference, pcm);
+        let actual = candidate.analyze(pcm);
+        for (subband, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                actual.re.to_bits(),
+                expected.re.to_bits(),
+                "real component differs at block {block_index}, subband {subband}"
+            );
+            assert_eq!(
+                actual.im.to_bits(),
+                expected.im.to_bits(),
+                "imaginary component differs at block {block_index}, subband {subband}"
+            );
+        }
+    }
+
+    fn compare_zero_flush(
+        candidate: &mut ReferenceQmf64F64,
+        reference: &mut ReferenceQmf64F64,
+        next_block_index: &mut usize,
+    ) {
+        let alternating_signed_zero =
+            std::array::from_fn(|index| if index % 2 == 0 { -0.0 } else { 0.0 });
+        compare_block(
+            candidate,
+            reference,
+            &alternating_signed_zero,
+            *next_block_index,
+        );
+        *next_block_index += 1;
+        compare_block(candidate, reference, &[-0.0; QMF_BANDS], *next_block_index);
+        *next_block_index += 1;
+        for _ in 2..16 {
+            compare_block(candidate, reference, &[0.0; QMF_BANDS], *next_block_index);
+            *next_block_index += 1;
+        }
+    }
+
+    #[test]
+    fn zipped_analysis_matches_original_indexed_f64_bits() {
+        let mut candidate = ReferenceQmf64F64::new();
+        let mut reference = ReferenceQmf64F64::new();
+        let mut block_index = 0;
+
+        for history_index in 0..32 {
+            compare_block(
+                &mut candidate,
+                &mut reference,
+                &deterministic_block(history_index),
+                block_index,
+            );
+            block_index += 1;
+        }
+        candidate.reset();
+        reference.reset();
+        compare_zero_flush(&mut candidate, &mut reference, &mut block_index);
+
+        for signal_index in 0..256 {
+            compare_block(
+                &mut candidate,
+                &mut reference,
+                &deterministic_block(signal_index),
+                block_index,
+            );
+            block_index += 1;
+        }
+
+        for (impulse_index, position) in IMPULSE_POSITIONS.iter().copied().enumerate() {
+            let amplitude = if impulse_index % 2 == 0 { 1.0 } else { -0.5 };
+            let mut impulse = [0.0; QMF_BANDS];
+            impulse[position] = amplitude;
+            compare_block(&mut candidate, &mut reference, &impulse, block_index);
+            block_index += 1;
+        }
+        compare_zero_flush(&mut candidate, &mut reference, &mut block_index);
+
+        candidate.reset();
+        reference.reset();
+        for (impulse_index, position) in IMPULSE_POSITIONS.iter().copied().enumerate() {
+            let amplitude = if impulse_index % 2 == 0 { -1.0 } else { 0.25 };
+            let mut impulse = [0.0; QMF_BANDS];
+            impulse[position] = amplitude;
+            compare_block(&mut candidate, &mut reference, &impulse, block_index);
+            block_index += 1;
+        }
+        compare_zero_flush(&mut candidate, &mut reference, &mut block_index);
+
+        assert_eq!(block_index, 346, "the regression corpus size changed");
     }
 }

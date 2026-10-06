@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 BASELINE_REVISION = "15aefe1baa7b40f37950df252b6dbf6179894d6d"
 BASELINE_LOCK_SHA256 = "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7"
+DEFAULT_TOOLCHAIN = "1.89.0"
 PROBE = "crates/openjoc-api/examples/pcm_regression_probe.rs"
 CORE_PROBE = "crates/openjoc-eac3/examples/eac3_pcm_regression_probe.rs"
 PARTITIONED_PROBE = "crates/openjoc-render/examples/partitioned_fft_scratch_probe.rs"
@@ -439,6 +440,14 @@ def parse_case(value: str) -> Case:
     return Case(name, Path(path).resolve(), mode, layout)
 
 
+def parse_toolchain(value: str) -> str:
+    if not value or value.startswith("+") or any(character.isspace() for character in value):
+        raise argparse.ArgumentTypeError(
+            "toolchain must be a non-empty rustup toolchain name without a leading '+' or whitespace"
+        )
+    return value
+
+
 def hash_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -453,6 +462,13 @@ def git_head(root: Path) -> str:
 
 def paths_overlap(left: Path, right: Path) -> bool:
     return left == right or left in right.parents or right in left.parents
+
+
+def probe_binary_path(target: Path, example: str, *, platform: str | None = None) -> Path:
+    """Return Cargo's release-example path, including Windows' executable suffix."""
+    active_platform = sys.platform if platform is None else platform
+    suffix = ".exe" if active_platform == "win32" else ""
+    return target / "release" / "examples" / f"{example}{suffix}"
 
 
 def _expected_feature_manifest(head_bytes: bytes, package: str) -> bytes:
@@ -538,6 +554,8 @@ def build_revision(
     needs_core: bool,
     allocation_profile: bool,
     online: bool,
+    toolchain: str,
+    verbose: bool,
 ) -> dict[str, Path]:
     cargo_env = env.copy()
     cargo_env.update(
@@ -555,7 +573,9 @@ def build_revision(
     if needs_core:
         builds.append(("openjoc-eac3", "eac3_pcm_regression_probe", "core"))
     for package, example, key in builds:
-        command = ["cargo", "+1.89.0", "build", "--release", "--locked"]
+        command = ["cargo", f"+{toolchain}", "build", "--release", "--locked"]
+        if verbose:
+            command.append("--verbose")
         if not online:
             command.append("--offline")
         command.extend(["-p", package, "--example", example])
@@ -567,11 +587,19 @@ def build_revision(
             env=cargo_env,
             log=log_dir / f"build-{label}-{package}.log",
         )
-        binary = target / "release" / "examples" / example
+        binary = probe_binary_path(target, example)
         if not binary.is_file():
             raise GateError(f"build reported success but probe binary is missing: {binary}")
         binaries[key] = binary
     return binaries
+
+
+def toolchain_commands(toolchain: str) -> tuple[list[str], list[str]]:
+    """Return the compiler and Cargo provenance commands for the selected toolchain."""
+    return (
+        ["rustc", f"+{toolchain}", "-vV"],
+        ["cargo", f"+{toolchain}", "-Vv"],
+    )
 
 
 def run_probe(
@@ -661,7 +689,7 @@ def mutation_sensitivity(
         mutated.unlink(missing_ok=True)
 
 
-def main(argv: list[str] | None = None) -> int:
+def argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true", help="run comparator negative-sensitivity tests")
     parser.add_argument("--baseline-root", type=Path, help="clean frozen baseline worktree")
@@ -675,8 +703,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allocations", action="store_true", help="run a separate counting-allocator build; its timings are instrumentation-only")
     parser.add_argument("--timing-only", action="store_true", help="plain-allocator timing run; consume/drop PCM in scope and compare output-shape summaries, not PCM capture")
     parser.add_argument("--online", action="store_true", help="allow Cargo to fetch locked dependencies when CI has no local crate cache")
+    parser.add_argument("--toolchain", type=parse_toolchain, default=DEFAULT_TOOLCHAIN, help=f"Rust toolchain used for both builds and provenance capture (default: {DEFAULT_TOOLCHAIN})")
+    parser.add_argument("--verbose-builds", action="store_true", help="log Cargo compiler invocations for build-flag provenance")
     parser.add_argument("--keep", action="store_true", help="retain per-case PCM files after comparison")
     parser.add_argument("--selftest-integrated", action="store_true", help="mutate first candidate PCM output copy and prove the gate rejects it")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argument_parser()
     args = parser.parse_args(argv)
     if args.self_test:
         run_self_tests()
@@ -742,6 +777,8 @@ def main(argv: list[str] | None = None) -> int:
         needs_core=needs_core,
         allocation_profile=args.allocations,
         online=args.online,
+        toolchain=args.toolchain,
+        verbose=args.verbose_builds,
     )
     candidate_binaries = build_revision(
         candidate_root,
@@ -753,13 +790,19 @@ def main(argv: list[str] | None = None) -> int:
         needs_core=needs_core,
         allocation_profile=args.allocations,
         online=args.online,
+        toolchain=args.toolchain,
+        verbose=args.verbose_builds,
     )
     for key in baseline_binaries.keys() & candidate_binaries.keys():
         if baseline_binaries[key].read_bytes() == candidate_binaries[key].read_bytes():
             print(f"{key} probe binaries are byte-identical", file=sys.stderr)
+    binary_hashes = {
+        "baseline": {key: hash_file(path) for key, path in baseline_binaries.items()},
+        "candidate": {key: hash_file(path) for key, path in candidate_binaries.items()},
+    }
     toolchain_log = output_dir / "toolchain.txt"
     with toolchain_log.open("w", encoding="utf-8") as stream:
-        for command in (["rustc", "+1.89.0", "-vV"], ["cargo", "+1.89.0", "-Vv"]):
+        for command in toolchain_commands(args.toolchain):
             stream.write("$ " + " ".join(command) + "\n")
             stream.write(subprocess.check_output(command, text=True, env=env))
             stream.write("\n")
@@ -767,6 +810,9 @@ def main(argv: list[str] | None = None) -> int:
         stream.write(f"baseline_head={baseline_head}\n")
         stream.write(f"candidate_head={candidate_head}\n")
         stream.write(f"baseline_lock_sha256={baseline_lock_hash}\n")
+        for variant, hashes in binary_hashes.items():
+            for key, digest in sorted(hashes.items()):
+                stream.write(f"{variant}_{key}_probe_binary_sha256={digest}\n")
         if needs_api:
             stream.write(f"api_probe_sha256={hash_file(candidate_root / PROBE)}\n")
         if needs_core:
@@ -775,6 +821,7 @@ def main(argv: list[str] | None = None) -> int:
         stream.write(f"cargo_encoded_rustflags={env.get('CARGO_ENCODED_RUSTFLAGS', '')}\n")
         stream.write(f"allocation_profile={args.allocations}\n")
         stream.write(f"cargo_offline={not args.online}\n")
+        stream.write(f"cargo_verbose_builds={args.verbose_builds}\n")
         for key in sorted(key for key in env if key.startswith("CARGO_PROFILE_")):
             stream.write(f"{key}={env[key]}\n")
 
@@ -878,6 +925,9 @@ def main(argv: list[str] | None = None) -> int:
                     "tail_samples": shape.get("tail_samples", parsed.results["tail_samples"] if parsed else "0"),
                     "channels": shape.get("channel_count", parsed.results["channel_count"] if parsed else "0"),
                 }
+                for variant, hashes in binary_hashes.items():
+                    for key, digest in hashes.items():
+                        row[f"{variant}_{key}_probe_binary_sha256"] = digest
                 for variant in ("baseline", "candidate"):
                     row[f"{variant}_external_process_wall_ns"] = str(external_walls[variant])
                     for key, value in timings[variant].items():
