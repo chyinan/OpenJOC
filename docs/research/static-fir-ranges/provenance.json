@@ -1,0 +1,53 @@
+{
+  "performance_before": "5d88140045a65dc1940b923b83d399a984bce482",
+  "sound_oracle_unchanged": "15aefe1baa7b40f37950df252b6dbf6179894d6d",
+  "candidate_head": "30de70366bfb6824ba420a2e160309ea27569726",
+  "candidate_diff_sha256": "872601faf3acb7f00695542e4267db4d8ea958c170a0a9843ce88f2f1ab54aeb",
+  "product_render_source_sha256": "5270d8e4cae5611893e88a9d9f4f9839179f13e087d8076c9314a866ebddee44",
+  "api_probe_sha256": "934514fc95a8c0d2e06434ca1fd016bb7335c6733d586349e5f3073cd1c85e86",
+  "binary_sha256": {
+    "baseline": "5119559528132d2087e0b95065278e4fce09bbdd3a4bced413cc09fe81c20642",
+    "candidate": "22db6c7c0477467dfdfae47ef670533bedb0488b4f4087bc8a072d56b6032462"
+  },
+  "note": "Timing-only validates descriptors, not PCM; frozen full-PCM gate is separate. Both are release Rust 1.98.1 default-feature builds; see build logs.",
+  "performance_before_public_revision": "30de70366bfb6824ba420a2e160309ea27569726",
+  "performance_before_identical_tree": "dc9c06dd6351955326f219135e140d9ae49c9ec3",
+  "candidate_source_mapping": "The measured uncommitted renderer patch on candidate_head was committed without source changes as candidate_production_commit. Verified commit render/lib.rs SHA-256 equals product_render_source_sha256; documentation is separate.",
+  "machine": {
+    "cpu": "AMD EPYC 9V74 80-Core Processor (virtualized cloud host)",
+    "architecture": "x86_64",
+    "kernel": "Linux 6.18.44",
+    "os": "Debian GNU/Linux 13 (trixie)",
+    "isolation": "Sequential benchmarks, no concurrent local build/test/benchmark; shared-host load and frequency uncontrolled"
+  },
+  "toolchain": {
+    "rustc": "1.98.1 (48a229cea 2026-09-01)",
+    "llvm": "22.1.8",
+    "cargo": "1.98.1 (797e8a9bc 2026-08-05)",
+    "target": "x86_64-unknown-linux-gnu",
+    "profile": "release",
+    "opt_level": 3,
+    "features": "default API embedded-builtin-hrtf; renderer no optional features",
+    "rustflags": "",
+    "cargo_encoded_rustflags": "",
+    "CARGO_BUILD_JOBS": "1",
+    "CARGO_INCREMENTAL": "0",
+    "link_time_optimization": "workspace default (off)",
+    "target_cpu": "default, no native flags",
+    "source_and_dependency_resolution": "workspace manifests, locked/offline; canonical source roots in retained verbose logs"
+  },
+  "micro_binary_sha256": {
+    "baseline": "69f5f70f16a0cf40af6236b474659b29636d6ea0e6da07097a07c6289c3b1586",
+    "candidate": "e99fe3730f40bc1d8c3385e61d1211a79ef502058bfb73aa68e81fae1a20193c"
+  },
+  "micro_probe_sha256": "3e8caa0252ac48e0d0383c988c8640988980d98e086cc5c8aff9af3b23fdbf56",
+  "cargo_lock_sha256": "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7",
+  "public_data_counts": {
+    "primary_api_pairs": 20,
+    "early_diagnostic_pairs": 2,
+    "control_pairs": 6,
+    "micro_pairs": 5
+  },
+  "data_note": "All attached workloads are reproducible public synthetic inputs. No private-input data or aggregate timings included.",
+  "candidate_production_commit": "c609785ed17b5cd9fa0cecf5e5376ed04cf32c61"
+}
