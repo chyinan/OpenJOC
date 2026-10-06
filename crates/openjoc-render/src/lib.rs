@@ -1311,12 +1311,16 @@ impl BinauralRenderer {
             for offset in 0..block_length {
                 let mut left_acc = left[offset];
                 let mut right_acc = right[offset];
-                for tap_index in 0..source.left_taps.len() {
-                    let input = if tap_index <= offset {
-                        block.samples[offset - tap_index] * source.definition.gain
-                    } else {
-                        source.history[history_len - (tap_index - offset)]
-                    };
+                // Keep ascending tap order across both ranges. Current-block
+                // samples need gain; history already contains gained samples.
+                let current_taps = source.left_taps.len().min(offset + 1);
+                for tap_index in 0..current_taps {
+                    let input = block.samples[offset - tap_index] * source.definition.gain;
+                    left_acc += input * source.left_taps[tap_index];
+                    right_acc += input * source.right_taps[tap_index];
+                }
+                for tap_index in current_taps..source.left_taps.len() {
+                    let input = source.history[history_len - (tap_index - offset)];
                     left_acc += input * source.left_taps[tap_index];
                     right_acc += input * source.right_taps[tap_index];
                 }
@@ -5163,6 +5167,53 @@ mod tests {
         assert_ne!(left, right);
         assert_eq!(renderer.remaining_tail_samples(), 0);
         assert!(renderer.is_finished());
+    }
+
+    #[test]
+    fn binaural_static_tap_ranges_match_old_loop_at_current_history_boundaries() {
+        for tap_count in [1, 2, 3, 15, 16, 17] {
+            let left_taps = (0..tap_count)
+                .map(|tap| 0.1 / (tap as f64 + 1.0))
+                .collect::<Vec<_>>();
+            let right_taps = (0..tap_count)
+                .map(|tap| -0.3 / (tap as f64 + 1.0))
+                .collect::<Vec<_>>();
+            let direction = CartesianPosition::new(0.0, 1.0, 0.0);
+            let bank = HrirBank::new(
+                48_000,
+                vec![hrir_entry_test(1, direction, &left_taps, &right_taps)],
+            )
+            .unwrap();
+            let source =
+                StaticBinauralSource::new(SourceId::new(1), direction, -0.7, HrirEntryId::new(1))
+                    .unwrap();
+            let mut original = BinauralRenderer::new(48_000, bank.clone(), vec![source]).unwrap();
+            let mut candidate = BinauralRenderer::new(48_000, bank, vec![source]).unwrap();
+            // Repeated blocks exercise both zero and populated history, with
+            // the split before, at, and after the final tap in each block.
+            for length in [1, 0, tap_count - 1, tap_count, tap_count + 1, 1] {
+                let samples = (0..length)
+                    .map(|index| [1.0e16, 1.0, -1.0e16, 0.1, -0.0][index % 5])
+                    .collect::<Vec<_>>();
+                let blocks = [BinauralSourceBlock::new(SourceId::new(1), &samples)];
+                let mut original_left = vec![0.0; length];
+                let mut original_right = vec![0.0; length];
+                let mut candidate_left = vec![0.0; length];
+                let mut candidate_right = vec![0.0; length];
+                let expected = render_block_original_loop(
+                    &mut original,
+                    &blocks,
+                    &mut original_left,
+                    &mut original_right,
+                );
+                let actual =
+                    candidate.render_block(&blocks, &mut candidate_left, &mut candidate_right);
+                assert_eq!(expected, actual);
+                assert_f64_slice_bits(&original_left, &candidate_left, "tap boundary left");
+                assert_f64_slice_bits(&original_right, &candidate_right, "tap boundary right");
+                assert_binaural_state_bits(&original, &candidate);
+            }
+        }
     }
 
     #[test]
