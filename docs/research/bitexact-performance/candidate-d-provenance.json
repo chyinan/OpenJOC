@@ -1,0 +1,81 @@
+{
+  "record": "Optional partitioned FFT scratch reuse; evaluated and excluded from final product changes",
+  "date_utc": "2026-10-05",
+  "experimental_branch": "perf/experimental-bitexact-candidates (local only)",
+  "experiment_commit": "1d5d5d7ebbe65306bc0c28c7617f66d1ae87bffa",
+  "harness_commit": "69acffd00d031649f1cb8909954c21e41993042e",
+  "baseline_revision": "15aefe1baa7b40f37950df252b6dbf6179894d6d",
+  "cargo_lock_sha256": "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7",
+  "source_change": {
+    "file": "crates/openjoc-render/src/partitioned.rs",
+    "sha256": "962aac2e838c3372a34d3d26e02bfd881d0bc40f404d4e02f259b4778da684d8",
+    "description": "One renderer-owned f64 complex scratch buffer sized to max(forward,inverse get_inplace_scratch_len); render-time Fft::process calls use process_with_scratch. FFT plans, processing order, coefficients, operations, normalization, default direct-FIR route, and lifecycle are unchanged."
+  },
+  "harness": {
+    "example": "crates/openjoc-render/examples/partitioned_fft_scratch_probe.rs",
+    "example_sha256": "e464dbcc5985bd0160a040cd9935749021e01dd8709c813c13bb423a6dbb0493",
+    "runner": "scripts/verify_partitioned_fft_scratch.py",
+    "runner_sha256": "545f3d65df62e291a74bbb92e6cbe20f5aebfed9b588d0897a7406bb39e5e65a",
+    "runner_pass_condition": "same-backend PCM descriptors and all f64 bits match; allocation/timing results are diagnostics and do not determine gate pass/fail"
+  },
+  "toolchain": {
+    "rustc": "1.89.0 (29483883e 2025-08-04)",
+    "cargo": "1.89.0 (c24e10642 2025-06-23)",
+    "profile": "release",
+    "dependencies": "Cargo.lock pinned; no dependency changes",
+    "rustflags": "empty",
+    "cargo_encoded_rustflags": "empty",
+    "host": "x86_64-unknown-linux-gnu; Linux 6.18.44 x86_64; CPU model/topology unavailable"
+  },
+  "same_backend_exact_gate": {
+    "shared_input_sha256": "a3290ac6a8d011056df398eb07cefe33b0f3617ecd9007a444f8ca85acee874f",
+    "shared_input_bytes": 36396,
+    "input_generation": "generated once by the candidate probe, then the identical sidecar was passed to both revisions",
+    "scenarios": [
+      "791 input samples for each of two nonsilent sources",
+      "77 samples of zero input per source after nonzero processing, then drained",
+      "613 nonzero input samples per source with different excitation",
+      "791-sample replay of scenario 1 after reset and different source-block ordering"
+    ],
+    "hrir_taps_per_source": [300, 533],
+    "supported_partition_sizes": [1, 64, 128, 256],
+    "unsupported_partition_sizes": [7, 257],
+    "pcm_bytes_per_configuration": 70400,
+    "baseline_candidate_pcm_sha256_by_partition": {
+      "1": "9cf49f272a7b353f11cf0657c94630cf5033065ee4ffc4a4ed93e1dcbfb5e243",
+      "64": "0b52aa38f0e14d685c48ad2700c2aad1806e5a5b5658cfdfa6e01f7832c91590",
+      "128": "15465db332526aa06e188106373bbc0a65b344d25db80d5dabd786213e900a3f",
+      "256": "3773b8f8ade327aae34400f9a25f91a0282e262752c3fc4735b37ab44049e7e7"
+    },
+    "negative_sensitivity": "integrated one-bit f64 PCM mutation rejected specifically as partitioned PCM bit mismatch; standalone signed-zero, sample-bit, and truncation controls pass",
+    "result": "all supported partition sizes bit-identical; replay bit-identical; silence remains zero; unsupported errors unchanged"
+  },
+  "allocation_probe": {
+    "instrumentation": "separate counting-allocator binary and process, not used for timing",
+    "workload": "64 steady render_partition calls; 11 sources x 256 taps x 256 samples",
+    "baseline_allocations_per_block": 33,
+    "candidate_allocations_per_block": 0,
+    "baseline_requested_bytes_per_block": 270336,
+    "candidate_requested_bytes_per_block": 0,
+    "interpretation": "allocator requests removed in this measured optional-backend workload; not live, retained, copied, peak, or default-path bytes"
+  },
+  "plain_timing_probe": {
+    "workload": "plain allocator, 64 warmups plus 1024 timed render_partition calls; 11 sources x 256 taps x 256 samples; 512-point FFT",
+    "serial_alternating_pairs": 5,
+    "baseline_ns_per_block": [63685.831, 58207.208, 61634.511, 59678.897, 75996.224],
+    "candidate_ns_per_block": [52315.594, 59980.075, 66220.872, 72608.786, 67915.740],
+    "baseline_median_ns_per_block": 61634.511,
+    "candidate_median_ns_per_block": 66220.872,
+    "candidate_faster_pairs": 2,
+    "cpu_gain_demonstrated": false,
+    "interpretation": "No repeatable CPU gain; candidate median is slower and paired runs are noisy. No percentage or real-time speedup claim."
+  },
+  "scope_limits": [
+    "Synthetic inputs and synthetic HRIRs, not representative programme audio",
+    "Optional PartitionedBinauralRenderer only; no effect on API/LAV default direct-FIR path",
+    "Timed region excludes construction/planning and file I/O",
+    "No hosted CI execution, real programme corpus, Windows device, or CPU-model claim"
+  ],
+  "raw_outputs": "../openjoc-perf-run/partitioned-d-actual (external local run directory; no PCM copied into repository)",
+  "decision": "Do not include the D product change in the final gate/report branch because CPU benefit was not demonstrated"
+}

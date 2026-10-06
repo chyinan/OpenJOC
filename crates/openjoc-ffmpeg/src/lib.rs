@@ -3118,9 +3118,12 @@ mod tests {
     const SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT: usize = 128;
 
     fn synthetic_joc_lifecycle_stream() -> Vec<u8> {
+        synthetic_joc_lifecycle_stream_with_count(SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT)
+    }
+
+    fn synthetic_joc_lifecycle_stream_with_count(frame_count: usize) -> Vec<u8> {
         const JOC_SEQUENCE_MAX: usize = 1023;
         const JOC_SEQUENCE_FIRST: usize = 1;
-        let frame_count = SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT;
         let mut stream = Vec::with_capacity(frame_count * 4096);
         for index in 0..frame_count {
             let x = u8::try_from((index * 17 + 15) % 63).expect("bounded lifecycle x");
@@ -3133,7 +3136,7 @@ mod tests {
                 })
             });
             let sequence_count = u16::try_from(index % JOC_SEQUENCE_MAX + JOC_SEQUENCE_FIRST)
-                .expect("bounded lifecycle JOC sequence count");
+                .expect("JOC lifecycle sequence count wraps from 1023 to 1");
             stream.extend_from_slice(&five_channel_audio_frame_with_exponent_codes(
                 &joc_emdf(
                     &active_object_oamd(x, y, z),
@@ -3147,7 +3150,7 @@ mod tests {
         stream
     }
 
-    fn assert_lifecycle_payload_sequence_contract() {
+    fn assert_lifecycle_payload_sequence_contract(frame_count: usize) {
         use openjoc_scene::{JocFrameInput, PayloadDecoder, PayloadDecoderConfig};
 
         let mut decoder = PayloadDecoder::streaming(PayloadDecoderConfig {
@@ -3156,8 +3159,8 @@ mod tests {
         });
         let downmix = vec![vec![0.0_f64; 1536]; 5];
         let mut callbacks = 0usize;
-        for index in 0..SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT {
-            let sequence_count = u16::try_from(index % 1023 + 1).expect("bounded JOC sequence");
+        for index in 0..frame_count {
+            let sequence_count = u16::try_from(index % 1023 + 1).expect("JOC sequence 1..=1023");
             let joc_payload = one_object_joc_with_sequence(sequence_count);
             let parsed = openjoc_joc::parse_joc_payload(&joc_payload).expect("parse lifecycle JOC");
             assert_eq!(parsed.sequence_count, sequence_count);
@@ -3200,14 +3203,17 @@ mod tests {
                 )
                 .expect("decode lifecycle payload frame");
         }
-        assert_eq!(callbacks, SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT);
+        assert_eq!(callbacks, frame_count);
         decoder
             .finish_streaming()
             .expect("finish lifecycle payload stream");
     }
 
     fn assert_lifecycle_fixture_streaming_contract(stream: &[u8]) {
-        assert_lifecycle_payload_sequence_contract();
+        let expected_access_units = stream.len() / 4096;
+        assert!(expected_access_units > 0);
+        assert_eq!(stream.len(), expected_access_units * 4096);
+        assert_lifecycle_payload_sequence_contract(expected_access_units);
         let config = OpenJocConfig {
             render_mode: RenderMode::Stereo,
             speaker_layout: "2.0".to_owned(),
@@ -3215,8 +3221,47 @@ mod tests {
             ..OpenJocConfig::default()
         };
         let mut session = OpenJocSession::new(config).expect("lifecycle fixture session");
-        let expected_access_units = SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT;
-        assert_eq!(stream.len(), expected_access_units * 4096);
+        let mut metadata_changes = 0_usize;
+        let mut excitation_changes = 0_usize;
+        let mut sequence_changes = 0_usize;
+        let mut sequence_wraps = 0_usize;
+        let mut distinct_positions = std::collections::HashSet::new();
+        let mut previous_position = None;
+        let mut previous_excitation = None;
+        let mut previous_sequence = None;
+        for index in 0..expected_access_units {
+            let position = (
+                (index * 17 + 15) % 63,
+                (index * 29 + 4) % 63,
+                (index * 11) % 31,
+            );
+            let excitation = (0..18)
+                .map(|code| (index * 13 + (code / 3) * 5 + (code % 3) * 3) % 27)
+                .collect::<Vec<_>>();
+            let sequence = u16::try_from(index % 1023 + 1).expect("JOC sequence 1..=1023");
+            distinct_positions.insert(position);
+            metadata_changes +=
+                usize::from(previous_position.is_some_and(|previous| previous != position));
+            excitation_changes += usize::from(
+                previous_excitation
+                    .as_ref()
+                    .is_some_and(|previous| *previous != excitation),
+            );
+            sequence_changes +=
+                usize::from(previous_sequence.is_some_and(|previous| previous != sequence));
+            sequence_wraps +=
+                usize::from(previous_sequence.is_some_and(|previous| previous > sequence));
+            previous_position = Some(position);
+            previous_excitation = Some(excitation);
+            previous_sequence = Some(sequence);
+        }
+        eprintln!(
+            "lifecycle corpus audit: aus={expected_access_units} metadata_position_changes={metadata_changes} distinct_positions={} excitation_changes={excitation_changes} sequence_changes={sequence_changes} sequence_wraps={sequence_wraps}",
+            distinct_positions.len(),
+        );
+        assert_eq!(metadata_changes, expected_access_units.saturating_sub(1));
+        assert_eq!(excitation_changes, expected_access_units.saturating_sub(1));
+        assert_eq!(sequence_changes, expected_access_units.saturating_sub(1));
         let expected_samples = expected_access_units * 1536 + FINAL_LINKED_GAIN_LATENCY_SAMPLES;
 
         for segment_origin in [0_i64, 480_000_i64] {
@@ -3419,7 +3464,17 @@ mod tests {
         let Some(path) = std::env::var_os("OPENJOC_LIFECYCLE_JOC_PATH") else {
             return;
         };
-        let stream = synthetic_joc_lifecycle_stream();
+        let frame_count = std::env::var("OPENJOC_LIFECYCLE_JOC_FRAME_COUNT")
+            .ok()
+            .map_or(Ok(SYNTHETIC_JOC_LIFECYCLE_FRAME_COUNT), |value| {
+                value.parse::<usize>()
+            })
+            .expect("OPENJOC_LIFECYCLE_JOC_FRAME_COUNT must be an integer");
+        assert!(
+            frame_count > 0,
+            "lifecycle fixture must contain access units"
+        );
+        let stream = synthetic_joc_lifecycle_stream_with_count(frame_count);
         assert_lifecycle_fixture_streaming_contract(&stream);
         std::fs::write(path, stream).expect("write requested lifecycle JOC fixture");
     }

@@ -974,3 +974,58 @@ boundary are retained. `SemanticBindingState::Unresolved` is unchanged.
 
 See [J4R9_ACTIVE_COMPANION_RB_GEOMETRY.md](J4R9_ACTIVE_COMPANION_RB_GEOMETRY.md)
 and [its machine-readable record](J4R9_ACTIVE_COMPANION_RB_GEOMETRY.json).
+
+## 2026-10-05 — paired bit-exact performance baseline
+
+The first OpenJOC performance milestone adds a separate-build paired PCM
+oracle, release timing-only probe path, synthetic continuous 30/60-second
+inputs, stage/allocation instrumentation, and a bounded CI-ready exact-gate
+job. The baseline is pinned at the PR16 merge and the latest local 30/60-second
+paired exact gates pass for speaker layouts, binaural/orientation, and ordinary
+E-AC-3 core output, including the core `f64` stream. Three-pair timing-only
+results show material run/host spread and do not support a speedup claim. No
+product optimization has been included in this first milestone.
+
+See [the gate, corpus, exact results, limits, and reproduction notes](bitexact-performance/README.md)
+and [the compact performance summary](bitexact-performance/performance-summary.csv).
+
+## 2026-10-05 — Candidate A owned-frame allocation reduction
+
+Candidate A replaces a borrowed payload callback deep clone with the existing
+owned-frame return helper. Its 30- and 60-second exact PCM matrices pass,
+including the ordinary-core `f64` plane; focused API, scene, C API, FFmpeg,
+and WASM test suites pass. Separate allocation profiling observes 64 fewer
+allocation calls and 100,795 fewer requested bytes per access unit across six
+API paths. Five alternating 60-second timing pairs per path show mixed RTF
+medians with overlapping spreads, so no CPU speedup is claimed. Candidate A is
+preserved only on the local experiment branch. It is excluded from the proposed
+final gate/report branch because allocation-count reduction did not establish
+a CPU speedup; it is not recommended for merge.
+
+See the [Candidate A result and attribution record](bitexact-performance/README.md#candidate-a-owned-frame-clone-removal),
+[run-level timing CSV](bitexact-performance/candidate-a-timing60s.csv),
+[allocator CSV](bitexact-performance/candidate-a-allocations.csv),
+[exact-gate CSV](bitexact-performance/candidate-a-exact-gates.csv), and
+[provenance record](bitexact-performance/candidate-a-provenance.json).
+
+## 2026-10-05 — Candidate D partitioned FFT scratch experiment
+
+Candidate D changes only the optional `PartitionedBinauralRenderer` backend,
+replacing per-transform RustFFT convenience scratch with one correctly sized
+reused scratch buffer. The strict same-backend f64 oracle passes for supported
+partition sizes 1, 64, 128, and 256; unsupported 7 and 257 remain rejected.
+Inputs cover silence following nonzero state, source permutations, reset and
+replay, partial input, and varied tail drains. A separate allocator probe sees
+33 allocations/270,336 requested bytes per partition on baseline and zero for
+D. Five alternating plain-timing pairs are noisy and unfavorable overall
+(baseline median 61,635 ns/block, Candidate D 66,221 ns/block, only two pairs
+faster for D), so no CPU benefit is demonstrated. Candidate D is preserved
+only on the local experiment branch and is excluded from the proposed final
+gate/report branch.
+
+See the [Candidate D evidence and limits](bitexact-performance/README.md#candidate-d-optional-partitioned-fft-scratch-reuse),
+[timing CSV](bitexact-performance/candidate-d-timings.csv),
+[allocation CSV](bitexact-performance/candidate-d-allocations.csv),
+[exact matrix](bitexact-performance/candidate-d-exact-gates.csv),
+[unsupported-size CSV](bitexact-performance/candidate-d-unsupported-partitions.csv),
+and [provenance](bitexact-performance/candidate-d-provenance.json).

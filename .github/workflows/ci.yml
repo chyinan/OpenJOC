@@ -128,6 +128,67 @@ jobs:
       - name: Diff check
         run: git diff --check
 
+  pcm-bitexact:
+    name: pcm-bitexact
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the candidate and its pinned history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select the paired Rust toolchain
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustc +1.89.0 -vV
+          cargo +1.89.0 -Vv
+
+      - name: Resolve the frozen oracle worktree and identical test harness
+        shell: bash
+        run: |
+          baseline="$RUNNER_TEMP/openjoc-perf-baseline"
+          git worktree add --detach "$baseline" 15aefe1baa7b40f37950df252b6dbf6179894d6d
+          mkdir -p "$baseline/crates/openjoc-api/examples"
+          cp crates/openjoc-api/examples/pcm_regression_probe.rs \
+            "$baseline/crates/openjoc-api/examples/pcm_regression_probe.rs"
+          cp crates/openjoc-api/Cargo.toml "$baseline/crates/openjoc-api/Cargo.toml"
+          echo "OPENJOC_BASELINE_ROOT=$baseline" >> "$GITHUB_ENV"
+
+      - name: Fetch only locked workspace dependencies
+        run: cargo +1.89.0 fetch --locked
+
+      - name: Test strict comparator sensitivity
+        run: python3 scripts/verify_pcm_bitexact.py --self-test
+
+      - name: Paired same-host exact PCM gate
+        shell: bash
+        run: |
+          python3 scripts/verify_pcm_bitexact.py \
+            --baseline-root "$OPENJOC_BASELINE_ROOT" \
+            --candidate-root "$GITHUB_WORKSPACE" \
+            --baseline-target "$RUNNER_TEMP/openjoc-target-baseline" \
+            --candidate-target "$RUNNER_TEMP/openjoc-target-candidate" \
+            --output-dir "$RUNNER_TEMP/openjoc-pcm-gate" \
+            --online \
+            --selftest-integrated \
+            --case lifecycle-2.0,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,speaker,2.0 \
+            --case lifecycle-7.1.4,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,speaker,7.1.4 \
+            --case lifecycle-22.2,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,speaker,22.2 \
+            --case lifecycle-binaural-d1,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,binaural-d1,7.1.4 \
+            --case lifecycle-orientation-d1,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,orientation-d1,7.1.4
+
+      - name: Paired optional partitioned-backend exact PCM gate
+        shell: bash
+        run: |
+          python3 scripts/verify_partitioned_fft_scratch.py \
+            --baseline-root "$OPENJOC_BASELINE_ROOT" \
+            --candidate-root "$GITHUB_WORKSPACE" \
+            --baseline-target "$RUNNER_TEMP/openjoc-partitioned-target-baseline" \
+            --candidate-target "$RUNNER_TEMP/openjoc-partitioned-target-candidate" \
+            --output-dir "$RUNNER_TEMP/openjoc-partitioned-gate" \
+            --online \
+            --timing-pairs 5
+
   platform-windows:
     name: platform-windows
     runs-on: windows-2025

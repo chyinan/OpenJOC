@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+allocation-profile = []
+
 [dependencies]
 openjoc-bitio = { version = "0.18.0", path = "../openjoc-bitio" }
 openjoc-emdf = { version = "0.18.0", path = "../openjoc-emdf" }
