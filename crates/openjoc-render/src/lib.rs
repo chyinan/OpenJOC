@@ -1309,15 +1309,19 @@ impl BinauralRenderer {
                 })?;
             let history_len = source.history.len();
             for offset in 0..block_length {
+                let mut left_acc = left[offset];
+                let mut right_acc = right[offset];
                 for tap_index in 0..source.left_taps.len() {
                     let input = if tap_index <= offset {
                         block.samples[offset - tap_index] * source.definition.gain
                     } else {
                         source.history[history_len - (tap_index - offset)]
                     };
-                    left[offset] += input * source.left_taps[tap_index];
-                    right[offset] += input * source.right_taps[tap_index];
+                    left_acc += input * source.left_taps[tap_index];
+                    right_acc += input * source.right_taps[tap_index];
                 }
+                left[offset] = left_acc;
+                right[offset] = right_acc;
                 if !left[offset].is_finite() {
                     return self.numeric_failure(left, right, OutputChannel::Left, offset);
                 }
@@ -4546,6 +4550,155 @@ mod tests {
         .unwrap()
     }
 
+    /// Frozen test-only copy of `render_block` at merged-QMF `1647fc4`.
+    /// Preserve its old arithmetic here; do not update it with the candidate.
+    fn render_block_original_loop(
+        renderer: &mut BinauralRenderer,
+        blocks: &[BinauralSourceBlock<'_>],
+        left: &mut [f64],
+        right: &mut [f64],
+    ) -> Result<(), RenderError> {
+        renderer.ensure_renderable()?;
+        validate_binaural_outputs(left, right)?;
+        if blocks.len() != renderer.sources.len() {
+            return Err(RenderError::BinauralSourceCountMismatch {
+                expected: renderer.sources.len(),
+                actual: blocks.len(),
+            });
+        }
+        let block_length = left.len();
+        for (block_index, block) in blocks.iter().enumerate() {
+            if block.samples.len() != block_length {
+                return Err(RenderError::SourceBlockLengthMismatch {
+                    id: block.id,
+                    expected: block_length,
+                    actual: block.samples.len(),
+                });
+            }
+            if renderer
+                .sources
+                .iter()
+                .all(|source| source.definition.id != block.id)
+            {
+                return Err(RenderError::UnknownBinauralSource { id: block.id });
+            }
+            if blocks[..block_index]
+                .iter()
+                .any(|previous| previous.id == block.id)
+            {
+                return Err(RenderError::DuplicateBinauralSource { id: block.id });
+            }
+            if let Some(sample_index) = block.samples.iter().position(|sample| !sample.is_finite())
+            {
+                return Err(RenderError::NonFiniteSourceSample {
+                    id: block.id,
+                    sample_index,
+                });
+            }
+        }
+        for source in &renderer.sources {
+            if blocks.iter().all(|block| block.id != source.definition.id) {
+                return Err(RenderError::MissingBinauralSource {
+                    id: source.definition.id,
+                });
+            }
+        }
+        left.fill(0.0);
+        right.fill(0.0);
+        if block_length == 0 {
+            return Ok(());
+        }
+        for source in &mut renderer.sources {
+            let block = blocks
+                .iter()
+                .find(|block| block.id == source.definition.id)
+                .ok_or(RenderError::MissingBinauralSource {
+                    id: source.definition.id,
+                })?;
+            let history_len = source.history.len();
+            for offset in 0..block_length {
+                for tap_index in 0..source.left_taps.len() {
+                    let input = if tap_index <= offset {
+                        block.samples[offset - tap_index] * source.definition.gain
+                    } else {
+                        source.history[history_len - (tap_index - offset)]
+                    };
+                    left[offset] += input * source.left_taps[tap_index];
+                    right[offset] += input * source.right_taps[tap_index];
+                }
+                if !left[offset].is_finite() {
+                    return renderer.numeric_failure(left, right, OutputChannel::Left, offset);
+                }
+                if !right[offset].is_finite() {
+                    return renderer.numeric_failure(left, right, OutputChannel::Right, offset);
+                }
+            }
+        }
+        for source in &mut renderer.sources {
+            let block = blocks
+                .iter()
+                .find(|block| block.id == source.definition.id)
+                .ok_or(RenderError::MissingBinauralSource {
+                    id: source.definition.id,
+                })?;
+            update_binaural_history(&mut source.history, block.samples, source.definition.gain);
+            source.tail_remaining = source.history.len();
+        }
+        Ok(())
+    }
+
+    fn assert_f64_slice_bits(expected: &[f64], actual: &[f64], label: &str) {
+        assert_eq!(expected.len(), actual.len(), "{label} length changed");
+        for (index, (&expected, &actual)) in expected.iter().zip(actual).enumerate() {
+            assert_eq!(
+                expected.to_bits(),
+                actual.to_bits(),
+                "{label}[{index}] differs: expected={expected:.17e}, actual={actual:.17e}"
+            );
+        }
+    }
+
+    fn assert_binaural_state_bits(expected: &BinauralRenderer, actual: &BinauralRenderer) {
+        assert_eq!(expected.sample_rate_hz, actual.sample_rate_hz);
+        assert_eq!(expected.tail_started, actual.tail_started);
+        assert_eq!(expected.finished, actual.finished);
+        assert_eq!(expected.requires_reset, actual.requires_reset);
+        assert_eq!(
+            expected.remaining_tail_samples(),
+            actual.remaining_tail_samples()
+        );
+        assert_eq!(expected.sources.len(), actual.sources.len());
+        for (index, (expected, actual)) in expected.sources.iter().zip(&actual.sources).enumerate()
+        {
+            assert_eq!(
+                expected.definition.id, actual.definition.id,
+                "source {index} ID"
+            );
+            assert_eq!(
+                expected.definition.gain.to_bits(),
+                actual.definition.gain.to_bits(),
+                "source {index} gain"
+            );
+            assert_eq!(expected.left_taps.len(), actual.left_taps.len());
+            assert_eq!(expected.right_taps.len(), actual.right_taps.len());
+            assert_f64_slice_bits(
+                &expected.left_taps,
+                &actual.left_taps,
+                "registered left taps",
+            );
+            assert_f64_slice_bits(
+                &expected.right_taps,
+                &actual.right_taps,
+                "registered right taps",
+            );
+            assert_f64_slice_bits(&expected.history, &actual.history, "source history");
+            assert_eq!(
+                expected.tail_remaining, actual.tail_remaining,
+                "source {index} tail"
+            );
+        }
+    }
+
     fn oracle_full_convolution(samples: &[f64], gain: f64, taps: &[f64]) -> Vec<f64> {
         let mut output = vec![0.0; samples.len() + taps.len() - 1];
         for (sample_index, &sample) in samples.iter().enumerate() {
@@ -5010,6 +5163,365 @@ mod tests {
         assert_ne!(left, right);
         assert_eq!(renderer.remaining_tail_samples(), 0);
         assert!(renderer.is_finished());
+    }
+
+    #[test]
+    fn binaural_local_accumulators_match_old_loop_for_long_cancellation_sensitive_filters() {
+        let tap_lengths = [255, 256, 257, 2, 1];
+        let directions = [
+            CartesianPosition::new(1.0, 0.0, 0.0),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            CartesianPosition::new(0.0, 0.0, 1.0),
+            CartesianPosition::new(1.0, 1.0, 0.0),
+            CartesianPosition::new(-1.0, 1.0, 0.0),
+        ];
+        let gains = [1.1, -0.7, 0.3, 0.0, -0.0];
+        let mut entries = Vec::new();
+        let mut sources = Vec::new();
+        for source_index in 0..tap_lengths.len() {
+            let tap_count = tap_lengths[source_index];
+            let left_taps = (0..tap_count)
+                .map(|tap| 0.1 / (tap as f64 + 1.0) + source_index as f64 * 1.0e-10)
+                .collect::<Vec<_>>();
+            let right_taps = (0..tap_count)
+                .map(|tap| -0.3 / (tap as f64 + 1.0) - source_index as f64 * 1.0e-10)
+                .collect::<Vec<_>>();
+            let id = SourceId::new(301 + source_index as u64);
+            let entry_id = HrirEntryId::new(301 + source_index as u64);
+            entries.push(hrir_entry_test(
+                entry_id.get(),
+                directions[source_index],
+                &left_taps,
+                &right_taps,
+            ));
+            sources.push(
+                StaticBinauralSource::new(
+                    id,
+                    directions[source_index],
+                    gains[source_index],
+                    entry_id,
+                )
+                .unwrap(),
+            );
+        }
+        let bank = HrirBank::new(48_000, entries).unwrap();
+        let mut original = BinauralRenderer::new(48_000, bank.clone(), sources.clone()).unwrap();
+        let mut candidate = BinauralRenderer::new(48_000, bank.clone(), sources.clone()).unwrap();
+        assert_binaural_state_bits(&original, &candidate);
+
+        let inputs = (0..tap_lengths.len())
+            .map(|source_index| {
+                (0..850)
+                    .map(|sample_index| match (sample_index + source_index) % 8 {
+                        0 => 1.0e16,
+                        1 => 1.0,
+                        2 => -1.0e16,
+                        3 => 0.1,
+                        4 => -0.1,
+                        5 => f64::from_bits(0x3ff0_0000_0000_0001),
+                        6 => -0.0,
+                        _ => 0.375,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let ids = (0..tap_lengths.len())
+            .map(|index| SourceId::new(301 + index as u64))
+            .collect::<Vec<_>>();
+        let make_blocks = |start: usize, length: usize, reverse: bool| {
+            let mut blocks: Vec<_> = ids
+                .iter()
+                .zip(&inputs)
+                .map(|(&id, samples)| BinauralSourceBlock::new(id, &samples[start..start + length]))
+                .collect();
+            if reverse {
+                blocks.reverse();
+            }
+            blocks
+        };
+
+        // The 127/128-sample chunks are below every history length; 256 and
+        // 336 cross the shorter histories and the longest 256-sample history.
+        let chunk_lengths = [1, 127, 128, 256, 2, 0, 336];
+        let mut offset = 0;
+        for &length in &chunk_lengths {
+            let reference_blocks = make_blocks(offset, length, false);
+            let candidate_blocks = make_blocks(offset, length, true);
+            let mut original_left = vec![0.0; length];
+            let mut original_right = vec![0.0; length];
+            let mut candidate_left = vec![0.0; length];
+            let mut candidate_right = vec![0.0; length];
+            let reference_result = render_block_original_loop(
+                &mut original,
+                &reference_blocks,
+                &mut original_left,
+                &mut original_right,
+            );
+            let candidate_result = candidate.render_block(
+                &candidate_blocks,
+                &mut candidate_left,
+                &mut candidate_right,
+            );
+            assert_eq!(reference_result, candidate_result);
+            assert_f64_slice_bits(&original_left, &candidate_left, "long chunk left");
+            assert_f64_slice_bits(&original_right, &candidate_right, "long chunk right");
+            assert_binaural_state_bits(&original, &candidate);
+            offset += length;
+        }
+        assert_eq!(offset, 850);
+        assert_eq!(original.remaining_tail_samples(), 256);
+
+        // Duplicate-source validation wins over the later NaN check and must
+        // leave caller outputs plus renderer history unchanged.
+        let mut invalid_original =
+            BinauralRenderer::new(48_000, bank.clone(), sources.clone()).unwrap();
+        let mut invalid_candidate = BinauralRenderer::new(48_000, bank, sources).unwrap();
+        let valid_sample = [0.5];
+        let non_finite_sample = [f64::NAN];
+        let invalid_blocks = [
+            BinauralSourceBlock::new(SourceId::new(301), &valid_sample),
+            BinauralSourceBlock::new(SourceId::new(301), &non_finite_sample),
+            BinauralSourceBlock::new(SourceId::new(303), &valid_sample),
+            BinauralSourceBlock::new(SourceId::new(304), &valid_sample),
+            BinauralSourceBlock::new(SourceId::new(305), &valid_sample),
+        ];
+        let mut invalid_original_left = [3.0];
+        let mut invalid_original_right = [-4.0];
+        let mut invalid_candidate_left = [3.0];
+        let mut invalid_candidate_right = [-4.0];
+        let reference_result = render_block_original_loop(
+            &mut invalid_original,
+            &invalid_blocks,
+            &mut invalid_original_left,
+            &mut invalid_original_right,
+        );
+        let candidate_result = invalid_candidate.render_block(
+            &invalid_blocks,
+            &mut invalid_candidate_left,
+            &mut invalid_candidate_right,
+        );
+        assert_eq!(
+            reference_result,
+            Err(RenderError::DuplicateBinauralSource {
+                id: SourceId::new(301)
+            })
+        );
+        assert_eq!(reference_result, candidate_result);
+        assert_f64_slice_bits(
+            &invalid_original_left,
+            &invalid_candidate_left,
+            "invalid long left",
+        );
+        assert_f64_slice_bits(
+            &invalid_original_right,
+            &invalid_candidate_right,
+            "invalid long right",
+        );
+        assert_binaural_state_bits(&invalid_original, &invalid_candidate);
+
+        for length in [128, 128] {
+            let mut original_left = vec![0.0; length];
+            let mut original_right = vec![0.0; length];
+            let mut candidate_left = vec![0.0; length];
+            let mut candidate_right = vec![0.0; length];
+            let reference_result =
+                original.drain_tail_block(&mut original_left, &mut original_right);
+            let candidate_result =
+                candidate.drain_tail_block(&mut candidate_left, &mut candidate_right);
+            assert_eq!(reference_result, candidate_result);
+            assert_f64_slice_bits(&original_left, &candidate_left, "long tail left");
+            assert_f64_slice_bits(&original_right, &candidate_right, "long tail right");
+            assert_binaural_state_bits(&original, &candidate);
+        }
+        assert!(original.is_finished());
+        original.reset();
+        candidate.reset();
+        assert_binaural_state_bits(&original, &candidate);
+        let reference_blocks = make_blocks(0, 1, false);
+        let candidate_blocks = make_blocks(0, 1, true);
+        let mut original_left = [0.0];
+        let mut original_right = [0.0];
+        let mut candidate_left = [0.0];
+        let mut candidate_right = [0.0];
+        let reference_result = render_block_original_loop(
+            &mut original,
+            &reference_blocks,
+            &mut original_left,
+            &mut original_right,
+        );
+        let candidate_result =
+            candidate.render_block(&candidate_blocks, &mut candidate_left, &mut candidate_right);
+        assert_eq!(reference_result, candidate_result);
+        assert_f64_slice_bits(&original_left, &candidate_left, "long post-reset left");
+        assert_f64_slice_bits(&original_right, &candidate_right, "long post-reset right");
+        assert_binaural_state_bits(&original, &candidate);
+    }
+
+    #[test]
+    fn binaural_local_accumulators_preserve_overflow_error_precedence_and_reset() {
+        let bank = HrirBank::new(
+            48_000,
+            vec![hrir_entry_test(
+                99,
+                CartesianPosition::new(0.0, 1.0, 0.0),
+                &[f64::MAX],
+                &[f64::MAX],
+            )],
+        )
+        .unwrap();
+        let source = StaticBinauralSource::new(
+            SourceId::new(90),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            2.0,
+            HrirEntryId::new(99),
+        )
+        .unwrap();
+        let mut original = BinauralRenderer::new(48_000, bank.clone(), vec![source]).unwrap();
+        let mut candidate = BinauralRenderer::new(48_000, bank, vec![source]).unwrap();
+        let huge_sample = [f64::MAX];
+        let blocks = [BinauralSourceBlock::new(SourceId::new(90), &huge_sample)];
+        let mut original_left = [7.0];
+        let mut original_right = [8.0];
+        let mut candidate_left = [7.0];
+        let mut candidate_right = [8.0];
+        let reference_result = render_block_original_loop(
+            &mut original,
+            &blocks,
+            &mut original_left,
+            &mut original_right,
+        );
+        let candidate_result =
+            candidate.render_block(&blocks, &mut candidate_left, &mut candidate_right);
+        assert_eq!(
+            reference_result,
+            Err(RenderError::NonFiniteOutput {
+                channel: OutputChannel::Left,
+                sample_index: 0,
+            })
+        );
+        assert_eq!(reference_result, candidate_result);
+        assert_f64_slice_bits(&original_left, &candidate_left, "overflow left output");
+        assert_f64_slice_bits(&original_right, &candidate_right, "overflow right output");
+        assert_binaural_state_bits(&original, &candidate);
+        assert!(original.requires_reset);
+
+        // requires_reset must win before output-length/structural validation.
+        let malformed: [BinauralSourceBlock<'_>; 0] = [];
+        let mut original_bad_left = [3.0; 2];
+        let mut original_bad_right = [4.0; 1];
+        let mut candidate_bad_left = [3.0; 2];
+        let mut candidate_bad_right = [4.0; 1];
+        let reference_result = render_block_original_loop(
+            &mut original,
+            &malformed,
+            &mut original_bad_left,
+            &mut original_bad_right,
+        );
+        let candidate_result = candidate.render_block(
+            &malformed,
+            &mut candidate_bad_left,
+            &mut candidate_bad_right,
+        );
+        assert_eq!(reference_result, Err(RenderError::BinauralRequiresReset));
+        assert_eq!(reference_result, candidate_result);
+        assert_f64_slice_bits(
+            &original_bad_left,
+            &candidate_bad_left,
+            "reset-required left",
+        );
+        assert_f64_slice_bits(
+            &original_bad_right,
+            &candidate_bad_right,
+            "reset-required right",
+        );
+        assert_binaural_state_bits(&original, &candidate);
+
+        original.reset();
+        candidate.reset();
+        assert_binaural_state_bits(&original, &candidate);
+        let zero_sample = [0.0];
+        let recovery_blocks = [BinauralSourceBlock::new(SourceId::new(90), &zero_sample)];
+        let mut original_left = [1.0];
+        let mut original_right = [2.0];
+        let mut candidate_left = [1.0];
+        let mut candidate_right = [2.0];
+        let reference_result = render_block_original_loop(
+            &mut original,
+            &recovery_blocks,
+            &mut original_left,
+            &mut original_right,
+        );
+        let candidate_result =
+            candidate.render_block(&recovery_blocks, &mut candidate_left, &mut candidate_right);
+        assert_eq!(reference_result, Ok(()));
+        assert_eq!(reference_result, candidate_result);
+        assert_f64_slice_bits(&original_left, &candidate_left, "recovery left output");
+        assert_f64_slice_bits(&original_right, &candidate_right, "recovery right output");
+        assert_binaural_state_bits(&original, &candidate);
+
+        // Right-only non-finite output is distinct from the both-ears overflow
+        // above: the left channel must stay finite and the error names right.
+        let right_only_bank = HrirBank::new(
+            48_000,
+            vec![hrir_entry_test(
+                100,
+                CartesianPosition::new(0.0, 1.0, 0.0),
+                &[1.0],
+                &[f64::MAX],
+            )],
+        )
+        .unwrap();
+        let right_only_source = StaticBinauralSource::new(
+            SourceId::new(91),
+            CartesianPosition::new(0.0, 1.0, 0.0),
+            1.0,
+            HrirEntryId::new(100),
+        )
+        .unwrap();
+        let mut right_original =
+            BinauralRenderer::new(48_000, right_only_bank.clone(), vec![right_only_source])
+                .unwrap();
+        let mut right_candidate =
+            BinauralRenderer::new(48_000, right_only_bank, vec![right_only_source]).unwrap();
+        let right_huge_sample = [f64::MAX];
+        let right_blocks = [BinauralSourceBlock::new(
+            SourceId::new(91),
+            &right_huge_sample,
+        )];
+        let mut right_original_left = [2.0];
+        let mut right_original_right = [3.0];
+        let mut right_candidate_left = [2.0];
+        let mut right_candidate_right = [3.0];
+        let right_reference_result = render_block_original_loop(
+            &mut right_original,
+            &right_blocks,
+            &mut right_original_left,
+            &mut right_original_right,
+        );
+        let right_candidate_result = right_candidate.render_block(
+            &right_blocks,
+            &mut right_candidate_left,
+            &mut right_candidate_right,
+        );
+        assert_eq!(
+            right_reference_result,
+            Err(RenderError::NonFiniteOutput {
+                channel: OutputChannel::Right,
+                sample_index: 0,
+            })
+        );
+        assert_eq!(right_reference_result, right_candidate_result);
+        assert_f64_slice_bits(
+            &right_original_left,
+            &right_candidate_left,
+            "right-only overflow left output",
+        );
+        assert_f64_slice_bits(
+            &right_original_right,
+            &right_candidate_right,
+            "right-only overflow right output",
+        );
+        assert_binaural_state_bits(&right_original, &right_candidate);
     }
 
     #[test]
