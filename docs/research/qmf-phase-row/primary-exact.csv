@@ -1,0 +1,11 @@
+case,input_sha256,mode,layout,aus,frames,samples,channels,pcm_bytes,comparison,evidence_log
+stereo30,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,stereo,2.0,938,939,1440800,2,11526400,byte-exact PASS,qmf-exact-run.log
+speaker714-30,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,speaker,7.1.4,938,939,1440800,12,69158400,byte-exact PASS,qmf-exact-run.log
+d1-714-30,a44fc36470d07f98c68053c9015e3cb169a21af927b1b3b93bd5712a42234671,binaural-d1,7.1.4,938,939,1441023,2,11528184,byte-exact PASS,qmf-exact-run.log
+stereo60,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,stereo,2.0,1875,1876,2880032,2,23040256,byte-exact PASS,qmf-exact-run.log
+speaker714-60,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,speaker,7.1.4,1875,1876,2880032,12,138241536,byte-exact PASS,qmf-exact-run.log
+d1-714-60,8202e69a5cd13c9142165315f7640d2d7c3cf554b6de0bba8b2c5c40cc499cf2,binaural-d1,7.1.4,1875,1876,2880255,2,23042040,byte-exact PASS,qmf-exact-run.log
+speaker222-short,b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8,speaker,22.2,128,129,196640,24,18877440,byte-exact PASS,qmf-exact-run.log
+d2-222-short,b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8,binaural-d2,22.2,128,129,196863,2,1574904,byte-exact PASS,qmf-exact-run.log
+orientation-d1-short,b860509a1613134931e1e39b9d2b6d4d31687b1a6586d8e2bcf5fe99e7da14f8,orientation-d1,7.1.4,128,129,196863,2,1574904,byte-exact PASS,qmf-exact-run.log
+ordinary-core60,0b98eb8c92ad542cbda37c402e420e74f8a9ddd25e72cd440788be110ce4a136,ordinary-eac3-core,5.1,1875,1875,2880000,6,69120000,byte-exact PASS,qmf-core-control-run.log

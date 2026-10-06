@@ -1,0 +1,6 @@
+pair,order,calls,baseline_ms,baseline_us_per_call,candidate_ms,candidate_us_per_call,candidate_delta_percent
+1,baseline-candidate,65536,1529.451,23.338,390.944,5.965,-74.43893266276592
+2,candidate-baseline,65536,1785.035,27.237,397.305,6.062,-77.74245322920838
+3,baseline-candidate,65536,1511.236,23.06,542.199,8.273,-64.12214902238962
+4,candidate-baseline,65536,1527.757,23.312,399.023,6.089,-73.88177570124044
+5,baseline-candidate,65536,1480.494,22.591,383.708,5.855,-74.08243464681384

@@ -3,6 +3,7 @@ import sys
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "verify_pcm_bitexact.py"
@@ -12,6 +13,54 @@ import verify_partitioned_fft_scratch as partitioned_gate  # noqa: E402
 
 
 class PcmBitexactGateTests(unittest.TestCase):
+    def test_probe_binary_path_suffix_is_platform_aware(self):
+        target = Path("/tmp/openjoc-target")
+        self.assertEqual(
+            gate.probe_binary_path(target, "pcm_regression_probe", platform="win32"),
+            target / "release/examples/pcm_regression_probe.exe",
+        )
+        self.assertEqual(
+            gate.probe_binary_path(target, "pcm_regression_probe", platform="linux"),
+            target / "release/examples/pcm_regression_probe",
+        )
+
+    def test_toolchain_defaults_and_override_are_explicit(self):
+        parser = gate.argument_parser()
+        defaults = parser.parse_args([])
+        override = parser.parse_args(["--toolchain", "1.98.1"])
+        self.assertEqual(defaults.toolchain, "1.89.0")
+        self.assertEqual(override.toolchain, "1.98.1")
+        self.assertEqual(
+            gate.toolchain_commands(override.toolchain),
+            (["rustc", "+1.98.1", "-vV"], ["cargo", "+1.98.1", "-Vv"]),
+        )
+
+    def test_build_uses_selected_toolchain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            target = Path(temporary) / "target"
+            logs = Path(temporary) / "logs"
+            binary = gate.probe_binary_path(target, "pcm_regression_probe")
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"mock binary")
+            with mock.patch.object(gate, "run_checked") as run_checked:
+                result = gate.build_revision(
+                    root,
+                    target,
+                    label="candidate",
+                    log_dir=logs,
+                    env={},
+                    needs_api=True,
+                    needs_core=False,
+                    allocation_profile=False,
+                    online=False,
+                    toolchain="1.98.1",
+                    verbose=True,
+                )
+            self.assertEqual(result["api"], binary)
+            self.assertEqual(run_checked.call_args.args[0][:3], ["cargo", "+1.98.1", "build"])
+            self.assertIn("--verbose", run_checked.call_args.args[0])
+
     def test_comparator_negative_sensitivity_suite(self):
         gate.run_self_tests()
 
