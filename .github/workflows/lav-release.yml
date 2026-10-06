@@ -12,7 +12,7 @@ on:
       lav_ref:
         description: Full LAVFilters-OpenJOC commit to build
         required: true
-        default: 8f32aad51aea24602f2175316a241568be5fc4a1
+        default: 01666bae613aeaf0568f7548bfe9ab77a09486e1
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '8f32aad51aea24602f2175316a241568be5fc4a1' }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || '01666bae613aeaf0568f7548bfe9ab77a09486e1' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # Keep build tooling at the workflow revision, while compiling CAPI from
@@ -348,10 +348,16 @@ jobs:
           $preflight = Test-OpenJocPackage $session
           if (-not $preflight.Success) { throw $preflight.Detail }
           $smokes = Join-Path $env:RUNNER_TEMP 'openjoc-lav-smokes'
-          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocDirectShowLifecycle.exe', 'OpenJocShippedLayoutsTests.exe')) {
+          # Native tests resolve imports beside the EXE, using this exact package.
+          Copy-Item -Path (Join-Path $extract 'runtime\*') -Destination $smokes -Recurse -Force
+          foreach ($name in @('AudioStatusCapacityTests.exe', 'OpenJocAdmissionTests.exe', 'OpenJocDiagnosticTests.exe', 'OpenJocDialnormPolicyTests.exe', 'OpenJocOutputTests.exe', 'OpenJocStrictOutputTests.exe', 'OpenJocShippedLayoutsTests.exe')) {
             & (Join-Path $smokes $name)
             if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: $name ($LASTEXITCODE)" }
           }
+          & (Join-Path $smokes 'OpenJocSettingsSmoke.exe') $lavAudio
+          if ($LASTEXITCODE -ne 0) { throw "settings smoke failed: $LASTEXITCODE" }
+          & (Join-Path $smokes 'OpenJocSettingsSmoke.exe') $lavAudio --output-gain-only
+          if ($LASTEXITCODE -ne 0) { throw "output-gain settings smoke failed: $LASTEXITCODE" }
           & (Join-Path $smokes 'OpenJocPropertyPageSmoke.exe') $lavAudio
           if ($LASTEXITCODE -ne 0) { throw "standalone smoke failed: OpenJocPropertyPageSmoke.exe ($LASTEXITCODE)" }
           & (Join-Path $smokes 'LAVAudioIdentitySmoke.exe') (Join-Path $extract 'runtime\LAVAudio.ax')

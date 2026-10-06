@@ -12,6 +12,24 @@ WORKFLOW = WORKSPACE / ".github" / "workflows" / "lav-release.yml"
 
 
 class LavReleaseWorkflowTests(unittest.TestCase):
+    def test_gain_documentation_is_explicitly_unreleased(self) -> None:
+        for relative, expected in (
+            ("docs/integration/LAV_FILTERS_OPENJOC.md", "Unreleased source/candidate feature"),
+            ("docs/site/using/windows-lav-potplayer.md", "**Unreleased:**"),
+            ("docs/site/using/windows-lav-potplayer.zh.md", "**尚未发布：**"),
+        ):
+            text = (WORKSPACE / relative).read_text(encoding="utf-8")
+            self.assertIn(expected, text)
+            self.assertIn("v0.18.0", text)
+
+    def test_native_gain_and_settings_gates_precede_publication(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        validation = text.split("- name: Validate package and standalone smoke tests")[1].split("- name: Upload LAV asset")[0]
+        for required in ("OpenJocOutputTests.exe", "OpenJocStrictOutputTests.exe", "OpenJocSettingsSmoke.exe", "--output-gain-only", "if ($LASTEXITCODE -ne 0)", "Copy-Item -Path (Join-Path $extract 'runtime\\*') -Destination $smokes"):
+            self.assertIn(required, validation)
+        self.assertNotIn("OpenJocDirectShowLifecycle.exe", validation)
+        self.assertIn("ref: ${{ env.RELEASE_TAG }}", text)
+
     def test_workflow_builds_pinned_lav_and_uploads_the_matching_release_asset(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         for expected in (
@@ -19,13 +37,15 @@ class LavReleaseWorkflowTests(unittest.TestCase):
             "workflow_dispatch:",
             "tags: ['v*']",
             "repository: chyinan/LAVFilters-OpenJOC",
-            "8f32aad51aea24602f2175316a241568be5fc4a1",
+            "01666bae613aeaf0568f7548bfe9ab77a09486e1",
             "scripts/package_lav_release.py",
             "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip",
             "gh release upload",
             "contents: write",
         ):
             self.assertIn(expected, text)
+        # Both manual default and tag-trigger fallback must use this reviewed pin.
+        self.assertEqual(text.count("01666bae613aeaf0568f7548bfe9ab77a09486e1"), 2)
         self.assertIn("cargo build -p openjoc-capi --release --locked", text)
         self.assertIn("--extra-libs=../thirdparty/64/lib/zlib.lib", text)
         self.assertIn("Join-Path $lav 'ffmpeg\\zlib.lib'", text)

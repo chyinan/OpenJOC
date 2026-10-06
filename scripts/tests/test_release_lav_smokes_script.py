@@ -67,6 +67,12 @@ class ReleaseLavSmokesScriptTests(unittest.TestCase):
         self.assertGreaterEqual(text.count("strmiids.lib"), 3)
         self.assertGreaterEqual(text.count("call cl"), 14)
 
+    def test_assertions_remain_enabled_in_every_smoke(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        commands = [line for line in text.splitlines() if line.startswith("call cl ")]
+        self.assertTrue(commands)
+        self.assertTrue(all("/UNDEBUG" in line for line in commands))
+
     def test_checked_in_noop_lifecycle_is_reproducible(self) -> None:
         text = NOOP_LIFECYCLE_SOURCE.read_text(encoding="utf-8")
 
