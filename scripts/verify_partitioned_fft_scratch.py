@@ -25,6 +25,7 @@ from verify_pcm_bitexact import (
     hash_file,
     paths_overlap,
     validate_baseline_worktree,
+    validate_versioned_dependencies,
 )
 
 
@@ -476,8 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     base_lock = hash_file(baseline_root / "Cargo.lock")
     candidate_lock = hash_file(candidate_root / "Cargo.lock")
-    if base_lock != candidate_lock:
-        raise GateError("baseline and candidate Cargo.lock hashes differ")
+    validate_versioned_dependencies(baseline_root, candidate_root)
 
     baseline_plain = build_probe(
         baseline_root,

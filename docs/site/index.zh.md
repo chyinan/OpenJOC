@@ -54,6 +54,6 @@ OpenJOC 是一个使用 Rust 编写的开源、以净室方式开发的 **E-AC-3
 
 ## 当前版本
 
-本站以仓库 **v0.18.0** 为基线。支持范围是有意限定的；在把渲染或导出结果当作生产交付物前，请阅读[能力矩阵](project/capabilities.md)和[已知限制](compatibility/known-limitations.md)。
+本站以仓库 **v0.19.0** 为基线。支持范围是有意限定的；在把渲染或导出结果当作生产交付物前，请阅读[能力矩阵](project/capabilities.md)和[已知限制](compatibility/known-limitations.md)。
 
 OpenJOC 与 Dolby Laboratories 没有隶属、认可或赞助关系。第三方名称归其各自所有者所有。
