@@ -110,6 +110,8 @@ This setting selects the decoder's programme-calibration policy. It is not
 normalization, DRC, a quality mode, or mastering gain, and it adds no
 post-render gain stage.
 
+**Unreleased:** Output gain is available in current LAV sources and identified test candidates, not in the published v0.18.0 Windows LAV package.
+
 **Output gain** is an independent post-render PCM level control in the same
 Program Level group. It ranges from **-20.0 dB to +20.0 dB**, in 0.1 dB steps,
 and defaults to **0.0 dB**. It applies the same linear gain to every channel

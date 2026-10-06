@@ -10,7 +10,7 @@ a downstream fork of [Nevcairiel/LAVFilters](https://github.com/Nevcairiel/LAVFi
 The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
 `fefb6987994ed56e4525e8a125f5fbb53707bc52`. The OpenJOC 0.18.0 package is
 built from immutable LAV commit
-`8f32aad51aea24602f2175316a241568be5fc4a1`, pinned by the release workflow.
+`8f32aad51aea24602f2175316a241568be5fc4a1`, pinned by the workflow used for that release.
 
 The public release includes `openjoc-lav-0.18.0-windows-x64.zip`. The pinned
 LAV source is available from the public repository at the commit above; the
@@ -132,6 +132,8 @@ as an explicit validated local-file choice; and
 **9.1.6 (Experimental)** selects the larger virtual speaker field while the
 delivered PCM remains two-channel.
 
+**Unreleased source/candidate feature:** Output gain is not included in the published v0.18.0 LAV package. The description below applies to gain-enabled LAV sources and explicitly identified test candidates until a new package is released.
+
 The **Output gain** control is independent of Dialnorm, Mixing, DRC, HRTF, and
 the renderer configuration. It stores a signed tenths-of-a-decibel value from
 -200 to +200 (displayed as -20.0 dB to +20.0 dB), defaulting to 0.0 dB. LAV
@@ -180,3 +182,12 @@ downstream LAV integration is distributed under the applicable GPL-compatible
 upstream terms. The bundled LAV/FFmpeg build has an effective GPL-3.0-only
 combined distribution classification. See the release's third-party notices,
 license files, and corresponding-source asset for the complete boundary.
+
+## Release source identity
+
+The release workflow uses build tooling from its workflow revision, but builds
+OpenJOC CAPI from the selected `RELEASE_TAG`, not from the latest `master`.
+Updating the pinned LAV revision alone does not put newer core fixes into an
+existing release package. Artifact-only validation pins both repositories to
+explicit commits and does not replace stable release assets. The published
+v0.18.0 package and a newer source/candidate build are distinct deliverables.

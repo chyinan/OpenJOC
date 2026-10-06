@@ -15,7 +15,7 @@ if errorlevel 1 exit /b %errorlevel%
 pushd "%~5"
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /D__STDC_CONSTANT_MACROS ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT /D__STDC_CONSTANT_MACROS ^
   "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocAdmissionTests.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocAdmission.cpp" ^
@@ -23,21 +23,21 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /D__STDC_CONSTANT_MACROS ^
   /Fe:OpenJocAdmissionTests.exe
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "/I%~2\decoder\LAVAudio" ^
   "%~2\decoder\LAVAudio\OpenJocDiagnosticTests.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocDiagnostic.cpp" ^
   /Fe:OpenJocDiagnosticTests.exe
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocOutputTests.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocOutput.cpp" ^
   /Fe:OpenJocOutputTests.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\ffmpeg" ^
   "/I%~2\common\includes" "/I%~2\common\baseclasses" "/I%~2\common\DSUtilLite" ^
   "%~2\decoder\LAVAudio\OpenJocStrictOutputTests.cpp" ^
@@ -47,13 +47,13 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:OpenJocStrictOutputTests.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~3" ^
   "%~2\decoder\LAVAudio\OpenJocDialnormPolicyTests.cpp" ^
   /Fe:OpenJocDialnormPolicyTests.exe
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC /DLAV_OPENJOC_SIDE_BY_SIDE /DLAV_OPENJOC_TESTING ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC /DLAV_OPENJOC_SIDE_BY_SIDE /DLAV_OPENJOC_TESTING ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
   "/I%~2\common\baseclasses" "/I%~2\ffmpeg" "/I%~2\libbluray\src" ^
   "/I%~2\common\DSUtilLite" "/I%~3" ^
@@ -65,17 +65,17 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /DLAV_ENABLE_OPENJOC /DLAV_OPENJOC_SIDE
   /Fe:OpenJocDecoderSmoke.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "%~2\decoder\LAVAudio\LAVAudioIdentitySmoke.cpp" ^
   /Fe:LAVAudioIdentitySmoke.exe /link ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "%~2\decoder\LAVAudio\LAVAudioResourceIdentitySmoke.cpp" ^
   /Fe:LAVAudioResourceIdentitySmoke.exe /link user32.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   /DUNICODE /D_UNICODE /DLAV_ENABLE_OPENJOC ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
   "/I%~2\common\baseclasses" "/I%~2\common\DSUtilLite" "/I%~2\ffmpeg" "/I%~3" ^
@@ -90,23 +90,23 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 /DPSAPI_VERSION=2 ^
   /link "/LIBPATH:%~2\bin_x64\lib" strmbase.lib strmiids.lib ole32.lib oleaut32.lib uuid.lib user32.lib advapi32.lib winmm.lib bcrypt.lib avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" "/I%~2\decoder\LAVAudio" ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" "/I%~2\decoder\LAVAudio" ^
   "%~2\decoder\LAVAudio\OpenJocSettingsSmoke.cpp" ^
   /Fe:OpenJocSettingsSmoke.exe /link advapi32.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX /DUNICODE /D_UNICODE ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT /W4 /WX /DUNICODE /D_UNICODE ^
   "/I%~2\include" "/I%~2\decoder\LAVAudio" "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocPolicyControl.cpp" ^
   /Fe:OpenJocPolicyControl.exe /link advapi32.lib ole32.lib strmiids.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT /utf-8 "/I%~2\include" ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT /utf-8 "/I%~2\include" ^
   "%~2\decoder\LAVAudio\OpenJocPropertyPageSmoke.cpp" ^
   /Fe:OpenJocPropertyPageSmoke.exe /link comctl32.lib ole32.lib oleaut32.lib strmiids.lib user32.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\common\includes" ^
   "/I%~2\common\baseclasses" "/I%~2\ffmpeg" "/I%~2\libbluray\src" ^
   "/I%~2\common\DSUtilLite" ^
@@ -114,7 +114,7 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:AudioStatusCapacityTests.exe
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT ^
   "/I%~2\decoder\LAVAudio" "/I%~2\include" "/I%~2\ffmpeg" ^
   "%~2\decoder\LAVAudio\OpenJocShippedLayoutsTests.cpp" ^
   "%~2\decoder\LAVAudio\OpenJocShippedLayouts.cpp" ^
@@ -122,6 +122,6 @@ call cl /nologo /EHsc /std:c++17 /O2 /MT ^
   /Fe:OpenJocShippedLayoutsTests.exe /link "/LIBPATH:%~2\bin_x64\lib" avutil-lav.lib
 if errorlevel 1 exit /b %errorlevel%
 
-call cl /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
+call cl /UNDEBUG /nologo /EHsc /std:c++17 /O2 /MT "/I%~2\include" ^
   "%~4" /Fe:OpenJocDirectShowLifecycle.exe /link ole32.lib strmiids.lib
 exit /b %errorlevel%
