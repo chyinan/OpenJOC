@@ -1791,11 +1791,14 @@ pub extern "C" fn openjoc_stream_decoder_create(
         let orientation_pull_samples = orientation_pull_samples_from_c(config);
         let config = config_from_c(config)
             .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string()))?;
-        let decoder = if let Some(max_pull_samples) = orientation_pull_samples {
+        let mut decoder = if let Some(max_pull_samples) = orientation_pull_samples {
             FfmpegDecoder::new_with_listener_orientation_pull(config, max_pull_samples)?
         } else {
             FfmpegDecoder::new(config)?
         };
+        // The C stream API exposes aggregate live inspection, not AU traces.
+        // Do not retain diagnostic history that its callers cannot consume.
+        decoder.set_trace_collection_enabled(false);
         let layout_name = CString::new(
             decoder
                 .channel_layout()
@@ -2493,6 +2496,69 @@ mod orientation_status_tests {
         assert!(retired.is_null());
         openjoc_listener_orientation_update_destroy(update);
         openjoc_listener_orientation_preparer_destroy(preparer);
+        openjoc_stream_decoder_destroy(stream);
+    }
+}
+
+#[cfg(test)]
+mod stream_lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn c_stream_does_not_retain_unconsumable_traces() {
+        let mut config = std::mem::MaybeUninit::uninit();
+        assert_eq!(
+            openjoc_decoder_config_init_v1_7(config.as_mut_ptr()),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
+        // SAFETY: the current initializer populated the full configuration.
+        let config = unsafe { config.assume_init() };
+        let mut stream = ptr::null_mut();
+        assert_eq!(
+            openjoc_stream_decoder_create(&raw const config, &raw mut stream),
+            openjoc_status::OPENJOC_STATUS_OK
+        );
+        let fixture = include_bytes!("../../openjoc-wasm/testdata/joc.lifecycle.ec3");
+        // SAFETY: successful creation returned a live exclusively owned handle.
+        let decoder = unsafe { &mut (*stream).decoder };
+        for cycle in 0..2 {
+            for (index, bytes) in fixture.chunks_exact(4096).cycle().take(256).enumerate() {
+                decoder
+                    .send_packet(PacketRef {
+                        data: bytes,
+                        pts: Some(i64::try_from((index + cycle) * 1536).unwrap()),
+                        dts: None,
+                        duration: None,
+                        time_base: Rational::SAMPLE_TIME_BASE,
+                        stream_index: 0,
+                        discontinuity: false,
+                        preroll: false,
+                    })
+                    .unwrap();
+                while matches!(decoder.receive_frame().unwrap(), ReceiveOutcome::Frame(_)) {}
+            }
+            decoder.drain().unwrap();
+            while matches!(decoder.receive_frame().unwrap(), ReceiveOutcome::Frame(_)) {}
+            assert!(matches!(
+                decoder.receive_frame().unwrap(),
+                ReceiveOutcome::EndOfStream
+            ));
+            assert_eq!(
+                decoder.take_traces(),
+                [] as [openjoc_ffmpeg::AccessUnitTrace; 0]
+            );
+            let snapshot = decoder.live_inspection_snapshot();
+            assert_eq!(snapshot.observed_au_count, 256);
+            assert_eq!(
+                snapshot.coverage,
+                if cycle == 0 {
+                    "complete_continuous"
+                } else {
+                    "partial"
+                }
+            );
+            decoder.reset();
+        }
         openjoc_stream_decoder_destroy(stream);
     }
 }

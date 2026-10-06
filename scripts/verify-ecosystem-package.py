@@ -17,6 +17,15 @@ import tempfile
 import zipfile
 
 
+_MACOS_SPEC = importlib.util.spec_from_file_location(
+    "openjoc_macos_package", pathlib.Path(__file__).with_name("macos_package.py")
+)
+if _MACOS_SPEC is None or _MACOS_SPEC.loader is None:
+    raise RuntimeError("unable to load Mach-O relocation implementation")
+_MACOS = importlib.util.module_from_spec(_MACOS_SPEC)
+_MACOS_SPEC.loader.exec_module(_MACOS)
+
+
 _PLAYER_PACKAGE_SPEC = importlib.util.spec_from_file_location(
     "openjoc_player_package", pathlib.Path(__file__).with_name("player-package.py")
 )
@@ -113,8 +122,8 @@ def run_binary(
     check: bool = True,
 ) -> tuple[int, str]:
     environment = hermetic_environment(root, platform_name)
-    if platform_name == "linux-x86_64":
-        # Exercise the shipped public launcher, not a verifier-only setup.
+    if platform_name in {"linux-x86_64", "macos-arm64"}:
+        # Exercise public commands with only their shipped loader configuration.
         environment.pop("LD_LIBRARY_PATH", None)
         environment.pop("DYLD_LIBRARY_PATH", None)
     completed = subprocess.run(
@@ -137,6 +146,10 @@ def verify_ffmpeg_runtime(root: pathlib.Path, platform_name: str) -> None:
     suffix = ".exe" if platform_name == "windows-x64" else ""
     ffmpeg = root / f"bin/openjoc-ffmpeg{suffix}"
     ffprobe = root / f"bin/openjoc-ffprobe{suffix}"
+    if platform_name == "macos-arm64":
+        _MACOS.verify(root)
+        for owner in _MACOS.images(root):
+            _MACOS.run("codesign", "--verify", "--strict", str(owner))
     _, ffmpeg_version = run_binary(ffmpeg, root, platform_name)
     _, ffprobe_version = run_binary(ffprobe, root, platform_name)
     if not re.search(r"(?im)^ffmpeg version\b", ffmpeg_version):

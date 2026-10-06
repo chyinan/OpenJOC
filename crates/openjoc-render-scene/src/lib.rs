@@ -226,6 +226,8 @@ pub fn load_scene(
     }
     let root = path
         .parent()
+        // A bare filename has an empty parent, which denotes the current directory.
+        .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
         .canonicalize()?;
     let mut ids = HashSet::new();

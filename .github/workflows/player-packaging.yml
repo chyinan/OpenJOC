@@ -111,7 +111,14 @@ jobs:
           cp "$RUNNER_TEMP"/openjoc-ecosystem-{sdk,gstreamer,ffmpeg}/* "$ecosystem/"
           python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-sdk-*.tar.gz' -print -quit)" --kind sdk --platform macos-arm64
           python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-gstreamer-plugin-*.tar.gz' -print -quit)" --kind gstreamer-plugin --platform macos-arm64 --run-gstreamer
+          # Prove the archived binaries cannot fall back to the build prefix.
+          prefix="$RUNNER_TEMP/openjoc-player-work-macos/prefix"
+          hidden_prefix="$RUNNER_TEMP/openjoc-player-work-macos/prefix-unavailable"
+          mv "$prefix" "$hidden_prefix"
+          trap 'mv "$hidden_prefix" "$prefix"' EXIT
           python3 scripts/verify-ecosystem-package.py --archive "$(find "$ecosystem" -name 'openjoc-ffmpeg-*.tar.gz' -print -quit)" --kind ffmpeg --platform macos-arm64
+          mv "$hidden_prefix" "$prefix"
+          trap - EXIT
 
       - name: Upload macOS ecosystem artifacts
         if: ${{ inputs.release_candidate }}

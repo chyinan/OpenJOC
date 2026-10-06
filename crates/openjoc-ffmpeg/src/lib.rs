@@ -484,6 +484,7 @@ pub struct FfmpegDecoder {
     config: OpenJocConfig,
     config_descriptor: String,
     config_fingerprint: String,
+    latency_samples: usize,
     layout: FfmpegChannelLayout,
     timestamp_policy: TimestampPolicy,
     orientation_pull_samples: Option<usize>,
@@ -495,7 +496,7 @@ pub struct FfmpegDecoder {
     staging: Vec<u8>,
     boundaries: VecDeque<Boundary>,
     output: VecDeque<FfmpegFrame>,
-    traces: Vec<AccessUnitTrace>,
+    traces: Option<Vec<AccessUnitTrace>>,
     classification: JocClassification,
     timeline: Timeline,
     next_au_index: u64,
@@ -556,7 +557,7 @@ impl FfmpegDecoder {
         config
             .validate()
             .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string()))?;
-        let (session, orientation_preparer, config_descriptor, config_fingerprint) =
+        let (session, orientation_preparer, config_descriptor, config_fingerprint, latency_samples) =
             if let Some(max_pull_samples) = orientation_pull_samples {
                 let binaural = config.binaural.as_ref().ok_or_else(|| {
                     BridgeError::new(
@@ -578,19 +579,25 @@ impl FfmpegDecoder {
                 })?;
                 let descriptor = preflight.effective_config_descriptor();
                 let fingerprint = preflight.effective_config_fingerprint();
+                let latency = preflight.latency_samples();
                 drop(preflight);
-                (None, Some(preparer), descriptor, fingerprint)
+                (None, Some(preparer), descriptor, fingerprint, latency)
             } else {
-                if config.render_mode == RenderMode::Binaural {
-                    OpenJocSession::new(config.clone()).map_err(|error| {
-                        BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
-                    })?;
-                }
+                let latency = if config.render_mode == RenderMode::Binaural {
+                    OpenJocSession::new(config.clone())
+                        .map_err(|error| {
+                            BridgeError::new(BridgeErrorKind::InvalidConfig, error.to_string())
+                        })?
+                        .latency_samples()
+                } else {
+                    QMF_LATENCY_SAMPLES + FINAL_LINKED_GAIN_LATENCY_SAMPLES
+                };
                 (
                     None,
                     None,
                     config.effective_config_descriptor(),
                     config.effective_config_fingerprint(),
+                    latency,
                 )
             };
         let layout = channel_layout_for_config(&config)?;
@@ -598,6 +605,7 @@ impl FfmpegDecoder {
             config,
             config_descriptor,
             config_fingerprint,
+            latency_samples,
             layout,
             timestamp_policy,
             orientation_pull_samples,
@@ -609,7 +617,7 @@ impl FfmpegDecoder {
             staging: Vec::new(),
             boundaries: VecDeque::new(),
             output: VecDeque::new(),
-            traces: Vec::new(),
+            traces: Some(Vec::new()),
             classification: JocClassification::Unknown,
             timeline: Timeline::Unset,
             next_au_index: 0,
@@ -745,11 +753,7 @@ impl FfmpegDecoder {
 
     #[must_use]
     pub fn latency_samples(&self) -> usize {
-        if self.config.render_mode == RenderMode::Binaural {
-            QMF_LATENCY_SAMPLES
-        } else {
-            QMF_LATENCY_SAMPLES + FINAL_LINKED_GAIN_LATENCY_SAMPLES
-        }
+        self.latency_samples
     }
 
     #[must_use]
@@ -775,8 +779,21 @@ impl FfmpegDecoder {
         self.timings
     }
 
+    /// Enables or disables per-access-unit diagnostic history. Enabled by default
+    /// for compatibility; callers retaining it should regularly call `take_traces`.
+    /// Disabling releases existing history and skips future trace/hash allocation.
+    /// Live inspection and PCM output are unaffected. This setting survives reset.
+    pub fn set_trace_collection_enabled(&mut self, enabled: bool) {
+        if enabled {
+            self.traces.get_or_insert_with(Vec::new);
+        } else {
+            self.traces = None;
+        }
+    }
+
+    /// Removes all retained traces, in access-unit order.
     pub fn take_traces(&mut self) -> Vec<AccessUnitTrace> {
-        std::mem::take(&mut self.traces)
+        self.traces.as_mut().map(std::mem::take).unwrap_or_default()
     }
 
     #[must_use]
@@ -987,7 +1004,10 @@ impl FfmpegDecoder {
                 )
             }
             PumpResult::NotJoc => Ok(ReceiveOutcome::NotJoc),
-            PumpResult::Eof => Ok(ReceiveOutcome::EndOfStream),
+            PumpResult::Eof => {
+                self.inspection.mark_end_of_stream();
+                Ok(ReceiveOutcome::EndOfStream)
+            }
             PumpResult::Idle => Ok(ReceiveOutcome::NeedMoreInput),
         }
     }
@@ -1201,17 +1221,19 @@ impl FfmpegDecoder {
                     frames.push(frame);
                 }
                 self.timings.add_session(session_started.elapsed());
-                self.traces.push(AccessUnitTrace {
-                    index: self.next_au_index,
-                    byte_length: bytes.len(),
-                    sha256: sha256_hex(&bytes),
-                    pts_samples,
-                    timestamp_source,
-                    sample_count: inspection.unit.samples,
-                    sample_rate: inspection.unit.sample_rate,
-                    independent_frame_count: inspection.independent_frame_count,
-                    dependent_frame_count: inspection.dependent_frame_count,
-                });
+                if let Some(traces) = self.traces.as_mut() {
+                    traces.push(AccessUnitTrace {
+                        index: self.next_au_index,
+                        byte_length: bytes.len(),
+                        sha256: sha256_hex(&bytes),
+                        pts_samples,
+                        timestamp_source,
+                        sample_count: inspection.unit.samples,
+                        sample_rate: inspection.unit.sample_rate,
+                        independent_frame_count: inspection.independent_frame_count,
+                        dependent_frame_count: inspection.dependent_frame_count,
+                    });
+                }
                 self.next_au_index = self.next_au_index.saturating_add(1);
                 self.consume_staging(size);
                 let reorder_started = Instant::now();
@@ -1450,7 +1472,9 @@ impl FfmpegDecoder {
         self.staging.clear();
         self.boundaries.clear();
         self.output.clear();
-        self.traces.clear();
+        if let Some(traces) = self.traces.as_mut() {
+            traces.clear();
+        }
         self.classification = JocClassification::Unknown;
         self.timeline = Timeline::Unset;
         self.next_au_index = 0;
@@ -2796,6 +2820,12 @@ mod tests {
         assert_ne!(pull_pcm.len(), 0);
         assert_eq!(pull_pcm, static_pcm);
         if drain {
+            for decoder in [&static_decoder, &pull_decoder] {
+                assert_eq!(
+                    decoder.live_inspection_snapshot().coverage,
+                    "complete_continuous"
+                );
+            }
             assert!(
                 pull_pcm.len() > 8 * 1536,
                 "drain must emit the reconstruction tail after the submitted AUs"
@@ -6419,6 +6449,102 @@ mod tests {
         assert!(!snapshot.joc_present);
         assert_eq!(snapshot.format, "eac3");
         assert_eq!(snapshot.observed_au_count, 1);
+    }
+
+    #[test]
+    fn trace_opt_out_preserves_pcm_and_inspection_across_receive_eof_and_reset() {
+        let fixture = synthetic_joc_lifecycle_stream();
+        let mut traced = FfmpegDecoder::new(OpenJocConfig::default()).unwrap();
+        let mut untraced = FfmpegDecoder::new(OpenJocConfig::default()).unwrap();
+        untraced.set_trace_collection_enabled(false);
+        for cycle in 0..2 {
+            for (index, bytes) in fixture
+                .chunks_exact(4096)
+                .take(16)
+                .cycle()
+                .take(256)
+                .enumerate()
+            {
+                let packet = packet(bytes, Some(i64::try_from((index + cycle) * 1536).unwrap()));
+                assert_eq!(
+                    traced.send_packet(packet).unwrap(),
+                    untraced.send_packet(packet).unwrap()
+                );
+                loop {
+                    match (
+                        traced.receive_frame().unwrap(),
+                        untraced.receive_frame().unwrap(),
+                    ) {
+                        (ReceiveOutcome::Frame(a), ReceiveOutcome::Frame(b)) => {
+                            assert_eq!(a, b);
+                            assert!(
+                                a.interleaved_f32
+                                    .iter()
+                                    .zip(&b.interleaved_f32)
+                                    .all(|(a, b)| a.to_bits() == b.to_bits())
+                            );
+                        }
+                        (ReceiveOutcome::NeedMoreInput, ReceiveOutcome::NeedMoreInput) => break,
+                        other => panic!("unexpected receive pair: {other:?}"),
+                    }
+                }
+            }
+            assert_eq!(traced.drain().unwrap(), untraced.drain().unwrap());
+            loop {
+                match (
+                    traced.receive_frame().unwrap(),
+                    untraced.receive_frame().unwrap(),
+                ) {
+                    (ReceiveOutcome::Frame(a), ReceiveOutcome::Frame(b)) => assert_eq!(a, b),
+                    (ReceiveOutcome::EndOfStream, ReceiveOutcome::EndOfStream) => break,
+                    other => panic!("unexpected drain pair: {other:?}"),
+                }
+            }
+            let snapshot = traced.live_inspection_snapshot();
+            assert_eq!(
+                format!("{snapshot:?}"),
+                format!("{:?}", untraced.live_inspection_snapshot())
+            );
+            assert_eq!(
+                snapshot.coverage,
+                if cycle == 0 {
+                    "complete_continuous"
+                } else {
+                    "partial"
+                }
+            );
+            assert_eq!(snapshot.observed_au_count, 256);
+            assert!(matches!(
+                untraced.receive_frame().unwrap(),
+                ReceiveOutcome::EndOfStream
+            ));
+            assert_eq!(untraced.drain().unwrap(), BridgeStatus::EndOfStream);
+            assert_eq!(
+                format!("{snapshot:?}"),
+                format!("{:?}", untraced.live_inspection_snapshot())
+            );
+            assert_eq!(traced.take_traces().len(), 256);
+            assert!(untraced.traces.is_none());
+            assert_eq!(untraced.take_traces(), [] as [AccessUnitTrace; 0]);
+            traced.reset();
+            untraced.reset();
+        }
+        // Turning collection off releases already retained history too.
+        traced
+            .send_packet(packet(&fixture[..8192], Some(0)))
+            .unwrap();
+        assert_ne!(
+            traced.traces.as_ref().unwrap().as_slice(),
+            [] as [AccessUnitTrace; 0]
+        );
+        traced.set_trace_collection_enabled(false);
+        assert!(traced.traces.is_none());
+        traced.set_trace_collection_enabled(true);
+        traced.reset();
+        traced
+            .send_packet(packet(&fixture[..8192], Some(0)))
+            .unwrap();
+        assert_ne!(traced.take_traces(), [] as [AccessUnitTrace; 0]);
     }
 
     #[test]
