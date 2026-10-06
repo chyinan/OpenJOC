@@ -2360,6 +2360,8 @@ struct AudioBlockState {
     dynamic_range_2: Option<u8>,
     spectral_extension: Option<SpectralExtensionInformation>,
     coupling: Option<CouplingInformation>,
+    // Absolute boundaries survive strategy/range changes and inactive blocks.
+    standard_coupling_structure: [bool; 18],
     first_spx_coordinates: Vec<bool>,
     first_coupling_coordinates: Vec<bool>,
     first_coupling_leak: bool,
@@ -2387,6 +2389,7 @@ impl AudioBlockState {
             dynamic_range_2: None,
             spectral_extension: None,
             coupling: None,
+            standard_coupling_structure: DEFAULT_STANDARD_COUPLING_STRUCTURE,
             first_spx_coordinates: vec![true; channels],
             first_coupling_coordinates: vec![true; channels],
             first_coupling_leak: true,
@@ -2421,6 +2424,15 @@ impl AudioBlockState {
         };
         self.spectral_extension = prefix.spectral_extension.clone();
         self.coupling = prefix.coupling.clone();
+        self.standard_coupling_structure = DEFAULT_STANDARD_COUPLING_STRUCTURE;
+        if let Some(CouplingInformation::Standard(info)) = &prefix.coupling {
+            let begin = usize::from(info.begin_frequency_code);
+            let count = usize::from(info.subband_count);
+            // The implicit first active boundary is only a relative view; it
+            // must not overwrite a boundary exposed by a later range change.
+            self.standard_coupling_structure[begin + 1..begin + count]
+                .copy_from_slice(&info.band_structure[1..count]);
+        }
         self.channel_bandwidth_codes = prefix.channel_bandwidth_codes.clone();
         self.channel_end_mantissas = prefix
             .channel_exponents
@@ -3053,6 +3065,7 @@ fn parse_audio_block_prefix_reader(
                 frame,
                 channels,
                 spectral_extension.as_ref(),
+                &mut state.standard_coupling_structure,
             )?;
             merge_reusable_coupling(value, previous.coupling.as_ref())
         } else {
@@ -3694,6 +3707,7 @@ fn parse_following_coupling_strategy(
     frame: &AudioFrameInformation,
     channels: usize,
     spx: Option<&SpectralExtensionInformation>,
+    standard_structure: &mut [bool; 18],
 ) -> Result<CouplingInformation, Eac3Error> {
     let enhanced = bits.read_bit()?;
     let channel_in_use = if frame.bsi.audio_coding_mode == 2 {
@@ -3761,14 +3775,17 @@ fn parse_following_coupling_strategy(
         }
         let subband_count =
             u8::try_from(subband_count).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-        let mut band_structure = default_standard_coupling_structure(
+        let mut band_structure = standard_coupling_structure(
+            standard_structure,
             begin_frequency_code,
             end_frequency_code,
             subband_count,
         )?;
         if bits.read_bit()? {
             for band in 1..subband_count {
-                band_structure[usize::from(band)] = bits.read_bit()?;
+                let merged = bits.read_bit()?;
+                band_structure[usize::from(band)] = merged;
+                standard_structure[usize::from(begin_frequency_code) + usize::from(band)] = merged;
             }
         }
         Ok(CouplingInformation::Standard(StandardCouplingInformation {
@@ -4845,22 +4862,24 @@ fn parse_first_coupling(
 
 // Table E.1.12 is indexed by absolute subband; StandardCouplingInformation
 // stores the active structure relative to cplbegf. Its first band always starts
-// independently, including when the absolute default table contains a one.
-fn default_standard_coupling_structure(
+// independently, without changing the cached boundary at the active origin.
+// E.1.3.3.15 retains earlier boundaries when cplbndstrce is zero.
+fn standard_coupling_structure(
+    absolute: &[bool; 18],
     begin: u8,
     end: i8,
     subband_count: u8,
 ) -> Result<[bool; 18], Eac3Error> {
     let start = usize::from(begin);
     let count = usize::from(subband_count);
-    let defaults = DEFAULT_STANDARD_COUPLING_STRUCTURE
+    let boundaries = absolute
         .get(start..start + count)
         .ok_or(Eac3Error::InvalidCouplingRange {
             begin: i16::from(begin),
             end: i16::from(end),
         })?;
     let mut relative = [false; 18];
-    relative[1..count].copy_from_slice(&defaults[1..]);
+    relative[1..count].copy_from_slice(&boundaries[1..]);
     Ok(relative)
 }
 
@@ -4886,7 +4905,8 @@ fn parse_standard_coupling(
         return Err(Eac3Error::InvalidCouplingRange { begin, end });
     }
     let subband_count = u8::try_from(subband_count).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-    let mut band_structure = default_standard_coupling_structure(
+    let mut band_structure = standard_coupling_structure(
+        &DEFAULT_STANDARD_COUPLING_STRUCTURE,
         begin_frequency_code,
         end_frequency_code,
         subband_count,
@@ -5075,6 +5095,223 @@ mod tests {
     }
 
     #[test]
+    fn standard_coupling_retains_explicit_structure_when_omitted() {
+        let frame =
+            crate::parse_audio_frame(include_bytes!("../tests/fixtures/coupling/acmod5.eac3"))
+                .unwrap();
+        let mut structure = super::DEFAULT_STANDARD_COUPLING_STRUCTURE;
+        let explicit = coupling_test_bits(&[(0, 1), (15, 4), (7, 4), (9, 4), (1, 1), (0b0101, 4)]);
+        let omitted = coupling_test_bits(&[(0, 1), (15, 4), (7, 4), (9, 4), (0, 1)]);
+        let super::CouplingInformation::Standard(first) = super::parse_following_coupling_strategy(
+            &mut BitReader::new(&explicit),
+            &frame,
+            4,
+            None,
+            &mut structure,
+        )
+        .unwrap() else {
+            panic!("standard coupling")
+        };
+        let super::CouplingInformation::Standard(next) = super::parse_following_coupling_strategy(
+            &mut BitReader::new(&omitted),
+            &frame,
+            4,
+            None,
+            &mut structure,
+        )
+        .unwrap() else {
+            panic!("standard coupling")
+        };
+        assert_eq!(
+            &first.band_structure[..5],
+            &[false, false, true, false, true]
+        );
+        assert_eq!(next.band_structure, first.band_structure);
+    }
+
+    fn check_following_standard_structure(
+        structure: &mut [bool; 18],
+        begin: u8,
+        end: u8,
+        explicit: Option<&[bool]>,
+        expected: &[bool],
+    ) {
+        let frame =
+            crate::parse_audio_frame(include_bytes!("../tests/fixtures/coupling/acmod5.eac3"))
+                .unwrap();
+        let bands = expected.iter().filter(|&&merged| !merged).count();
+        let mut fields = vec![
+            (0, 1),
+            (15, 4), // standard; four participating channels
+            (u64::from(begin), 4),
+            (u64::from(end), 4),
+            (u64::from(explicit.is_some()), 1),
+        ];
+        if let Some(flags) = explicit {
+            assert_eq!(flags.len(), expected.len() - 1);
+            fields.extend(flags.iter().map(|&flag| (u64::from(flag), 1)));
+        }
+        for _ in 0..4 {
+            fields.push((1, 1)); // cplcoe: replace coordinates after a strategy change
+            fields.push((2, 2)); // master
+            fields.extend((0..bands).map(|band| (0x30 + band as u64, 8)));
+        }
+        fields.push((0x5a, 8)); // next syntax field, not coordinate data
+        let bytes = coupling_test_bits(&fields);
+        let mut bits = BitReader::new(&bytes);
+        let value = super::parse_following_coupling_strategy(&mut bits, &frame, 4, None, structure)
+            .unwrap();
+        let super::CouplingInformation::Standard(info) =
+            super::parse_following_coupling_coordinates(&mut bits, &frame, value, &mut [false; 4])
+                .unwrap()
+        else {
+            panic!("standard coupling");
+        };
+        assert_eq!(&info.band_structure[..expected.len()], expected);
+        assert_eq!(usize::from(info.band_count), bands);
+        for coordinate in info.coordinates.iter().flatten() {
+            assert_eq!(coordinate.master, 2);
+            assert_eq!(
+                coordinate.bands,
+                (0..bands).map(|band| (3, band as u8)).collect::<Vec<_>>()
+            );
+        }
+        assert_eq!(bits.read_bits(8).unwrap(), 0x5a);
+        let consumed: usize = fields.iter().map(|&(_, width)| usize::from(width)).sum();
+        assert_eq!(bits.bits_remaining(), bytes.len() * 8 - consumed);
+    }
+
+    #[test]
+    fn standard_coupling_retains_absolute_boundaries_across_range_changes() {
+        let mut structure = super::DEFAULT_STANDARD_COUPLING_STRUCTURE;
+        check_following_standard_structure(
+            &mut structure,
+            7,
+            9,
+            Some(&[false, true, false, true]),
+            &[false, false, true, false, true],
+        );
+        check_following_standard_structure(&mut structure, 8, 9, None, &[false, true, false, true]);
+        // Absolute boundary 9 is implicitly independent in this view only.
+        check_following_standard_structure(&mut structure, 9, 9, None, &[false, false, true]);
+        check_following_standard_structure(&mut structure, 8, 9, None, &[false, true, false, true]);
+        check_following_standard_structure(&mut structure, 7, 7, None, &[false, false, true]);
+        check_following_standard_structure(
+            &mut structure,
+            7,
+            9,
+            None,
+            &[false, false, true, false, true],
+        );
+        // Newly exposed boundaries still have their Table E.1.12 defaults.
+        check_following_standard_structure(
+            &mut structure,
+            6,
+            10,
+            None,
+            &[false, false, false, true, false, true, false],
+        );
+    }
+
+    #[test]
+    fn standard_coupling_explicit_update_changes_only_transmitted_boundaries() {
+        let mut structure = super::DEFAULT_STANDARD_COUPLING_STRUCTURE;
+        check_following_standard_structure(
+            &mut structure,
+            7,
+            9,
+            Some(&[false, true, false, true]),
+            &[false, false, true, false, true],
+        );
+        check_following_standard_structure(
+            &mut structure,
+            9,
+            9,
+            Some(&[true, false]),
+            &[false, true, false],
+        );
+        check_following_standard_structure(
+            &mut structure,
+            7,
+            9,
+            None,
+            &[false, false, true, true, false],
+        );
+        // A one-subband explicit structure carries no boundaries to replace.
+        check_following_standard_structure(&mut structure, 9, 7, Some(&[]), &[false]);
+        check_following_standard_structure(
+            &mut structure,
+            7,
+            9,
+            None,
+            &[false, false, true, true, false],
+        );
+    }
+
+    #[test]
+    fn standard_coupling_cache_is_seeded_independently_of_active_coupling() {
+        let bytes = include_bytes!("../tests/fixtures/coupling/acmod5.eac3");
+        let frame = crate::parse_audio_frame(bytes).unwrap();
+        let mut prefix = super::parse_first_audio_block_prefix(bytes).unwrap();
+        let mut state = super::AudioBlockState::new(4);
+        // First use may occur after initially inactive blocks.
+        check_following_standard_structure(
+            &mut state.standard_coupling_structure,
+            7,
+            9,
+            None,
+            &[false, true, false, true, true],
+        );
+        let Some(super::CouplingInformation::Standard(info)) = &mut prefix.coupling else {
+            panic!("standard coupling");
+        };
+        info.begin_frequency_code = 7;
+        info.end_frequency_code = 9;
+        info.subband_count = 5;
+        info.band_structure = [false; 18];
+        info.band_structure[2] = true;
+        info.band_structure[4] = true;
+        info.band_count = 3;
+        state.seed_first(&prefix, &frame).unwrap();
+        // Model the inactive coupling state without running unrelated exponent
+        // syntax. This specifically tests the cache's independent lifetime.
+        state.coupling = None;
+        state.first_coupling_coordinates.fill(true);
+        check_following_standard_structure(
+            &mut state.standard_coupling_structure,
+            7,
+            9,
+            None,
+            &[false, false, true, false, true],
+        );
+        // Seeding must also preserve the implicit origin's absolute default.
+        // Absolute boundary 8 is one even though every relative view starts zero.
+        let Some(super::CouplingInformation::Standard(info)) = &mut prefix.coupling else {
+            panic!("standard coupling");
+        };
+        info.begin_frequency_code = 8;
+        info.subband_count = 4;
+        state.seed_first(&prefix, &frame).unwrap();
+        check_following_standard_structure(
+            &mut state.standard_coupling_structure,
+            7,
+            9,
+            None,
+            &[false, true, false, true, false],
+        );
+        // Seeding a fresh frame resets the cache even if its block zero is off.
+        prefix.coupling = None;
+        state.seed_first(&prefix, &frame).unwrap();
+        check_following_standard_structure(
+            &mut state.standard_coupling_structure,
+            7,
+            9,
+            None,
+            &[false, true, false, true, true],
+        );
+    }
+
+    #[test]
     fn default_coupling_parsers_use_absolute_table_at_every_legal_origin() {
         // Independent transcription of Table E.1.12, indexed by absolute
         // subband. Exercise both parser entry points, all legal ranges, and
@@ -5124,10 +5361,15 @@ mod tests {
                         }
                         let bytes = coupling_test_bits(&fields);
                         let mut bits = BitReader::new(&bytes);
+                        let mut structure = super::DEFAULT_STANDARD_COUPLING_STRUCTURE;
                         let info = if following {
                             let super::CouplingInformation::Standard(info) =
                                 super::parse_following_coupling_strategy(
-                                    &mut bits, &frame, 4, None,
+                                    &mut bits,
+                                    &frame,
+                                    4,
+                                    None,
+                                    &mut structure,
                                 )
                                 .unwrap()
                             else {

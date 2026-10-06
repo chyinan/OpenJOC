@@ -45,11 +45,35 @@ must continue to pass the established gates.
   spectra with both boundary and wrap-point notches, and compare spectra and
   windowed PCM for all four corrected rows.
 
-## Remaining scope
+## Standard-coupling structure retention
 
-Following-block reuse of an explicitly transmitted coupling structure when
-`cplbndstrce=0` is a separate state-retention issue under E.1.3.3.15. This change
-corrects default-table origin only; it does not claim to solve retention across
-strategy/range changes or inactive gaps. A complete retention correction needs
-its own stateful regression contract. Current support boundaries remain owned
-by [CAPABILITIES](../CAPABILITIES.md) and [KNOWN_LIMITATIONS](../KNOWN_LIMITATIONS.md).
+The subsequent retention correction implements E.1.3.3.15: omitted band
+structure uses defaults on first use in a frame and otherwise retains the
+previous structure. A private, frame-local cache stores the 18 absolute
+subband boundaries independently of whether coupling is active. Explicit
+structure bits replace only the transmitted boundaries. The public active
+structure remains relative to `cplbegf`, with its first entry implicitly zero;
+materializing that view does not erase the corresponding cached boundary.
+
+Retaining boundaries through inactive blocks follows the E.1.2.4 inactive
+branch, which resets participation, coordinate and leak state but does not
+reset band structure. Absolute-frequency retention across range changes is
+an interpretation of Table E.1.12 and clauses 4.4.3.11–13 together with
+E.1.3.3.15; the specification's relative-index pseudocode does not separately
+spell out remapping on range changes. Tests make that interpretation explicit
+rather than claiming an additional normative sentence.
+
+Public six-block decoder regressions cover explicit-to-omitted reuse,
+replacement, coordinate reuse and fresh-frame defaults. Private strategy
+regressions cover changed lower and upper bounds, implicit-first-boundary
+preservation and partial explicit replacement, with coordinate counts and
+following-field alignment checks. A private state-lifetime test covers cache
+seeding, initially inactive state, clearing active coupling and fresh-frame
+reset. Full-stream gap/reentry and changed-range validation remain unclaimed:
+synthetic attempts also depend on following-block exponent/bandwidth behavior,
+which is outside this focused correction. This can change affected spectra/PCM
+or admit streams that previously failed; it is a decoder correctness change. The frozen
+`15aefe1` performance oracle and exact equality checks remain unchanged.
+Enhanced coupling and SPX structure retention are outside this correction.
+Current support boundaries remain owned by [CAPABILITIES](../CAPABILITIES.md)
+and [KNOWN_LIMITATIONS](../KNOWN_LIMITATIONS.md).

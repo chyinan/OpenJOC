@@ -2988,3 +2988,14 @@ measure host CPU only and are summarized in the canonical
 [limitations](site/compatibility/known-limitations.md); they do not establish
 sensor-to-sound latency, earphone quality, long-duration behavior, or physical
 hardware support.
+
+### Standard-coupling band-structure retention
+
+The following-block retention correction is derived from ETSI TS 102 366
+V1.4.1 clause E.1.3.3.15, Table E.1.12, and clauses 4.4.3.11–13 and E.1.2.4.
+It keeps private absolute-subband state while preserving the public relative
+active representation. State lifetime, the range-change interpretation,
+regression contract and PCM compatibility boundary are documented in
+[decoder table corrections](research/decoder-table-corrections.md#standard-coupling-structure-retention).
+No proprietary implementation source was used; enhanced coupling and SPX
+retention are not changed.
