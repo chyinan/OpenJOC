@@ -95,12 +95,23 @@ def _shape_problem(
             elif previous != value:
                 return f"{column} changed within case {case!r}"
     # Some paired exports carry output descriptors on each side. If so, both
-    # sides must describe the same input/output shape before their times pair.
+    # sides must describe the same input/output shape before their times pair,
+    # and each exported descriptor must stay fixed across repetitions.
     for suffix in SHAPE_COLUMNS:
         baseline_value = row.get(f"baseline_summary_{suffix}", "").strip()
         candidate_value = row.get(f"candidate_summary_{suffix}", "").strip()
         if baseline_value and candidate_value and baseline_value != candidate_value:
             return f"baseline/candidate workload shape differs at {suffix}"
+        for side, value in (("baseline", baseline_value), ("candidate", candidate_value)):
+            if not value:
+                continue
+            column = f"{side}_summary_{suffix}"
+            key = (case, column)
+            previous = known_shapes.get(key)
+            if previous is None:
+                known_shapes[key] = value
+            elif previous != value:
+                return f"{column} changed within case {case!r}"
     return None
 
 

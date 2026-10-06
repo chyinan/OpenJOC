@@ -94,6 +94,31 @@ class PerformanceProfileReproTests(unittest.TestCase):
         with self.assertRaisesRegex(repro.AnalysisError, "workload shape differs"):
             repro.analyze_rows(rows, fields)
 
+    def test_rejects_paired_descriptor_changes_across_repetitions(self):
+        for suffix in ("config_fingerprint", "config_descriptor_hex", "latency_samples", "output_frames"):
+            with self.subTest(suffix=suffix):
+                fields = self.fields + [f"{side}_summary_{suffix}" for side in ("baseline", "candidate")]
+                rows = [dict(row) for row in self.rows[:3]]
+                for index, row in enumerate(rows):
+                    for side in ("baseline", "candidate"):
+                        row[f"{side}_summary_{suffix}"] = "200" if index == 1 else "100"
+                excluded, reports = repro.analyze_rows(rows, fields)
+                self.assertEqual(len(excluded), 1)
+                self.assertIn(f"baseline_summary_{suffix} changed within case", excluded[0])
+                self.assertEqual(reports[0]["valid_pairs"], 2)
+                self.assertEqual(reports[0]["baseline_self_repeat"]["range"], [10, 30])
+
+    def test_tracks_one_sided_exported_descriptors_across_repetitions(self):
+        for side in ("baseline", "candidate"):
+            with self.subTest(side=side):
+                column = f"{side}_summary_config_descriptor_hex"
+                rows = [dict(row) for row in self.rows[:2]]
+                rows[0][column] = "aa"
+                rows[1][column] = "bb"
+                excluded, reports = repro.analyze_rows(rows, self.fields + [column])
+                self.assertIn(f"{column} changed within case", excluded[0])
+                self.assertEqual(reports[0]["valid_pairs"], 1)
+
     def test_report_disclaims_speedup_and_labels_same_product_only_when_requested(self):
         excluded, reports = repro.analyze_rows(self.rows[:3], self.fields)
         rendered = repro.render_report(
