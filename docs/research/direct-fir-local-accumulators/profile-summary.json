@@ -1,0 +1,209 @@
+[
+  {
+    "case": "d1-714-60",
+    "total_samples": 326,
+    "sampled_cpu": 32.6,
+    "process_user_system_cpu": 32.635000000000005,
+    "coverage_percent": 99.89275317910217,
+    "render_exclusive_samples": 289,
+    "render_share_percent": 88.65030674846626,
+    "internal_sample_groups": {
+      "tap_loop": 289,
+      "source_selection": 5,
+      "tap_accumulation_bounds": 284,
+      "other_render": 0
+    },
+    "hot_pcs": [
+      [
+        810,
+        163
+      ],
+      [
+        850,
+        36
+      ],
+      [
+        815,
+        29
+      ],
+      [
+        858,
+        24
+      ],
+      [
+        783,
+        21
+      ],
+      [
+        779,
+        4
+      ],
+      [
+        747,
+        3
+      ],
+      [
+        801,
+        3
+      ],
+      [
+        837,
+        3
+      ],
+      [
+        716,
+        2
+      ],
+      [
+        832,
+        1
+      ]
+    ]
+  },
+  {
+    "case": "d1-repeat-714-60",
+    "total_samples": 323,
+    "sampled_cpu": 32.3,
+    "process_user_system_cpu": 32.303000000000004,
+    "coverage_percent": 99.9907129368789,
+    "render_exclusive_samples": 274,
+    "render_share_percent": 84.82972136222911,
+    "internal_sample_groups": {
+      "tap_loop": 272,
+      "source_selection": 7,
+      "tap_accumulation_bounds": 265,
+      "other_render": 2
+    },
+    "hot_pcs": [
+      [
+        810,
+        147
+      ],
+      [
+        850,
+        44
+      ],
+      [
+        858,
+        25
+      ],
+      [
+        815,
+        24
+      ],
+      [
+        783,
+        18
+      ],
+      [
+        801,
+        4
+      ],
+      [
+        716,
+        3
+      ],
+      [
+        773,
+        2
+      ],
+      [
+        747,
+        1
+      ],
+      [
+        754,
+        1
+      ],
+      [
+        822,
+        1
+      ],
+      [
+        837,
+        1
+      ],
+      [
+        861,
+        1
+      ],
+      [
+        899,
+        1
+      ],
+      [
+        924,
+        1
+      ]
+    ]
+  },
+  {
+    "case": "d2-714-60",
+    "total_samples": 324,
+    "sampled_cpu": 32.4,
+    "process_user_system_cpu": 32.468,
+    "coverage_percent": 99.79056301589256,
+    "render_exclusive_samples": 289,
+    "render_share_percent": 89.19753086419753,
+    "internal_sample_groups": {
+      "tap_loop": 286,
+      "source_selection": 6,
+      "tap_accumulation_bounds": 280,
+      "other_render": 3
+    },
+    "hot_pcs": [
+      [
+        810,
+        185
+      ],
+      [
+        850,
+        35
+      ],
+      [
+        815,
+        20
+      ],
+      [
+        783,
+        16
+      ],
+      [
+        858,
+        14
+      ],
+      [
+        801,
+        5
+      ],
+      [
+        716,
+        4
+      ],
+      [
+        837,
+        3
+      ],
+      [
+        779,
+        2
+      ],
+      [
+        899,
+        2
+      ],
+      [
+        399,
+        1
+      ],
+      [
+        739,
+        1
+      ],
+      [
+        754,
+        1
+      ]
+    ]
+  }
+]
