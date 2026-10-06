@@ -18,8 +18,8 @@ external-builtin-hrtf-assets = []
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-openjoc-api = { version = "0.18.0", path = "../openjoc-api", default-features = false }
-openjoc-eac3 = { version = "0.18.0", path = "../openjoc-eac3" }
+openjoc-api = { version = "0.19.0", path = "../openjoc-api", default-features = false }
+openjoc-eac3 = { version = "0.19.0", path = "../openjoc-eac3" }
 
 [dev-dependencies]
 hdf5-pure = "0.47.0"

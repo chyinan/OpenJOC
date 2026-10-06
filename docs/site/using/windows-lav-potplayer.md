@@ -2,7 +2,7 @@
 
 OpenJOC ships an optional downstream LAV Audio Decoder for Windows DirectShow. It has a separate filter identity and installs beside stock LAV. Installing the package does not change PotPlayer automatically.
 
-The primary validated host workflow is PotPlayer. These instructions describe the package behavior recorded for the v0.12+ Windows integration; the OpenJOC release baseline for this site is v0.18.0.
+The primary validated host workflow is PotPlayer. These instructions describe the package behavior recorded for the v0.12+ Windows integration; the OpenJOC release baseline for this site is v0.19.0.
 
 ## Install and verify
 
@@ -110,7 +110,7 @@ This setting selects the decoder's programme-calibration policy. It is not
 normalization, DRC, a quality mode, or mastering gain, and it adds no
 post-render gain stage.
 
-**Unreleased:** Output gain is available in current LAV sources and identified test candidates, not in the published v0.18.0 Windows LAV package.
+**Available with the v0.19.0 LAV package:** Output gain requires `openjoc-lav-0.19.0-windows-x64.zip`; the v0.18.0 Windows LAV package does not include it. Check that the v0.19.0 LAV asset is available on the release page before upgrading.
 
 **Output gain** is an independent post-render PCM level control in the same
 Program Level group. It ranges from **-20.0 dB to +20.0 dB**, in 0.1 dB steps,

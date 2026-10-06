@@ -12,9 +12,11 @@ The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
 built from immutable LAV commit
 `8f32aad51aea24602f2175316a241568be5fc4a1`, pinned by the workflow used for that release.
 
-The public release includes `openjoc-lav-0.18.0-windows-x64.zip`. The pinned
-LAV source is available from the public repository at the commit above; the
-package carries its runtime notices and license files.
+The v0.19.0 release contract uses immutable LAV commit
+`01666bae613aeaf0568f7548bfe9ab77a09486e1` for
+`openjoc-lav-0.19.0-windows-x64.zip`. The LAV asset is built and uploaded
+separately from the core packages; check its availability on the release page.
+The package carries its runtime notices and license files.
 
 ## Routing behavior
 
@@ -132,7 +134,7 @@ as an explicit validated local-file choice; and
 **9.1.6 (Experimental)** selects the larger virtual speaker field while the
 delivered PCM remains two-channel.
 
-**Unreleased source/candidate feature:** Output gain is not included in the published v0.18.0 LAV package. The description below applies to gain-enabled LAV sources and explicitly identified test candidates until a new package is released.
+**Available with the v0.19.0 LAV package:** Output gain requires `openjoc-lav-0.19.0-windows-x64.zip`; it is not included in the v0.18.0 LAV package. The description below applies to the gain-enabled source and matching v0.19.0 asset once that asset is available.
 
 The **Output gain** control is independent of Dialnorm, Mixing, DRC, HRTF, and
 the renderer configuration. It stores a signed tenths-of-a-decibel value from
@@ -189,5 +191,5 @@ The release workflow uses build tooling from its workflow revision, but builds
 OpenJOC CAPI from the selected `RELEASE_TAG`, not from the latest `master`.
 Updating the pinned LAV revision alone does not put newer core fixes into an
 existing release package. Artifact-only validation pins both repositories to
-explicit commits and does not replace stable release assets. The published
-v0.18.0 package and a newer source/candidate build are distinct deliverables.
+explicit commits and does not replace stable release assets. The v0.18.0 package, v0.19.0 package, and source/candidate builds are distinct
+deliverables; compare their embedded source identities rather than filenames alone.

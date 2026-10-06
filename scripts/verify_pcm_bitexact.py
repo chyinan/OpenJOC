@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 from dataclasses import dataclass
 
 BASELINE_REVISION = "15aefe1baa7b40f37950df252b6dbf6179894d6d"
@@ -485,6 +486,94 @@ def _expected_feature_manifest(head_bytes: bytes, package: str) -> bytes:
     return head_bytes.replace(marker, replacement, 1)
 
 
+
+def install_baseline_feature_overlay(baseline_root: Path) -> None:
+    """Add only the audited allocator feature to the frozen manifests, never copy candidate TOML."""
+    if git_head(baseline_root) != BASELINE_REVISION:
+        raise GateError("feature overlay requires the pinned baseline")
+    for package in ("openjoc-api", "openjoc-eac3"):
+        relative = f"crates/{package}/Cargo.toml"
+        committed = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=baseline_root)
+        expected = _expected_feature_manifest(committed, package)
+        path = baseline_root / relative
+        if path.read_bytes() not in (committed, expected):
+            raise GateError(f"refusing to overwrite unexpected baseline manifest: {relative}")
+        path.write_bytes(expected)
+
+
+def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -> None:
+    """Compare all Cargo metadata; permit only the audited 0.18 -> 0.19 workspace bump.
+
+    The oracle files are never rewritten. Workspace identities and paths come from
+    its pinned manifest, not a name prefix or the candidate's dependency claims.
+    External package records, dependency edges and every other TOML field stay exact.
+    """
+    def read(path: Path) -> dict:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+
+    baseline_workspace = read(baseline_root / "Cargo.toml")
+    candidate_workspace = read(candidate_root / "Cargo.toml")
+    old = baseline_workspace["workspace"]["package"]["version"]
+    new = candidate_workspace["workspace"]["package"]["version"]
+    if old != "0.18.0" or new not in (old, "0.19.0"):
+        raise GateError("unsupported workspace version transition")
+    candidate_workspace["workspace"]["package"]["version"] = old
+    if candidate_workspace != baseline_workspace:
+        raise GateError("workspace manifest differs beyond the release version")
+    members = baseline_workspace["workspace"]["members"]
+    manifests = {}
+    identities = {}
+    for member in members:
+        relative = f"{member}/Cargo.toml"
+        data = read(baseline_root / relative)
+        name = data["package"]["name"]
+        if name in identities or data["package"].get("version") != {"workspace": True}:
+            raise GateError("unexpected frozen workspace package identity/version")
+        identities[name] = member
+        manifests[member] = data
+    for member, baseline in manifests.items():
+        candidate = read(candidate_root / member / "Cargo.toml")
+        # The independently allowlisted harness feature is the only baseline overlay.
+        if member in ("crates/openjoc-api", "crates/openjoc-eac3"):
+            baseline.setdefault("features", {})["allocation-profile"] = []
+        sections = [candidate]
+        sections.extend(candidate.get("target", {}).values())
+        for section in sections:
+            for kind in ("dependencies", "dev-dependencies", "build-dependencies"):
+                for alias, dependency in section.get(kind, {}).items():
+                    if not isinstance(dependency, dict) or "path" not in dependency:
+                        continue
+                    name = dependency.get("package", alias)
+                    expected_member = identities.get(name)
+                    if expected_member is None:
+                        raise GateError(f"unrecognized internal path dependency: {member}:{alias}")
+                    actual_path = (candidate_root / member / dependency["path"]).resolve()
+                    if actual_path != (candidate_root / expected_member).resolve():
+                        raise GateError(f"wrong internal dependency path: {member}:{alias}")
+                    if dependency.get("version") != new:
+                        raise GateError(f"wrong internal dependency version: {member}:{alias}")
+                    dependency["version"] = old
+        if candidate != baseline:
+            raise GateError(f"package manifest differs beyond internal release versions: {member}")
+    baseline_lock = read(baseline_root / "Cargo.lock")
+    candidate_lock = read(candidate_root / "Cargo.lock")
+    seen = set()
+    for package in candidate_lock.get("package", []):
+        name = package["name"]
+        if name in identities:
+            if name in seen or package.get("version") != new or "source" in package or "checksum" in package:
+                raise GateError(f"wrong internal lock package identity/version/source: {name}")
+            seen.add(name)
+            package["version"] = old
+        # Cargo may qualify a dependency edge when package names are ambiguous.
+        for index, edge in enumerate(package.get("dependencies", [])):
+            parts = edge.split(" ")
+            if len(parts) == 2 and parts[0] in identities and parts[1] == new:
+                package["dependencies"][index] = f"{parts[0]} {old}"
+    if seen != set(identities) or candidate_lock != baseline_lock:
+        raise GateError("Cargo.lock differs beyond verified internal workspace versions")
+
+
 def validate_baseline_worktree(baseline_root: Path, candidate_root: Path) -> None:
     if paths_overlap(baseline_root, candidate_root):
         raise GateError("baseline and candidate repository roots must be distinct, non-overlapping worktrees")
@@ -755,18 +844,13 @@ def main(argv: list[str] | None = None) -> int:
     candidate_lock_hash = hash_file(candidate_root / "Cargo.lock")
     if baseline_lock_hash != BASELINE_LOCK_SHA256:
         raise GateError(f"baseline Cargo.lock SHA-256 {baseline_lock_hash} differs from pinned lock {BASELINE_LOCK_SHA256}")
-    if baseline_lock_hash != candidate_lock_hash:
-        raise GateError("baseline and candidate Cargo.lock files differ")
+    validate_versioned_dependencies(baseline_root, candidate_root)
     needs_api = any(case.mode != "ordinary-eac3-core" for case in args.case)
     needs_core = any(case.mode == "ordinary-eac3-core" for case in args.case)
     if needs_api and (baseline_root / PROBE).read_bytes() != (candidate_root / PROBE).read_bytes():
         raise GateError("baseline API probe harness overlay differs from candidate probe source")
-    if needs_api and (baseline_root / "crates/openjoc-api/Cargo.toml").read_bytes() != (candidate_root / "crates/openjoc-api/Cargo.toml").read_bytes():
-        raise GateError("baseline API probe feature manifest differs from candidate")
     if needs_core and (baseline_root / CORE_PROBE).read_bytes() != (candidate_root / CORE_PROBE).read_bytes():
         raise GateError("baseline ordinary-core probe harness overlay differs from candidate probe source")
-    if needs_core and (baseline_root / "crates/openjoc-eac3/Cargo.toml").read_bytes() != (candidate_root / "crates/openjoc-eac3/Cargo.toml").read_bytes():
-        raise GateError("baseline E-AC-3 probe feature manifest differs from candidate")
     baseline_binaries = build_revision(
         baseline_root,
         baseline_target,

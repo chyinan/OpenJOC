@@ -12,15 +12,16 @@ WORKFLOW = WORKSPACE / ".github" / "workflows" / "lav-release.yml"
 
 
 class LavReleaseWorkflowTests(unittest.TestCase):
-    def test_gain_documentation_is_explicitly_unreleased(self) -> None:
+    def test_gain_documentation_identifies_required_release_asset(self) -> None:
         for relative, expected in (
-            ("docs/integration/LAV_FILTERS_OPENJOC.md", "Unreleased source/candidate feature"),
-            ("docs/site/using/windows-lav-potplayer.md", "**Unreleased:**"),
-            ("docs/site/using/windows-lav-potplayer.zh.md", "**尚未发布：**"),
+            ("docs/integration/LAV_FILTERS_OPENJOC.md", "Available with the v0.19.0 LAV package"),
+            ("docs/site/using/windows-lav-potplayer.md", "Available with the v0.19.0 LAV package"),
+            ("docs/site/using/windows-lav-potplayer.zh.md", "适用于 v0.19.0 LAV 安装包"),
         ):
             text = (WORKSPACE / relative).read_text(encoding="utf-8")
             self.assertIn(expected, text)
             self.assertIn("v0.18.0", text)
+            self.assertIn("openjoc-lav-0.19.0-windows-x64.zip", text)
 
     def test_native_gain_and_settings_gates_precede_publication(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")

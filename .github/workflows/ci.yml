@@ -27,6 +27,8 @@ jobs:
         os: [ubuntu-24.04, windows-2025, macos-14]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Dependency gate tests read the frozen oracle manifests.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -151,7 +153,7 @@ jobs:
           mkdir -p "$baseline/crates/openjoc-api/examples"
           cp crates/openjoc-api/examples/pcm_regression_probe.rs \
             "$baseline/crates/openjoc-api/examples/pcm_regression_probe.rs"
-          cp crates/openjoc-api/Cargo.toml "$baseline/crates/openjoc-api/Cargo.toml"
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); from verify_pcm_bitexact import install_baseline_feature_overlay; install_baseline_feature_overlay(Path(sys.argv[1]))' "$baseline"
           echo "OPENJOC_BASELINE_ROOT=$baseline" >> "$GITHUB_ENV"
 
       - name: Fetch only locked workspace dependencies
@@ -212,7 +214,7 @@ jobs:
           mkdir -p "$baseline/crates/openjoc-api/examples"
           cp crates/openjoc-api/examples/pcm_regression_probe.rs \
             "$baseline/crates/openjoc-api/examples/pcm_regression_probe.rs"
-          cp crates/openjoc-api/Cargo.toml "$baseline/crates/openjoc-api/Cargo.toml"
+          python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); from verify_pcm_bitexact import install_baseline_feature_overlay; install_baseline_feature_overlay(Path(sys.argv[1]))' "$baseline"
           echo "OPENJOC_BASELINE_ROOT=$baseline" >> "$GITHUB_ENV"
 
       - name: Fetch only locked workspace dependencies

@@ -5,7 +5,7 @@
 
 OpenJOC 提供一个可选的 Windows DirectShow 下游 LAV Audio Decoder。它有独立的筛选器标识，可以和原有的 LAV 并存安装；安装包不会自动改动 PotPlayer 的设置。
 
-下面记录的是 v0.12 及以后 Windows 集成中验证过的安装包行为；本站的发布基线是 v0.18.0。
+下面记录的是 v0.12 及以后 Windows 集成中验证过的安装包行为；本站的发布基线是 v0.19.0。
 
 ## 安装并验证
 
@@ -84,7 +84,7 @@ OpenJOC 不会检测物理扬声器配置，也不会自动降混来匹配输出
 
 这个设置只选择解码器的节目电平校准策略。它不是归一化、DRC、质量模式或母带增益，也不会增加渲染后增益级。
 
-**尚未发布：** Output gain 仅适用于当前 LAV 源码和明确标识的测试候选包；已发布的 v0.18.0 Windows LAV 安装包不包含此功能。
+**适用于 v0.19.0 LAV 安装包：** Output gain 需要 `openjoc-lav-0.19.0-windows-x64.zip`；v0.18.0 Windows LAV 安装包不包含此功能。升级前请确认发布页面已提供 v0.19.0 LAV 资源。
 
 **Output gain** 是同一 **Program Level** 分组中的独立渲染后 PCM 电平控制，范围为
 **-20.0 dB 到 +20.0 dB**，步进 0.1 dB，默认 **0.0 dB**。它在 OpenJOC 扬声器或双耳

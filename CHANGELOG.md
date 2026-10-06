@@ -2,42 +2,65 @@
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-07
+
+OpenJOC v0.19 expands Custom SOFA and experimental listener orientation,
+improves binaural processing efficiency, and fixes decoder and playback edge cases.
+
 ### Added
 
-- Added bounded local NetCDF-4/HDF5 `SimpleFreeFieldHRIR` SOFA loading through
-  a pure-Rust reader shared by native and WASM builds.
-- Resample custom HRIRs to the renderer sample rate during setup; matching-rate
-  banks retain their original coefficients bit-for-bit.
-
-### Fixed
-
-- Retain standard E-AC-3 coupling band boundaries when later blocks omit them,
-  including range changes and inactive gaps; affected streams may decode
-  differently as a correctness fix.
-
-- Preserve convolution gain and the complete sinc precursor when resampling
-  custom HRIRs, including delay-aware spatial interpolation. Converted banks
-  retain a documented common causal filter delay; matching-rate banks are unchanged.
-- Align bypass LFE with the HRIR conversion delay across API and CLI binaural
-  backends, including partial blocks, complete tails, and resets.
-- Accept standard singleton receiver and fixed-delay SOFA dimensions, and
-  bound HDF5 chunk decompression before allocation.
-- Honor the selected built-in binaural HRTF on the CLI profiling, topology,
-  diagnostic, and partitioned-render paths instead of silently selecting D1.
-- Keep WASM performance metrics current with a bounded rolling window and cache repeated reads.
-- Classify finite ADM PCM24 range errors as `output-range`, retaining sample diagnostics and safe output cleanup.
-- Correct the README's LAV policy count to include Binaural (Headphones), with a documentation consistency check.
+- Added experimental device-independent 3DoF listener orientation to the Rust
+  and C APIs (C ABI 1.7), including canonical 22.2 virtual-speaker directions.
+- Added bounded local NetCDF-4/HDF5 SimpleFreeFieldHRIR SOFA loading shared by
+  native and WASM builds, with setup-time HRIR sample-rate conversion.
+- Added independent LAV Output gain from -20.0 to +20.0 dB, with persistent
+  settings and a bit-exact 0 dB bypass, in the matching v0.19.0 Windows LAV asset.
+- Added frozen-baseline strict PCM regression gates, public synthetic performance
+  evidence, and native/WASM and packaging regression coverage.
 
 ### Changed
 
-- Raised the workspace minimum Rust version to 1.89 for the portable HDF5 reader.
-- Read `render-joc` input in bounded access units after a complete preflight,
-  including normalization and profiling, removing the 512 MiB programme cap
-  while preserving DSP precision, sample order, and drain behavior.
-- Run Python script regressions on Linux and Windows in PR CI. Platform and
-  external LAV source requirements are explicit; CMD/BAT checkouts use CRLF.
-- Remove two temporary allocations per API binaural render block while preserving direct-FIR arithmetic, PCM bits, timing, tail, and reset behavior.
-- Add actual WASM ABI smoke tests for embedded/external HRTFs and Custom SOFA to CI.
+- Optimized QMF phase-row indexing and static direct-FIR processing without
+  changing the arithmetic order or PCM bits on the covered regression corpus.
+- Read CLI render input in bounded access units after complete preflight,
+  removing the 512 MiB programme cap while preserving sample order and drain behavior.
+- Raised the minimum supported Rust version to 1.89 for the portable HDF5 reader.
+- Updated the Windows LAV release pin to
+  `01666bae613aeaf0568f7548bfe9ab77a09486e1` and expanded native gain/settings gates.
+
+### Fixed
+
+- Corrected E-AC-3 standard-coupling defaults and retained band boundaries
+  across blocks; bounded following-channel exponents at the coupling start.
+  Corrected four SPX attenuation coefficients and diagnostic channel inventories.
+- Preserved custom-HRIR conversion gain and sinc precursors, aligned bypass
+  LFE with conversion delay, and accepted standard singleton/fixed-delay SOFA
+  dimensions with bounded HDF5 decompression.
+- Honored selected CLI HRTFs across profiling, diagnostics and partitioned
+  rendering; fixed queued multi-AU PCM pulls, late timestamp anchoring,
+  EOF diagnostics and bounded C trace handling.
+- Corrected positioned WAV sinks, odd WAV chunk padding, scene paths containing
+  spaces, custom-layout transport and ADM PCM24 output-range diagnostics.
+- Preserved LAV format transitions across preroll and serialized output-gain
+  persistence with runtime settings.
+- Corrected portable package runtime paths, macOS library relocation and
+  package metadata, and kept WASM performance metrics bounded and current.
+
+### Scope
+
+- Decoder correctness fixes can change affected PCM or admit previously rejected
+  streams. They are separate from the bit-exact performance changes; v0.19 is
+  not claimed to produce identical PCM to v0.18 for every input.
+- Public synthetic Linux measurements document the performance changes and
+  their controls; they do not establish Windows/LAV playback speed, low-power
+  CPU performance, or physical-device latency.
+- Listener orientation remains experimental and host-supplied; there is no
+  sensor integration, automatic headphone detection, or real-earphone latency
+  guarantee. Virtual 9.1.6 remains experimental and binaural output is two-channel.
+- Physical multichannel hardware, automatic output-layout negotiation, and
+  exact native Dolby/Apple binaural equivalence remain unverified or unclaimed.
+- Nonzero LAV gain has no clipping protection. The LAV asset is built separately;
+  use the matching v0.19.0 package rather than the older v0.18.0 package.
 
 ## [0.18.0] — 2026-09-25
 
