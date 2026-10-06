@@ -2543,7 +2543,10 @@ mod stream_lifecycle_tests {
                 decoder.receive_frame().unwrap(),
                 ReceiveOutcome::EndOfStream
             ));
-            assert!(decoder.take_traces().is_empty());
+            assert_eq!(
+                decoder.take_traces(),
+                [] as [openjoc_ffmpeg::AccessUnitTrace; 0]
+            );
             let snapshot = decoder.live_inspection_snapshot();
             assert_eq!(snapshot.observed_au_count, 256);
             assert_eq!(

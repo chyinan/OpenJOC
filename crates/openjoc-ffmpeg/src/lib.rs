@@ -6525,7 +6525,7 @@ mod tests {
             );
             assert_eq!(traced.take_traces().len(), 256);
             assert!(untraced.traces.is_none());
-            assert!(untraced.take_traces().is_empty());
+            assert_eq!(untraced.take_traces(), [] as [AccessUnitTrace; 0]);
             traced.reset();
             untraced.reset();
         }
@@ -6533,7 +6533,10 @@ mod tests {
         traced
             .send_packet(packet(&fixture[..8192], Some(0)))
             .unwrap();
-        assert!(!traced.traces.as_ref().unwrap().is_empty());
+        assert_ne!(
+            traced.traces.as_ref().unwrap().as_slice(),
+            [] as [AccessUnitTrace; 0]
+        );
         traced.set_trace_collection_enabled(false);
         assert!(traced.traces.is_none());
         traced.set_trace_collection_enabled(true);
@@ -6541,7 +6544,7 @@ mod tests {
         traced
             .send_packet(packet(&fixture[..8192], Some(0)))
             .unwrap();
-        assert!(!traced.take_traces().is_empty());
+        assert_ne!(traced.take_traces(), [] as [AccessUnitTrace; 0]);
     }
 
     #[test]

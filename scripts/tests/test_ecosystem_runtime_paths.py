@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import sys
@@ -156,6 +156,18 @@ class MacOSRelocationFixtures(unittest.TestCase):
             with patch.object(PACKAGE._MACOS, 'dependencies', return_value=['/opt/local/libmissing.dylib']):
                 with self.assertRaisesRegex(RuntimeError, 'unbundled Mach-O dependency'):
                     PACKAGE._MACOS.relocate(root)
+
+    def test_windows_host_paths_emit_posix_macho_references_fixture(self):
+        macho = PACKAGE._MACOS
+        root = PureWindowsPath('C:/bundle with spaces')
+        owners = [root / 'bin/openjoc-ffmpeg', root / 'bin/openjoc-ffprobe',
+                  root / 'lib/libsample.dylib']
+        with patch.object(macho, 'images', return_value=owners), patch.object(macho, 'dependencies', return_value=['/builder/libsample.dylib']), patch.object(macho, 'rpaths', return_value=[]), patch.object(macho, 'verify'), patch.object(macho, 'run') as run:
+            macho.relocate(root)
+        arguments = [call.args for call in run.call_args_list]
+        self.assertTrue(any('@loader_path/../lib/libsample.dylib' in args for args in arguments))
+        self.assertTrue(any('@loader_path/libsample.dylib' in args for args in arguments))
+        self.assertFalse(any('\\' in arg for args in arguments for arg in args if arg.startswith('@loader_path/')))
 
     def test_relocation_preserves_system_dependencies_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:

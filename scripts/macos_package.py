@@ -1,7 +1,7 @@
 """Relocate the staged FFmpeg Mach-O closure; requires native Apple tools."""
 from __future__ import annotations
 
-import os
+import posixpath
 import pathlib
 import subprocess
 
@@ -56,7 +56,8 @@ def relocate(root: pathlib.Path) -> None:
             if target is None:
                 raise RuntimeError(f"unbundled Mach-O dependency {raw!r} from {owner}")
             # Direct loader-relative edges avoid build-prefix rpaths entirely.
-            relative = os.path.relpath(target, owner.parent)
+            # Mach-O paths use POSIX separators even in cross-host fixtures.
+            relative = posixpath.relpath(target.as_posix(), owner.parent.as_posix())
             changes.extend(["-change", raw, f"@loader_path/{relative}"])
         if owner.suffix == ".dylib":
             changes.extend(["-id", f"@rpath/{owner.name}"])
