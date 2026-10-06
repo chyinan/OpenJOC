@@ -132,10 +132,22 @@ as an explicit validated local-file choice; and
 **9.1.6 (Experimental)** selects the larger virtual speaker field while the
 delivered PCM remains two-channel.
 
-Output and Dialnorm settings persist only below
+The **Output gain** control is independent of Dialnorm, Mixing, DRC, HRTF, and
+the renderer configuration. It stores a signed tenths-of-a-decibel value from
+-200 to +200 (displayed as -20.0 dB to +20.0 dB), defaulting to 0.0 dB. LAV
+applies it once to the validated OpenJOC FP32 PCM buffer after rendering and
+before queueing/strict DirectShow delivery; queue flush, normal delivery, and
+tail drain only transport the already-scaled samples. Every output channel,
+including LFE, uses the same multiplier. The 0 dB path returns before any
+sample conversion, so the old PCM is bit-exact; nonzero values use
+`10^(gain_db / 20)` and do not add clipping protection or automatic
+compensation. Applying gain does not recreate the OpenJOC decoder or reload an
+HRTF.
+
+Output, Dialnorm, and Output gain settings persist only below
 `Software\LAV\Audio\OpenJOC`. Dialnorm uses schema version 1 and falls back to
 Calibrated for missing, future, mistyped, or invalid registry values. The new
-level setting is exposed through a separate versioned COM IID so the published
+level settings use separate versioned COM IIDs so the published
 `ILAVAudioSettings` and `ILAVOpenJocSettings` vtables remain unchanged.
 
 The standard LAV Status page receives read-only volume statistics from valid

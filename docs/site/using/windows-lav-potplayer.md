@@ -110,6 +110,15 @@ This setting selects the decoder's programme-calibration policy. It is not
 normalization, DRC, a quality mode, or mastering gain, and it adds no
 post-render gain stage.
 
+**Output gain** is an independent post-render PCM level control in the same
+Program Level group. It ranges from **-20.0 dB to +20.0 dB**, in 0.1 dB steps,
+and defaults to **0.0 dB**. It applies the same linear gain to every channel
+after OpenJOC speaker or binaural rendering and before the strict PCM sample is
+delivered; it does not change Dialnorm, Mixing, DRC, HRTF, channel layout, frame
+count, or timestamps. At 0 dB the new stage is bypassed, so the existing output
+is unchanged. Positive gain may cause clipping; the control does not add a
+limiter or automatic compensation.
+
 The **Status** page uses the standard LAV channel meters. It currently displays
 at most the first eight output channels; for 10- and 12-channel policies, the
 displayed first eight meters remain channel-index aligned with the PCM output.
