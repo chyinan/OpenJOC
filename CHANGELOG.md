@@ -11,6 +11,10 @@
 
 ### Fixed
 
+- Retain standard E-AC-3 coupling band boundaries when later blocks omit them,
+  including range changes and inactive gaps; affected streams may decode
+  differently as a correctness fix.
+
 - Preserve convolution gain and the complete sinc precursor when resampling
   custom HRIRs, including delay-aware spatial interpolation. Converted banks
   retain a documented common causal filter delay; matching-rate banks are unchanged.
