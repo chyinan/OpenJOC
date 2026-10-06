@@ -26,7 +26,7 @@ improves binaural processing efficiency, and fixes decoder and playback edge cas
   removing the 512 MiB programme cap while preserving sample order and drain behavior.
 - Raised the minimum supported Rust version to 1.89 for the portable HDF5 reader.
 - Updated the Windows LAV release pin to
-  `01666bae613aeaf0568f7548bfe9ab77a09486e1` and expanded native gain/settings gates.
+  `d13b7cac86c5750b5d4181569d98f44ae9a1607c` and expanded native gain/settings gates.
 
 ### Fixed
 

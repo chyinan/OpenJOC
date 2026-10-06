@@ -13,7 +13,7 @@ built from immutable LAV commit
 `8f32aad51aea24602f2175316a241568be5fc4a1`, pinned by the workflow used for that release.
 
 The v0.19.0 release contract uses immutable LAV commit
-`01666bae613aeaf0568f7548bfe9ab77a09486e1` for
+`d13b7cac86c5750b5d4181569d98f44ae9a1607c` for
 `openjoc-lav-0.19.0-windows-x64.zip`. The LAV asset is built and uploaded
 separately from the core packages; check its availability on the release page.
 The package carries its runtime notices and license files.
