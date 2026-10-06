@@ -35,6 +35,7 @@ on:
       - "integrations/ffmpeg/native/**"
       - "integrations/mpv/**"
       - "crates/openjoc-capi/**"
+      - "crates/openjoc-eac3/**"
       - "crates/openjoc-ffmpeg/**"
       - "crates/openjoc-qmf/**"
       - "crates/openjoc-render/**"

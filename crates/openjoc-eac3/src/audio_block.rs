@@ -446,6 +446,7 @@ pub struct StandardCouplingInformation {
     pub begin_frequency_code: u8,
     pub end_frequency_code: i8,
     pub subband_count: u8,
+    /// Active entries are relative to `begin_frequency_code`; entry zero is false.
     pub band_structure: [bool; 18],
     pub band_count: u8,
     pub coordinates: Vec<Option<StandardCouplingCoordinates>>,
@@ -3760,7 +3761,11 @@ fn parse_following_coupling_strategy(
         }
         let subband_count =
             u8::try_from(subband_count).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-        let mut band_structure = DEFAULT_STANDARD_COUPLING_STRUCTURE;
+        let mut band_structure = default_standard_coupling_structure(
+            begin_frequency_code,
+            end_frequency_code,
+            subband_count,
+        )?;
         if bits.read_bit()? {
             for band in 1..subband_count {
                 band_structure[usize::from(band)] = bits.read_bit()?;
@@ -4838,6 +4843,27 @@ fn parse_first_coupling(
     }
 }
 
+// Table E.1.12 is indexed by absolute subband; StandardCouplingInformation
+// stores the active structure relative to cplbegf. Its first band always starts
+// independently, including when the absolute default table contains a one.
+fn default_standard_coupling_structure(
+    begin: u8,
+    end: i8,
+    subband_count: u8,
+) -> Result<[bool; 18], Eac3Error> {
+    let start = usize::from(begin);
+    let count = usize::from(subband_count);
+    let defaults = DEFAULT_STANDARD_COUPLING_STRUCTURE
+        .get(start..start + count)
+        .ok_or(Eac3Error::InvalidCouplingRange {
+            begin: i16::from(begin),
+            end: i16::from(end),
+        })?;
+    let mut relative = [false; 18];
+    relative[1..count].copy_from_slice(&defaults[1..]);
+    Ok(relative)
+}
+
 fn parse_standard_coupling(
     bits: &mut BitReader<'_>,
     frame: &AudioFrameInformation,
@@ -4860,7 +4886,11 @@ fn parse_standard_coupling(
         return Err(Eac3Error::InvalidCouplingRange { begin, end });
     }
     let subband_count = u8::try_from(subband_count).map_err(|_| Eac3Error::FrameSizeOverflow)?;
-    let mut band_structure = DEFAULT_STANDARD_COUPLING_STRUCTURE;
+    let mut band_structure = default_standard_coupling_structure(
+        begin_frequency_code,
+        end_frequency_code,
+        subband_count,
+    )?;
     if bits.read_bit()? {
         for band in 1..subband_count {
             band_structure[usize::from(band)] = bits.read_bit()?;
@@ -5029,6 +5059,99 @@ mod tests {
     use super::{AudioBlockMantissaFailure, ExponentInformation, consume_conventional_mantissas};
     use crate::{Eac3Error, MantissaElement};
     use openjoc_bitio::{BitRead, BitReader};
+
+    fn coupling_test_bits(fields: &[(u64, u8)]) -> Vec<u8> {
+        let mut bits = Vec::new();
+        for &(value, width) in fields {
+            for shift in (0..width).rev() {
+                bits.push((value >> shift) & 1 != 0);
+            }
+        }
+        let mut bytes = vec![0; bits.len().div_ceil(8)];
+        for (index, bit) in bits.into_iter().enumerate() {
+            bytes[index / 8] |= u8::from(bit) << (7 - index % 8);
+        }
+        bytes
+    }
+
+    #[test]
+    fn default_coupling_parsers_use_absolute_table_at_every_legal_origin() {
+        // Independent transcription of Table E.1.12, indexed by absolute
+        // subband. Exercise both parser entry points, all legal ranges, and
+        // explicit overrides (including origins whose table entry is one).
+        let defaults = [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1];
+        let frame =
+            crate::parse_audio_frame(include_bytes!("../tests/fixtures/coupling/acmod5.eac3"))
+                .unwrap();
+        for begin in 0_u8..=15 {
+            for end in 0_u8..=15 {
+                if end + 3 <= begin {
+                    continue;
+                }
+                let count = usize::from(end + 3 - begin);
+                for explicit in [false, true] {
+                    let expected = (0..count)
+                        .map(|relative| {
+                            relative != 0
+                                && if explicit {
+                                    relative % 2 == 1
+                                } else {
+                                    defaults[usize::from(begin) + relative] != 0
+                                }
+                        })
+                        .collect::<Vec<_>>();
+                    let bands = expected.iter().filter(|&&merged| !merged).count();
+                    for following in [false, true] {
+                        let mut fields = Vec::new();
+                        if following {
+                            fields.extend([(0, 1), (15, 4)]); // standard; four participants
+                        }
+                        fields.extend([
+                            (u64::from(begin), 4),
+                            (u64::from(end), 4),
+                            (u64::from(explicit), 1),
+                        ]);
+                        if explicit {
+                            fields.extend(expected[1..].iter().map(|&flag| (u64::from(flag), 1)));
+                        }
+                        let strategy_bits: usize =
+                            fields.iter().map(|&(_, width)| usize::from(width)).sum();
+                        if !following {
+                            for _ in 0..4 {
+                                fields.push((0, 2));
+                                fields.extend((0..bands).map(|_| (0, 8)));
+                            }
+                        }
+                        let bytes = coupling_test_bits(&fields);
+                        let mut bits = BitReader::new(&bytes);
+                        let info = if following {
+                            let super::CouplingInformation::Standard(info) =
+                                super::parse_following_coupling_strategy(
+                                    &mut bits, &frame, 4, None,
+                                )
+                                .unwrap()
+                            else {
+                                panic!("standard coupling");
+                            };
+                            info
+                        } else {
+                            super::parse_standard_coupling(&mut bits, &frame, vec![true; 4], None)
+                                .unwrap()
+                        };
+                        assert_eq!(
+                            &info.band_structure[..count],
+                            expected,
+                            "begin={begin}, end={end}, explicit={explicit}, following={following}"
+                        );
+                        assert_eq!(usize::from(info.band_count), bands);
+                        let consumed =
+                            strategy_bits + if following { 0 } else { 4 * (2 + bands * 8) };
+                        assert_eq!(bits.bits_remaining(), bytes.len() * 8 - consumed);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn parse_only_mantissa_cursor_reports_invalid_code_without_inventing_pcm() {

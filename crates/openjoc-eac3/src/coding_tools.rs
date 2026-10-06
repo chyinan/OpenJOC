@@ -97,14 +97,15 @@ fn channel_labels(acmod: u8, lfe: bool) -> Vec<SemanticChannel> {
         ],
         5 => vec![
             SemanticChannel::Left,
+            SemanticChannel::Centre,
             SemanticChannel::Right,
             SemanticChannel::Other(3),
         ],
         6 => vec![
             SemanticChannel::Left,
-            SemanticChannel::Centre,
             SemanticChannel::Right,
-            SemanticChannel::Other(3),
+            SemanticChannel::LeftSurround,
+            SemanticChannel::RightSurround,
         ],
         7 => vec![
             SemanticChannel::Left,

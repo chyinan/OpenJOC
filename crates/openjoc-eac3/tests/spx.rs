@@ -130,3 +130,52 @@ fn applies_the_symmetric_five_tap_attenuation_notch() {
     assert!((output[50] - attenuation[1] * 0.875).abs() < 1e-12);
     assert!((output[51] - attenuation[0] * 0.875).abs() < 1e-12);
 }
+
+#[test]
+fn corrected_attenuation_rows_match_normative_spectrum_and_pcm() {
+    // ETSI TS 102 366 V1.4.1 Table E.2.12; the public five-bit blend domain
+    // tops out at 31. This configuration has zero noise gain and gain 28.
+    let information = info();
+    let coordinates = SpectralExtensionCoordinates {
+        blend: 31,
+        master: 0,
+        bands: vec![(0, 3); 3],
+    };
+    for (code, row) in [
+        (18, [0.415618948, 0.172739110, 0.071793647]),
+        (23, [0.329876978, 0.108818820, 0.035896824]),
+        (27, [0.274206245, 0.075189065, 0.020617311]),
+        (28, [0.261823531, 0.068551561, 0.017948412]),
+    ] {
+        let output = synthesize_spectral_extension(
+            &[1.0; 49],
+            &information,
+            &coordinates,
+            Some(code),
+            &[0.0; 36],
+        )
+        .unwrap();
+        // Build the expected spectrum independently: copy gain 28 and five-tap
+        // symmetric notches at the baseband boundary and the copy-wrap point.
+        let mut expected = vec![1.0; 85];
+        expected[49..].fill(28.0);
+        for center in [49, 73] {
+            for (offset, factor) in [row[0], row[1], row[2], row[1], row[0]]
+                .into_iter()
+                .enumerate()
+            {
+                expected[center - 2 + offset] *= factor;
+            }
+        }
+        assert_eq!(output, expected, "SPX attenuation code {code}");
+        let mut actual_coefficients = [0.0; 256];
+        let mut expected_coefficients = [0.0; 256];
+        actual_coefficients[..85].copy_from_slice(&output);
+        expected_coefficients[..85].copy_from_slice(&expected);
+        assert_eq!(
+            openjoc_eac3::inverse_transform(&actual_coefficients, false).unwrap(),
+            openjoc_eac3::inverse_transform(&expected_coefficients, false).unwrap(),
+            "windowed PCM for attenuation code {code}",
+        );
+    }
+}
