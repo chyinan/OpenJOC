@@ -15,6 +15,10 @@ pub(crate) fn accumulate_interior(
     right: &mut [f64],
     offset: usize,
 ) -> Result<usize, (OutputChannel, usize)> {
+    #[cfg(target_arch = "aarch64")]
+    if samples.len() - offset >= 4 {
+        return accumulate_aarch64_unrolled(source, samples, left, right, offset);
+    }
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     if samples.len() - offset >= 4 && std::is_x86_feature_detected!("avx") {
         // SAFETY: AVX and OS support were detected above. The helper checks all
@@ -24,6 +28,78 @@ pub(crate) fn accumulate_interior(
     }
     // Other architectures retain the original scalar implementation.
     let _ = (source, samples, left, right);
+    Ok(offset)
+}
+
+// Keep the four output samples independent while exposing enough instruction
+// level parallelism for AArch64 without changing the arithmetic graph. Each
+// lane starts from its existing accumulator and visits every tap in ascending
+// order; gain multiplication, tap multiplication, and addition remain
+// separate operations. This is deliberately safe Rust; non-AArch64 targets
+// retain the existing scalar fallback.
+#[cfg(target_arch = "aarch64")]
+#[inline(never)]
+fn accumulate_aarch64_unrolled(
+    source: &BinauralRegisteredSource,
+    samples: &[f64],
+    left: &mut [f64],
+    right: &mut [f64],
+    mut offset: usize,
+) -> Result<usize, (OutputChannel, usize)> {
+    let tap_count = source.left_taps.len();
+    assert!(tap_count > 0);
+    assert_eq!(tap_count, source.right_taps.len());
+    assert_eq!(samples.len(), left.len());
+    assert_eq!(samples.len(), right.len());
+    assert!(offset >= tap_count - 1 && offset <= samples.len());
+    let gain = source.definition.gain;
+    while samples.len() - offset >= 4 {
+        let mut left_0 = left[offset];
+        let mut right_0 = right[offset];
+        let mut left_1 = left[offset + 1];
+        let mut right_1 = right[offset + 1];
+        let mut left_2 = left[offset + 2];
+        let mut right_2 = right[offset + 2];
+        let mut left_3 = left[offset + 3];
+        let mut right_3 = right[offset + 3];
+        for tap_index in 0..tap_count {
+            let left_tap = source.left_taps[tap_index];
+            let right_tap = source.right_taps[tap_index];
+
+            let input_0 = samples[offset - tap_index] * gain;
+            left_0 += input_0 * left_tap;
+            right_0 += input_0 * right_tap;
+
+            let input_1 = samples[offset - tap_index + 1] * gain;
+            left_1 += input_1 * left_tap;
+            right_1 += input_1 * right_tap;
+
+            let input_2 = samples[offset - tap_index + 2] * gain;
+            left_2 += input_2 * left_tap;
+            right_2 += input_2 * right_tap;
+
+            let input_3 = samples[offset - tap_index + 3] * gain;
+            left_3 += input_3 * left_tap;
+            right_3 += input_3 * right_tap;
+        }
+        left[offset] = left_0;
+        right[offset] = right_0;
+        left[offset + 1] = left_1;
+        right[offset + 1] = right_1;
+        left[offset + 2] = left_2;
+        right[offset + 2] = right_2;
+        left[offset + 3] = left_3;
+        right[offset + 3] = right_3;
+        for lane in 0..4 {
+            if !left[offset + lane].is_finite() {
+                return Err((OutputChannel::Left, offset + lane));
+            }
+            if !right[offset + lane].is_finite() {
+                return Err((OutputChannel::Right, offset + lane));
+            }
+        }
+        offset += 4;
+    }
     Ok(offset)
 }
 
