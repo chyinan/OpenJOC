@@ -16,6 +16,8 @@ Files:
 - [Research history](RESEARCH_HISTORY.md) — research notes and experiment chronology.
 - [Implementation history](IMPLEMENTATION_HISTORY.md) — dated implementation and
   verification record.
+- [Ordered adjacent-output AVX FIR](ordered-fir-avx/README.md) — strict-bit-exact
+  static-FIR acceleration, paired wall-time evidence and control regressions.
 - [Bit-exact performance gate](bitexact-performance/README.md) — paired baseline,
   synthetic long-corpus, timing, allocation, and coverage notes.
 - [Performance summary](bitexact-performance/performance-summary.csv) — compact

@@ -1,0 +1,38 @@
+{
+  "production_commit": "97a25a00151c2df6ae9e17ef9ecf8e140af3a0bb",
+  "performance_baseline": "291900ce33ea349c4b855655cdb282819e94eabc",
+  "frozen_pcm_oracle": "15aefe1baa7b40f37950df252b6dbf6179894d6d",
+  "measurement_date_utc": "2026-10-07",
+  "rustc": "1.98.1 (48a229ceaefd4985c50990b14116b6d856af0985)",
+  "llvm": "22.1.8",
+  "target": "x86_64-unknown-linux-gnu",
+  "host": "virtual AMD EPYC 9V74, Linux",
+  "profile": "default Cargo release (opt-level=3)",
+  "api_features": [
+    "default",
+    "embedded-builtin-hrtf"
+  ],
+  "rustflags": [],
+  "cargo_encoded_rustflags": "",
+  "cargo_build_jobs": 1,
+  "global_native_or_fast_math_flags": false,
+  "primary_metric": "summary_api_pipeline_wall_ns; summed API push/receive/drain wall time, not process CPU time",
+  "primary_workload": {
+    "description": "authorized non-redistributable recording; no input name, fingerprint or PCM is published",
+    "duration_seconds": 152.704,
+    "layout": "7.1.4 for binaural/speaker; 2.0 for stereo"
+  },
+  "full_pairs_per_mode": 7,
+  "micro_pairs": 9,
+  "short_control_pairs_per_shape": 9,
+  "pair_order": "baseline then candidate for odd pairs; candidate then baseline for even pairs",
+  "execution_sequence": "pair 1, correctness/quality checks, then pairs 2-7; exact source and binary identities unchanged",
+  "measurement_isolation": "performance measurements serialized without concurrent builds/tests/other benchmarks; correctness-only gate overlapped validation work",
+  "msrv": "1.89.0: x86_64 release renderer tests and checks; aarch64-unknown-linux-gnu and wasm32-unknown-unknown compile checks",
+  "limits": [
+    "single-host performance only",
+    "no native ARM performance or old-CPU runtime-dispatch execution",
+    "no exact-commit hosted CI result yet",
+    "native GStreamer and FFmpeg9 development files absent locally"
+  ]
+}

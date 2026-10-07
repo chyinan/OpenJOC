@@ -32,9 +32,9 @@ repository = "https://github.com/chyinan/OpenJOC"
 rust-version = "1.89"
 
 [workspace.lints.rust]
-# The C ABI crate necessarily contains small, audited raw-pointer boundaries.
-# It opts into `allow(unsafe_code)` locally; the rest of the workspace remains
-# warning-clean and continues to use no unsafe implementation code.
+# The C ABI and runtime-gated AVX FIR helper contain small, audited raw-pointer
+# boundaries. They opt into `allow(unsafe_code)` locally; other implementation
+# code remains warning-clean without unsafe allowances.
 unsafe_code = "warn"
 
 [workspace.lints.clippy]
