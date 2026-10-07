@@ -28,6 +28,7 @@ use std::{
     fmt,
 };
 
+mod direct_fir;
 mod dynamic_binaural;
 mod final_linked_gain;
 mod partitioned;
@@ -1250,6 +1251,23 @@ impl BinauralRenderer {
         left: &mut [f64],
         right: &mut [f64],
     ) -> Result<(), RenderError> {
+        if left.len() < 4 {
+            self.render_block_impl::<false>(blocks, left, right)
+        } else {
+            self.render_block_impl::<true>(blocks, left, right)
+        }
+    }
+
+    // Tiny blocks cannot contain a SIMD group, so they use the portable body
+    // without per-source dispatch overhead. Tests also force this body on an
+    // AVX-capable host, without a public switch or process-global state.
+    #[inline(never)]
+    fn render_block_impl<const ACCELERATE: bool>(
+        &mut self,
+        blocks: &[BinauralSourceBlock<'_>],
+        left: &mut [f64],
+        right: &mut [f64],
+    ) -> Result<(), RenderError> {
         self.ensure_renderable()?;
         validate_binaural_outputs(left, right)?;
         if blocks.len() != self.sources.len() {
@@ -1308,7 +1326,25 @@ impl BinauralRenderer {
                     id: source.definition.id,
                 })?;
             let history_len = source.history.len();
-            for offset in 0..block_length {
+            let mut offset = 0;
+            while offset < block_length {
+                if ACCELERATE && offset == history_len && block_length - offset >= 4 {
+                    offset = match direct_fir::accumulate_interior(
+                        source,
+                        block.samples,
+                        left,
+                        right,
+                        offset,
+                    ) {
+                        Ok(next) => next,
+                        Err((channel, sample_index)) => {
+                            return self.numeric_failure(left, right, channel, sample_index);
+                        }
+                    };
+                    if offset == block_length {
+                        break;
+                    }
+                }
                 let mut left_acc = left[offset];
                 let mut right_acc = right[offset];
                 // Keep ascending tap order across both ranges. Current-block
@@ -1332,6 +1368,7 @@ impl BinauralRenderer {
                 if !right[offset].is_finite() {
                     return self.numeric_failure(left, right, OutputChannel::Right, offset);
                 }
+                offset += 1;
             }
         }
         for source in &mut self.sources {
@@ -6140,5 +6177,376 @@ mod tests {
         assert!(!manifest.contains("openjoc-joc"));
         assert!(!manifest.contains("DecodedJocComponents"));
         assert!(Speaker3d::new(SpeakerId::new(280), CartesianPosition::new(0.0, 0.0, 1.0)).is_ok());
+    }
+    fn render_block_check_fallback(
+        renderer: &mut BinauralRenderer,
+        blocks: &[BinauralSourceBlock<'_>],
+        left: &mut [f64],
+        right: &mut [f64],
+    ) -> Result<(), RenderError> {
+        let mut fallback = renderer.clone();
+        let mut fallback_left = left.to_vec();
+        let mut fallback_right = right.to_vec();
+        let expected =
+            fallback.render_block_impl::<false>(blocks, &mut fallback_left, &mut fallback_right);
+        let actual = renderer.render_block(blocks, left, right);
+        assert_eq!(expected, actual, "forced portable result");
+        assert_f64_slice_bits(&fallback_left, left, "forced portable left");
+        assert_f64_slice_bits(&fallback_right, right, "forced portable right");
+        assert_binaural_state_bits(&fallback, renderer);
+        actual
+    }
+
+    #[test]
+    fn binaural_adjacent_outputs_match_frozen_loop_bits_and_state() {
+        let values = [
+            0.0,
+            -0.0,
+            f64::from_bits(1),
+            -f64::from_bits(1),
+            f64::MIN_POSITIVE,
+            -f64::MIN_POSITIVE,
+            0.1,
+            -0.3,
+            f64::from_bits(0x3ff0_0000_0000_0001),
+            f64::MAX * 0.0001,
+        ];
+        for tap_count in [
+            1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 64, 127, 128, 255, 256, 257, 512,
+        ] {
+            let mut entries = Vec::new();
+            let mut sources = Vec::new();
+            for (index, gain) in [0.7, -0.3, -0.0].into_iter().enumerate() {
+                let direction = CartesianPosition::new(index as f64 * 0.2, 1.0, 0.0);
+                let count = tap_count + index;
+                let taps = (0..count)
+                    .map(|i| 0.001 / (i + 1) as f64)
+                    .collect::<Vec<_>>();
+                let right = taps.iter().map(|x| -x * 0.3).collect::<Vec<_>>();
+                entries.push(hrir_entry_test(index as u64 + 1, direction, &taps, &right));
+                sources.push(
+                    StaticBinauralSource::new(
+                        SourceId::new(index as u64 + 1),
+                        direction,
+                        gain,
+                        HrirEntryId::new(index as u64 + 1),
+                    )
+                    .unwrap(),
+                );
+            }
+            let bank = HrirBank::new(48_000, entries).unwrap();
+            let mut original = BinauralRenderer::new(48_000, bank, sources).unwrap();
+            let mut candidate = original.clone();
+            for (round, length) in [
+                0,
+                1,
+                2,
+                3,
+                4,
+                tap_count - 1,
+                tap_count,
+                tap_count + 1,
+                tap_count + 2,
+                tap_count + 3,
+                tap_count + 4,
+                tap_count + 5,
+                tap_count + 6,
+                tap_count + 7,
+                1537,
+                1,
+                0,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let samples = (0..3)
+                    .map(|source| {
+                        (0..length)
+                            .map(|i| values[(i + source + round) % values.len()])
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                let blocks = (0..3)
+                    .rev()
+                    .map(|i| BinauralSourceBlock::new(SourceId::new(i as u64 + 1), &samples[i]))
+                    .collect::<Vec<_>>();
+                let mut expected_left = vec![123.0; length];
+                let mut expected_right = expected_left.clone();
+                let mut actual_left = expected_left.clone();
+                let mut actual_right = expected_left.clone();
+                assert_eq!(
+                    render_block_original_loop(
+                        &mut original,
+                        &blocks,
+                        &mut expected_left,
+                        &mut expected_right
+                    ),
+                    render_block_check_fallback(
+                        &mut candidate,
+                        &blocks,
+                        &mut actual_left,
+                        &mut actual_right
+                    )
+                );
+                assert_f64_slice_bits(&expected_left, &actual_left, "adjacent left");
+                assert_f64_slice_bits(&expected_right, &actual_right, "adjacent right");
+                assert_binaural_state_bits(&original, &candidate);
+            }
+            while original.remaining_tail_samples() > 0 {
+                let n = original.remaining_tail_samples().min(7);
+                let mut expected_left = vec![123.0; n];
+                let mut expected_right = expected_left.clone();
+                let mut actual_left = expected_left.clone();
+                let mut actual_right = expected_left.clone();
+                assert_eq!(
+                    original.drain_tail_block(&mut expected_left, &mut expected_right),
+                    candidate.drain_tail_block(&mut actual_left, &mut actual_right)
+                );
+                assert_f64_slice_bits(&expected_left, &actual_left, "adjacent tail left");
+                assert_f64_slice_bits(&expected_right, &actual_right, "adjacent tail right");
+                assert_binaural_state_bits(&original, &candidate);
+            }
+            original.reset();
+            candidate.reset();
+            assert_binaural_state_bits(&original, &candidate);
+        }
+    }
+
+    #[test]
+    fn binaural_adjacent_outputs_keep_prior_source_accumulators() {
+        let direction = CartesianPosition::new(0.0, 1.0, 0.0);
+        let taps = [1.0, 0.0, -0.0, 0.0, 0.0];
+        let bank =
+            HrirBank::new(48_000, vec![hrir_entry_test(1, direction, &taps, &taps)]).unwrap();
+        let sources = (1..=3)
+            .map(|id| {
+                StaticBinauralSource::new(SourceId::new(id), direction, 1.0, HrirEntryId::new(1))
+                    .unwrap()
+            })
+            .collect();
+        let mut original = BinauralRenderer::new(48_000, bank, sources).unwrap();
+        let mut candidate = original.clone();
+        let samples = [vec![1e16; 39], vec![1.0; 39], vec![-1e16; 39]];
+        let blocks = (0..3)
+            .rev()
+            .map(|i| BinauralSourceBlock::new(SourceId::new(i as u64 + 1), &samples[i]))
+            .collect::<Vec<_>>();
+        let mut expected_left = vec![123.0; 39];
+        let mut expected_right = expected_left.clone();
+        let mut actual_left = expected_left.clone();
+        let mut actual_right = expected_left.clone();
+        assert_eq!(
+            render_block_original_loop(
+                &mut original,
+                &blocks,
+                &mut expected_left,
+                &mut expected_right
+            ),
+            render_block_check_fallback(
+                &mut candidate,
+                &blocks,
+                &mut actual_left,
+                &mut actual_right
+            )
+        );
+        assert_f64_slice_bits(&expected_left, &actual_left, "cancellation left");
+        assert_f64_slice_bits(&expected_right, &actual_right, "cancellation right");
+        assert_binaural_state_bits(&original, &candidate);
+        assert!(expected_left.iter().all(|x| x.to_bits() == 0));
+        // Prior sources must enter the accumulator before each tap addition;
+        // A separately accumulated source subtotal would produce different bits.
+        let second_direction = CartesianPosition::new(0.1, 1.0, 0.0);
+        let second_taps = [1.0, 1.0, 0.0, 0.0, 0.0];
+        let bank = HrirBank::new(
+            48_000,
+            vec![
+                hrir_entry_test(1, direction, &taps, &taps),
+                hrir_entry_test(2, second_direction, &second_taps, &second_taps),
+            ],
+        )
+        .unwrap();
+        let sources = vec![
+            StaticBinauralSource::new(SourceId::new(1), direction, 1.0, HrirEntryId::new(1))
+                .unwrap(),
+            StaticBinauralSource::new(SourceId::new(2), second_direction, 1.0, HrirEntryId::new(2))
+                .unwrap(),
+        ];
+        let mut original = BinauralRenderer::new(48_000, bank, sources).unwrap();
+        let mut candidate = original.clone();
+        let first = vec![1e16; 39];
+        let second = (0..39)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1e16 })
+            .collect::<Vec<_>>();
+        let blocks = [
+            BinauralSourceBlock::new(SourceId::new(2), &second),
+            BinauralSourceBlock::new(SourceId::new(1), &first),
+        ];
+        assert_eq!(
+            render_block_original_loop(
+                &mut original,
+                &blocks,
+                &mut expected_left,
+                &mut expected_right
+            ),
+            render_block_check_fallback(
+                &mut candidate,
+                &blocks,
+                &mut actual_left,
+                &mut actual_right
+            )
+        );
+        assert_f64_slice_bits(&expected_left, &actual_left, "ordered prior-source left");
+        assert_f64_slice_bits(&expected_right, &actual_right, "ordered prior-source right");
+        assert_binaural_state_bits(&original, &candidate);
+        assert_eq!(expected_left[5].to_bits(), 1.0_f64.to_bits());
+    }
+
+    #[test]
+    fn binaural_adjacent_outputs_keep_exception_order_and_atomic_history() {
+        let direction = CartesianPosition::new(0.0, 1.0, 0.0);
+        for exceptional in [
+            f64::from_bits(0x7ff8_0000_0000_0123),
+            f64::from_bits(0xfff8_0000_0000_0456),
+            f64::from_bits(0x7ff0_0000_0000_0001),
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::MAX,
+        ] {
+            for lane in 0..4 {
+                for right_first in [false, true] {
+                    let left_taps = [
+                        if right_first { 0.5 } else { 2.0 },
+                        if right_first { 2.0 } else { 0.1 },
+                        -0.1,
+                        0.0,
+                        -0.0,
+                    ];
+                    let right_taps = [2.0, 0.1, -0.1, 0.0, -0.0];
+                    let bank = HrirBank::new(
+                        48_000,
+                        vec![hrir_entry_test(1, direction, &left_taps, &right_taps)],
+                    )
+                    .unwrap();
+                    let sources = (1..=2)
+                        .map(|id| {
+                            StaticBinauralSource::new(
+                                SourceId::new(id),
+                                direction,
+                                1.0,
+                                HrirEntryId::new(1),
+                            )
+                            .unwrap()
+                        })
+                        .collect();
+                    let mut original = BinauralRenderer::new(48_000, bank, sources).unwrap();
+                    let mut candidate = original.clone();
+                    for round in 0..3 {
+                        let mut samples = [vec![0.1; 17], vec![0.1; 17]];
+                        if round == 1 {
+                            samples[0][8 + lane] = exceptional;
+                            samples[1][4] = exceptional;
+                        }
+                        // Validation follows caller order; arithmetic follows registered source order.
+                        let blocks = [
+                            BinauralSourceBlock::new(SourceId::new(2), &samples[1]),
+                            BinauralSourceBlock::new(SourceId::new(1), &samples[0]),
+                        ];
+                        let mut expected_left = vec![123.0; 17];
+                        let mut expected_right = expected_left.clone();
+                        let mut actual_left = expected_left.clone();
+                        let mut actual_right = expected_left.clone();
+                        let previous_history = original
+                            .sources
+                            .iter()
+                            .map(|source| source.history.clone())
+                            .collect::<Vec<_>>();
+                        let expected = render_block_original_loop(
+                            &mut original,
+                            &blocks,
+                            &mut expected_left,
+                            &mut expected_right,
+                        );
+                        assert_eq!(
+                            expected,
+                            render_block_check_fallback(
+                                &mut candidate,
+                                &blocks,
+                                &mut actual_left,
+                                &mut actual_right
+                            )
+                        );
+                        if round == 1 {
+                            if exceptional.is_finite() {
+                                assert_eq!(
+                                    expected,
+                                    Err(RenderError::NonFiniteOutput {
+                                        channel: if right_first {
+                                            OutputChannel::Right
+                                        } else {
+                                            OutputChannel::Left
+                                        },
+                                        sample_index: 8 + lane
+                                    })
+                                );
+                            } else {
+                                assert_eq!(
+                                    expected,
+                                    Err(RenderError::NonFiniteSourceSample {
+                                        id: SourceId::new(2),
+                                        sample_index: 4
+                                    })
+                                );
+                            }
+                            for (history, source) in previous_history.iter().zip(&candidate.sources)
+                            {
+                                assert_f64_slice_bits(history, &source.history, "failure history");
+                            }
+                        }
+                        assert_f64_slice_bits(&expected_left, &actual_left, "exception left");
+                        assert_f64_slice_bits(&expected_right, &actual_right, "exception right");
+                        assert_binaural_state_bits(&original, &candidate);
+                    }
+                    let mut expected_left = [123.0; 1];
+                    let mut expected_right = expected_left;
+                    let mut actual_left = expected_left;
+                    let mut actual_right = expected_left;
+                    assert_eq!(
+                        original.drain_tail_block(&mut expected_left, &mut expected_right),
+                        candidate.drain_tail_block(&mut actual_left, &mut actual_right)
+                    );
+                    assert_f64_slice_bits(&expected_left, &actual_left, "error tail left");
+                    assert_f64_slice_bits(&expected_right, &actual_right, "error tail right");
+                    original.reset();
+                    candidate.reset();
+                    assert_binaural_state_bits(&original, &candidate);
+                    let samples = [0.1; 17];
+                    let blocks = [
+                        BinauralSourceBlock::new(SourceId::new(1), &samples),
+                        BinauralSourceBlock::new(SourceId::new(2), &samples),
+                    ];
+                    let mut expected_left = [123.0; 17];
+                    let mut expected_right = expected_left;
+                    let mut actual_left = expected_left;
+                    let mut actual_right = expected_left;
+                    assert_eq!(
+                        render_block_original_loop(
+                            &mut original,
+                            &blocks,
+                            &mut expected_left,
+                            &mut expected_right
+                        ),
+                        render_block_check_fallback(
+                            &mut candidate,
+                            &blocks,
+                            &mut actual_left,
+                            &mut actual_right
+                        )
+                    );
+                    assert_f64_slice_bits(&expected_left, &actual_left, "reset left");
+                    assert_f64_slice_bits(&expected_right, &actual_right, "reset right");
+                    assert_binaural_state_bits(&original, &candidate);
+                }
+            }
+        }
     }
 }
