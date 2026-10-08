@@ -19,6 +19,8 @@ openjoc render-joc input.m4a \\
 
 `--layout` 和 `--layout-file` 不能同时使用。自定义布局严格按照 `speakers` 数组排序；这个顺序同时也是交错 PCM 的顺序，以及 Rust 和 C API 报告的语义标签顺序。
 
+布局的 `name` 是显示名称：即使使用 `"2.0"`，自定义布局仍然按照几何位置渲染。只有内置 `2.0` 预设会选择立体声下混策略。
+
 ## 格式与坐标
 
 当前格式是 JSON `version: 1`：
@@ -66,4 +68,4 @@ let session = OpenJocSession::new(OpenJocConfig::default().with_speaker_layout(l
 
 C ABI 1.4 在 `openjoc_decoder_config` 中追加了 `custom_speaker_layout`。它指向一个有序的 `openjoc_custom_speaker` 记录数组，并会在创建解码器时复制和校验。继续使用预设的 ABI 调用方可以把它留空。ABI 不要求生成临时 JSON 文件。
 
-对于自定义物理布局，WAV 会按照声明的声道顺序写入确定且真实的无掩码 PCM；使用标准 WAVEFORMATEXTENSIBLE 扬声器掩码会错误地声称这些是标准声道身份。如果下游互操作需要保留几何信息，建议使用 CAF，因为 OpenJOC 会在那里写入带坐标的声道描述。下游播放器、FFmpeg 声道布局协商、GStreamer、DirectShow/LAV 和物理设备，仍可能有更窄的几何布局约定；渲染器支持不代表主机或设备也支持。
+对于自定义物理布局，WAV 会按照声明的声道顺序写入确定且真实的无掩码 PCM；使用标准 WAVEFORMATEXTENSIBLE 扬声器掩码会错误地声称这些是标准声道身份。如果下游互操作需要保留几何信息，建议使用 CAF，因为 OpenJOC 会在那里写入带坐标的声道描述。CAF 矩形坐标以 +X 向右、+Y 向前、+Z 向上；归一化 OpenJOC 坐标转换为 `(2*x-1, 1-2*y, z/QMAX)`。逻辑 LFE 输出保留 CAF LFE 标签。下游播放器、FFmpeg 声道布局协商、GStreamer、DirectShow/LAV 和物理设备，仍可能有更窄的几何布局约定；渲染器支持不代表主机或设备也支持。

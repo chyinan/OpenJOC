@@ -129,3 +129,39 @@ fn custom_route_fingerprint_is_order_independent_and_gain_sensitive() {
         config(changed).effective_config_fingerprint()
     );
 }
+
+fn assert_custom_name_preserves_spatial_rendering(count: usize) {
+    let speakers = [
+        SpeakerGeometry::full_range("FL", 75.0, 0.0),
+        SpeakerGeometry::full_range("FR", -65.0, 0.0),
+        SpeakerGeometry::full_range("FC", 0.0, 15.0),
+    ];
+    let config = |name| {
+        OpenJocConfig::default()
+            .with_speaker_layout(SpeakerLayout::custom(name, speakers[..count].to_vec()).unwrap())
+    };
+    let expected = render(config("custom-spatial"));
+    let actual = render(config("2.0"));
+    assert_ne!(actual, [] as [f32; 0]);
+    assert_eq!(actual.len() % count, 0);
+    assert_eq!(
+        actual
+            .iter()
+            .map(|sample| sample.to_bits())
+            .collect::<Vec<_>>(),
+        expected
+            .iter()
+            .map(|sample| sample.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn custom_stereo_display_name_preserves_two_channel_spatial_rendering() {
+    assert_custom_name_preserves_spatial_rendering(2);
+}
+
+#[test]
+fn custom_stereo_display_name_preserves_three_channel_spatial_rendering() {
+    assert_custom_name_preserves_spatial_rendering(3);
+}

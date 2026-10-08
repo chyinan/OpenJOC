@@ -18,6 +18,9 @@ openjoc render-joc input.m4a \
 `--layout` and `--layout-file` are mutually exclusive. A custom layout is
 ordered exactly as its `speakers` array; that order is the interleaved PCM
 order and the semantic label order reported by the Rust and C APIs.
+The layout `name` is a display label: even `"2.0"` leaves a custom layout on
+the geometry-based rendering path. Only the built-in `2.0` preset selects
+the stereo downmix policy.
 
 ## Format and coordinates
 
@@ -100,6 +103,9 @@ unmasked PCM in the declared channel order; a
 standard WAVEFORMATEXTENSIBLE speaker mask would falsely claim standard
 identities. CAF is recommended when downstream interchange must preserve
 geometry because OpenJOC writes coordinate channel descriptions there.
+CAF rectangular coordinates use +X right, +Y front, and +Z up; normalized
+OpenJOC coordinates are converted as `(2*x-1, 1-2*y, z/QMAX)`.
+Logical LFE outputs retain their CAF LFE labels.
 Downstream players, FFmpeg channel-layout negotiation,
 GStreamer, DirectShow/LAV, and physical devices may still have narrower
 geometry contracts; renderer support does not imply host/device support.

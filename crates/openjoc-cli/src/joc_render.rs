@@ -3416,7 +3416,7 @@ fn caf_description_at_canonical(
     if let Some(coordinates) = layout.channel_coordinates().get(index) {
         return Ok(caf_coordinate_xyz(
             f64::from(coordinates[0]) * 2.0 - 1.0,
-            f64::from(coordinates[1]) * 2.0 - 1.0,
+            1.0 - f64::from(coordinates[1]) * 2.0,
             f64::from(coordinates[2]) / OPENJOC_QMAX,
         ));
     }
@@ -6581,6 +6581,96 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn custom_caf_coordinates_preserve_cardinal_directions_and_pcm_order() {
+        use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
+
+        let layout = SpeakerLayout::custom(
+            "cardinal",
+            vec![
+                SpeakerGeometry::full_range("Front", 0.0, 0.0),
+                SpeakerGeometry::full_range("Back", 180.0, 0.0),
+                SpeakerGeometry::full_range("Left", 90.0, 0.0),
+                SpeakerGeometry::full_range("Right", -90.0, 0.0),
+                SpeakerGeometry::full_range("Up", 0.0, 90.0),
+                SpeakerGeometry::full_range("Down", 0.0, -90.0),
+                SpeakerGeometry::lfe("SubA", 0.0, 0.0),
+                SpeakerGeometry::lfe("SubB", 180.0, 0.0),
+            ],
+        )
+        .unwrap();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "openjoc-custom-cardinal-{}-{nonce}.caf",
+            std::process::id()
+        ));
+        let mut output =
+            JocCafOutput::new_for_canonical_layout(&path, SampleFormat::F32, false, &layout)
+                .unwrap();
+        output
+            .write_block(&RenderedBlock {
+                sample_rate: 48_000,
+                channels: (0..8).map(|index| vec![index as f64 / 8.0]).collect(),
+            })
+            .unwrap();
+        output.finish().unwrap();
+        let bytes = fs::read(&path).unwrap();
+        let descriptions = caf_channel_descriptions(&bytes);
+        assert_eq!(descriptions.len(), 8);
+        for (description, expected) in descriptions.iter().zip([
+            [0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+        ]) {
+            assert_eq!((description.0, description.1), (100, 1));
+            for (actual, expected) in description.2.iter().zip(expected) {
+                assert!((actual - expected).abs() < 1.0e-6);
+            }
+        }
+        assert_eq!(descriptions[6], (4, 0, [0.0; 3]));
+        assert_eq!(descriptions[7], (37, 0, [0.0; 3]));
+        assert_eq!(
+            caf_f32_samples(&bytes)
+                .into_iter()
+                .map(|sample| (sample as f32).to_bits())
+                .collect::<Vec<_>>(),
+            (0..8)
+                .map(|index| (index as f32 / 8.0).to_bits())
+                .collect::<Vec<_>>()
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn custom_caf_fixture_faces_front_and_presets_keep_existing_metadata() {
+        let layout = openjoc_scene::SpeakerLayout::from_json_str(include_str!(
+            "../../../fixtures/speaker-layouts/studio-irregular.json"
+        ))
+        .unwrap();
+        for (index, label) in layout.channel_labels().iter().enumerate().take(3) {
+            let description = super::caf_description_at_canonical(&layout, index, label).unwrap();
+            assert_eq!((description.label, description.flags), (100, 1));
+            assert!(description.coordinates[1] > 0.8);
+        }
+        for name in openjoc_scene::SPEAKER_LAYOUT_PRESET_NAMES {
+            let layout = openjoc_scene::SpeakerLayout::preset(name).unwrap();
+            for (index, label) in layout.channel_labels().iter().enumerate() {
+                let actual = super::caf_description_at_canonical(&layout, index, label).unwrap();
+                let expected =
+                    super::caf_description(&layout.semantic_channel_layout(), label).unwrap();
+                assert_eq!(actual.label, expected.label);
+                assert_eq!(actual.flags, expected.flags);
+                assert_eq!(actual.coordinates, expected.coordinates);
+            }
+        }
     }
 
     #[test]
