@@ -27,7 +27,7 @@ The first adapter uses the stable GStreamer 1.x API baseline below:
 | Item | Choice |
 |---|---|
 | Minimum GStreamer | 1.20 |
-| Tested target | 1.28.6 (Homebrew macOS SDK) |
+| Tested targets | 1.28.6 (Homebrew macOS SDK), 1.26.2 (Linux native regressions) |
 | gstreamer-rs | 0.24.5 |
 | Rust MSRV | OpenJOC workspace MSRV 1.89 |
 
@@ -253,16 +253,29 @@ tail is not added to steady-state latency. A flush clears pending parser state,
 OpenJOC reconstruction history, FinalLinkedGain state, dialnorm state, and
 binaural convolution state before the next segment.
 
-The adapter completes each admitted compressed AU with
-`finish_subframe(NULL)`, so no GstAudioDecoder input frame remains pending when
-GStreamer calls `handle_frame(NULL)` for forced drain. Drain PCM is therefore
-emitted with `finish_frame(buffer, -1)`: in the current GstAudioDecoder source,
-`-1` resolves relative to the pending input-frame queue and consumes all pending
-input frames. With this adapter's empty queue it consumes none while still
-accounting and timestamping the delayed PCM as a full output frame. A
-zero-frame `finish_frame` call is invalid, and `finish_subframe(buffer)` would
-incorrectly require a pending compressed input frame. An empty OpenJOC drain
-returns normally without a dummy completion call.
+The adapter retains each compressed AU in GstAudioDecoder's pending queue
+until its declared samples have been emitted. Renderer warm-up with no PCM
+does not complete an AU: the delayed first PCM must retain the first input's
+timestamp. PCM fragments use `finish_subframe(buffer)`, followed by
+`finish_subframe(NULL)` only at the corresponding AU sample boundary. Short
+syncframe groups use the complete grouped AU's duration, not the first
+syncframe's duration.
+
+Drain follows the same accounting for delayed AU samples. Only after all
+pending AUs are completed does additional renderer tail use
+`finish_frame(buffer, -1)`, which permits output with an empty pending queue.
+An empty drain returns without a dummy completion call. Flush also resets
+this accounting, including a hard flush during warm-up before the first PCM.
+
+The native timestamp regression uses the checked-in valid JOC fixture through
+`appsrc -> openjocdec -> appsink`. It checks zero/nonzero origins, single-AU
+EOS, speaker and binaural tails, unchanged reported latency, warm-up flush,
+caps changes, discontinuities, finite-segment clipping, and bitwise PCM against
+the core session:
+
+```sh
+cargo test -p gst-plugin-openjoc --features gstreamer --test timestamps -- --test-threads=1
+```
 
 The output buffer owns one copied PCM representation. This is required because
 OpenJOC's Rust frame is owned by the session and must not be borrowed beyond

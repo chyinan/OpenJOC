@@ -8,7 +8,8 @@ use openjoc_api::{
     OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
     ValidationProfile,
 };
-use openjoc_eac3::{StreamType, parse_syncframe_header};
+use openjoc_eac3::{StreamType, group_access_units, index_syncframes, parse_syncframe_header};
+use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 #[path = "autoplug.rs"]
@@ -16,10 +17,8 @@ mod autoplug;
 
 const SAMPLE_RATE: u32 = 48_000;
 // GStreamer 1.28 resolves a negative finish-frame count relative to the
-// pending compressed-input queue.  -1 therefore finishes all pending input
-// frames; during forced drain the queue is empty because every admitted AU
-// was already closed with finish_subframe(NULL), so the delayed PCM is not
-// falsely attributed to a new compressed frame.
+// pending compressed-input queue. Once all AU samples have been emitted,
+// -1 permits renderer tail output with no compressed input left to retire.
 const DRAIN_FINISH_ALL_PENDING: i32 = -1;
 
 static CAT: OnceLock<gst::DebugCategory> = OnceLock::new();
@@ -201,6 +200,7 @@ struct State {
     configured_channels: Option<usize>,
     configured_labels: Option<Vec<String>>,
     pending_discontinuity: bool,
+    pending_input_samples: VecDeque<usize>,
 }
 
 #[derive(Default)]
@@ -406,6 +406,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
         state.configured_channels = None;
         state.configured_labels = None;
         state.pending_discontinuity = false;
+        state.pending_input_samples.clear();
         drop(state);
 
         self.obj().set_drainable(true);
@@ -432,6 +433,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
         state.configured_channels = None;
         state.configured_labels = None;
         state.pending_discontinuity = false;
+        state.pending_input_samples.clear();
         Ok(())
     }
 
@@ -463,6 +465,21 @@ impl AudioDecoderImpl for OpenJocDecImp {
                 autoplug::JOC_CAPS_FEATURE
             ));
         }
+        // CAPS changes do not clear GstAudioDecoder's pending-input queue.
+        // Match the session reset by discarding the same compressed frames.
+        let pending = lock(&self.state).pending_input_samples.len();
+        if pending != 0 {
+            self.obj()
+                .finish_frame(
+                    None,
+                    i32::try_from(pending).map_err(|_| {
+                        gst::loggable_error!(gst::CAT_RUST, "too many pending access units")
+                    })?,
+                )
+                .map_err(|error| {
+                    gst::loggable_error!(gst::CAT_RUST, "failed to reset pending input: {error}")
+                })?;
+        }
         let mut state = lock(&self.state);
         if let Some(session) = state.session.as_mut() {
             session.flush();
@@ -474,6 +491,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
         state.configured_channels = None;
         state.configured_labels = None;
         state.pending_discontinuity = false;
+        state.pending_input_samples.clear();
         Ok(())
     }
 
@@ -519,14 +537,14 @@ impl AudioDecoderImpl for OpenJocDecImp {
         if bytes.len() < header.frame_size {
             return Err(gst::FlowError::Error);
         }
-        if let Err(error) = admit_joc(&bytes) {
+        let input_samples = admit_joc(&bytes).map_err(|error| {
             gst::element_imp_error!(
                 self,
                 gst::StreamError::Decode,
                 ("OpenJOC requires an admitted JOC access unit: {error}")
             );
-            return Err(gst::FlowError::Error);
-        }
+            gst::FlowError::Error
+        })?;
 
         self.ensure_session_for_output_target()?;
 
@@ -554,6 +572,7 @@ impl AudioDecoderImpl for OpenJocDecImp {
                 Ok(_) => {
                     let frames = collect_frames(session);
                     state.pending_discontinuity = false;
+                    state.pending_input_samples.push_back(input_samples);
                     frames
                 }
                 Err(error) => {
@@ -568,7 +587,9 @@ impl AudioDecoderImpl for OpenJocDecImp {
         };
 
         if frames.is_empty() {
-            return self.obj().finish_subframe(None);
+            // The renderer is delayed: this AU still owns future PCM and its
+            // timestamp must remain at the head of GstAudioDecoder's queue.
+            return Ok(gst::FlowSuccess::Ok);
         }
         self.ensure_output_format(frames[0].sample_rate, &frames[0])?;
         self.push_frames(frames)
@@ -583,6 +604,19 @@ impl AudioDecoderImpl for OpenJocDecImp {
         state.configured_channels = None;
         state.configured_labels = None;
         state.pending_discontinuity = true;
+        state.pending_input_samples.clear();
+    }
+
+    fn sink_event(&self, event: gst::Event) -> bool {
+        let hard_flush = matches!(event.view(), gst::EventView::FlushStop(_));
+        let result = self.parent_sink_event(event);
+        if hard_flush {
+            // GstAudioDecoder skips the subclass flush callback until the
+            // first PCM output. A seek during renderer warm-up must still
+            // discard the session and our matching compressed-input state.
+            self.flush(true);
+        }
+        result
     }
 }
 
@@ -640,11 +674,7 @@ impl OpenJocDecImp {
             return Ok(gst::FlowSuccess::Ok);
         }
         self.ensure_output_format(frames[0].sample_rate, &frames[0])?;
-        for frame in frames {
-            self.obj()
-                .finish_frame(Some(pcm_buffer(&frame)?), DRAIN_FINISH_ALL_PENDING)?;
-        }
-        Ok(gst::FlowSuccess::Ok)
+        self.push_frames(frames)
     }
 
     fn ensure_output_format(
@@ -704,9 +734,38 @@ impl OpenJocDecImp {
         frames: Vec<OpenJocPcmFrame>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
         for frame in frames {
-            self.obj().finish_subframe(Some(pcm_buffer(&frame)?))?;
+            let buffer = pcm_buffer(&frame)?;
+            let bytes_per_sample = frame.channel_count * 4;
+            let mut offset = 0;
+            while offset < frame.sample_count {
+                let pending = lock(&self.state).pending_input_samples.front().copied();
+                let count = pending.map_or(frame.sample_count - offset, |remaining| {
+                    remaining.min(frame.sample_count - offset)
+                });
+                let output = buffer
+                    .copy_region(
+                        gst::BufferCopyFlags::MEMORY,
+                        offset * bytes_per_sample..(offset + count) * bytes_per_sample,
+                    )
+                    .map_err(|_| gst::FlowError::Error)?;
+                if let Some(remaining) = pending {
+                    // Keep all fragments of one AU on the same timestamp
+                    // anchor; NULL retires it only after its final sample.
+                    self.obj().finish_subframe(Some(output))?;
+                    if count == remaining {
+                        self.obj().finish_subframe(None)?;
+                        lock(&self.state).pending_input_samples.pop_front();
+                    } else {
+                        *lock(&self.state).pending_input_samples.front_mut().unwrap() -= count;
+                    }
+                } else {
+                    self.obj()
+                        .finish_frame(Some(output), DRAIN_FINISH_ALL_PENDING)?;
+                }
+                offset += count;
+            }
         }
-        self.obj().finish_subframe(None)
+        Ok(gst::FlowSuccess::Ok)
     }
 }
 
@@ -747,9 +806,15 @@ fn parse_adapter(adapter: &gst_base::Adapter, eos: bool) -> Result<(u32, u32), g
     }
 }
 
-fn admit_joc(bytes: &[u8]) -> Result<(), String> {
+fn admit_joc(bytes: &[u8]) -> Result<usize, String> {
     match autoplug::classify_access_unit(bytes) {
-        autoplug::JocClassification::ConfirmedJoc => Ok(()),
+        autoplug::JocClassification::ConfirmedJoc => {
+            let frames = index_syncframes(bytes).map_err(|error| error.to_string())?;
+            let units = group_access_units(&frames).map_err(|error| error.to_string())?;
+            // Short syncframes are grouped into one six-block input AU; its
+            // first syncframe alone does not describe the input duration.
+            Ok(usize::from(units[0].samples))
+        }
         autoplug::JocClassification::ConfirmedNonJoc => {
             Err("JOC metadata is absent; ordinary E-AC-3 is not a fallback".to_owned())
         }
