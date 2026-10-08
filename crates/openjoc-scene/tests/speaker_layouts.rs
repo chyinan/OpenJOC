@@ -1009,3 +1009,26 @@ fn binaural_directions_cover_all_presets_and_use_canonical_system_h_geometry() {
         }
     );
 }
+
+#[test]
+fn stereo_identity_belongs_to_the_preset_not_a_custom_display_name() {
+    for name in openjoc_scene::SPEAKER_LAYOUT_PRESET_NAMES {
+        let layout = SpeakerLayout::preset(name).unwrap();
+        assert_eq!(layout.is_stereo(), name == "2.0");
+        assert_eq!(
+            layout.with_route_vectors(Vec::new()).unwrap().is_stereo(),
+            name == "2.0"
+        );
+    }
+    for count in [2, 3] {
+        let speakers = [
+            SpeakerGeometry::full_range("FL", 30.0, 0.0),
+            SpeakerGeometry::full_range("FR", -30.0, 0.0),
+            SpeakerGeometry::full_range("FC", 0.0, 0.0),
+        ];
+        let layout = SpeakerLayout::custom("2.0", speakers[..count].to_vec()).unwrap();
+        assert_eq!(layout.name(), "2.0");
+        assert!(!layout.is_stereo());
+        assert!(!layout.with_route_vectors(Vec::new()).unwrap().is_stereo());
+    }
+}

@@ -378,6 +378,7 @@ impl From<SpatialProjectionError> for SpeakerLayoutError {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SpeakerLayout {
     name: String,
+    preset_name: Option<&'static str>,
     labels: Vec<String>,
     lfe_indices: Vec<usize>,
     spatial: SpatialLayout,
@@ -410,6 +411,7 @@ impl SpeakerLayout {
         let semantic = preset.semantic_channel_layout();
         Self {
             name: preset.name.to_owned(),
+            preset_name: Some(preset.name),
             labels,
             lfe_indices,
             spatial: preset.layout,
@@ -521,6 +523,7 @@ impl SpeakerLayout {
         semantic.role_lfe_count = Some(lfe_indices.len());
         Ok(Self {
             name,
+            preset_name: None,
             labels,
             lfe_indices,
             spatial,
@@ -620,7 +623,7 @@ impl SpeakerLayout {
     /// Returns whether this layout is the ordinary physical stereo preset.
     #[must_use]
     pub fn is_stereo(&self) -> bool {
-        self.name == "2.0"
+        self.preset_name == Some("2.0")
     }
 }
 

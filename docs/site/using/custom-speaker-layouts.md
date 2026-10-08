@@ -18,6 +18,9 @@ openjoc render-joc input.m4a \
 `--layout` and `--layout-file` are mutually exclusive. A custom layout is
 ordered exactly as its `speakers` array; that order is the interleaved PCM
 order and the semantic label order reported by the Rust and C APIs.
+The layout `name` is a display label: even `"2.0"` leaves a custom layout on
+the geometry-based rendering path. Only the built-in `2.0` preset selects
+the stereo downmix policy.
 
 ## Format and coordinates
 
