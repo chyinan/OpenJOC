@@ -33,7 +33,8 @@ pub struct BridgeControlEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub struct BridgeControlFrame {
     pub topology_epoch: u64,
-    /// Present only for the first valid topology or a topology rebuild.
+    /// Pre-event state, present only for the first valid topology or a rebuild.
+    /// Timed metadata, including quantum-zero updates, is carried by `events`.
     pub initial_topology: Option<SpatialTopologySnapshot>,
     pub events: Vec<BridgeControlEvent>,
 }
@@ -347,6 +348,18 @@ impl BridgeControlAssembler {
             self.bindings = bindings;
         }
 
+        // The bridge installs this snapshot at the frame start. Capture the
+        // pre-event state, while retaining the final records below for the
+        // next frame's selective diffs and metadata inheritance.
+        let initial_topology = if first_topology || topology_changed {
+            Some(
+                self.topology_snapshot()
+                    .ok_or(BridgeControlAssemblyError::MissingInitialPayload)?,
+            )
+        } else {
+            None
+        };
+
         let frame_samples = frame.sample_range.len();
         let mut events = Vec::new();
         let mut raw_events = Vec::new();
@@ -411,14 +424,6 @@ impl BridgeControlAssembler {
             }
         }
 
-        let initial_topology = if first_topology || topology_changed {
-            Some(
-                self.topology_snapshot()
-                    .ok_or(BridgeControlAssemblyError::MissingInitialPayload)?,
-            )
-        } else {
-            None
-        };
         Ok(BridgeControlFrame {
             topology_epoch: self.topology_epoch,
             initial_topology,
@@ -1258,6 +1263,211 @@ mod tests {
             programme_layout: ProgrammeLayout::from_prefix(&prefix).unwrap(),
             decoded_joc_binding: None,
         }
+    }
+
+    fn assert_pcm_bits(actual: &[f64], expected: &[f64]) {
+        assert_eq!(
+            actual
+                .iter()
+                .map(|sample| sample.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|sample| sample.to_bits())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    fn timing_test_layout() -> crate::SpatialLayout {
+        crate::SpatialLayout::new(
+            vec![crate::SpatialLayoutChannel {
+                identity: "FL".to_owned(),
+                enabled: true,
+                lfe: false,
+            }],
+            vec![vec![0.0, 1.0]],
+            vec![
+                crate::SpatialLayoutNode {
+                    knot_indices: vec![0],
+                    vector: vec![1.0],
+                },
+                crate::SpatialLayoutNode {
+                    knot_indices: vec![1],
+                    vector: vec![1.0],
+                },
+            ],
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    // Match the automatic API's event-window dispatch with silent Base PCM
+    // and a unit ReconstructionBasis signal, so only object timing is audible.
+    fn render_timing_control(
+        bridge: &mut crate::JocSpatialBridge,
+        control: &super::BridgeControlFrame,
+    ) -> Vec<f64> {
+        let layout = timing_test_layout();
+        let base = [0.0; 64];
+        let reconstruction = [1.0; 64];
+        let mut output = vec![0.0; 64];
+        let mut boundaries = vec![0, 64];
+        boundaries.extend(
+            control
+                .events
+                .iter()
+                .map(|event| usize::try_from(event.quantum).unwrap() * 32),
+        );
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        for window in boundaries.windows(2) {
+            let (start, end) = (window[0], window[1]);
+            let event = control
+                .events
+                .iter()
+                .find(|event| usize::try_from(event.quantum).unwrap() * 32 == start);
+            bridge
+                .render_coordinates(
+                    &[&base[start..end], &reconstruction[start..end]],
+                    if start == 0 {
+                        control.initial_topology.as_ref()
+                    } else {
+                        None
+                    },
+                    event.map(|event| event.updates.as_slice()),
+                    &layout,
+                    event.map_or(0, |event| u64::from(event.ramp_duration)),
+                    48_000,
+                    &mut [&mut output[start..end]],
+                )
+                .unwrap();
+        }
+        output
+    }
+
+    #[test]
+    fn initial_topology_does_not_activate_delayed_object_and_retains_frame_end_state() {
+        use crate::{BaseFullBandCoordinate, JocSpatialBridge};
+        let mut frame = equivalence_frame();
+        let openjoc_oamd::OamdElement::Objects(objects) = &mut frame.oamd.elements[0].element
+        else {
+            unreachable!();
+        };
+        objects.timing.blocks[0].start_sample = 32;
+        let mut assembler = super::BridgeControlAssembler::new(8, 1);
+        let mut bridge = JocSpatialBridge::new();
+        let assemble = |assembler: &mut super::BridgeControlAssembler,
+                        frame: &crate::DecodedPayloadFrame| {
+            assembler
+                .assemble_frame(frame, &[BaseFullBandCoordinate::Left], None)
+                .unwrap()
+        };
+        let control = assemble(&mut assembler, &frame);
+        assert_eq!(control.events[0].quantum, 1);
+        let output = render_timing_control(&mut bridge, &control);
+        assert_pcm_bits(&output[..32], &[0.0; 32]);
+        assert_pcm_bits(&output[32..], &[1.0; 32]);
+        let initial = &control.initial_topology.as_ref().unwrap().dynamic_records[0];
+        assert!(!initial.active);
+        assert_eq!(initial.scalar, 0.0);
+
+        let mut inherited_frame = frame.clone();
+        inherited_frame.oamd.elements.clear();
+        let inherited = assemble(&mut assembler, &inherited_frame);
+        assert!(inherited.initial_topology.is_none());
+        assert_eq!(inherited.events, []);
+        assert_pcm_bits(&render_timing_control(&mut bridge, &inherited), &[1.0; 64]);
+        // Repeating the final metadata must not generate a spurious update.
+        assert_eq!(assemble(&mut assembler, &frame).events, []);
+
+        assembler.reset();
+        bridge.reset();
+        let reset = assemble(&mut assembler, &frame);
+        assert_eq!(reset, control);
+        assert_pcm_bits(&render_timing_control(&mut bridge, &reset), &output);
+    }
+
+    #[test]
+    fn initial_topology_preserves_zero_time_updates_and_ramps() {
+        for (start_sample, ramp_duration) in [(0, 0), (0, 64), (32, 32)] {
+            let mut frame = equivalence_frame();
+            let openjoc_oamd::OamdElement::Objects(objects) = &mut frame.oamd.elements[0].element
+            else {
+                unreachable!();
+            };
+            objects.timing.blocks[0].start_sample = start_sample;
+            objects.timing.blocks[0].ramp_duration = ramp_duration;
+            let control = super::BridgeControlAssembler::new(8, 1)
+                .assemble_frame(&frame, &[crate::BaseFullBandCoordinate::Left], None)
+                .unwrap();
+            let output = render_timing_control(&mut crate::JocSpatialBridge::new(), &control);
+            let start = usize::from(start_sample);
+            assert_pcm_bits(&output[..start], &vec![0.0; start]);
+            for (sample, &value) in output[start..].iter().enumerate() {
+                let expected = if ramp_duration == 0 {
+                    1.0
+                } else {
+                    sample as f64 / f64::from(ramp_duration)
+                };
+                assert_eq!(value.to_bits(), expected.to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn initial_topology_keeps_selective_events_grouping_and_rebuild_state_separate() {
+        use crate::BaseFullBandCoordinate;
+        let mut frame = equivalence_frame();
+        let openjoc_oamd::OamdElement::Objects(objects) = &mut frame.oamd.elements[0].element
+        else {
+            unreachable!();
+        };
+        objects
+            .timing
+            .blocks
+            .push(openjoc_oamd::MetadataBlockTiming {
+                start_sample: 32,
+                ramp_duration: 0,
+            });
+        let mut quieter = objects.objects[0][0].clone();
+        quieter.basic.gain = Gain::Decibels(-6);
+        objects.objects[0].push(quieter);
+        let mut assembler = super::BridgeControlAssembler::new(8, 1);
+        let control = assembler
+            .assemble_frame(&frame, &[BaseFullBandCoordinate::Left], None)
+            .unwrap();
+        assert_eq!(control.events.len(), 2);
+        let second = &control.events[1].updates[0];
+        assert!(second.descriptor.is_none());
+        assert!(second.active.is_none());
+        let gain = bridge_gain_scalar(Gain::Decibels(-6)).unwrap();
+        assert_eq!(second.scalar, Some(gain));
+        let output = render_timing_control(&mut crate::JocSpatialBridge::new(), &control);
+        assert_pcm_bits(&output[..32], &[1.0; 32]);
+        assert_pcm_bits(&output[32..], &[gain; 32]);
+        assert_eq!(assembler.records.as_ref().unwrap()[1].scalar, gain);
+
+        // A changed Base identity rebuilds the snapshot, but delayed object
+        // state must still be installed only by its event, not by the rebuild.
+        let openjoc_oamd::OamdElement::Objects(objects) = &mut frame.oamd.elements[0].element
+        else {
+            unreachable!();
+        };
+        objects.timing.blocks[0].start_sample = 32;
+        let rebuilt = assembler
+            .assemble_frame(&frame, &[BaseFullBandCoordinate::Right], None)
+            .unwrap();
+        assert_eq!(rebuilt.topology_epoch, 2);
+        let topology = rebuilt.initial_topology.as_ref().unwrap();
+        assert_eq!(topology.explicit_groups[0].members[0].canonical_label, "FR");
+        assert!(!topology.dynamic_records[0].active);
+        assert_eq!(topology.dynamic_records[0].scalar, 0.0);
+        // Both blocks now map to the same quantum; retain one final-state diff.
+        assert_eq!(rebuilt.events.len(), 1);
+        assert_eq!(rebuilt.events[0].quantum, 1);
+        assert_eq!(rebuilt.events[0].updates[0].scalar, Some(gain));
+        assert_eq!(rebuilt.events[0].updates[0].active, Some(true));
+        assert_eq!(assembler.records.as_ref().unwrap()[1].scalar, gain);
     }
 
     #[test]

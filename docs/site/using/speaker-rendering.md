@@ -75,6 +75,11 @@ component state. `--topology bridge-control.json` is an advanced complete
 override/test input. Automatic and explicit control are never implicitly
 merged.
 
+An initial or rebuilt automatic topology installs the pre-event state. Timed
+metadata takes effect at its quantized event boundary; the frame-end metadata
+state is retained for the next frame. Resetting the renderer does not apply a
+future event early.
+
 ## Custom speaker geometry
 
 Advanced users may replace the preset with versioned JSON:
