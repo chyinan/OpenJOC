@@ -5,6 +5,7 @@ source-state evidence used by the current release packaging workflow. These
 files do not own current product capabilities or release chronology.
 
 - Current capabilities: [CAPABILITIES.md](../CAPABILITIES.md)
+- Current release summary: [v0.19.0 release notes](../../RELEASE_NOTES_v0.19.0.md)
 - Release chronology: [CHANGELOG.md](../../CHANGELOG.md)
 - Historical release-specific documents: [archive/releases/](../archive/releases/)
 
