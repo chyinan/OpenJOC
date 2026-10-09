@@ -88,9 +88,17 @@ The menu's LAV-parity **Stereo (Speakers)** choice maps to
 `[openjoc-stereo]` profile, which uses the physical `speaker_layout=2.0`
 renderer.
 
-The menu deliberately omits LAV's post-render output-gain control because this
-decoder bridge has no matching gain stage; mpv's normal volume remains
-separate. The read-only live JOC Stream page is also not wired to mpv.
+The Player Bundle menu includes an independent live post-render output-gain
+control. It uses a named audio filter only while the selected audio track is
+confirmed as E-AC-3 decoded by `libopenjoc`; the 0 dB setting is exact unity.
+The gain is not mpv's master-volume control and is never forwarded as a decoder
+option. It can be previewed during playback; Cancel restores the pre-edit gain,
+while Save stores it for future files. Apply Current is a separate explicit
+action for layout and HRTF changes and may cause a brief audio gap when mpv
+rebuilds the audio chain. Ordinary codecs and compressed passthrough do not
+receive the OpenJOC gain filter. The packaged D1/D2 binaural exact-unity
+qualification remains a CI release gate. The read-only live JOC Stream page is
+also not wired to mpv.
 
 Menu edits are drafts until explicitly saved. Before decoder creation, the
 saved selection is merged into mpv's file-local FFmpeg decoder-option map for

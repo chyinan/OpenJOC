@@ -25,13 +25,19 @@ local logged_errors = {}
 local overlay = { data = '', res_x = 0, res_y = 0 }
 function overlay:update() end
 local last_parsed_layout
+local last_parsed_gain
 
 local function parse_json(contents)
     local layout = contents:match('"speaker_layout"%s*:%s*"([^"]+)"')
     if not layout or not contents:find('"schema"%s*:%s*1') then return nil end
     local mode = contents:match('"render_mode"%s*:%s*"([^"]+)"')
+    local gain = contents:match('"output_gain_tenths_db"%s*:%s*(-?%d+)')
     last_parsed_layout = layout
-    return { schema = 1, options = { render_mode = mode, speaker_layout = layout } }
+    last_parsed_gain = gain and tonumber(gain) or nil
+    return { schema = 1, options = {
+        render_mode = mode, speaker_layout = layout,
+        output_gain_tenths_db = last_parsed_gain,
+    } }
 end
 
 local function quote(value)
@@ -43,7 +49,8 @@ local utils = {
     format_json = function(document)
         local parts = {}
         for key, value in pairs(document.options) do
-            parts[#parts + 1] = quote(key) .. ':' .. quote(value)
+            local encoded = type(value) == 'number' and tostring(value) or quote(value)
+            parts[#parts + 1] = quote(key) .. ':' .. encoded
         end
         table.sort(parts)
         return '{"schema":1,"options":{' .. table.concat(parts, ',') .. '}}'
@@ -118,7 +125,7 @@ for _, filename in ipairs({ primary, temporary, backup }) do
     file_io.remove(filename)
 end
 
-local initial = '{"schema":1,"options":{"render_mode":"speaker","speaker_layout":"5.1"}}\n'
+local initial = '{"schema":1,"options":{"render_mode":"speaker","speaker_layout":"5.1","output_gain_tenths_db":-137}}\n'
 assert(file_io.write(primary, initial), 'LuaJIT could not seed a Unicode-path settings file')
 
 if package.config:sub(1, 1) == '\\' then
@@ -155,14 +162,19 @@ assert(type(hooks.on_preloaded) == 'function')
 bindings['openjoc-settings-toggle']()
 assert(overlay.data:find('Output policy', 1, true))
 assert(overlay.data:find('5.1', 1, true), 'seeded settings were not loaded from the Unicode path')
+assert(overlay.data:find('−13.7 dB', 1, true), 'saved numeric gain was not loaded from the Unicode path')
 bindings['openjoc-settings-right']()
 assert(overlay.data:find('7.1', 1, true), 'draft change was not reflected in the panel')
-for _ = 1, 5 do bindings['openjoc-settings-down']() end -- output row -> Save
+for _ = 1, 6 do bindings['openjoc-settings-down']() end -- output row -> Save
 bindings['openjoc-settings-enter']()
 
 local written_contents = assert(file_io.read(primary), 'primary settings file was not promoted')
 assert(parse_json(written_contents).options.speaker_layout == '7.1',
     'primary file does not contain the saved output choice')
+assert(last_parsed_gain == -137,
+    'explicit save did not preserve the backward-compatible numeric gain value')
+assert(written_contents:find('"output_gain_tenths_db":-137', 1, true),
+    'numeric live gain was serialized as a string or changed value')
 assert(backup_seen, 'backup fallback did not use a Unicode-path rename/read')
 assert(not file_io.read(temporary), 'successful save left a temporary settings file')
 assert(not file_io.read(backup), 'successful save left a backup settings file behind')
@@ -197,7 +209,7 @@ assert(overlay.data:find('Settings need attention', 1, true)
         and overlay.data:find('Save disabled', 1, true),
     'unreadable Unicode settings were shown as ordinary defaults')
 bindings['openjoc-settings-right']()
-for _ = 1, 5 do bindings['openjoc-settings-down']() end -- output row -> disabled Save
+for _ = 1, 6 do bindings['openjoc-settings-down']() end -- output row -> disabled Save
 bindings['openjoc-settings-enter']()
 assert(overlay.data:find('Save disabled to protect the existing settings file', 1, true),
     'Save was not blocked after a Unicode-path read failure')

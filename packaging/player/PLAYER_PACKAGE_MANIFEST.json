@@ -130,6 +130,10 @@
       "9_1_6",
       "22_2",
       "EOS",
+      "GAIN_PCM_BITEXACT",
+      "GAIN_SAMPLES",
+      "LIVE_GAIN_NO_RESTART",
+      "APPLYCURRENT_REINIT",
       "PRIVATE_PATH_SCAN"
     ]
   },

@@ -24,8 +24,15 @@ HARNESS_FIELDS = (
     "FIRST_AU_INTEGRITY", "EXPLICIT_OVERRIDE", "PASSTHROUGH",
     "ORDINARY_EAC3", "BINAURAL", "BINAURAL_D2", "2_0", "5_1", "7_1",
     "5_1_2", "5_1_4", "7_1_2", "7_1_4", "9_1_6",
-    "22_2", "EOS",
+    "22_2", "EOS", "GAIN_PCM_BITEXACT", "GAIN_SAMPLES",
+    "LIVE_GAIN_NO_RESTART", "APPLYCURRENT_REINIT",
 )
+GAIN_HARNESS_MARKERS = {
+    "GAIN_PCM_BITEXACT": "GAIN_PCM_BITEXACT:PASS",
+    "GAIN_SAMPLES": "GAIN_SAMPLES:PASS",
+    "LIVE_GAIN_NO_RESTART": "LIVE_GAIN_NO_RESTART:PASS",
+    "APPLYCURRENT_REINIT": "APPLYCURRENT_REINIT:PASS",
+}
 FIELDS = [
     "BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME",
     "DECODER_SELECTION", "GUI_EXECUTABLE", "DIRECT_GUI_CONFIG_AUTOLOAD",
@@ -75,6 +82,18 @@ def clean_output(value: str, temporary: pathlib.Path, fixtures: pathlib.Path) ->
         .replace(str(fixtures).replace("/", "\\"), "<fixtures>")
         .replace(str(REPOSITORY).replace("/", "\\"), "<repository>")
     )
+
+
+def apply_gain_harness_statuses(statuses: dict[str, str], output: str) -> list[str]:
+    """Mark gain evidence from literal harness PASS markers; missing is FAIL."""
+    missing: list[str] = []
+    for field, marker in GAIN_HARNESS_MARKERS.items():
+        if marker in output:
+            statuses[field] = "PASS"
+        else:
+            statuses[field] = "FAIL"
+            missing.append(marker)
+    return missing
 
 
 def run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -> tuple[int, str]:
@@ -268,10 +287,16 @@ def main() -> int:
             code, output = run(harness, cwd=root, env=env)
             evidence["player_harness"] = clean_output(output, temporary, fixtures)
             if code == 0:
-                harness_ok = True
                 for field in HARNESS_FIELDS:
                     statuses[field] = "PASS"
+                missing_markers = apply_gain_harness_statuses(statuses, output)
+                harness_ok = not missing_markers
+                if missing_markers:
+                    evidence["gain_marker_contract"] = (
+                        "missing required harness markers: " + ", ".join(missing_markers)
+                    )
             else:
+                harness_ok = False
                 for field in HARNESS_FIELDS:
                     statuses[field] = "FAIL"
 

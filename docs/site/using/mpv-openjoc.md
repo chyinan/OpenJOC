@@ -32,18 +32,38 @@ focus), Left/Right, and Enter. The main page includes:
 
 Menu changes are drafts. **Save** stores them in
 `bin/portable_config/openjoc-settings.json` for the next file; it does not
-reload or seek the current file. **Cancel** discards the draft. Esc or a click
-outside the panel closes it while keeping the draft available if you reopen the
-panel. The settings panel separates the pending choices from read-only live
-mpv decoder/channel properties. Before decoder creation, the
-menu merges options into the per-file decoder-option map when a file has an
-E-AC-3 audio track. JOC is not yet known at that point, so plain or unselected
-E-AC-3 tracks may also receive the options. Because the map is file-local, it
-may reach other audio decoders in a mixed-track file and cause unsupported
-option warnings. The menu does not select or force `libopenjoc`, change `ad` or
-`aid`, or touch `audio-channels`. Files without E-AC-3 bypass this hook. The
-menu leaves current playback in place and does not seek or reload it, which is
-important for forward-only raw JOC streams.
+reload or seek the current file. **Apply Current** is a separate explicit
+action for the current selected, confirmed `libopenjoc` E-AC-3 track. It writes
+the file-local FFmpeg decoder-option map and lets the pinned mpv rebuild the
+audio chain, so a brief audio gap may occur. It does not seek or reload the
+file. Apply Current is immediate and is not undone by Cancel; Save remains
+separate for the next file.
+
+The **Live output gain** row adjusts −20.0 to +20.0 dB in 0.1 dB steps, with a
+Reset control at 0 dB. The saved JSON key is `output_gain_tenths_db`; older
+settings files that omit it continue to mean 0 dB. At 0 dB the named
+post-render filter uses exact unity. Gain preview is separate from mpv's
+master-volume control and is applied only while the selected audio track is
+confirmed as E-AC-3 decoded by `libopenjoc`. FLAC, PCM, ordinary E-AC-3 and
+compressed passthrough do not receive the OpenJOC gain filter. On those tracks
+the value can still be saved for a later OpenJOC file, while the panel reports
+that live preview is unavailable. Filter or command failures are shown as
+errors; the script does not substitute mpv volume or a decoder option.
+
+**Cancel** discards the draft and restores the live gain captured before the
+unsaved gain preview, including after a failed preview. Esc, a click outside,
+or closing the menu keeps the draft and any active preview for this playback;
+that preview is not persisted unless you choose Save. Saving while a preview is
+pending or failed reports that it has not been confirmed. Before decoder
+creation, the menu merges decoder options into the per-file map when a file has
+an E-AC-3 audio track. JOC is not yet known at that point, so plain or
+unselected E-AC-3 tracks may also receive the options. Because the map is
+file-local, it may reach other audio decoders in a mixed-track file and cause
+unsupported-option warnings. The menu does not select or force `libopenjoc`,
+change `ad` or `aid`, or touch `audio-channels`. Files without E-AC-3 bypass
+this hook. The menu leaves current playback in place unless Apply Current is
+explicitly selected; it never seeks or reloads the file, which is important
+for forward-only raw JOC streams.
 
 For Custom SOFA, **Set path…** opens a text prompt; enter an existing local
 file path there. The
@@ -66,10 +86,13 @@ normal channel map separately if you need an exact hardware target.
 
 Settings rows show the pending/saved selection; separate read-only rows report
 mpv's current decoder and channel properties, not live JOC metadata or
-diagnostics. LAV's post-render output-gain slider is not implemented in the mpv
-decoder bridge. mpv's normal volume control is separate and is not an OpenJOC
-output gain stage. The LAV live JOC Stream page is also not available in the
-current mpv integration.
+diagnostics. The independent post-render gain is not mpv's normal volume
+control. The LAV live JOC Stream page is not available in the current mpv
+integration.
+
+The packaged D1/D2 binaural exact-unity qualification for this candidate is a
+CI release gate and has not yet been reported green. Do not interpret the
+presence of the menu control as completed package qualification.
 
 The [mpv integration guide](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/MPV.md)
 documents command-line profiles, exact channel maps, decoder options, and
