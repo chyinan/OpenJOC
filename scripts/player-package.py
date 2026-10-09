@@ -158,12 +158,16 @@ def portable_runtime_environment(root: pathlib.Path, platform_name: str) -> dict
     """Build a package-only runtime environment for extracted-bundle tests."""
     if platform_name == "windows-x64":
         system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+        isolated_profile = root.parent / "isolated-user-profile"
         return {
             "PATH": ";".join(
                 [str(root / "bin"), f"{system_root}\\System32", f"{system_root}\\System32\\Wbem"]
             ),
             "SystemRoot": system_root,
             "WINDIR": system_root,
+            "USERPROFILE": str(isolated_profile),
+            "APPDATA": str(isolated_profile / "AppData" / "Roaming"),
+            "LOCALAPPDATA": str(isolated_profile / "AppData" / "Local"),
             "TEMP": str(root.parent),
             "TMP": str(root.parent),
             "LC_ALL": "C",
@@ -853,7 +857,8 @@ def bundle(arguments: argparse.Namespace) -> int:
         root = work / root_name
         (root / "bin").mkdir(parents=True)
         (root / "lib").mkdir(parents=True)
-        (root / "config").mkdir(parents=True)
+        config_root = root / "bin/portable_config"
+        (config_root / "scripts").mkdir(parents=True)
         (root / "licenses").mkdir(parents=True)
         copy_file(staged_executable, root / "bin" / executable_name)
         (root / "bin" / executable_name).chmod(0o755)
@@ -865,24 +870,28 @@ def bundle(arguments: argparse.Namespace) -> int:
             copy_file(console_executable, root / "bin/mpv.com")
             (root / "bin/mpv.com").chmod(0o755)
         copy_file(QUICKSTART_PATH, root / "QUICKSTART.md")
-        copy_file(PROFILES_PATH, root / "config/profiles.conf")
-        copy_file(SETTINGS_SCRIPT_PATH, root / "config/scripts/openjoc-settings.lua")
-        (root / "config/mpv.conf").write_text(
-            "# Portable OpenJOC Player Bundle config. Profiles are opt-in.\n",
+        copy_file(SETTINGS_SCRIPT_PATH, config_root / "scripts/openjoc-settings.lua")
+        # Windows mpv discovers portable_config next to mpv.exe. Put all
+        # defaults/profiles in mpv.conf so direct GUI launches and wrappers
+        # consume the same settings and state directory.
+        profiles = PROFILES_PATH.read_text(encoding="utf-8")
+        (config_root / "mpv.conf").write_text(
+            "# Portable OpenJOC Player Bundle config. Profiles are opt-in.\n\n"
+            + profiles,
             encoding="utf-8",
         )
         if platform_name == "windows-x64":
             (root / "bin/openjoc-mpv.cmd").write_text(
                 "@echo off\r\n"
                 "set \"OPENJOC_PLAYER_ROOT=%~dp0..\"\r\n"
-                "\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.com\" \"--config-dir=%OPENJOC_PLAYER_ROOT%\\config\" \"--include=%OPENJOC_PLAYER_ROOT%\\config\\profiles.conf\" %*\r\n"
+                "\"%OPENJOC_PLAYER_ROOT%\\bin\\mpv.com\" \"--config-dir=%OPENJOC_PLAYER_ROOT%\\bin\\portable_config\" %*\r\n"
                 "exit /b %ERRORLEVEL%\r\n",
                 encoding="utf-8",
             )
         else:
             launcher = root / "bin/openjoc-mpv"
             launcher.write_text(
-                "#!/bin/sh\nset -eu\nhere=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\nexec \"$here/bin/mpv\" \"--config-dir=$here/config\" \"--include=$here/config/profiles.conf\" \"$@\"\n",
+                "#!/bin/sh\nset -eu\nhere=$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\nexec \"$here/bin/mpv\" \"--config-dir=$here/bin/portable_config\" \"$@\"\n",
                 encoding="utf-8",
             )
             launcher.chmod(0o755)
@@ -969,6 +978,7 @@ def bundle(arguments: argparse.Namespace) -> int:
                 "gui": "bin/mpv.exe" if platform_name == "windows-x64" else "bin/mpv",
                 "console": "bin/mpv.com" if platform_name == "windows-x64" else "bin/mpv",
                 "launcher": "bin/openjoc-mpv.cmd" if platform_name == "windows-x64" else "bin/openjoc-mpv",
+                "portable_config": "bin/portable_config",
             },
             "configure": {"ffmpeg": manifest["pinned_stack"]["ffmpeg"]["configure_flags"], "mpv": ["-Dtests=false", "-Dmanpage-build=disabled", "-Dhtml-build=disabled", "-Dpdf-build=disabled", "-Dlua=luajit"]},
             "signing": {"developer_id_signed": False, "notarized": False, "ad_hoc_only_if_required": True, "ad_hoc_signed": ad_hoc_signed},
@@ -1036,8 +1046,8 @@ def verify(arguments: argparse.Namespace) -> int:
     required = [
         "BUILD_INFO.json", "BUILD_INFO.txt", "DEPENDENCIES.json",
         "THIRD_PARTY_NOTICES.txt", "SHA256SUMS", "QUICKSTART.md",
-        "config/mpv.conf", "config/profiles.conf", launcher,
-        "config/scripts/openjoc-settings.lua",
+        "bin/portable_config/mpv.conf", launcher,
+        "bin/portable_config/scripts/openjoc-settings.lua",
         "licenses/openjoc/LICENSE.txt", "licenses/openjoc/THIRD_PARTY_NOTICES.md",
     ]
     executable = root / ("bin/mpv.exe" if arguments.platform == "windows-x64" else "bin/mpv")
@@ -1120,20 +1130,20 @@ def verify(arguments: argparse.Namespace) -> int:
                 raise SystemExit(f"package verification: openjoc-mpv.cmd --version failed\n{wrapper_version.stdout}")
             help_command = [comspec, "/d", "/c", str(wrapper), "--ad=help"]
         else:
-            help_command = [str(smoke_executable), f"--config-dir={root / 'config'}", "--ad=help"]
+            help_command = [str(root / "bin/openjoc-mpv"), "--ad=help"]
         help_result = subprocess.run(help_command, cwd=root, env=env, text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         if help_result.returncode != 0 or "libopenjoc" not in help_result.stdout or "eac3" not in help_result.stdout:
             raise SystemExit(f"package verification: decoder visibility failed\n{help_result.stdout}")
         print(f"mpv console --version: {version.stdout.splitlines()[0]}")
         print("mpv decoder inventory: eac3=PASS libopenjoc=PASS")
-        menu_script = root / "config/scripts/openjoc-settings.lua"
+        menu_script = root / "bin/portable_config/scripts/openjoc-settings.lua"
         with tempfile.TemporaryDirectory(prefix="openjoc-mpv-lua-smoke-") as temporary_name:
             temporary = pathlib.Path(temporary_name)
-            # Exercise the same config/scripts discovery path used by the
-            # bundle, rather than explicitly loading the packaged script.
-            idle_scripts = temporary / "scripts"
-            idle_scripts.mkdir()
-            shutil.copy2(menu_script, idle_scripts / menu_script.name)
+            # Exercise the packaged config/scripts discovery path rather than
+            # explicitly loading the packaged script. On Windows this runs
+            # mpv.exe directly with no --config-dir, proving adjacent
+            # portable_config auto-discovery; other platforms use the bundle
+            # wrapper, which points at the same directory.
             quit_script = temporary / "controlled-quit.lua"
             quit_script.write_text(
                 "mp.add_timeout(0.25, function() "
@@ -1142,12 +1152,14 @@ def verify(arguments: argparse.Namespace) -> int:
                 encoding="utf-8",
             )
             idle_log = temporary / "idle-mpv.log"
-            # Keep an isolated config root without --no-config: that option
-            # empties mpv's `~~/` expansion, which the settings script uses.
+            # The extracted package itself is the isolated config root. The
+            # qualification environment uses a fresh HOME / APPDATA so an
+            # accidental fallback cannot touch the host user's mpv config.
+            menu_executable = executable if arguments.platform == "windows-x64" else root / "bin/openjoc-mpv"
             idle_command = [
-                str(smoke_executable), "--idle=yes",
+                str(menu_executable), "--idle=yes",
                 "--load-scripts=yes", "--force-window=no", "--vo=null", "--ao=null",
-                f"--config-dir={temporary}", f"--log-file={idle_log}",
+                f"--log-file={idle_log}",
                 "--msg-level=all=info", f"--script={quit_script}",
             ]
             try:
@@ -1160,7 +1172,10 @@ def verify(arguments: argparse.Namespace) -> int:
             idle_output = idle_log.read_text(encoding="utf-8", errors="replace") if idle_log.is_file() else idle.stdout
             if idle.returncode != 0 or "OpenJOC settings menu loaded" not in idle_output or "OPENJOC_SETTINGS_IDLE_SMOKE_QUIT" not in idle_output:
                 raise SystemExit(f"package verification: headless mpv Lua script-load smoke failed\n{idle_output}")
-            print("mpv headless Lua menu load (idle/null AO/VO, controlled quit): PASS")
+            if arguments.platform == "windows-x64":
+                print("mpv.exe direct portable_config Lua menu autoload (no --config-dir): PASS")
+            else:
+                print("mpv bundle launcher portable_config Lua menu load (idle/null AO/VO, controlled quit): PASS")
 
             if arguments.fixture:
                 fixture = arguments.fixture.resolve()

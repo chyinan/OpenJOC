@@ -28,7 +28,8 @@ HARNESS_FIELDS = (
 )
 FIELDS = [
     "BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME",
-    "DECODER_SELECTION", "GUI_EXECUTABLE", "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
+    "DECODER_SELECTION", "GUI_EXECUTABLE", "DIRECT_GUI_CONFIG_AUTOLOAD",
+    "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
     *HARNESS_FIELDS, "PRIVATE_PATH_SCAN",
 ]
 
@@ -107,21 +108,39 @@ def main() -> int:
     evidence: dict[str, str] = {}
     package_ok = False
     harness_ok = False
+    direct_gui_config_ok = args.platform != "windows-x64"
 
     with tempfile.TemporaryDirectory(prefix="openjoc-player-qualification-") as temporary_name:
         temporary = pathlib.Path(temporary_name)
-        extract_dir = temporary / "extracted"
+        # The native Windows executable and launchers must handle ordinary
+        # relocated installs containing spaces and non-ASCII characters.
+        extract_dir = temporary / "extracted bundle with spaces — 日本語"
         extract_dir.mkdir()
         root = safe_extract(archive, extract_dir)
         env = dict(os.environ)
         env["HOME"] = str(temporary / "home")
         env["LC_ALL"] = "C"
+        env.pop("MPV_HOME", None)
         env["NO_PROXY"] = "*"
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
             env.pop(key, None)
         (temporary / "home").mkdir()
         if args.platform == "windows-x64":
             system_root = env.get("SystemRoot") or env.get("WINDIR") or r"C:\Windows"
+            isolated_profile = temporary / "isolated-user-profile"
+            native_profile = str(isolated_profile)
+            cygpath = shutil.which("cygpath")
+            if cygpath:
+                converted = subprocess.run(
+                    [cygpath, "-w", native_profile], check=False,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, errors="replace",
+                )
+                if converted.returncode == 0 and converted.stdout.strip():
+                    native_profile = converted.stdout.strip()
+            env["USERPROFILE"] = native_profile
+            env["APPDATA"] = native_profile + r"\AppData\Roaming"
+            env["LOCALAPPDATA"] = native_profile + r"\AppData\Local"
             sh_path = shutil.which("sh")
             tool_entries = [str(root / "bin")]
             if sh_path:
@@ -148,6 +167,8 @@ def main() -> int:
                 statuses[field] = "PASS"
             if args.platform == "windows-x64":
                 statuses["GUI_EXECUTABLE"] = "PASS"
+                direct_gui_config_ok = "mpv.exe direct portable_config Lua menu autoload (no --config-dir): PASS" in output
+                statuses["DIRECT_GUI_CONFIG_AUTOLOAD"] = "PASS" if direct_gui_config_ok else "FAIL"
                 statuses["CONSOLE_ENTRYPOINT"] = "PASS"
                 statuses["CONSOLE_INTERRUPT"] = "PASS" if "mpv.com console interrupt smoke: PASS" in output else "NOT_APPLICABLE"
         else:
@@ -155,6 +176,7 @@ def main() -> int:
                 statuses[field] = "FAIL"
             if args.platform == "windows-x64":
                 statuses["GUI_EXECUTABLE"] = "FAIL"
+                statuses["DIRECT_GUI_CONFIG_AUTOLOAD"] = "FAIL"
                 statuses["CONSOLE_ENTRYPOINT"] = "FAIL"
                 statuses["CONSOLE_INTERRUPT"] = "FAIL"
 
@@ -181,7 +203,7 @@ def main() -> int:
             "archive": archive.name,
             "archive_sha256": digest(archive),
             "archive_size": archive.stat().st_size,
-            "qualification": "QUALIFIED" if package_ok and harness_ok else "BLOCKED",
+            "qualification": "QUALIFIED" if package_ok and harness_ok and direct_gui_config_ok else "BLOCKED",
             "statuses": statuses,
             "build_info": {
                 "target": build_info.get("target"),

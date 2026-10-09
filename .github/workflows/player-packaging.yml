@@ -68,6 +68,7 @@ jobs:
       - name: Test the mocked mpv settings menu
         run: luajit integrations/mpv/test-openjoc-settings.lua
 
+
       - name: Select stable Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -191,6 +192,7 @@ jobs:
       - name: Test the mocked mpv settings menu
         run: luajit integrations/mpv/test-openjoc-settings.lua
 
+
       - name: Select stable Rust
         run: |
           rustup toolchain install stable --profile minimal
@@ -308,6 +310,15 @@ jobs:
 
       - name: Test the mocked mpv settings menu
         run: luajit integrations/mpv/test-openjoc-settings.lua
+
+      - name: Test real LuaJIT settings IO from a Unicode path
+        run: |
+          set -euo pipefail
+          test_root="$(cygpath -u "$RUNNER_TEMP")/OpenJOC Settings 日本語"
+          mkdir -p "$test_root"
+          trap 'rm -rf -- "$test_root"' EXIT
+          OPENJOC_SETTINGS_IO_TEST_DIR="$(cygpath -w "$test_root")" \
+            luajit integrations/mpv/test-openjoc-settings-io.lua
 
       - name: Select the GNU Rust target and build the ZIP
         env:

@@ -1,14 +1,19 @@
 -- SPDX-FileCopyrightText: 2026 OpenJOC contributors
 -- SPDX-License-Identifier: Apache-2.0
 
--- Mocked mpv API smoke test for the bundled settings script. Run with LuaJIT.
+-- Mocked mpv API interaction test for the bundled settings panel. Run with LuaJIT.
 local files = {}
 local existing_paths = { ['/tmp/openjoc-custom.sofa'] = true }
 local bindings = {}
 local hooks = {}
+local observers = {}
 local property_writes = {}
 local input_request
 local last_osd = ''
+local last_overlay = ''
+local overlay_res_x, overlay_res_y = 0, 0
+local screen_w, screen_h = 1280, 720
+local mouse_x, mouse_y = 0, 0
 local saved_document
 local include_user_options = false
 local current_tracks = {}
@@ -19,6 +24,7 @@ local promote_attempts = 0
 local settings_path = '~~/openjoc-settings.json'
 local settings_temp_path = settings_path .. '.tmp'
 local settings_backup_path = settings_path .. '.bak'
+local legacy_settings_path = '~~/../../config/openjoc-settings.json'
 
 local real_io_open = io.open
 io.open = function(path, mode)
@@ -81,7 +87,12 @@ os.rename = function(old_path, new_path)
 end
 
 local utils = {
-    parse_json = function() return nil end,
+    parse_json = function(contents)
+        if contents == 'legacy-settings' then
+            return { schema = 1, options = { render_mode = 'binaural', hrtf = 'd2' } }
+        end
+        return nil
+    end,
     format_json = function(document)
         saved_document = document
         return '{"mock":"settings"}'
@@ -99,6 +110,7 @@ package.preload['mp.input'] = function() return input end
 
 mp = {
     command_native = function(command)
+        if command[1] == 'escape-ass' then return command[2] end
         if command[1] == 'expand-path' or command[1] == 'normalize-path' then
             return command[2]
         end
@@ -118,6 +130,9 @@ mp = {
         end
         return default
     end,
+    get_property_number = function(_, default) return default end,
+    get_osd_size = function() return screen_w, screen_h end,
+    get_mouse_pos = function() return mouse_x, mouse_y end,
     set_property = function(name, value)
         property_writes[#property_writes + 1] = { name, value }
         return true
@@ -136,23 +151,86 @@ mp = {
         timeouts[#timeouts + 1] = timeout
         return timeout
     end,
-    observe_property = function() end,
+    observe_property = function(name, _, callback) observers[name] = callback end,
+    create_osd_overlay = function(kind)
+        assert(kind == 'ass-events', 'settings panel must use mpv ASS overlay rendering')
+        local created = { data = '', res_x = 0, res_y = 0 }
+        function created:update()
+            last_overlay = self.data
+            overlay_res_x, overlay_res_y = self.res_x, self.res_y
+        end
+        return created
+    end,
     osd_message = function(text) last_osd = text end,
     msg = { info = function() end, error = function(message) error(message) end },
 }
+
+local function click(x, y)
+    mouse_x, mouse_y = x, y
+    assert(type(bindings['openjoc-settings-mouse']) == 'function', 'mouse binding is not active')
+    bindings['openjoc-settings-mouse']()
+end
+
+local function capture_preview(name)
+    local directory = os.getenv('OPENJOC_ASS_PREVIEW_DIR')
+    if not directory then return end
+    local file = real_io_open(directory .. '/' .. name .. '.ass-events', 'wb')
+    assert(file, 'could not write requested ASS test capture')
+    file:write(last_overlay)
+    file:close()
+end
+
+local function output_selector_value()
+    -- The wide-window first-row value is emitted as its own ASS Dialogue
+    -- event at this documented design-grid coordinate.
+    for event in last_overlay:gmatch('[^\n]+') do
+        if event:find('\\pos(744,198)', 1, true) then
+            return event:match('}([^}]*)$')
+        end
+    end
+    return nil
+end
 
 dofile('integrations/mpv/openjoc-settings.lua')
 assert(type(bindings['openjoc-settings-toggle']) == 'function', 'toggle binding not registered')
 assert(type(hooks.on_preloaded) == 'function', 'per-file hook not registered')
 
 bindings['openjoc-settings-toggle']()
-assert(last_osd:find('Output policy: 5.1', 1, true), 'menu did not show the default output selection')
+assert(last_overlay:find('OpenJOC settings', 1, true), 'panel title was not rendered')
+assert(last_overlay:find('Output policy', 1, true) and last_overlay:find('5.1', 1, true),
+    'panel did not show the default output selection')
+assert(output_selector_value() == '5.1', 'output selector did not show the default value')
 assert(files[settings_path] == nil, 'menu initialization/open wrote settings without an explicit save')
-assert(last_osd:find('status rows above are live mpv properties', 1, true), 'menu did not distinguish settings from live status rows')
-assert(last_osd:find('Active decoder (read-only): libopenjoc', 1, true), 'menu omitted actual decoder status')
-assert(last_osd:find('Decoder output channels (read-only): 5.1', 1, true), 'menu omitted decoder channel status')
-assert(last_osd:find('Audio output channels (read-only): Stereo', 1, true), 'menu omitted AO channel status')
-assert(not last_osd:find('Advanced decoder options', 1, true), 'unexpected advanced controls')
+assert(last_overlay:find('LIVE PLAYER', 1, true)
+        and last_overlay:find('Active decoder', 1, true)
+        and last_overlay:find('libopenjoc', 1, true),
+    'panel omitted actual decoder status')
+assert(last_overlay:find('Decoder output channels', 1, true)
+        and last_overlay:find('Audio output channels', 1, true),
+    'panel omitted live mpv channel status')
+assert(last_overlay:find('Live rows are mpv properties, not JOC diagnostics', 1, true),
+    'panel did not distinguish settings from live status')
+assert(last_overlay:find('Save', 1, true) and last_overlay:find('Cancel', 1, true),
+    'fixed Save and Cancel buttons were not rendered')
+assert(last_overlay:find('Click controls or use Up/Down', 1, true),
+    'keyboard and mouse help was not rendered')
+assert(overlay_res_x == 1280 and overlay_res_y == 720, 'ASS overlay did not use current OSD dimensions')
+assert(#last_overlay < 14000, 'panel ASS unexpectedly expanded into a full-screen text page')
+capture_preview('openjoc-settings-1280x720')
+
+-- Tab/Shift+Tab remain usable, and the custom-path row is mouse clickable.
+bindings['openjoc-settings-tab']()
+bindings['openjoc-settings-shift-tab']()
+-- At 1280x720 the custom SOFA action is centered at x=991, y=332.
+click(991, 332)
+assert(type(input_request) == 'table' and last_overlay == '',
+    'clicking Set path did not open the path prompt')
+bindings['openjoc-settings-toggle']()
+assert(last_overlay == '' and bindings['openjoc-settings-mouse'] == nil,
+    'toggling during the SOFA modal reopened menu bindings')
+input_request.closed()
+assert(last_overlay:find('No file selected', 1, true), 'cancelling Set path hid the panel')
+for _ = 1, 3 do bindings['openjoc-settings-up']() end -- return focus to output row
 
 local output_sequence = {
     '7.1', '5.1.2', '5.1.4', '7.1.2', '7.1.4',
@@ -160,64 +238,102 @@ local output_sequence = {
 }
 for _, label in ipairs(output_sequence) do
     bindings['openjoc-settings-right']()
-    assert(last_osd:find('Output policy: ' .. label, 1, true),
-        'output policy did not cycle to ' .. label)
+    assert(output_selector_value() == label,
+        'output selector did not cycle to ' .. label .. ': ' .. tostring(output_selector_value()))
 end
-for _ = 1, 8 do bindings['openjoc-settings-down']() end -- discard row
-bindings['openjoc-settings-enter']()
-assert(bindings['openjoc-settings-up'] == nil, 'discard did not close the menu')
-bindings['openjoc-settings-toggle']()
-assert(last_osd:find('Output policy: 5.1', 1, true), 'discard did not restore saved output')
-assert(last_osd:find('settings may reach other tracks and log warnings', 1, true),
-    'menu omitted the best-effort E-AC-3 gate note')
+-- The panel reflows to the compact OSD size and the rendered hitboxes track it.
+screen_w, screen_h = 640, 480
+observers['osd-dimensions']('osd-dimensions', { w = screen_w, h = screen_h })
+assert(overlay_res_x == screen_w and overlay_res_y == screen_h, 'resize did not update ASS PlayRes')
+assert(last_overlay:find('LIVE PLAYER', 1, true) and last_overlay:find('Decoder:', 1, true),
+    'compact panel omitted a concise live status line')
+capture_preview('openjoc-settings-640x480')
+local panel_x, panel_y = last_overlay:match('\\pos%((%d+),(%d+)%)')
+assert(panel_x and panel_y and tonumber(panel_x) >= 0 and tonumber(panel_y) >= 0
+        and tonumber(panel_x) < screen_w and tonumber(panel_y) < screen_h,
+    'compact panel background started outside the OSD')
+-- At 640x480 the output right-arrow hitbox is centered at x=590, y=124.
+click(590, 124)
+assert(last_overlay:find('7.1', 1, true), 'compact output hitbox did not advance the selection')
+click(375, 124)
+assert(last_overlay:find('5.1', 1, true), 'compact output hitbox did not reverse the selection')
 
--- Move to the HRTF row, select D2, then choose and submit a local SOFA path.
+-- Clicking outside closes without discarding a dirty draft; Cancel discards it.
+click(8, 8)
+assert(last_overlay == '', 'outside click did not close the panel')
+assert(last_osd:find('Draft kept', 1, true), 'outside click did not preserve the dirty draft')
+bindings['openjoc-settings-toggle']()
+assert(last_overlay:find('7.1', 1, true) and last_overlay:find('UNSAVED DRAFT', 1, true),
+    'reopening did not retain the unsaved output draft')
+-- At 640x480 the Cancel button center is x=559, y=379.
+click(559, 379)
+assert(last_overlay == '', 'Cancel did not close the panel')
+assert(files[settings_path] == nil, 'Cancel unexpectedly persisted the draft')
+screen_w, screen_h = 1280, 720
+observers['osd-dimensions']('osd-dimensions', { w = screen_w, h = screen_h })
+bindings['openjoc-settings-toggle']()
+assert(last_overlay:find('5.1', 1, true) and not last_overlay:find('UNSAVED DRAFT', 1, true),
+    'Cancel did not restore the saved/default output')
+
+-- HRTF presets, the separate custom-file button, modal cancel, and path errors.
 local windows_sofa = 'C:\\Users\\tester\\OpenJOC\\custom,hrtf.sofa'
 existing_paths[windows_sofa] = true
 bindings['openjoc-settings-down']()
 bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
 bindings['openjoc-settings-right']()
-assert(last_osd:find('Binaural virtual layout (when selected): 9.1.6 (experimental)', 1, true),
-    'experimental binaural virtual layout was not selectable')
-bindings['openjoc-settings-left']()
-assert(last_osd:find('Binaural virtual layout (when selected): 7.1.4', 1, true),
-    'default binaural virtual layout was not selectable')
+assert(last_overlay:find('SADIE II D2 / KEMAR', 1, true), 'D2 selection did not update the panel')
 bindings['openjoc-settings-right']()
-assert(last_osd:find('Binaural virtual layout (when selected): 9.1.6 (experimental)', 1, true),
-    'experimental binaural virtual layout could not be restored')
-bindings['openjoc-settings-up']()
-bindings['openjoc-settings-right']()
-assert(last_osd:find('SADIE II D2 / KEMAR', 1, true), 'D2 selection did not update the menu')
-bindings['openjoc-settings-right']()
-assert(type(input_request) == 'table', 'Custom SOFA did not request text input')
+assert(type(input_request) == 'table' and last_overlay == '',
+    'custom SOFA did not open the mpv path prompt and hide the panel')
+assert(bindings['openjoc-settings-up'] == nil and bindings['openjoc-settings-mouse'] == nil,
+    'modal path input left panel key or mouse bindings active')
 input_request.submit(windows_sofa)
 input_request.closed()
-assert(last_osd:find('Custom SOFA', 1, true), 'SOFA submission did not return to the menu')
+assert(last_overlay:find('Custom SOFA', 1, true)
+        and last_overlay:find('custom,hrtf.sofa', 1, true),
+    'valid Windows SOFA path did not return to the graphical panel')
 
--- Cancel and invalid paths leave the selected built-in preset untouched.
-bindings['openjoc-settings-left']() -- custom -> D2
-bindings['openjoc-settings-right']() -- D2 -> custom, then cancel
+-- The file row reopens the prompt; cancel does not change the chosen source.
+bindings['openjoc-settings-down']()
+bindings['openjoc-settings-enter']()
 local cancelled_request = input_request
 cancelled_request.closed()
-assert(last_osd:find('SADIE II D2 / KEMAR', 1, true), 'cancelled SOFA input changed the HRTF selection')
-bindings['openjoc-settings-right']() -- retry custom with an invalid path
+assert(last_overlay:find('Custom SOFA', 1, true), 'cancelled SOFA prompt lost the prior path')
+bindings['openjoc-settings-enter']() -- retry with an invalid path
 input_request.submit('/tmp/openjoc-does-not-exist.sofa')
-assert(last_osd:find('Choose an existing local SOFA file', 1, true), 'invalid SOFA path was not rejected')
-assert(last_osd:find('SADIE II D2 / KEMAR', 1, true), 'invalid SOFA path changed the prior selection')
-bindings['openjoc-settings-right']() -- valid Windows path with backslashes and comma
+input_request.closed()
+assert(last_overlay:find('Choose an existing local SOFA file', 1, true),
+    'invalid SOFA path was not rejected')
+assert(last_overlay:find('Custom SOFA', 1, true), 'invalid SOFA path changed the prior selection')
+
+-- Selecting a built-in preset clears the custom override; it can be restored.
+bindings['openjoc-settings-up']()
+bindings['openjoc-settings-left']()
+assert(last_overlay:find('SADIE II D2 / KEMAR', 1, true),
+    'built-in HRTF selection did not replace the custom source')
+assert(last_overlay:find('No file selected', 1, true), 'built-in selection did not clear the SOFA path')
+bindings['openjoc-settings-right']() -- D2 -> custom prompt
 input_request.submit(windows_sofa)
 input_request.closed()
-assert(last_osd:find('Custom SOFA', 1, true), 'valid Windows SOFA path was not accepted')
+assert(last_overlay:find('Custom SOFA', 1, true), 'valid Windows SOFA path was not accepted')
+
+-- Virtual layout cycles only between 7.1.4 and the experimental 9.1.6.
+bindings['openjoc-settings-down']()
+bindings['openjoc-settings-down']()
+bindings['openjoc-settings-right']()
+assert(last_overlay:find('9.1.6 (experimental)', 1, true),
+    'experimental binaural virtual layout was not selectable')
+bindings['openjoc-settings-left']()
+assert(last_overlay:find('7.1.4', 1, true), 'default binaural virtual layout was not selectable')
+bindings['openjoc-settings-right']()
+assert(last_overlay:find('9.1.6 (experimental)', 1, true),
+    'experimental binaural virtual layout could not be restored')
 
 -- Save explicitly, then verify the hook merges only E-AC-3 per-file decoder options.
 assert(files[settings_path] == nil, 'menu edits were written before the Save row was activated')
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-enter']()
+bindings['openjoc-settings-down']() -- Save action
+-- At 1280x720 the fixed Save button is centered at x=855, y=592.
+click(855, 592)
 assert(saved_document and saved_document.schema == 1, 'save did not serialize settings')
 assert(saved_document.options.render_mode == nil, 'unchanged output mode was unexpectedly written')
 assert(saved_document.options.hrtf == 'd2', 'D2 choice was not saved')
@@ -225,19 +341,9 @@ assert(saved_document.options.sofa == windows_sofa, 'Windows SOFA path with a co
 assert(saved_document.options.virtual_layout == '9.1.6', 'virtual layout choice was not saved')
 
 -- Resaving an existing config exercises the Windows-compatible backup path.
-bindings['openjoc-settings-up']()
-bindings['openjoc-settings-up']()
-bindings['openjoc-settings-up']()
-bindings['openjoc-settings-up']()
-bindings['openjoc-settings-up']()
-bindings['openjoc-settings-up']()
+for _ = 1, 4 do bindings['openjoc-settings-up']() end -- Save -> HRTF -> Dialnorm
 bindings['openjoc-settings-right']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
-bindings['openjoc-settings-down']()
+for _ = 1, 4 do bindings['openjoc-settings-down']() end -- back to Save
 bindings['openjoc-settings-enter']()
 assert(saved_document.options.dialnorm == 'analog', 'second save did not persist Dialnorm')
 
@@ -279,15 +385,15 @@ assert(property_writes[#property_writes][2].aid == nil
 
 -- Exercise write failure, failed promotion and backup rollback, then retry.
 local previous_file = files[settings_path]
-for _ = 1, 7 do bindings['openjoc-settings-up']() end -- output row
+for _ = 1, 5 do bindings['openjoc-settings-up']() end -- output row
 bindings['openjoc-settings-right']() -- dirty the output policy
-for _ = 1, 7 do bindings['openjoc-settings-down']() end -- save row
+for _ = 1, 5 do bindings['openjoc-settings-down']() end -- save row
 fail_write = true
 bindings['openjoc-settings-enter']()
 fail_write = false
 assert(files[settings_path] == previous_file, 'failed write changed the saved settings file')
 assert(files[settings_temp_path] == nil, 'failed write left a temporary file')
-assert(last_osd:find('Settings not saved', 1, true), 'write failure was not reported')
+assert(last_overlay:find('Settings not saved', 1, true), 'write failure was not reported in the panel')
 fail_second_promote = true
 promote_attempts = 0
 bindings['openjoc-settings-enter']()
@@ -295,7 +401,7 @@ fail_second_promote = false
 assert(files[settings_path] == previous_file, 'failed promotion did not restore the previous settings file')
 assert(files[settings_backup_path] == nil, 'failed promotion left a backup file behind')
 assert(files[settings_temp_path] == nil, 'failed promotion left a temporary file')
-assert(last_osd:find('Settings not saved', 1, true), 'promotion failure was not reported')
+assert(last_overlay:find('Settings not saved', 1, true), 'promotion failure was not reported in the panel')
 bindings['openjoc-settings-enter']()
 assert(saved_document.options.render_mode == 'speaker'
         and saved_document.options.speaker_layout == '7.1',
@@ -304,7 +410,7 @@ assert(saved_document.options.render_mode == 'speaker'
 -- The menu must be explicit about what it leaves outside the LAV parity scope.
 bindings['openjoc-settings-toggle']()
 bindings['openjoc-settings-toggle']()
-assert(last_osd:find('LAV output gain', 1, true), 'gain parity limitation is not visible')
+assert(last_overlay:find('LAV output gain', 1, true), 'gain parity limitation is not visible')
 
 -- Idle timeout removes forced bindings and leaves the unsaved draft available.
 bindings['openjoc-settings-right']()
@@ -315,16 +421,33 @@ end
 assert(idle_timeout, 'menu did not arm its idle close timer')
 idle_timeout.callback()
 assert(bindings['openjoc-settings-up'] == nil, 'idle close left forced menu bindings installed')
+assert(last_overlay == '', 'idle close left the graphical panel visible')
 assert(last_osd:find('draft retained', 1, true), 'idle close did not preserve the unsaved draft')
 bindings['openjoc-settings-toggle']()
 bindings['openjoc-settings-escape']()
-assert(last_osd:find('Output policy:', 1, true)
-        and last_osd:find('Status: Unsaved edits. Choose Save or Discard', 1, true),
-    'Escape warning hid the still-active menu: ' .. last_osd)
+assert(last_overlay == '', 'Escape did not close the graphical panel')
+assert(last_osd:find('Draft kept', 1, true), 'Escape did not preserve the dirty draft')
 bindings['openjoc-settings-toggle']()
-assert(last_osd:find('Output policy:', 1, true)
-        and last_osd:find('Status: Unsaved edits. Choose Save or Discard', 1, true),
-    'toggle warning hid the still-active menu')
+assert(last_overlay:find('5.1.2', 1, true) and last_overlay:find('UNSAVED DRAFT', 1, true),
+    'reopening after Escape did not restore the latest draft')
+bindings['openjoc-settings-toggle']()
+assert(last_overlay == '', 'toggle did not close the panel')
+
+-- First-launch migration reads the old root/config file without moving it.
+files[settings_path] = nil
+files[settings_backup_path] = nil
+files[legacy_settings_path] = 'legacy-settings'
+dofile('integrations/mpv/openjoc-settings.lua')
+bindings['openjoc-settings-toggle']()
+assert(last_overlay:find('Binaural (Headphones)', 1, true)
+        and last_overlay:find('SADIE II D2 / KEMAR', 1, true),
+    'legacy settings were not read when the new portable config was absent')
+assert(files[legacy_settings_path] == 'legacy-settings', 'migration modified the legacy settings file')
+bindings['openjoc-settings-right']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-enter']()
+assert(files[settings_path] ~= nil, 'explicit Save did not write into the new config directory')
+assert(files[legacy_settings_path] == 'legacy-settings', 'explicit Save changed the legacy file')
 
 -- Restore global primitives so this file is safe if reused by another test.
 io.open = real_io_open

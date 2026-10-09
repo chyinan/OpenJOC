@@ -4,11 +4,15 @@
 # mpv OpenJOC 播放器软件包
 
 OpenJOC Player Bundle 是项目提供的、打过补丁的 mpv/FFmpeg 构建，不是
-mpv 或 FFmpeg 上游官方发行版。解压后，使用媒体文件启动
-`bin/openjoc-mpv`（Windows 上为 `bin/openjoc-mpv.cmd`）：
+mpv 或 FFmpeg 上游官方发行版。解压后，在 macOS/Linux 上使用媒体文件启动
+`bin/openjoc-mpv`，Windows 上启动 `bin/openjoc-mpv.cmd`。Windows 也可以直接
+运行 GUI 程序 `bin/mpv.exe`；它会自动发现旁边的 `bin/portable_config`，无需
+包装脚本，也不会更改用户的全局 mpv 配置。直接发现配置的前提是未设置
+`MPV_HOME`；如果已有 `MPV_HOME`，它会优先生效。软件包启动器会明确选择软件包
+自己的配置目录，但不会更改该环境变量：
 
 ```text
-bin/openjoc-mpv path/to/media
+bin/mpv.exe "path/to/media"
 ```
 
 补丁播放器会自动选择已确认的 JOC；普通 E-AC-3 仍由 mpv 自带的 `eac3`
@@ -17,8 +21,9 @@ OpenJOC 渲染。
 
 ## 打开设置菜单
 
-在 Player Bundle 中按 `Ctrl+Alt+J`。使用上下方向键选择项目，左右方向键
-更改值，Enter 确认，Esc 关闭。主页面提供：
+在 Player Bundle 中按 `Ctrl+Alt+J` 打开紧凑设置面板。可以点击方向按钮和
+**Set path…**，也可以使用上下方向键（Tab 同样可以移动焦点）、左右方向键
+和 Enter。主页面提供：
 
 - 输出策略：Stereo speakers、Binaural、5.1、7.1、5.1.2、5.1.4、7.1.2
   或 7.1.4
@@ -26,8 +31,11 @@ OpenJOC 渲染。
 - 双耳 HRTF：SADIE II D1/KU100、SADIE II D2/KEMAR 或 Custom SOFA
 - 双耳虚拟布局：7.1.4 或实验性的 9.1.6
 
-菜单修改先作为草稿保留。选择 **Save selection for next OpenJOC file** 后，
-设置才会写入软件包配置目录。解码器创建前，如果文件含有 E-AC-3 音轨，菜单会
+菜单修改先作为草稿保留。点击 **Save** 后，设置会写入
+`bin/portable_config/openjoc-settings.json`，并在下一个文件打开时生效；不会
+重新加载或跳转当前文件。点击 **Cancel** 会丢弃草稿。按 Esc 或点击面板外会
+关闭面板并保留草稿，重新打开后仍可继续编辑。面板会把待应用的设置与只读的
+当前 mpv 解码器/声道属性分开显示。解码器创建前，如果文件含有 E-AC-3 音轨，菜单会
 将选项合并到该文件的解码器选项映射中。此时尚不能识别 JOC，因此普通或未选中的
 E-AC-3 音轨也可能收到这些选项。由于映射按文件生效，混合音轨文件中的其他音频解码器
 也可能收到这些选项并记录不支持选项的警告。菜单不会选择或强制使用 `libopenjoc`，
@@ -35,9 +43,13 @@ E-AC-3 音轨也可能收到这些选项。由于映射按文件生效，混合�
 菜单不会中断、跳转或重新加载当前播放，特别是因为原始 JOC 输入可能只能向前播放。
 如果想对当前文件使用不同策略，请自行停止并重新打开该文件。
 
-选择 Custom SOFA 时，可在文本输入框中填写一个已存在的本地文件路径。
+点击 **Set path…** 后，可在文本输入框中填写一个已存在的本地 SOFA 文件路径。
 解码器打开时仍会验证受支持的 `SimpleFreeFieldHRIR` 子集，详见[双耳与
 SOFA](binaural-sofa.zh.md)。
+
+如果旧版软件包曾将设置保存在 `config/openjoc-settings.json`，新配置文件
+不存在时，菜单会从旧位置读取并用于迁移。旧文件会保留不动；下次明确点击
+Save 时，设置会写入 `bin/portable_config/openjoc-settings.json`。
 
 ## 输出与硬件
 

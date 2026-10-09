@@ -12,6 +12,12 @@ local input = require 'mp.input'
 local CONFIG_PATH = mp.command_native({ 'expand-path', '~~/openjoc-settings.json' })
 local CONFIG_TEMP_PATH = CONFIG_PATH .. '.tmp'
 local CONFIG_BACKUP_PATH = CONFIG_PATH .. '.bak'
+-- The bundled launcher now uses bin/portable_config as mpv's config dir.
+-- Read the former root/config location as a fallback, but leave it in place;
+-- future explicit saves always target CONFIG_PATH above.
+local LEGACY_CONFIG_PATH = mp.command_native({
+    'expand-path', '~~/../../config/openjoc-settings.json',
+})
 
 local DEFAULTS = {
     render_mode = 'speaker',
@@ -116,7 +122,12 @@ local function load_state()
         end
     end
     if not file then
-        return empty_state()
+        -- Portable-config migration is read-only. Do not rename, delete, or
+        -- rewrite the legacy file; the next explicit Save creates the new one.
+        file = io.open(LEGACY_CONFIG_PATH, 'rb')
+        if not file then
+            return empty_state()
+        end
     end
     local contents = file:read('*a')
     file:close()
@@ -129,9 +140,12 @@ local draft = copy_state(saved)
 local dirty = false
 local row = 1
 local menu_open = false
+local sofa_input_open = false
 local menu_timeout
 local status_timeout
 local status_message
+local overlay = mp.create_osd_overlay('ass-events')
+overlay.z = 50
 
 local function key_value_table(raw)
     local result = {}
@@ -232,6 +246,7 @@ local change_selected
 local remove_menu_keys
 local install_menu_keys
 local close_menu
+local open_sofa_prompt
 
 local function show_status(message, duration)
     status_message = message
@@ -272,8 +287,18 @@ local function read_only_property(name, fallback)
     return fallback or 'Unavailable'
 end
 
+local function states_equal(left, right)
+    for key, value in pairs(left.options) do
+        if right.options[key] ~= value then return false end
+    end
+    for key, value in pairs(right.options) do
+        if left.options[key] ~= value then return false end
+    end
+    return true
+end
+
 local function mark_changed()
-    dirty = true
+    dirty = not states_equal(draft, saved)
 end
 
 local function set_option(key, value)
@@ -357,6 +382,136 @@ local function label_for_hrtf()
     return 'SADIE II D1 / KU100'
 end
 
+local function osd_dimensions()
+    local width, height
+    if type(mp.get_osd_size) == 'function' then
+        width, height = mp.get_osd_size()
+    end
+    if type(width) ~= 'number' or width < 1 then
+        width = mp.get_property_number and mp.get_property_number('osd-width', 1280) or 1280
+    end
+    if type(height) ~= 'number' or height < 1 then
+        height = mp.get_property_number and mp.get_property_number('osd-height', 720) or 720
+    end
+    if type(width) ~= 'number' or width < 1 then width = 1280 end
+    if type(height) ~= 'number' or height < 1 then height = 720 end
+    return width, height
+end
+
+local function geometry()
+    local screen_w, screen_h = osd_dimensions()
+    local compact = screen_h < 500
+    local base_w = compact and 760 or 850
+    local base_h = compact and 470 or 560
+    local scale = math.min(1, screen_w * 0.94 / base_w, screen_h * 0.94 / base_h)
+    local panel_w = base_w * scale
+    local panel_h = base_h * scale
+    local x = (screen_w - panel_w) / 2
+    local y = (screen_h - panel_h) / 2
+    local pad = (compact and 22 or 30) * scale
+    local row_h = (compact and 32 or 42) * scale
+    local first_row_y = y + (compact and 72 or 106) * scale
+    local row_rects = {}
+    local controls_x = x + panel_w * 0.57
+    local controls_right = x + panel_w - pad
+    local arrow_w = 34 * scale
+    for index = 1, 5 do
+        local row_y = first_row_y + (index - 1) * row_h
+        row_rects[index] = {
+            x = x + pad, y = row_y, w = panel_w - pad * 2, h = row_h - 3 * scale,
+            control_x = controls_x, control_right = controls_right,
+            arrow_w = arrow_w,
+            choose_x = controls_right - 88 * scale,
+            choose_w = 88 * scale,
+        }
+        if index == 4 then
+            row_rects[index].choose = {
+                x = controls_right - 88 * scale,
+                y = row_y + 3 * scale,
+                w = 88 * scale,
+                h = row_h - 9 * scale,
+            }
+        end
+    end
+    local button_h = 42 * scale
+    local button_w = 112 * scale
+    local button_y = y + (compact and 390 or 491) * scale
+    local button_gap = 12 * scale
+    local cancel = { x = x + panel_w - pad - button_w, y = button_y, w = button_w, h = button_h }
+    local save = { x = cancel.x - button_gap - button_w, y = button_y, w = button_w, h = button_h }
+    return {
+        width = screen_w, height = screen_h, x = x, y = y,
+        w = panel_w, h = panel_h, scale = scale, compact = compact,
+        rows = row_rects, save = save, cancel = cancel,
+        help_y = y + (compact and 350 or 541) * scale,
+        status_y = y + (compact and 286 or 451) * scale,
+        live_title_y = y + (compact and 245 or 333) * scale,
+        live_rows_y = y + 356 * scale,
+    }
+end
+
+local function ass_escape(value)
+    local text = tostring(value or ''):gsub('[\r\n]', ' ')
+    local ok, escaped = pcall(mp.command_native, { 'escape-ass', text })
+    if ok and type(escaped) == 'string' then return escaped end
+    text = text:gsub('\\', '\\\\')
+    return text:gsub('{', '\\{'):gsub('}', '\\}')
+end
+
+local function shorten(value, limit)
+    local text = tostring(value or '')
+    local has_wide_char = false
+    for index = 1, #text do
+        if text:byte(index) >= 0xE0 then has_wide_char = true; break end
+    end
+    local max_chars = has_wide_char and math.max(5, math.floor(limit / 2)) or limit
+    local index, count = 1, 0
+    while index <= #text and count < max_chars do
+        local first = text:byte(index)
+        local length = first < 0x80 and 1 or (first < 0xE0 and 2 or (first < 0xF0 and 3 or 4))
+        local valid = index + length - 1 <= #text
+        if valid and length > 1 then
+            for offset = 1, length - 1 do
+                local continuation = text:byte(index + offset)
+                if continuation < 0x80 or continuation > 0xBF then valid = false; break end
+            end
+        end
+        index = index + (valid and length or 1)
+        count = count + 1
+    end
+    if index > #text then return text end
+    if count < max_chars then return text end
+    return text:sub(1, index - 1) .. '...'
+end
+
+local function add_rect(events, x, y, width, height, color, alpha)
+    local x0, y0 = math.floor(x), math.floor(y)
+    local w, h = math.max(1, math.floor(width)), math.max(1, math.floor(height))
+    events[#events + 1] = string.format(
+        '{\\an7\\pos(%d,%d)\\bord0\\shad0\\p1\\1c&H%s&\\1a&H%02X&}' ..
+        'm 0 0 l %d 0 %d %d 0 %d{\\p0}\n',
+        x0, y0, color, alpha or 0, w, w, h, h)
+end
+
+local function add_text(events, x, y, value, size, color, alpha)
+    events[#events + 1] = string.format(
+        '{\\an7\\pos(%d,%d)\\bord0\\shad0\\q2\\fnArial\\fs%d\\1c&H%s&\\1a&H%02X&}%s\n',
+        math.floor(x), math.floor(y), math.max(8, math.floor(size)), color,
+        alpha or 0, ass_escape(value))
+end
+
+local function selected_hrtf(direction)
+    local current = hrtf_source_index()
+    local next_index = ((current - 1 + direction) % 3) + 1
+    if next_index == 3 then
+        open_sofa_prompt()
+    else
+        draft.options.hrtf = next_index == 1 and 'd1' or 'd2'
+        draft.options.sofa = ''
+        mark_changed()
+    end
+end
+
 local function main_rows()
     local dialnorm = effective_value('dialnorm', 'default')
     local dialnorm_label = ({
@@ -365,93 +520,29 @@ local function main_rows()
         digital = 'Digital (advanced)',
     })[dialnorm] or dialnorm
     local virtual = shown_option('virtual_layout', '7.1.4')
-    if virtual == '9.1.6' then
-        virtual = '9.1.6 (experimental)'
-    end
+    if virtual == '9.1.6' then virtual = '9.1.6 (experimental)' end
+    local sofa = effective_value('sofa', '')
+    local display_path = sofa:gsub('\\', '/')
+    local sofa_name = display_path:match('([^/]+)$') or display_path
+    local sofa_label = sofa ~= '' and shorten(sofa_name, 36) or 'No file selected'
     return {
         { title = 'Output policy', value = current_output_label(), change = change_output },
         {
             title = 'Dialnorm', value = dialnorm_label,
             change = function(direction)
                 local choices = { 'default', 'analog' }
-                local index
                 local current = effective_value('dialnorm', 'default')
+                local index
                 for choice_index, choice in ipairs(choices) do
-                    if choice == current then
-                        index = choice_index
-                        break
-                    end
+                    if choice == current then index = choice_index; break end
                 end
-                if not index then
-                    index = direction > 0 and 1 or #choices
-                end
+                if not index then index = direction > 0 and 1 or #choices end
                 index = ((index - 1 + direction) % #choices) + 1
                 set_option('dialnorm', choices[index])
             end,
         },
-        {
-            title = 'Binaural HRTF (when selected)', value = label_for_hrtf(),
-            change = function(direction)
-                local current = hrtf_source_index()
-                local next_index = ((current - 1 + direction) % 3) + 1
-                if next_index == 3 then
-                    local current_path = effective_value('sofa', '')
-                    if menu_open then
-                        menu_open = false
-                        if remove_menu_keys then
-                            remove_menu_keys()
-                        end
-                        mp.osd_message('', 0.1)
-                    end
-                    input.get({
-                        prompt = 'Custom SOFA file path (local file): ',
-                        default_text = current_path,
-                        id = 'openjoc-sofa-path',
-                        closed = function()
-                            -- Return to the menu for either Enter or cancel.
-                            if menu_open == false then
-                                menu_open = true
-                                if install_menu_keys then install_menu_keys() end
-                                draw()
-                            end
-                        end,
-                        submit = function(path)
-                            if type(path) ~= 'string' or path:match('^%s*$') then
-                                show_status('No SOFA path entered.', 3)
-                                return
-                            end
-                            local expanded = mp.command_native({ 'expand-path', path })
-                            local normalized = expanded and mp.command_native({ 'normalize-path', expanded })
-                            local info = normalized and utils.file_info(normalized)
-                            if not info or not info.is_file then
-                                if menu_open == false then
-                                    menu_open = true
-                                    if install_menu_keys then install_menu_keys() end
-                                end
-                                show_status('Choose an existing local SOFA file.', 3)
-                                draw()
-                            else
-                                draft.options.sofa = normalized
-                                mark_changed()
-                                if menu_open == false then
-                                    menu_open = true
-                                    if install_menu_keys then install_menu_keys() end
-                                end
-                                draw()
-                            end
-                        end,
-                    })
-                elseif next_index == 1 then
-                    draft.options.hrtf = 'd1'
-                    draft.options.sofa = ''
-                    mark_changed()
-                else
-                    draft.options.hrtf = 'd2'
-                    draft.options.sofa = ''
-                    mark_changed()
-                end
-            end,
-        },
+        { title = 'Binaural HRTF (when selected)', value = label_for_hrtf(), change = selected_hrtf },
+        { title = 'Custom SOFA file', value = sofa_label, action = open_sofa_prompt },
         {
             title = 'Binaural virtual layout (when selected)', value = virtual,
             change = function(direction)
@@ -461,130 +552,309 @@ local function main_rows()
                 set_option('virtual_layout', choices[index])
             end,
         },
-        { title = 'Active decoder (read-only)', value = read_only_property('current-tracks/audio/decoder') },
-        { title = 'Decoder output channels (read-only)', value =
-            read_only_property('audio-params/hr-channels', read_only_property('audio-params/channels')) },
-        { title = 'Audio output channels (read-only)', value =
-            read_only_property('audio-out-params/hr-channels', read_only_property('audio-out-params/channels')) },
-        { title = 'Save selection for next OpenJOC file', value = dirty and 'Unsaved changes' or 'No unsaved changes', action = function()
-            local ok, err = save_state()
-            if not ok then
-                show_status('Settings not saved: ' .. tostring(err), 4)
-                return
-            end
-            local path = mp.get_property('path', '') or ''
-            if path ~= '' then
-                show_status('Selection saved. Current decoder is unchanged; applies when the next file opens.', 4)
-            else
-                show_status('Selection saved. Applies when the next file opens.', 4)
-            end
-        end },
-        { title = 'Discard edits and close', value = '', action = function()
-            draft = copy_state(saved)
-            dirty = false
-            close_menu()
-        end },
     }
+end
+
+local function show_overlay(events, dimensions)
+    overlay.res_x = math.max(1, math.floor(dimensions.width))
+    overlay.res_y = math.max(1, math.floor(dimensions.height))
+    overlay.data = table.concat(events)
+    overlay:update()
 end
 
 draw = function()
-    if not menu_open then
-        return
-    end
+    if not menu_open then return end
+    local g = geometry()
+    local s, events = g.scale, {}
     local rows = main_rows()
-    if row > #rows then
-        row = 1
-    elseif row < 1 then
-        row = #rows
+    row = math.max(1, math.min(row, #rows + 2))
+
+    -- A high-opacity charcoal panel remains readable over bright or moving
+    -- video while keeping a narrow border of the current picture visible.
+    add_rect(events, g.x, g.y, g.w, g.h, '151A22', 12)
+    add_rect(events, g.x, g.y, g.w, 3 * s, 'B5D869', 0)
+    add_text(events, g.x + 30 * s, g.y + 20 * s, 'OpenJOC settings', 28 * s, 'F4F7F8')
+    local badge = dirty and 'UNSAVED DRAFT' or 'READY FOR NEXT FILE'
+    local badge_color = dirty and '72C8F4' or 'B5D869'
+    add_text(events, g.x + g.w - 210 * s, g.y + 28 * s, badge, 13 * s, badge_color)
+    local summary = dirty
+        and 'Draft only. Save stores it for the next file; current playback stays as-is.'
+        or 'Current settings take effect when the next file opens; current playback stays as-is.'
+    add_text(events, g.x + 30 * s, g.y + 56 * s, summary, 14 * s, 'C3CDD4')
+    if not g.compact then
+        add_text(events, g.x + 30 * s, g.y + 84 * s,
+            'OUTPUT AND BINAURAL OPTIONS', 12 * s, '83A4B4')
     end
-    local lines = {
-        'OpenJOC settings' .. (dirty and '  • unsaved' or ''),
-        'Up/Down: choose   Left/Right: change   Enter: select   Esc: close',
-    }
+
     for index, item in ipairs(rows) do
-        local marker = index == row and '> ' or '  '
-        lines[#lines + 1] = marker .. item.title .. (item.value ~= '' and (': ' .. item.value) or '')
+        local r = g.rows[index]
+        local focused = row == index
+        add_rect(events, r.x, r.y, r.w, r.h,
+            focused and '293641' or '202832', focused and 0x08 or 0x18)
+        add_text(events, r.x + 14 * s, r.y + 12 * s, item.title,
+            16 * s, focused and 'F5FAFC' or 'D8E0E5')
+        if index == 4 then
+            local choose = { x = r.choose_x, y = r.y + 3 * s, w = r.choose_w, h = r.h - 6 * s }
+            add_text(events, r.control_x + 8 * s, r.y + 12 * s,
+                shorten(item.value, g.compact and 22 or 26), 15 * s, 'BBC9D2')
+            add_rect(events, choose.x, choose.y, choose.w, choose.h,
+                focused and '456352' or '34444E', 0)
+            add_text(events, choose.x + 14 * s, choose.y + 8 * s,
+                effective_value('sofa', '') ~= '' and 'Change path...' or 'Set path...',
+                13 * s, 'F4F7F8')
+            r.choose = choose
+        else
+            local left = { x = r.control_x, y = r.y + 3 * s, w = r.arrow_w, h = r.h - 6 * s }
+            local right = { x = r.control_right - r.arrow_w, y = left.y, w = r.arrow_w, h = left.h }
+            add_rect(events, left.x, left.y, left.w, left.h, '34434D', 0)
+            add_rect(events, right.x, right.y, right.w, right.h, '34434D', 0)
+            add_text(events, left.x + 12 * s, left.y + 7 * s, '<', 15 * s, 'F4F7F8')
+            add_text(events, right.x + 12 * s, right.y + 7 * s, '>', 15 * s, 'F4F7F8')
+            add_text(events, left.x + left.w + 11 * s, r.y + 12 * s,
+                shorten(item.value, g.compact and 28 or 34), 15 * s,
+                focused and 'B5D869' or 'E8EDF0')
+            r.left, r.right = left, right
+        end
     end
-    lines[#lines + 1] = 'Settings are for the next file; status rows above are live mpv properties, not JOC diagnostics.'
-    lines[#lines + 1] = 'Best-effort E-AC-3 gate; settings may reach other tracks and log warnings.'
-    lines[#lines + 1] = 'mpv keeps its normal audio output mapping; it may adapt channels to the AO.'
-    lines[#lines + 1] = 'LAV output gain / live JOC page are unavailable; mpv volume is separate.'
-    if status_message then
-        lines[#lines + 1] = 'Status: ' .. status_message
+
+    if g.compact then
+        local decoder = shorten(read_only_property('current-tracks/audio/decoder'), 18)
+        local input_channels = shorten(read_only_property('audio-params/hr-channels',
+            read_only_property('audio-params/channels')), 12)
+        local output_channels = shorten(read_only_property('audio-out-params/hr-channels',
+            read_only_property('audio-out-params/channels')), 12)
+        add_text(events, g.x + 30 * s, g.live_title_y, 'LIVE PLAYER', 12 * s, '83A4B4')
+        add_text(events, g.x + 30 * s, g.live_title_y + 17 * s,
+            'Decoder: ' .. decoder .. '   Input: ' .. input_channels .. '   Output: ' .. output_channels,
+            12 * s, 'C3CDD4')
+        add_text(events, g.x + 30 * s, g.status_y,
+            status_message and shorten(status_message, 56) or 'Best-effort E-AC-3 options; mpv audio routing is unchanged.',
+            12 * s, status_message and 'F0B8A2' or '99AAB4')
+    else
+        add_text(events, g.x + 30 * s, g.live_title_y, 'LIVE PLAYER  ·  READ ONLY', 12 * s, '83A4B4')
+        local labels = {
+            { 'Active decoder', read_only_property('current-tracks/audio/decoder') },
+            { 'Decoder output channels', read_only_property('audio-params/hr-channels',
+                read_only_property('audio-params/channels')) },
+            { 'Audio output channels', read_only_property('audio-out-params/hr-channels',
+                read_only_property('audio-out-params/channels')) },
+        }
+        for index, item in ipairs(labels) do
+            local y = g.live_rows_y + (index - 1) * 21 * s
+            add_text(events, g.x + 30 * s, y, item[1], 12 * s, '99AAB4')
+            add_text(events, g.x + 230 * s, y, shorten(item[2], 52), 12 * s, 'DCE4E8')
+        end
+        add_text(events, g.x + 30 * s, g.y + 423 * s,
+            status_message and shorten(status_message, 96)
+                or 'Live rows are mpv properties, not JOC diagnostics; LAV output gain is not exposed here.',
+            12 * s, status_message and 'F0B8A2' or '99AAB4')
     end
-    mp.osd_message(table.concat(lines, '\n'), 15)
+
+    local save_focused, cancel_focused = row == #rows + 1, row == #rows + 2
+    add_rect(events, g.save.x, g.save.y, g.save.w, g.save.h,
+        save_focused and '427D67' or '355F51', 0)
+    add_rect(events, g.cancel.x, g.cancel.y, g.cancel.w, g.cancel.h,
+        cancel_focused and '58636B' or '303942', 0)
+    add_text(events, g.save.x + 34 * s, g.save.y + 12 * s, 'Save', 15 * s, 'FFFFFF')
+    add_text(events, g.cancel.x + 30 * s, g.cancel.y + 12 * s, 'Cancel', 15 * s, 'F4F7F8')
+    add_text(events, g.x + 30 * s, g.help_y,
+        'Click controls or use Up/Down, Left/Right, Enter, Tab. Esc closes and keeps the draft.',
+        11 * s, '9BAAB2')
+    show_overlay(events, g)
     reset_menu_timeout()
 end
 
-change_selected = function(direction)
-    local rows = main_rows()
-    local item = rows[row]
-    if not item then
+local function save_selected()
+    local ok, err = save_state()
+    if not ok then
+        show_status('Settings not saved: ' .. tostring(err), 4)
         return
     end
-    if item.change then
-        item.change(direction)
-    elseif item.action then
-        item.action()
-    end
+    show_status('Saved for the next file. Current playback is unchanged.', 4)
+end
+
+local function cancel_draft()
+    draft = copy_state(saved)
+    dirty = false
+    close_menu()
+end
+
+local function resume_menu()
+    if menu_open then return end
+    sofa_input_open = false
+    menu_open = true
+    if install_menu_keys then install_menu_keys() end
     draw()
+end
+
+open_sofa_prompt = function()
+    if sofa_input_open then return end
+    sofa_input_open = true
+    menu_open = false
+    if menu_timeout then menu_timeout:kill(); menu_timeout = nil end
+    if remove_menu_keys then remove_menu_keys() end
+    overlay.data = ''
+    overlay:update()
+    local current_path = effective_value('sofa', '')
+    input.get({
+        prompt = 'Custom SOFA file path (local file): ',
+        default_text = current_path,
+        id = 'openjoc-sofa-path',
+        closed = function()
+            resume_menu()
+        end,
+        submit = function(path)
+            if type(path) ~= 'string' or path:match('^%s*$') then
+                resume_menu()
+                show_status('No SOFA path entered.', 3)
+                return
+            end
+            local expanded = mp.command_native({ 'expand-path', path })
+            local normalized = expanded and mp.command_native({ 'normalize-path', expanded })
+            local info = normalized and utils.file_info(normalized)
+            resume_menu()
+            if not info or not info.is_file then
+                show_status('Choose an existing local SOFA file.', 3)
+                return
+            end
+            draft.options.sofa = normalized
+            mark_changed()
+            show_status('Custom SOFA selected for the next file.', 3)
+        end,
+    })
+end
+
+local function point_inside(point_x, point_y, rect)
+    return point_x >= rect.x and point_x <= rect.x + rect.w
+        and point_y >= rect.y and point_y <= rect.y + rect.h
+end
+
+local function save_state_or_report()
+    save_selected()
+end
+
+change_selected = function(direction, activate)
+    local rows = main_rows()
+    if row <= #rows then
+        local item = rows[row]
+        if item.change then
+            item.change(direction)
+        elseif activate and item.action then
+            item.action()
+        end
+    elseif row == #rows + 1 then
+        save_state_or_report()
+    elseif row == #rows + 2 then
+        cancel_draft()
+    end
+    if menu_open then draw() end
+end
+
+local function move_focus(delta)
+    local max_row = #main_rows() + 2
+    row = ((row - 1 + delta) % max_row) + 1
+    draw()
+end
+
+local function on_mouse_click()
+    if not menu_open then return end
+    local mouse_x, mouse_y = mp.get_mouse_pos()
+    if type(mouse_x) ~= 'number' or type(mouse_y) ~= 'number' then return end
+    local g = geometry()
+    if not point_inside(mouse_x, mouse_y, { x = g.x, y = g.y, w = g.w, h = g.h }) then
+        local had_draft = dirty
+        close_menu()
+        if had_draft then
+            mp.osd_message('Draft kept. Reopen settings to save or cancel.', 4)
+        end
+        return
+    end
+    if point_inside(mouse_x, mouse_y, g.save) then
+        row = #main_rows() + 1
+        save_selected()
+        if menu_open then draw() end
+        return
+    end
+    if point_inside(mouse_x, mouse_y, g.cancel) then
+        cancel_draft()
+        return
+    end
+    local rows = main_rows()
+    for index, rect in ipairs(g.rows) do
+        if point_inside(mouse_x, mouse_y, rect) then
+            row = index
+            local item = rows[index]
+            if index == 4 and point_inside(mouse_x, mouse_y, rect.choose) then
+                open_sofa_prompt()
+                return
+            elseif item.change and mouse_x >= rect.control_x then
+                local direction = mouse_x >= rect.control_right - rect.arrow_w and 1
+                    or (mouse_x <= rect.control_x + rect.arrow_w and -1 or 1)
+                change_selected(direction)
+            else
+                draw()
+            end
+            return
+        end
+    end
+    reset_menu_timeout()
 end
 
 close_menu = function()
     menu_open = false
-    if menu_timeout then
-        menu_timeout:kill()
-        menu_timeout = nil
-    end
-    if status_timeout then
-        status_timeout:kill()
-        status_timeout = nil
-    end
+    if menu_timeout then menu_timeout:kill(); menu_timeout = nil end
+    if status_timeout then status_timeout:kill(); status_timeout = nil end
     status_message = nil
     if remove_menu_keys then remove_menu_keys() end
-    mp.osd_message('', 0.1)
+    overlay.data = ''
+    overlay:update()
 end
 
 remove_menu_keys = function()
-    for _, name in ipairs({ 'up', 'down', 'left', 'right', 'enter', 'escape' }) do
+    for _, name in ipairs({ 'up', 'down', 'left', 'right', 'enter', 'escape',
+        'tab', 'shift-tab', 'mouse' }) do
         mp.remove_key_binding('openjoc-settings-' .. name)
     end
 end
 
 install_menu_keys = function()
-    mp.add_forced_key_binding('UP', 'openjoc-settings-up', function()
-        row = row - 1
-        draw()
-    end, { repeatable = true })
-    mp.add_forced_key_binding('DOWN', 'openjoc-settings-down', function()
-        row = row + 1
-        draw()
-    end, { repeatable = true })
+    mp.add_forced_key_binding('UP', 'openjoc-settings-up', function() move_focus(-1) end,
+        { repeatable = true })
+    mp.add_forced_key_binding('DOWN', 'openjoc-settings-down', function() move_focus(1) end,
+        { repeatable = true })
     mp.add_forced_key_binding('LEFT', 'openjoc-settings-left', function()
-        change_selected(-1)
+        if row == #main_rows() + 2 then row = row - 1; draw()
+        elseif row == #main_rows() + 1 then row = row + 1; draw()
+        else change_selected(-1) end
     end, { repeatable = true })
     mp.add_forced_key_binding('RIGHT', 'openjoc-settings-right', function()
-        change_selected(1)
+        if row == #main_rows() + 1 then row = row + 1; draw()
+        elseif row == #main_rows() + 2 then row = row - 1; draw()
+        else change_selected(1) end
     end, { repeatable = true })
     mp.add_forced_key_binding('ENTER', 'openjoc-settings-enter', function()
-        change_selected(1)
+        change_selected(1, true)
+    end)
+    mp.add_forced_key_binding('TAB', 'openjoc-settings-tab', function() move_focus(1) end)
+    mp.add_forced_key_binding('Shift+TAB', 'openjoc-settings-shift-tab', function()
+        move_focus(-1)
     end)
     mp.add_forced_key_binding('ESC', 'openjoc-settings-escape', function()
-        if dirty then
-            show_status('Unsaved edits. Choose Save or Discard before closing.', 3)
-        else
-            close_menu()
-        end
+        local had_draft = dirty
+        close_menu()
+        if had_draft then mp.osd_message('Draft kept. Reopen settings to save or cancel.', 4) end
     end)
+    mp.add_forced_key_binding('MBTN_LEFT', 'openjoc-settings-mouse', on_mouse_click)
 end
 
 local function toggle_menu()
+    if sofa_input_open then return end
     if menu_open then
-        if dirty then
-            show_status('Unsaved edits. Choose Save or Discard before closing.', 3)
-            return
-        end
+        local had_draft = dirty
         close_menu()
+        if had_draft then
+            mp.osd_message('Draft kept. Reopen settings to save or cancel.', 4)
+        end
         return
     end
     if not dirty then
@@ -631,8 +901,9 @@ for _, property in ipairs({
     'current-tracks/audio/decoder',
     'audio-params/hr-channels',
     'audio-out-params/hr-channels',
+    'osd-dimensions',
 }) do
-    mp.observe_property(property, 'string', function()
+    mp.observe_property(property, property == 'osd-dimensions' and 'native' or 'string', function()
         if menu_open then draw() end
     end)
 end

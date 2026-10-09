@@ -181,7 +181,7 @@
     "default_decoder_policy": "preserve patched mpv safe policy: ordinary E-AC-3 uses eac3; confirmed JOC uses libopenjoc",
     "explicit_decoder_overrides": ["--ad=libopenjoc", "--ad=eac3"],
     "passthrough": "--audio-spdif=eac3 bypasses OpenJOC and remains user-controlled",
-    "global_config": "portable launcher uses the bundle config directory; it does not overwrite or require user global config",
+    "global_config": "Windows mpv.exe auto-discovers bin/portable_config and uses only that directory; all bundle launchers point to the same bundled config, with no overwrite or dependency on user global config",
     "network": "not required for packaged playback or built-in HRTF"
   },
   "reproducibility": {

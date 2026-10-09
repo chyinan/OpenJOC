@@ -78,12 +78,12 @@ It does not require Rust, FFmpeg, or MSYS2 on an end-user machine.
 ```text
 bin/mpv.exe             patched GUI player executable (Windows)
 bin/mpv.com             upstream console wrapper (Windows)
-bin/openjoc-mpv.cmd     Windows console launcher with bundle config/profile include
+bin/openjoc-mpv.cmd     Windows console launcher using portable_config
 bin/mpv                 patched player executable (macOS/Linux)
-bin/openjoc-mpv         relocatable launcher with bundle config/profile include (macOS/Linux)
+bin/openjoc-mpv         relocatable launcher using portable_config (macOS/Linux)
 lib/                    macOS/Linux private shared-library closure
-config/mpv.conf         neutral portable config
-config/profiles.conf    opt-in OpenJOC output profiles
+bin/portable_config/mpv.conf  isolated config and opt-in OpenJOC profiles
+bin/portable_config/scripts/  OpenJOC settings menu
 licenses/               OpenJOC, SADIE, mpv, FFmpeg, and closure evidence
 BUILD_INFO.json/.txt    resolved source/toolchain/feature/signing metadata
 DEPENDENCIES.json       bundled and external dependency inventory
@@ -93,20 +93,33 @@ SHA256SUMS              inner bundle checksum manifest
 
 Windows keeps runtime DLLs in `bin/` because the Windows loader naturally
 searches the executable directory. `mpv.exe` remains the GUI/Explorer entry;
-`mpv.com` is the upstream console entry, and `openjoc-mpv.cmd` injects the
-portable config/profile paths before forwarding the child exit status. The
-launcher has no filename-extension or demux policy. Positive raw-JOC admission
-is implemented inside the patched lavf demux path from the non-destructive
-probe buffer. No registry or global `PATH` change is performed.
+its adjacent `portable_config` directory is discovered by mpv 0.41.0, so a
+direct GUI launch loads the menu without arguments or changes to the user's
+global config ([mpv 0.41.0 Windows config lookup](https://github.com/mpv-player/mpv/blob/v0.41.0/DOCS/man/mpv.rst#L1193-L1209)).
+This default discovery is qualified with `MPV_HOME` unset. An explicitly set
+`MPV_HOME` takes precedence over the adjacent directory; the direct-launch
+autoloader may therefore use that alternate config instead. The provided
+Windows launcher passes the bundle config directory explicitly and is the
+fallback when preserving an existing `MPV_HOME` setting.
+`mpv.com` is the upstream console entry, and
+`openjoc-mpv.cmd` points to the same config before forwarding the child exit
+status. The launcher has no filename-extension or demux policy. Positive
+raw-JOC admission is implemented inside the patched lavf demux path from the
+non-destructive probe buffer. No registry or global `PATH` change is performed.
 
 The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 `openjoc-mpv.cmd --version`, `openjoc-mpv.cmd --ad=help` with `eac3` and
 `libopenjoc`, synthetic JOC null-output playback, package checksums, and the
-presence/PE audit of both GUI and console executables. Native Windows runners
-also attempt a console interrupt smoke where the platform exposes
-`CTRL_BREAK_EVENT`. The GUI executable status means presence and PE audit only;
-it does not exercise mpv's windowed OSD or interactive menu. Manual Windows
-OSD/input checks remain pending as listed in the mpv integration guide.
+presence/PE audit of both GUI and console executables. The direct GUI config
+autoload smoke starts `mpv.exe` itself with no `--config-dir` and verifies the
+bundled Lua script ran with `MPV_HOME` unset. Qualification extracts under a
+path containing spaces and Unicode. A separate real-LuaJIT test writes, backs
+up, promotes, and reloads settings under a Unicode path using the settings
+script's actual file IO. Native Windows runners also attempt a console interrupt smoke
+where the platform exposes `CTRL_BREAK_EVENT`. The GUI executable status means
+presence and PE audit only; the separate config-autoload smoke does not exercise
+mpv's windowed OSD or interactive menu. Manual Windows OSD/input checks remain
+pending as listed in the mpv integration guide.
 
 On macOS, `install_name_tool` rewrites private dependencies to `@rpath` and
 adds `@loader_path/../lib` to the executable and `@loader_path` to bundled
