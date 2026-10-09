@@ -25,66 +25,43 @@ local settings_path = '~~/openjoc-settings.json'
 local settings_temp_path = settings_path .. '.tmp'
 local settings_backup_path = settings_path .. '.bak'
 local legacy_settings_path = '~~/../../config/openjoc-settings.json'
+local real_io_open = io.open -- only used for the opt-in ASS preview capture below
 
-local real_io_open = io.open
-io.open = function(path, mode)
-    if mode == 'rb' then
+-- This interaction test must never write to the host filesystem. Inject the
+-- same settings-file IO seam used by production, with every operation backed
+-- by the in-memory fixture. The separate test-openjoc-settings-io.lua exercises
+-- the real OS adapter (including Windows Unicode paths).
+local file_io_module = 'openjoc.settings_file_io.v1'
+local previous_file_io = package.loaded[file_io_module]
+package.loaded[file_io_module] = {
+    read = function(path)
         local contents = files[path]
-        if not contents then
-            return nil, 'not found'
+        if contents == nil then return nil, 'not found', true end
+        return contents
+    end,
+    write = function(path, contents)
+        if fail_write then return nil, 'injected disk-full failure' end
+        files[path] = contents
+        return true
+    end,
+    remove = function(path)
+        files[path] = nil
+        return true
+    end,
+    move = function(old_path, new_path)
+        if fail_second_promote and old_path == settings_temp_path then
+            promote_attempts = promote_attempts + 1
+            if promote_attempts == 2 then
+                return nil, 'injected replacement failure'
+            end
         end
-        local offset = 1
-        return {
-            read = function(_, format)
-                assert(format == '*a')
-                local result = contents:sub(offset)
-                offset = #contents + 1
-                return result
-            end,
-            close = function() return true end,
-        }
-    elseif mode == 'wb' then
-        local buffer = {}
-        return {
-            write = function(_, ...)
-                if fail_write then return nil, 'injected disk-full failure' end
-                for index = 1, select('#', ...) do
-                    buffer[#buffer + 1] = tostring(select(index, ...))
-                end
-                return true
-            end,
-            close = function()
-                files[path] = table.concat(buffer)
-                return true
-            end,
-        }
-    end
-    return real_io_open(path, mode)
-end
-
-local real_remove = os.remove
-local real_rename = os.rename
-os.remove = function(path)
-    files[path] = nil
-    return true
-end
-os.rename = function(old_path, new_path)
-    if fail_second_promote and old_path == settings_temp_path then
-        promote_attempts = promote_attempts + 1
-        if promote_attempts == 2 then
-            return nil, 'injected replacement failure'
-        end
-    end
-    if not files[old_path] then
-        return nil, 'not found'
-    end
-    if files[new_path] then
-        return nil, 'target already exists'
-    end
-    files[new_path] = files[old_path]
-    files[old_path] = nil
-    return true
-end
+        if files[old_path] == nil then return nil, 'not found' end
+        if files[new_path] ~= nil then return nil, 'target already exists' end
+        files[new_path] = files[old_path]
+        files[old_path] = nil
+        return true
+    end,
+}
 
 local utils = {
     parse_json = function(contents)
@@ -449,8 +426,6 @@ bindings['openjoc-settings-enter']()
 assert(files[settings_path] ~= nil, 'explicit Save did not write into the new config directory')
 assert(files[legacy_settings_path] == 'legacy-settings', 'explicit Save changed the legacy file')
 
--- Restore global primitives so this file is safe if reused by another test.
-io.open = real_io_open
-os.remove = real_remove
-os.rename = real_rename
+-- Restore the injected module so this file is safe if reused by another test.
+package.loaded[file_io_module] = previous_file_io
 print('mpv OpenJOC settings Lua mock checks passed')
