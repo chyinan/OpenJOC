@@ -1027,6 +1027,79 @@ assert(find_gain_filter().params.graph:find('volume=' .. startup_plus_01, 1, tru
     'startup-ready Apply Current did not restore saved gain')
 drain_short_timeouts()
 
+-- Replay the exact packaged-mpv qualification driver against the production
+-- menu. This catches stale keyboard navigation when a new option row is added:
+-- reaching live gain and resetting it is not a successful settings save.
+for _, timeout in ipairs(timeouts) do timeout.active = false end
+current_path = nil
+current_tracks = {}
+current_decoder = ''
+include_user_options = false
+active_ad_options = {}
+af_filters = {}
+files[settings_path] = 'roundtrip-state'
+files[settings_temp_path] = nil
+files[settings_backup_path] = nil
+files[legacy_settings_path] = nil
+local roundtrip_document = { schema = 1, options = {
+    render_mode = 'speaker', speaker_layout = '5.1', output_gain_tenths_db = -137,
+} }
+local previous_parse_json, previous_format_json = utils.parse_json, utils.format_json
+utils.parse_json = function(contents)
+    if contents:match('^roundtrip%-state%s*$') then return roundtrip_document end
+    return previous_parse_json(contents)
+end
+utils.format_json = function(document)
+    saved_document = document
+    roundtrip_document = document
+    return 'roundtrip-state'
+end
+-- The driver checks the LuaJIT FFI prerequisite, while this interaction test
+-- injects file IO. Native FFI/Unicode IO is covered by the separate IO harness.
+local previous_ffi = package.loaded.ffi
+package.loaded.ffi = { cdef = function() end }
+local previous_commandv, previous_info = mp.commandv, mp.msg.info
+local driver_done, driver_quits, driver_exit
+mp.commandv = function(...)
+    local args = { ... }
+    if args[1] == 'script-binding' then
+        local name = args[2]:match('^openjoc_settings/(.+)$')
+        assert(name and type(bindings[name]) == 'function',
+            'qualification driver dispatched an unavailable menu binding')
+        bindings[name]()
+        return true
+    elseif args[1] == 'quit' then
+        driver_quits = driver_quits + 1
+        driver_exit = args[2]
+        return true
+    end
+    return previous_commandv(...)
+end
+mp.msg.info = function(message)
+    if message == 'OPENJOC_SETTINGS_MPV_DRIVER_DONE' then driver_done = true end
+    previous_info(message)
+end
+for _, expected_layout in ipairs({ '7.1', '5.1.2' }) do
+    saved_document = nil
+    driver_done, driver_quits, driver_exit = false, 0, nil
+    dofile('integrations/mpv/openjoc-settings.lua')
+    dofile('integrations/mpv/test-openjoc-settings-mpv-driver.lua')
+    drain_short_timeouts()
+    assert(driver_done and driver_quits == 1 and driver_exit == 0,
+        'qualification driver did not finish with one clean quit')
+    assert(saved_document and saved_document.schema == 1
+            and saved_document.options.speaker_layout == expected_layout,
+        'qualification driver did not save the expected output layout ' .. expected_layout)
+    assert(saved_document.options.output_gain_tenths_db == -137,
+        'qualification driver activated the gain Reset row instead of Save')
+    assert(files[settings_path] == 'roundtrip-state\n'
+            and files[settings_temp_path] == nil and files[settings_backup_path] == nil,
+        'qualification driver did not promote settings and clean up temporary files')
+end
+mp.commandv, mp.msg.info = previous_commandv, previous_info
+utils.parse_json, utils.format_json = previous_parse_json, previous_format_json
+package.loaded.ffi = previous_ffi
+
 -- Restore the injected module so this file is safe if reused by another test.
 package.loaded[file_io_module] = previous_file_io
 print('mpv OpenJOC settings Lua mock checks passed')

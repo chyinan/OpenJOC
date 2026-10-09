@@ -13,6 +13,8 @@ end
 local actions = {
     'openjoc-settings-toggle',
     'openjoc-settings-right',
+    -- Six option rows, including live gain, precede the Save button.
+    'openjoc-settings-down',
     'openjoc-settings-down',
     'openjoc-settings-down',
     'openjoc-settings-down',
