@@ -329,6 +329,27 @@ fn six_block_mono_frame_with_aht_and_compr(
     bits.bytes(4096)
 }
 
+// E-AC-3 CRC2 covers the complete syncframe after the syncword. Keep the
+// conventional channel-map regressions valid for independent decoder checks.
+fn with_eac3_crc(mut frame: Vec<u8>) -> Vec<u8> {
+    fn crc16(bytes: &[u8]) -> u16 {
+        let mut crc = 0_u16;
+        for byte in bytes {
+            crc ^= u16::from(*byte) << 8;
+            for _ in 0..8 {
+                crc = (crc << 1) ^ if crc & 0x8000 != 0 { 0x8005 } else { 0 };
+            }
+        }
+        crc
+    }
+
+    let crc_start = frame.len() - 2;
+    let crc = crc16(&frame[2..crc_start]);
+    frame[crc_start..].copy_from_slice(&crc.to_be_bytes());
+    assert_eq!(crc16(&frame[2..]), 0);
+    frame
+}
+
 fn benchmark_percentile(sorted: &[f64], percentile: usize) -> f64 {
     let maximum = sorted.len() - 1;
     let index = (maximum * percentile + 50) / 100;
@@ -779,6 +800,95 @@ fn decodes_a_raw_dependent_d0_custom_map_through_pcm_and_replaces_i0() {
         .expect("independent PCM");
     assert_ne!(pcm.channels[0], independent_pcm.channels[0]);
     assert!(pcm.channels[0].iter().all(|sample| sample.is_finite()));
+}
+
+#[test]
+fn equivalent_dependent_channel_maps_preserve_tdac_history() {
+    fn decode_maps(maps: [Option<u16>; 3]) -> Vec<u64> {
+        let independent = with_eac3_crc(six_block_mono_frame_with_aht(0, None, Some(0), false));
+        let mut bytes = Vec::new();
+        for map in maps {
+            let dependent = with_eac3_crc(six_block_mono_frame_with_aht(1, map, Some(0), false));
+            assert_eq!(
+                parse_bsi(&dependent).expect("dependent BSI").channel_map,
+                map
+            );
+            bytes.extend_from_slice(&independent);
+            bytes.extend_from_slice(&dependent);
+        }
+        let frames = index_syncframes(&bytes).expect("valid conventional I0/D0 frames");
+        let units = group_access_units(&frames).expect("three access units");
+        assert_eq!(units.len(), 3);
+        let mut decoder = JocAccessUnitPcmDecoder::new();
+        let mut pcm_bits = Vec::new();
+        for unit in units {
+            let pcm = decoder
+                .decode(&bytes, &frames, unit, &[0.5; 512])
+                .expect("conventional dependent PCM");
+            assert_eq!(pcm.channel_locations, vec![ChannelLocation::Centre]);
+            assert_eq!(pcm.channels.len(), 1);
+            assert!(pcm.lfe.is_none());
+            assert_eq!(pcm.channels[0].len(), 1536);
+            assert!(
+                pcm.channels[0]
+                    .iter()
+                    .all(|sample| sample.is_finite() && *sample != 0.0)
+            );
+            pcm_bits.extend(pcm.channels[0].iter().map(|sample| sample.to_bits()));
+        }
+        pcm_bits
+    }
+
+    let implicit = decode_maps([None; 3]);
+    // The fixture must exercise a nonzero retained tail, rather than pass
+    // vacuously because its first block is independent of decoder history.
+    assert_ne!(implicit[..256], implicit[1536..1792]);
+    assert_eq!(implicit, decode_maps([Some(0x4000); 3]));
+    // TS 102 366 E.1.3.1.7/E.1.3.1.8: implicit mono and explicit Centre
+    // describe the same coded channel. Both directions must retain its tail.
+    assert_eq!(implicit, decode_maps([None, Some(0x4000), None]));
+    assert_eq!(implicit, decode_maps([Some(0x4000), None, Some(0x4000)]));
+}
+
+#[test]
+fn equivalent_dependent_channel_maps_are_continuous_within_a_short_access_unit() {
+    fn decode_maps(maps: [Option<u16>; 3]) -> Result<Vec<u64>, Eac3Error> {
+        let mut bytes = Vec::new();
+        for (index, (blocks, map)) in [1, 2, 3].into_iter().zip(maps).enumerate() {
+            bytes.extend(with_eac3_crc(short_mono_frame(0, blocks, index == 0)));
+            bytes.extend(with_eac3_crc(short_mono_frame_with_channel_map(
+                1, blocks, false, map,
+            )));
+        }
+        let frames = index_syncframes(&bytes)?;
+        let units = group_access_units(&frames)?;
+        assert_eq!(units.len(), 1);
+        let pcm = JocAccessUnitPcmDecoder::new().decode(&bytes, &frames, units[0], &[0.5; 512])?;
+        assert_eq!(pcm.channel_locations, vec![ChannelLocation::Centre]);
+        assert_eq!(pcm.channels[0].len(), 1536);
+        assert!(pcm.channels[0].iter().any(|sample| *sample != 0.0));
+        Ok(pcm.channels[0]
+            .iter()
+            .map(|sample| sample.to_bits())
+            .collect())
+    }
+
+    let implicit = decode_maps([None; 3]).expect("implicit mixed short frames");
+    for maps in [
+        [Some(0x4000); 3],
+        [None, Some(0x4000), None],
+        [Some(0x4000), None, Some(0x4000)],
+    ] {
+        assert_eq!(
+            implicit,
+            decode_maps(maps).expect("equivalent mixed short frames")
+        );
+    }
+    // A genuine channel reassignment remains invalid within one grouped AU.
+    assert_eq!(
+        decode_maps([None, Some(0x8000), None]),
+        Err(Eac3Error::SubstreamTimingMismatch { frame: 1 })
+    );
 }
 
 #[test]
