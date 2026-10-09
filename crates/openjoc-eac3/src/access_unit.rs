@@ -487,6 +487,18 @@ struct SubstreamPcmConfiguration {
 
 impl From<&BitstreamInformation> for SubstreamPcmConfiguration {
     fn from(info: &BitstreamInformation) -> Self {
+        // TS 102 366 E.1.3.1.7/E.1.3.1.8: when chanmape is absent, acmod
+        // and lfeon imply these Table E.1.4 locations in the same coded-channel
+        // order. Use that explicit identity so equivalent syntax retains TDAC
+        // history. Keep acmod separately: dual mono and stereo are distinct.
+        const STANDARD_CHANNEL_MAPS: [u16; 8] = [
+            0xa000, 0x4000, 0xa000, 0xe000, 0xa100, 0xe100, 0xb800, 0xf800,
+        ];
+        let channel_map = info.channel_map.or_else(|| {
+            STANDARD_CHANNEL_MAPS
+                .get(usize::from(info.audio_coding_mode))
+                .map(|map| map | u16::from(info.lfe_on))
+        });
         Self {
             stream_type: info.header.stream_type,
             bitstream_id: info.bitstream_id,
@@ -494,7 +506,7 @@ impl From<&BitstreamInformation> for SubstreamPcmConfiguration {
             sample_rate: info.header.sample_rate,
             audio_coding_mode: info.audio_coding_mode,
             lfe_on: info.lfe_on,
-            channel_map: info.channel_map,
+            channel_map,
         }
     }
 }
@@ -1508,6 +1520,54 @@ mod tests {
                 "chanmap {map:#06x}"
             );
         }
+    }
+
+    #[test]
+    fn implicit_configuration_matches_explicit_order_for_every_acmod_and_lfe() {
+        for acmod in 0..8 {
+            for lfe_on in [false, true] {
+                let mut implicit = info_with(acmod, lfe_on, None);
+                implicit.header.stream_type = StreamType::Dependent;
+                let configuration = SubstreamPcmConfiguration::from(&implicit);
+                let mut explicit = implicit.clone();
+                explicit.channel_map = Some(configuration.channel_map.expect("standard map"));
+                assert_eq!(
+                    channel_locations(&implicit).expect("standard channel order"),
+                    channel_locations(&explicit).expect("explicit channel order"),
+                    "acmod={acmod}, lfeon={lfe_on}"
+                );
+                assert_eq!(configuration, SubstreamPcmConfiguration::from(&explicit));
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_configuration_preserves_real_reset_discriminators() {
+        let mut original = info(1, None);
+        original.header.stream_type = StreamType::Dependent;
+        let configuration = SubstreamPcmConfiguration::from(&original);
+        let mut variants = vec![original.clone(); 7];
+        variants[0].header.stream_type = StreamType::Independent;
+        variants[1].bitstream_id = 15;
+        variants[2].bitstream_mode = Some(1);
+        variants[3].header.sample_rate = 44_100;
+        variants[4].audio_coding_mode = 2;
+        variants[5].lfe_on = true;
+        variants[6].channel_map = Some(0x8000); // Centre becomes Left
+        for variant in variants {
+            assert_ne!(configuration, SubstreamPcmConfiguration::from(&variant));
+        }
+
+        // Equal location lists do not make dual-mono and stereo coding equal.
+        assert_ne!(
+            SubstreamPcmConfiguration::from(&info(0, None)),
+            SubstreamPcmConfiguration::from(&info(2, Some(0xa000)))
+        );
+        // An explicit LFE2 identity must not alias implicit LFE1.
+        assert_ne!(
+            SubstreamPcmConfiguration::from(&info_with(1, true, None)),
+            SubstreamPcmConfiguration::from(&info_with(1, true, Some(0x4002)))
+        );
     }
 
     #[test]
