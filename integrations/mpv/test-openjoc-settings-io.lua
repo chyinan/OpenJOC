@@ -3,9 +3,13 @@
 
 -- Exercise the real settings-script file IO with LuaJIT and a Unicode path.
 -- The mpv API is mocked, but io.open/os.rename/os.remove are not replaced.
--- Windows packaging CI sets OPENJOC_SETTINGS_IO_TEST_DIR to a fresh folder.
-local config_dir = assert(os.getenv('OPENJOC_SETTINGS_IO_TEST_DIR'),
-    'OPENJOC_SETTINGS_IO_TEST_DIR must name a pre-created test directory')
+-- Windows packaging CI passes an ASCII-only root because MinGW LuaJIT's
+-- os.getenv does not reliably preserve non-ACP characters from Windows env
+-- values. Construct the Unicode child path here so real LuaJIT CRT file
+-- operations still receive UTF-8 bytes.
+local test_root = assert(os.getenv('OPENJOC_SETTINGS_IO_TEST_ROOT'),
+    'OPENJOC_SETTINGS_IO_TEST_ROOT must name a pre-created test root')
+local config_dir = test_root .. '/OpenJOC Settings 日本語'
 assert(config_dir:find(' ', 1, true), 'test config path must contain spaces')
 assert(config_dir:find('日本語', 1, true), 'test config path must contain Japanese characters')
 config_dir = config_dir:gsub('\\', '/')
