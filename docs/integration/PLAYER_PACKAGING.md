@@ -113,13 +113,17 @@ The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 presence/PE audit of both GUI and console executables. The direct GUI config
 autoload smoke starts `mpv.exe` itself with no `--config-dir` and verifies the
 bundled Lua script ran with `MPV_HOME` unset. Qualification extracts under a
-path containing spaces and Unicode. A separate real-LuaJIT test writes, backs
-up, promotes, and reloads settings under a Unicode path using the settings
-script's actual file IO. Native Windows runners also attempt a console interrupt smoke
-where the platform exposes `CTRL_BREAK_EVENT`. The GUI executable status means
-presence and PE audit only; the separate config-autoload smoke does not exercise
-mpv's windowed OSD or interactive menu. Manual Windows OSD/input checks remain
-pending as listed in the mpv integration guide.
+path containing spaces and Unicode. A real-LuaJIT test exercises the settings
+script's production path-aware IO adapter there, including failed replace,
+backup, promotion, and reload. A two-launch headless `mpv.exe` test then uses
+the actual menu and adjacent `portable_config` with no `--config-dir`: it saves
+7.1, restarts, loads that state, and saves 5.1.2, checking the persisted
+primary file and temporary/backup cleanup. Native Windows runners also attempt
+a console interrupt smoke where the platform exposes `CTRL_BREAK_EVENT`. The
+GUI executable status means presence and PE audit only; the separate
+config-autoload smoke does not exercise mpv's windowed OSD or interactive menu.
+Manual Windows OSD/input checks remain pending as listed in the mpv integration
+guide.
 
 On macOS, `install_name_tool` rewrites private dependencies to `@rpath` and
 adds `@loader_path/../lib` to the executable and `@loader_path` to bundled

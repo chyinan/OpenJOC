@@ -29,6 +29,7 @@ HARNESS_FIELDS = (
 FIELDS = [
     "BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME",
     "DECODER_SELECTION", "GUI_EXECUTABLE", "DIRECT_GUI_CONFIG_AUTOLOAD",
+    "SETTINGS_IO_ROUNDTRIP",
     "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
     *HARNESS_FIELDS, "PRIVATE_PATH_SCAN",
 ]
@@ -90,6 +91,79 @@ def run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -> tuple[
     return result.returncode, result.stdout
 
 
+def run_windows_settings_io_roundtrip(
+    root: pathlib.Path, temporary: pathlib.Path, env: dict[str, str],
+) -> tuple[bool, str]:
+    """Drive the packaged Lua menu in mpv.exe under its Unicode config path."""
+    config_dir = root / "bin" / "portable_config"
+    settings = config_dir / "openjoc-settings.json"
+    temp_path = settings.with_name(settings.name + ".tmp")
+    backup_path = settings.with_name(settings.name + ".bak")
+    driver = REPOSITORY / "integrations/mpv/test-openjoc-settings-mpv-driver.lua"
+    executable = root / "bin" / "mpv.exe"
+    if not driver.is_file() or not executable.is_file():
+        return False, "mpv settings roundtrip driver or packaged mpv.exe is missing"
+    if "日本語" not in str(settings) or " " not in str(settings):
+        return False, "settings roundtrip config path must contain spaces and Japanese characters"
+
+    # Seed the existing destination with Python's Unicode-safe file API. The
+    # actual mpv/LuaJIT settings script then has to read, replace, and reload it.
+    for path in (temp_path, backup_path):
+        path.unlink(missing_ok=True)
+    try:
+        settings.write_text(
+            json.dumps({"schema": 1, "options": {
+                "render_mode": "speaker", "speaker_layout": "5.1",
+            }}) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        return False, f"could not seed the Unicode-path settings file: {error}"
+    outputs: list[str] = []
+    for pass_number, expected_layout in ((1, "7.1"), (2, "5.1.2")):
+        log_path = temporary / f"mpv-settings-roundtrip-{pass_number}.log"
+        command = [
+            str(executable), "--idle=yes", "--load-scripts=yes",
+            "--force-window=no", "--vo=null", "--ao=null", "--no-video",
+            "--msg-level=all=info", f"--log-file={log_path}",
+            f"--script={driver}",
+        ]
+        try:
+            result = subprocess.run(
+                command, cwd=root, env=env, check=False, timeout=25,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+            )
+        except subprocess.TimeoutExpired as error:
+            log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+            outputs.append(f"pass {pass_number} timed out\n{log}\n{error.stdout or ''}")
+            return False, "\n".join(outputs)
+
+        log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else result.stdout
+        outputs.append(f"pass {pass_number}: exit={result.returncode}\n{log}")
+        if result.returncode != 0:
+            return False, "\n".join(outputs)
+        if "OpenJOC settings menu loaded" not in log or "OPENJOC_SETTINGS_MPV_DRIVER_DONE" not in log:
+            return False, "settings script or headless driver did not complete\n" + "\n".join(outputs)
+        try:
+            document = json.loads(settings.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            return False, f"could not read saved Unicode-path state after pass {pass_number}: {error}\n" + "\n".join(outputs)
+        options = document.get("options") if isinstance(document, dict) else None
+        actual_layout = options.get("speaker_layout") if isinstance(options, dict) else None
+        if not isinstance(document, dict) or document.get("schema") != 1 or actual_layout != expected_layout:
+            return False, (
+                f"pass {pass_number} expected saved layout {expected_layout!r}, got {actual_layout!r}\n"
+                + "\n".join(outputs)
+            )
+        if temp_path.exists() or backup_path.exists():
+            return False, f"pass {pass_number} left a temporary or backup settings file\n" + "\n".join(outputs)
+
+    for path in (settings, temp_path, backup_path):
+        path.unlink(missing_ok=True)
+    return True, "actual mpv Lua settings save/load roundtrip passed under Unicode portable_config\n" + "\n".join(outputs)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", type=pathlib.Path, required=True)
@@ -109,6 +183,7 @@ def main() -> int:
     package_ok = False
     harness_ok = False
     direct_gui_config_ok = args.platform != "windows-x64"
+    settings_io_roundtrip_ok = args.platform != "windows-x64"
 
     with tempfile.TemporaryDirectory(prefix="openjoc-player-qualification-") as temporary_name:
         temporary = pathlib.Path(temporary_name)
@@ -180,6 +255,13 @@ def main() -> int:
                 statuses["CONSOLE_ENTRYPOINT"] = "FAIL"
                 statuses["CONSOLE_INTERRUPT"] = "FAIL"
 
+        if package_ok and args.platform == "windows-x64":
+            settings_io_roundtrip_ok, settings_output = run_windows_settings_io_roundtrip(
+                root, temporary, env,
+            )
+            evidence["settings_io_roundtrip"] = clean_output(settings_output, temporary, fixtures)
+            statuses["SETTINGS_IO_ROUNDTRIP"] = "PASS" if settings_io_roundtrip_ok else "FAIL"
+
         if package_ok:
             harness_executable = "mpv.com" if args.platform == "windows-x64" else "mpv"
             harness = [shutil.which("sh") or "sh", str(PLAYER_HARNESS), str(root / "bin" / harness_executable), str(fixtures)]
@@ -203,7 +285,7 @@ def main() -> int:
             "archive": archive.name,
             "archive_sha256": digest(archive),
             "archive_size": archive.stat().st_size,
-            "qualification": "QUALIFIED" if package_ok and harness_ok and direct_gui_config_ok else "BLOCKED",
+            "qualification": "QUALIFIED" if package_ok and harness_ok and direct_gui_config_ok and settings_io_roundtrip_ok else "BLOCKED",
             "statuses": statuses,
             "build_info": {
                 "target": build_info.get("target"),

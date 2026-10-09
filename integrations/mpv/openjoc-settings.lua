@@ -19,6 +19,259 @@ local LEGACY_CONFIG_PATH = mp.command_native({
     'expand-path', '~~/../../config/openjoc-settings.json',
 })
 
+-- Lua's standard io/os file functions pass narrow paths to the Windows CRT.
+-- mpv's Lua 5.1 host opens the standard libraries unchanged, so UTF-8 paths
+-- (including a portable bundle installed below a non-ASCII user directory)
+-- need Win32's wide-character file APIs. Keep this adapter in the same file:
+-- mpv does not add the directory of a single-file script to package.path.
+local FILE_IO_MODULE = 'openjoc.settings_file_io.v1'
+local MAX_SETTINGS_BYTES = 65536
+
+local function get_settings_file_io()
+    local cached = package.loaded[FILE_IO_MODULE]
+    if type(cached) == 'table' then return cached end
+
+    local file_io = {}
+    local is_windows = type(package.config) == 'string'
+        and package.config:sub(1, 1) == '\\'
+    local ffi, win32, ffi_error
+
+    if is_windows then
+        local ok, result = pcall(require, 'ffi')
+        if ok then
+            ffi = result
+            local cdef_ok, cdef_error = pcall(ffi.cdef, [[
+                typedef unsigned short oj_wchar;
+                typedef unsigned long oj_dword;
+                typedef unsigned int oj_uint;
+                typedef void *oj_handle;
+                typedef const unsigned short *oj_lpcwstr;
+                typedef unsigned short *oj_lpwstr;
+                typedef const char *oj_lpcch;
+                typedef const void *oj_lpcvoid;
+                typedef void *oj_lpvoid;
+                oj_handle __stdcall CreateFileW(oj_lpcwstr, oj_dword, oj_dword,
+                    void *, oj_dword, oj_dword, oj_handle);
+                int __stdcall ReadFile(oj_handle, oj_lpvoid, oj_dword,
+                    oj_dword *, void *);
+                int __stdcall WriteFile(oj_handle, oj_lpcvoid, oj_dword,
+                    oj_dword *, void *);
+                int __stdcall CloseHandle(oj_handle);
+                int __stdcall MoveFileW(oj_lpcwstr, oj_lpcwstr);
+                int __stdcall DeleteFileW(oj_lpcwstr);
+                oj_dword __stdcall GetLastError(void);
+                int __stdcall MultiByteToWideChar(oj_uint, oj_dword, oj_lpcch,
+                    int, oj_lpwstr, int);
+            ]])
+            if cdef_ok then
+                local load_ok, library = pcall(ffi.load, 'kernel32')
+                if load_ok then
+                    win32 = library
+                else
+                    ffi_error = tostring(library)
+                end
+            else
+                ffi_error = tostring(cdef_error)
+            end
+        else
+            ffi_error = tostring(result)
+        end
+    end
+
+    local function has_non_ascii(path)
+        return path:find('[\\128-\\255]') ~= nil
+    end
+
+    local function use_wide_api(...)
+        if not is_windows then return false end
+        if win32 then return true end
+        for index = 1, select('#', ...) do
+            if has_non_ascii(select(index, ...)) then
+                local detail = ffi_error and (': ' .. ffi_error) or ''
+                return nil, 'Unicode settings paths need LuaJIT FFI support' .. detail
+            end
+        end
+        return false
+    end
+
+    local function win_error(operation)
+        local code = tonumber(win32.GetLastError())
+        return operation .. ' failed (Windows error ' .. tostring(code) .. ')', code
+    end
+
+    local function missing_error(error_message)
+        local message = tostring(error_message or ''):lower()
+        return message:find('no such file', 1, true) ~= nil
+            or message:find('file not found', 1, true) ~= nil
+            or message:find('path not found', 1, true) ~= nil
+            or message:find('not found', 1, true) ~= nil
+            or message:find('cannot find the file', 1, true) ~= nil
+            or message:find('cannot find the path', 1, true) ~= nil
+    end
+
+    local function to_wide(path)
+        if path == '' or path:find('\0', 1, true) then
+            return nil, 'invalid settings file path'
+        end
+        -- Explicitly allocate and NUL-terminate the UTF-8 input, then ask
+        -- Windows to reject malformed UTF-8 rather than silently replace it.
+        local input_bytes = ffi.new('char[?]', #path + 1)
+        ffi.copy(input_bytes, path, #path)
+        local needed = win32.MultiByteToWideChar(65001, 8, input_bytes, #path, nil, 0)
+        if needed <= 0 then
+            local message = win_error('UTF-8 path conversion')
+            return nil, message
+        end
+        local output = ffi.new('oj_wchar[?]', needed + 1)
+        local converted = win32.MultiByteToWideChar(65001, 8, input_bytes,
+            #path, output, needed)
+        if converted ~= needed then
+            local message = win_error('UTF-8 path conversion')
+            return nil, message
+        end
+        output[needed] = 0
+        return output
+    end
+
+    local function win_open(path, access, creation)
+        local wide, err = to_wide(path)
+        if not wide then return nil, err end
+        local handle = win32.CreateFileW(wide, access, 7, nil, creation, 128, nil)
+        if handle == ffi.cast('oj_handle', -1) or handle == ffi.NULL then
+            local message, code = win_error('Opening settings file')
+            return nil, message, code == 2 or code == 3
+        end
+        return handle
+    end
+
+    local function win_read(path)
+        local handle, err, missing = win_open(path, 0x80000000, 3) -- GENERIC_READ, OPEN_EXISTING
+        if not handle then return nil, err, missing end
+        local buffer = ffi.new('char[16384]')
+        local count = ffi.new('oj_dword[1]')
+        local chunks, total = {}, 0
+        while true do
+            if win32.ReadFile(handle, buffer, 16384, count, nil) == 0 then
+                local read_error = win_error('Reading settings file')
+                win32.CloseHandle(handle)
+                return nil, read_error, false
+            end
+            local size = tonumber(count[0])
+            if size == 0 then break end
+            total = total + size
+            if total > MAX_SETTINGS_BYTES then
+                win32.CloseHandle(handle)
+                return nil, 'settings file exceeds 64 KiB', false
+            end
+            chunks[#chunks + 1] = ffi.string(buffer, size)
+        end
+        if win32.CloseHandle(handle) == 0 then
+            local close_error = win_error('Closing settings file')
+            return nil, close_error, false
+        end
+        return table.concat(chunks)
+    end
+
+    local function win_write(path, contents)
+        local handle, err = win_open(path, 0x40000000, 2) -- GENERIC_WRITE, CREATE_ALWAYS
+        if not handle then return nil, err end
+        local bytes = ffi.new('char[?]', math.max(#contents, 1))
+        if #contents > 0 then ffi.copy(bytes, contents, #contents) end
+        local pointer = ffi.cast('const char *', bytes)
+        local offset = 0
+        local count = ffi.new('oj_dword[1]')
+        while offset < #contents do
+            local requested = math.min(#contents - offset, 2147483647)
+            if win32.WriteFile(handle, pointer + offset, requested, count, nil) == 0 then
+                local write_error = win_error('Writing settings file')
+                win32.CloseHandle(handle)
+                return nil, write_error
+            end
+            local size = tonumber(count[0])
+            if size <= 0 or size > requested then
+                win32.CloseHandle(handle)
+                return nil, 'could not complete settings file write'
+            end
+            offset = offset + size
+        end
+        if win32.CloseHandle(handle) == 0 then
+            return nil, win_error('Closing settings file')
+        end
+        return true
+    end
+
+    local function read(path)
+        local wide, err = use_wide_api(path)
+        if wide == nil then return nil, err, false end
+        if wide then return win_read(path) end
+        local file, open_error = io.open(path, 'rb')
+        if not file then return nil, open_error, missing_error(open_error) end
+        local contents, read_error = file:read('*a')
+        local close_ok, close_error = file:close()
+        if not contents then return nil, read_error, false end
+        if close_ok == nil then return nil, close_error, false end
+        if #contents > MAX_SETTINGS_BYTES then
+            return nil, 'settings file exceeds 64 KiB', false
+        end
+        return contents
+    end
+
+    local function write(path, contents)
+        local wide, err = use_wide_api(path)
+        if wide == nil then return nil, err end
+        if wide then return win_write(path, contents) end
+        local file, open_error = io.open(path, 'wb')
+        if not file then return nil, open_error end
+        local ok, write_error = file:write(contents)
+        local close_ok, close_error = file:close()
+        if not ok or close_ok == nil then
+            return nil, write_error or close_error or 'could not write settings'
+        end
+        return true
+    end
+
+    local function move(old_path, new_path)
+        local wide, err = use_wide_api(old_path, new_path)
+        if wide == nil then return nil, err end
+        if wide then
+            local old_wide, old_error = to_wide(old_path)
+            if not old_wide then return nil, old_error end
+            local new_wide, new_error = to_wide(new_path)
+            if not new_wide then return nil, new_error end
+            -- MoveFileW is same-volume, atomic, and deliberately does not
+            -- replace an existing destination, matching os.rename fallback.
+            if win32.MoveFileW(old_wide, new_wide) == 0 then
+                return nil, win_error('Moving settings file')
+            end
+            return true
+        end
+        return os.rename(old_path, new_path)
+    end
+
+    local function remove(path)
+        local wide, err = use_wide_api(path)
+        if wide == nil then return nil, err end
+        if wide then
+            local wide_path, path_error = to_wide(path)
+            if not wide_path then return nil, path_error end
+            if win32.DeleteFileW(wide_path) == 0 then
+                return nil, win_error('Removing settings file')
+            end
+            return true
+        end
+        return os.remove(path)
+    end
+
+    file_io.read = read
+    file_io.write = write
+    file_io.move = move
+    file_io.remove = remove
+    package.loaded[FILE_IO_MODULE] = file_io
+    return file_io
+end
+
+local settings_file_io = get_settings_file_io()
+
 local DEFAULTS = {
     render_mode = 'speaker',
     speaker_layout = '5.1',
@@ -109,30 +362,67 @@ local function sanitize_state(value)
     return safe
 end
 
-local function load_state()
-    local file = io.open(CONFIG_PATH, 'rb')
-    if not file then
-        -- Recover the previous settings if Windows stopped between moving the
-        -- old file aside and installing the newly written temporary file.
-        local backup = io.open(CONFIG_BACKUP_PATH, 'rb')
-        if backup then
-            backup:close()
-            os.rename(CONFIG_BACKUP_PATH, CONFIG_PATH)
-            file = io.open(CONFIG_PATH, 'rb') or io.open(CONFIG_BACKUP_PATH, 'rb')
-        end
-    end
-    if not file then
-        -- Portable-config migration is read-only. Do not rename, delete, or
-        -- rewrite the legacy file; the next explicit Save creates the new one.
-        file = io.open(LEGACY_CONFIG_PATH, 'rb')
-        if not file then
-            return empty_state()
-        end
-    end
-    local contents = file:read('*a')
-    file:close()
+local state_load_error
+local state_save_blocked = false
+
+local function parse_state_contents(contents, source, block_save)
     local parsed = utils.parse_json(contents)
+    if type(parsed) ~= 'table' or parsed.schema ~= 1 or type(parsed.options) ~= 'table' then
+        state_load_error = source .. ' is invalid or uses an unsupported schema.'
+        state_save_blocked = state_save_blocked or block_save
+        mp.msg.error('OpenJOC settings: ' .. state_load_error)
+        return nil
+    end
     return sanitize_state(parsed)
+end
+
+local function load_state()
+    local contents, read_error, missing = settings_file_io.read(CONFIG_PATH)
+    if contents then
+        return parse_state_contents(contents, 'Saved settings', true) or empty_state()
+    end
+    if not missing then
+        state_load_error = 'Saved settings could not be read: ' .. tostring(read_error)
+        state_save_blocked = true
+        mp.msg.error('OpenJOC settings: ' .. state_load_error)
+        return empty_state()
+    end
+
+    -- Recover the previous settings if Windows stopped between moving the
+    -- old file aside and installing the newly written temporary file.
+    local backup_contents, backup_error, backup_missing = settings_file_io.read(CONFIG_BACKUP_PATH)
+    if backup_contents then
+        local backup_state = parse_state_contents(backup_contents, 'Settings recovery backup', true)
+        if not backup_state then return empty_state() end
+        local restored, restore_error = settings_file_io.move(CONFIG_BACKUP_PATH, CONFIG_PATH)
+        if not restored then
+            state_load_error = 'Recovered saved settings from the backup; it could not be restored: '
+                .. tostring(restore_error)
+            state_save_blocked = true
+            mp.msg.error('OpenJOC settings: ' .. state_load_error)
+        end
+        return backup_state
+    end
+    if not backup_missing then
+        state_load_error = 'Settings recovery backup could not be read: ' .. tostring(backup_error)
+        state_save_blocked = true
+        mp.msg.error('OpenJOC settings: ' .. state_load_error)
+        return empty_state()
+    end
+
+    -- Portable-config migration is read-only. Do not rename, delete, or
+    -- rewrite the legacy file; the next explicit Save creates the new one.
+    local legacy_contents, legacy_error, legacy_missing = settings_file_io.read(LEGACY_CONFIG_PATH)
+    if legacy_contents then
+        return parse_state_contents(legacy_contents, 'Older saved settings', true) or empty_state()
+    end
+    if not legacy_missing then
+        state_load_error = 'Older saved settings could not be read; the original file was left untouched: '
+            .. tostring(legacy_error)
+        state_save_blocked = true
+        mp.msg.error('OpenJOC settings: ' .. state_load_error)
+    end
+    return empty_state()
 end
 
 local saved = load_state()
@@ -322,6 +612,10 @@ local function change_output(direction)
 end
 
 local function save_state()
+    if state_save_blocked then
+        return false, (state_load_error or 'saved settings could not be read')
+            .. ' Save is disabled to protect the existing file.'
+    end
     local document = {
         schema = 1,
         options = draft.options,
@@ -330,45 +624,41 @@ local function save_state()
     if type(encoded) ~= 'string' then
         return false, 'could not encode settings'
     end
-    local file, error_message = io.open(CONFIG_TEMP_PATH, 'wb')
-    if not file then
-        return false, error_message or 'settings directory is not writable'
+    local ok, write_error = settings_file_io.write(CONFIG_TEMP_PATH, encoded .. '\n')
+    if not ok then
+        settings_file_io.remove(CONFIG_TEMP_PATH)
+        return false, write_error or 'settings directory is not writable'
     end
-    local ok, write_error = file:write(encoded, '\n')
-    local close_ok, close_error = file:close()
-    if not ok or close_ok == nil then
-        os.remove(CONFIG_TEMP_PATH)
-        return false, write_error or close_error or 'could not write settings'
-    end
-    local renamed, rename_error = os.rename(CONFIG_TEMP_PATH, CONFIG_PATH)
+    local renamed, rename_error = settings_file_io.move(CONFIG_TEMP_PATH, CONFIG_PATH)
     if not renamed then
-        -- C runtimes on Windows may refuse rename-over-existing. Keep the
-        -- previous file recoverable while promoting the already-written temp.
-        os.remove(CONFIG_BACKUP_PATH)
-        local existing = io.open(CONFIG_PATH, 'rb')
+        -- Keep the previous file recoverable when the path-safe move backend
+        -- cannot replace an existing destination in one operation.
+        settings_file_io.remove(CONFIG_BACKUP_PATH)
+        local existing = settings_file_io.read(CONFIG_PATH)
         local moved_old = false
         if existing then
-            existing:close()
-            moved_old, rename_error = os.rename(CONFIG_PATH, CONFIG_BACKUP_PATH)
+            moved_old, rename_error = settings_file_io.move(CONFIG_PATH, CONFIG_BACKUP_PATH)
             if not moved_old then
-                os.remove(CONFIG_TEMP_PATH)
+                settings_file_io.remove(CONFIG_TEMP_PATH)
                 return false, rename_error or 'could not preserve previous settings'
             end
         end
-        renamed, rename_error = os.rename(CONFIG_TEMP_PATH, CONFIG_PATH)
+        renamed, rename_error = settings_file_io.move(CONFIG_TEMP_PATH, CONFIG_PATH)
         if not renamed then
             if moved_old then
-                os.rename(CONFIG_BACKUP_PATH, CONFIG_PATH)
+                settings_file_io.move(CONFIG_BACKUP_PATH, CONFIG_PATH)
             end
-            os.remove(CONFIG_TEMP_PATH)
+            settings_file_io.remove(CONFIG_TEMP_PATH)
             return false, rename_error or 'could not replace settings file'
         end
         if moved_old then
-            os.remove(CONFIG_BACKUP_PATH)
+            settings_file_io.remove(CONFIG_BACKUP_PATH)
         end
     end
     saved = copy_state(draft)
     dirty = false
+    state_load_error = nil
+    state_save_blocked = false
     return true
 end
 
@@ -577,9 +867,11 @@ draw = function()
     local badge = dirty and 'UNSAVED DRAFT' or 'READY FOR NEXT FILE'
     local badge_color = dirty and '72C8F4' or 'B5D869'
     add_text(events, g.x + g.w - 210 * s, g.y + 28 * s, badge, 13 * s, badge_color)
-    local summary = dirty
-        and 'Draft only. Save stores it for the next file; current playback stays as-is.'
-        or 'Current settings take effect when the next file opens; current playback stays as-is.'
+    local summary = state_save_blocked
+        and 'Settings need attention. Save is disabled to protect your data.'
+        or (dirty
+            and 'Draft only. Save stores it for the next file; current playback stays as-is.'
+            or 'Current settings take effect when the next file opens; current playback stays as-is.')
     add_text(events, g.x + 30 * s, g.y + 56 * s, summary, 14 * s, 'C3CDD4')
     if not g.compact then
         add_text(events, g.x + 30 * s, g.y + 84 * s,
@@ -628,8 +920,10 @@ draw = function()
             'Decoder: ' .. decoder .. '   Input: ' .. input_channels .. '   Output: ' .. output_channels,
             12 * s, 'C3CDD4')
         add_text(events, g.x + 30 * s, g.status_y,
-            status_message and shorten(status_message, 56) or 'Best-effort E-AC-3 options; mpv audio routing is unchanged.',
-            12 * s, status_message and 'F0B8A2' or '99AAB4')
+            (status_message or state_load_error)
+                and shorten(status_message or state_load_error, 56)
+                or 'Best-effort E-AC-3 options; mpv audio routing is unchanged.',
+            12 * s, (status_message or state_load_error) and 'F0B8A2' or '99AAB4')
     else
         add_text(events, g.x + 30 * s, g.live_title_y, 'LIVE PLAYER  ·  READ ONLY', 12 * s, '83A4B4')
         local labels = {
@@ -645,17 +939,19 @@ draw = function()
             add_text(events, g.x + 230 * s, y, shorten(item[2], 52), 12 * s, 'DCE4E8')
         end
         add_text(events, g.x + 30 * s, g.y + 423 * s,
-            status_message and shorten(status_message, 96)
+            (status_message or state_load_error) and shorten(status_message or state_load_error, 96)
                 or 'Live rows are mpv properties, not JOC diagnostics; LAV output gain is not exposed here.',
-            12 * s, status_message and 'F0B8A2' or '99AAB4')
+            12 * s, (status_message or state_load_error) and 'F0B8A2' or '99AAB4')
     end
 
     local save_focused, cancel_focused = row == #rows + 1, row == #rows + 2
     add_rect(events, g.save.x, g.save.y, g.save.w, g.save.h,
-        save_focused and '427D67' or '355F51', 0)
+        state_save_blocked and '394047' or (save_focused and '427D67' or '355F51'), 0)
     add_rect(events, g.cancel.x, g.cancel.y, g.cancel.w, g.cancel.h,
         cancel_focused and '58636B' or '303942', 0)
-    add_text(events, g.save.x + 34 * s, g.save.y + 12 * s, 'Save', 15 * s, 'FFFFFF')
+    add_text(events, g.save.x + 22 * s, g.save.y + 12 * s,
+        state_save_blocked and 'Save disabled' or 'Save', 15 * s,
+        state_save_blocked and 'AAB4BA' or 'FFFFFF')
     add_text(events, g.cancel.x + 30 * s, g.cancel.y + 12 * s, 'Cancel', 15 * s, 'F4F7F8')
     add_text(events, g.x + 30 * s, g.help_y,
         'Click controls or use Up/Down, Left/Right, Enter, Tab. Esc closes and keeps the draft.',
@@ -665,6 +961,10 @@ draw = function()
 end
 
 local function save_selected()
+    if state_save_blocked then
+        show_status('Save disabled to protect the existing settings file.', 4)
+        return
+    end
     local ok, err = save_state()
     if not ok then
         show_status('Settings not saved: ' .. tostring(err), 4)

@@ -20,7 +20,7 @@ for input in "$mpv" "$raw_single" "$raw_multi" "$joc" "$ordinary"; do
     fi
 done
 
-help=$($mpv --no-config --ad=help 2>&1)
+help=$("$mpv" --no-config --ad=help 2>&1)
 printf '%s\n' "$help" | grep -Fq 'libopenjoc (eac3)'
 printf '%s\n' "$help" | grep -Fq 'eac3 - '
 
