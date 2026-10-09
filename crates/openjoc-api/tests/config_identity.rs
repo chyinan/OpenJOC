@@ -22,6 +22,7 @@ fn custom_config(lfe: bool) -> OpenJocConfig {
 
 fn render(config: OpenJocConfig) -> Vec<f32> {
     let mut session = OpenJocSession::new(config).unwrap();
+    let labels = session.output_info().channel_labels;
     let mut pcm = Vec::new();
     for au in include_bytes!("fixtures/timestamps.ec3")
         .chunks_exact(4096)
@@ -36,14 +37,82 @@ fn render(config: OpenJocConfig) -> Vec<f32> {
             })
             .unwrap();
         while let Some(frame) = session.receive_frame() {
+            assert_eq!(frame.channel_labels, labels);
             pcm.extend(frame.interleaved_f32);
         }
     }
     session.drain().unwrap();
     while let Some(frame) = session.receive_frame() {
+        assert_eq!(frame.channel_labels, labels);
         pcm.extend(frame.interleaved_f32);
     }
     pcm
+}
+
+fn custom_labels(labels: [&str; 2]) -> OpenJocConfig {
+    OpenJocConfig::default().with_speaker_layout(
+        SpeakerLayout::custom(
+            "studio",
+            vec![
+                SpeakerGeometry::full_range(labels[0], -42.0, 0.0),
+                SpeakerGeometry::full_range(labels[1], 51.0, 9.0),
+            ],
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn custom_channel_label_boundaries_distinguish_identity_without_changing_pcm() {
+    let first = custom_labels(["A,B", "C"]);
+    let second = custom_labels(["A", "B,C"]);
+    first.validate().unwrap();
+    second.validate().unwrap();
+    assert_ne!(
+        first.effective_config_descriptor(),
+        second.effective_config_descriptor()
+    );
+    assert_ne!(
+        first.effective_config_fingerprint(),
+        second.effective_config_fingerprint()
+    );
+    let first_pcm = render(first);
+    let second_pcm = render(second);
+    assert_eq!(first_pcm.len(), 18_496);
+    assert_eq!(
+        first_pcm
+            .iter()
+            .map(|sample| sample.to_bits())
+            .collect::<Vec<_>>(),
+        second_pcm
+            .iter()
+            .map(|sample| sample.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn custom_channel_labels_are_ordered_and_utf8_byte_length_framed() {
+    let cases = [
+        (["A", "B"], "2:1:A:1:B"),
+        (["B", "A"], "2:1:B:1:A"),
+        (["A,B", "C"], "2:3:A,B:1:C"),
+        (["A", "B,C"], "2:1:A:3:B,C"),
+        (["A:1:B", "C"], "2:5:A:1:B:1:C"),
+        (["A", "B:1:C"], "2:1:A:5:B:1:C"),
+        (["左,右", "C:=\\"], "2:7:左,右:4:C:=\\"),
+    ];
+    let mut fingerprints = std::collections::HashSet::new();
+    for (labels, framed) in cases {
+        let config = custom_labels(labels);
+        config.validate().unwrap();
+        assert!(config.effective_config_descriptor().contains(&format!(
+            "\ncustom_layout_channels={framed}\ncustom_layout_roles="
+        )));
+        let fingerprint = config.effective_config_fingerprint();
+        assert_eq!(fingerprint, config.clone().effective_config_fingerprint());
+        assert!(fingerprints.insert(fingerprint));
+    }
 }
 
 #[test]

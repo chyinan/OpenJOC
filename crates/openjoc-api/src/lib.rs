@@ -317,7 +317,11 @@ impl OpenJocConfig {
     /// reach an OpenJOC session. Fields that are intentionally ignored by a
     /// selected mode are omitted, so frontends can compare effective rather
     /// than merely user-visible configuration. Custom layouts include ordered
-    /// channel roles and fixed/named route vectors.
+    /// channel roles and fixed/named route vectors. Custom channel labels use
+    /// `count:byte_length:label:byte_length:label...` framing (UTF-8 byte lengths),
+    /// so punctuation in labels cannot alias channel boundaries. This replaces
+    /// the former comma-separated labels and changes custom-layout fingerprints;
+    /// preset descriptors are unchanged.
     #[must_use]
     pub fn effective_config_descriptor(&self) -> String {
         let mut descriptor = format!(
@@ -347,8 +351,11 @@ impl OpenJocConfig {
                 .map_or_else(|| "none".to_owned(), |value| value.get().to_string()),
         );
         if let Some(layout) = &self.speaker_layout_definition {
-            descriptor.push_str("\ncustom_layout_channels=");
-            descriptor.push_str(&layout.channel_labels().join(","));
+            let labels = layout.channel_labels();
+            let _ = write!(descriptor, "\ncustom_layout_channels={}", labels.len());
+            for label in labels {
+                let _ = write!(descriptor, ":{}:{label}", label.len());
+            }
             descriptor.push_str("\ncustom_layout_roles=");
             descriptor.push_str(
                 &layout
@@ -3887,7 +3894,7 @@ mod tests {
         .expect("custom layout");
         let config = OpenJocConfig::default().with_speaker_layout(layout);
         let descriptor = config.effective_config_descriptor();
-        assert!(descriptor.contains("custom_layout_channels=A,B,C,Sub"));
+        assert!(descriptor.contains("custom_layout_channels=4:1:A:1:B:1:C:3:Sub"));
         let session = OpenJocSession::new(config).expect("custom session");
         let info = session.output_info();
         assert_eq!(info.layout_name, "rust-studio");
