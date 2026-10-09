@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Length-frame ordered custom speaker channel labels in effective configuration
+  descriptors, distinguishing labels such as `["A,B", "C"]` and `["A", "B,C"]`.
+  Custom-layout fingerprints change; preset descriptors and fingerprints remain
+  unchanged. This changes configuration identity only, not rendering or PCM.
+
 ## [0.19.0] — 2026-10-07
 
 OpenJOC v0.19 expands Custom SOFA and experimental listener orientation,
