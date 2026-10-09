@@ -379,11 +379,27 @@ def collect_linux(
     return records, sorted(external)
 
 
-def pe_imports(path: pathlib.Path) -> list[str]:
+def objdump_output(path: pathlib.Path, *arguments: str) -> str:
+    """Run objdump without putting a possibly Unicode PE path in its argv.
+
+    MinGW's native argv conversion can lose non-ASCII characters. Keep the
+    filename argument ASCII and let the Windows process resolve it from its
+    Unicode working directory instead. If the PE filename itself is not
+    ASCII, inspect a temporary byte-identical copy with an ASCII basename.
+    """
     objdump = shutil.which("objdump")
     if objdump is None:
         raise RuntimeError("Windows packaging requires MinGW objdump")
-    output = run([objdump, "-p", str(path)])
+    if path.name.isascii():
+        return run([objdump, *arguments, path.name], cwd=path.parent)
+    with tempfile.TemporaryDirectory(prefix=".openjoc-objdump-", dir=path.parent) as temporary_name:
+        inspection_copy = pathlib.Path(temporary_name) / "inspection.bin"
+        shutil.copyfile(path, inspection_copy)
+        return run([objdump, *arguments, inspection_copy.name], cwd=inspection_copy.parent)
+
+
+def pe_imports(path: pathlib.Path) -> list[str]:
+    output = objdump_output(path, "-p")
     return [match.group(1) for match in re.finditer(r"DLL Name: (.+)", output, re.IGNORECASE)]
 
 
@@ -1100,7 +1116,7 @@ def verify(arguments: argparse.Namespace) -> int:
         if not shutil.which("objdump"):
             raise SystemExit("package verification: Windows PE audit requires MinGW objdump")
         for pe in (executable, console_executable):
-            output = run(["objdump", "-f", str(pe)])
+            output = objdump_output(pe, "-f")
             if "pei-x86-64" not in output.lower():
                 raise SystemExit(f"package verification: unexpected PE architecture: {output.strip()}")
         verify_windows_dependency_closure_from_roots(root, [executable, console_executable])
