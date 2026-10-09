@@ -48,6 +48,7 @@ OpenJOC 是一个使用 Rust 编写的开源、以净室方式开发的 **E-AC-3
 | 渲染第一个节目 | [快速开始](getting-started/quick-start.md) |
 | 安装 CLI 或从源代码构建 | [安装](getting-started/installation.md) |
 | 在 Windows 上使用 PotPlayer | [Windows LAV / PotPlayer](using/windows-lav-potplayer.md) |
+| 使用 OpenJOC mpv 播放器软件包 | [mpv 设置与播放](using/mpv-openjoc.zh.md) |
 | 理解对象身份 | [解码对象与创作对象](concepts/decoded-vs-authored-objects.md) |
 | 为其他工具导出 ADM | [重建 ADM 导出](using/reconstructed-adm-export.md) |
 | 将 OpenJOC 集成到软件中 | [Rust API](reference/rust-api.md) 或 [C ABI](reference/c-abi.md) |

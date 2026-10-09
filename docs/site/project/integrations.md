@@ -10,6 +10,7 @@ The repository keeps adapter-specific contracts in their natural locations rathe
 | Native FFmpeg `libopenjoc` wrapper | [FFMPEG_NATIVE.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG_NATIVE.md) |
 | GStreamer | [GSTREAMER.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/GSTREAMER.md) |
 | mpv | [MPV.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/MPV.md) |
+| mpv user guide | [OpenJOC Player Bundle](../using/mpv-openjoc.md) |
 | Player bundles | [PLAYER_PACKAGING.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/PLAYER_PACKAGING.md) |
 | Ecosystem packages | [ECOSYSTEM_PACKAGING.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/ECOSYSTEM_PACKAGING.md) |
 | Windows DirectShow/LAV | [Windows LAV / PotPlayer](../using/windows-lav-potplayer.md) |

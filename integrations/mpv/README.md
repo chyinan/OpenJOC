@@ -21,7 +21,7 @@ The build needs:
 
 - FFmpeg with the native `libopenjoc` decoder patch from
   `integrations/ffmpeg/native/patches/`;
-- OpenJOC C ABI 1.5, discoverable through `pkg-config` as `openjoc`;
+- OpenJOC C ABI 1.6 or newer, discoverable through `pkg-config` as `openjoc`;
 - normal mpv dependencies, including Meson, Ninja, libass, and libplacebo.
 
 Without the `openjoc` pkg-config module, mpv builds normally and does not add
@@ -52,7 +52,8 @@ mpv joc.mp4 --ad-lavc-o=render_mode=binaural
 # Explicit decoder debugging.
 mpv joc.mp4 --ad=libopenjoc
 
-# Physical stereo; this is not binaural.
+# Physical 2.0 speaker rendering; distinct from the menu's LAV
+# "Stereo (Speakers)" policy, which uses render_mode=stereo.
 mpv joc.mp4 --audio-channels=2.0 \
   --ad-lavc-o=render_mode=speaker,speaker_layout=2.0
 
@@ -75,9 +76,9 @@ mpv joc.mp4 --ao=null --audio-channels=22.2 \
   --ad-lavc-o=render_mode=speaker,speaker_layout=22.2
 ```
 
-`--ad-lavc-o` forwards native OpenJOC AVOptions. Advanced controls such as
-DRC, dialnorm, and SOFA remain at that decoder boundary; mpv does not duplicate
-the OpenJOC configuration surface.
+`--ad-lavc-o` forwards native OpenJOC AVOptions. The GUI menu intentionally
+covers the LAV property-page controls; other decoder options such as DRC and
+validation remain available only through the native FFmpeg option boundary.
 
 `--audio-spdif=eac3` is an explicit compressed passthrough request. It selects
 mpv's SPDIF path and bypasses OpenJOC software rendering.
@@ -90,6 +91,37 @@ integrations/mpv/verify-player.sh /absolute/path/to/mpv \
 ```
 
 Opt-in profile examples are in [`mpv.conf.example`](mpv.conf.example).
+
+## OpenJOC settings menu in the Player Bundle
+
+The project-provided Player Bundle includes a Lua/OSD settings menu. Press
+`Ctrl+Alt+J`, move with the arrow keys, and press Enter to choose an item.
+The main page mirrors the LAV OpenJOC choices: Stereo speakers, Binaural,
+5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, or 7.1.4; Calibrated or Unity/Compatibility
+Dialnorm; D1/KU100, D2/KEMAR, or a local Custom SOFA file; and the 7.1.4 or
+experimental 9.1.6 binaural virtual layout. LAV's post-render gain slider and
+live JOC Stream page are not available in this mpv integration.
+
+Edits remain a draft until **Save selection for next OpenJOC file** is
+selected. They are stored in the bundle config directory and merged into the
+file-local FFmpeg decoder-option map before decoder creation for files with an
+E-AC-3 audio track. JOC cannot be identified at that point, so plain or
+unselected E-AC-3 tracks can also receive these options. Since the map is
+file-local, options may also reach other audio decoders in a mixed-track file
+and produce unsupported-AVOption warnings. The menu does not select or force a
+decoder, change mpv's `audio-channels` setting, or reset/seek the current
+stream. Files without E-AC-3 bypass this hook and keep mpv's usual decoder
+selection and audio-output mapping. The selected renderer
+layout may still be adapted to the active AO according to mpv's normal channel
+negotiation. The SOFA chooser is a text prompt for an existing local file path,
+not a platform file-picker.
+
+Settings rows show the pending/saved selection; separate read-only rows report
+mpv's current decoder and channel properties, not live JOC metadata or
+diagnostics. To use an exact hardware channel map, configure mpv's normal audio
+output separately; the menu intentionally does not change that setting for
+other media. mpv's normal volume remains separate from LAV's post-render
+OpenJOC gain.
 
 Fixtures are intentionally not copied into this repository. Private media is
 accepted only as a local test input and is never part of the patchset.

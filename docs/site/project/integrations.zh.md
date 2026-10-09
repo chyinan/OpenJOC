@@ -13,6 +13,7 @@
 | 原生 FFmpeg `libopenjoc` 包装器 | [FFMPEG_NATIVE.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/FFMPEG_NATIVE.md) |
 | GStreamer | [GSTREAMER.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/GSTREAMER.md) |
 | mpv | [MPV.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/MPV.md) |
+| mpv 用户指南 | [OpenJOC Player Bundle](../using/mpv-openjoc.zh.md) |
 | 播放器软件包 | [PLAYER_PACKAGING.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/PLAYER_PACKAGING.md) |
 | 生态系统软件包 | [ECOSYSTEM_PACKAGING.md](https://github.com/chyinan/OpenJOC/blob/master/docs/integration/ECOSYSTEM_PACKAGING.md) |
 | Windows DirectShow/LAV | [Windows LAV / PotPlayer](../using/windows-lav-potplayer.md) |

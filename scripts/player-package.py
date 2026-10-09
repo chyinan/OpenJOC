@@ -33,6 +33,7 @@ REPOSITORY = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST_PATH = REPOSITORY / "packaging/player/PLAYER_PACKAGE_MANIFEST.json"
 QUICKSTART_PATH = REPOSITORY / "packaging/player/QUICKSTART.md"
 PROFILES_PATH = REPOSITORY / "packaging/player/profiles.conf"
+SETTINGS_SCRIPT_PATH = REPOSITORY / "integrations/mpv/openjoc-settings.lua"
 OPENJOC_LICENSE = REPOSITORY / "LICENSE"
 OPENJOC_NOTICES = REPOSITORY / "THIRD_PARTY_NOTICES.md"
 BUILTIN_HRTF = REPOSITORY / "crates/openjoc-sofa/assets/sadie-ii-d1-ku100.ojhrtf"
@@ -865,6 +866,7 @@ def bundle(arguments: argparse.Namespace) -> int:
             (root / "bin/mpv.com").chmod(0o755)
         copy_file(QUICKSTART_PATH, root / "QUICKSTART.md")
         copy_file(PROFILES_PATH, root / "config/profiles.conf")
+        copy_file(SETTINGS_SCRIPT_PATH, root / "config/scripts/openjoc-settings.lua")
         (root / "config/mpv.conf").write_text(
             "# Portable OpenJOC Player Bundle config. Profiles are opt-in.\n",
             encoding="utf-8",
@@ -968,7 +970,7 @@ def bundle(arguments: argparse.Namespace) -> int:
                 "console": "bin/mpv.com" if platform_name == "windows-x64" else "bin/mpv",
                 "launcher": "bin/openjoc-mpv.cmd" if platform_name == "windows-x64" else "bin/openjoc-mpv",
             },
-            "configure": {"ffmpeg": manifest["pinned_stack"]["ffmpeg"]["configure_flags"], "mpv": ["-Dtests=false", "-Dmanpage-build=disabled", "-Dhtml-build=disabled", "-Dpdf-build=disabled"]},
+            "configure": {"ffmpeg": manifest["pinned_stack"]["ffmpeg"]["configure_flags"], "mpv": ["-Dtests=false", "-Dmanpage-build=disabled", "-Dhtml-build=disabled", "-Dpdf-build=disabled", "-Dlua=luajit"]},
             "signing": {"developer_id_signed": False, "notarized": False, "ad_hoc_only_if_required": True, "ad_hoc_signed": ad_hoc_signed},
             "verification": {
                 "network_required_at_runtime": False,
@@ -1035,6 +1037,7 @@ def verify(arguments: argparse.Namespace) -> int:
         "BUILD_INFO.json", "BUILD_INFO.txt", "DEPENDENCIES.json",
         "THIRD_PARTY_NOTICES.txt", "SHA256SUMS", "QUICKSTART.md",
         "config/mpv.conf", "config/profiles.conf", launcher,
+        "config/scripts/openjoc-settings.lua",
         "licenses/openjoc/LICENSE.txt", "licenses/openjoc/THIRD_PARTY_NOTICES.md",
     ]
     executable = root / ("bin/mpv.exe" if arguments.platform == "windows-x64" else "bin/mpv")
@@ -1123,6 +1126,77 @@ def verify(arguments: argparse.Namespace) -> int:
             raise SystemExit(f"package verification: decoder visibility failed\n{help_result.stdout}")
         print(f"mpv console --version: {version.stdout.splitlines()[0]}")
         print("mpv decoder inventory: eac3=PASS libopenjoc=PASS")
+        menu_script = root / "config/scripts/openjoc-settings.lua"
+        with tempfile.TemporaryDirectory(prefix="openjoc-mpv-lua-smoke-") as temporary_name:
+            temporary = pathlib.Path(temporary_name)
+            # Exercise the same config/scripts discovery path used by the
+            # bundle, rather than explicitly loading the packaged script.
+            idle_scripts = temporary / "scripts"
+            idle_scripts.mkdir()
+            shutil.copy2(menu_script, idle_scripts / menu_script.name)
+            quit_script = temporary / "controlled-quit.lua"
+            quit_script.write_text(
+                "mp.add_timeout(0.25, function() "
+                "mp.msg.info('OPENJOC_SETTINGS_IDLE_SMOKE_QUIT'); "
+                "mp.commandv('quit') end)\n",
+                encoding="utf-8",
+            )
+            idle_log = temporary / "idle-mpv.log"
+            # Keep an isolated config root without --no-config: that option
+            # empties mpv's `~~/` expansion, which the settings script uses.
+            idle_command = [
+                str(smoke_executable), "--idle=yes",
+                "--load-scripts=yes", "--force-window=no", "--vo=null", "--ao=null",
+                f"--config-dir={temporary}", f"--log-file={idle_log}",
+                "--msg-level=all=info", f"--script={quit_script}",
+            ]
+            try:
+                idle = subprocess.run(idle_command, cwd=root, env=env, text=True,
+                                      encoding="utf-8", errors="replace",
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                      timeout=20, check=False)
+            except subprocess.TimeoutExpired as error:
+                raise SystemExit("package verification: headless mpv Lua script-load smoke timed out") from error
+            idle_output = idle_log.read_text(encoding="utf-8", errors="replace") if idle_log.is_file() else idle.stdout
+            if idle.returncode != 0 or "OpenJOC settings menu loaded" not in idle_output or "OPENJOC_SETTINGS_IDLE_SMOKE_QUIT" not in idle_output:
+                raise SystemExit(f"package verification: headless mpv Lua script-load smoke failed\n{idle_output}")
+            print("mpv headless Lua menu load (idle/null AO/VO, controlled quit): PASS")
+
+            if arguments.fixture:
+                fixture = arguments.fixture.resolve()
+                if not fixture.is_file():
+                    raise SystemExit(f"package verification: JOC fixture does not exist: {fixture}")
+                fixture_config = temporary / "fixture-config"
+                fixture_config.mkdir()
+                fixture_scripts = fixture_config / "scripts"
+                fixture_scripts.mkdir()
+                shutil.copy2(menu_script, fixture_scripts / menu_script.name)
+                (fixture_config / "openjoc-settings.json").write_text(
+                    json.dumps({"schema": 1, "options": {
+                        "render_mode": "speaker", "speaker_layout": "2.0",
+                        "dialnorm": "analog", "hrtf": "d2",
+                    }}) + "\n",
+                    encoding="utf-8",
+                )
+                fixture_log = temporary / "fixture-mpv.log"
+                fixture_command = [
+                    str(smoke_executable),
+                    f"--config-dir={fixture_config}", "--force-window=no",
+                    "--load-scripts=yes", "--vo=null", "--ao=null", "--no-video", "--end=1",
+                    "--msg-level=all=info", f"--log-file={fixture_log}",
+                    str(fixture),
+                ]
+                try:
+                    hook = subprocess.run(fixture_command, cwd=root, env=env, text=True,
+                                          encoding="utf-8", errors="replace",
+                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                          timeout=30, check=False)
+                except subprocess.TimeoutExpired as error:
+                    raise SystemExit("package verification: saved OpenJOC settings hook smoke timed out") from error
+                hook_output = fixture_log.read_text(encoding="utf-8", errors="replace") if fixture_log.is_file() else hook.stdout
+                if hook.returncode != 0 or "OpenJOC saved decoder options applied for an E-AC-3 file" not in hook_output:
+                    raise SystemExit(f"package verification: saved OpenJOC settings hook smoke failed for {fixture}\n{hook_output}")
+                print("mpv E-AC-3 pre-decoder saved-options hook smoke: PASS")
         if arguments.platform == "windows-x64" and arguments.fixture:
             fixture = arguments.fixture
             fixture_argument = native_windows_path(fixture)

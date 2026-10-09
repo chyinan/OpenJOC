@@ -60,11 +60,11 @@ only. It does not alter strictness for other FFmpeg decoders.
 ## Output policy
 
 Decoder choice and spatial output target are independent. OpenJOC renders the
-requested target before mpv transports the resulting PCM; mpv is not asked to
-downmix a 7.1.4 render into a stereo or 5.1 target.
+requested target before mpv transports the resulting PCM. To preserve that
+exact target at the AO, configure a matching `--audio-channels` map; otherwise
+mpv may adapt the decoder output to the active AO.
 
-The small product surface is the native decoder AVOption set forwarded through
-`--ad-lavc-o`:
+The native decoder AVOption set is forwarded through `--ad-lavc-o`:
 
 ```text
 render_mode=speaker|stereo|binaural
@@ -75,10 +75,45 @@ dialnorm=default|digital|analog
 sofa=/absolute/path/to/file.sofa
 ```
 
-There are deliberately no mpv options duplicating every OpenJOC DSP control.
-Use `--audio-channels` to state exact mpv output intent where a physical target
-is required. `auto-safe` and broad AO capabilities do not imply headphones or
-any particular physical speaker layout.
+The project-provided Player Bundle adds a Lua/OSD menu (`Ctrl+Alt+J`) for the
+LAV OpenJOC page's supported choices: Stereo speakers, Binaural, 5.1, 7.1,
+5.1.2, 5.1.4, 7.1.2, and 7.1.4; Calibrated/Unity Dialnorm; built-in SADIE II
+D1/D2 or a text-entered local Custom SOFA path; and 7.1.4/experimental 9.1.6
+binaural virtual layouts. D2 is provided by `hrtf=d2`, added in this source
+integration through C ABI 1.6; D1 remains the default and a selected SOFA takes
+precedence over either built-in preset.
+
+The menu's LAV-parity **Stereo (Speakers)** choice maps to
+`render_mode=stereo`. That is distinct from the existing opt-in
+`[openjoc-stereo]` profile, which uses the physical `speaker_layout=2.0`
+renderer.
+
+The menu deliberately omits LAV's post-render output-gain control because this
+decoder bridge has no matching gain stage; mpv's normal volume remains
+separate. The read-only live JOC Stream page is also not wired to mpv.
+
+Menu edits are drafts until explicitly saved. Before decoder creation, the
+saved selection is merged into mpv's file-local FFmpeg decoder-option map for
+files containing at least one E-AC-3 audio track. It does not select or force
+`libopenjoc`; the patched player's normal positive JOC selection remains in
+control. JOC cannot be distinguished from ordinary E-AC-3 at this hook, so
+plain or unselected E-AC-3 tracks can also receive the options. Because mpv's
+`ad-lavc-o` is file-local, the map may also reach other audio decoders in a
+mixed-track file and cause unsupported-option warnings. This does not change
+`ad` or `aid`; files without E-AC-3 bypass the hook. The menu
+does not change mpv's `audio-channels` setting, seek, or reload the current
+file. In particular, it does not restart positively admitted raw JOC, which
+the integration intentionally exposes as forward-only. Settings rows show the
+pending/saved selection; separate read-only rows report mpv's current decoder
+and channel properties, not live JOC metadata or diagnostics. The SOFA prompt
+accepts a local path rather than presenting a native file-picker.
+
+The selected output policy is the OpenJOC renderer target. mpv retains its
+normal audio-output mapping and may adapt channels to the active AO. Use
+`--audio-channels` to state an exact mpv output map when a physical target is
+required; `auto-safe` and broad AO capabilities do not imply headphones or any
+particular physical speaker layout. The menu avoids changing this general
+setting, so ordinary non-JOC media keep the user's normal output mapping.
 
 Useful exact-target examples are in
 [`integrations/mpv/README.md`](../../integrations/mpv/README.md). mpv 0.41.0's
@@ -126,6 +161,24 @@ The local harness verifies:
 - binaural stereo transport;
 - physical 7.1.4/22.2 channel counts without an output Remix;
 - explicit E-AC-3 passthrough.
+
+### Manual Windows OSD smoke matrix
+
+Status: **Pending**. The current development environment has no Windows mpv
+runtime, so these visual/input checks have not been run manually. The packaged
+Windows CI build will run the Lua mock and decoder integration harness; it does
+not replace this interactive smoke check.
+
+| Check | Expected result |
+| --- | --- |
+| Open and close menu with `Ctrl+Alt+J`; navigate with arrows/Enter/Esc | Menu opens, selected row/value is visible, and closed keys work normally |
+| Cycle all eight output policies | UI shows Stereo, Binaural, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, and 7.1.4 |
+| Change Dialnorm and built-in HRTF | Calibrated/Unity and D1/D2 selections update without restarting the current file |
+| Enter valid and invalid Custom SOFA paths | Existing file is accepted; missing file is rejected with a message; Escape returns to menu |
+| Toggle binaural virtual layout | 7.1.4 and experimental 9.1.6 are selectable |
+| Save twice, then open another JOC file | Settings persist; current playback is not reloaded; next file gets the saved decoder options |
+| Play ordinary E-AC-3 and PCM/FLAC after saving | No decoder is forced and mpv `audio-channels` remains unchanged; E-AC-3 and mixed-file tracks may log unsupported OpenJOC AVOptions |
+| Open a file with AAC selected and a secondary E-AC-3 track | Best-effort file-local map may reach both tracks; `aid` and decoder selection stay unchanged |
 
 ```sh
 integrations/mpv/verify-player.sh /path/to/patched/mpv /path/to/fixtures

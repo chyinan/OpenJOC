@@ -46,6 +46,15 @@ if printf '%s\n' "$ordinary_log" | grep -Fq 'OpenJOC config'; then
     exit 1
 fi
 
+# Menu AVOptions must not force OpenJOC on an ordinary E-AC-3 stream.
+ordinary_with_settings_log=$(run "$ordinary" \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=5.1,virtual_layout=7.1.4,hrtf=d2,dialnorm=default)
+printf '%s\n' "$ordinary_with_settings_log" | grep -Fq 'Selected decoder: eac3 '
+if printf '%s\n' "$ordinary_with_settings_log" | grep -Fq 'OpenJOC config'; then
+    echo "OpenJOC menu decoder options forced an OpenJOC decoder for ordinary E-AC-3" >&2
+    exit 1
+fi
+
 joc_log=$(run "$joc" --ad-lavc-o=render_mode=binaural)
 printf '%s\n' "$joc_log" | grep -Fq 'OpenJOC classifier: CONFIRMED_JOC'
 printf '%s\n' "$joc_log" | grep -Fq 'Selected decoder: libopenjoc '
@@ -68,7 +77,9 @@ multi_chunks=$(printf '%s\n' "$raw_multi_log" | grep -Fc 'OpenJOC consumed compr
 # WAVE bytes prove the raw path neither drops nor duplicates that first AU.
 raw_pcm=openjoc-first-au-raw-$$.wav
 mp4_pcm=openjoc-first-au-mp4-$$.wav
-trap 'rm -f "$raw_pcm" "$mp4_pcm"' EXIT HUP INT TERM
+hrtf_d1_pcm=openjoc-hrtf-d1-$$.wav
+hrtf_d2_pcm=openjoc-hrtf-d2-$$.wav
+trap 'rm -f "$raw_pcm" "$mp4_pcm" "$hrtf_d1_pcm" "$hrtf_d2_pcm"' EXIT HUP INT TERM
 run "$raw_single" --ao=pcm --ao-pcm-waveheader=yes \
     --ao-pcm-file="$raw_pcm" --audio-format=float \
     '--audio-channels=5.1(side)' \
@@ -79,6 +90,17 @@ run "$joc" --ao=pcm --ao-pcm-waveheader=yes \
     --ad-lavc-o=render_mode=speaker,speaker_layout=5.1 >/dev/null
 python3 -c 'import pathlib, sys; sys.exit(pathlib.Path(sys.argv[1]).read_bytes() != pathlib.Path(sys.argv[2]).read_bytes())' \
     "$raw_pcm" "$mp4_pcm"
+
+# The decoder wrapper maps both built-in presets through C ABI 1.6. The D2
+# sample comparison exercises the option through mpv -> FFmpeg -> OpenJOC.
+for hrtf in d1 d2; do
+    "$mpv" "$joc" --no-config --no-video --ao=pcm --ao-pcm-waveheader=yes \
+        --ao-pcm-file="openjoc-hrtf-$hrtf-$$.wav" --audio-format=float \
+        --audio-channels=stereo --end=1 --ad=libopenjoc \
+        --ad-lavc-o="render_mode=binaural,hrtf=$hrtf,virtual_layout=7.1.4" >/dev/null
+done
+python3 -c 'import pathlib, sys; sys.exit(pathlib.Path(sys.argv[1]).read_bytes() == pathlib.Path(sys.argv[2]).read_bytes())' \
+    "$hrtf_d1_pcm" "$hrtf_d2_pcm"
 
 explicit_log=$(run "$raw_single" --ad=eac3)
 printf '%s\n' "$explicit_log" | grep -Fq 'Selected decoder: eac3 '
@@ -103,10 +125,18 @@ layout_log() {
     fi
 }
 
-layout_log '2ch' --audio-channels=2.0 \
-    --ad-lavc-o=render_mode=speaker,speaker_layout=2.0
+layout_log '2ch' --audio-channels=stereo \
+    --ad-lavc-o=render_mode=stereo,speaker_layout=2.0
 layout_log '6ch' --audio-channels='5.1(side)' \
     --ad-lavc-o=render_mode=speaker,speaker_layout=5.1
+layout_log '8ch' --audio-channels=fl-fr-fc-lfe-bl-br-sl-sr \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=7.1
+layout_log '8ch' --audio-channels=fl-fr-fc-lfe-sl-sr-tfl-tfr \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=5.1.2
+layout_log '10ch' --audio-channels=fl-fr-fc-lfe-sl-sr-tfl-tfr-tbl-tbr \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=5.1.4
+layout_log '10ch' --audio-channels=fl-fr-fc-lfe-bl-br-sl-sr-tfl-tfr \
+    --ad-lavc-o=render_mode=speaker,speaker_layout=7.1.2
 layout_log '12ch' \
     --audio-channels=fl-fr-fc-lfe-bl-br-sl-sr-tfl-tfr-tbl-tbr \
     --ad-lavc-o=render_mode=speaker,speaker_layout=7.1.4
@@ -122,6 +152,12 @@ run "$joc" --start=0.02 --length=0.2 >/dev/null
 for codec in aac.m4a flac.flac mp3.mp3 ac3.ac3; do
     if [ -f "$fixtures/$codec" ]; then
         run "$fixtures/$codec" >/dev/null
+        ordinary_media_options_log=$(run "$fixtures/$codec" \
+            --ad-lavc-o=render_mode=speaker,speaker_layout=5.1,virtual_layout=7.1.4,hrtf=d2,dialnorm=default)
+        if printf '%s\n' "$ordinary_media_options_log" | grep -Fq 'OpenJOC config'; then
+            echo "OpenJOC menu decoder options forced an OpenJOC decoder for $codec" >&2
+            exit 1
+        fi
     fi
 done
 if [ -f "$fixtures/video.mp4" ]; then

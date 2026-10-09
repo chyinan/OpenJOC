@@ -22,7 +22,8 @@ PLAYER_HARNESS = REPOSITORY / "integrations/mpv/verify-player.sh"
 HARNESS_FIELDS = (
     "JOC", "RAW_SINGLE_AU_JOC", "RAW_MULTI_AU_JOC", "MP4_JOC",
     "FIRST_AU_INTEGRITY", "EXPLICIT_OVERRIDE", "PASSTHROUGH",
-    "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6",
+    "ORDINARY_EAC3", "BINAURAL", "BINAURAL_D2", "2_0", "5_1", "7_1",
+    "5_1_2", "5_1_4", "7_1_2", "7_1_4", "9_1_6",
     "22_2", "EOS",
 )
 FIELDS = [
@@ -138,8 +139,7 @@ def main() -> int:
             sys.executable, str(PACKAGE_VERIFIER), "verify", "--root", str(root),
             "--platform", args.platform, "--run-smoke", "--missing-dependency-smoke",
         ]
-        if args.platform == "windows-x64":
-            verifier.extend(["--fixture", str(fixtures / "joc.single.ec3")])
+        verifier.extend(["--fixture", str(fixtures / "joc.single.ec3")])
         code, output = run(verifier, cwd=root, env=env)
         evidence["package_verifier"] = clean_output(output, temporary, fixtures)
         if code == 0:

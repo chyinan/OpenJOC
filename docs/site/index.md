@@ -44,6 +44,7 @@ OpenJOC is an open-source, clean-room **E-AC-3 JOC Object decoder and spatial re
 | Render your first programme | [Quick start](getting-started/quick-start.md) |
 | Install the CLI or build from source | [Installation](getting-started/installation.md) |
 | Use PotPlayer on Windows | [Windows LAV / PotPlayer](using/windows-lav-potplayer.md) |
+| Use the OpenJOC mpv Player Bundle | [mpv settings and playback](using/mpv-openjoc.md) |
 | Understand object identity | [Decoded Objects vs authored Objects](concepts/decoded-vs-authored-objects.md) |
 | Export ADM for another tool | [Reconstructed ADM export](using/reconstructed-adm-export.md) |
 | Integrate OpenJOC into software | [Rust API](reference/rust-api.md) or [C ABI](reference/c-abi.md) |

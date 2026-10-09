@@ -81,6 +81,10 @@ sha256_file() {
 for command in cargo rustc git make pkg-config meson ninja x86_64-w64-mingw32-gcc objdump python3; do
     command -v "$command" >/dev/null || { echo "missing MSYS2 command: $command" >&2; exit 1; }
 done
+if ! pkg-config --exists luajit; then
+    echo "Windows player build requires the LuaJIT pkg-config file; install mingw-w64-x86_64-luajit in MINGW64" >&2
+    exit 1
+fi
 if ! git -C "$repo_root" diff --quiet; then
     echo "tracked source changes are not allowed for a reproducible player build" >&2
     exit 1
@@ -155,7 +159,7 @@ mpv_prefix="$work/prefix/mpv"
     cd "$work"
     PKG_CONFIG_PATH="$ffmpeg_prefix/lib/pkgconfig:$openjoc_prefix/lib/pkgconfig:/mingw64/lib/pkgconfig" \
     MSYS2_ARG_CONV_EXCL='--prefix=' meson setup "$work/build/mpv" "$mpv_source" --prefix=/usr --buildtype=release \
-        -Dtests=false -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled
+        -Dtests=false -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled -Dlua=luajit
 )
 PATH="$openjoc_prefix/bin:$ffmpeg_prefix/bin:/mingw64/bin:$PATH" \
     meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"

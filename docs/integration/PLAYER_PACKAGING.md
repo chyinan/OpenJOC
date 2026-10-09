@@ -28,8 +28,9 @@ The canonical contract is
 [`packaging/player/PLAYER_PACKAGE_MANIFEST.json`](../../packaging/player/PLAYER_PACKAGE_MANIFEST.json).
 It pins FFmpeg `n9.0.1` at
 `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa`, mpv `v0.41.0` at
-`41f6a645068483470267271e1d09966ca3b9f413`, both OpenJOC patch hashes, ABI
-1.5, archive names, profiles, loader policy, and external-runtime policy.
+`41f6a645068483470267271e1d09966ca3b9f413`, both OpenJOC patch hashes, the
+packaged OpenJOC C ABI 1.7, the FFmpeg bridge's minimum C ABI 1.6, archive
+names, profiles, loader policy, and external-runtime policy.
 
 ## Qualified artifact surface
 
@@ -53,6 +54,8 @@ the patch SHA-256 values, requires `git apply --check` to pass, builds the
 OpenJOC C ABI, builds FFmpeg with the recorded flags, builds patched mpv, and
 packages an extracted runtime closure. Build worktrees and prefixes stay
 outside the repository.
+The mpv configure provenance records `-Dlua=luajit`; the build preflight
+requires a `luajit.pc` development package on each target platform.
 
 `--release` is required for final archive names such as
 `openjoc-mpv-<version>-macos-arm64.tar.gz`. Without it, the same build
@@ -101,7 +104,9 @@ The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 `libopenjoc`, synthetic JOC null-output playback, package checksums, and the
 presence/PE audit of both GUI and console executables. Native Windows runners
 also attempt a console interrupt smoke where the platform exposes
-`CTRL_BREAK_EVENT`.
+`CTRL_BREAK_EVENT`. The GUI executable status means presence and PE audit only;
+it does not exercise mpv's windowed OSD or interactive menu. Manual Windows
+OSD/input checks remain pending as listed in the mpv integration guide.
 
 On macOS, `install_name_tool` rewrites private dependencies to `@rpath` and
 adds `@loader_path/../lib` to the executable and `@loader_path` to bundled
@@ -163,6 +168,10 @@ scripts/verify-player-package.sh \
 It checks required files, inner checksums, target architecture, loader paths,
 the extracted ELF/PE dependency closure, decoder visibility (`--ad=help`), ABI
 metadata, license-review status, and private/local path leaks. The
+runtime smoke also loads the bundled menu script in headless idle mpv with
+null AO/VO and a controlled quit, then inspects log markers. Qualification
+supplies a synthetic E-AC-3/JOC fixture to verify the saved-options pre-decoder
+hook. The
 missing-dependency smoke temporarily removes the OpenJOC runtime from a copy
 and requires a clear loader failure.
 

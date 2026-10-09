@@ -15,14 +15,20 @@
       "minor": 7,
       "packed_hex": "0x00010007"
     },
+    "native_ffmpeg_minimum_c_abi": {
+      "major": 1,
+      "minor": 6,
+      "reason": "the libopenjoc decoder exposes the D1/D2 HRTF preset via C ABI 1.6"
+    },
     "license": "Apache-2.0",
     "dsp_renderer": "OpenJOC shared renderer; platform-neutral",
     "features": [
       "native FFmpeg libavcodec wrapper",
       "decode-free bounded JOC classifier",
       "automatic positive JOC decoder selection",
+      "bundled OpenJOC OSD settings menu for LAV-parity output policy, Dialnorm, HRTF, and binaural virtual layout",
       "binaural rendering",
-      "physical 2.0, 5.1, 7.1.4, 9.1.6, and 22.2 rendering",
+      "physical speaker rendering for supported OpenJOC layouts, including 2.0, 5.1, 7.1.4, 9.1.6, and 22.2",
       "built-in SADIE II D1 KU100 default and SADIE II D2 KEMAR HRTFs"
     ]
   },
@@ -31,7 +37,8 @@
       "tag": "n9.0.1",
       "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
       "patch_path": "integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch",
-      "patch_sha256": "e8921951af338c82edaa15766e2f2a1e7ee5b33ccd1e514733b93baa40d266a9",
+      "patch_sha256": "d38aa42ff08f96aba43f5350cc10d28a2b22304d7e839a3af04c5b209278caa0",
+      "minimum_openjoc_c_abi": "1.6",
       "configure_flags": [
         "--disable-autodetect",
         "--disable-static",
@@ -112,8 +119,13 @@
       "PASSTHROUGH",
       "ORDINARY_EAC3",
       "BINAURAL",
+      "BINAURAL_D2",
       "2_0",
       "5_1",
+      "7_1",
+      "5_1_2",
+      "5_1_4",
+      "7_1_2",
       "7_1_4",
       "9_1_6",
       "22_2",

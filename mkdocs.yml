@@ -128,6 +128,7 @@ nav:
       - Decode and inspect: using/decode-inspect.md
       - Speaker rendering: using/speaker-rendering.md
       - Binaural and SOFA: using/binaural-sofa.md
+      - mpv OpenJOC Player Bundle: using/mpv-openjoc.md
       - Reconstructed ADM export: using/reconstructed-adm-export.md
       - Reconstructed ADM semantics: using/reconstructed-adm-semantics.md
       - Custom speaker layouts: using/custom-speaker-layouts.md

@@ -141,12 +141,18 @@ never hijack ordinary E-AC-3.
 - `speaker_layout` (`5.1` by default), including `2.0`, `5.1`, `7.1.4`,
   `9.1.6`, and `22.2`;
 - `virtual_layout=7.1.4` by default for binaural;
+- `hrtf=d1 | d2` for SADIE II D1/KU100 (default) or D2/KEMAR; a non-empty
+  `sofa` path takes precedence;
 - `downmix=auto | loro | ltrt`;
 - `drc=disabled | line | rf | custom`, plus `drc_boost`/`drc_cut`;
 - `dialnorm=default | digital | analog`;
 - `validation=auto | strict | vendor`;
 - optional `sofa`; omission selects built-in SADIE II D1;
 - `binaural_lfe=exclude | dual_mono`.
+
+The wrapper maps a non-empty SOFA file only when `render_mode=binaural`.
+Speaker and stereo rendering ignore the path, so a stale custom path cannot
+break a physical-speaker decoder initialization.
 
 There is no offline peak-normalization option in the decoder. Physical `2.0`
 and binaural two-channel output remain distinct product choices.

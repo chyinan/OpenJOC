@@ -175,6 +175,11 @@ case "$platform" in
             echo "Install them with: brew install libass libplacebo meson ninja" >&2
             exit 1
         fi
+        if ! pkg-config --exists luajit; then
+            echo "macOS player build requires LuaJIT development files discoverable as luajit.pc" >&2
+            echo "Install them with: brew install luajit" >&2
+            exit 1
+        fi
         ffmpeg_source="$work/src/ffmpeg"
         mpv_source="$work/src/mpv"
         echo '::group::Pinned FFmpeg/mpv sources and patch gates'
@@ -209,7 +214,8 @@ case "$platform" in
         (cd "$work" && PKG_CONFIG_PATH="$ffmpeg_prefix/lib/pkgconfig:$openjoc_prefix/lib/pkgconfig:$dep_pkgconfig" \
             meson setup "$work/build/mpv" "$mpv_source" \
             --prefix=/usr --buildtype=release -Dtests=false \
-            -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled)
+            -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled \
+            -Dlua=luajit)
         LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
         LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
@@ -240,6 +246,11 @@ case "$platform" in
         for command in cargo rustc git make pkg-config meson ninja gcc readelf patchelf python3; do
             command -v "$command" >/dev/null 2>&1 || { echo "missing build command: $command" >&2; exit 1; }
         done
+        if ! pkg-config --exists luajit; then
+            echo "Linux player build requires LuaJIT development files discoverable as luajit.pc" >&2
+            echo "Install the LuaJIT development package (for example: libluajit-5.1-dev)" >&2
+            exit 1
+        fi
         ffmpeg_source="$work/src/ffmpeg"
         mpv_source="$work/src/mpv"
         echo '::group::Pinned FFmpeg/mpv sources and patch gates'
@@ -271,7 +282,8 @@ case "$platform" in
         (cd "$work" && PKG_CONFIG_PATH="$ffmpeg_prefix/lib/pkgconfig:$openjoc_prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
             meson setup "$work/build/mpv" "$mpv_source" \
             --prefix=/usr --buildtype=release -Dtests=false \
-            -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled)
+            -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled \
+            -Dlua=luajit)
         LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             meson compile -C "$work/build/mpv" -j "${CARGO_BUILD_JOBS:-2}"
         LD_LIBRARY_PATH="$openjoc_prefix/lib:$ffmpeg_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
