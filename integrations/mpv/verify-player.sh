@@ -107,8 +107,9 @@ python3 -c 'import pathlib, sys; sys.exit(pathlib.Path(sys.argv[1]).read_bytes()
 # entire packaged decoder/AO pipeline. Compare complete float WAVE files so a
 # sample count, channel count, sample rate, or PCM-bit change cannot be hidden.
 live_gain_fixture=$fixtures/joc.live-gain.mp4
+gain_pcm_fixture=$fixtures/joc.lifecycle.mp4
 gain_pcm_checker=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)/scripts/compare-player-gain-pcm.py
-if [ ! -s "$live_gain_fixture" ] || [ ! -f "$gain_pcm_checker" ]; then
+if [ ! -s "$live_gain_fixture" ] || [ ! -s "$gain_pcm_fixture" ] || [ ! -f "$gain_pcm_checker" ]; then
     echo "missing live-gain fixture or PCM checker" >&2
     exit 1
 fi
@@ -118,10 +119,14 @@ render_gain_pcm() {
     audio_channels=$3
     decoder_options=$4
     tenths_db=$5
+    stop_args=
+    if [ "${6:-}" = cutoff ]; then
+        stop_args=--end=4
+    fi
     if [ "$tenths_db" = none ]; then
         "$mpv" "$input" --no-config --no-video --ao=pcm --ao-pcm-waveheader=yes \
             --ao-pcm-file="$output" --audio-format=float --audio-channels="$audio_channels" \
-            --end=4 --ad=libopenjoc --ad-lavc-o="$decoder_options" \
+            $stop_args --ad=libopenjoc --ad-lavc-o="$decoder_options" \
             >/dev/null 2>&1
         return
     fi
@@ -134,46 +139,76 @@ PY
 )
     "$mpv" "$input" --no-config --no-video --ao=pcm --ao-pcm-waveheader=yes \
         --ao-pcm-file="$output" --audio-format=float --audio-channels="$audio_channels" \
-        --end=4 --ad=libopenjoc --ad-lavc-o="$decoder_options" \
-        "--af=@openjoc_gain:lavfi=[volume@openjoc_gain=volume=$factor:precision=float]" \
+        $stop_args --ad=libopenjoc --ad-lavc-o="$decoder_options" \
+        "--af=@openjoc_gain:lavfi=[volume@openjoc_gain=volume=$factor:precision=float]:fix-pts=yes" \
         >/dev/null 2>&1
 }
 pcm_prefix_file=$pcm_prefix
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-binaural-d1-none.wav" stereo \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-binaural-d1-none.wav" stereo \
     'render_mode=binaural,hrtf=d1,virtual_layout=7.1.4' none
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-binaural-d1-unity.wav" stereo \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-binaural-d1-unity.wav" stereo \
     'render_mode=binaural,hrtf=d1,virtual_layout=7.1.4' 0
 python3 "$gain_pcm_checker" exact "$pcm_prefix_file-binaural-d1-none.wav" \
     "$pcm_prefix_file-binaural-d1-unity.wav" --channels 2 --rate 48000
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-binaural-d2-none.wav" stereo \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-binaural-d2-none.wav" stereo \
     'render_mode=binaural,hrtf=d2,virtual_layout=7.1.4' none
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-binaural-d2-unity.wav" stereo \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-binaural-d2-unity.wav" stereo \
     'render_mode=binaural,hrtf=d2,virtual_layout=7.1.4' 0
 python3 "$gain_pcm_checker" exact "$pcm_prefix_file-binaural-d2-none.wav" \
     "$pcm_prefix_file-binaural-d2-unity.wav" --channels 2 --rate 48000
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-speaker-stereo-none.wav" stereo \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-speaker-stereo-none.wav" stereo \
     'render_mode=speaker,speaker_layout=2.0' none
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-speaker-stereo-unity.wav" stereo \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-speaker-stereo-unity.wav" stereo \
     'render_mode=speaker,speaker_layout=2.0' 0
 python3 "$gain_pcm_checker" exact "$pcm_prefix_file-speaker-stereo-none.wav" \
     "$pcm_prefix_file-speaker-stereo-unity.wav" --channels 2 --rate 48000
 speaker_714_channels=fl-fr-fc-lfe-bl-br-sl-sr-tfl-tfr-tbl-tbr
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-speaker-714-none.wav" \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-speaker-714-none.wav" \
     "$speaker_714_channels" 'render_mode=speaker,speaker_layout=7.1.4' none
-render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-speaker-714-unity.wav" \
+render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-speaker-714-unity.wav" \
     "$speaker_714_channels" 'render_mode=speaker,speaker_layout=7.1.4' 0
 python3 "$gain_pcm_checker" exact "$pcm_prefix_file-speaker-714-none.wav" \
     "$pcm_prefix_file-speaker-714-unity.wav" --channels 12 --rate 48000
-echo "GAIN_PCM_BITEXACT:PASS D1_D2_binaural_virtual_7.1.4 speaker_stereo speaker_7.1.4"
 
-for gain_tenths in -20 -6 -1 1 6 20; do
-    render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-speaker-714-gain-${gain_tenths}.wav" \
+# Preserve the reported early-stop case as a separate strict comparison too.
+# `fix-pts=yes` keeps lavfi audio timestamps aligned to input frame boundaries
+# before mpv clips at --end; otherwise compressed 1536-sample frames can gain
+# one trailing sample even though their common PCM prefix is unchanged.
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-d1-none.wav" stereo \
+    'render_mode=binaural,hrtf=d1,virtual_layout=7.1.4' none cutoff
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-d1-unity.wav" stereo \
+    'render_mode=binaural,hrtf=d1,virtual_layout=7.1.4' 0 cutoff
+python3 "$gain_pcm_checker" exact "$pcm_prefix_file-cutoff-d1-none.wav" \
+    "$pcm_prefix_file-cutoff-d1-unity.wav" --channels 2 --rate 48000
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-d2-none.wav" stereo \
+    'render_mode=binaural,hrtf=d2,virtual_layout=7.1.4' none cutoff
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-d2-unity.wav" stereo \
+    'render_mode=binaural,hrtf=d2,virtual_layout=7.1.4' 0 cutoff
+python3 "$gain_pcm_checker" exact "$pcm_prefix_file-cutoff-d2-none.wav" \
+    "$pcm_prefix_file-cutoff-d2-unity.wav" --channels 2 --rate 48000
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-stereo-none.wav" stereo \
+    'render_mode=speaker,speaker_layout=2.0' none cutoff
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-stereo-unity.wav" stereo \
+    'render_mode=speaker,speaker_layout=2.0' 0 cutoff
+python3 "$gain_pcm_checker" exact "$pcm_prefix_file-cutoff-stereo-none.wav" \
+    "$pcm_prefix_file-cutoff-stereo-unity.wav" --channels 2 --rate 48000
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-714-none.wav" \
+    "$speaker_714_channels" 'render_mode=speaker,speaker_layout=7.1.4' none cutoff
+render_gain_pcm "$live_gain_fixture" "$pcm_prefix_file-cutoff-714-unity.wav" \
+    "$speaker_714_channels" 'render_mode=speaker,speaker_layout=7.1.4' 0 cutoff
+python3 "$gain_pcm_checker" exact "$pcm_prefix_file-cutoff-714-none.wav" \
+    "$pcm_prefix_file-cutoff-714-unity.wav" --channels 12 --rate 48000
+echo "GAIN_CUTOFF_PCM_BITEXACT:PASS early_stop=4s modes=D1_D2_binaural speaker_stereo speaker_7.1.4"
+echo "GAIN_PCM_BITEXACT:PASS EOF_and_early_stop D1_D2_binaural speaker_stereo speaker_7.1.4"
+
+for gain_tenths in -200 -60 -1 1 60 200; do
+    render_gain_pcm "$gain_pcm_fixture" "$pcm_prefix_file-speaker-714-gain-${gain_tenths}.wav" \
         "$speaker_714_channels" 'render_mode=speaker,speaker_layout=7.1.4' "$gain_tenths"
     python3 "$gain_pcm_checker" gain "$pcm_prefix_file-speaker-714-unity.wav" \
         "$pcm_prefix_file-speaker-714-gain-${gain_tenths}.wav" \
         --tenths-db "$gain_tenths" --channels 12 --rate 48000
 done
-echo "GAIN_SAMPLES:PASS gains_tenths_db=-20,-6,-1,1,6,20"
+echo "GAIN_SAMPLES:PASS gains_tenths_db=-200,-60,-1,1,60,200 exact_f32_scalar"
 
 # Exercise the UI's live preview and Apply Current against paced playback. The
 # named gain filter must take the +0.1 dB runtime command without reopening

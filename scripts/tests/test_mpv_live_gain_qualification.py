@@ -66,12 +66,17 @@ class MpvLiveGainQualificationTests(unittest.TestCase):
             temporary = Path(temporary_name)
             baseline = temporary / "baseline.wav"
             baseline.write_bytes(float_wave(source_samples))
-            for tenths_db in (-20, -6, -1, 1, 6, 20):
+            for tenths_db in (-200, -60, -1, 1, 60, 200):
                 factor = math.pow(10.0, tenths_db / 200.0)
+                f32_factor = struct.unpack("<f", struct.pack("<f", factor))[0]
+                f32_sources = [
+                    struct.unpack("<f", struct.pack("<f", sample))[0]
+                    for sample in source_samples
+                ]
                 output = temporary / f"gain-{tenths_db}.wav"
                 output.write_bytes(float_wave([
-                    struct.unpack("<f", struct.pack("<f", sample * factor))[0]
-                    for sample in source_samples
+                    struct.unpack("<f", struct.pack("<f", sample * f32_factor))[0]
+                    for sample in f32_sources
                 ]))
                 checker.gain(baseline, output, tenths_db, channels=2, rate=48000)
 
@@ -126,7 +131,15 @@ class MpvLiveGainQualificationTests(unittest.TestCase):
         self.assertIn("'render_mode=binaural,hrtf=d2,virtual_layout=7.1.4' 0", source)
         self.assertIn("'render_mode=speaker,speaker_layout=2.0' none", source)
         self.assertIn("'render_mode=speaker,speaker_layout=7.1.4' none", source)
+        self.assertIn(":fix-pts=yes", source)
+        self.assertIn("--end=4", source)
+        self.assertIn("GAIN_CUTOFF_PCM_BITEXACT:PASS", source)
         self.assertIn("GAIN_PCM_BITEXACT:PASS", source)
+        self.assertIn("for gain_tenths in -200 -60 -1 1 60 200", source)
+        checker = CHECKER_PATH.read_text(encoding="utf-8")
+        self.assertIn("f32_factor = struct.unpack", checker)
+        self.assertIn("candidate_data[index * 4:index * 4 + 4]", checker)
+        self.assertIn("PCM_GAIN_F32:PASS", checker)
         self.assertIn("--tenths-db \"$gain_tenths\"", source)
 
 

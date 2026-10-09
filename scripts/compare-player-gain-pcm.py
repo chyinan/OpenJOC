@@ -71,26 +71,30 @@ def gain(reference: Path, candidate: Path, tenths_db: int, channels: int, rate: 
     if len(candidate_data) != len(reference_data):
         raise ValueError("gain changed the final float PCM sample count")
     factor = math.pow(10.0, tenths_db / 200.0)
+    f32_factor = struct.unpack("<f", struct.pack("<f", factor))[0]
     changed = 0
-    tested = 0
-    max_relative_error = 0.0
-    for (source,), (actual,) in zip(struct.iter_unpack("<f", reference_data), struct.iter_unpack("<f", candidate_data)):
+    for index, ((source,), (actual,)) in enumerate(zip(
+        struct.iter_unpack("<f", reference_data), struct.iter_unpack("<f", candidate_data),
+    )):
         if not math.isfinite(source) or not math.isfinite(actual):
             raise ValueError("non-finite float sample in gain PCM")
-        expected = struct.unpack("<f", struct.pack("<f", source * factor))[0]
-        if abs(source) > 1e-5:
-            tested += 1
-            error = abs(actual - expected)
-            tolerance = max(2e-7, abs(expected) * 2e-6)
-            if error > tolerance:
-                raise ValueError(f"sample gain mismatch at sample {tested}: actual={actual!r}, expected≈{expected!r}, error={error:g}")
-            max_relative_error = max(max_relative_error, error / max(abs(expected), 1e-12))
-            if actual != source:
-                changed += 1
-    if tested < 100 or changed < max(50, tested // 2):
-        raise ValueError(f"insufficient nonzero/gain-changed samples: tested={tested}, changed={changed}")
+        # FFmpeg 9's precision=float path passes the parsed double gain through
+        # AVFloatDSP's float scalar multiply. Casting the factor first exactly
+        # models that f32 scalar * f32 sample operation.
+        expected = struct.pack("<f", source * f32_factor)
+        actual_bytes = candidate_data[index * 4:index * 4 + 4]
+        if actual_bytes != expected:
+            raise ValueError(
+                f"f32 scalar multiplication mismatch at sample {index}: "
+                f"actual={actual!r} ({actual_bytes.hex()}), "
+                f"expected={struct.unpack('<f', expected)[0]!r} ({expected.hex()})"
+            )
+        if actual_bytes != reference_data[index * 4:index * 4 + 4]:
+            changed += 1
+    if changed < max(50, len(reference_data) // 8):
+        raise ValueError(f"insufficient gain-changed samples: changed={changed}")
     frames = len(reference_data) // (channels * 4)
-    print(f"PCM_GAIN:PASS tenths_db={tenths_db} factor={factor:.17g} channels={channels} rate={rate} frames={frames} compared={tested} changed={changed} max_rel_error={max_relative_error:.3g}")
+    print(f"PCM_GAIN_F32:PASS tenths_db={tenths_db} factor={factor:.17g} f32_factor={f32_factor:.9g} channels={channels} rate={rate} frames={frames} compared={frames * channels} changed={changed}")
 
 
 def main() -> int:

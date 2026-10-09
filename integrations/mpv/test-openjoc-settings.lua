@@ -153,8 +153,9 @@ mp = {
                 fail_af_add_count = fail_af_add_count - 1
                 return nil, 'injected AF add error'
             end
-            local graph = args[3]:match('^@openjoc_gain:lavfi=%[(.*)%]$')
-            assert(graph, 'gain AF graph did not use the named lavfi syntax')
+            local graph = args[3]:match(
+                '^@openjoc_gain:lavfi=%[(.*)%]:fix%-pts=yes$')
+            assert(graph, 'gain AF graph did not use named lavfi syntax with PTS repair')
             local filter = {
                 name = 'lavfi', label = 'openjoc_gain', enabled = true,
                 params = { graph = graph },

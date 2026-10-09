@@ -722,7 +722,10 @@ end
 local function add_gain_filter(initial_value)
     local factor = gain_factor(initial_value)
     local graph = 'volume@openjoc_gain=volume=' .. factor .. ':precision=float'
-    local spec = '@openjoc_gain:lavfi=[' .. graph .. ']'
+    -- Keep the libavfilter audio PTS aligned to the original frame boundary.
+    -- mpv clips audio to explicit stop/end timestamps; the default lavfi
+    -- timestamp emulation can otherwise retain one extra sample at that edge.
+    local spec = '@openjoc_gain:lavfi=[' .. graph .. ']:fix-pts=yes'
     local ok, err = run_mpv_command('af', 'add', spec)
     if not ok then
         return nil, 'could not add the live OpenJOC gain filter: ' .. tostring(err)
