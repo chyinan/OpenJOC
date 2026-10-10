@@ -585,6 +585,10 @@ local gain_cleanup_timer
 local apply_current_timer
 local runtime_reconcile_timer
 local gain_pending
+local gain_failed_pending
+-- `af.params.graph` is the insertion configuration, not the volume changed
+-- by `af-command`. Only successful runtime commands confirm the live value.
+local gain_confirmed_value
 local gain_add_pending = false
 local gain_add_cleanup_pending = false
 local gain_add_cleanup_attempt = 0
@@ -730,6 +734,7 @@ local function add_gain_filter(initial_value)
     if not ok then
         return nil, 'could not add the live OpenJOC gain filter: ' .. tostring(err)
     end
+    gain_confirmed_value = nil
     local filter = named_gain_filter()
     if filter then
         gain_add_pending = false
@@ -757,6 +762,8 @@ end
 
 local function finish_gain_update(value)
     active_gain_tenths_db = clamp_gain(value)
+    gain_confirmed_value = active_gain_tenths_db
+    gain_failed_pending = nil
     gain_pending = nil
     gain_add_pending = false
     gain_filter_settling = false
@@ -768,6 +775,9 @@ local function finish_gain_update(value)
 end
 
 local function fail_gain_update(message)
+    -- Stop polling at the deadline, but retain the latest insertion intent so
+    -- a genuinely late AF-readiness event can start one more bounded attempt.
+    gain_failed_pending = (gain_add_pending or gain_filter_settling) and gain_pending or nil
     gain_pending = nil
     cancel_gain_retry()
     set_runtime_error(message)
@@ -815,8 +825,7 @@ local function schedule_gain_retry(pending, delay)
             end
         else
             pending.wait_for_add = false
-            local filter_value = filter_gain_value(filter)
-            if filter_value == pending.value and not gain_filter_settling then
+            if gain_confirmed_value == pending.value and not gain_filter_settling then
                 finish_gain_update(pending.value)
                 return
             end
@@ -840,16 +849,52 @@ local function schedule_gain_retry(pending, delay)
     end)
 end
 
+local function retry_failed_gain_update(manual)
+    local pending = gain_failed_pending
+    if not pending or gain_pending or not named_gain_filter()
+        or not gain_retry_is_current(pending)
+        or (pending.readiness_retried and not manual) then return false end
+    pending.readiness_retried = true
+    pending.attempt = 0
+    pending.last_error = nil
+    gain_failed_pending = nil
+    schedule_gain_retry(pending, GAIN_RETRY_DELAYS[1])
+    return true
+end
+
 local function request_runtime_gain(value, reason)
     value = clamp_gain(value)
-    local active, decoder = openjoc_track()
+    if pending_apply then reconcile_live_gain('gain-intent-during-apply') end
+    -- Decoder reinitialization already requested by Apply Current still needs
+    -- validation, but its gain snapshot must follow newer preview/Cancel intent.
+    if pending_apply and (reason == 'preview' or reason == 'restore') then
+        pending_apply.gain = value
+    end
+    local active, decoder, track = openjoc_track()
     if not active then
         gain_pending = nil
         cancel_gain_retry()
         if reason == 'preview' then
-            gain_preview_touched = false
-            gain_restore_owed = false
-            gain_restore_value = nil
+            local applying_this_track = pending_apply
+                and pending_apply.token == runtime_apply_token
+                and pending_apply.path == tostring(mp.get_property('path', '') or '')
+                and (not track or (pending_apply.track_id == tostring(track.id or '')
+                    and (tostring(track.codec or ''):lower() == 'eac3'
+                        or tostring(track.codec or ''):lower() == 'e-ac-3')))
+            if applying_this_track then
+                -- Decoder evidence can temporarily disappear during Apply.
+                -- Keep Cancel's original baseline even for a newer preview
+                -- made in that window; the validated Apply will use its target.
+                if not gain_preview_touched then
+                    gain_restore_value = active_gain_tenths_db
+                    gain_preview_touched = true
+                    gain_restore_owed = true
+                end
+            else
+                gain_preview_touched = false
+                gain_restore_owed = false
+                gain_restore_value = nil
+            end
         end
         set_runtime_error('Live preview needs an active libopenjoc E-AC-3 track; this value is saved for a later OpenJOC file.')
         return nil, 'live OpenJOC decoder is unavailable (' .. tostring(decoder) .. ')'
@@ -865,6 +910,7 @@ local function request_runtime_gain(value, reason)
     end
 
     gain_epoch = gain_epoch + 1
+    gain_failed_pending = nil
     cancel_gain_retry()
     local pending = {
         epoch = gain_epoch,
@@ -905,8 +951,7 @@ local function request_runtime_gain(value, reason)
         return nil, 'gain filter insertion is pending'
     end
 
-    local filter_value = filter_gain_value(filter)
-    if filter_value == value and not gain_filter_settling and not gain_add_pending then
+    if gain_confirmed_value == value and not gain_filter_settling and not gain_add_pending then
         finish_gain_update(value)
         return true
     end
@@ -964,6 +1009,8 @@ local function schedule_pending_add_cleanup()
 end
 
 remove_gain_filter_for_non_openjoc = function()
+    gain_confirmed_value = nil
+    gain_failed_pending = nil
     cancel_gain_retry()
     gain_epoch = gain_epoch + 1
     gain_pending = nil
@@ -1016,7 +1063,10 @@ remove_gain_filter_for_non_openjoc = function()
     -- our own post-render stage before retrying. Never touch unrelated filters.
     local neutralized, neutral_error = run_mpv_command('af-command', GAIN_FILTER_LABEL,
         'volume', '1', 'volume')
-    if neutralized then active_gain_tenths_db = 0 end
+    if neutralized then
+        active_gain_tenths_db = 0
+        gain_confirmed_value = 0
+    end
     set_cleanup_warning((neutralized
         and 'Gain cleanup failed; unity fallback is active while removal retries.'
         or 'Gain cleanup failed; unity fallback also failed; removal retries continue.')
@@ -1063,6 +1113,7 @@ local function ensure_saved_gain_filter()
     local active = openjoc_track()
     if not active then return remove_gain_filter_for_non_openjoc() end
     local wanted = saved.options.output_gain_tenths_db or 0
+    if gain_pending or gain_failed_pending then return true end
     if not filter_exists() then
         if gain_add_pending then
             -- Reuse a filter insertion that is still crossing the AF update
@@ -1087,13 +1138,12 @@ local function ensure_saved_gain_filter()
         end
         return true
     end
-    local current = filter_gain_value(named_gain_filter())
-    if current ~= nil then active_gain_tenths_db = current end
-    if current ~= wanted then
-        request_runtime_gain(wanted, 'startup')
-    else
-        clear_runtime_error()
-    end
+    -- Same-file observations must not reinterpret the static graph as the
+    -- live value or overwrite an in-flight/confirmed preview with saved gain.
+    if gain_confirmed_value ~= nil then return true end
+    local configured = filter_gain_value(named_gain_filter())
+    if configured ~= nil then active_gain_tenths_db = configured end
+    request_runtime_gain(wanted, 'startup')
     return true
 end
 
@@ -1188,6 +1238,7 @@ apply_current_playback = function()
     end
 
     if gain_add_pending or gain_filter_settling then
+        retry_failed_gain_update(true)
         show_status('Apply Current is waiting for the live gain filter to initialize; retry shortly.', 5)
         return
     end
@@ -1204,6 +1255,8 @@ apply_current_playback = function()
     cancel_gain_retry()
     gain_epoch = gain_epoch + 1
     gain_pending = nil
+    gain_failed_pending = nil
+    gain_confirmed_value = nil
     gain_add_pending = false
     gain_filter_settling = false
 
@@ -1239,7 +1292,20 @@ apply_current_playback = function()
 end
 
 reconcile_live_gain = function(reason)
-    if pending_apply then return end
+    if pending_apply then
+        local track = selected_audio_track()
+        local path_changed = pending_apply.path ~= tostring(mp.get_property('path', '') or '')
+        local codec = tostring(track and track.codec or ''):lower()
+        local track_changed = track and (pending_apply.track_id ~= tostring(track.id or '')
+            or (codec ~= 'eac3' and codec ~= 'e-ac-3'))
+        if not path_changed and not track_changed then return end
+        -- A real file/track change supersedes Apply immediately. Temporary
+        -- missing decoder/track evidence during same-file reinit may settle.
+        pending_apply = nil
+        runtime_apply_token = runtime_apply_token + 1
+        kill_timer(apply_current_timer)
+        apply_current_timer = nil
+    end
     local active = openjoc_track()
     local signature = current_runtime_signature()
     if runtime_signature and signature ~= runtime_signature then
@@ -1248,6 +1314,8 @@ reconcile_live_gain = function(reason)
         cancel_gain_retry()
         gain_epoch = gain_epoch + 1
         gain_pending = nil
+        gain_failed_pending = nil
+        gain_confirmed_value = nil
         gain_preview_touched = false
         gain_restore_owed = false
         gain_restore_value = nil
@@ -1789,6 +1857,7 @@ local function save_selected()
 end
 
 local function cancel_draft()
+    if pending_apply then reconcile_live_gain('cancel-during-apply') end
     local had_gain_preview = gain_restore_owed or gain_preview_touched
     local restored, restore_error = true, nil
     if had_gain_preview then
@@ -1798,7 +1867,7 @@ local function cancel_draft()
     dirty = false
     close_menu()
     if had_gain_preview and not restored then
-        local message = gain_pending
+        local message = (gain_pending or pending_apply)
             and 'Cancel queued restoration of the previous live gain; it will retry when playback resumes or the filter is ready.'
             or ('Cancel could not restore the previous live gain: ' .. tostring(restore_error))
         mp.osd_message(message, 5)
@@ -2079,7 +2148,10 @@ for _, property in ipairs({
                     remove_gain_filter_for_non_openjoc()
                 end
                 gain_cleanup_in_progress = false
-            elseif gain_pending and gain_add_pending and not gain_cleanup_in_progress then
+            elseif not gain_cleanup_in_progress and gain_failed_pending then
+                retry_failed_gain_update(false)
+            elseif gain_pending and (gain_add_pending or gain_filter_settling)
+                and not gain_cleanup_in_progress then
                 -- AF property changes are a readiness signal. Retry the latest
                 -- queued value promptly rather than issuing another add.
                 schedule_gain_retry(gain_pending, GAIN_RETRY_DELAYS[1])
