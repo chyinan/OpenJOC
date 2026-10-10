@@ -150,13 +150,8 @@ jobs:
           $buildScriptText = $buildScriptText.Replace($zlibOption, $zlibOptionWithLibrary)
           if (-not $buildScriptText.Contains('--extra-libs=../thirdparty/64/lib/zlib.lib')) { throw 'LAV FFmpeg zlib library option was not applied.' }
           $configure = Join-Path $lav 'ffmpeg\configure'
-          $configureText = Get-Content -Raw -LiteralPath $configure
-          $awkBackslashPattern = 'gsub(/\\/, "/")'
-          $awkBackslashPatternEscaped = 'gsub(/\\\\/, "/")'
-          if (-not $configureText.Contains($awkBackslashPattern)) { throw 'LAV FFmpeg configure dependency command was not found.' }
-          $configureText = $configureText.Replace($awkBackslashPattern, $awkBackslashPatternEscaped)
-          if (-not $configureText.Contains($awkBackslashPatternEscaped)) { throw 'LAV FFmpeg configure dependency command was not patched.' }
-          [IO.File]::WriteAllText($configure, $configureText, [Text.UTF8Encoding]::new($false))
+          python scripts/prepare_lav_ffmpeg_configure.py "$configure"
+          if ($LASTEXITCODE -ne 0) { throw "LAV FFmpeg dependency preparation failed: $LASTEXITCODE" }
           if (-not (Test-Path -LiteralPath $zlibLibrary -PathType Leaf)) { throw 'LAV FFmpeg zlib library is missing.' }
           if (-not (Test-Path -LiteralPath (Join-Path $lav 'ffmpeg\zlib.lib') -PathType Leaf)) { throw 'FFmpeg working-directory zlib library is missing.' }
           Write-Host "Prepared FFmpeg zlib library: $zlibLibrary"

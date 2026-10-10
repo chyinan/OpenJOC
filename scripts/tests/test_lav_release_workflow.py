@@ -57,7 +57,9 @@ class LavReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("mingw-w64-x86_64-gcc-libs", text)
         self.assertIn("setup-msys2\\msys2.cmd", text)
         self.assertIn("cygpath' '-w' '/mingw64/bin", text)
-        self.assertIn(r'''gsub(/\\\\/, "/")''', text)
+        preparation = text.split("- name: Prepare LAV FFmpeg inputs")[1].split("- name: Build LAV FFmpeg")[0]
+        self.assertIn('python scripts/prepare_lav_ffmpeg_configure.py "$configure"', preparation)
+        self.assertIn('if ($LASTEXITCODE -ne 0) { throw "LAV FFmpeg dependency preparation failed:', preparation)
         self.assertIn("defined(Z_HAVE_UNISTD_H) && !defined(_WIN32)", text)
         self.assertIn('bash -c "sh ./build_ffmpeg_msvc.sh x64 release"', text)
         self.assertIn("Retain FFmpeg configure diagnostics", text)
