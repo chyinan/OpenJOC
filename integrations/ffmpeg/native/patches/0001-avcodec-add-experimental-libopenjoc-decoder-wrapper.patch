@@ -8,8 +8,8 @@ Subject: [PATCH] avcodec: add experimental libopenjoc decoder wrapper
  doc/decoders.texi          |  43 ++++
  libavcodec/Makefile        |   1 +
  libavcodec/allcodecs.c     |   3 +
- libavcodec/libopenjocdec.c | 500 +++++++++++++++++++++++++++++++++++++++++++++++
- 5 files changed, 551 insertions(+)
+ libavcodec/libopenjocdec.c | 507 +++++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 562 insertions(+)
  create mode 100644 libavcodec/libopenjocdec.c
 
 diff --git a/configure b/configure
@@ -52,7 +52,7 @@ diff --git a/doc/decoders.texi b/doc/decoders.texi
 index c8177c15e7..8fea5f5e48 100644
 --- a/doc/decoders.texi
 +++ b/doc/decoders.texi
-@@ -347,6 +347,49 @@ Requires the presence of the libmpeghdec headers and library during
+@@ -347,6 +347,53 @@ Requires the presence of the libmpeghdec headers and library during
  configuration. You need to explicitly configure the build with
  @code{--enable-libmpeghdec --enable-nonfree}.
  
@@ -60,7 +60,7 @@ index c8177c15e7..8fea5f5e48 100644
 +
 +OpenJOC E-AC-3 JOC decoder wrapper.
 +
-+This experimental decoder requires OpenJOC C ABI 1.2 or newer and a build
++This experimental decoder requires OpenJOC C ABI 1.6 or newer and a build
 +configured with @code{--enable-version3 --enable-libopenjoc}. It is selected
 +explicitly by the decoder name @code{libopenjoc}; the ordinary @code{eac3}
 +decoder remains the generic/default decoder for the E-AC-3 codec ID.
@@ -84,6 +84,10 @@ index c8177c15e7..8fea5f5e48 100644
 +@item virtual_layout
 +Set the virtual speaker target for binaural rendering. The default is
 +@code{7.1.4}.
++
++@item hrtf
++Choose the built-in @code{d1} (default) or @code{d2} (KEMAR) preset. A
++non-empty @option{sofa} path takes precedence over the selected built-in.
 +
 +@item drc
 +Choose @code{disabled}, @code{line} (default), @code{rf}, or @code{custom}.
@@ -133,7 +137,7 @@ new file mode 100644
 index 0000000000..e9cbbf1ab1
 --- /dev/null
 +++ b/libavcodec/libopenjocdec.c
-@@ -0,0 +1,500 @@
+@@ -0,0 +1,507 @@
 +/*
 + * OpenJOC E-AC-3 JOC decoder wrapper
 + *
@@ -183,6 +187,7 @@ index 0000000000..e9cbbf1ab1
 +    char *virtual_layout;
 +    char *sofa;
 +    int render_mode;
++    int hrtf_preset;
 +    int downmix;
 +    int drc;
 +    int drc_boost;
@@ -325,18 +330,19 @@ index 0000000000..e9cbbf1ab1
 +    int ret;
 +
 +    abi_version = openjoc_get_abi_version();
-+    if ((abi_version >> 16) != 1 || (abi_version & 0xffff) < 2) {
++    if ((abi_version >> 16) != 1 || (abi_version & 0xffff) < 6) {
 +        av_log(avctx, AV_LOG_ERROR,
-+               "libopenjoc requires OpenJOC C ABI 1.2 or newer within major 1; "
++               "libopenjoc requires OpenJOC C ABI 1.6 or newer within major 1; "
 +               "found %u.%u\n", abi_version >> 16, abi_version & 0xffff);
 +        return AVERROR(ENOSYS);
 +    }
 +
-+    status = openjoc_decoder_config_init_v1_4(&config);
++    status = openjoc_decoder_config_init_v1_6(&config);
 +    if (status != OPENJOC_STATUS_OK)
 +        return libopenjoc_error(avctx, status, "configuration initialization");
 +
 +    config.render_mode       = s->render_mode;
++    config.hrtf_preset       = s->hrtf_preset;
 +    config.speaker_layout    = s->speaker_layout;
 +    config.virtual_layout    = s->virtual_layout;
 +    config.downmix           = s->downmix;
@@ -347,7 +353,7 @@ index 0000000000..e9cbbf1ab1
 +    config.validation_profile = s->validation_profile;
 +    config.lfe_policy        = s->lfe_policy;
 +
-+    if (s->sofa && s->sofa[0]) {
++    if (s->render_mode == OPENJOC_RENDER_BINAURAL && s->sofa && s->sofa[0]) {
 +        ret = av_file_map(s->sofa, &sofa_data, &sofa_size, 0, avctx);
 +        if (ret < 0)
 +            return ret;
@@ -567,6 +573,11 @@ index 0000000000..e9cbbf1ab1
 +    { "speaker",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_RENDER_SPEAKER }, 0, 0, AD, .unit = "render_mode" },
 +    { "stereo",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_RENDER_STEREO },  0, 0, AD, .unit = "render_mode" },
 +    { "binaural", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_RENDER_BINAURAL }, 0, 0, AD, .unit = "render_mode" },
++    { "hrtf", "Select the built-in binaural HRTF preset; SOFA takes precedence",
++      OFFSET(hrtf_preset), AV_OPT_TYPE_INT, { .i64 = OPENJOC_HRTF_SADIE_D1_KU100 },
++      OPENJOC_HRTF_SADIE_D1_KU100, OPENJOC_HRTF_SADIE_D2_KEMAR, AD, .unit = "hrtf" },
++    { "d1", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_HRTF_SADIE_D1_KU100 }, 0, 0, AD, .unit = "hrtf" },
++    { "d2", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = OPENJOC_HRTF_SADIE_D2_KEMAR }, 0, 0, AD, .unit = "hrtf" },
 +    { "speaker_layout", "Physical speaker target (for example 2.0, 5.1, 7.1.4, 9.1.6, or 22.2)",
 +      OFFSET(speaker_layout), AV_OPT_TYPE_STRING, { .str = "5.1" }, 0, 0, AD },
 +    { "virtual_layout", "Virtual speaker target used by binaural rendering",

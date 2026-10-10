@@ -15,14 +15,20 @@
       "minor": 7,
       "packed_hex": "0x00010007"
     },
+    "native_ffmpeg_minimum_c_abi": {
+      "major": 1,
+      "minor": 6,
+      "reason": "the libopenjoc decoder exposes the D1/D2 HRTF preset via C ABI 1.6"
+    },
     "license": "Apache-2.0",
     "dsp_renderer": "OpenJOC shared renderer; platform-neutral",
     "features": [
       "native FFmpeg libavcodec wrapper",
       "decode-free bounded JOC classifier",
       "automatic positive JOC decoder selection",
+      "bundled OpenJOC OSD settings menu for LAV-parity output policy, Dialnorm, HRTF, and binaural virtual layout",
       "binaural rendering",
-      "physical 2.0, 5.1, 7.1.4, 9.1.6, and 22.2 rendering",
+      "physical speaker rendering for supported OpenJOC layouts, including 2.0, 5.1, 7.1.4, 9.1.6, and 22.2",
       "built-in SADIE II D1 KU100 default and SADIE II D2 KEMAR HRTFs"
     ]
   },
@@ -31,7 +37,8 @@
       "tag": "n9.0.1",
       "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
       "patch_path": "integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch",
-      "patch_sha256": "e8921951af338c82edaa15766e2f2a1e7ee5b33ccd1e514733b93baa40d266a9",
+      "patch_sha256": "d38aa42ff08f96aba43f5350cc10d28a2b22304d7e839a3af04c5b209278caa0",
+      "minimum_openjoc_c_abi": "1.6",
       "configure_flags": [
         "--disable-autodetect",
         "--disable-static",
@@ -47,7 +54,7 @@
       "tag": "v0.41.0",
       "commit": "41f6a645068483470267271e1d09966ca3b9f413",
       "patch_path": "integrations/mpv/patches/mpv-0.41.0-openjoc.patch",
-      "patch_sha256": "49c8478083bbe6c4c9d2ddac0135f47d097acbd91a45518a9e72be6989caf9ca"
+      "patch_sha256": "08b6c38a7ece0b258f8cdef90ea397c4c968abeb58e051e76ecf939fbad0fcc5"
     },
     "rust": {
       "minimum": "1.89",
@@ -112,12 +119,21 @@
       "PASSTHROUGH",
       "ORDINARY_EAC3",
       "BINAURAL",
+      "BINAURAL_D2",
       "2_0",
       "5_1",
+      "7_1",
+      "5_1_2",
+      "5_1_4",
+      "7_1_2",
       "7_1_4",
       "9_1_6",
       "22_2",
       "EOS",
+      "GAIN_PCM_BITEXACT",
+      "GAIN_SAMPLES",
+      "LIVE_GAIN_NO_RESTART",
+      "APPLYCURRENT_REINIT",
       "PRIVATE_PATH_SCAN"
     ]
   },
@@ -169,7 +185,7 @@
     "default_decoder_policy": "preserve patched mpv safe policy: ordinary E-AC-3 uses eac3; confirmed JOC uses libopenjoc",
     "explicit_decoder_overrides": ["--ad=libopenjoc", "--ad=eac3"],
     "passthrough": "--audio-spdif=eac3 bypasses OpenJOC and remains user-controlled",
-    "global_config": "portable launcher uses the bundle config directory; it does not overwrite or require user global config",
+    "global_config": "Windows mpv.exe auto-discovers bin/portable_config and uses only that directory; all bundle launchers point to the same bundled config, with no overwrite or dependency on user global config",
     "network": "not required for packaged playback or built-in HRTF"
   },
   "reproducibility": {

@@ -28,8 +28,9 @@ The canonical contract is
 [`packaging/player/PLAYER_PACKAGE_MANIFEST.json`](../../packaging/player/PLAYER_PACKAGE_MANIFEST.json).
 It pins FFmpeg `n9.0.1` at
 `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa`, mpv `v0.41.0` at
-`41f6a645068483470267271e1d09966ca3b9f413`, both OpenJOC patch hashes, ABI
-1.5, archive names, profiles, loader policy, and external-runtime policy.
+`41f6a645068483470267271e1d09966ca3b9f413`, both OpenJOC patch hashes, the
+packaged OpenJOC C ABI 1.7, the FFmpeg bridge's minimum C ABI 1.6, archive
+names, profiles, loader policy, and external-runtime policy.
 
 ## Qualified artifact surface
 
@@ -53,6 +54,8 @@ the patch SHA-256 values, requires `git apply --check` to pass, builds the
 OpenJOC C ABI, builds FFmpeg with the recorded flags, builds patched mpv, and
 packages an extracted runtime closure. Build worktrees and prefixes stay
 outside the repository.
+The mpv configure provenance records `-Dlua=luajit`; the build preflight
+requires a `luajit.pc` development package on each target platform.
 
 `--release` is required for final archive names such as
 `openjoc-mpv-<version>-macos-arm64.tar.gz`. Without it, the same build
@@ -75,12 +78,12 @@ It does not require Rust, FFmpeg, or MSYS2 on an end-user machine.
 ```text
 bin/mpv.exe             patched GUI player executable (Windows)
 bin/mpv.com             upstream console wrapper (Windows)
-bin/openjoc-mpv.cmd     Windows console launcher with bundle config/profile include
+bin/openjoc-mpv.cmd     Windows console launcher using portable_config
 bin/mpv                 patched player executable (macOS/Linux)
-bin/openjoc-mpv         relocatable launcher with bundle config/profile include (macOS/Linux)
+bin/openjoc-mpv         relocatable launcher using portable_config (macOS/Linux)
 lib/                    macOS/Linux private shared-library closure
-config/mpv.conf         neutral portable config
-config/profiles.conf    opt-in OpenJOC output profiles
+bin/portable_config/mpv.conf  isolated config and opt-in OpenJOC profiles
+bin/portable_config/scripts/  OpenJOC settings menu
 licenses/               OpenJOC, SADIE, mpv, FFmpeg, and closure evidence
 BUILD_INFO.json/.txt    resolved source/toolchain/feature/signing metadata
 DEPENDENCIES.json       bundled and external dependency inventory
@@ -90,18 +93,37 @@ SHA256SUMS              inner bundle checksum manifest
 
 Windows keeps runtime DLLs in `bin/` because the Windows loader naturally
 searches the executable directory. `mpv.exe` remains the GUI/Explorer entry;
-`mpv.com` is the upstream console entry, and `openjoc-mpv.cmd` injects the
-portable config/profile paths before forwarding the child exit status. The
-launcher has no filename-extension or demux policy. Positive raw-JOC admission
-is implemented inside the patched lavf demux path from the non-destructive
-probe buffer. No registry or global `PATH` change is performed.
+its adjacent `portable_config` directory is discovered by mpv 0.41.0, so a
+direct GUI launch loads the menu without arguments or changes to the user's
+global config ([mpv 0.41.0 Windows config lookup](https://github.com/mpv-player/mpv/blob/v0.41.0/DOCS/man/mpv.rst#L1193-L1209)).
+This default discovery is qualified with `MPV_HOME` unset. An explicitly set
+`MPV_HOME` takes precedence over the adjacent directory; the direct-launch
+autoloader may therefore use that alternate config instead. The provided
+Windows launcher passes the bundle config directory explicitly and is the
+fallback when preserving an existing `MPV_HOME` setting.
+`mpv.com` is the upstream console entry, and
+`openjoc-mpv.cmd` points to the same config before forwarding the child exit
+status. The launcher has no filename-extension or demux policy. Positive
+raw-JOC admission is implemented inside the patched lavf demux path from the
+non-destructive probe buffer. No registry or global `PATH` change is performed.
 
 The extracted Windows acceptance matrix checks direct `mpv.com --version`,
 `openjoc-mpv.cmd --version`, `openjoc-mpv.cmd --ad=help` with `eac3` and
 `libopenjoc`, synthetic JOC null-output playback, package checksums, and the
-presence/PE audit of both GUI and console executables. Native Windows runners
-also attempt a console interrupt smoke where the platform exposes
-`CTRL_BREAK_EVENT`.
+presence/PE audit of both GUI and console executables. The direct GUI config
+autoload smoke starts `mpv.exe` itself with no `--config-dir` and verifies the
+bundled Lua script ran with `MPV_HOME` unset. Qualification extracts under a
+path containing spaces and Unicode. A real-LuaJIT test exercises the settings
+script's production path-aware IO adapter there, including failed replace,
+backup, promotion, and reload. A two-launch headless `mpv.exe` test then uses
+the actual menu and adjacent `portable_config` with no `--config-dir`: it saves
+7.1, restarts, loads that state, and saves 5.1.2, checking the persisted
+primary file and temporary/backup cleanup. Native Windows runners also attempt
+a console interrupt smoke where the platform exposes `CTRL_BREAK_EVENT`. The
+GUI executable status means presence and PE audit only; the separate
+config-autoload smoke does not exercise mpv's windowed OSD or interactive menu.
+Manual Windows OSD/input checks remain pending as listed in the mpv integration
+guide.
 
 On macOS, `install_name_tool` rewrites private dependencies to `@rpath` and
 adds `@loader_path/../lib` to the executable and `@loader_path` to bundled
@@ -163,6 +185,10 @@ scripts/verify-player-package.sh \
 It checks required files, inner checksums, target architecture, loader paths,
 the extracted ELF/PE dependency closure, decoder visibility (`--ad=help`), ABI
 metadata, license-review status, and private/local path leaks. The
+runtime smoke also loads the bundled menu script in headless idle mpv with
+null AO/VO and a controlled quit, then inspects log markers. Qualification
+supplies a synthetic E-AC-3/JOC fixture to verify the saved-options pre-decoder
+hook. The
 missing-dependency smoke temporarily removes the OpenJOC runtime from a copy
 and requires a clear loader failure.
 

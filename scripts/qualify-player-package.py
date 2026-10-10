@@ -22,12 +22,22 @@ PLAYER_HARNESS = REPOSITORY / "integrations/mpv/verify-player.sh"
 HARNESS_FIELDS = (
     "JOC", "RAW_SINGLE_AU_JOC", "RAW_MULTI_AU_JOC", "MP4_JOC",
     "FIRST_AU_INTEGRITY", "EXPLICIT_OVERRIDE", "PASSTHROUGH",
-    "ORDINARY_EAC3", "BINAURAL", "2_0", "5_1", "7_1_4", "9_1_6",
-    "22_2", "EOS",
+    "ORDINARY_EAC3", "BINAURAL", "BINAURAL_D2", "2_0", "5_1", "7_1",
+    "5_1_2", "5_1_4", "7_1_2", "7_1_4", "9_1_6",
+    "22_2", "EOS", "GAIN_PCM_BITEXACT", "GAIN_SAMPLES",
+    "LIVE_GAIN_NO_RESTART", "APPLYCURRENT_REINIT",
 )
+GAIN_HARNESS_MARKERS = {
+    "GAIN_PCM_BITEXACT": "GAIN_PCM_BITEXACT:PASS",
+    "GAIN_SAMPLES": "GAIN_SAMPLES:PASS",
+    "LIVE_GAIN_NO_RESTART": "LIVE_GAIN_NO_RESTART:PASS",
+    "APPLYCURRENT_REINIT": "APPLYCURRENT_REINIT:PASS",
+}
 FIELDS = [
     "BUILD", "PACKAGE", "DEPENDENCIES", "LICENSE", "RUNTIME",
-    "DECODER_SELECTION", "GUI_EXECUTABLE", "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
+    "DECODER_SELECTION", "GUI_EXECUTABLE", "DIRECT_GUI_CONFIG_AUTOLOAD",
+    "SETTINGS_IO_ROUNDTRIP",
+    "CONSOLE_ENTRYPOINT", "CONSOLE_INTERRUPT",
     *HARNESS_FIELDS, "PRIVATE_PATH_SCAN",
 ]
 
@@ -74,6 +84,18 @@ def clean_output(value: str, temporary: pathlib.Path, fixtures: pathlib.Path) ->
     )
 
 
+def apply_gain_harness_statuses(statuses: dict[str, str], output: str) -> list[str]:
+    """Mark gain evidence from literal harness PASS markers; missing is FAIL."""
+    missing: list[str] = []
+    for field, marker in GAIN_HARNESS_MARKERS.items():
+        if marker in output:
+            statuses[field] = "PASS"
+        else:
+            statuses[field] = "FAIL"
+            missing.append(marker)
+    return missing
+
+
 def run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -> tuple[int, str]:
     result = subprocess.run(
         command,
@@ -86,6 +108,79 @@ def run(command: list[str], *, cwd: pathlib.Path, env: dict[str, str]) -> tuple[
         errors="replace",
     )
     return result.returncode, result.stdout
+
+
+def run_windows_settings_io_roundtrip(
+    root: pathlib.Path, temporary: pathlib.Path, env: dict[str, str],
+) -> tuple[bool, str]:
+    """Drive the packaged Lua menu in mpv.exe under its Unicode config path."""
+    config_dir = root / "bin" / "portable_config"
+    settings = config_dir / "openjoc-settings.json"
+    temp_path = settings.with_name(settings.name + ".tmp")
+    backup_path = settings.with_name(settings.name + ".bak")
+    driver = REPOSITORY / "integrations/mpv/test-openjoc-settings-mpv-driver.lua"
+    executable = root / "bin" / "mpv.exe"
+    if not driver.is_file() or not executable.is_file():
+        return False, "mpv settings roundtrip driver or packaged mpv.exe is missing"
+    if "日本語" not in str(settings) or " " not in str(settings):
+        return False, "settings roundtrip config path must contain spaces and Japanese characters"
+
+    # Seed the existing destination with Python's Unicode-safe file API. The
+    # actual mpv/LuaJIT settings script then has to read, replace, and reload it.
+    for path in (temp_path, backup_path):
+        path.unlink(missing_ok=True)
+    try:
+        settings.write_text(
+            json.dumps({"schema": 1, "options": {
+                "render_mode": "speaker", "speaker_layout": "5.1",
+            }}) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        return False, f"could not seed the Unicode-path settings file: {error}"
+    outputs: list[str] = []
+    for pass_number, expected_layout in ((1, "7.1"), (2, "5.1.2")):
+        log_path = temporary / f"mpv-settings-roundtrip-{pass_number}.log"
+        command = [
+            str(executable), "--idle=yes", "--load-scripts=yes",
+            "--force-window=no", "--vo=null", "--ao=null", "--no-video",
+            "--msg-level=all=info", f"--log-file={log_path}",
+            f"--script={driver}",
+        ]
+        try:
+            result = subprocess.run(
+                command, cwd=root, env=env, check=False, timeout=25,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+            )
+        except subprocess.TimeoutExpired as error:
+            log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+            outputs.append(f"pass {pass_number} timed out\n{log}\n{error.stdout or ''}")
+            return False, "\n".join(outputs)
+
+        log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else result.stdout
+        outputs.append(f"pass {pass_number}: exit={result.returncode}\n{log}")
+        if result.returncode != 0:
+            return False, "\n".join(outputs)
+        if "OpenJOC settings menu loaded" not in log or "OPENJOC_SETTINGS_MPV_DRIVER_DONE" not in log:
+            return False, "settings script or headless driver did not complete\n" + "\n".join(outputs)
+        try:
+            document = json.loads(settings.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            return False, f"could not read saved Unicode-path state after pass {pass_number}: {error}\n" + "\n".join(outputs)
+        options = document.get("options") if isinstance(document, dict) else None
+        actual_layout = options.get("speaker_layout") if isinstance(options, dict) else None
+        if not isinstance(document, dict) or document.get("schema") != 1 or actual_layout != expected_layout:
+            return False, (
+                f"pass {pass_number} expected saved layout {expected_layout!r}, got {actual_layout!r}\n"
+                + "\n".join(outputs)
+            )
+        if temp_path.exists() or backup_path.exists():
+            return False, f"pass {pass_number} left a temporary or backup settings file\n" + "\n".join(outputs)
+
+    for path in (settings, temp_path, backup_path):
+        path.unlink(missing_ok=True)
+    return True, "actual mpv Lua settings save/load roundtrip passed under Unicode portable_config\n" + "\n".join(outputs)
 
 
 def main() -> int:
@@ -106,21 +201,40 @@ def main() -> int:
     evidence: dict[str, str] = {}
     package_ok = False
     harness_ok = False
+    direct_gui_config_ok = args.platform != "windows-x64"
+    settings_io_roundtrip_ok = args.platform != "windows-x64"
 
     with tempfile.TemporaryDirectory(prefix="openjoc-player-qualification-") as temporary_name:
         temporary = pathlib.Path(temporary_name)
-        extract_dir = temporary / "extracted"
+        # The native Windows executable and launchers must handle ordinary
+        # relocated installs containing spaces and non-ASCII characters.
+        extract_dir = temporary / "extracted bundle with spaces — 日本語"
         extract_dir.mkdir()
         root = safe_extract(archive, extract_dir)
         env = dict(os.environ)
         env["HOME"] = str(temporary / "home")
         env["LC_ALL"] = "C"
+        env.pop("MPV_HOME", None)
         env["NO_PROXY"] = "*"
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
             env.pop(key, None)
         (temporary / "home").mkdir()
         if args.platform == "windows-x64":
             system_root = env.get("SystemRoot") or env.get("WINDIR") or r"C:\Windows"
+            isolated_profile = temporary / "isolated-user-profile"
+            native_profile = str(isolated_profile)
+            cygpath = shutil.which("cygpath")
+            if cygpath:
+                converted = subprocess.run(
+                    [cygpath, "-w", native_profile], check=False,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, errors="replace",
+                )
+                if converted.returncode == 0 and converted.stdout.strip():
+                    native_profile = converted.stdout.strip()
+            env["USERPROFILE"] = native_profile
+            env["APPDATA"] = native_profile + r"\AppData\Roaming"
+            env["LOCALAPPDATA"] = native_profile + r"\AppData\Local"
             sh_path = shutil.which("sh")
             tool_entries = [str(root / "bin")]
             if sh_path:
@@ -138,8 +252,7 @@ def main() -> int:
             sys.executable, str(PACKAGE_VERIFIER), "verify", "--root", str(root),
             "--platform", args.platform, "--run-smoke", "--missing-dependency-smoke",
         ]
-        if args.platform == "windows-x64":
-            verifier.extend(["--fixture", str(fixtures / "joc.single.ec3")])
+        verifier.extend(["--fixture", str(fixtures / "joc.single.ec3")])
         code, output = run(verifier, cwd=root, env=env)
         evidence["package_verifier"] = clean_output(output, temporary, fixtures)
         if code == 0:
@@ -148,6 +261,8 @@ def main() -> int:
                 statuses[field] = "PASS"
             if args.platform == "windows-x64":
                 statuses["GUI_EXECUTABLE"] = "PASS"
+                direct_gui_config_ok = "mpv.exe direct portable_config Lua menu autoload (no --config-dir): PASS" in output
+                statuses["DIRECT_GUI_CONFIG_AUTOLOAD"] = "PASS" if direct_gui_config_ok else "FAIL"
                 statuses["CONSOLE_ENTRYPOINT"] = "PASS"
                 statuses["CONSOLE_INTERRUPT"] = "PASS" if "mpv.com console interrupt smoke: PASS" in output else "NOT_APPLICABLE"
         else:
@@ -155,8 +270,16 @@ def main() -> int:
                 statuses[field] = "FAIL"
             if args.platform == "windows-x64":
                 statuses["GUI_EXECUTABLE"] = "FAIL"
+                statuses["DIRECT_GUI_CONFIG_AUTOLOAD"] = "FAIL"
                 statuses["CONSOLE_ENTRYPOINT"] = "FAIL"
                 statuses["CONSOLE_INTERRUPT"] = "FAIL"
+
+        if package_ok and args.platform == "windows-x64":
+            settings_io_roundtrip_ok, settings_output = run_windows_settings_io_roundtrip(
+                root, temporary, env,
+            )
+            evidence["settings_io_roundtrip"] = clean_output(settings_output, temporary, fixtures)
+            statuses["SETTINGS_IO_ROUNDTRIP"] = "PASS" if settings_io_roundtrip_ok else "FAIL"
 
         if package_ok:
             harness_executable = "mpv.com" if args.platform == "windows-x64" else "mpv"
@@ -164,10 +287,16 @@ def main() -> int:
             code, output = run(harness, cwd=root, env=env)
             evidence["player_harness"] = clean_output(output, temporary, fixtures)
             if code == 0:
-                harness_ok = True
                 for field in HARNESS_FIELDS:
                     statuses[field] = "PASS"
+                missing_markers = apply_gain_harness_statuses(statuses, output)
+                harness_ok = not missing_markers
+                if missing_markers:
+                    evidence["gain_marker_contract"] = (
+                        "missing required harness markers: " + ", ".join(missing_markers)
+                    )
             else:
+                harness_ok = False
                 for field in HARNESS_FIELDS:
                     statuses[field] = "FAIL"
 
@@ -181,7 +310,7 @@ def main() -> int:
             "archive": archive.name,
             "archive_sha256": digest(archive),
             "archive_size": archive.stat().st_size,
-            "qualification": "QUALIFIED" if package_ok and harness_ok else "BLOCKED",
+            "qualification": "QUALIFIED" if package_ok and harness_ok and direct_gui_config_ok and settings_io_roundtrip_ok else "BLOCKED",
             "statuses": statuses,
             "build_info": {
                 "target": build_info.get("target"),

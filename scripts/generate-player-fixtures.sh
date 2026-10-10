@@ -56,6 +56,7 @@ verify_seekable_eac3_timing() {
     label=$2
     expected_packets=$3
     expected_duration=$4
+    expected_duration_ts=$((expected_packets * 1536))
     stream_rows="$output/${label}.stream-timing.txt"
     packet_pts="$output/${label}.packet-pts.txt"
     frame_rows="$output/${label}.frame-timing.csv"
@@ -70,7 +71,7 @@ verify_seekable_eac3_timing() {
         -of csv=p=0 "$mp4" > "$frame_rows"
 
     require_exact_row "time_base=1/48000" "$stream_rows"
-    require_exact_row "duration_ts=196608" "$stream_rows"
+    require_exact_row "duration_ts=$expected_duration_ts" "$stream_rows"
     require_exact_row "duration=$expected_duration" "$stream_rows"
     require_exact_row "nb_frames=$expected_packets" "$stream_rows"
     require_exact_row "nb_read_packets=$expected_packets" "$stream_rows"
@@ -96,7 +97,7 @@ verify_seekable_eac3_timing() {
         cat "$frame_rows" >&2
         return 1
     fi
-    echo "seekable E-AC-3 timing: $mp4 packets=$expected_packets pts_dts_step=1536 frame_samples=1536 frame_duration=N/A duration_ts=196608 duration=$expected_duration"
+    echo "seekable E-AC-3 timing: $mp4 packets=$expected_packets pts_dts_step=1536 frame_samples=1536 frame_duration=N/A duration_ts=$expected_duration_ts duration=$expected_duration"
     sha256_files "$mp4" "$stream_rows" "$packet_pts" "$frame_rows"
 }
 
@@ -132,6 +133,15 @@ ffmpeg -v error -f eac3 -i "$output/joc.lifecycle.ec3" -map 0:a:0 -c:a copy \
 verify_exact_mp4_payload "$output/joc.lifecycle.ec3" \
     "$output/joc.lifecycle.mp4" joc-lifecycle
 verify_seekable_eac3_timing "$output/joc.lifecycle.mp4" joc-lifecycle 128 4.096000
+
+# Give the real-mpv live-gain and ApplyCurrent driver a bounded 32.768-second
+# JOC stream. Eight copies of the checked lifecycle corpus are stream-copied;
+# setts then assigns one strictly increasing 1536/48000 interval per AU.
+ffmpeg -v error -stream_loop 7 -i "$output/joc.lifecycle.mp4" -map 0:a:0 \
+    -c:a copy -bsf:a "$joc_setts" -movie_timescale 48000 -f mp4 -y \
+    "$output/joc.live-gain.mp4"
+verify_seekable_eac3_timing "$output/joc.live-gain.mp4" \
+    joc-live-gain 1024 32.768000
 
 # Annex-J transparent mixed-carriage fixture. The first syncframe is original
 # syntax AC-3 I0 and each access unit is followed by dependent E-AC-3 D0. The

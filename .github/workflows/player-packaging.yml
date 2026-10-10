@@ -63,7 +63,11 @@ jobs:
           ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Install pinned build prerequisites
-        run: brew install ffmpeg gstreamer meson ninja libass libplacebo
+        run: brew install ffmpeg gstreamer meson ninja libass libplacebo luajit
+
+      - name: Test the mocked mpv settings menu
+        run: luajit integrations/mpv/test-openjoc-settings.lua
+
 
       - name: Select stable Rust
         run: |
@@ -181,9 +185,13 @@ jobs:
             libxpresent-dev libxrandr-dev libxv-dev libxinerama-dev \
             libxext-dev libxss-dev libxkbcommon-dev libwayland-dev \
             libdrm-dev libgbm-dev libpipewire-0.3-dev libpulse-dev \
-            libjpeg-dev liblcms2-dev libvulkan-dev python3 \
+            libjpeg-dev liblcms2-dev libvulkan-dev libluajit-5.1-dev luajit python3 \
             gstreamer1.0-tools gstreamer1.0-plugins-good \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Test the mocked mpv settings menu
+        run: luajit integrations/mpv/test-openjoc-settings.lua
+
 
       - name: Select stable Rust
         run: |
@@ -299,6 +307,19 @@ jobs:
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
             mingw-w64-x86_64-gst-plugins-good
+
+      - name: Test the mocked mpv settings menu
+        run: luajit integrations/mpv/test-openjoc-settings.lua
+
+      - name: Test real LuaJIT settings IO from a Unicode path
+        run: |
+          set -euo pipefail
+          test_root="$(cygpath -u "$RUNNER_TEMP")/openjoc-settings-io-test"
+          test_dir="$test_root/OpenJOC Settings 日本語"
+          mkdir -p "$test_dir"
+          trap 'rm -rf -- "$test_root"' EXIT
+          OPENJOC_SETTINGS_IO_TEST_ROOT="$(cygpath -w "$test_root")" \
+            luajit integrations/mpv/test-openjoc-settings-io.lua
 
       - name: Select the GNU Rust target and build the ZIP
         env:

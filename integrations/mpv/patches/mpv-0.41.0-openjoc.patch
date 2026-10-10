@@ -4,14 +4,14 @@ Date: Thu, 20 Aug 2026 16:02:54 +0800
 Subject: [PATCH 1/3] audio: add optional OpenJOC JOC selection and transport
 
 ---
- audio/aframe.c              |  10 ++
+ audio/aframe.c              |  32 ++++++++++++++++++++++++++++++++
  audio/chmap.c               |   2 +
  audio/chmap.h               |   5 +
  audio/chmap_avchannel.c     |  20 ++-
  audio/decode/ad_lavc.c      |   7 ++
  filters/f_decoder_wrapper.c | 240 +++++++++++++++++++++++++++++++++++-
  meson.build                 |   9 ++
- 7 files changed, 287 insertions(+), 6 deletions(-)
+ 7 files changed, 308 insertions(+), 7 deletions(-)
 
 diff --git a/audio/aframe.c b/audio/aframe.c
 index fbba7a3..1f6e6d8 100644
@@ -34,6 +34,30 @@ index fbba7a3..1f6e6d8 100644
      int format = af_from_avformat(av_frame->format);
      if (!format && av_frame->format != AV_SAMPLE_FMT_NONE)
          return NULL;
+@@ -165,2 +175,22 @@ struct AVFrame *mp_aframe_to_avframe(struct mp_aframe *frame)
+-    return av_frame_clone(frame->av_frame);
++    AVFrame *clone = av_frame_clone(frame->av_frame);
++    if (!clone)
++        return NULL;
++
++    // Keep the clone's channel metadata consistent with mpv's transport map.
++    // This matters when AVFrame labels BIL/BIR but mp_aframe canonicalized
++    // that already-rendered binaural pair as ordinary stereo. Never mutate
++    // the source frame or reorder/scale its samples.
++    struct mp_chmap cloned_map = {0};
++    if (mp_chmap_from_av_layout(&cloned_map, &clone->ch_layout) &&
++        !mp_chmap_equals(&cloned_map, &frame->chmap)) {
++        AVChannelLayout expected_layout = {0};
++        mp_chmap_to_av_layout(&expected_layout, &frame->chmap);
++        if (av_channel_layout_check(&expected_layout)) {
++            av_channel_layout_uninit(&clone->ch_layout);
++            clone->ch_layout = expected_layout;
++        } else {
++            av_channel_layout_uninit(&expected_layout);
++        }
++    }
++    return clone;
+ }
 diff --git a/audio/chmap.c b/audio/chmap.c
 index 79ae2d7..d58b01f 100644
 --- a/audio/chmap.c

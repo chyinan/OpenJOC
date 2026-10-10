@@ -78,7 +78,7 @@ run_with_libraries() {
 run_with_libraries "$build_dir/ffmpeg" -hide_banner -decoders \
     | grep -E '(^| )eac3|libopenjoc'
 run_with_libraries "$build_dir/ffmpeg" -hide_banner -h decoder=libopenjoc \
-    | grep -E 'OpenJOC|Supported sample formats: flt|speaker_layout|virtual_layout'
+    | grep -E 'OpenJOC|Supported sample formats: flt|speaker_layout|virtual_layout|hrtf|d1|d2'
 
 cc "$script_dir/verify-decoder-selection.c" \
     -I"$ffmpeg_source" -I"$build_dir" \
@@ -92,6 +92,39 @@ if [ -n "$positive_fixture" ]; then
         -speaker_layout 2.0 -i "$positive_fixture" \
         -map 0:a:0 -c:a pcm_f32le -f f32le -y "$build_dir/openjoc.f32"
     test -s "$build_dir/openjoc.f32"
+    for hrtf in d1 d2; do
+        run_with_libraries "$build_dir/ffmpeg" -hide_banner -loglevel error \
+            -flags2 +skip_manual -c:a libopenjoc -strict experimental \
+            -render_mode binaural -hrtf "$hrtf" -virtual_layout 7.1.4 \
+            -i "$positive_fixture" -map 0:a:0 -c:a pcm_f32le -f f32le -y \
+            "$build_dir/openjoc-$hrtf.f32"
+        test -s "$build_dir/openjoc-$hrtf.f32"
+    done
+    if cmp -s "$build_dir/openjoc-d1.f32" "$build_dir/openjoc-d2.f32"; then
+        echo "D1 and D2 HRTF presets produced identical PCM for the supplied JOC fixture" >&2
+        exit 1
+    fi
+
+    # A persisted custom path is irrelevant to physical speaker rendering.
+    # The wrapper should only map SOFA bytes when binaural rendering is active.
+    missing_sofa="$build_dir/no-such-openjoc-test.sofa"
+    if [ -e "$missing_sofa" ]; then
+        echo "expected SOFA test path to be absent: $missing_sofa" >&2
+        exit 1
+    fi
+    run_with_libraries "$build_dir/ffmpeg" -hide_banner -loglevel error \
+        -flags2 +skip_manual -c:a libopenjoc -strict experimental \
+        -render_mode speaker -speaker_layout 2.0 -sofa "$missing_sofa" \
+        -i "$positive_fixture" -map 0:a:0 -f null -
+    if run_with_libraries "$build_dir/ffmpeg" -hide_banner -loglevel error \
+        -flags2 +skip_manual -c:a libopenjoc -strict experimental \
+        -render_mode binaural -hrtf d2 -sofa "$missing_sofa" \
+        -i "$positive_fixture" -map 0:a:0 -f null - \
+        > "$build_dir/missing-sofa-binaural.log" 2>&1; then
+        echo "binaural rendering unexpectedly accepted a missing custom SOFA file" >&2
+        exit 1
+    fi
+    echo "missing SOFA ignored for speaker render and rejected for binaural render"
 fi
 
 run_with_libraries "$build_dir/ffmpeg" -hide_banner -loglevel error \

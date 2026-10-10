@@ -54,7 +54,7 @@ jobs:
 
       - name: Verify exported patch integrity
         run: |
-          echo "e8921951af338c82edaa15766e2f2a1e7ee5b33ccd1e514733b93baa40d266a9  integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch" \
+          echo "d38aa42ff08f96aba43f5350cc10d28a2b22304d7e839a3af04c5b209278caa0  integrations/ffmpeg/native/patches/0001-avcodec-add-experimental-libopenjoc-decoder-wrapper.patch" \
             | sha256sum --check
 
       - name: Generate a redistributable synthetic JOC fixture
