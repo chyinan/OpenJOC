@@ -54,7 +54,7 @@
       "tag": "v0.41.0",
       "commit": "41f6a645068483470267271e1d09966ca3b9f413",
       "patch_path": "integrations/mpv/patches/mpv-0.41.0-openjoc.patch",
-      "patch_sha256": "08b6c38a7ece0b258f8cdef90ea397c4c968abeb58e051e76ecf939fbad0fcc5"
+      "patch_sha256": "1d72607360605696ed94e0f61a30801ae4651d34eb9278b202ffb00ebeaeb369"
     },
     "rust": {
       "minimum": "1.89",

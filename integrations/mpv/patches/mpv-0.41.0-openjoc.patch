@@ -1,7 +1,7 @@
 From 817058bab089cf90314e6e056c67704e1483e042 Mon Sep 17 00:00:00 2001
 From: chyinan <chyinan2015@gmail.com>
 Date: Thu, 20 Aug 2026 16:02:54 +0800
-Subject: [PATCH 1/3] audio: add optional OpenJOC JOC selection and transport
+Subject: [PATCH 1/4] audio: add optional OpenJOC JOC selection and transport
 
 ---
  audio/aframe.c              |  32 ++++++++++++++++++++++++++++++++
@@ -493,7 +493,7 @@ index fb10be5..1c76eb3 100644
 From 2936603658cfd37a729afb6d7f6c4ce31a25e29a Mon Sep 17 00:00:00 2001
 From: chyinan <chyinan2015@gmail.com>
 Date: Thu, 20 Aug 2026 16:11:07 +0800
-Subject: [PATCH 2/3] audio: reset OpenJOC classification at segment boundaries
+Subject: [PATCH 2/4] audio: reset OpenJOC classification at segment boundaries
 
 ---
  filters/f_decoder_wrapper.c | 7 +++++++
@@ -524,7 +524,7 @@ index ef73eef..500d47e 100644
 From 703d11fc0dbf95868f34b559a0c0c3c055056856 Mon Sep 17 00:00:00 2001
 From: OpenJOC Maintainers <maintainers@openjoc.invalid>
 Date: Fri, 21 Aug 2026 15:03:35 +0800
-Subject: [PATCH 3/3] demux: pre-admit confirmed raw OpenJOC streams
+Subject: [PATCH 3/4] demux: pre-admit confirmed raw OpenJOC streams
 
 ---
  demux/demux_lavf.c          | 119 +++++++++++++++++++++++++++++++++++-
@@ -792,3 +792,110 @@ index 500d47e..017a2c7 100644
 -- 
 2.47.1
 
+
+From 3b4dcde50b457c6bec172184593f4197370713d01 Mon Sep 17 00:00:00 2001
+From: chyinan <60872708+chyinan@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 04:15:00 +0000
+Subject: [PATCH 4/4] lavfi: retain owned OpenJOC gain across graph recreation
+
+Persist only the last successful scalar volume command for the dedicated
+single-filter OpenJOC audio gain graph. Replay its exact text after graph
+configuration, before any new-context audio frame is processed. Other lavfi
+graphs and commands keep upstream behavior.
+
+---
+diff --git a/filters/f_lavfi.c b/filters/f_lavfi.c
+index 29cb9fa33..55fea4628 100644
+--- a/filters/f_lavfi.c
++++ b/filters/f_lavfi.c
+@@ -60,6 +60,9 @@ struct lavfi {
+     struct mp_filter *f;
+
+     char *graph_string;
++    // Only the dedicated OpenJOC gain stage persists its last successful
++    // scalar command across lazy graph recreation. Owned by this instance.
++    char *openjoc_gain_volume;
+     char **graph_opts;
+     bool force_bidir;
+     enum mp_frame_type force_type;
+@@ -539,6 +542,32 @@ static void dump_graph(struct lavfi *c)
+     av_free(s);
+ }
+
++// Deliberately recognize only OpenJOC's dedicated single audio volume graph.
++// Other lavfi graphs and commands retain their normal upstream semantics.
++static bool is_openjoc_gain_graph(struct lavfi *c)
++{
++    const char *prefix = "volume@openjoc_gain=volume=";
++    if (c->direct_filter || !c->force_bidir || c->force_type != MP_FRAME_AUDIO ||
++        !c->graph_string || strncmp(c->graph_string, prefix, strlen(prefix)))
++        return false;
++    const char *start = c->graph_string + strlen(prefix);
++    char *end;
++    double value = strtod(start, &end);
++    return end != start && isfinite(value) && value >= 0.1 && value <= 10.0 &&
++           strcmp(end, ":precision=float") == 0;
++}
++
++static bool is_openjoc_gain_command(struct mp_filter_command *cmd)
++{
++    if (!cmd->target || !cmd->cmd || !cmd->arg ||
++        strcmp(cmd->target, "volume") || strcmp(cmd->cmd, "volume"))
++        return false;
++    char *end;
++    double value = strtod(cmd->arg, &end);
++    return end != cmd->arg && *end == '\0' && isfinite(value) &&
++           value >= 0.1 && value <= 10.0;
++}
++
+ // Initialize the graph if all inputs have formats set. If it's already
+ // initialized, or can't be initialized yet, do nothing.
+ static void init_graph(struct lavfi *c)
+@@ -580,6 +609,20 @@ static void init_graph(struct lavfi *c)
+             return;
+         }
+
++        // A format/EOF/reset recovery reconstructs the graph from its static
++        // string. Restore the owned stage's last successful runtime command
++        // before any frame can be fed into this new graph, even with fixed AO.
++        if (c->openjoc_gain_volume && is_openjoc_gain_graph(c) &&
++            avfilter_graph_send_command(c->graph, "volume@openjoc_gain", "volume",
++                                        c->openjoc_gain_volume,
++                                        &(char){0}, 0, 0) < 0)
++        {
++            MP_FATAL(c, "failed to restore the OpenJOC gain after graph recreation\n");
++            free_graph(c);
++            c->failed = true;
++            return;
++        }
++
+         // The timebase is available after configuring.
+         for (int n = 0; n < c->num_out_pads; n++) {
+             struct lavfi_pad *pad = c->out_pads[n];
+@@ -816,9 +859,21 @@ static bool lavfi_command(struct mp_filter *f, struct mp_filter_command *cmd)
+
+     switch (cmd->type) {
+     case MP_FILTER_COMMAND_TEXT: {
+-        return avfilter_graph_send_command(c->graph, cmd->target,
+-                                           cmd->cmd, cmd->arg,
+-                                           &(char){0}, 0, 0) >= 0;
++        bool ok = avfilter_graph_send_command(c->graph, cmd->target,
++                                              cmd->cmd, cmd->arg,
++                                              &(char){0}, 0, 0) >= 0;
++        if (ok && is_openjoc_gain_graph(c)) {
++            // Failed commands leave the last successful target intact. Any
++            // successful non-scalar/alternate command drops our narrow replay
++            // contract instead of resurrecting an older numeric target.
++            talloc_free(c->openjoc_gain_volume);
++            c->openjoc_gain_volume = NULL;
++            if (is_openjoc_gain_command(cmd)) {
++                c->openjoc_gain_volume = talloc_strdup(c, cmd->arg);
++                MP_HANDLE_OOM(c->openjoc_gain_volume);
++            }
++        }
++        return ok;
+     }
+     case MP_FILTER_COMMAND_GET_META: {
+         // We can worry later about what it should do to multi output filters.
+--
+2.43.0

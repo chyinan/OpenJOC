@@ -191,6 +191,9 @@ mp = {
                     -- mpv exposes the configured graph unchanged after a
                     -- successful command; actual DSP volume is separate.
                     filter.runtime_volume = factor
+                    -- The patched native dedicated gain stage retains this
+                    -- exact successful scalar command across graph recovery.
+                    filter.runtime_saved_volume = factor
                     found = true
                 end
             end
@@ -1072,6 +1075,83 @@ bindings['openjoc-settings-enter']()
 assert(find_gain_filter().runtime_volume == plus_01
         and find_gain_filter().params.graph == configured_baseline,
     'ordinary Cancel did not restore the actual nonzero runtime baseline')
+
+-- Native lavfi context recovery preserves the last successful command for
+-- the same dedicated filter instance. The compiled C hunk harness separately
+-- validates this primitive; these mocks exercise the Lua intent/epoch boundary.
+local function recreate_owned_gain_context()
+    local filter = assert(find_gain_filter())
+    filter.runtime_volume = filter.params.graph:match('volume@openjoc_gain=volume=([^:]+)')
+    if filter.runtime_saved_volume then
+        filter.runtime_volume = filter.runtime_saved_volume
+    end
+end
+
+fresh_gain_scenario('native-saved-context-rebuild')
+drain_short_timeouts()
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']()
+bindings['openjoc-settings-down']() -- Save +0.2 over the +0.1 constructor
+bindings['openjoc-settings-enter']()
+assert(saved_document.options.output_gain_tenths_db == 2, 'context test did not save +0.2')
+local host_resample = {
+    name = 'lavfi', label = 'unrelated_resample', enabled = true,
+    params = { graph = 'aresample=44100' },
+}
+table.insert(af_filters, 1, host_resample)
+local context_commands = #command_calls
+for _ = 1, 4 do
+    recreate_owned_gain_context()
+    observers['af']('af', af_filters)
+    observers['track-list']('track-list', current_tracks)
+    assert(find_gain_filter().runtime_volume == plus_02,
+        'same-instance format/reset recovery lost the saved runtime value')
+end
+assert(#command_calls == context_commands and #af_filters == 2 and af_filters[1] == host_resample,
+    'native context recovery caused duplicate filters, polling, or unrelated-filter changes')
+
+fresh_gain_scenario('native-preview-context-rebuild')
+drain_short_timeouts()
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']()
+recreate_owned_gain_context()
+observers['track-list']('track-list', current_tracks)
+assert(find_gain_filter().runtime_volume == plus_02,
+    'native recovery replaced an unsaved preview with the saved target')
+bindings['openjoc-settings-right']() -- newest +0.3 intent
+recreate_owned_gain_context()
+assert(find_gain_filter().runtime_volume == plus_03, 'native recovery replayed an older preview')
+for _ = 1, 3 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-enter']() -- Cancel to the original +0.1 baseline
+recreate_owned_gain_context()
+assert(find_gain_filter().runtime_volume == plus_01,
+    "native context replay lost Cancel's original nonzero baseline")
+
+-- A queued paused preview is not yet a successful native command. Recovery
+-- keeps the last successful value until the existing resume queue takes over.
+fresh_gain_scenario('native-paused-context-rebuild')
+drain_short_timeouts()
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+pause_value = true
+bindings['openjoc-settings-right']()
+recreate_owned_gain_context()
+assert(find_gain_filter().runtime_volume == plus_01 and drain_short_timeouts() == 0,
+    'native recovery confirmed a paused gain request that was never sent')
+pause_value = false
+observers['pause']('pause', false)
+drain_short_timeouts()
+recreate_owned_gain_context()
+assert(find_gain_filter().runtime_volume == plus_02,
+    'native recovery lost the newest gain command after playback resumed')
+current_path = 'native-context-new-file.mkv'
+observers['path']('path', current_path)
+drain_short_timeouts()
+recreate_owned_gain_context()
+assert(find_gain_filter().runtime_volume == plus_01,
+    'native target escaped its filter instance across a true file epoch')
 
 -- Cancel before Apply validation supersedes only its pending gain intent.
 -- Already-requested decoder settings still validate, and stale callbacks do

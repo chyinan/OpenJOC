@@ -32,6 +32,7 @@ on:
       - "scripts/generate-player-fixtures.sh"
       - "scripts/qualify-player-package.py"
       - "scripts/verify-player-package.sh"
+      - "scripts/verify-mpv-gain-recovery.py"
       - "integrations/ffmpeg/native/**"
       - "integrations/mpv/**"
       - "crates/openjoc-capi/**"
