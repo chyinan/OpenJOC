@@ -1053,6 +1053,9 @@ impl JocSpeakerRenderer {
             if let Some(control) = self.control.as_mut() {
                 control.reset();
             }
+            if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+                linked_gain.reset();
+            }
             self.base_coordinates = None;
             self.expected_coordinates = None;
             self.expected_frame = frame_index;
