@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Avoided false custom-SOFA coverage errors for resolvable shallow rotated
+  triangles with conservative positive-cone certification, preserving existing
+  successful neighbor selections and interpolation arithmetic.
 - Length-frame ordered custom speaker channel labels in effective configuration
   descriptors, distinguishing labels such as `["A,B", "C"]` and `["A", "B,C"]`.
   Custom-layout fingerprints change; preset descriptors and fingerprints remain
