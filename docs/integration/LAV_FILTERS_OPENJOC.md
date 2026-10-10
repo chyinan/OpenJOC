@@ -193,3 +193,9 @@ Updating the pinned LAV revision alone does not put newer core fixes into an
 existing release package. Artifact-only validation pins both repositories to
 explicit commits and does not replace stable release assets. The v0.18.0 package, v0.19.0 package, and source/candidate builds are distinct
 deliverables; compare their embedded source identities rather than filenames alone.
+
+FFmpeg preparation recognizes the legacy MSVC awk dependency command and the
+native `-showIncludes` dependency-flag implementation. It escapes only the
+known legacy command; already-patched and native inputs remain byte-identical.
+Unknown dependency forms stop the build for review. The preparation regressions
+run with `python -m unittest discover -s scripts/tests -p 'test_prepare_lav_ffmpeg_configure.py' -v`.

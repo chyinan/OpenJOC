@@ -1,0 +1,34 @@
+# FFmpeg n8.0 configure: unmodified MSVC compiler-detection branch excerpt.
+# See README.md for the source and scope. This excerpt is not executable.
+    elif VSLANG=1033 $_cc -nologo- 2>&1 | grep -q ^Microsoft || { $_cc -v 2>&1 | grep -q clang && $_cc -? > /dev/null 2>&1; }; then
+        _type=msvc
+        if VSLANG=1033 $_cc -nologo- 2>&1 | grep -q ^Microsoft; then
+            # Depending on the tool (cl.exe or link.exe), the version number
+            # is printed on the first line of stderr or stdout
+            _ident=$(VSLANG=1033 $_cc 2>&1 | grep ^Microsoft | head -n1 | tr -d '\r')
+        else
+            _ident=$($_cc --version 2>/dev/null | head -n1 | tr -d '\r')
+        fi
+        if [ -x "$(command -v wslpath)" ]; then
+            _DEPCMD='$(DEP$(1)) $(DEP$(1)FLAGS) $($(1)DEP_FLAGS) $< 2>&1 | awk '\''/including/ { sub(/^.*file: */, ""); if (!match($$0, / /)) { print $$0 } }'\'' | xargs -r -d\\n -n1 wslpath -u | awk '\''BEGIN { printf "%s:", "$@" }; { sub(/\r/,""); printf " %s", $$0 }; END { print "" }'\'' > $(@:.o=.d)'
+
+        else
+            _DEPCMD='$(DEP$(1)) $(DEP$(1)FLAGS) $($(1)DEP_FLAGS) $< 2>&1 | awk '\''/including/ { sub(/^.*file: */, ""); gsub(/\\/, "/"); if (!match($$0, / /)) print "$@:", $$0 }'\'' > $(@:.o=.d)'
+        fi
+        _DEPFLAGS='$(CPPFLAGS) $(CFLAGS) -showIncludes -Zs'
+        _cflags_speed="-O2"
+        _cflags_size="-O1"
+        _cflags_noopt="-O1"
+        if $_cc -nologo- 2>&1 | grep -q Linker; then
+            _ld_o='-out:$@'
+            _flags_filter=msvc_flags_link
+        else
+            _ld_o='-Fe$@'
+            _flags_filter=msvc_flags
+        fi
+        _cc_o='-Fo$@'
+        _cc_e='-P -Fi$@'
+        _ld_lib='lib%.a'
+        _ld_path='-libpath:'
+        _flags='-nologo'
+        disable stripping
