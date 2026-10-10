@@ -78,6 +78,12 @@ jobs:
           # The final archive is explicitly labeled CI and includes source provenance.
           "release_version=0.19.0" >> $env:GITHUB_OUTPUT
 
+      - name: Inspect exact FFmpeg configure before rebuilding
+        shell: pwsh
+        run: |
+          Select-String -LiteralPath lav/ffmpeg/configure -Pattern 'gsub|msvc|dep_cmd|DEP_FLAGS|dep_cc|showIncludes' -Context 3,3 | ForEach-Object { $_.ToString() }
+          throw 'Intentional diagnostic stop: inspect updated FFmpeg dependency generation before rebuilding.'
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
