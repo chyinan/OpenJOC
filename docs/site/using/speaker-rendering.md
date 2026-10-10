@@ -95,6 +95,11 @@ same renderer and support up to 64 ordered output channels. The JSON
 `speakers` array is the semantic label order and interleaved PCM order. LFE
 entries remain logical outputs outside the spatial projector.
 
+Custom geometry and channel order also apply with `--topology`,
+`--performance-report`, contribution diagnostics, and peak normalization.
+These options use the custom layout definition rather than resolving its
+display name as a preset.
+
 Coordinate ranges, validation, projection coverage, Rust construction, C ABI
 1.4 descriptors, and examples are canonical in
 [custom speaker layouts](custom-speaker-layouts.md). Renderer support does

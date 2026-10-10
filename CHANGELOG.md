@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Preserved custom speaker geometry and channel order in CLI renders using
+  topology overrides, performance reports, or contribution diagnostics,
+  including layouts whose display names match presets.
+- Kept custom layouts named `2.0` in speaker mode instead of rejecting them
+  as incompatible with the preset stereo path.
 - Reset CLI spatial-bridge gain history on decoder discontinuities when using
   an explicit `--topology` sidecar, even when its full topology is unchanged.
 - Avoided false custom-SOFA coverage errors for resolvable shallow rotated

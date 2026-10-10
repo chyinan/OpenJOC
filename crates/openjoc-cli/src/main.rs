@@ -2801,7 +2801,17 @@ fn render_joc(
     } else {
         let mut renderer = if let Some(topology) = &arguments.topology {
             let control = joc_render::RenderControl::from_path(topology)?;
-            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            if let Some(layout) = arguments.speaker_layout_definition.clone() {
+                if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                    joc_render::JocSpeakerRenderer::new_with_layout(layout, control)?
+                } else {
+                    joc_render::JocSpeakerRenderer::new_with_layout_and_contribution(
+                        layout,
+                        control,
+                        arguments.diagnostic_contribution,
+                    )?
+                }
+            } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
                 joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
             } else {
                 joc_render::JocSpeakerRenderer::new_with_contribution(
@@ -2809,6 +2819,15 @@ fn render_joc(
                     control,
                     arguments.diagnostic_contribution,
                 )?
+            }
+        } else if let Some(layout) = arguments.speaker_layout_definition.clone() {
+            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                joc_render::JocSpeakerRenderer::new_automatic_with_layout(layout)
+            } else {
+                joc_render::JocSpeakerRenderer::new_automatic_with_layout_and_contribution(
+                    layout,
+                    arguments.diagnostic_contribution,
+                )
             }
         } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
             joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
@@ -2961,7 +2980,7 @@ fn render_joc_with_embedded_session(
         input.preflight(decode_config, arguments.validation_profile)?;
     let render_mode = if arguments.binaural {
         ApiRenderMode::Binaural
-    } else if arguments.layout == "2.0" {
+    } else if arguments.speaker_layout_definition.is_none() && arguments.layout == "2.0" {
         ApiRenderMode::Stereo
     } else {
         ApiRenderMode::Speaker
