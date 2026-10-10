@@ -1728,7 +1728,7 @@ fn orientation_neighborhood_from_candidates(
 }
 
 fn find_interpolation_neighborhood_for_candidate_expansion(
-    _target: [f64; 3],
+    target: [f64; 3],
     candidates: &[Candidate],
     candidate_directions: &[[f64; 3]],
     candidate_projections: Option<&[[f64; 2]]>,
@@ -1771,6 +1771,14 @@ fn find_interpolation_neighborhood_for_candidate_expansion(
                         ])
                     }
                 }) {
+                    let vertices = [
+                        candidate_directions[first],
+                        candidate_directions[second],
+                        candidate_directions[third],
+                    ];
+                    if !triangle_points_toward_target(target, vertices, weights) {
+                        continue;
+                    }
                     return Ok(InterpolationNeighborhood {
                         indices: selected.map(|candidate| candidate.index).to_vec(),
                         weights: weights.to_vec(),
@@ -2298,10 +2306,50 @@ fn spherical_triangle_weights(target: [f64; 3], vertices: [[f64; 3]; 3]) -> Opti
     let beta = (a.mul_add(-projected[2][1], projected[2][0] * c)) / determinant;
     let gamma = 1.0 - alpha - beta;
     let weights = [alpha, beta, gamma];
-    weights
+    let weights = weights
         .iter()
         .all(|weight| weight.is_finite() && *weight >= -INTERPOLATION_WEIGHT_TOLERANCE)
-        .then_some(weights.map(|weight| weight.max(0.0)))
+        .then_some(weights.map(|weight| weight.max(0.0)))?;
+    triangle_points_toward_target(target, vertices, weights).then_some(weights)
+}
+
+fn triangle_points_toward_target(
+    target: [f64; 3],
+    vertices: [[f64; 3]; 3],
+    weights: [f64; 3],
+) -> bool {
+    // Tangent projection discards the radial sign: positive projected weights
+    // can describe either the request or its antipode. Form the original 3D
+    // combination without changing the interpolation weights or tap math.
+    let mut combined = [0.0; 3];
+    let mut absolute_products = [0.0; 3];
+    for (weight, vertex) in weights.into_iter().zip(vertices) {
+        for axis in 0..3 {
+            let product = weight * vertex[axis];
+            combined[axis] += product;
+            absolute_products[axis] += product.abs();
+        }
+    }
+    // A cancelling combination must not manufacture a direction from floating
+    // point residue. gamma_6, using EPSILON conservatively rather than half an
+    // ulp, bounds the three products/two additions and their absolute sums.
+    // This is scale-aware, rather than an absolute cone-size cutoff.
+    let roundoff_factor = 6.0 * f64::EPSILON / (1.0 - 6.0 * f64::EPSILON);
+    let uncertainty_squared =
+        roundoff_factor * roundoff_factor * dot_array(absolute_products, absolute_products);
+    let magnitude_squared = dot_array(combined, combined);
+    let radial_component = dot_array(combined, target);
+    let residual = cross_array(combined, target);
+    // Require the resolvable vector to point forward and remain parallel to
+    // the request within the existing spatial tolerance. This also rejects
+    // lateral residue from tolerated/clamped barycentric boundary weights.
+    // Individual vertices may still lie behind the target's tangent plane.
+    magnitude_squared.is_finite()
+        && magnitude_squared > uncertainty_squared
+        && radial_component.is_finite()
+        && radial_component > 0.0
+        && dot_array(residual, residual)
+            <= magnitude_squared * INTERPOLATION_WEIGHT_TOLERANCE * INTERPOLATION_WEIGHT_TOLERANCE
 }
 
 fn great_circle_segment_weights(
@@ -2823,7 +2871,80 @@ mod nearest_candidate_tests {
         find_interpolation_neighborhood_with_options, interpolate_f32_pair, load_builtin_hrir_f32,
         nearest_candidates, nearest_candidates_with_limit, normalize, resolve_hrir_f32,
         resolve_hrir_f32_for_listener_orientation, resolve_hrir_for_listener_orientation,
+        spherical_triangle_weights,
     };
+
+    #[test]
+    fn resolvable_small_forward_cone_has_no_absolute_size_cutoff() {
+        for sign in [-1.0, 1.0] {
+            let target = [0.0, 0.0, sign];
+            let z = sign * 1.0e-12;
+            let vertices = [[1.0, 0.0, z], [0.0, 1.0, z], [-1.0, 0.0, z]];
+            // These are unit vectors at f64 precision. Their dyadic weights
+            // cancel the tangential terms exactly, leaving a meaningful
+            // forward vector much smaller than the absolute geometry bound.
+            assert!(
+                vertices
+                    .iter()
+                    .all(|vertex| dot_array(*vertex, *vertex) == 1.0)
+            );
+            assert_eq!(
+                spherical_triangle_weights(target, vertices).unwrap(),
+                [0.5, 0.0, 0.5]
+            );
+        }
+    }
+
+    #[test]
+    fn signed_triangle_containment_continues_static_and_expanded_candidate_search() {
+        for sign in [-1.0, 1.0] {
+            let target = [0.0, 0.0, sign];
+            let a = [3.0 / 5.0, 0.0, sign * 4.0 / 5.0];
+            let b = [0.0, 24.0 / 25.0, sign * -7.0 / 25.0];
+            let c = [-3.0 / 13.0, -12.0 / 13.0, sign * -4.0 / 13.0];
+            let d = [-12.0 / 13.0, -3.0 / 13.0, sign * -4.0 / 13.0];
+            // Projected ABC contains the origin, but its weighted radial
+            // component is -7/61. ABD points toward the target at +89/289.
+            assert!(spherical_triangle_weights(target, [a, b, c]).is_none());
+            let expected_weights = spherical_triangle_weights(target, [a, b, d]).unwrap();
+            let vertices = [a, b, c, d];
+            let static_result = find_interpolation_neighborhood_with_options(
+                target,
+                vertices.len(),
+                |index| vertices[index],
+                8,
+            )
+            .unwrap();
+            assert_eq!(static_result.indices, [0, 1, 3]);
+            assert_eq!(static_result.weights, expected_weights);
+
+            let filler = |z: f64| [0.1, (0.99 - z * z).sqrt(), sign * z];
+            let mut expanded_vertices = vec![a, b];
+            expanded_vertices.extend([-0.281, -0.282, -0.283, -0.284, -0.285, -0.286].map(filler));
+            expanded_vertices.extend([c, d]);
+            expanded_vertices.extend([-0.32, -0.34, -0.36, -0.38, -0.40, -0.42].map(filler));
+            // The first eight occupy one projected quadrant. Tier 16 must
+            // reject [0,1,8], then visit and accept [0,1,9], including the
+            // cached first/third arithmetic used only by the larger tiers.
+            assert!(matches!(
+                find_interpolation_neighborhood_with_options(
+                    target,
+                    expanded_vertices.len(),
+                    |index| expanded_vertices[index],
+                    8,
+                ),
+                Err(super::SofaError::InterpolationOutsideCoverage(_))
+            ));
+            let expanded_result = find_interpolation_neighborhood_for_listener_orientation(
+                target,
+                expanded_vertices.len(),
+                |index| expanded_vertices[index],
+            )
+            .unwrap();
+            assert_eq!(expanded_result.indices, [0, 1, 9]);
+            assert_eq!(expanded_result.weights, expected_weights);
+        }
+    }
 
     #[test]
     fn nearest_candidate_selection_orders_by_dot_and_stable_index() {
