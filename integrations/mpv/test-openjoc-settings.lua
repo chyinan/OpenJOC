@@ -159,6 +159,7 @@ mp = {
             local filter = {
                 name = 'lavfi', label = 'openjoc_gain', enabled = true,
                 params = { graph = graph },
+                runtime_volume = graph:match('volume@openjoc_gain=volume=([^:]+)'),
             }
             if defer_af_add_visibility then
                 pending_af_filters[#pending_af_filters + 1] = filter
@@ -187,9 +188,9 @@ mp = {
             local found = false
             for _, filter in ipairs(af_filters) do
                 if filter.label == 'openjoc_gain' then
-                    filter.params.graph = filter.params.graph:gsub(
-                        'volume@openjoc_gain=volume=[^:]+',
-                        'volume@openjoc_gain=volume=' .. factor)
+                    -- mpv exposes the configured graph unchanged after a
+                    -- successful command; actual DSP volume is separate.
+                    filter.runtime_volume = factor
                     found = true
                 end
             end
@@ -354,14 +355,16 @@ assert(command_calls[#command_calls][1] == 'af-command'
         and command_calls[#command_calls][4] == plus_01
         and command_calls[#command_calls][5] == 'volume',
     'live +0.1 dB did not use the exact runtime volume command contract')
-assert(find_gain_filter().params.graph:find('volume=' .. plus_01, 1, true),
-    'live command did not update the named gain graph')
+assert(find_gain_filter().runtime_volume == plus_01,
+    'live command did not update the named runtime gain')
+assert(find_gain_filter().params.graph == 'volume@openjoc_gain=volume=1:precision=float',
+    'mock rewrote insertion configuration after a runtime gain command')
 assert(not active_ad_options.output_gain_tenths_db,
     'live gain preview wrote an FFmpeg decoder option')
 for _ = 1, 3 do bindings['openjoc-settings-down']() end -- Save, Apply, Cancel
 bindings['openjoc-settings-enter']()
 assert(last_overlay == '', 'Cancel did not close after restoring a gain preview')
-assert(find_gain_filter().params.graph == 'volume@openjoc_gain=volume=1:precision=float',
+assert(find_gain_filter().runtime_volume == '1',
     'Cancel did not restore the original unity gain')
 assert(files[settings_path] == nil, 'gain preview or Cancel unexpectedly persisted settings')
 bindings['openjoc-settings-toggle']()
@@ -389,11 +392,11 @@ for tenths_db = -200, 200 do
     assert(seen_gain_factors[factor],
         'runtime gain sweep omitted exact factor for tenths-dB value ' .. tostring(tenths_db))
 end
-assert(find_gain_filter().params.graph:find('volume=' .. string.format('%.17g', 10.0), 1, true),
+assert(find_gain_filter().runtime_volume == string.format('%.17g', 10.0),
     'gain sweep did not reach the +20 dB upper bound')
 for _ = 1, 3 do bindings['openjoc-settings-down']() end -- Save, Apply, Cancel
 bindings['openjoc-settings-enter']()
-assert(find_gain_filter().params.graph == 'volume@openjoc_gain=volume=1:precision=float',
+assert(find_gain_filter().runtime_volume == '1',
     'Cancel after the exhaustive sweep did not restore exact unity')
 assert(files[settings_path] == nil, 'uncommitted gain sweep was persisted')
 bindings['openjoc-settings-toggle']()
@@ -442,7 +445,7 @@ click(537, 251)
 assert(last_overlay:find('+0.1 dB', 1, true), 'compact gain increment hitbox did not preview')
 click(580, 251)
 assert(last_overlay:find('0.0 dB', 1, true), 'compact gain Reset hitbox did not restore unity')
-assert(find_gain_filter().params.graph == 'volume@openjoc_gain=volume=1:precision=float',
+assert(find_gain_filter().runtime_volume == '1',
     'compact mouse Reset did not restore exact unity')
 
 -- Clicking outside closes without discarding a dirty draft; Cancel discards it.
@@ -664,7 +667,7 @@ assert(last_overlay:find('live gain is still queued and not yet confirmed', 1, t
     'Save falsely claimed a queued live gain preview had applied')
 drain_short_timeouts()
 local plus_02 = string.format('%.17g', math.pow(10.0, 2 / 200.0))
-assert(find_gain_filter().params.graph:find('volume=' .. plus_02, 1, true),
+assert(find_gain_filter().runtime_volume == plus_02,
     'queued live preview did not apply after the filter initialized')
 assert(saved_document.options.output_gain_tenths_db == 2,
     'independent gain setting was not saved in the JSON options')
@@ -680,11 +683,11 @@ drain_short_timeouts()
 assert(last_overlay:find('could not be confirmed after bounded retries', 1, true),
     'failed live update did not remain visibly unconfirmed')
 local plus_03 = string.format('%.17g', math.pow(10.0, 3 / 200.0))
-assert(find_gain_filter().params.graph:find('volume=' .. plus_02, 1, true),
+assert(find_gain_filter().runtime_volume == plus_02,
     'failed af-command changed the known active gain unexpectedly')
 for _ = 1, 3 do bindings['openjoc-settings-down']() end -- Save, Apply, Cancel
 bindings['openjoc-settings-enter']()
-assert(find_gain_filter().params.graph:find('volume=' .. plus_02, 1, true),
+assert(find_gain_filter().runtime_volume == plus_02,
     'Cancel failed to preserve the original nonzero gain after a preview error')
 
 -- Save after a failed preview must report the current live gain as unknown or
@@ -715,11 +718,11 @@ pause_value = false
 observers['pause']('pause', false)
 drain_short_timeouts()
 local plus_05 = string.format('%.17g', math.pow(10.0, 5 / 200.0))
-assert(find_gain_filter().params.graph:find('volume=' .. plus_05, 1, true),
+assert(find_gain_filter().runtime_volume == plus_05,
     'resume did not apply the latest queued gain value')
 for _ = 1, 3 do bindings['openjoc-settings-down']() end
 bindings['openjoc-settings-enter']()
-assert(find_gain_filter().params.graph:find('volume=' .. plus_02, 1, true),
+assert(find_gain_filter().runtime_volume == plus_02,
     'Cancel after resume did not restore the pre-preview nonzero baseline')
 
 -- Cancel before resume cancels the queued preview epoch; changing files before
@@ -737,7 +740,7 @@ assert(#command_calls == command_count_before_paused_cancel,
 pause_value = false
 observers['pause']('pause', false)
 drain_short_timeouts()
-assert(find_gain_filter().params.graph:find('volume=' .. plus_02, 1, true),
+assert(find_gain_filter().runtime_volume == plus_02,
     'cancelled paused preview applied after resume')
 
 bindings['openjoc-settings-toggle']()
@@ -795,7 +798,7 @@ assert(apply_write[2].ad == nil and apply_write[2].aid == nil
     'Apply Current changed decoder selection, mpv routing, or leaked gain into AVOptions')
 assert(not find_gain_filter(), 'Apply Current did not suspend its labeled gain stage')
 assert(run_timeout_with_delay(0.75), 'Apply Current did not arm bounded reinit validation')
-assert(find_gain_filter().params.graph:find('volume=' .. plus_03, 1, true),
+assert(find_gain_filter().runtime_volume == plus_03,
     'Apply Current did not restore the requested live gain after decoder validation')
 assert(last_overlay:find('Applied to current playback', 1, true),
     'Apply Current reported no success after validated reinitialization')
@@ -807,7 +810,7 @@ fail_property_write_count = 1
 bindings['openjoc-settings-enter']()
 assert(last_overlay:find('Apply Current failed', 1, true),
     'failed Apply Current write did not report an error')
-assert(find_gain_filter().params.graph:find('volume=' .. plus_03, 1, true),
+assert(find_gain_filter().runtime_volume == plus_03,
     'failed Apply Current did not restore the known live gain stage')
 
 -- Ordinary-track cleanup retries removal. If remove fails, neutralize this
@@ -815,7 +818,7 @@ assert(find_gain_filter().params.graph:find('volume=' .. plus_03, 1, true),
 fail_af_remove_count = 1
 current_tracks = { { type = 'audio', codec = 'flac', selected = true, id = 24 } }
 observers['track-list']('track-list', current_tracks)
-assert(find_gain_filter().params.graph == 'volume@openjoc_gain=volume=1:precision=float',
+assert(find_gain_filter().runtime_volume == '1',
     'failed removal did not use exact-unity fallback')
 assert(last_overlay:find('unity fallback is active', 1, true),
     'unity fallback warning was not visible')
@@ -893,7 +896,7 @@ reveal_pending_af_filters()
 defer_af_add_visibility = false
 drain_short_timeouts()
 local async_plus_03 = string.format('%.17g', math.pow(10.0, 3 / 200.0))
-assert(#af_filters == 1 and find_gain_filter().params.graph:find('volume=' .. async_plus_03, 1, true),
+assert(#af_filters == 1 and find_gain_filter().runtime_volume == async_plus_03,
     'latest coalesced gain did not apply after the filter became visible')
 assert(count_af_adds_since(async_add_begin) == 1,
     'async filter initialization required a duplicate AF add')
@@ -901,7 +904,7 @@ bindings['openjoc-settings-enter']() -- retry Apply Current after initialization
 assert(#property_writes == writes_before_async_apply + 1,
     'Apply Current retry did not proceed after filter initialization')
 assert(run_timeout_with_delay(0.75), 'ready Apply Current retry did not arm reinit validation')
-assert(find_gain_filter().params.graph:find('volume=' .. async_plus_03, 1, true),
+assert(find_gain_filter().runtime_volume == async_plus_03,
     'ready Apply Current retry did not restore the latest gain')
 
 -- Cancel while the first insertion is still invisible replaces the queued
@@ -928,7 +931,7 @@ reveal_pending_af_filters()
 defer_af_add_visibility = false
 drain_short_timeouts()
 local async_saved_plus_01 = string.format('%.17g', math.pow(10.0, 1 / 200.0))
-assert(#af_filters == 1 and find_gain_filter().params.graph:find('volume=' .. async_saved_plus_01, 1, true),
+assert(#af_filters == 1 and find_gain_filter().runtime_volume == async_saved_plus_01,
     'Cancel did not restore the saved gain when the filter became visible')
 assert(count_af_adds_since(async_cancel_begin) == 1,
     'Cancel-after-pending-add left a duplicate gain filter')
@@ -970,7 +973,7 @@ reveal_pending_af_filters()
 defer_af_add_visibility = false
 fail_af_remove_count = 1
 observers['af']('af', af_filters)
-assert(find_gain_filter().params.graph == 'volume@openjoc_gain=volume=1:precision=float',
+assert(find_gain_filter().runtime_volume == '1',
     'late cleanup remove failure did not neutralize the owned filter to unity')
 assert(last_osd:find('unity fallback is active', 1, true),
     'late cleanup remove failure did not report its unity fallback while the menu was closed')
@@ -1017,14 +1020,304 @@ assert(#property_writes == writes_before_startup_apply,
     'Apply Current proceeded after only failed readiness probes')
 assert(run_timeout_with_delay(0.10), 'startup readiness retry after second command error was missing')
 local startup_plus_01 = string.format('%.17g', math.pow(10.0, 1 / 200.0))
-assert(find_gain_filter().params.graph:find('volume=' .. startup_plus_01, 1, true),
+assert(find_gain_filter().runtime_volume == startup_plus_01,
     'same-factor readiness probe changed the configured startup gain')
 bindings['openjoc-settings-enter']() -- ready, no preview interaction required
 assert(#property_writes == writes_before_startup_apply + 1,
     'Apply Current did not unlock after a strict startup readiness command succeeded')
 assert(run_timeout_with_delay(0.75), 'startup-ready Apply Current did not validate')
-assert(find_gain_filter().params.graph:find('volume=' .. startup_plus_01, 1, true),
+assert(find_gain_filter().runtime_volume == startup_plus_01,
     'startup-ready Apply Current did not restore saved gain')
+drain_short_timeouts()
+
+-- Each interrupted-flow scenario starts with a saved nonzero baseline and
+-- keeps the configured AF graph separate from the actual runtime volume.
+local function fresh_gain_scenario(name, deferred)
+    for _, timeout in ipairs(timeouts) do timeout.active = false end
+    files[settings_path] = 'saved-plus01'
+    files[legacy_settings_path] = nil
+    current_path = name .. '.mkv'
+    current_tracks = { { type = 'audio', codec = 'eac3', selected = true, id = 101 } }
+    current_decoder = 'libopenjoc'
+    pause_value = false
+    include_user_options = false
+    active_ad_options = { unrelated_option = 'preserve-me' }
+    af_filters, pending_af_filters = {}, {}
+    defer_af_add_visibility = deferred or false
+    fail_af_command_count, fail_af_add_count, fail_af_remove_count = 0, 0, 0
+    fail_property_write_count = 0
+    dofile('integrations/mpv/openjoc-settings.lua')
+end
+
+-- Repeated same-file observations cannot mistake the static +0.1 graph for
+-- the confirmed +0.2 runtime value, including the next Cancel baseline.
+fresh_gain_scenario('static-graph-cancel')
+drain_short_timeouts()
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']()
+local configured_baseline = find_gain_filter().params.graph
+assert(find_gain_filter().runtime_volume == plus_02
+        and configured_baseline:find('volume=' .. plus_01, 1, true),
+    'nonzero preview did not leave its insertion graph unchanged')
+observers['current-tracks/audio/decoder']('current-tracks/audio/decoder', current_decoder)
+observers['file-local-options/ad-lavc-o']('file-local-options/ad-lavc-o', active_ad_options)
+assert(find_gain_filter().runtime_volume == plus_02,
+    'same-file observation overwrote a confirmed preview with the configured gain')
+assert(run_timeout_with_delay(3), 'preview did not arm its status expiry')
+assert(last_overlay:find('Live gain: +0.2 dB', 1, true),
+    'same-file observation falsely displayed the static graph as the current live gain')
+for _ = 1, 3 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-enter']()
+assert(find_gain_filter().runtime_volume == plus_01
+        and find_gain_filter().params.graph == configured_baseline,
+    'ordinary Cancel did not restore the actual nonzero runtime baseline')
+
+-- Cancel before Apply validation supersedes only its pending gain intent.
+-- Already-requested decoder settings still validate, and stale callbacks do
+-- not replay the discarded preview or silently undo the output-layout Apply.
+fresh_gain_scenario('cancel-pending-apply')
+drain_short_timeouts()
+bindings['openjoc-settings-toggle']()
+bindings['openjoc-settings-right']() -- applied output target 7.1
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']() -- unsaved +0.2 dB
+for _ = 1, 2 do bindings['openjoc-settings-down']() end
+local interrupted_writes = #property_writes
+bindings['openjoc-settings-enter']()
+assert(not find_gain_filter(), 'pending Apply did not suspend its owned filter')
+local stale_apply_callback
+for _, timeout in ipairs(timeouts) do
+    if timeout.active and timeout.seconds == 0.75 then stale_apply_callback = timeout.callback end
+end
+assert(stale_apply_callback, 'pending Apply did not arm validation')
+bindings['openjoc-settings-down']() -- Cancel
+bindings['openjoc-settings-enter']()
+assert(find_gain_filter().runtime_volume == plus_01,
+    'Cancel did not start restoring the previous live gain during Apply')
+assert(run_timeout_with_delay(0.75), 'decoder Apply validation was discarded by Cancel')
+drain_short_timeouts()
+stale_apply_callback()
+assert(find_gain_filter().runtime_volume == plus_01,
+    'pending Apply replayed discarded gain after Cancel')
+assert(#property_writes == interrupted_writes + 1
+        and active_ad_options.speaker_layout == '7.1'
+        and active_ad_options.unrelated_option == 'preserve-me',
+    'Cancel reverted already-requested decoder settings or changed unrelated options')
+
+-- A newer slider move during the same validation window must also win.
+fresh_gain_scenario('new-preview-pending-apply')
+drain_short_timeouts()
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']()
+for _ = 1, 2 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-enter']()
+for _ = 1, 2 do bindings['openjoc-settings-up']() end
+bindings['openjoc-settings-right']() -- latest +0.3 dB while Apply is pending
+assert(run_timeout_with_delay(0.75), 'new-preview Apply validation was missing')
+drain_short_timeouts()
+assert(find_gain_filter().runtime_volume == plus_03,
+    'Apply validation overwrote a newer gain-preview intent')
+for _ = 1, 3 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-enter']()
+assert(find_gain_filter().runtime_volume == plus_01,
+    'Cancel after updated Apply completion lost the original preview baseline')
+
+-- Decoder evidence may disappear briefly during Apply reinitialization.
+-- Previewing in that window must preserve (or establish) the Cancel baseline,
+-- and completion must still use the latest Cancel target after evidence returns.
+for _, missing_evidence in ipairs({ 'decoder', 'track' }) do
+    for _, preview_before_apply in ipairs({ true, false }) do
+        fresh_gain_scenario('cancel-transient-apply-' .. missing_evidence .. tostring(preview_before_apply))
+        drain_short_timeouts()
+        bindings['openjoc-settings-toggle']()
+        for _ = 1, 5 do bindings['openjoc-settings-down']() end
+        if preview_before_apply then bindings['openjoc-settings-right']() end
+        for _ = 1, 2 do bindings['openjoc-settings-down']() end
+        bindings['openjoc-settings-enter']()
+        local original_tracks = current_tracks
+        if missing_evidence == 'decoder' then
+            current_decoder = ''
+            observers['current-tracks/audio/decoder']('current-tracks/audio/decoder', current_decoder)
+        else
+            current_tracks = {}
+            observers['track-list']('track-list', current_tracks)
+        end
+        for _ = 1, 2 do bindings['openjoc-settings-up']() end
+        bindings['openjoc-settings-right']() -- unavailable preview remains Apply intent
+        for _ = 1, 3 do bindings['openjoc-settings-down']() end
+        bindings['openjoc-settings-enter']() -- Cancel while decoder evidence is unavailable
+        assert(not find_gain_filter(), 'transient-decoder Cancel added an unverified live filter')
+        assert(last_osd:find('Cancel queued restoration', 1, true),
+            'transient-decoder Cancel did not disclose its queued restoration')
+        current_decoder = 'libopenjoc'
+        current_tracks = original_tracks
+        observers['track-list']('track-list', current_tracks)
+        observers['current-tracks/audio/decoder']('current-tracks/audio/decoder', current_decoder)
+        assert(run_timeout_with_delay(0.75), 'transient-decoder Apply validation was missing')
+        drain_short_timeouts()
+        assert(find_gain_filter().runtime_volume == plus_01,
+            'preview during transient decoder unavailability lost the original Cancel baseline')
+    end
+
+end
+
+-- A genuine new file, selected track, or codec supersedes pending Apply
+-- and old restoration immediately. Distinct saved/live values expose stale
+-- +0.1 restoration that would otherwise coincide with a new-file startup add.
+for _, transition in ipairs({ 'path', 'track', 'codec' }) do
+    fresh_gain_scenario('cancel-new-apply-epoch-' .. transition)
+    local user_filter = { name = 'lavfi', label = 'user_equalizer', params = { graph = 'anull' } }
+    af_filters[#af_filters + 1] = user_filter
+    drain_short_timeouts()
+    bindings['openjoc-settings-toggle']()
+    for _ = 1, 5 do bindings['openjoc-settings-down']() end
+    pause_value = true
+    observers['pause']('pause', true)
+    bindings['openjoc-settings-right']() -- queued +0.2 while runtime remains +0.1
+    bindings['openjoc-settings-down']() -- Save +0.2 as the next-file target
+    bindings['openjoc-settings-enter']()
+    assert(saved_document.options.output_gain_tenths_db == 2)
+    bindings['openjoc-settings-up']()
+    bindings['openjoc-settings-right']() -- +0.3 preview, Cancel baseline is actual +0.1
+    for _ = 1, 2 do bindings['openjoc-settings-down']() end
+    bindings['openjoc-settings-enter']()
+    local stale_epoch_callback
+    for _, timeout in ipairs(timeouts) do
+        if timeout.active and timeout.seconds == 0.75 then stale_epoch_callback = timeout.callback end
+    end
+    assert(stale_epoch_callback, 'new-epoch Apply did not arm validation')
+    local new_epoch_commands = #command_calls + 1
+    if transition == 'path' then current_path = current_path .. '.next'
+    elseif transition == 'track' then current_tracks[1].id = 102
+    else current_tracks[1].codec = 'flac' end
+    observers['path']('path', current_path)
+    observers['track-list']('track-list', current_tracks)
+    bindings['openjoc-settings-down']()
+    bindings['openjoc-settings-enter']() -- Cancel the old draft
+    pause_value = false
+    observers['pause']('pause', false)
+    drain_short_timeouts()
+    stale_epoch_callback()
+    assert(af_filters[1] == user_filter, 'Apply/Cancel epoch transition disturbed an unrelated filter')
+    if transition == 'codec' then
+        assert(not find_gain_filter(), 'old Apply attached gain to a different selected codec')
+    else
+        assert(find_gain_filter().runtime_volume == plus_02,
+            'old Apply/Cancel restored +0.1 onto a new OpenJOC epoch with saved +0.2')
+    end
+    for index = new_epoch_commands, #command_calls do
+        local call = command_calls[index]
+        assert(not (call[1] == 'af-command' and (call[4] == plus_01 or call[4] == plus_03)),
+            'old Apply/Cancel gain command crossed a true lifecycle epoch')
+    end
+end
+
+-- An accepted invisible insertion may arrive after the initial readiness
+-- deadline. Keep its latest target, stop idle polling, and recover from the AF
+-- event without adding a duplicate filter or requiring a slider interaction.
+fresh_gain_scenario('late-af-readiness', true)
+local late_add_begin = #command_calls + 1
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']() -- latest +0.2 dB
+assert(drain_short_timeouts() == 7, 'late-readiness test did not exhaust the bounded budget')
+assert(drain_short_timeouts() == 0 and #pending_af_filters == 1,
+    'timed-out insertion continued idle polling or lost its ownership')
+reveal_pending_af_filters()
+defer_af_add_visibility = false
+observers['af']('af', af_filters)
+assert(drain_short_timeouts() == 1,
+    'late AF visibility did not start exactly one successful readiness probe')
+assert(find_gain_filter().runtime_volume == plus_02
+        and count_af_adds_since(late_add_begin) == 0,
+    'late readiness lost the latest gain target or duplicated the accepted insertion')
+for _ = 1, 2 do bindings['openjoc-settings-down']() end
+local late_writes = #property_writes
+bindings['openjoc-settings-enter']()
+assert(#property_writes == late_writes + 1,
+    'late readiness did not unblock Apply Current without a slider interaction')
+assert(run_timeout_with_delay(0.75), 'recovered Apply did not validate')
+drain_short_timeouts()
+assert(find_gain_filter().runtime_volume == plus_02,
+    'recovered Apply lost the latest confirmed gain')
+
+-- Same-file lifecycle notifications while insertion is invisible cannot
+-- replace its preview/Cancel target with saved gain. Cancellation after the
+-- timeout creates a new authoritative epoch, including while paused.
+fresh_gain_scenario('late-af-cancel-paused', true)
+local late_cancel_add_begin = #command_calls + 1
+bindings['openjoc-settings-toggle']()
+for _ = 1, 5 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-right']()
+observers['current-tracks/audio/decoder']('current-tracks/audio/decoder', current_decoder)
+assert(drain_short_timeouts() == 7, 'late Cancel preview did not exhaust readiness')
+pause_value = true
+observers['pause']('pause', true)
+for _ = 1, 3 do bindings['openjoc-settings-down']() end
+bindings['openjoc-settings-enter']()
+reveal_pending_af_filters()
+defer_af_add_visibility = false
+observers['af']('af', af_filters)
+assert(drain_short_timeouts() == 0, 'late Cancel burned its new retry budget while paused')
+pause_value = false
+observers['pause']('pause', false)
+assert(drain_short_timeouts() == 1, 'late Cancel did not resume its current restoration intent')
+assert(find_gain_filter().runtime_volume == plus_01
+        and count_af_adds_since(late_cancel_add_begin) == 0,
+    'late Cancel replayed discarded preview or duplicated insertion')
+for index = late_cancel_add_begin, #command_calls do
+    local call = command_calls[index]
+    assert(not (call[1] == 'af-command' and call[4] == plus_02),
+        'late Cancel sent its superseded gain preview after visibility')
+end
+
+-- Expired readiness intent belongs to its original file/track/codec epoch.
+-- A late insertion on ordinary audio is cleaned up rather than resumed.
+fresh_gain_scenario('late-af-new-codec', true)
+assert(drain_short_timeouts() == 7, 'late codec test did not exhaust readiness')
+local late_codec_commands = #command_calls + 1
+current_path = 'late-af-now-flac.mkv'
+current_tracks = { { type = 'audio', codec = 'flac', selected = true, id = 102 } }
+current_decoder = 'flac'
+observers['path']('path', current_path)
+observers['track-list']('track-list', current_tracks)
+observers['current-tracks/audio/decoder']('current-tracks/audio/decoder', current_decoder)
+drain_short_timeouts()
+reveal_pending_af_filters()
+defer_af_add_visibility = false
+observers['af']('af', af_filters)
+drain_short_timeouts()
+assert(not find_gain_filter(), 'expired insertion leaked onto a newer ordinary-audio epoch')
+for index = late_codec_commands, #command_calls do
+    assert(command_calls[index][1] ~= 'af-command',
+        'expired readiness resumed runtime gain on a different codec')
+end
+
+-- A failed late readiness probe has its own bounded budget; repeated AF
+-- notifications cannot cause infinite polling. Explicit Apply retries may
+-- recheck readiness once the same filter is actually command-ready.
+fresh_gain_scenario('late-af-command-errors', true)
+assert(drain_short_timeouts() == 7, 'late command-error test did not time out')
+reveal_pending_af_filters()
+defer_af_add_visibility = false
+fail_af_command_count = 20
+observers['af']('af', af_filters)
+assert(drain_short_timeouts() == 7, 'late readiness command failures exceeded their budget')
+for _ = 1, 3 do observers['af']('af', af_filters) end
+assert(drain_short_timeouts() == 0, 'repeated late AF signals restarted exhausted polling')
+fail_af_command_count = 0
+bindings['openjoc-settings-toggle']()
+for _ = 1, 7 do bindings['openjoc-settings-down']() end
+local retry_writes = #property_writes
+bindings['openjoc-settings-enter']()
+assert(#property_writes == retry_writes and drain_short_timeouts() == 1,
+    'Apply retry did not safely recheck failed readiness before changing decoder settings')
+bindings['openjoc-settings-enter']()
+assert(#property_writes == retry_writes + 1,
+    'Apply retry stayed blocked after the manual readiness probe succeeded')
+assert(run_timeout_with_delay(0.75), 'manually recovered Apply did not validate')
 drain_short_timeouts()
 
 -- Replay the exact packaged-mpv qualification driver against the production
