@@ -1,4 +1,6 @@
 // Functional Core: sparse SOFA preparation must reject an entire uncovered pose.
+#[path = "../../openjoc-sofa/tests/support/legacy_interpolation.rs"]
+mod legacy_interpolation;
 #[path = "../../openjoc-sofa/tests/support/sparse.rs"]
 mod sparse;
 
@@ -6,16 +8,22 @@ use openjoc_api::{
     BinauralConfig, BinauralLfePolicy, ListenerOrientation, ListenerOrientationPrepareError,
     OpenJocConfig, OpenJocSession, RenderMode,
 };
+use openjoc_render::CartesianPosition;
+use openjoc_sofa::{SofaLoadLimits, parse_simple_free_field_hrir};
 
 #[test]
 fn sparse_sofa_session_rejects_antipodal_pose_without_queuing_an_update() {
     let mut wrongly_accepted = 0;
     for sign in [-1.0, 1.0] {
+        let bytes = sparse::cap_fixture(sign * 20.0, true);
+        let bank = parse_simple_free_field_hrir(&bytes, SofaLoadLimits::default())
+            .unwrap()
+            .bank;
         let config = OpenJocConfig {
             render_mode: RenderMode::Binaural,
             speaker_layout: "2.0".into(),
             binaural: Some(BinauralConfig::from_sofa_bytes(
-                sparse::cap_fixture(sign * 20.0, true),
+                bytes,
                 "2.0",
                 BinauralLfePolicy::Exclude,
             )),
@@ -60,9 +68,17 @@ fn sparse_sofa_session_rejects_antipodal_pose_without_queuing_an_update() {
             .unwrap();
             let update = preparer.prepare(covered, epoch, 2).unwrap();
             assert_eq!(update.kernels().len(), 2);
+            let listener = covered.world_to_listener([
+                -std::f64::consts::FRAC_1_SQRT_2,
+                std::f64::consts::FRAC_1_SQRT_2,
+                0.0,
+            ]);
             for (kernel, expected) in update.kernels().iter().zip([
-                [0x4000_0000_0000_0000, 0, 0x3ff8_0000_0000_0001, 0],
-                [5.0_f64.to_bits(), 0, 3.75_f64.to_bits(), 0],
+                legacy_interpolation::valid_triangle_coefficient_bits(
+                    &bank,
+                    CartesianPosition::new(listener[0], listener[1], listener[2]),
+                ),
+                vec![5.0_f64.to_bits(), 0, 3.75_f64.to_bits(), 0],
             ]) {
                 let actual = kernel
                     .pair()

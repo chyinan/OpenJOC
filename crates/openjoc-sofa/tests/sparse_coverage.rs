@@ -1,4 +1,6 @@
 // Functional Core: parsed sparse SOFA coverage and exact coefficient regressions.
+#[path = "support/legacy_interpolation.rs"]
+mod legacy_interpolation;
 #[path = "support/sparse.rs"]
 mod sparse;
 
@@ -43,13 +45,10 @@ fn parsed_sparse_caps_reject_the_antipode_and_preserve_covered_coefficients() {
             for ear in [HrirEar::Left, HrirEar::Right] {
                 assert_eq!(covered.pair.delay_samples(ear), 0);
             }
-            // Frozen from the unmodified interpolation arithmetic on master.
-            let expected = if elevation.abs() < 1.0 {
-                // A small but meaningful forward cone must still resolve.
-                [0x3fff_ffff_ffff_ffff, 0, 0x3ff7_ffff_ffff_ffff, 0]
-            } else {
-                [0x4000_0000_0000_0000, 0, 0x3ff8_0000_0000_0001, 0]
-            };
+            let expected = legacy_interpolation::valid_triangle_coefficient_bits(
+                &loaded.bank,
+                CartesianPosition::new(0.0, 0.0, sign),
+            );
             assert_eq!(coefficient_bits(&covered), expected);
             match resolver(&loaded.bank, CartesianPosition::new(0.0, 0.0, -sign)) {
                 Err(SofaError::InterpolationOutsideCoverage(_)) => {}
@@ -80,10 +79,14 @@ fn containing_triangles_can_cross_the_targets_tangent_plane() {
         for resolver in [resolve_hrir, resolve_hrir_for_listener_orientation] {
             let covered = resolver(&loaded.bank, CartesianPosition::new(0.0, 0.0, sign)).unwrap();
             assert_eq!(covered.neighbor_count, 3);
-            // Keep the valid wide-triangle coefficients bit-identical.
+            // Keep the valid wide-triangle coefficients exactly equal to the
+            // pre-fix arithmetic over this platform's parsed directions.
             assert_eq!(
                 coefficient_bits(&covered),
-                [0x3ffd0b16fcb38ca9, 0, 0x3ff5c8513d86a97f, 0]
+                legacy_interpolation::valid_triangle_coefficient_bits(
+                    &loaded.bank,
+                    CartesianPosition::new(0.0, 0.0, sign),
+                )
             );
         }
     }
