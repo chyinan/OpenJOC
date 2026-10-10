@@ -2,6 +2,18 @@
 
 OpenJOC LAV must already show **PASS** when you double-click `verify.bat`.
 
+**Check LAV Splitter separately.** A `verify.bat` **PASS** does not verify the
+active splitter. This audio-only package does not update
+LAV Splitter / LAV Splitter Source or LAV Video. An old splitter can
+misidentify MP4/MOV PCM and produce loud static even with a current audio
+decoder. Check the active splitter's version and file path, including any
+manually added external filter path in PotPlayer. If static occurs, stop
+playback and mute the output before inspecting or reopening the file. Follow
+the [PCM troubleshooting guide](https://chyinan.github.io/OpenJOC/using/troubleshooting/#pcm-noise-with-an-old-lav-splitter)
+and [splitter-only update instructions](https://chyinan.github.io/OpenJOC/using/windows-lav-potplayer/#update-only-lav-splitter).
+Keep the complete official x64 LAV package in its own folder; do not mix its
+DLLs with the OpenJOC runtime or replace the OpenJOC audio filter selection.
+
 1. Close and reopen PotPlayer if it was running during installation.
 2. Open **Preferences** (`F5`).
 3. Select **Filter Control**, then **Filter Priority (Overall)**.

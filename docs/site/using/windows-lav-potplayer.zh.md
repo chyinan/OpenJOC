@@ -17,6 +17,14 @@ OpenJOC 提供一个可选的 Windows DirectShow 下游 LAV Audio Decoder。它�
 
 安装包会放入隔离的 OpenJOC 版本目录，只注册 OpenJOC 自有的 DirectShow 筛选器。它不会替换原有的 LAV，不会修改 `PATH`，也不会改变 PowerShell 执行策略。
 
+!!! warning "LAV Splitter 是独立组件"
+    OpenJOC 安装包只更新 **LAV Audio Decoder (OpenJOC)**，不会更新
+    **LAV Splitter / LAV Splitter Source** 或 LAV Video。`verify.bat` 显示
+    **PASS** 不代表实际使用的分离器已通过检查。请分别检查 PotPlayer
+    实际加载的分离器与音频解码器的版本和文件路径。即使音频解码器已经更新，
+    旧分离器仍可能误判 MP4/MOV 中的 PCM，产生刺耳噪声。详见
+    [PCM 噪声排查](troubleshooting.md#pcm-noise-with-an-old-lav-splitter)。
+
 ## 在 PotPlayer 中选择筛选器
 
 1. 按 `F5` 打开 PotPlayer 设置。
@@ -26,6 +34,42 @@ OpenJOC 提供一个可选的 Windows DirectShow 下游 LAV Audio Decoder。它�
 5. 将它设为 **Prefer**，然后点击 **Apply** 和 **OK**。
 
 请保留原有的 LAV 解码器。如果列表中没有 OpenJOC 筛选器，先运行 `verify.bat`；只有验证报告失败时才需要重新安装。
+
+## 只更新 LAV Splitter {#update-only-lav-splitter}
+
+请从 [LAV Filters 官方发行版页面](https://github.com/Nevcairiel/LAVFilters/releases)
+下载当前的官方 **x64** ZIP。**0.83** 已解决[故障排除](troubleshooting.md#pcm-noise-with-an-old-lav-splitter)
+中确认的旧分离器 PCM 问题；这是该案例中验证有效的推荐版本，不是所有文件的最低版本要求。
+
+1. 停止播放，将输出静音或调低音量，再关闭 PotPlayer，然后才修改文件或注册项。
+   记录旧分离器的版本和路径，并保留其完整安装包，以便回滚。
+2. 将**整个官方 x64 ZIP** 解压到新的长期保留目录，与 OpenJOC 安装目录和旧版
+   LAV 目录分开。保留包内全部 DLL 和 manifest 文件，不要只复制 `LAVSplitter.ax`，
+   不要混用不同版本的 DLL，也不要把原版 LAV 覆盖解压到 OpenJOC 音频运行时目录。
+3. 以管理员身份打开原生 **64 位命令提示符**，只注册新的 `LAVSplitter.ax`。
+   下面的 `C:\Filters\LAVFilters-x64` 是示例路径，请替换为实际解压目录：
+
+    ```bat
+    "%SystemRoot%\System32\regsvr32.exe" "C:\Filters\LAVFilters-x64\LAVSplitter.ax"
+    ```
+
+    确认注册成功。在 64 位 Windows 上，`System32` 中是原生 64 位工具，
+    不要使用 `SysWOW64` 中的 32 位工具。此操作会更新系统的 LAV Splitter 注册，
+    也可能影响其他 DirectShow 播放器，但不会注册原版音频或视频解码器；
+    此次只更新分离器，不要运行音频或视频解码器的安装脚本。
+    另见上游[安装说明](https://github.com/Nevcairiel/LAVFilters/blob/0.83/README.md#install)。
+4. 保持 **LAV Audio Decoder (OpenJOC)** 为 **Prefer**。如果 PotPlayer 中手动添加的
+   外部分离器仍指向旧文件，请把该条目改为新的 `LAVSplitter.ax`；系统注册更新
+   不一定会覆盖播放器中手动指定的路径。
+5. **保持静音**，重新打开有问题的文件。在当前筛选器列表中确认
+   **LAV Splitter / LAV Splitter Source** 实际使用了新版本和新路径，并按照
+   [故障排除](troubleshooting.md#pcm-noise-with-an-old-lav-splitter)核对 LAV Audio 的
+   **Input（输入）**格式与源 PCM 一致。之后才以低音量短暂试听；仍有噪声就立即停止。
+
+要回滚这次仅分离器的更新，请关闭 PotPlayer，重新注册旧版**完整安装包**中的
+`LAVSplitter.ax`，并恢复 PotPlayer 手动指定的分离器路径。每个版本继续使用自己的
+配套依赖，保留 OpenJOC 音频安装包及其优先级。回滚到受影响的旧分离器不会解决
+该 PCM 兼容性问题。
 
 ## 路由行为
 

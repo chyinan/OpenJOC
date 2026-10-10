@@ -14,6 +14,14 @@ The primary validated host workflow is PotPlayer. These instructions describe th
 
 The package installs under an isolated OpenJOC version directory and registers only its own DirectShow filter. It does not replace stock LAV, modify `PATH`, or change PowerShell execution policy.
 
+!!! warning "LAV Splitter is a separate component"
+    The OpenJOC package updates **LAV Audio Decoder (OpenJOC)** only; it does not
+    update **LAV Splitter / LAV Splitter Source** or LAV Video. A `verify.bat`
+    **PASS** does not verify the active splitter. Check the version
+    and file path of the splitter actually loaded by PotPlayer separately from
+    the audio decoder. An old splitter can misidentify PCM in MP4/MOV and cause
+    loud static even with a current audio decoder. See [PCM noise troubleshooting](troubleshooting.md#pcm-noise-with-an-old-lav-splitter).
+
 ## Select the filter in PotPlayer
 
 1. Open PotPlayer preferences with `F5`.
@@ -23,6 +31,49 @@ The package installs under an isolated OpenJOC version directory and registers o
 5. Set it to **Prefer**, then select **Apply** and **OK**.
 
 Keep the stock LAV decoder installed. If the OpenJOC filter is not listed, run `verify.bat` and repeat installation only if verification reports a failure.
+
+## Update only LAV Splitter {#update-only-lav-splitter}
+
+Use a current official **x64** ZIP from the [LAV Filters releases page](https://github.com/Nevcairiel/LAVFilters/releases).
+Version **0.83** resolved the confirmed old-splitter PCM case described in
+[Troubleshooting](troubleshooting.md#pcm-noise-with-an-old-lav-splitter); this is
+a known-good recommendation for that case, not a universal minimum version.
+
+1. Stop playback, mute or lower the output volume, and close PotPlayer before
+   changing files or registration. Keep a record of the old splitter's version
+   and path and retain its complete package for rollback.
+2. Extract the **entire official x64 ZIP** to a new permanent folder, separate
+   from the OpenJOC installation and any older LAV package. Keep all bundled
+   DLLs and manifests together. Do not copy just `LAVSplitter.ax`, mix DLLs
+   between releases, or extract stock LAV over the OpenJOC audio runtime.
+3. Open a native **64-bit Command Prompt as administrator** and register only
+   the new `LAVSplitter.ax`. In the following example, replace
+   `C:\Filters\LAVFilters-x64` with the folder you actually extracted:
+
+    ```bat
+    "%SystemRoot%\System32\regsvr32.exe" "C:\Filters\LAVFilters-x64\LAVSplitter.ax"
+    ```
+
+    Require a successful registration result. On 64-bit Windows, `System32`
+    contains the native 64-bit tool; do not use the `SysWOW64` 32-bit tool.
+    This changes the system's LAV Splitter registration and can affect other
+    DirectShow players. It does not register the stock audio or video decoder;
+    do not run their installation scripts for this splitter-only update.
+    See the upstream [installation instructions](https://github.com/Nevcairiel/LAVFilters/blob/0.83/README.md#install).
+4. Preserve **LAV Audio Decoder (OpenJOC)** as **Prefer**. If PotPlayer has a
+   manually added external splitter pointing to an old file, update that entry
+   to the new `LAVSplitter.ax`; system registration alone may not override it.
+5. Reopen the affected file **while muted**. Inspect the active filter list,
+   confirm **LAV Splitter / LAV Splitter Source** uses the new version and file
+   path, and check that LAV Audio's **Input** format matches the source PCM as
+   described in [Troubleshooting](troubleshooting.md#pcm-noise-with-an-old-lav-splitter).
+   Only then test briefly at low volume; stop immediately if static remains.
+
+To roll back this splitter-only change, close PotPlayer and register
+`LAVSplitter.ax` from the previous **complete** package, restoring any explicit
+PotPlayer splitter path as well. Keep each package's own dependencies together
+and leave the OpenJOC audio package and filter priority intact. A rollback to
+the affected old splitter does not fix the PCM compatibility issue.
 
 ## Routing behavior
 

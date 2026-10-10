@@ -84,6 +84,42 @@ E-AC-3 and compressed passthrough intentionally remain on the stock path.
 Only positively confirmed JOC is admitted to the OpenJOC filter. See [Windows
 LAV / PotPlayer](windows-lav-potplayer.md).
 
+## PCM noise with an old LAV Splitter {#pcm-noise-with-an-old-lav-splitter}
+
+**Stop playback and mute or lower the output volume before investigating loud
+static.** If you need to reopen the file to inspect the active filters, keep
+the output muted.
+
+The OpenJOC Windows package updates the audio decoder, not LAV Splitter or LAV
+Video. In one confirmed case, **LAV Splitter 0.76.1** misidentified an MP4/MOV
+`ipcm` track: MediaInfo reported signed **32-bit little-endian PCM**, 48 kHz,
+2 channels, **3072 kb/s**, but LAV Audio's **Input** showed **16-bit big-endian
+PCM (S16BE)** at **1536 kb/s**. Playback produced harsh static even with an
+updated OpenJOC audio decoder. Updating the splitter to official **0.83**
+resolved that case. This is a confirmed compatibility example, not a diagnosis
+of every noise problem or a universal minimum-version claim.
+
+1. In PotPlayer's active filter list, inspect **LAV Splitter / LAV Splitter
+   Source** and **LAV Audio Decoder (OpenJOC)** separately. Record each loaded
+   version and file path; the audio decoder's version does not establish the
+   splitter's version. A manually configured external filter may still point
+   at an old `LAVSplitter.ax` after an update elsewhere.
+2. Compare the source track's MediaInfo details with LAV Audio's **Input**
+   format, especially PCM bit depth, byte order, sample rate, and channel
+   count. Do not confuse this with **Output**: legitimate output conversion
+   can produce 16-bit PCM even when the source is 32-bit. For the example above,
+   the incorrect **Input** format is the warning sign.
+3. If the loaded splitter is old or the PCM input is misidentified, follow
+   [Update only LAV Splitter](windows-lav-potplayer.md#update-only-lav-splitter).
+   Keep the complete official x64 package separate from OpenJOC and preserve
+   the OpenJOC audio filter priority. After restarting, verify the actual
+   splitter version/path and corrected input format while muted, then test
+   briefly at low volume.
+
+If the input format is correct and noise remains, stop playback and collect
+the source track details, active filter versions/paths, and Input/Output
+status for an issue report. Redact personal path components before sharing.
+
 ## Collect a useful issue report
 
 Include the OpenJOC version, platform, exact command, sanitized `inspect` or
