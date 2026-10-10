@@ -18,6 +18,44 @@ ROOT = Path(__file__).resolve().parents[1]
 VOLUME = re.compile(r"volume@openjoc_gain:.*?n:([^ ]+).*?volume_dB:([-+0-9.]+)")
 
 
+def convert_msys_path(path: Path, mode: str) -> str:
+    # The package qualifier can pass D:/... to MSYS Python. Its POSIX Path
+    # implementation must not resolve that as a relative path before cygpath
+    # converts it. Conversely, mpv's native argv uses Windows/mixed paths.
+    # https://www.msys2.org/docs/filesystem-paths/#windows-unix-path-conversion
+    if sys.platform.startswith(('cygwin', 'msys')):
+        converter = shutil.which('cygpath')
+        if not converter:
+            raise RuntimeError('MSYS/Cygwin verification requires cygpath')
+        result = subprocess.run([converter, mode, str(path)], capture_output=True,
+                                text=True, check=True)
+        converted = result.stdout.rstrip('\r\n')
+        if not converted:
+            raise RuntimeError('cygpath returned an empty path')
+        return converted
+    return str(path)
+
+
+def resolve_local_path(path: Path) -> Path:
+    return Path(convert_msys_path(path, '-u')).resolve()
+
+
+def player_command(mpv: Path, fixture: Path, config: Path, logfile: Path,
+                   scenario: str, ordinary_track: Path | None = None) -> list[str]:
+    command = [
+        convert_msys_path(mpv, '-m'), convert_msys_path(fixture, '-m'),
+        '--no-video', '--ao=null', '--ao-null-untimed=no', '--volume=100', '--aid=1',
+        '--gapless-audio=yes', f'--config-dir={convert_msys_path(config, "-m")}',
+        '--ad=libopenjoc', '--ad-lavc-o=render_mode=speaker,speaker_layout=5.1',
+        f'--script={convert_msys_path(ROOT / "integrations/mpv/test-openjoc-gain-recovery-driver.lua", "-m")}',
+        f'--script-opts=openjoc_gain_recovery-recovery_case={scenario}',
+        '--msg-level=all=debug', f'--log-file={convert_msys_path(logfile, "-m")}',
+    ]
+    if ordinary_track is not None:
+        command.append(f'--audio-file={convert_msys_path(ordinary_track, "-m")}')
+    return command
+
+
 def verify_log(log: str, scenario: str) -> None:
     if 'GAIN_RECOVERY_STAGE DONE' not in log:
         raise ValueError(f'{scenario}: driver did not finish')
@@ -104,16 +142,8 @@ def run(mpv: Path, fixture: Path, output: Path) -> None:
             'render_mode': 'speaker', 'speaker_layout': '5.1', 'output_gain_tenths_db': 1,
         }}))
         logfile = output / f'{scenario}.log'
-        command = [
-            str(mpv), str(fixture), '--no-video', '--ao=null', '--ao-null-untimed=no',
-            '--volume=100', '--aid=1', '--gapless-audio=yes', f'--config-dir={config}',
-            '--ad=libopenjoc', '--ad-lavc-o=render_mode=speaker,speaker_layout=5.1',
-            f'--script={ROOT / "integrations/mpv/test-openjoc-gain-recovery-driver.lua"}',
-            f'--script-opts=openjoc_gain_recovery-recovery_case={scenario}',
-            '--msg-level=all=debug', f'--log-file={logfile}',
-        ]
-        if scenario == 'track':
-            command.append(f'--audio-file={ordinary_track}')
+        command = player_command(mpv, fixture, config, logfile, scenario,
+                                 ordinary_track if scenario == 'track' else None)
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=18)
         except subprocess.TimeoutExpired:
@@ -142,11 +172,12 @@ def main() -> None:
     parser.add_argument('fixture', type=Path, help='seekable long synthetic JOC MP4 fixture')
     parser.add_argument('--output-dir', type=Path)
     args = parser.parse_args()
+    mpv, fixture = resolve_local_path(args.mpv), resolve_local_path(args.fixture)
     if args.output_dir:
-        run(args.mpv.resolve(), args.fixture.resolve(), args.output_dir.resolve())
+        run(mpv, fixture, resolve_local_path(args.output_dir))
     else:
         with tempfile.TemporaryDirectory(prefix='openjoc-mpv-gain-recovery-') as directory:
-            run(args.mpv.resolve(), args.fixture.resolve(), Path(directory))
+            run(mpv, fixture, Path(directory))
 
 
 if __name__ == '__main__':

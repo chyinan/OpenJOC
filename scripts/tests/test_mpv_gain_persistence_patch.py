@@ -8,13 +8,14 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shlex
 import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 PATCHES = [ROOT / "integrations/mpv/patches" / name for name in (
@@ -287,6 +288,86 @@ class MpvGainRecoveryEvidenceTests(unittest.TestCase):
         cls.verifier = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.verifier)
 
+    def test_msys_windows_paths_are_converted_before_posix_resolution(self) -> None:
+        for platform in ('cygwin', 'msys'):
+            for incoming, local in (
+                ('D:/a/extracted bundle 日本語/bin/mpv.com', '/d/a/extracted bundle 日本語/bin/mpv.com'),
+                (r'D:\a\fixtures 日本語\joc.live-gain.mp4', '/d/a/fixtures 日本語/joc.live-gain.mp4'),
+                ('/d/a/reports 日本語', '/d/a/reports 日本語'),
+            ):
+                result = subprocess.CompletedProcess([], 0, local + '\r\n', '')
+                with mock.patch.object(self.verifier.sys, 'platform', platform), \
+                     mock.patch.object(self.verifier.shutil, 'which', return_value='/usr/bin/cygpath'), \
+                     mock.patch.object(self.verifier.subprocess, 'run', return_value=result) as convert:
+                    self.assertEqual(self.verifier.resolve_local_path(PurePosixPath(incoming)), Path(local).resolve())
+                    convert.assert_called_once_with(['/usr/bin/cygpath', '-u', incoming],
+                                                    capture_output=True, text=True, check=True)
+
+    def test_non_msys_paths_do_not_use_cygpath_and_conversion_errors_are_visible(self) -> None:
+        with mock.patch.object(self.verifier.sys, 'platform', 'linux'), \
+             mock.patch.object(self.verifier.subprocess, 'run') as convert:
+            self.assertEqual(self.verifier.resolve_local_path(Path('relative mpv')), Path('relative mpv').resolve())
+            convert.assert_not_called()
+        with mock.patch.object(self.verifier.sys, 'platform', 'cygwin'), \
+             mock.patch.object(self.verifier.shutil, 'which', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'requires cygpath'):
+                self.verifier.resolve_local_path(Path('D:/mpv.com'))
+        with mock.patch.object(self.verifier.sys, 'platform', 'cygwin'), \
+             mock.patch.object(self.verifier.shutil, 'which', return_value='cygpath'), \
+             mock.patch.object(self.verifier.subprocess, 'run',
+                               return_value=subprocess.CompletedProcess([], 0, '\n', '')):
+            with self.assertRaisesRegex(RuntimeError, 'empty path'):
+                self.verifier.resolve_local_path(Path('D:/mpv.com'))
+        with mock.patch.object(self.verifier.sys, 'platform', 'cygwin'), \
+             mock.patch.object(self.verifier.shutil, 'which', return_value='cygpath'), \
+             mock.patch.object(self.verifier.subprocess, 'run',
+                               side_effect=subprocess.CalledProcessError(1, ['cygpath'])):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.verifier.resolve_local_path(Path('D:/mpv.com'))
+
+    def test_native_player_argv_converts_every_path_without_a_shell(self) -> None:
+        paths = [PurePosixPath('/d/a/bundle 日本語/bin/mpv.com'), PurePosixPath('/d/a/fixture 日本語.mp4'),
+                 PurePosixPath('/tmp/config 日本語'), PurePosixPath('/tmp/log 日本語.log'), PurePosixPath('/tmp/ordinary 日本語.wav')]
+        def converted(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            self.assertEqual(command[:2], ['/usr/bin/cygpath', '-m'])
+            self.assertNotIn('shell', kwargs)
+            native = 'D:' + command[2][2:] if command[2].startswith('/d/') else 'C:/msys64' + command[2]
+            return subprocess.CompletedProcess(command, 0, native + '\n', '')
+        repository = PurePosixPath('/d/a/OpenJOC 日本語')
+        with mock.patch.object(self.verifier.sys, 'platform', 'cygwin'), \
+             mock.patch.object(self.verifier, 'ROOT', repository), \
+             mock.patch.object(self.verifier.shutil, 'which', return_value='/usr/bin/cygpath'), \
+             mock.patch.object(self.verifier.subprocess, 'run', side_effect=converted) as convert:
+            command = self.verifier.player_command(*paths[:4], 'track', paths[4])
+        driver = repository / 'integrations/mpv/test-openjoc-gain-recovery-driver.lua'
+        self.assertEqual(convert.call_count, 6)
+        for path, prefix in ((paths[0], ''), (paths[1], ''), (paths[2], '--config-dir='),
+                             (driver, '--script='), (paths[3], '--log-file='), (paths[4], '--audio-file=')):
+            value = str(path)
+            native = 'D:' + value[2:] if value.startswith('/d/') else 'C:/msys64' + value
+            self.assertIn(prefix + native, command)
+        self.assertIn('--script-opts=openjoc_gain_recovery-recovery_case=track', command)
+        for platform in ('linux', 'darwin'):
+            with mock.patch.object(self.verifier.sys, 'platform', platform), \
+                 mock.patch.object(self.verifier.subprocess, 'run') as convert:
+                command = self.verifier.player_command(*paths[:4], 'saved')
+                convert.assert_not_called()
+                self.assertEqual(command[:2], [str(path) for path in paths[:2]])
+                self.assertFalse(any(arg.startswith('--audio-file=') for arg in command))
+        windows_paths = [PureWindowsPath('D:/a/bundle 日本語/bin/mpv.com'), PureWindowsPath('D:/a/fixture 日本語.mp4'),
+                         PureWindowsPath('D:/temp/config 日本語'), PureWindowsPath('D:/temp/log 日本語.log'), PureWindowsPath('D:/temp/ordinary 日本語.wav')]
+        windows_repository = PureWindowsPath('D:/a/OpenJOC 日本語')
+        with mock.patch.object(self.verifier.sys, 'platform', 'win32'), \
+             mock.patch.object(self.verifier, 'ROOT', windows_repository), \
+             mock.patch.object(self.verifier.subprocess, 'run') as convert:
+            command = self.verifier.player_command(*windows_paths[:4], 'track', windows_paths[4])
+            convert.assert_not_called()
+            self.assertEqual(command[:2], [str(path) for path in windows_paths[:2]])
+            for path, prefix in ((windows_paths[2], '--config-dir='), (windows_paths[3], '--log-file='),
+                                 (windows_paths[4], '--audio-file=')):
+                self.assertIn(prefix + str(path), command)
+            self.assertIn('--script=' + str(windows_repository / 'integrations/mpv/test-openjoc-gain-recovery-driver.lua'), command)
+
     @staticmethod
     def stage(name: str) -> str:
         return "GAIN_RECOVERY_STAGE " + name + "\n"
@@ -347,6 +428,8 @@ class MpvGainRecoveryEvidenceTests(unittest.TestCase):
     def test_real_harness_is_in_the_packaged_verification_path(self) -> None:
         source = (ROOT / "integrations/mpv/verify-player.sh").read_text()
         self.assertIn('scripts/verify-mpv-gain-recovery.py" "$mpv" "$live_gain_fixture"', source)
+        workflow = (ROOT / '.github/workflows/player-packaging.yml').read_text()
+        self.assertIn('      - "scripts/verify-mpv-gain-recovery.py"', workflow)
         driver = (ROOT / "integrations/mpv/test-openjoc-gain-recovery-driver.lua").read_text()
         self.assertIn("mp.get_property_native('seekable') == true", driver)
         self.assertIn("playback_restarts > restarts", driver)
