@@ -183,11 +183,16 @@ fn joc_frame(emdf: &[u8], complexity: u8) -> Vec<u8> {
 }
 
 fn absent_joc() -> Vec<u8> {
+    absent_joc_with_sequence(0)
+}
+
+fn absent_joc_with_sequence(sequence: u16) -> Vec<u8> {
     let mut bits = Vec::new();
     push(&mut bits, 0, 3); // joc_dmx_config_idx: 5.X
     push(&mut bits, 0, 6); // object count
     push(&mut bits, 0, 3); // extension count
-    push(&mut bits, 0, 3 + 5 + 10); // reserved/header fields
+    push(&mut bits, 0, 3 + 5); // clip fields
+    push(&mut bits, u64::from(sequence), 10);
     push(&mut bits, 0, 1); // no matrix data
     pack(bits)
 }
@@ -444,6 +449,118 @@ fn synthetic_joc_compressed_input() -> Vec<u8> {
     (0..8)
         .flat_map(|_| five_channel_audio_frame(&emdf))
         .collect()
+}
+
+#[test]
+fn speaker_sequence_resets_and_continuity_preserve_profiling_pcm_bits() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-speaker-sequence-reset-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).expect("test directory");
+
+    for (name, sequences, reset) in [
+        ("sequence-zero", [1, 2, 0, 1], true),
+        ("sequence-gap", [1, 2, 7, 8], true),
+        ("continuous", [1, 2, 3, 4], false),
+        ("counter-wrap", [1022, 1023, 1, 2], false),
+    ] {
+        // The existing valid five-channel carrier has nonzero deterministic
+        // dither PCM. Only the JOC sequence field changes between these cases.
+        let bytes: Vec<u8> = sequences
+            .into_iter()
+            .flat_map(|sequence| {
+                five_channel_audio_frame(&joc_emdf(
+                    &inactive_oamd(),
+                    &absent_joc_with_sequence(sequence),
+                ))
+            })
+            .collect();
+        let input = root.join(format!("{name}.ec3"));
+        fs::write(&input, bytes).expect("valid encoded input");
+
+        let inspection = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+            .arg("inspect")
+            .arg(&input)
+            .arg("--json")
+            .output()
+            .expect("inspect encoded input");
+        assert!(inspection.status.success());
+        let inspection: serde_json::Value =
+            serde_json::from_slice(&inspection.stdout).expect("inspection JSON");
+        assert_eq!(inspection["validation"]["etsi_strict"]["status"], "pass");
+        assert_eq!(inspection["validation"]["etsi_strict"]["tested_aus"], 4);
+        assert_eq!(
+            inspection["validation"]["etsi_strict"]["deviations"],
+            serde_json::json!([])
+        );
+        assert_eq!(inspection["validation"]["malformed_aus"], 0);
+
+        for (layout, channels) in [("2.0", 2), ("5.1", 6)] {
+            let render = |profiling: bool| {
+                let output = root.join(format!("{name}-{layout}-{profiling}.wav"));
+                let mut command = Command::new(env!("CARGO_BIN_EXE_openjoc"));
+                command.arg("render-joc").arg(&input).args([
+                    "--layout",
+                    layout,
+                    "--validation-profile",
+                    "etsi-strict",
+                    "--no-progress",
+                ]);
+                command.arg("--output").arg(&output);
+                if profiling {
+                    command
+                        .arg("--performance-report")
+                        .arg(root.join(format!("{name}-{layout}.json")));
+                }
+                let result = command.output().expect("render encoded input");
+                assert!(
+                    result.status.success(),
+                    "{name}/{layout}/{profiling}: {}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                fs::read(output).expect("rendered WAV")
+            };
+            let reference = render(false);
+            let profiled = render(true);
+            let pcm = decode(&reference).expect("decode reference WAV");
+            assert_eq!(pcm.channels.len(), channels);
+            assert_eq!(pcm.sample_rate, 48_000);
+            // A real reconstruction reset drops the pending previous interval;
+            // normal increment and 1023-to-1 wrap preserve it. Include the
+            // 32-sample final linked-gain drain in the exact output comparison.
+            let frames = if reset { 3 * 1536 + 32 } else { 4 * 1536 + 32 };
+            assert!(pcm.channels.iter().all(|channel| channel.len() == frames));
+            assert!(pcm.channels.iter().flatten().any(|sample| *sample != 0.0));
+            assert!(
+                pcm.channels.iter().any(|channel| {
+                    channel[1536 - 32..1536].iter().any(|sample| *sample != 0.0)
+                })
+            );
+            assert!(
+                pcm.channels
+                    .iter()
+                    .any(|channel| { channel[frames - 32..].iter().any(|sample| *sample != 0.0) })
+            );
+            let boundary_has_audio = pcm
+                .channels
+                .iter()
+                .any(|channel| channel[1536..1536 + 32].iter().any(|sample| *sample != 0.0));
+            assert_eq!(
+                boundary_has_audio, !reset,
+                "{name}/{layout}: gain history boundary"
+            );
+            assert!(
+                reference == profiled,
+                "{name}/{layout}: enabling profiling must preserve every PCM bit through drain"
+            );
+        }
+    }
+    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
