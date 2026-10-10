@@ -78,12 +78,6 @@ jobs:
           # The final archive is explicitly labeled CI and includes source provenance.
           "release_version=0.19.0" >> $env:GITHUB_OUTPUT
 
-      - name: Inspect exact FFmpeg configure before rebuilding
-        shell: pwsh
-        run: |
-          Select-String -LiteralPath lav/ffmpeg/configure -Pattern 'gsub|msvc|dep_cmd|DEP_FLAGS|dep_cc|showIncludes' -Context 3,3 | ForEach-Object { $_.ToString() }
-          throw 'Intentional diagnostic stop: inspect updated FFmpeg dependency generation before rebuilding.'
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -168,11 +162,16 @@ jobs:
           $awkBackslashPatternEscaped = 'gsub(/\\\\/, "/")'
           if ($configureText.Contains($awkBackslashPattern)) {
             $configureText = $configureText.Replace($awkBackslashPattern, $awkBackslashPatternEscaped)
-          } elseif (-not $configureText.Contains($awkBackslashPatternEscaped)) {
-            throw 'LAV FFmpeg configure dependency command is neither original nor already corrected.'
+            [IO.File]::WriteAllText($configure, $configureText, [Text.UTF8Encoding]::new($false))
+          } elseif ($configureText.Contains($awkBackslashPatternEscaped)) {
+            Write-Host 'FFmpeg already has the escaped legacy dependency command.'
+          } elseif ($configureText.Contains("_depflags='-showIncludes'") -and $configureText.Contains('CC_DEPFLAGS=$CC_DEPFLAGS')) {
+            # Pinned b033272d uses compiler include flags, replacing the old
+            # awk dependency command. Preserve that upstream implementation.
+            Write-Host 'FFmpeg uses native MSVC showIncludes dependency flags; legacy awk patch is not applicable.'
+          } else {
+            throw 'Unrecognized FFmpeg MSVC dependency-generation implementation.'
           }
-          if (-not $configureText.Contains($awkBackslashPatternEscaped)) { throw 'LAV FFmpeg configure dependency command was not patched.' }
-          [IO.File]::WriteAllText($configure, $configureText, [Text.UTF8Encoding]::new($false))
           if (-not (Test-Path -LiteralPath $zlibLibrary -PathType Leaf)) { throw 'LAV FFmpeg zlib library is missing.' }
           if (-not (Test-Path -LiteralPath (Join-Path $lav 'ffmpeg\zlib.lib') -PathType Leaf)) { throw 'FFmpeg working-directory zlib library is missing.' }
           Write-Host "Prepared FFmpeg zlib library: $zlibLibrary"
