@@ -1639,7 +1639,7 @@ fn find_interpolation_neighborhood_with_candidate_limit(
     direction_at: impl Fn(usize) -> [f64; 3],
     candidate_limit: usize,
 ) -> Result<InterpolationNeighborhood, SofaError> {
-    find_interpolation_neighborhood_with_options(
+    find_interpolation_neighborhood_with_roundoff_fallback(
         target,
         direction_count,
         direction_at,
@@ -1697,28 +1697,37 @@ fn orientation_neighborhood_from_candidates(
             .map(|direction| projection.project(target, direction))
             .collect::<Vec<_>>()
     });
-    let mut previous_limit = 0;
-    for candidate_limit in CANDIDATE_LIMITS {
-        let candidate_limit = candidate_limit.min(candidates.len());
-        if candidate_limit == previous_limit {
-            continue;
-        }
-        match find_interpolation_neighborhood_for_candidate_expansion(
-            target,
-            candidates,
-            &candidate_directions,
-            candidate_projections.as_deref(),
-            previous_limit,
-            candidate_limit,
-        ) {
-            Ok(neighborhood) => return Ok(neighborhood),
-            Err(error @ SofaError::InterpolationOutsideCoverage(_)) => {
-                previous_limit = candidate_limit;
-                if candidate_limit == candidates.len() {
-                    return Err(error);
-                }
+    // Exhaust the original strict search, including every segment and
+    // expansion tier, before admitting any roundoff-certified triangle.
+    // Existing successful queries therefore keep their selected neighbors.
+    for allow_roundoff in [false, true] {
+        let mut previous_limit = 0;
+        for candidate_limit in CANDIDATE_LIMITS {
+            let candidate_limit = candidate_limit.min(candidates.len());
+            if candidate_limit == previous_limit {
+                continue;
             }
-            Err(error) => return Err(error),
+            match find_interpolation_neighborhood_for_candidate_expansion(
+                target,
+                candidates,
+                &candidate_directions,
+                candidate_projections.as_deref(),
+                previous_limit,
+                candidate_limit,
+                allow_roundoff,
+            ) {
+                Ok(neighborhood) => return Ok(neighborhood),
+                Err(error @ SofaError::InterpolationOutsideCoverage(_)) => {
+                    previous_limit = candidate_limit;
+                    if candidate_limit == candidates.len() {
+                        if allow_roundoff {
+                            return Err(error);
+                        }
+                        break;
+                    }
+                }
+                Err(error) => return Err(error),
+            }
         }
     }
     Err(SofaError::InsufficientInterpolationData {
@@ -1734,6 +1743,7 @@ fn find_interpolation_neighborhood_for_candidate_expansion(
     candidate_projections: Option<&[[f64; 2]]>,
     previous_limit: usize,
     candidate_limit: usize,
+    allow_roundoff: bool,
 ) -> Result<InterpolationNeighborhood, SofaError> {
     // All triples with their largest candidate index below previous_limit
     // were already rejected at the preceding tier. Visit only newly possible
@@ -1776,7 +1786,7 @@ fn find_interpolation_neighborhood_for_candidate_expansion(
                         candidate_directions[second],
                         candidate_directions[third],
                     ];
-                    if !triangle_points_toward_target(target, vertices, weights) {
+                    if !triangle_points_toward_target(target, vertices, weights, allow_roundoff) {
                         continue;
                     }
                     return Ok(InterpolationNeighborhood {
@@ -1892,11 +1902,53 @@ fn spherical_triangle_weights_from_projected(projected: [[f64; 2]; 3]) -> Option
     TriangleFirstTerms::new(projected[0], projected[2]).weights(projected[1], projected[2])
 }
 
+fn find_interpolation_neighborhood_with_roundoff_fallback(
+    target: [f64; 3],
+    direction_count: usize,
+    direction_at: impl Fn(usize) -> [f64; 3],
+    candidate_limit: usize,
+) -> Result<InterpolationNeighborhood, SofaError> {
+    let strict = find_interpolation_neighborhood_with_options(
+        target,
+        direction_count,
+        &direction_at,
+        candidate_limit,
+    );
+    match strict {
+        Err(SofaError::InterpolationOutsideCoverage(_)) => {
+            find_interpolation_neighborhood_with_admission(
+                target,
+                direction_count,
+                direction_at,
+                candidate_limit,
+                true,
+            )
+        }
+        result => result,
+    }
+}
+
 fn find_interpolation_neighborhood_with_options(
     target: [f64; 3],
     direction_count: usize,
     direction_at: impl Fn(usize) -> [f64; 3],
     candidate_limit: usize,
+) -> Result<InterpolationNeighborhood, SofaError> {
+    find_interpolation_neighborhood_with_admission(
+        target,
+        direction_count,
+        direction_at,
+        candidate_limit,
+        false,
+    )
+}
+
+fn find_interpolation_neighborhood_with_admission(
+    target: [f64; 3],
+    direction_count: usize,
+    direction_at: impl Fn(usize) -> [f64; 3],
+    candidate_limit: usize,
+    allow_roundoff: bool,
 ) -> Result<InterpolationNeighborhood, SofaError> {
     if direction_count < 2 {
         return Err(SofaError::InsufficientInterpolationData {
@@ -1926,7 +1978,12 @@ fn find_interpolation_neighborhood_with_options(
                     continue;
                 }
                 let ordered = selected.map(|candidate| direction_at(candidate.index));
-                if let Some(weights) = spherical_triangle_weights(target, ordered) {
+                let weights = if allow_roundoff {
+                    spherical_triangle_weights_with_admission(target, ordered, true)
+                } else {
+                    spherical_triangle_weights(target, ordered)
+                };
+                if let Some(weights) = weights {
                     return Ok(InterpolationNeighborhood {
                         indices: selected.map(|candidate| candidate.index).to_vec(),
                         weights: weights.to_vec(),
@@ -2275,6 +2332,14 @@ fn rounded_delay(value: f64) -> Result<usize, SofaError> {
 }
 
 fn spherical_triangle_weights(target: [f64; 3], vertices: [[f64; 3]; 3]) -> Option<[f64; 3]> {
+    spherical_triangle_weights_with_admission(target, vertices, false)
+}
+
+fn spherical_triangle_weights_with_admission(
+    target: [f64; 3],
+    vertices: [[f64; 3]; 3],
+    allow_roundoff: bool,
+) -> Option<[f64; 3]> {
     let reference = if target[2].abs() < 0.9 {
         [0.0, 0.0, 1.0]
     } else {
@@ -2310,13 +2375,14 @@ fn spherical_triangle_weights(target: [f64; 3], vertices: [[f64; 3]; 3]) -> Opti
         .iter()
         .all(|weight| weight.is_finite() && *weight >= -INTERPOLATION_WEIGHT_TOLERANCE)
         .then_some(weights.map(|weight| weight.max(0.0)))?;
-    triangle_points_toward_target(target, vertices, weights).then_some(weights)
+    triangle_points_toward_target(target, vertices, weights, allow_roundoff).then_some(weights)
 }
 
 fn triangle_points_toward_target(
     target: [f64; 3],
     vertices: [[f64; 3]; 3],
     weights: [f64; 3],
+    allow_roundoff: bool,
 ) -> bool {
     // Tangent projection discards the radial sign: positive projected weights
     // can describe either the request or its antipode. Form the original 3D
@@ -2340,16 +2406,83 @@ fn triangle_points_toward_target(
     let magnitude_squared = dot_array(combined, combined);
     let radial_component = dot_array(combined, target);
     let residual = cross_array(combined, target);
-    // Require the resolvable vector to point forward and remain parallel to
-    // the request within the existing spatial tolerance. This also rejects
-    // lateral residue from tolerated/clamped barycentric boundary weights.
-    // Individual vertices may still lie behind the target's tangent plane.
-    magnitude_squared.is_finite()
+    let residual_squared = dot_array(residual, residual);
+    // Preserve the strict predicate and its arithmetic exactly for queries
+    // already covered by an existing triangle or later segment/expansion.
+    if magnitude_squared.is_finite()
         && magnitude_squared > uncertainty_squared
         && radial_component.is_finite()
         && radial_component > 0.0
-        && dot_array(residual, residual)
+        && residual_squared
             <= magnitude_squared * INTERPOLATION_WEIGHT_TOLERANCE * INTERPOLATION_WEIGHT_TOLERANCE
+    {
+        return true;
+    }
+    if !allow_roundoff {
+        return false;
+    }
+    let magnitude = magnitude_squared.sqrt();
+    let target_magnitude = dot_array(target, target).sqrt();
+    // Propagate the reconstruction uncertainty through dot/cross with the
+    // actual normalized target. gamma_6 also conservatively bounds their
+    // arithmetic: gamma_3(u) for dot and sqrt(2)*gamma_2(u) for cross, where
+    // u=EPSILON/2. Keep the forward component outside this error envelope.
+    let directional_uncertainty =
+        target_magnitude * (uncertainty_squared.sqrt() + roundoff_factor * magnitude);
+    if !magnitude_squared.is_finite()
+        || magnitude_squared <= uncertainty_squared
+        || !directional_uncertainty.is_finite()
+        || !radial_component.is_finite()
+        || radial_component <= directional_uncertainty
+    {
+        return false;
+    }
+    let angular_bound = magnitude * INTERPOLATION_WEIGHT_TOLERANCE;
+    // Near cancellation, the same rounding in projection/weights/summation
+    // can exceed a purely relative angle bound. Admit only a residual within
+    // arithmetic uncertainty AND an independently certified positive cone.
+    // This leaves interpolation arithmetic unchanged without admitting an
+    // outside target merely because its combination is poorly conditioned.
+    let alignment_bound = angular_bound + directional_uncertainty;
+    residual_squared <= alignment_bound * alignment_bound
+        && resolved_positive_cone_contains(target, vertices)
+}
+
+fn resolved_positive_cone_contains(target: [f64; 3], vertices: [[f64; 3]; 3]) -> bool {
+    let (volume, uncertainty) = signed_volume_with_uncertainty(vertices);
+    if !volume.is_finite() || !uncertainty.is_normal() || volume.abs() <= uncertainty {
+        return false;
+    }
+    // Cramer's rule certifies positive coefficients using the exact f64
+    // directions, independently of the rounded tangent-plane weights.
+    // Ambiguous/zero determinants fail closed in this extra admission path.
+    // Require normal error bounds because relative gamma bounds alone do
+    // not cover subnormal intermediate products/underflow.
+    let sign = volume.signum();
+    (0..3).all(|index| {
+        let mut replaced = vertices;
+        replaced[index] = target;
+        let (volume, uncertainty) = signed_volume_with_uncertainty(replaced);
+        volume.is_finite() && uncertainty.is_normal() && sign * volume > uncertainty
+    })
+}
+
+fn signed_volume_with_uncertainty(vertices: [[f64; 3]; 3]) -> (f64, f64) {
+    let [first, second, third] = vertices;
+    let volume = dot_array(first, cross_array(second, third));
+    let absolute_products = [
+        first[0].abs() * ((second[1] * third[2]).abs() + (second[2] * third[1]).abs()),
+        first[1].abs() * ((second[2] * third[0]).abs() + (second[0] * third[2]).abs()),
+        first[2].abs() * ((second[0] * third[1]).abs() + (second[1] * third[0]).abs()),
+    ];
+    // Each determinant monomial passes through at most five rounded
+    // operations. gamma_8(EPSILON), with EPSILON=2*u, also covers rounding
+    // while computing the six-term absolute permanent used as the bound.
+    let roundoff_factor = 8.0 * f64::EPSILON / (1.0 - 8.0 * f64::EPSILON);
+    (
+        volume,
+        roundoff_factor * absolute_products.into_iter().sum::<f64>(),
+    )
 }
 
 fn great_circle_segment_weights(
@@ -2875,6 +3008,264 @@ mod nearest_candidate_tests {
     };
 
     #[test]
+    fn clamped_shallow_boundary_weights_cannot_hide_resolvable_lateral_error() {
+        for sign in [-1.0, 1.0] {
+            let vertices = [
+                super::normalize_array([1.0, 0.0, sign * 1.0e-6]).unwrap(),
+                super::normalize_array([-1.0, 0.0, sign * 1.0e-6]).unwrap(),
+                super::normalize_array([0.0, 1.0, sign * 1.0e-6]).unwrap(),
+            ];
+            let target = super::normalize_array([0.0, -1.0e-7, sign]).unwrap();
+            // The negative third weight is small enough to be clamped by
+            // the barycentric tolerance, but its lateral angular error is
+            // ten times the spatial tolerance and exceeds roundoff.
+            assert!(spherical_triangle_weights(target, vertices).is_none());
+            assert!(!super::triangle_points_toward_target(
+                target,
+                vertices,
+                [0.5, 0.5, 0.0],
+                true,
+            ));
+        }
+    }
+
+    #[test]
+    fn unresolved_forward_and_exactly_cancelling_combinations_still_reject() {
+        for radial in [-1.0e-16, 0.0, 1.0e-16] {
+            let vertices = [[1.0, 0.0, radial], [-1.0, 0.0, radial], [0.0, 1.0, radial]];
+            assert!(!super::triangle_points_toward_target(
+                [0.0, 0.0, 1.0],
+                vertices,
+                [0.5, 0.5, 0.0],
+                true,
+            ));
+        }
+    }
+
+    #[test]
+    fn uncertainty_admission_requires_independent_positive_cone_certification() {
+        let vertices = [
+            [1.0, 0.0, 2.0e-15],
+            [-1.0, 0.0, 2.0e-15],
+            [0.0, 1.0, 2.0e-15],
+        ];
+        let inside = super::normalize_array([0.0, 0.25, 1.0]).unwrap();
+        let outside = super::normalize_array([0.0, -0.25, 1.0]).unwrap();
+        // Both requests have a forward component and a residual smaller
+        // than the absolute reconstruction uncertainty. Only one belongs
+        // to the exact-f64 positive cone; uncertainty cannot cover leakage
+        // across its edge even very near the cancellation threshold.
+        assert!(super::triangle_points_toward_target(
+            inside,
+            vertices,
+            [0.5, 0.5, 0.0],
+            true,
+        ));
+        assert!(!super::triangle_points_toward_target(
+            outside,
+            vertices,
+            [0.5, 0.5, 0.0],
+            true,
+        ));
+    }
+
+    #[test]
+    fn forward_component_must_exceed_its_own_roundoff_bound() {
+        let vertices = [
+            [1.0, 0.0, 1.0e-15],
+            [-1.0, 0.0, 1.0e-15],
+            [0.0, 1.0, 1.0e-15],
+        ];
+        let lateral_weight = 2.0_f64.powi(-50);
+        // The total magnitude is resolvable and its lateral residual fits
+        // the error envelope, but its positive radial component does not.
+        assert!(!super::triangle_points_toward_target(
+            [0.0, 0.0, 1.0],
+            vertices,
+            [0.5, 0.5 - lateral_weight, lateral_weight],
+            true,
+        ));
+    }
+
+    #[test]
+    fn subnormal_cone_certificate_uncertainty_fails_closed() {
+        let vertices = [
+            [1.0, 0.0, 1.0e-300],
+            [-1.0, 0.0, 1.0e-300],
+            [0.0, 1.0, 1.0e-300],
+        ];
+        assert!(!super::resolved_positive_cone_contains(
+            [0.0, 0.0, 1.0],
+            vertices,
+        ));
+    }
+
+    #[test]
+    fn certified_fallback_preserves_later_strict_triangle_and_expansion_weights() {
+        let target = [0.4444444440975938, 0.8888888881951876, -0.11111111804812342];
+        let cap = [
+            [0.4444444522014632, -0.11111109559707356, 0.8888888869496341],
+            [
+                0.45135309958936004,
+                -0.32934460839015717,
+                -0.8293446258434495,
+            ],
+            [
+                -0.8957975285197667,
+                0.44045575052934377,
+                -0.0595442669239491,
+            ],
+        ];
+        let later = [
+            -0.8938855742687118,
+            0.44818502649518305,
+            0.00993791425840655,
+        ];
+        let first = [cap[1], cap[2], cap[0]];
+        assert!(spherical_triangle_weights(target, first).is_none());
+        assert!(super::spherical_triangle_weights_with_admission(target, first, true).is_some());
+        // Captured from the original strict arithmetic over these exact f64
+        // directions, independently of the new certified admission path.
+        let expected = [
+            0.34653425653306275_f64,
+            0.319588059209396,
+            0.33387768425754133,
+        ]
+        .map(f64::to_bits);
+        let vertices = [cap[0], cap[1], cap[2], later];
+        for result in [
+            find_interpolation_neighborhood_with_candidate_limit(
+                target,
+                vertices.len(),
+                |index| vertices[index],
+                8,
+            )
+            .unwrap(),
+            find_interpolation_neighborhood_for_listener_orientation(
+                target,
+                vertices.len(),
+                |index| vertices[index],
+            )
+            .unwrap(),
+        ] {
+            assert_eq!(result.indices, [1, 0, 3]);
+            assert_eq!(
+                result
+                    .weights
+                    .into_iter()
+                    .map(f64::to_bits)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+        let segment = [
+            [
+                -0.49488614697606864,
+                0.34702512970166677,
+                0.7966563003496065,
+            ],
+            [
+                0.49488615675384645,
+                -0.34702511014611126,
+                -0.7966563027940512,
+            ],
+        ];
+        let vertices = [cap[0], cap[1], cap[2], segment[0], segment[1]];
+        // Freeze the unchanged legacy segment arithmetic on this host;
+        // acos implementations need not return identical cross-platform bits.
+        let whole = dot_array(segment[0], segment[1]).clamp(-1.0, 1.0).acos();
+        let expected_segment = [
+            dot_array(segment[1], target).clamp(-1.0, 1.0).acos() / whole,
+            dot_array(segment[0], target).clamp(-1.0, 1.0).acos() / whole,
+        ]
+        .map(f64::to_bits);
+        for result in [
+            find_interpolation_neighborhood_with_candidate_limit(
+                target,
+                vertices.len(),
+                |index| vertices[index],
+                8,
+            )
+            .unwrap(),
+            find_interpolation_neighborhood_for_listener_orientation(
+                target,
+                vertices.len(),
+                |index| vertices[index],
+            )
+            .unwrap(),
+        ] {
+            // Every strict triple fails, but the original near-antipodal
+            // (not antipodal) segment succeeds and retains precedence.
+            assert_eq!(result.indices, [3, 4]);
+            assert_eq!(
+                result
+                    .weights
+                    .into_iter()
+                    .map(f64::to_bits)
+                    .collect::<Vec<_>>(),
+                expected_segment
+            );
+        }
+        let mut expanded = cap.to_vec();
+        expanded.extend([
+            [
+                0.45125250319660226,
+                -0.3293032074630348,
+                -0.8294158039930021,
+            ],
+            [
+                0.45112094256093566,
+                -0.32924905939198146,
+                -0.8295088619613589,
+            ],
+            [
+                0.45110546398188944,
+                -0.3292426884050776,
+                -0.8295198083816211,
+            ],
+            [0.4510435478613439, -0.3292172031405166, -0.8295635907445477],
+            [0.4509816288541197, -0.3291917157689654, -0.8296073677982675],
+        ]);
+        expanded.push(later);
+        assert!(matches!(
+            find_interpolation_neighborhood_with_options(
+                target,
+                expanded.len(),
+                |index| expanded[index],
+                8,
+            ),
+            Err(super::SofaError::InterpolationOutsideCoverage(_))
+        ));
+        assert!(
+            super::find_interpolation_neighborhood_with_admission(
+                target,
+                expanded.len(),
+                |index| expanded[index],
+                8,
+                true,
+            )
+            .is_ok()
+        );
+        let result = find_interpolation_neighborhood_for_listener_orientation(
+            target,
+            expanded.len(),
+            |index| expanded[index],
+        )
+        .unwrap();
+        // A tier-8 certified result must never replace the prior tier-16
+        // strict result, including its exact interpolation weight bits.
+        assert_eq!(result.indices, [1, 0, 8]);
+        assert_eq!(
+            result
+                .weights
+                .into_iter()
+                .map(f64::to_bits)
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    #[test]
     fn resolvable_small_forward_cone_has_no_absolute_size_cutoff() {
         for sign in [-1.0, 1.0] {
             let target = [0.0, 0.0, sign];
@@ -3330,6 +3721,7 @@ mod nearest_candidate_tests {
                         candidate_projections.as_deref(),
                         previous_limit,
                         limit,
+                        false,
                     ) {
                         Ok(_) => {
                             deepest_window = deepest_window.max(limit);
