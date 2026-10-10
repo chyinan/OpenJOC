@@ -1045,6 +1045,7 @@ impl JocSpeakerRenderer {
         }
         let state_reset = frame.decoded.state_reset;
         if state_reset {
+            self.bridge.reset();
             self.timeline.reset();
             self.pending_frames.clear();
             if let Some(assembler) = self.assembler.as_mut() {
@@ -4475,6 +4476,131 @@ mod tests {
         let unity_peak = peak_metrics(&unity.channels).0;
         let calibrated_peak = peak_metrics(&calibrated.channels).0;
         assert!(calibrated_peak < unity_peak);
+    }
+
+    fn assert_speaker_blocks_bits_eq(actual: &[RenderedBlock], expected: &[RenderedBlock]) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert_eq!(actual.sample_rate, expected.sample_rate);
+            assert_eq!(actual.channels.len(), expected.channels.len());
+            for (channel, (actual, expected)) in
+                actual.channels.iter().zip(&expected.channels).enumerate()
+            {
+                assert_eq!(actual.len(), expected.len());
+                for (sample, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+                    assert_eq!(
+                        actual.to_bits(),
+                        expected.to_bits(),
+                        "channel {channel}, sample {sample}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn assert_explicit_sidecar_sequence_reset_matches_fresh_renderer(layout: &str) {
+        use crate::eac3_decode::decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm;
+        use openjoc_eac3::{DialnormMode, InternalBasePolicy};
+        use openjoc_scene::PayloadDecoderConfig;
+
+        // Concatenate complete, unchanged public synthetic AUs. Their sequence
+        // counts 1..=6, 1..=6 naturally reset the decoder at AU 6, under strict
+        // validation. No compressed metadata or decoded PCM is modified.
+        let input = include_bytes!("../../openjoc-api/tests/fixtures/timestamps.ec3").repeat(2);
+        let dither = crate::deterministic_dither_values();
+        let mut renderer = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
+        // Repeat after a complete drain and explicit reset to cover stream reuse.
+        for _ in 0..2 {
+            let mut fresh = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
+            let mut reset_frames = Vec::new();
+            let mut rendered_samples = 0;
+            let mut pre_reset_audio = false;
+            let mut post_reset_audio = false;
+            let (summary, tail) =
+                decode_internal_eac3_streaming_with_render_sink_and_policy_and_dialnorm(
+                    input.as_slice(),
+                    PayloadDecoderConfig {
+                        reference_screen: None,
+                        oamd: openjoc_oamd::OamdDecoderConfig::default(),
+                    },
+                    JocValidationProfile::EtsiStrict,
+                    &dither,
+                    InternalBasePolicy::default(),
+                    DialnormMode::Digital,
+                    |index, metadata, frame, pcm| {
+                        assert_eq!(
+                            metadata.validation_profile,
+                            JocValidationProfile::EtsiStrict
+                        );
+                        assert_eq!(
+                            metadata.validation_status,
+                            openjoc_emdf::JocValidationStatus::NormativeCompliant
+                        );
+                        assert_eq!(
+                            metadata.deviations,
+                            [] as [openjoc_emdf::JocProfileDeviation; 0]
+                        );
+                        assert_eq!(frame.joc.sequence_count, (index % 6 + 1) as u16);
+                        if frame.decoded.state_reset {
+                            reset_frames.push(index);
+                            // A new renderer has no spatial gain history. Feed
+                            // it the SAME decoded PCM, rebasing only input index.
+                            fresh = JocSpeakerRenderer::new(layout, control(false, 6)).unwrap();
+                            fresh.next_input_frame = index as u64;
+                        }
+                        let actual = renderer
+                            .render_frame_aligned_with_pcm_planes(index, frame, pcm)
+                            .unwrap();
+                        let expected = fresh
+                            .render_frame_aligned_with_pcm_planes(index, frame, pcm)
+                            .unwrap();
+                        assert_speaker_blocks_bits_eq(&actual, &expected);
+                        for block in actual {
+                            rendered_samples += block.channels[0].len();
+                            let has_audio = block.channels.iter().flatten().any(|s| *s != 0.0);
+                            if reset_frames.is_empty() {
+                                pre_reset_audio |= has_audio;
+                            } else {
+                                post_reset_audio |= has_audio;
+                            }
+                        }
+                        Ok(())
+                    },
+                    |_, _| Ok(()),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(summary.frames, 12);
+            assert_eq!(reset_frames, [6]);
+            assert!(pre_reset_audio && post_reset_audio);
+            let actual_tail = renderer.finish_with_reconstruction_tail(&tail).unwrap();
+            let expected_tail = fresh.finish_with_reconstruction_tail(&tail).unwrap();
+            assert_speaker_blocks_bits_eq(&actual_tail, &expected_tail);
+            assert_eq!(actual_tail.last().unwrap().channels[0].len(), 32);
+            rendered_samples += actual_tail
+                .iter()
+                .map(|block| block.channels[0].len())
+                .sum::<usize>();
+            // The reset discards one pending QMF interval; final linked gain
+            // still contributes its full 32-sample drain.
+            assert_eq!(rendered_samples, 11 * 1536 + 32);
+            renderer.reset();
+        }
+    }
+
+    #[test]
+    fn explicit_sidecar_sequence_reset_5_1_matches_fresh_renderer() {
+        assert_explicit_sidecar_sequence_reset_matches_fresh_renderer("5.1");
+    }
+
+    #[test]
+    fn explicit_sidecar_sequence_reset_7_1_4_matches_fresh_renderer() {
+        assert_explicit_sidecar_sequence_reset_matches_fresh_renderer("7.1.4");
+    }
+
+    #[test]
+    fn explicit_sidecar_sequence_reset_22_2_matches_fresh_renderer() {
+        assert_explicit_sidecar_sequence_reset_matches_fresh_renderer("22.2");
     }
 
     #[test]

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Reset CLI spatial-bridge gain history on decoder discontinuities when using
+  an explicit `--topology` sidecar, even when its full topology is unchanged.
 - Avoided false custom-SOFA coverage errors for resolvable shallow rotated
   triangles with conservative positive-cone certification, preserving existing
   successful neighbor selections and interpolation arithmetic.

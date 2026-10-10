@@ -211,6 +211,11 @@ Flush/reset/discontinuity clears access-unit, decoder, timeline, gain, and
 HRTF state before the next segment. Integrations remain responsible for
 container seek, preroll choice, and discard-output policy.
 
+A decoder-signaled JOC reset also clears the CLI spatial bridge's gain history
+before reapplying an explicit `--topology` sidecar, even if the topology is
+unchanged. Ordinary sequence increments, including the normal `1023` to `1`
+wrap, do not signal a reset and preserve this history.
+
 ## Progress, reports, and output safety
 
 Interactive progress is written to stderr and is disabled automatically for
