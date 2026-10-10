@@ -299,6 +299,12 @@ fi
 echo "LIVE_GAIN_NO_RESTART:PASS decoder_opens=0"
 echo "APPLYCURRENT_REINIT:PASS decoder_opens=1 output_channels=8 restored_graph=verified"
 
+# A runtime command must survive the lavfi context's own lazy recreation,
+# even when a downstream fixed-rate filter leaves the AO format unchanged.
+# This independently checks logged native replay before the first new sample;
+# it does not reinterpret the static AF graph as the current volume.
+python3 "$script_dir/../../scripts/verify-mpv-gain-recovery.py" "$mpv" "$live_gain_fixture"
+
 explicit_log=$(run "$raw_single" --ad=eac3)
 printf '%s\n' "$explicit_log" | grep -Fq 'Selected decoder: eac3 '
 if printf '%s\n' "$explicit_log" | grep -Fq 'Selected decoder: libopenjoc '; then

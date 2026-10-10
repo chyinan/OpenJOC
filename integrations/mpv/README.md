@@ -10,10 +10,11 @@ The patchset was developed and built against:
 | mpv 0.41.0 | `41f6a645068483470267271e1d09966ca3b9f413` | `patches/mpv-0.41.0-openjoc.patch` |
 | mpv master | `e7191f2a65d64af266c5c80793e79d2f4b92b789` | `patches/mpv-master-openjoc.patch` |
 
-Both patch files contain the same three-part architecture: the optional
-OpenJOC integration, the segment-boundary classification reset, and bounded
-positive pre-demux admission for raw JOC. The stable and master patches are
-kept separately so upstream source drift is visible.
+Both patch files contain the same four-part architecture: the optional
+OpenJOC integration, the segment-boundary classification reset, bounded
+positive pre-demux admission for raw JOC, and persistence of the dedicated
+OpenJOC gain stage across internal lavfi graph recreation. The stable and
+master patches are kept separately so upstream source drift is visible.
 
 ## Build boundary
 
@@ -25,7 +26,8 @@ The build needs:
 - normal mpv dependencies, including Meson, Ninja, libass, and libplacebo.
 
 Without the `openjoc` pkg-config module, mpv builds normally and does not add
-the classifier or any OpenJOC behavior.
+the OpenJOC decoder-selection classifier. The narrowly reserved gain-graph
+persistence rule does not depend on decoder integration.
 
 Apply one patch to a clean matching mpv checkout:
 
@@ -139,6 +141,19 @@ diagnostics. To use an exact hardware channel map, configure mpv's normal audio
 output separately; the menu intentionally does not change that setting for
 other media. mpv's normal volume remains separate from the independent
 post-render OpenJOC gain stage.
+
+The patched player retains the dedicated gain filter's last successful scalar
+runtime command when upstream sample rate, sample format or channel layout
+changes recreate its lavfi graph. The exact command is replayed before the
+new graph processes its first frame, including with a fixed downstream AO or
+paused playback. This is limited to the single reserved
+`volume@openjoc_gain=volume=<factor>:precision=float` audio graph and numeric
+`volume` commands in the menu's existing range. Other lavfi graphs keep their
+usual command semantics. Replacing/removing the owned filter discards its
+per-instance target; normal reset/seek preserves it. A failed command retains
+the previous successful target. A successful command outside this narrow
+contract clears persistence. If replay itself fails, mpv reports a lavfi error
+and its normal failed-user-filter handling may bypass the stage.
 
 Fixtures are intentionally not copied into this repository. Private media is
 accepted only as a local test input and is never part of the patchset.
