@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Preserved finite f64 PCM and metadata coordinates exactly when reimporting
+  scene JSON, using round-trip-accurate floating-point parsing.
 - Preserved custom speaker geometry and channel order in CLI renders using
   topology overrides, performance reports, or contribution diagnostics,
   including layouts whose display names match presets.
