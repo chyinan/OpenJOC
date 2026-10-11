@@ -1,0 +1,32 @@
+# LAV FFmpeg b033272d configure: captured source-line excerpts, not executable.
+# Gaps are deliberately omitted; see README.md for provenance.
+# Source line 5373 (omitted intervening lines)
+    elif VSLANG=1033 $_cc -nologo- 2>&1 | grep -q ^Microsoft || { $_cc -v 2>&1 | grep -q clang && $_cc -? > /dev/null 2>&1; }; then
+        _type=msvc
+        if VSLANG=1033 $_cc -nologo- 2>&1 | grep -q ^Microsoft; then
+            # Depending on the tool (cl.exe or link.exe), the version number
+            # is printed on the first line of stderr or stdout
+# Source line 5379 (omitted intervening lines)
+        else
+            _ident=$($_cc --version 2>/dev/null | head -n1 | tr -d '\r')
+        fi
+        _depflags='-showIncludes'
+        _cflags_speed="-O2"
+        _cflags_size="-O1"
+        if $_cc -nologo- 2>&1 | grep -q Linker; then
+            _ld_o='-out:$@'
+            _flags_filter=msvc_flags_link
+        else
+            _ld_o='-Fe$@'
+# Source line 5411 (omitted intervening lines)
+        eval "${1}_DEPFLAGS=\"\$_depflags\""
+    else
+        eval "${1}DEP=\"\${_DEPCMD:-\$DEPCMD}\""
+        eval "${1}DEP_FLAGS=\"\${_DEPFLAGS:-\$DEPFLAGS} \${_DEP${1}FLAGS:-\$DEP${1}FLAGS}\""
+        eval "DEP${1}FLAGS=\"\$_flags\""
+    fi
+}
+# Source line 8545 (omitted intervening lines)
+CCDEP_FLAGS=$CCDEP_FLAGS
+# Source line 8549 (omitted intervening lines)
+CC_DEPFLAGS=$CC_DEPFLAGS
