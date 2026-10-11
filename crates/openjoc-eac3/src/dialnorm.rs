@@ -15,6 +15,14 @@ pub enum DialnormMode {
     Digital,
 }
 
+/// A change of calibration at a sample offset within a grouped access unit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DialnormSegment {
+    /// Offset relative to the start of the access unit, in samples per channel.
+    pub start_sample: u16,
+    pub state: DialnormState,
+}
+
 /// Prepared semantic state for one E-AC-3 program boundary.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DialnormState {

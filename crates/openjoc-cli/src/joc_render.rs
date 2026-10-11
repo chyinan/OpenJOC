@@ -751,6 +751,7 @@ struct PendingRenderFrame {
     lfe_location: Option<ChannelLocation>,
     downmix: DownmixMetadata,
     dialnorm: DialnormState,
+    dialnorm_segments: Vec<openjoc_eac3::DialnormSegment>,
     compatibility_pcm: Option<DecodedAccessUnitPcm>,
 }
 
@@ -1078,6 +1079,7 @@ impl JocSpeakerRenderer {
             lfe_location: base.lfe_location,
             downmix: base.downmix,
             dialnorm: base.dialnorm,
+            dialnorm_segments: base.dialnorm_segments.clone(),
             compatibility_pcm: (self.layout.is_stereo()
                 && frame.admitted_decoded_joc_binding().is_some())
             .then(|| pcm_planes.compatibility_pcm.clone()),
@@ -1135,7 +1137,7 @@ impl JocSpeakerRenderer {
         };
         let mut calibrated_frame = frame.clone();
         for row in &mut calibrated_frame.decoded.reconstruction_basis.rows {
-            base.dialnorm.apply_to_samples(row);
+            base.apply_dialnorm_to_samples(row);
         }
         let base_coordinates = base
             .channel_locations
@@ -2829,6 +2831,7 @@ fn aligned_base_pcm(
         lfe: aligned.lfe_pcm.clone(),
         downmix: pending.downmix,
         dialnorm: pending.dialnorm,
+        dialnorm_segments: pending.dialnorm_segments.clone(),
     }
 }
 
@@ -3819,6 +3822,7 @@ mod tests {
             lfe: Some(vec![99.0; samples]),
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         }
     }
 
@@ -3837,6 +3841,7 @@ mod tests {
             lfe: lfe.map(|value| vec![value]),
             downmix,
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         }
     }
 
@@ -4438,6 +4443,127 @@ mod tests {
             assert!((actual - expected).abs() <= 1.0e-12);
         }
         assert!(unity_base.dialnorm.linear_gain() > gain);
+    }
+
+    #[test]
+    fn short_frame_dialnorm_changes_scale_base_reconstruction_and_lfe() {
+        use openjoc_eac3::{DialnormMode, DialnormSegment};
+        let mut renderer = JocSpeakerRenderer::new("5.1", fixed_route_control(true)).unwrap();
+        let mut pcm = base(2, 1.0);
+        pcm.dialnorm_segments = vec![DialnormSegment {
+            start_sample: 1,
+            state: DialnormState::new(DialnormMode::Digital, 20),
+        }];
+        let block = renderer
+            .render_frame(0, &decoded_frame(0, 0, 2), &pcm)
+            .unwrap();
+        for index in 0..2 {
+            let gain = DialnormState::new(DialnormMode::Digital, if index == 0 { 31 } else { 20 })
+                .linear_gain();
+            assert_eq!(
+                block.channels[0][index].to_bits(),
+                (1.0 * gain + 6.0 * gain).to_bits()
+            );
+            assert_eq!(block.channels[3][index].to_bits(), (99.0 * gain).to_bits());
+        }
+    }
+
+    #[test]
+    fn short_frame_dialnorm_changes_survive_alignment_and_drain() {
+        use openjoc_eac3::{DialnormMode, DialnormSegment};
+        // Use the same dynamic control fixture as the existing aligned-tail
+        // regression. The LFE plane isolates calibration from spatial routing.
+        let mut renderer = JocSpeakerRenderer::new("5.1", control(false, 6)).unwrap();
+        let mut pcm = base(640, 1.0);
+        pcm.dialnorm_segments = vec![
+            DialnormSegment {
+                start_sample: 256,
+                state: DialnormState::new(DialnormMode::Digital, 20),
+            },
+            DialnormSegment {
+                start_sample: 512,
+                state: DialnormState::new(DialnormMode::Digital, 31),
+            },
+        ];
+        assert_eq!(
+            renderer
+                .render_frame_aligned(0, &decoded_frame(0, 0, 640), &pcm)
+                .unwrap(),
+            [] as [RenderedBlock; 0]
+        );
+        let mut blocks = renderer
+            .render_frame_aligned(1, &decoded_frame(1, 640, 640), &pcm)
+            .unwrap();
+        assert_eq!(blocks.len(), 1);
+        blocks.extend(
+            renderer
+                .finish_with_reconstruction_tail(&ReconstructionBasis {
+                    rows: vec![
+                        vec![0.0; openjoc_joc::ReconstructionOutputTimeline::qmf_latency_samples()],
+                    ],
+                })
+                .unwrap(),
+        );
+        assert_eq!(blocks.len(), 2);
+        for block in blocks {
+            assert_eq!(block.channels[3].len(), 640);
+            for index in 0..640 {
+                let gain = DialnormState::new(
+                    DialnormMode::Digital,
+                    if (256..512).contains(&index) { 20 } else { 31 },
+                )
+                .linear_gain();
+                assert_eq!(block.channels[3][index].to_bits(), (99.0 * gain).to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn short_frame_dialnorm_changes_calibrate_compatibility_stereo() {
+        use openjoc_eac3::{DialnormMode, DialnormSegment};
+        let identities = vec!["FC"; 20];
+        let mut renderer = JocSpeakerRenderer::new_with_contribution_and_linked_gain(
+            "2.0",
+            control_with_identities(false, &identities),
+            SpatialContributionMode::Full,
+            false,
+        )
+        .unwrap();
+        renderer
+            .set_downmix_policy(StereoDownmixPolicy::LoRo)
+            .unwrap();
+        let mut compatibility = base(640, 1.0);
+        compatibility.dialnorm_segments = vec![DialnormSegment {
+            start_sample: 256,
+            state: DialnormState::new(DialnormMode::Digital, 20),
+        }];
+        let mut expected_pcm = compatibility.clone();
+        let gain = DialnormState::new(DialnormMode::Digital, 20).linear_gain();
+        for channel in &mut expected_pcm.channels {
+            for sample in &mut channel[256..] {
+                *sample *= gain;
+            }
+        }
+        for sample in &mut expected_pcm.lfe.as_mut().unwrap()[256..] {
+            *sample *= gain;
+        }
+        let mut expected = vec![vec![0.0; 640]; 2];
+        add_stereo_base_downmix(&mut expected, &expected_pcm, StereoDownmixPolicy::LoRo).unwrap();
+        let planes = DecodedJocAccessUnitPcm {
+            compatibility_pcm: compatibility.clone(),
+            joc_input_pcm: compatibility,
+        };
+        let actual = renderer
+            .render_frame_with_pcm_planes(0, &common_profile_decoded_frame(640), &planes)
+            .unwrap();
+        for (actual, expected) in actual
+            .channels
+            .iter()
+            .flatten()
+            .zip(expected.iter().flatten())
+        {
+            assert_eq!(actual.to_bits(), expected.to_bits());
+        }
     }
 
     #[test]

@@ -525,6 +525,7 @@ mod tests {
             lfe: lfe.map(|value| vec![value]),
             downmix: metadata,
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         }
     }
 
@@ -661,6 +662,7 @@ mod tests {
             lfe: None,
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         };
         left_only.channels[5][0] = 1.0;
         let mut right_only = left_only.clone();
@@ -708,6 +710,7 @@ mod tests {
             lfe: None,
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         };
         for channel_index in [5, 6] {
             input.channels[channel_index][0] = 1.0;

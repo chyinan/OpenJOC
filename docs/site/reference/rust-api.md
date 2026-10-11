@@ -45,6 +45,25 @@ also requires six blocks per syncframe.
 Arbitrary byte fragmentation, file paths, MP4/Matroska demuxing, and multiple
 AUs in one call are intentionally outside this first contract.
 
+## Lower-level PCM calibration migration
+
+`openjoc_eac3::DecodedAccessUnitPcm` now includes `dialnorm_segments`.
+Downstream Rust code that constructs this public struct with a literal must add
+`dialnorm_segments: Vec::new()` for a single or constant-dialnorm interval.
+This is a Rust source-compatibility change; the high-level session API and C
+configuration layout are unchanged.
+
+The existing `dialnorm` field describes the first independent syncframe.
+`DialnormSegment { start_sample, state }` entries describe subsequent metadata
+changes at strictly increasing, nonzero access-unit-relative sample offsets
+less than `samples`. An empty list retains the original single-scalar behavior.
+The decoder retains raw PCM; callers that render it should use
+`with_dialnorm_applied()` for Base/LFE and `apply_dialnorm_to_samples()` for
+aligned reconstruction rows starting at access-unit sample zero. Applying only
+`dialnorm.linear_gain()` to a whole grouped access unit loses later changes.
+The decoder's `dialnorm_state()` reports the last successfully accepted
+independent-syncframe state.
+
 ## Output and layout
 
 The canonical format is interleaved IEEE-754 `f32`. Each `OpenJocPcmFrame`
