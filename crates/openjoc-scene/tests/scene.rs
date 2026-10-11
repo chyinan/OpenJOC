@@ -66,6 +66,61 @@ fn scene_json_roundtrips_without_losing_timeline_or_basis() {
 }
 
 #[test]
+fn scene_json_preserves_pcm_bits_for_non_binary_fractions() {
+    let mut expected = scene();
+    let mut samples: Vec<f64> = (-100..=100).map(|value| f64::from(value) / 257.0).collect();
+    samples.extend([0.0, -0.0]);
+    expected.duration_samples = samples.len() as u64;
+    expected.reconstruction_basis = Some(ReconstructionBasis {
+        rows: vec![samples.clone()],
+    });
+    expected.base_lfe_pcm = Some(samples.clone());
+    expected.validate().expect("valid finite scene");
+
+    let json = expected.to_json_pretty().expect("finite scene JSON");
+    let decoded = ObjectScene::from_json(&json).expect("scene JSON");
+    let row = &decoded.reconstruction_basis.as_ref().unwrap().rows[0];
+    let lfe = decoded.base_lfe_pcm.as_ref().unwrap();
+    assert_eq!(row.len(), samples.len());
+    assert_eq!(lfe.len(), samples.len());
+    for (index, expected) in samples.iter().enumerate() {
+        assert_eq!(
+            row[index].to_bits(),
+            expected.to_bits(),
+            "row sample {index}"
+        );
+        assert_eq!(
+            lfe[index].to_bits(),
+            expected.to_bits(),
+            "LFE sample {index}"
+        );
+    }
+    assert_eq!(decoded, expected);
+}
+
+#[test]
+fn scene_json_preserves_metadata_coordinate_bits() {
+    let mut expected = scene();
+    let position = Position3 {
+        x: 100.0 / 257.0,
+        y: 31.0 / 257.0,
+        z: -100.0 / 257.0,
+    };
+    expected.metadata_timeline[0].position = Position::Room(position);
+    expected.validate().expect("valid finite scene");
+
+    let json = expected.to_json_pretty().expect("finite scene JSON");
+    let decoded = ObjectScene::from_json(&json).expect("scene JSON");
+    let Position::Room(actual) = &decoded.metadata_timeline[0].position else {
+        panic!("room position must retain its anchor");
+    };
+    assert_eq!(actual.x.to_bits(), position.x.to_bits());
+    assert_eq!(actual.y.to_bits(), position.y.to_bits());
+    assert_eq!(actual.z.to_bits(), position.z.to_bits());
+    assert_eq!(decoded, expected);
+}
+
+#[test]
 fn metadata_scene_is_admissible_without_audio_basis() {
     let mut metadata_only = scene();
     metadata_only.reconstruction_basis = None;
