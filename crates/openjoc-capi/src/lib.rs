@@ -483,7 +483,7 @@ pub struct openjoc_decoder_config {
     pub sofa_size: usize,
     pub virtual_layout: *const c_char,
     pub lfe_policy: u32,
-    /// Appended in ABI minor 1; older `struct_size` callers use Default.
+    /// Appended in ABI minor 1; prefixes ending before this field use Default.
     pub dialnorm_mode: u32,
     /// Appended in ABI minor 4; null retains preset-name behavior.
     pub custom_speaker_layout: *const openjoc_custom_speaker_layout,
@@ -1125,6 +1125,10 @@ fn default_decoder_config(struct_size: u32) -> openjoc_decoder_config {
 }
 
 /// Initializes only the ABI 1.3 configuration prefix.
+///
+/// Requires storage for that prefix, regardless of incoming `struct_size`.
+/// The smaller historical ABI 1.0 allocation on ILP32 is not supported here;
+/// see `docs/site/reference/c-abi.md` for the legacy initialization boundary.
 ///
 /// This symbol is intentionally safe for a caller compiled against the old
 /// ABI 1.3 header: that caller allocated only the prefix-sized struct, so the

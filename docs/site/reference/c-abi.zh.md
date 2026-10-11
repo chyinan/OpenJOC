@@ -7,13 +7,30 @@
 
 ## ABI 策略
 
-ABI 版本为 `1.7-experimental`，与 OpenJOC 软件包版本彼此独立。重大改动可能破坏结构布局或所有权规则，需要增加 ABI 主版本号。小版本新增内容必须追加字段或函数，并保持已有字段的含义不变。配置、PCM 帧和输出信息结构体都包含 `struct_size`；调用方必须初始化它们，生产者必须拒绝尺寸更小的结构体。ABI 次版本 1 追加了 `dialnorm_mode` 字段。使用 ABI 1.0 配置结构大小的调用方仍会被接受，并收到 `OPENJOC_DIALNORM_DEFAULT`。ABI 1.2 追加了函数和状态码，但没有改变已有结构体布局。`openjoc_get_abi_version()` 返回 `(major << 16) | minor`。
+ABI 版本为 `1.7-experimental`，与 OpenJOC 软件包版本彼此独立。重大改动可能破坏结构布局或所有权规则，需要增加 ABI 主版本号。小版本新增内容必须追加字段或函数，并保持已有字段的含义不变。配置、PCM 帧和输出信息结构体都包含 `struct_size`；调用方必须初始化它们，生产者必须拒绝尺寸更小的结构体。ABI 次版本 1 追加了 `dialnorm_mode` 字段。调用方声明的前缀若在 `dialnorm_mode` 之前结束，则使用 `OPENJOC_DIALNORM_DEFAULT`。历史 ABI 1.0 的结构大小并非在所有目标上都能标识这个前缀，详见下方[旧版初始化边界](#legacy-initialization-boundary)。ABI 1.2 追加了函数和状态码，但没有改变已有结构体布局。`openjoc_get_abi_version()` 返回 `(major << 16) | minor`。
 
 ABI 1.4 在 `openjoc_decoder_config` 中追加了 `custom_speaker_layout`。需要使用自定义几何时，把它设为内存中的 `openjoc_custom_speaker_layout`；其中有序的 `openjoc_custom_speaker` 数组包含有限的方位角/仰角（单位为度），以及 `OPENJOC_SPEAKER_FULL_RANGE` 或 `OPENJOC_SPEAKER_LFE` 角色。描述结构和其中的所有字符串只在 `openjoc_decoder_create` 调用期间借用；解码器会复制经过验证的布局，并通过输出标签报告相同的顺序。原有调用方将此字段留空即可继续使用预设行为。自定义布局的约定、坐标规则、校验限制以及 WAV/CAF 元数据边界，记录在[自定义扬声器布局](../using/custom-speaker-layouts.md)中。
 
 流式 API 的传输范围比直接 `openjoc_decoder` 更窄：`openjoc_stream_decoder_create` 要求自定义名称具有现有的 OpenJOC 到 FFmpeg 声道映射、映射后标识唯一，并且 LFE/全频角色一致。可表示的自定义定义保留原顺序并优先于预设字段；不支持的名称、别名冲突或角色不一致会在创建时、提交音频前返回 `OPENJOC_STATUS_INVALID_ARGUMENT`。流式 API 报告 FFmpeg 声道标签，不传输自定义角度。详见[自定义布局传输边界](rust-api.zh.md#custom-layout-transport-boundary)。
 
-`openjoc_decoder_config_init()` 仍是对旧版本安全的 ABI 1.3 前缀初始化函数，不会写入 ABI 1.4 或之后追加的字段。ABI 1.4 调用方使用 `openjoc_decoder_config_init_v1_4()` 初始化自定义布局字段；ABI 1.6 调用方使用 `openjoc_decoder_config_init_v1_6()` 初始化精确的 v1.6 前缀并选择 HRTF；ABI 1.7 调用方使用 `openjoc_decoder_config_init_v1_7()` 初始化完整结构。保留的 v1.6 对齐字段可防止旧结构尾部填充被误读为启用新功能。
+`openjoc_decoder_config_init()` 仍仅初始化 ABI 1.3 前缀，调用方必须为该前缀提供足够可写空间；它不会写入 ABI 1.4 或之后追加的字段。ABI 1.4 调用方使用 `openjoc_decoder_config_init_v1_4()` 初始化自定义布局字段；ABI 1.6 调用方使用 `openjoc_decoder_config_init_v1_6()` 初始化精确的 v1.6 前缀并选择 HRTF；ABI 1.7 调用方使用 `openjoc_decoder_config_init_v1_7()` 初始化完整结构。保留的 v1.6 对齐字段可防止旧结构尾部填充被误读为启用新功能。
+
+### 旧版初始化边界 {#legacy-initialization-boundary}
+
+上述小版本兼容策略存在一个历史限制：无版本的 `openjoc_decoder_config_init()` 不接收容量或调用方 ABI 版本，要求可写存储至少覆盖 ABI 1.3 前缀。在普通 ILP32 目标上（指针和 `size_t` 均为四字节），不能把较小的 ABI 1.0 分配传给它：历史结构为 44 字节，当前初始化函数写入 48 字节。调用前设置 `struct_size` 不能限制它的写入范围。此 ABI 限制由源码分析确认，不是在已发布的 32 位软件包中观察到的故障；当前[发行目标](../getting-started/supported-platforms.zh.md)均为 64 位。
+
+在普通 LP64 目标上，ABI 1.0 和 ABI 1.1–1.3 的结构均占 64 字节：`dialnorm_mode` 复用了旧结构的尾部填充。仅凭大小无法区分旧填充和后加字段。调用当前无版本初始化函数后再创建解码器，会在该位置写入 Default；但这不保证由旧库初始化或自行构造的配置具有相同行为。不能仅因大小为 64 字节就忽略较新调用方显式设置的 dialnorm。
+
+源码迁移步骤：
+
+1. 使用当前头文件和匹配的库重新编译。分配完整的当前 `openjoc_decoder_config`，调用 `openjoc_decoder_config_init_v1_7()`，检查返回状态后再设置应用选项并创建解码器。该函数初始化完整结构，默认关闭听音者姿态拉取模式。
+2. 不要对旧头文件定义的较小分配调用 `v1_7`，不要把较小分配强制转换成当前类型，也不要只增大声明的 `struct_size`。保留 ABI 1.4 或 1.6 源码布局时，使用对应的带版本初始化函数，并链接导出该函数的库。
+3. 对无法重编译的 ABI 1.0 二进制程序，不要假定在 ILP32 上替换为当前库是安全的。安排针对该调用方的兼容部署前，应保留其匹配的库。ABI 1.1–1.3 二进制程序使用相同的无版本符号，却需要较大的前缀；库无法在这一调用处自动区分这两代程序。
+
+本说明不改变无版本符号、不增加初始化函数，也不禁止 32 位源码构建。这里记录的是现有边界，并未修复历史二进制兼容缺陷。
+
+### 后续 ABI 新增内容
+
 ABI 1.5 新增了 `openjoc_stream_decoder` 的只读 `openjoc_live_inspection_snapshot`。它报告同一条带内解码路径观察到的 programme 布局、重建载体、验证状态、对象/复杂度、EMDF、动态场景、AU 和时间戳信息；实时覆盖明确区分 `partial` 与 `complete_continuous`，seek、flush 或 reset 会开始新的观察 epoch。
 
 ABI 1.6 在 `openjoc_decoder_config` 末尾追加 `hrtf_preset`。值 `0` 选择默认 SADIE II D1/KU100，值 `1` 选择 SADIE II D2/KEMAR。旧版 `struct_size` 会继续使用 D1；已退役的 Aachen 值 `2` 也会为旧调用方映射到 D1。

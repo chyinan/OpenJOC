@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Clarified the historical C initializer boundary on ILP32 and the LP64
+  size ambiguity, with migration steps using existing versioned initializers.
+  No ABI implementation, symbol, or supported build target is changed; the
+  historical binary-compatibility defect is not repaired by this clarification.
+
 ### Fixed
 
 - Preserved finite f64 PCM and metadata coordinates exactly when reimporting
