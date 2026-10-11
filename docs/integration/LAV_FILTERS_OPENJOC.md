@@ -12,11 +12,17 @@ The public integration branch is `openjoc-main`, based on LAV Filters 0.83 at
 built from immutable LAV commit
 `8f32aad51aea24602f2175316a241568be5fc4a1`, pinned by the workflow used for that release.
 
-The v0.19.0 release contract uses immutable LAV commit
+The historical v0.19.0 release contract used immutable LAV commit
 `d13b7cac86c5750b5d4181569d98f44ae9a1607c` for
 `openjoc-lav-0.19.0-windows-x64.zip`. The LAV asset is built and uploaded
 separately from the core packages; check its availability on the release page.
 The package carries its runtime notices and license files.
+
+The current build default advances to immutable LAV commit
+`a876fbc0ca2615fdaa240cf96ac13c82f28689a9`. Existing published assets are not
+replaced by this source change. The default remains the audio-only one-click
+package; the explicit optional full variant and its registration/rollback
+boundaries are described in [full LAV packaging](../release/LAV_FULL_PACKAGE.md).
 
 ## Routing behavior
 

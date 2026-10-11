@@ -7,6 +7,8 @@ OpenJOC 提供一个可选的 Windows DirectShow 下游 LAV Audio Decoder。它�
 
 下面记录的是 v0.12 及以后 Windows 集成中验证过的安装包行为；本站的发布基线是 v0.19.0。
 
+
+默认音频包继续保留原来的一键 `install.bat` / `uninstall.bat` 体验。维护者可显式构建独立的 `full` 完整包，包含 Audio、Video、Splitter 和 QuickSync。只有用户主动执行其手动注册入口时，才会更改标准 Video/Splitter 注册；详见[完整包安装与回退](https://github.com/chyinan/OpenJOC/blob/master/docs/release/LAV_FULL_PACKAGE.md)。下载和解压不会执行注册。
 ## 安装并验证
 
 1. 从 [OpenJOC 发行版页面](https://github.com/chyinan/OpenJOC/releases)下载 Windows LAV 安装包。

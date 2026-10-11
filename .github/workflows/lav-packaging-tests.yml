@@ -1,0 +1,142 @@
+name: LAV packaging and registration regression
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/lav-packaging-tests.yml'
+      - '.github/workflows/lav-release.yml'
+      - 'packaging/windows-lav/**'
+      - 'packaging/windows-lav-full/**'
+      - 'scripts/package_lav_release.py'
+      - 'scripts/release_packaging_core.py'
+      - 'scripts/prepare_lav_ffmpeg_configure.py'
+      - 'scripts/release_lav_msbuild.cmd'
+      - 'scripts/tests/test_lav_full_package.py'
+      - 'scripts/tests/test_lav_release_package.py'
+      - 'scripts/tests/test_lav_release_workflow.py'
+      - 'scripts/tests/test_lav_packaging_workflow.py'
+      - 'scripts/tests/test_release_packaging_core.py'
+      - 'scripts/tests/test_prepare_lav_ffmpeg_configure.py'
+      - 'scripts/tests/test_release_lav_msbuild_script.py'
+      - 'scripts/tests/test_lav_registration_process.ps1'
+      - 'scripts/tests/lav_registration_gui_probe.cpp'
+  push:
+    branches: ['master', 'feat/lav-full-package-a876fbc']
+    paths:
+      - '.github/workflows/lav-packaging-tests.yml'
+      - '.github/workflows/lav-release.yml'
+      - 'packaging/windows-lav/**'
+      - 'packaging/windows-lav-full/**'
+      - 'scripts/package_lav_release.py'
+      - 'scripts/release_packaging_core.py'
+      - 'scripts/prepare_lav_ffmpeg_configure.py'
+      - 'scripts/release_lav_msbuild.cmd'
+      - 'scripts/tests/test_lav_full_package.py'
+      - 'scripts/tests/test_lav_release_package.py'
+      - 'scripts/tests/test_lav_release_workflow.py'
+      - 'scripts/tests/test_lav_packaging_workflow.py'
+      - 'scripts/tests/test_release_packaging_core.py'
+      - 'scripts/tests/test_prepare_lav_ffmpeg_configure.py'
+      - 'scripts/tests/test_release_lav_msbuild_script.py'
+      - 'scripts/tests/test_lav_registration_process.ps1'
+      - 'scripts/tests/lav_registration_gui_probe.cpp'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lav-packaging-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packaging-and-registration:
+    name: LAV packaging and no-registration tests (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Check out the tested source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test package and workflow contracts with synthetic files
+        shell: pwsh
+        run: |
+          python -m unittest -v `
+            scripts.tests.test_lav_full_package `
+            scripts.tests.test_lav_release_package `
+            scripts.tests.test_lav_release_workflow `
+            scripts.tests.test_lav_packaging_workflow `
+            scripts.tests.test_release_packaging_core `
+            scripts.tests.test_prepare_lav_ffmpeg_configure `
+            scripts.tests.test_release_lav_msbuild_script
+          if ($LASTEXITCODE -ne 0) { throw "LAV packaging regression failed: $LASTEXITCODE" }
+
+      - name: Build only the harmless GUI exit-code fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'Visual Studio C++ installation missing.' }
+          $source = Join-Path $env:GITHUB_WORKSPACE 'scripts\tests\lav_registration_gui_probe.cpp'
+          $probe = Join-Path $env:RUNNER_TEMP 'lav_registration_gui_probe.exe'
+          $command = Join-Path $env:RUNNER_TEMP 'build-lav-registration-probe.cmd'
+          @"
+          @echo off
+          call "$vs\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo
+          if errorlevel 1 exit /b %errorlevel%
+          cd /d "$env:RUNNER_TEMP"
+          cl /nologo /W4 /WX /EHsc /std:c++17 /DUNICODE /D_UNICODE "$source" /Fe"$probe" /link /SUBSYSTEM:WINDOWS shell32.lib kernel32.lib
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $command -Encoding ascii
+          & cmd.exe /d /c $command
+          if ($LASTEXITCODE -ne 0) { throw "Harmless fixture build failed: $LASTEXITCODE" }
+
+      - name: Test exact helper in Windows PowerShell 5.1 without registration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $registration = Join-Path $env:GITHUB_WORKSPACE 'packaging\windows-lav-full\scripts\manual-registration.ps1'
+          $probeSource = Join-Path $env:GITHUB_WORKSPACE 'scripts\tests\lav_registration_gui_probe.cpp'
+          $probe = Join-Path $env:RUNNER_TEMP 'lav_registration_gui_probe.exe'
+          $receiptPath = Join-Path $env:RUNNER_TEMP 'lav-registration-regression.json'
+          # The harness extracts reviewed AST extents and mocks all registration.
+          # It never invokes or dot-sources the complete registration script.
+          & $powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File (Join-Path $env:GITHUB_WORKSPACE 'scripts\tests\test_lav_registration_process.ps1') `
+            -ScriptPath $registration -GuiProbe $probe -ResultPath $receiptPath `
+            -ScratchRoot (Join-Path $env:RUNNER_TEMP 'lav-registration-tests')
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell regression failed: $LASTEXITCODE" }
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.status -ne 'passed' -or $receipt.total -ne 86 -or $receipt.passed -ne 86 -or $receipt.failed -ne 0) {
+            throw 'Expected all 86 registration regression cases to pass.'
+          }
+          if ($receipt.powershell_version -notlike '5.1.*' -or $receipt.powershell_edition -ne 'Desktop' -or $receipt.process_is_64bit -ne $true) {
+            throw 'Receipt must come from 64-bit Windows PowerShell 5.1.'
+          }
+          if ($receipt.real_registration_attempted -ne $false -or $receipt.native_tests_started -ne $true -or
+              $receipt.native_gui.status -ne 'passed' -or $receipt.native_gui.total -ne 6 -or $receipt.native_gui.passed -ne 6) {
+            throw 'No-registration GUI fixture evidence is incomplete.'
+          }
+          if ($receipt.registration_script_sha256 -ne (Get-FileHash -LiteralPath $registration -Algorithm SHA256).Hash -or
+              $receipt.probe_source_sha256 -ne (Get-FileHash -LiteralPath $probeSource -Algorithm SHA256).Hash -or
+              $receipt.probe_executable_sha256 -ne (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash) {
+            throw 'Regression receipt hashes do not match the tested inputs.'
+          }
+          'Windows PowerShell 5.1: 86/86 cases passed, including six harmless GUI fixture cases; no filter registration attempted.' >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Retain no-registration regression receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lav-registration-regression-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lav-registration-regression.json
+          if-no-files-found: warn
+          retention-days: 14

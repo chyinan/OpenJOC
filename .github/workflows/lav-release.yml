@@ -9,10 +9,18 @@ on:
         description: OpenJOC release tag to receive the LAV asset
         required: true
         default: v0.19.0
+      variant:
+        description: Package variant (audio keeps the one-click onboarding default)
+        type: choice
+        required: true
+        default: audio
+        options:
+          - audio
+          - full
       lav_ref:
         description: Full LAVFilters-OpenJOC commit to build
         required: true
-        default: d13b7cac86c5750b5d4181569d98f44ae9a1607c
+        default: a876fbc0ca2615fdaa240cf96ac13c82f28689a9
 
 permissions:
   contents: write
@@ -26,7 +34,8 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
-      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || 'd13b7cac86c5750b5d4181569d98f44ae9a1607c' }}
+      LAV_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.lav_ref || 'a876fbc0ca2615fdaa240cf96ac13c82f28689a9' }}
+      LAV_VARIANT: ${{ github.event_name == 'workflow_dispatch' && inputs.variant || 'audio' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # Keep build tooling at the workflow revision, while compiling CAPI from
@@ -69,7 +78,60 @@ jobs:
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             throw "release tag must look like vMAJOR.MINOR.PATCH: $tag"
           }
+          if ($env:LAV_VARIANT -notin @('audio', 'full')) {
+            throw "unsupported LAV package variant: $env:LAV_VARIANT"
+          }
+          $assetPrefix = if ($env:LAV_VARIANT -eq 'full') { 'openjoc-lav-full' } else { 'openjoc-lav' }
           "release_version=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
+          "asset_name=$assetPrefix-$($tag.Substring(1))-windows-x64" >> $env:GITHUB_OUTPUT
+
+      - name: Verify full-build v145 ATL and Windows SDK
+        if: env.LAV_VARIANT == 'full'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          if ([string]::IsNullOrWhiteSpace($vs)) { throw 'No Visual Studio C++ installation.' }
+          $version = (Get-Content -Raw -LiteralPath (Join-Path $vs 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt')).Trim()
+          if ($version -notmatch '^14\.5\d+\.') { throw "Expected the verified v145/default compiler family, found $version" }
+          $vc = Join-Path $vs "VC\Tools\MSVC\$version"
+          $atl = Join-Path $vc 'atlmfc\include\atlbase.h'
+          $atlLib = Join-Path $vc 'atlmfc\lib\x64\atls.lib'
+          $toolsetProps = Get-ChildItem -LiteralPath (Join-Path $vs 'MSBuild\Microsoft\VC') -Recurse -Filter Toolset.props | Where-Object { $_.FullName -match '\\Platforms\\x64\\PlatformToolsets\\v145\\Toolset\.props$' } | Select-Object -First 1
+          if ($null -eq $toolsetProps) { throw 'v145 x64 MSBuild Toolset.props is missing.' }
+          $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
+          $sdk = Get-ChildItem -LiteralPath (Join-Path $kits 'Include') -Directory | Where-Object { $_.Name -match '^10\.0\.\d+\.\d+$' } | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          if ($null -eq $sdk) { throw 'Windows SDK10 include directory is missing.' }
+          $windowsHeader = Join-Path $sdk.FullName 'um\Windows.h'
+          $kernelLib = Join-Path $kits "Lib\$($sdk.Name)\um\x64\kernel32.lib"
+          foreach ($path in @($atl, $atlLib, $windowsHeader, $kernelLib, (Join-Path $vc 'bin\Hostx64\x64\cl.exe'))) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Selected toolchain input missing: $path" }
+            Write-Host "Verified toolchain input: $path"
+          }
+          $source = Join-Path $env:RUNNER_TEMP 'lav-toolchain-check.cpp'
+          $object = Join-Path $env:RUNNER_TEMP 'lav-toolchain-check.obj'
+          [IO.File]::WriteAllText($source, "#include <windows.h>`n#include <atlbase.h>`nint main() { return 0; }`n")
+          $selectedSdkFile = Join-Path $env:RUNNER_TEMP 'lav-selected-sdk.txt'
+          $command = Join-Path $env:RUNNER_TEMP 'lav-toolchain-check.cmd'
+          @"
+          @echo off
+          call "$vs\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo
+          if errorlevel 1 exit /b %errorlevel%
+          echo Compiler directory: %VCToolsInstallDir%
+          echo Windows SDK version: %WindowsSDKVersion%
+          echo %WindowsSDKVersion%>"$selectedSdkFile"
+          cl /nologo /c /EHsc /std:c++17 "$source" /Fo"$object"
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $command -Encoding ascii
+          & cmd.exe /d /c $command
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $object -PathType Leaf)) { throw 'v145 ATL/Windows SDK compile-only check failed.' }
+          $selectedSdk = (Get-Content -Raw -LiteralPath $selectedSdkFile).Trim().TrimEnd('\')
+          $selectedHeader = Join-Path $kits "Include\$selectedSdk\um\Windows.h"
+          if (-not (Test-Path -LiteralPath $selectedHeader -PathType Leaf)) { throw "Selected compiler SDK header missing: $selectedHeader" }
+          $selectedKernelLib = Join-Path $kits "Lib\$selectedSdk\um\x64\kernel32.lib"
+          if (-not (Test-Path -LiteralPath $selectedKernelLib -PathType Leaf)) { throw "Selected compiler SDK library missing: $selectedKernelLib" }
+          Write-Host "Verified v145 ATL compile with Windows SDK $selectedSdk"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -223,10 +285,10 @@ jobs:
             Copy-Item -LiteralPath $source -Destination (Join-Path $lav "bin_x64\$name") -Force
           }
 
-      - name: Build LAVAudio
+      - name: Build selected LAV filters
         shell: pwsh
         run: |
-          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-lav-audio.cmd'
+          $commandFile = Join-Path $env:RUNNER_TEMP 'openjoc-build-lav-filters.cmd'
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
           $vsdevcmd = Join-Path $vs 'Common7\Tools\VsDevCmd.bat'
@@ -235,12 +297,22 @@ jobs:
           $log = Join-Path $env:RUNNER_TEMP 'lav-msbuild.log'
           @"
           @echo off
-          call "$env:GITHUB_WORKSPACE\scripts\release_lav_msbuild.cmd" "$vsdevcmd" "$lav" "$include" "$log"
+          call "$env:GITHUB_WORKSPACE\scripts\release_lav_msbuild.cmd" "$vsdevcmd" "$lav" "$include" "$log" "$env:LAV_VARIANT"
           exit /b %errorlevel%
           "@ | Set-Content -LiteralPath $commandFile -Encoding ascii
           & cmd.exe /d /c $commandFile
-          if ($LASTEXITCODE -ne 0) { throw "LAVAudio build failed: $LASTEXITCODE" }
-          if (-not (Test-Path -LiteralPath (Join-Path $lav 'bin_x64\LAVAudio.ax') -PathType Leaf)) { throw 'LAVAudio.ax was not produced.' }
+          if ($LASTEXITCODE -ne 0) { throw "LAV $env:LAV_VARIANT build failed: $LASTEXITCODE" }
+          $outputs = @('LAVAudio.ax')
+          if ($env:LAV_VARIANT -eq 'full') {
+            $outputs += @('LAVVideo.ax', 'LAVSplitter.ax', 'IntelQuickSyncDecoder.dll')
+          }
+          foreach ($name in $outputs) {
+            if (-not (Test-Path -LiteralPath (Join-Path $lav "bin_x64\$name") -PathType Leaf)) { throw "LAV output is missing: $name" }
+          }
+          if ($env:LAV_VARIANT -eq 'full') {
+            # The complete solution rebuild refreshes libbluray; use that final output.
+            Copy-Item -LiteralPath (Join-Path $lav 'libbluray\bin_x64\libbluray\libbluray.dll') -Destination (Join-Path $lav 'bin_x64\libbluray.dll') -Force
+          }
 
       - name: Build LAV smoke tests
         shell: pwsh
@@ -270,12 +342,19 @@ jobs:
           Copy-Item -LiteralPath $zlibDll -Destination $dependencyDir -Force
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+          $requiredCrt = @('vcruntime140.dll', 'vcruntime140_1.dll', 'vcruntime140_threads.dll')
+          if ($env:LAV_VARIANT -eq 'full') {
+            $requiredCrt += @(
+              'concrt140.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll',
+              'msvcp140_atomic_wait.dll', 'msvcp140_codecvt_ids.dll', 'vccorlib140.dll'
+            )
+          }
           $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC\Redist\MSVC') -Recurse -Filter 'vcruntime140.dll' |
             Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC\d+\.CRT\\vcruntime140\.dll$' } |
             ForEach-Object {
               $candidateDir = $_.Directory
               $complete = $true
-              foreach ($name in @('vcruntime140.dll', 'vcruntime140_1.dll', 'vcruntime140_threads.dll')) {
+              foreach ($name in $requiredCrt) {
                 if (-not (Test-Path -LiteralPath (Join-Path $candidateDir.FullName $name) -PathType Leaf)) { $complete = $false; break }
               }
               if ($complete) { $_ }
@@ -302,6 +381,10 @@ jobs:
             if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "MSVC dependency is missing: $source" }
             Copy-Item -LiteralPath $source -Destination $dependencyDir -Force
           }
+          if ($env:LAV_VARIANT -eq 'full') {
+            # Include the matching C++/concurrency CRT set used by Video and QuickSync.
+            Get-ChildItem -LiteralPath $crtDir -Filter '*.dll' | Copy-Item -Destination $dependencyDir -Force
+          }
           "dependency_dir=$dependencyDir" >> $env:GITHUB_OUTPUT
         id: dependencies
 
@@ -312,13 +395,20 @@ jobs:
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'openjoc-lav-release'
           New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $template = if ($env:LAV_VARIANT -eq 'full') { 'packaging\windows-lav-full' } else { 'packaging\windows-lav' }
+          $variantOptions = @()
+          if ($env:LAV_VARIANT -eq 'full') {
+            # License notices must match the C API sources, not the tooling checkout.
+            $variantOptions = @('--core-source-root', (Join-Path $env:GITHUB_WORKSPACE 'openjoc-release'))
+          }
           python scripts/package_lav_release.py `
+            --variant $env:LAV_VARIANT `
             --release-version $env:RELEASE_VERSION `
             --lav-root (Join-Path $env:GITHUB_WORKSPACE 'lav') `
             --capi-dll (Join-Path $env:GITHUB_WORKSPACE 'openjoc-release\target\release\openjoc_capi.dll') `
             --dependency-dir '${{ steps.dependencies.outputs.dependency_dir }}' `
-            --onboarding-template (Join-Path $env:GITHUB_WORKSPACE 'packaging\windows-lav') `
-            --output-dir $output
+            --onboarding-template (Join-Path $env:GITHUB_WORKSPACE $template) `
+            --output-dir $output @variantOptions
           if ($LASTEXITCODE -ne 0) { throw "LAV package creation failed: $LASTEXITCODE" }
           "package_dir=$output" >> $env:GITHUB_OUTPUT
         id: package
@@ -328,7 +418,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
         run: |
-          $archive = Join-Path '${{ steps.package.outputs.package_dir }}' "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip"
+          $archive = Join-Path '${{ steps.package.outputs.package_dir }}' '${{ steps.identity.outputs.asset_name }}.zip'
           $extract = Join-Path $env:RUNNER_TEMP 'openjoc-lav-package-validation'
           Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
           $lavAudio = Join-Path $extract 'runtime\LAVAudio.ax'
@@ -338,7 +428,10 @@ jobs:
           if (-not ($lavAudioAscii.Contains('JOC Stream') -or $lavAudioUnicode.Contains('JOC Stream'))) {
             throw 'LAVAudio.ax does not contain the JOC Stream property-page resource.'
           }
-          Import-Module (Join-Path $extract 'scripts\OpenJoc.Onboarding.Shell.psm1') -Force
+          # The full archive has manual registration tools only. Reuse the checked-in
+          # read-only package preflight without adding audio onboarding to that ZIP.
+          $validationRoot = if ($env:LAV_VARIANT -eq 'full') { Join-Path $env:GITHUB_WORKSPACE 'packaging\windows-lav' } else { $extract }
+          Import-Module (Join-Path $validationRoot 'scripts\OpenJoc.Onboarding.Shell.psm1') -Force
           $session = New-OpenJocSession -Operation 'validate' -PackageRoot $extract -InstallRoot (Join-Path $env:RUNNER_TEMP 'openjoc-lav-install-validation') -LogPath (Join-Path $env:RUNNER_TEMP 'openjoc-lav-validation.log')
           $preflight = Test-OpenJocPackage $session
           if (-not $preflight.Success) { throw $preflight.Detail }
@@ -363,7 +456,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.identity.outputs.release_version }}
         run: |
-          $archive = Join-Path '${{ steps.package.outputs.package_dir }}' "openjoc-lav-$env:RELEASE_VERSION-windows-x64.zip"
+          $archive = Join-Path '${{ steps.package.outputs.package_dir }}' '${{ steps.identity.outputs.asset_name }}.zip'
           $available = $false
           # The main Release workflow builds several platform artifacts before it
           # becomes available; allow the full 25-minute publication window.
@@ -379,6 +472,6 @@ jobs:
       - name: Retain built LAV asset
         uses: actions/upload-artifact@v4
         with:
-          name: openjoc-lav-${{ steps.identity.outputs.release_version }}-windows-x64
+          name: ${{ steps.identity.outputs.asset_name }}
           path: ${{ steps.package.outputs.package_dir }}/*.zip
           if-no-files-found: error
