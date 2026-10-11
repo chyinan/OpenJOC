@@ -20,14 +20,9 @@ function Invoke-LavRegistrationProcess {
         if ($process -is [System.IDisposable]) { $process.Dispose() }
     }
 }
-try {
-    if (-not [Environment]::Is64BitProcess) { throw 'Use the supplied batch file with 64-bit Windows PowerShell.' }
-    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw 'Close this window, then right-click the batch file and choose Run as administrator only if you approve registration changes.'
-    }
-    $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-    $runtime = Join-Path $root 'runtime'
+function Assert-LavPackageInventory {
+    param([string]$Root)
+    $runtime = Join-Path $Root 'runtime'
     $profile = Get-Content -LiteralPath (Join-Path $runtime 'OpenJocRuntimeProfile.json') -Raw | ConvertFrom-Json
     # Verify every inventory entry before loading any candidate native code.
     $seen = @{}
@@ -45,10 +40,24 @@ try {
         $relative = $file.FullName.Substring($root.Length + 1).Replace('\','/')
         if ($relative -ne 'PACKAGE_SHA256SUMS.txt' -and -not $seen.ContainsKey($relative)) { throw "Unlisted package file: $relative" }
     }
-    $filters = @('LAVAudio.ax', 'LAVVideo.ax', 'LAVSplitter.ax')
     foreach ($name in $profile.required_runtime_files) {
         if (-not (Test-Path -LiteralPath (Join-Path $runtime $name) -PathType Leaf)) { throw "Missing runtime file: $name" }
     }
+}
+function Open-LavRegistrationBaseKey {
+    param([Microsoft.Win32.RegistryHive]$Hive)
+    return [Microsoft.Win32.RegistryKey]::OpenBaseKey($Hive, [Microsoft.Win32.RegistryView]::Registry64)
+}
+try {
+    if (-not [Environment]::Is64BitProcess) { throw 'Use the supplied batch file with 64-bit Windows PowerShell.' }
+    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw 'Close this window, then right-click the batch file and choose Run as administrator only if you approve registration changes.'
+    }
+    $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+    $runtime = Join-Path $root 'runtime'
+    Assert-LavPackageInventory -Root $root
+    $filters = @('LAVAudio.ax', 'LAVVideo.ax', 'LAVSplitter.ax')
     $classes = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'registration-classes.json') -Raw | ConvertFrom-Json
     $hives = @([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryHive]::CurrentUser)
     # Check all paths before unregistration, then check each DLL again immediately
@@ -58,7 +67,7 @@ try {
             $expected = [IO.Path]::GetFullPath((Join-Path $runtime $name))
             foreach ($clsid in $classes.$name) {
                 foreach ($hive in $hives) {
-                    $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, [Microsoft.Win32.RegistryView]::Registry64)
+                    $base = Open-LavRegistrationBaseKey -Hive $hive
                     try {
                         $key = $base.OpenSubKey("Software\Classes\CLSID\{$clsid}\InprocServer32")
                         if ($null -ne $key) {

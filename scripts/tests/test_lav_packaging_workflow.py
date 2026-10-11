@@ -35,6 +35,8 @@ class LavPackagingWorkflowTests(unittest.TestCase):
             "scripts/prepare_lav_ffmpeg_configure.py",
             "scripts/release_lav_msbuild.cmd",
             "scripts/tests/test_lav_registration_process.ps1",
+            "scripts/tests/test_lav_registration_preflight.ps1",
+            "scripts/tests/test_lav_registration_preflight.py",
             "scripts/tests/lav_registration_gui_probe.cpp",
         ):
             with self.subTest(path=path):
@@ -49,6 +51,7 @@ class LavPackagingWorkflowTests(unittest.TestCase):
         modules = re.findall(r"scripts\.tests\.(test_[a-z_]+)", tests)
         self.assertEqual(set(modules), {
             "test_lav_full_package",
+            "test_lav_registration_preflight",
             "test_lav_release_package",
             "test_lav_release_workflow",
             "test_lav_packaging_workflow",
