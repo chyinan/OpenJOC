@@ -39,7 +39,8 @@ class LavFullPackageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = pathlib.Path(self.temporary.name)
+        # Match the packager's resolved paths (Windows TEMP may use 8.3 names).
+        self.root = pathlib.Path(self.temporary.name).resolve()
         self.lav = self.root / "lav"
         (self.lav / "bin_x64").mkdir(parents=True)
         for name in (*packager.FFMPEG_DLLS, *packager.LAV_SUPPORT_DLLS,
