@@ -4,6 +4,8 @@ OpenJOC ships an optional downstream LAV Audio Decoder for Windows DirectShow. I
 
 The primary validated host workflow is PotPlayer. These instructions describe the package behavior recorded for the v0.12+ Windows integration; the OpenJOC release baseline for this site is v0.19.0.
 
+
+The default audio package retains the one-click `install.bat` / `uninstall.bat` experience. Maintainers can explicitly build a separate `full` variant containing Audio, Video, Splitter, and QuickSync. Its manual registration changes the standard Video/Splitter registrations only when explicitly run; see [full-package instructions and rollback](https://github.com/chyinan/OpenJOC/blob/master/docs/release/LAV_FULL_PACKAGE.md). Downloading or extracting it does not register anything.
 ## Install and verify
 
 1. Download the Windows LAV package from the [OpenJOC releases page](https://github.com/chyinan/OpenJOC/releases).

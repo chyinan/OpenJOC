@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the default downstream LAV source to the tested `a876fbc` revision.
+- Added an explicit full LAV packaging option with Audio, Video, Splitter, and
+  QuickSync while retaining the default audio-only one-click installer. Full
+  registration waits for each process and checks its actual exit code.
+
 ### Documentation
 
 - Clarified the historical C initializer boundary on ILP32 and the LP64

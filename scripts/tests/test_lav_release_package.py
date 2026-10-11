@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 
 
 WORKSPACE = pathlib.Path(__file__).resolve().parents[2]
@@ -92,6 +94,36 @@ class LavReleasePackageTests(unittest.TestCase):
                 )
                 self.assertIn("runtime/LAVAudio.ax.manifest", names)
                 self.assertIn("runtime/LAVFilters.Dependencies.manifest", names)
+                self.assertNotIn("variant", profile)
+                self.assertNotIn("runtime/LAVVideo.ax", names)
+                self.assertNotIn("runtime/LAVSplitter.ax", names)
+                self.assertNotIn("runtime/IntelQuickSyncDecoder.dll", names)
+                self.assertNotIn("register-all.bat", names)
+                self.assertNotIn("unregister-all.bat", names)
+                for path in TEMPLATE.rglob("*"):
+                    if path.is_file():
+                        self.assertEqual(
+                            handle.read(path.relative_to(TEMPLATE).as_posix()).decode("utf-8"),
+                            path.read_text(encoding="utf-8"),
+                        )
+                manifest = ET.fromstring(handle.read("runtime/LAVFilters.Dependencies.manifest"))
+                self.assertEqual(
+                    [entry.attrib["name"] for entry in manifest.findall("{urn:schemas-microsoft-com:asm.v1}file")],
+                    list(FFMPEG_DLLS),
+                )
+                for line in handle.read("PACKAGE_SHA256SUMS.txt").decode().splitlines():
+                    digest, name = line.split("  ", 1)
+                    self.assertEqual(hashlib.sha256(handle.read(name)).hexdigest().upper(), digest)
+
+            # Making the default explicit must not change any package byte.
+            default_bytes = archive.read_bytes()
+            explicit_output = root / "explicit-audio"
+            command = list(completed.args)
+            command[command.index("--output-dir") + 1] = str(explicit_output)
+            command.extend(("--variant", "audio"))
+            explicit = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(explicit.returncode, 0, explicit.stdout + explicit.stderr)
+            self.assertEqual((explicit_output / archive.name).read_bytes(), default_bytes)
 
 
 if __name__ == "__main__":
