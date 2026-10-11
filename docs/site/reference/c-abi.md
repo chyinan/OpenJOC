@@ -18,8 +18,11 @@ increment. Minor additions must append fields or functions and preserve the
 meaning of existing fields. Configuration, PCM-frame, and output-info structs
 contain `struct_size`; callers must initialize them and producers must reject a
 smaller size. The `dialnorm_mode` field was appended in ABI minor 1. A caller
-presenting the ABI 1.0 configuration size is accepted and receives
-`OPENJOC_DIALNORM_DEFAULT`. ABI 1.2 appends functions and statuses without
+whose advertised prefix ends before `dialnorm_mode` receives
+`OPENJOC_DIALNORM_DEFAULT`. Historical ABI 1.0 sizes do not identify that
+prefix on every target; see the
+[legacy initialization boundary](#legacy-initialization-boundary) below.
+ABI 1.2 appends functions and statuses without
 changing any existing structure layout. `openjoc_get_abi_version()` returns
 `(major << 16) | minor`.
 
@@ -43,8 +46,9 @@ field; unsupported names, alias collisions, or role mismatches return
 The stream reports FFmpeg channel labels and does not transport custom angles.
 See the [custom-layout transport boundary](rust-api.md#custom-layout-transport-boundary).
 
-`openjoc_decoder_config_init()` remains the legacy-safe ABI 1.3 prefix
-initializer: it never writes fields appended in ABIs 1.4 or 1.6, so an ABI 1.3
+`openjoc_decoder_config_init()` initializes only the ABI 1.3 prefix; callers
+must provide sufficient writable storage for that prefix. It never writes
+fields appended in ABIs 1.4 or 1.6, so an ABI 1.3
 caller may link it against a newer library without a struct over-write. ABI
 1.4 callers use `openjoc_decoder_config_init_v1_4()` for the custom-layout
 field. ABI 1.6 callers use `openjoc_decoder_config_init_v1_6()` for the v1.6
@@ -52,6 +56,49 @@ prefix and explicit HRTF selection. ABI 1.7 callers use
 `openjoc_decoder_config_init_v1_7()`. The v1.7 orientation field follows a
 reserved v1.6 alignment word, so legacy trailing padding cannot accidentally
 enable orientation mode; the v1.6 initializer writes exactly the v1.6 prefix.
+
+### Legacy initialization boundary
+
+The minor-version policy above has a historical limitation: the unversioned
+`openjoc_decoder_config_init()` takes no capacity or caller ABI version and
+requires writable storage for at least the ABI 1.3 prefix. It must not be used
+with the smaller ABI 1.0 allocation on ordinary ILP32 targets (four-byte
+pointers and `size_t`): that historical structure is 44 bytes, whereas the
+initializer writes 48 bytes. Setting `struct_size` before this call does not
+limit its writes. Source analysis establishes this ABI limitation; it is not
+a reported failure in a published 32-bit package. Current
+[release targets](../getting-started/supported-platforms.md) are 64-bit.
+
+On ordinary LP64 targets, ABI 1.0 and ABI 1.1–1.3 both occupy 64 bytes:
+`dialnorm_mode` reuses the old trailing padding. Size alone cannot distinguish
+that padding from the later field. Calling the current unversioned initializer
+and then creating a decoder supplies Default in that location. This does not
+guarantee the same behavior for configurations initialized by an older library
+or constructed independently. Later callers' explicit dialnorm settings must
+not be discarded merely because their size is 64 bytes.
+
+For source migrations:
+
+1. Rebuild against the current header and matching library. Allocate the full
+   current `openjoc_decoder_config` and call
+   `openjoc_decoder_config_init_v1_7()`, checking its return status before
+   setting application options and creating the decoder. This initializes the
+   full structure and leaves listener-orientation pull mode disabled by default.
+2. Do not call `v1_7` on an allocation defined by an older header, cast a smaller
+   allocation to the current type, or enlarge only its advertised `struct_size`.
+   Retained ABI 1.4 or 1.6 source layouts must use their matching versioned
+   initializer and a library exporting that function.
+3. For an ABI 1.0 binary that cannot be rebuilt, do not assume replacing its
+   library with the current one is safe on ILP32. Retain its matching library
+   until a caller-specific compatibility deployment is arranged. ABI 1.1–1.3
+   binaries use the same unversioned symbol but need the larger prefix; the
+   library cannot automatically distinguish these generations at that call.
+
+This documentation does not change the unversioned symbol, add an initializer,
+or prohibit 32-bit source builds. It records the existing boundary; it does not
+repair the historical binary-compatibility defect.
+
+### Subsequent ABI additions
 
 ABI 1.5 adds the read-only `openjoc_live_inspection_snapshot` surface for
 `openjoc_stream_decoder`. `openjoc_stream_decoder_get_live_inspection_snapshot`

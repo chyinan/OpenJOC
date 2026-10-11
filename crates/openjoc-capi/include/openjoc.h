@@ -122,7 +122,7 @@ typedef struct openjoc_decoder_config {
     size_t sofa_size;         /* Nonzero selects a strict caller-provided SOFA. */
     const char *virtual_layout;
     uint32_t lfe_policy;
-    /* Appended in ABI minor 1; older struct_size callers use DEFAULT. */
+    /* Appended in ABI minor 1; prefixes ending before this field use DEFAULT. */
     uint32_t dialnorm_mode;
     /* Appended in ABI minor 4; NULL retains preset-name behavior. */
     const openjoc_custom_speaker_layout *custom_speaker_layout;
@@ -236,7 +236,11 @@ typedef struct openjoc_live_inspection_snapshot {
 } openjoc_live_inspection_snapshot;
 
 uint32_t openjoc_get_abi_version(void);
-/* Legacy-safe ABI 1.3 prefix initializer. Use v1_4 for custom_speaker_layout,
+/* Requires writable storage for at least the ABI 1.3 prefix; not safe for
+ * the smaller ABI 1.0 allocation on ILP32. Incoming struct_size is ignored.
+ * Use the current full struct with v1_7 when rebuilding old callers.
+ * See docs/site/reference/c-abi.md for the legacy initialization boundary.
+ * Use v1_4 for custom_speaker_layout,
  * v1_6 for the exact v1.6 prefix/hrtf_preset, and v1_7 for the full current
  * struct including listener_orientation_pull_samples. */
 openjoc_status openjoc_decoder_config_init(openjoc_decoder_config *config);
