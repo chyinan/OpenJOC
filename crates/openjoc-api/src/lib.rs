@@ -1990,6 +1990,7 @@ struct PendingRenderFrame {
     lfe_location: Option<ChannelLocation>,
     downmix: DownmixMetadata,
     dialnorm: DialnormState,
+    dialnorm_segments: Vec<openjoc_eac3::DialnormSegment>,
     compatibility_pcm: Option<DecodedAccessUnitPcm>,
 }
 
@@ -2094,6 +2095,7 @@ impl SpeakerRenderer {
             lfe_location: base.lfe_location,
             downmix: base.downmix,
             dialnorm: base.dialnorm,
+            dialnorm_segments: base.dialnorm_segments.clone(),
             compatibility_pcm: (self.common_profile_stereo_enabled
                 && self.layout.is_stereo()
                 && frame.admitted_decoded_joc_binding().is_some())
@@ -2126,6 +2128,7 @@ impl SpeakerRenderer {
                 lfe: aligned_frame.lfe_pcm,
                 downmix: pending.downmix,
                 dialnorm: pending.dialnorm,
+                dialnorm_segments: pending.dialnorm_segments,
             };
             let mut aligned_payload = pending.frame;
             aligned_payload.decoded.reconstruction_basis = aligned_frame.reconstruction_basis;
@@ -2182,7 +2185,7 @@ impl SpeakerRenderer {
         };
         let mut calibrated_frame = frame.clone();
         for row in &mut calibrated_frame.decoded.reconstruction_basis.rows {
-            base.dialnorm.apply_to_samples(row);
+            base.apply_dialnorm_to_samples(row);
         }
         let coordinate_count = base_coordinates
             .len()
@@ -2394,6 +2397,7 @@ impl SpeakerRenderer {
                 lfe: aligned_frame.lfe_pcm,
                 downmix: pending.downmix,
                 dialnorm: pending.dialnorm,
+                dialnorm_segments: pending.dialnorm_segments,
             };
             let mut frame = pending.frame;
             frame.decoded.reconstruction_basis = aligned_frame.reconstruction_basis;

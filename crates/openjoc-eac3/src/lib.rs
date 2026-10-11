@@ -82,7 +82,7 @@ pub use coding_tools::{
     CodingToolBlockInventory, CodingToolInventory, InventoryProvenance, SemanticChannel,
     emit_coding_tool_inventory,
 };
-pub use dialnorm::{DialnormMode, DialnormState};
+pub use dialnorm::{DialnormMode, DialnormSegment, DialnormState};
 pub use dynamic_range::{
     DynamicRangeControl, apply_dynamic_range_gains, compression_gain, dynamic_range_gain,
     scaled_dynamic_range_code,
