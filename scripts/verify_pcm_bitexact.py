@@ -502,10 +502,11 @@ def install_baseline_feature_overlay(baseline_root: Path) -> None:
 
 
 def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -> None:
-    """Compare all Cargo metadata; permit only the audited 0.18 -> 0.19 workspace bump.
+    """Compare Cargo metadata with narrow release and scene-parser allowances.
 
     The oracle files are never rewritten. Workspace identities and paths come from
     its pinned manifest, not a name prefix or the candidate's dependency claims.
+    The scene parser may enable only float_roundtrip on the same serde_json version.
     External package records, dependency edges and every other TOML field stay exact.
     """
     def read(path: Path) -> dict:
@@ -553,8 +554,17 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
                     if dependency.get("version") != new:
                         raise GateError(f"wrong internal dependency version: {member}:{alias}")
                     dependency["version"] = old
+        # Correct scene JSON parsing without rewriting the frozen oracle or
+        # relaxing any PCM comparison. Reject every other dependency change.
+        if member == "crates/openjoc-scene":
+            baseline_json = baseline.get("dependencies", {}).get("serde_json")
+            candidate_json = candidate.get("dependencies", {}).get("serde_json")
+            if baseline_json == "1" and candidate_json == {
+                "version": "1", "features": ["float_roundtrip"],
+            }:
+                candidate["dependencies"]["serde_json"] = baseline_json
         if candidate != baseline:
-            raise GateError(f"package manifest differs beyond internal release versions: {member}")
+            raise GateError(f"package manifest differs beyond audited allowances: {member}")
     baseline_lock = read(baseline_root / "Cargo.lock")
     candidate_lock = read(candidate_root / "Cargo.lock")
     seen = set()

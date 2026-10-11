@@ -5566,6 +5566,7 @@ mod internal_base_tests {
             lfe: lfe.map(|value| vec![value, value + 0.5]),
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         }
     }
 

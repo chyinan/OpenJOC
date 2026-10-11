@@ -4,7 +4,7 @@
 
 use crate::{
     AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, DialnormMode,
-    DialnormState, DownmixMetadata, Eac3DecodeStageTiming, Eac3Error,
+    DialnormSegment, DialnormState, DownmixMetadata, Eac3DecodeStageTiming, Eac3Error,
     GENERAL_MAX_DEPENDENT_SUBSTREAMS, InternalBasePolicy, StreamType, SyncframeIndexEntry,
     audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
     inspect_audio_block_carriers, parse_audio_frame, parse_bsi,
@@ -62,8 +62,13 @@ pub struct DecodedAccessUnitPcm {
     pub lfe: Option<Vec<f64>>,
     /// E-AC-3 mixing metadata owned by this decoded programme frame.
     pub downmix: DownmixMetadata,
-    /// One calibrated program scalar prepared from the independent BSI.
+    /// Calibration from the first independent BSI in this access unit.
     pub dialnorm: DialnormState,
+    /// Later independent-syncframe calibration changes, in strictly increasing
+    /// sample order, with offsets greater than zero and less than `samples`.
+    /// The initial `dialnorm` covers sample zero up to the first change; the
+    /// final change covers the rest. Empty for a constant-dialnorm access unit.
+    pub dialnorm_segments: Vec<DialnormSegment>,
 }
 
 /// The two distinct PCM meanings carried by one decoded JOC access unit.
@@ -80,22 +85,41 @@ pub struct DecodedJocAccessUnitPcm {
 }
 
 impl DecodedAccessUnitPcm {
-    /// Returns a copy with the frame's prepared dialnorm scalar applied to
+    /// Returns a copy with the frame's prepared dialnorm timeline applied to
     /// every decoded Base plane, including the retained LFE plane.
     ///
     /// ReconstructionBasis rows are owned by the JOC frame and are scaled by
     /// the shared renderer beside this copy so the complete program receives
-    /// one common scalar exactly once.
+    /// one common gain per independent-syncframe interval exactly once.
     #[must_use]
     pub fn with_dialnorm_applied(&self) -> Self {
         let mut calibrated = self.clone();
         for channel in &mut calibrated.channels {
-            self.dialnorm.apply_to_samples(channel);
+            self.apply_dialnorm_to_samples(channel);
         }
         if let Some(lfe) = calibrated.lfe.as_mut() {
-            self.dialnorm.apply_to_samples(lfe);
+            self.apply_dialnorm_to_samples(lfe);
         }
         calibrated
+    }
+
+    /// Applies the same per-syncframe calibration to one aligned program plane,
+    /// including a JOC reconstruction row. The plane begins at access-unit
+    /// sample zero. PCM remains unscaled until this step. Offsets beyond a
+    /// shorter plane are clipped; manually supplied out-of-order offsets are
+    /// clamped to the preceding offset, so no sample is skipped or scaled twice.
+    pub fn apply_dialnorm_to_samples(&self, samples: &mut [f64]) {
+        let mut start = 0;
+        let mut state = self.dialnorm;
+        for segment in &self.dialnorm_segments {
+            let end = usize::from(segment.start_sample)
+                .min(samples.len())
+                .max(start);
+            state.apply_to_samples(&mut samples[start..end]);
+            start = end;
+            state = segment.state;
+        }
+        state.apply_to_samples(&mut samples[start..]);
     }
 
     /// Validates the channel sets admitted by TS 103 420 Table 47.
@@ -331,6 +355,7 @@ pub fn validate_joc_access_unit_decoder_contract_for_profile(
         lfe_location,
         downmix: DownmixMetadata::default(),
         dialnorm: DialnormState::default(),
+        dialnorm_segments: Vec::new(),
     };
     topology.validate_joc_topology()?;
     topology.validate_joc_downmix_topology(downmix_index)?;
@@ -768,6 +793,7 @@ impl JocAccessUnitPcmDecoder {
         let mut previous_independent_configuration = self.independent_configuration;
         let mut final_independent_configuration = self.independent_configuration;
         let mut accumulated = None;
+        let mut final_dialnorm = self.dialnorm_state;
         for (set_index, set) in structure.program_sets.iter().enumerate() {
             let dependent_drc = set
                 .dependents
@@ -835,6 +861,7 @@ impl JocAccessUnitPcmDecoder {
                 samples: set.independent.header.samples,
             };
             let dialnorm = DialnormState::new(self.dialnorm_mode, independent_info.dialnorm);
+            final_dialnorm = dialnorm;
             let segment = Eac3DecodeStageTiming::measure(
                 stage_timing.as_mut(),
                 |timing| &mut timing.pcm_assembly,
@@ -863,14 +890,13 @@ impl JocAccessUnitPcmDecoder {
                 actual: usize::from(output.joc_input_pcm.samples),
             });
         }
-        let dialnorm = output.joc_input_pcm.dialnorm;
 
         let commit_start = stage_timing.is_some().then(Instant::now);
         self.independent = independent_synth;
         self.dependent_synthesizers = dependent_synthesizers;
         self.dependent_configurations = dependent_configurations;
         self.independent_configuration = final_independent_configuration;
-        self.dialnorm_state = dialnorm;
+        self.dialnorm_state = final_dialnorm;
         if let (Some(timing), Some(start)) = (stage_timing.as_mut(), commit_start) {
             timing.decoder_state_commit += start.elapsed();
         }
@@ -906,6 +932,25 @@ fn append_decoded_pcm(
         || target.lfe.is_some() != segment.lfe.is_some()
     {
         return Err(Eac3Error::SubstreamTimingMismatch { frame: 0 });
+    }
+    let previous = target
+        .dialnorm_segments
+        .last()
+        .map_or(target.dialnorm, |entry| entry.state);
+    if previous != segment.dialnorm {
+        target.dialnorm_segments.push(DialnormSegment {
+            start_sample: target.samples,
+            state: segment.dialnorm,
+        });
+    }
+    for entry in segment.dialnorm_segments {
+        target.dialnorm_segments.push(DialnormSegment {
+            start_sample: target
+                .samples
+                .checked_add(entry.start_sample)
+                .ok_or(Eac3Error::FrameSizeOverflow)?,
+            state: entry.state,
+        });
     }
     for (target_channel, segment_channel) in target.channels.iter_mut().zip(segment.channels) {
         target_channel.extend(segment_channel);
@@ -1286,6 +1331,7 @@ fn merge_substreams_with_dialnorm(
             independent_info.downmix
         },
         dialnorm,
+        dialnorm_segments: Vec::new(),
     })
 }
 
@@ -1905,6 +1951,7 @@ mod tests {
             lfe: None,
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         };
         assert_eq!(
             mono.validate_joc_topology(),
@@ -1929,6 +1976,7 @@ mod tests {
             lfe: Some(vec![2.0]),
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         };
         assert!(matches!(
             lfe2.validate_joc_topology(),
@@ -1957,6 +2005,7 @@ mod tests {
             lfe: Some(vec![0.0]),
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         };
         assert!(pcm.validate_joc_downmix_topology(1).is_err());
         assert!(pcm.validate_joc_downmix_topology(4).is_ok());
@@ -1986,6 +2035,7 @@ mod tests {
             lfe: Some(vec![0.0]),
             downmix: DownmixMetadata::default(),
             dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
         };
         let rear = DecodedAccessUnitPcm {
             channel_locations: vec![

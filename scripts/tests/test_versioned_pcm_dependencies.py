@@ -55,6 +55,43 @@ class VersionedDependenciesTests(unittest.TestCase):
         self.assertEqual(before, {p: p.read_bytes() for p in before})
         self.assertIn('version = "0.19.0"', (self.candidate / 'Cargo.toml').read_text())
 
+    def test_scene_float_roundtrip_is_the_only_parser_allowance(self):
+        self.bump()
+        relative = "crates/openjoc-scene/Cargo.toml"
+        path = self.candidate / relative
+        original = path.read_text()
+        marker = 'serde_json = "1"'
+        self.assertIn(marker, original)
+        before = {p: p.read_bytes() for p in self.baseline.rglob('*') if p.is_file()}
+        allowed = 'serde_json = { version = "1", features = ["float_roundtrip"] }'
+        path.write_text(original.replace(marker, allowed, 1))
+        gate.validate_versioned_dependencies(self.baseline, self.candidate)
+        self.assertEqual(before, {p: p.read_bytes() for p in before})
+        for dependency in (
+            '{ version = "2", features = ["float_roundtrip"] }',
+            '{ version = "1", features = ["float_roundtrip", "arbitrary_precision"] }',
+            '{ version = "1", features = ["arbitrary_precision"] }',
+            '{ version = "1", features = ["float_roundtrip"], default-features = false }',
+            '{ version = "1", features = ["float_roundtrip"], registry = "other" }',
+            '{ version = "1", features = ["float_roundtrip"], path = "../serde_json" }',
+        ):
+            with self.subTest(dependency=dependency):
+                path.write_text(original.replace(marker, f"serde_json = {dependency}", 1))
+                with self.assertRaises(gate.GateError):
+                    gate.validate_versioned_dependencies(self.baseline, self.candidate)
+        path.write_text(original.replace(marker, allowed, 1))
+        # The parser allowance must not hide an unrelated change in this manifest.
+        path.write_text(path.read_text().replace('features = ["derive"]', 'features = []'))
+        with self.assertRaises(gate.GateError):
+            gate.validate_versioned_dependencies(self.baseline, self.candidate)
+        path.write_text(original)
+        # Nor may another package acquire the same parser feature.
+        other = self.candidate / "crates/openjoc-adm/Cargo.toml"
+        self.assertIn(marker, other.read_text())
+        other.write_text(other.read_text().replace(marker, allowed, 1))
+        with self.assertRaises(gate.GateError):
+            gate.validate_versioned_dependencies(self.baseline, self.candidate)
+
     def test_overlay_uses_frozen_manifests_and_rejects_extra_changes(self):
         committed = {
             f"crates/{package}/Cargo.toml": (self.baseline / f"crates/{package}/Cargo.toml").read_bytes()

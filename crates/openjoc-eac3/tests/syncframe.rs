@@ -87,6 +87,18 @@ fn short_mono_frame_with_options(
     addbsi: Option<&[u8]>,
     emdf: Option<&[u8]>,
 ) -> Vec<u8> {
+    short_mono_frame_with_dialnorm(stream_type, blocks, convsync, channel_map, addbsi, emdf, 31)
+}
+
+fn short_mono_frame_with_dialnorm(
+    stream_type: u8,
+    blocks: u8,
+    convsync: bool,
+    channel_map: Option<u16>,
+    addbsi: Option<&[u8]>,
+    emdf: Option<&[u8]>,
+    dialnorm: u8,
+) -> Vec<u8> {
     let num_blocks_code = match blocks {
         1 => 0,
         2 => 1,
@@ -103,7 +115,7 @@ fn short_mono_frame_with_options(
     bits.push(1, 3); // mono
     bits.push(0, 1); // no LFE
     bits.push(16, 5); // E-AC-3 version
-    bits.push(31, 5); // dialnorm
+    bits.push(u64::from(dialnorm), 5); // dialnorm
     bits.push(0, 1); // no compression word
     if stream_type == 1 {
         bits.push(u64::from(channel_map.is_some()), 1);
@@ -3480,4 +3492,142 @@ fn rejects_missing_joc_carrier_when_the_last_dependent_signals_joc() {
         extract_aux_joc_access_unit(&bytes, &frames, unit),
         Err(Eac3Error::MissingJocCarrier { required_frame: 2 })
     ));
+}
+
+fn short_dialnorm_stream(partitions: &[u8], values: &[u8], dependent: bool) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for (index, (&blocks, &value)) in partitions.iter().zip(values).enumerate() {
+        bytes.extend(with_eac3_crc(short_mono_frame_with_dialnorm(
+            0,
+            blocks,
+            index == 0,
+            None,
+            None,
+            None,
+            value,
+        )));
+        if dependent {
+            // Independent program metadata applies to both PCM presentations;
+            // D0's own dialnorm must not replace the I0 interval's gain.
+            bytes.extend(with_eac3_crc(short_mono_frame_with_dialnorm(
+                1,
+                blocks,
+                false,
+                Some(0x8000),
+                None,
+                None,
+                12,
+            )));
+        }
+    }
+    bytes
+}
+
+#[test]
+fn grouped_short_frames_calibrate_each_independent_dialnorm_interval() {
+    use openjoc_eac3::{DialnormMode, DialnormState, DynamicRangeControl};
+    let dither = vec![0.5; 4096];
+    for partitions in [vec![1, 1, 1, 1, 1, 1], vec![1, 2, 3], vec![3, 3]] {
+        let count = partitions.len();
+        for values in [
+            (0..count)
+                .map(|i| if i == 0 { 31 } else { 20 })
+                .collect::<Vec<_>>(),
+            (0..count)
+                .map(|i| if i % 2 == 0 { 31 } else { 20 })
+                .collect(),
+            (0..count)
+                .map(|i| if i % 2 == 0 { 0 } else { 31 })
+                .collect(),
+            vec![20; count],
+        ] {
+            for mode in [
+                DialnormMode::Default,
+                DialnormMode::Digital,
+                DialnormMode::Analog,
+            ] {
+                for policy in [
+                    InternalBasePolicy::CodecCore,
+                    InternalBasePolicy::CurrentDefault,
+                    InternalBasePolicy::DynamicRange(DynamicRangeControl::Rf),
+                ] {
+                    for dependent in [false, true] {
+                        let bytes = short_dialnorm_stream(&partitions, &values, dependent);
+                        let frames = index_syncframes(&bytes).expect("valid short frames with CRC");
+                        let unit = group_access_units(&frames).expect("grouped frames")[0];
+                        let mut decoder = JocAccessUnitPcmDecoder::new();
+                        decoder.set_dialnorm_mode(mode);
+                        let baseline_bytes =
+                            short_dialnorm_stream(&partitions, &vec![31; count], dependent);
+                        let baseline_frames = index_syncframes(&baseline_bytes).unwrap();
+                        let mut baseline_decoder = JocAccessUnitPcmDecoder::new();
+                        baseline_decoder.set_dialnorm_mode(mode);
+                        // Two consecutive AUs exercise retained synthesis state, not just startup.
+                        for _ in 0..2 {
+                            let pcm = decoder
+                                .decode_pcm_planes_with_policy(
+                                    &bytes, &frames, unit, &dither, policy,
+                                )
+                                .expect("PCM");
+                            let baseline = baseline_decoder
+                                .decode_pcm_planes_with_policy(
+                                    &baseline_bytes,
+                                    &baseline_frames,
+                                    unit,
+                                    &dither,
+                                    policy,
+                                )
+                                .unwrap();
+                            for (raw, reference) in [
+                                (&pcm.compatibility_pcm, &baseline.compatibility_pcm),
+                                (&pcm.joc_input_pcm, &baseline.joc_input_pcm),
+                            ] {
+                                assert_eq!(
+                                    raw.channels
+                                        .iter()
+                                        .flatten()
+                                        .map(|s| s.to_bits())
+                                        .collect::<Vec<_>>(),
+                                    reference
+                                        .channels
+                                        .iter()
+                                        .flatten()
+                                        .map(|s| s.to_bits())
+                                        .collect::<Vec<_>>(),
+                                    "raw PCM must not be calibrated"
+                                );
+                                let calibrated = raw.with_dialnorm_applied();
+                                assert!(raw.channels.iter().flatten().any(|sample| *sample != 0.0));
+                                let mut start = 0;
+                                for (&blocks, &value) in partitions.iter().zip(&values) {
+                                    let end = start + usize::from(blocks) * 256;
+                                    let gain = DialnormState::new(mode, value).linear_gain();
+                                    for (actual, original) in
+                                        calibrated.channels.iter().zip(&raw.channels)
+                                    {
+                                        for index in start..end {
+                                            assert_eq!(
+                                                actual[index].to_bits(),
+                                                (original[index] * gain).to_bits(),
+                                                "sample {index}, mode {mode:?}, partitions {partitions:?}"
+                                            );
+                                        }
+                                    }
+                                    start = end;
+                                }
+                                let changes =
+                                    values.windows(2).filter(|pair| pair[0] != pair[1]).count();
+                                assert_eq!(raw.dialnorm_segments.len(), changes);
+                                assert_eq!(raw.dialnorm.encoded_value(), values[0]);
+                            }
+                            assert_eq!(
+                                decoder.dialnorm_state().encoded_value(),
+                                *values.last().unwrap()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

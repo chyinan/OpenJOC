@@ -2,12 +2,21 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- Clarified the historical C initializer boundary on ILP32 and the LP64
+  size ambiguity, with migration steps using existing versioned initializers.
+  No ABI implementation, symbol, or supported build target is changed; the
+  historical binary-compatibility defect is not repaired by this clarification.
+
 ### Fixed
 
 - Corrected point projection and generated base routes for custom two-layer
   speaker layouts to clamp and blend using their actual layer heights.
   Affected custom renders change; preset and preset-derived region projections,
   the legacy `0..QMAX` arithmetic, and the separate extent law are unchanged.
+- Preserved finite f64 PCM and metadata coordinates exactly when reimporting
+  scene JSON, using round-trip-accurate floating-point parsing.
 - Preserved custom speaker geometry and channel order in CLI renders using
   topology overrides, performance reports, or contribution diagnostics,
   including layouts whose display names match presets.

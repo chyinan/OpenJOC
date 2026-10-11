@@ -82,6 +82,7 @@ fn prepared_scalar_scales_the_retained_lfe_plane_with_base() {
         lfe: Some(vec![0.5]),
         downmix: DownmixMetadata::default(),
         dialnorm: DialnormState::new(DialnormMode::Digital, 24),
+        dialnorm_segments: Vec::new(),
     };
     let calibrated = frame.with_dialnorm_applied();
     assert_close(calibrated.channels[0][0], 0.11167089803774079);
@@ -89,4 +90,46 @@ fn prepared_scalar_scales_the_retained_lfe_plane_with_base() {
         calibrated.lfe.as_ref().expect("LFE")[0],
         0.22334179607548158,
     );
+}
+
+#[test]
+fn empty_segment_timeline_is_bitexact_with_the_original_scalar_path() {
+    for mode in [
+        DialnormMode::Default,
+        DialnormMode::Digital,
+        DialnormMode::Analog,
+    ] {
+        for encoded in [0, 1, 20, 24, 31] {
+            let state = DialnormState::new(mode, encoded);
+            let samples = vec![
+                0.0,
+                -0.0,
+                1.0,
+                -1.0,
+                f64::MIN_POSITIVE,
+                -f64::MIN_POSITIVE,
+                0.125,
+            ];
+            let frame = DecodedAccessUnitPcm {
+                sample_rate: 48_000,
+                samples: samples.len() as u16,
+                channel_locations: vec![ChannelLocation::Left],
+                channels: vec![samples.clone()],
+                lfe_location: Some(ChannelLocation::Lfe(0)),
+                lfe: Some(samples.clone()),
+                downmix: DownmixMetadata::default(),
+                dialnorm: state,
+                dialnorm_segments: Vec::new(),
+            };
+            let mut expected = samples;
+            state.apply_to_samples(&mut expected);
+            let actual = frame.with_dialnorm_applied();
+            for plane in [&actual.channels[0], actual.lfe.as_ref().unwrap()] {
+                assert_eq!(
+                    plane.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                    expected.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
 }
