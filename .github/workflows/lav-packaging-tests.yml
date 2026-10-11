@@ -18,6 +18,8 @@ on:
       - 'scripts/tests/test_release_packaging_core.py'
       - 'scripts/tests/test_prepare_lav_ffmpeg_configure.py'
       - 'scripts/tests/test_release_lav_msbuild_script.py'
+      - 'scripts/tests/test_lav_registration_preflight.py'
+      - 'scripts/tests/test_lav_registration_preflight.ps1'
       - 'scripts/tests/test_lav_registration_process.ps1'
       - 'scripts/tests/lav_registration_gui_probe.cpp'
   push:
@@ -38,6 +40,8 @@ on:
       - 'scripts/tests/test_release_packaging_core.py'
       - 'scripts/tests/test_prepare_lav_ffmpeg_configure.py'
       - 'scripts/tests/test_release_lav_msbuild_script.py'
+      - 'scripts/tests/test_lav_registration_preflight.py'
+      - 'scripts/tests/test_lav_registration_preflight.ps1'
       - 'scripts/tests/test_lav_registration_process.ps1'
       - 'scripts/tests/lav_registration_gui_probe.cpp'
 
@@ -69,6 +73,7 @@ jobs:
         run: |
           python -m unittest -v `
             scripts.tests.test_lav_full_package `
+            scripts.tests.test_lav_registration_preflight `
             scripts.tests.test_lav_release_package `
             scripts.tests.test_lav_release_workflow `
             scripts.tests.test_lav_packaging_workflow `

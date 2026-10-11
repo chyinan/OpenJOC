@@ -230,12 +230,13 @@ class LavFullPackageTests(unittest.TestCase):
 
 
 class LavFullRegistrationTemplateTests(unittest.TestCase):
-    def test_verified_regfix_source_is_preserved(self) -> None:
+    def test_refactored_registration_source_is_pinned(self) -> None:
         script = TEMPLATE / "scripts" / "manual-registration.ps1"
-        # The vetted source uses LF; the earlier Windows ZIP used CRLF. Normalize
-        # only line endings so checkout settings do not change the regression pin.
+        # The extraction-equivalence test separately proves the original regfix
+        # statements and process helper are unchanged. Pin this complete source
+        # too; normalize only checkout-dependent line endings.
         digest = hashlib.sha256(script.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
-        self.assertEqual(digest, "186dde96d33112c6064ba81bcb88a6170e2ffd2dda2e9ce644b7ef006bce18d2")
+        self.assertEqual(digest, "7f4b04991801833c3f403873ed134c5c13dac9563a95251001e610834520a6cd")
 
     def test_launchers_keep_explicit_confirmation_and_x64_host(self) -> None:
         for name, operation in (("register-all", "Register"), ("unregister-all", "Unregister")):
