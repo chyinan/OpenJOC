@@ -499,7 +499,8 @@ impl SpeakerLayout {
             })
             .collect::<Vec<_>>();
         let topology = topology_from_positions(&speakers, &positions);
-        let spatial = SpatialLayout::from_topology(channels, topology, Vec::new())?;
+        let spatial = SpatialLayout::from_topology(channels, topology, Vec::new())?
+            .with_actual_two_layer_heights();
         let explicit_routes = custom_base_routes(&spatial)?;
         let spatial = spatial.with_route_vectors(explicit_routes)?;
         let labels = speakers

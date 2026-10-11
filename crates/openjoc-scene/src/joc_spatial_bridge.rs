@@ -1105,6 +1105,9 @@ pub struct SpatialLayout {
     route_vectors: Vec<SpatialRouteVector>,
     named_fallback_parameters: NamedFallbackParameterTuple,
     allow_legacy_duplicate_anchors: bool,
+    // Public spatial constructors retain legacy two-layer projection. Only
+    // custom speaker construction opts into authored heights.
+    use_actual_two_layer_heights: bool,
 }
 
 impl SpatialLayout {
@@ -1218,7 +1221,15 @@ impl SpatialLayout {
             route_vectors,
             named_fallback_parameters: NamedFallbackParameterTuple::default(),
             allow_legacy_duplicate_anchors,
+            use_actual_two_layer_heights: false,
         })
+    }
+
+    /// Uses authored heights for custom two-layer layouts, retaining legacy
+    /// arithmetic for layers at exactly `0` and `QMAX`.
+    pub(crate) fn with_actual_two_layer_heights(mut self) -> Self {
+        self.use_actual_two_layer_heights = true;
+        self
     }
 
     /// Returns this validated layout with an explicitly supplied fixed/named
@@ -1237,6 +1248,7 @@ impl SpatialLayout {
             true,
         )?;
         layout.named_fallback_parameters = self.named_fallback_parameters;
+        layout.use_actual_two_layer_heights = self.use_actual_two_layer_heights;
         Ok(layout)
     }
 
@@ -1265,6 +1277,7 @@ impl SpatialLayout {
             false,
         )?;
         layout.named_fallback_parameters = self.named_fallback_parameters;
+        layout.use_actual_two_layer_heights = self.use_actual_two_layer_heights;
         Ok(layout)
     }
 
@@ -1474,6 +1487,7 @@ impl SpatialLayout {
             &self.channels,
             &self.active_indices,
             position,
+            self.use_actual_two_layer_heights,
         )?;
         normalize(&mut target);
         Ok(target)
@@ -1581,6 +1595,7 @@ impl SpatialLayout {
             &self.channels,
             &self.active_indices,
             position,
+            self.use_actual_two_layer_heights,
         )
     }
 
@@ -2242,11 +2257,15 @@ fn generic_point_projector(
     channels: &[SpatialLayoutChannel],
     active_indices: &[usize],
     position: [f64; 3],
+    use_actual_two_layer_heights: bool,
 ) -> Result<Vec<f64>, SpatialProjectionError> {
     match topology.layers.as_slice() {
         [] => Err(SpatialProjectionError::InvalidLayout("no topology layers")),
         [layer] => plane_vector(layer, channels, active_indices, position[0], position[1]),
-        [lower, upper] => {
+        // Presets and their constrained topologies retain the legacy law.
+        // Custom geometry uses actual heights below, except for the canonical
+        // 0/QMAX pair whose existing arithmetic remains unchanged.
+        [lower, upper] if !use_actual_two_layer_heights || (lower.z == 0.0 && upper.z == QMAX) => {
             let bed = plane_vector(lower, channels, active_indices, position[0], position[1])?;
             let top = plane_vector(upper, channels, active_indices, position[0], position[1])?;
             let z = position[2].clamp(-QMAX, QMAX);

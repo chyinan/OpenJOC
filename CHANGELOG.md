@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Corrected point projection and generated base routes for custom two-layer
+  speaker layouts to clamp and blend using their actual layer heights.
+  Affected custom renders change; preset and preset-derived region projections,
+  the legacy `0..QMAX` arithmetic, and the separate extent law are unchanged.
 - Preserved custom speaker geometry and channel order in CLI renders using
   topology overrides, performance reports, or contribution diagnostics,
   including layouts whose display names match presets.
