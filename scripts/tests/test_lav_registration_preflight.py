@@ -26,6 +26,15 @@ def function_text(text: str, name: str) -> str:
     return matches[0]
 
 
+def powershell_51_environment(system_root: pathlib.PurePath, inherited: dict[str, str]) -> dict[str, str]:
+    # Python launched by pwsh inherits its PowerShell 7 module search path.
+    # Give only this Windows PowerShell child its own built-in module directory;
+    # never change the parent environment or any machine/user configuration.
+    environment = {key: value for key, value in inherited.items() if key.casefold() != 'psmodulepath'}
+    environment['PSModulePath'] = str(system_root / 'System32/WindowsPowerShell/v1.0/Modules')
+    return environment
+
+
 class LavRegistrationPreflightTests(unittest.TestCase):
     def test_extraction_preserves_every_original_production_statement(self) -> None:
         text = SCRIPT.read_text(encoding='utf-8')
@@ -65,6 +74,16 @@ class LavRegistrationPreflightTests(unittest.TestCase):
         self.assertIn('function Open-LavRegistrationBaseKey {', text)
         self.assertIn("Assert-Equal $script:NativeCalls 0", text)
 
+    def test_windows_child_uses_only_its_builtin_modules_without_mutating_parent(self) -> None:
+        inherited = {'PSModulePath': 'PowerShell-7-modules', 'PSMODULEPATH': 'Other-modules', 'KEEP': 'unchanged'}
+        original = inherited.copy()
+        environment = powershell_51_environment(pathlib.PureWindowsPath('C:/Windows'), inherited)
+        self.assertEqual(inherited, original)
+        self.assertEqual(environment, {
+            'KEEP': 'unchanged',
+            'PSModulePath': r'C:\Windows\System32\WindowsPowerShell\v1.0\Modules',
+        })
+
     @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell 5.1 is required')
     def test_real_inventory_and_ownership_functions_with_isolated_fixtures(self) -> None:
         system_root = pathlib.Path(os.environ['SystemRoot'])
@@ -79,7 +98,8 @@ class LavRegistrationPreflightTests(unittest.TestCase):
                 str(powershell), '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                 '-File', str(HARNESS), '-RegistrationScript', str(SCRIPT),
                 '-ScratchRoot', str(scratch), '-ReceiptPath', str(receipt),
-            ], capture_output=True, text=True, timeout=120)
+            ], capture_output=True, text=True, timeout=120,
+                env=powershell_51_environment(system_root, dict(os.environ)))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             data = json.loads(receipt.read_text(encoding='utf-8'))
             self.assertEqual((data['status'], data['total'], data['passed'], data['failed']),
