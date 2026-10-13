@@ -12,7 +12,7 @@ use openjoc_eac3::{
 use openjoc_emdf::{JocValidationProfile, OAMD_PAYLOAD_ID};
 use openjoc_joc::{JocParseError, ReconstructionBasis, parse_joc_payload};
 use openjoc_oamd::{
-    OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ObjectAnchor,
+    OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ObjectAnchor, ParsedOamdProof,
     parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use openjoc_scene::{
@@ -1236,11 +1236,22 @@ where
             .ok_or(DecodeEac3Error::FrameIndexOverflow)?;
         let parsed_joc = parse_joc_payload(&metadata.joc)?;
         pcm.validate_joc_downmix_topology(parsed_joc.header.downmix_index)?;
-        let parsed_oamd = parse_oamd_for_profile(&metadata.oamd, config.oamd, validation_profile)?;
+        let oamd_proof = match validation_profile {
+            JocValidationProfile::EtsiStrict => {
+                ParsedOamdProof::parse_with_config(&metadata.oamd, config.oamd)
+            }
+            JocValidationProfile::ObservedVendorCompat => ParsedOamdProof::parse_with_profile(
+                &metadata.oamd,
+                config.oamd,
+                OamdParseProfile::ObservedVendorCompat,
+                OAMD_PAYLOAD_ID,
+            ),
+        }?;
+        let parsed_oamd = oamd_proof.parsed();
         validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
         let binding_profile = binding_codec_profile_for_frame(
             &metadata,
-            &parsed_oamd,
+            parsed_oamd,
             validation_profile,
             oamd_profile,
         );
@@ -1251,7 +1262,7 @@ where
                 .as_deref_mut()
                 .map(|timing| &mut timing.joc_reconstruction),
             || {
-                decoder.decode_frame_with_profile_and_binding_profile_to_frame(
+                decoder.decode_frame_with_parsed_payloads_to_frame(
                     JocFrameInput {
                         sample_rate: unit.sample_rate,
                         downmix_pcm: &pcm.channels,
@@ -1262,6 +1273,10 @@ where
                     },
                     oamd_profile,
                     binding_profile,
+                    // CLI v1 payload_parsing keeps measuring the real inner
+                    // JOC parse. Only OAMD's duplicate syntax work is reused.
+                    None,
+                    Some(oamd_proof),
                 )
             },
         )?;

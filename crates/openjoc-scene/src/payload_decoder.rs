@@ -6,12 +6,12 @@ use crate::{
     StreamingSceneSummary, admit_decoded_joc_binding,
 };
 use openjoc_joc::{
-    DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ReconstructionBasis,
-    ReconstructionStageTiming, parse_joc_payload,
+    DecodedJocFrame, JocDecodeError, JocDecoderState, JocFrame, ParsedJocProof,
+    ReconstructionBasis, ReconstructionStageTiming, parse_joc_payload,
 };
 use openjoc_oamd::{
-    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ReferenceScreen,
-    parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
+    OAMD_PAYLOAD_ID, OamdDecoderConfig, OamdError, OamdParseProfile, OamdPayload, ParsedOamdProof,
+    ReferenceScreen, parse_oamd_payload_with_config, parse_oamd_payload_with_profile,
 };
 use std::fmt;
 
@@ -221,13 +221,15 @@ impl PayloadDecoder {
         &mut self,
         input: JocFrameInput<'_>,
     ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
-        self.decode_frame_inner(input, binding_codec_profile(self.oamd_profile))
+        self.decode_frame_inner(input, binding_codec_profile(self.oamd_profile), None, None)
     }
 
     fn decode_frame_inner(
         &mut self,
         input: JocFrameInput<'_>,
         binding_profile: BindingCodecProfile,
+        joc_proof: Option<ParsedJocProof>,
+        oamd_proof: Option<ParsedOamdProof>,
     ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
         if input.frame_index != self.next_frame_index {
             return Err(PayloadDecodeError::UnexpectedFrameIndex {
@@ -246,19 +248,38 @@ impl PayloadDecoder {
         let parse_start = self
             .reconstruction_timing_enabled
             .then(std::time::Instant::now);
-        let joc = parse_joc_payload(input.joc_payload).map_err(JocDecodeError::Parse)?;
+        // Keep the original syntax-stage timing boundary. A reusable proof
+        // measures exact-byte verification here, not a fictional second parse.
+        let joc = match joc_proof.and_then(|proof| proof.into_matching_frame(input.joc_payload)) {
+            Some(parsed) => parsed,
+            None => parse_joc_payload(input.joc_payload).map_err(JocDecodeError::Parse)?,
+        };
         let payload_parsing =
             parse_start.map_or(std::time::Duration::ZERO, |start| start.elapsed());
-        let oamd = match self.oamd_profile {
-            OamdParseProfile::EtsiStrict => {
-                parse_oamd_payload_with_config(input.oamd_payload, self.config.oamd)?
-            }
-            OamdParseProfile::ObservedVendorCompat => parse_oamd_payload_with_profile(
+        let payload_id = match self.oamd_profile {
+            OamdParseProfile::EtsiStrict => None,
+            OamdParseProfile::ObservedVendorCompat => Some(OAMD_PAYLOAD_ID),
+        };
+        let oamd = match oamd_proof.and_then(|proof| {
+            proof.into_matching_payload(
                 input.oamd_payload,
                 self.config.oamd,
-                OamdParseProfile::ObservedVendorCompat,
-                OAMD_PAYLOAD_ID,
-            )?,
+                self.oamd_profile,
+                payload_id,
+            )
+        }) {
+            Some(parsed) => parsed,
+            None => match self.oamd_profile {
+                OamdParseProfile::EtsiStrict => {
+                    parse_oamd_payload_with_config(input.oamd_payload, self.config.oamd)?
+                }
+                OamdParseProfile::ObservedVendorCompat => parse_oamd_payload_with_profile(
+                    input.oamd_payload,
+                    self.config.oamd,
+                    OamdParseProfile::ObservedVendorCompat,
+                    OAMD_PAYLOAD_ID,
+                )?,
+            },
         };
         let layout = ProgrammeLayout::from_prefix(&oamd.prefix)?;
         layout.validate_reconstruction_basis(usize::from(joc.header.object_count))?;
@@ -408,9 +429,54 @@ impl PayloadDecoder {
         profile: OamdParseProfile,
         binding_profile: BindingCodecProfile,
     ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
+        self.decode_frame_with_profile_and_binding_profile_and_oamd_proof_to_frame(
+            input,
+            profile,
+            binding_profile,
+            None,
+        )
+    }
+
+    /// Decodes with an optional reusable OAMD syntax parse, without bypassing
+    /// scene or binding admission. Only exact byte/config/profile/identifier
+    /// matches reuse the proof; every mismatch follows the original parser.
+    /// Frame-index, sample-rate and JOC checks retain their original priority.
+    pub fn decode_frame_with_profile_and_binding_profile_and_oamd_proof_to_frame(
+        &mut self,
+        input: JocFrameInput<'_>,
+        profile: OamdParseProfile,
+        binding_profile: BindingCodecProfile,
+        oamd_proof: Option<ParsedOamdProof>,
+    ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
+        self.decode_frame_with_parsed_payloads_to_frame(
+            input,
+            profile,
+            binding_profile,
+            None,
+            oamd_proof,
+        )
+    }
+
+    /// Decodes with optional immutable syntax proofs for the exact input bytes.
+    /// Every mismatch uses the original parser, and all scene, reconstruction
+    /// and binding admission remains mandatory. Frame and sample-rate checks
+    /// run before either proof is inspected, followed by JOC then OAMD syntax.
+    ///
+    /// When timing is enabled, `payload_parsing` measures the original JOC
+    /// syntax-stage boundary: actual parsing on a miss or byte verification on
+    /// a hit. It does not include the caller's earlier proof construction.
+    pub fn decode_frame_with_parsed_payloads_to_frame(
+        &mut self,
+        input: JocFrameInput<'_>,
+        profile: OamdParseProfile,
+        binding_profile: BindingCodecProfile,
+        joc_proof: Option<ParsedJocProof>,
+        oamd_proof: Option<ParsedOamdProof>,
+    ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
         let previous = self.oamd_profile;
         self.oamd_profile = profile;
-        let result = self.decode_frame_with_binding_profile(input, binding_profile);
+        let result =
+            self.decode_frame_with_binding_profile(input, binding_profile, joc_proof, oamd_proof);
         self.oamd_profile = previous;
         result
     }
@@ -439,8 +505,10 @@ impl PayloadDecoder {
         &mut self,
         input: JocFrameInput<'_>,
         binding_profile: BindingCodecProfile,
+        joc_proof: Option<ParsedJocProof>,
+        oamd_proof: Option<ParsedOamdProof>,
     ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
-        self.decode_frame_inner(input, binding_profile)
+        self.decode_frame_inner(input, binding_profile, joc_proof, oamd_proof)
     }
 
     /// Finalizes the accumulated renderer-independent object scene.

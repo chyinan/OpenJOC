@@ -81,6 +81,16 @@ pub(crate) struct RenderStageTiming {
     pub(crate) rendered_samples: u64,
 }
 
+impl RenderStageTiming {
+    pub(crate) fn record_rendered_au(&mut self, stages: &Self, input_samples: u16) {
+        self.bridge_control_assembly += stages.bridge_control_assembly;
+        self.spatial_bridge_render += stages.spatial_bridge_render;
+        self.binaural_render += stages.binaural_render;
+        self.rendered_frames += 1;
+        self.rendered_samples += u64::from(input_samples);
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct RenderPerformance {
     pub(crate) started_at: Instant,
@@ -135,6 +145,24 @@ impl RenderPerformance {
             eac3_frame_times: Vec::new(),
             slowest_eac3_frames: Vec::new(),
         }
+    }
+
+    pub(crate) fn merge_completed_output(
+        &mut self,
+        decode: DecodeStageTiming,
+        render: &RenderStageTiming,
+        output_frames: u64,
+        output_path: &Path,
+        progress: &crate::progress::ProgressReporter,
+    ) -> io::Result<()> {
+        self.merge_decode(decode);
+        self.merge_render(render);
+        self.output_frames = output_frames;
+        self.output_bytes = fs::metadata(output_path)?.len();
+        self.progress_enabled = progress.enabled();
+        self.progress_updates = progress.updates();
+        self.progress_overhead = progress.overhead();
+        Ok(())
     }
 
     pub(crate) fn merge_decode(&mut self, timing: DecodeStageTiming) {
@@ -576,3 +604,7 @@ mod tests {
         fs::remove_file(path).expect("cleanup");
     }
 }
+
+#[cfg(test)]
+#[path = "performance_refactor_tests.rs"]
+mod refactor_tests;
