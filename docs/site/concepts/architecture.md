@@ -352,6 +352,39 @@ Malformed or truncated raw E-AC-3 and consumed ISO BMFF structures are rejected
 with bounded diagnostics; streaming output is staged and promoted only after a
 complete successful decode, so failure cannot publish a canonical partial.
 
+#### Session lifecycle invariants
+
+The private `drained` flag records that drain has started, or that the session
+has failed closed. It does not by itself mean that output has been exhausted.
+Pending output comprises three distinct stores: owned PCM frames, deferred
+virtual-speaker blocks, and the partially rendered current pull block. The
+deferred sample counter covers only the unrendered samples in the latter two
+stores. A pull-session FIR/LFE tail is separate from all three stores and is
+eligible for receiving only after drain starts.
+
+| State or operation | Result and preserved transition |
+| --- | --- |
+| Fresh, or successfully flushed/reset | Drain not started; no queued output; not drain-complete |
+| Open session with any pending output | Push and drain return `OutputPending`; a requested discontinuity does not reset state |
+| Ordinary receive | Pops one owned PCM frame; pull sessions use the separate bounded receive method |
+| Bounded pull receive | Consumes deferred/current input first and decrements its remaining sample count; after drain starts it can consume the FIR/LFE tail |
+| Drain with no pending output | Marks drain started, then emits reconstruction and binaural tails; an empty session reaches `EndOfStream` |
+| Drain started, pending output remains | Push returns `AlreadyDrained`; another drain returns `OutputPending`; receiving continues |
+| Drain started, only a pull tail remains | Another drain returns `FrameAvailable`; completion stays false until the tail is exhausted |
+| Drain started, all output exhausted | Completion is true; repeated drain returns `EndOfStream`; push still returns `AlreadyDrained` |
+| Failed closed | Clears all three output stores and the deferred sample count, marks drain started, and records the terminal error; completion is true even if internal FIR history remains |
+| Successful flush/reset | Clears queued output before resetting decoder/render/timeline state, advances an orientation epoch, then clears the drain and terminal flags |
+| Accepted discontinuity on an open, output-free session | Resets stream state before timestamp validation and decoding; pending, drained, and terminal guards take precedence |
+
+Guard priority is part of the compatibility contract: push checks terminal
+error, drain-started, pending output, empty/size checks, then discontinuity and PTS;
+drain checks terminal error, pending output, then drain-started; bounded pull
+checks terminal error before its mode requirement. Reset failure remains
+fail-closed. The original typed terminal error is retained privately while
+repeat calls preserve their historical public `Render` wrapper and full text.
+Queue clearing does not itself reset FIR history, timestamps, epochs, or the
+terminal flag; the calling lifecycle operation owns those ordered steps.
+
 ### Scoped decoded-JOC/OAMD binding
 
 The payload boundary has one explicit clean-room structural admission gate for

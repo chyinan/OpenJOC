@@ -109,6 +109,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
+      - name: Required public container coverage
+        env:
+          OPENJOC_CONTAINER_TEST_MODE: required
+          OPENJOC_CONTAINER_FIXTURE_MODE: fixed
+        run: cargo test -p openjoc-cli --test container --locked -- --nocapture
+
       - name: Workspace tests
         run: cargo test --workspace --all-features --locked
 
@@ -171,6 +177,7 @@ jobs:
             --baseline-target "$RUNNER_TEMP/openjoc-target-baseline" \
             --candidate-target "$RUNNER_TEMP/openjoc-target-candidate" \
             --output-dir "$RUNNER_TEMP/openjoc-pcm-gate" \
+            --failure-pcm-bytes 8388608 \
             --online \
             --selftest-integrated \
             --case lifecycle-2.0,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,speaker,2.0 \
@@ -190,6 +197,28 @@ jobs:
             --output-dir "$RUNNER_TEMP/openjoc-partitioned-gate" \
             --online \
             --timing-pairs 5
+
+      - name: Record PCM job outcome
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/openjoc-pcm-gate"
+          printf 'job_status=%s\nsource_revision=%s\nselected_toolchain=%s\n' \
+            "${{ job.status }}" "$GITHUB_SHA" "1.89.0" \
+            > "$RUNNER_TEMP/openjoc-pcm-gate/job-status.txt"
+
+      - name: Upload PCM reports and bounded failure samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcm-bitexact-reports
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-pcm-gate/job-status.txt
+            ${{ runner.temp }}/openjoc-pcm-gate/toolchain.txt
+            ${{ runner.temp }}/openjoc-pcm-gate/measurements.csv
+            ${{ runner.temp }}/openjoc-pcm-gate/evidence-*/**
 
   pcm-bitexact-release:
     name: pcm-bitexact-release-1.98.1
@@ -236,6 +265,7 @@ jobs:
             --baseline-target "$RUNNER_TEMP/openjoc-target-baseline" \
             --candidate-target "$RUNNER_TEMP/openjoc-target-candidate" \
             --output-dir "$RUNNER_TEMP/openjoc-pcm-gate" \
+            --failure-pcm-bytes 8388608 \
             --online \
             --selftest-integrated \
             --case lifecycle-stereo,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,stereo,2.0 \
@@ -244,6 +274,28 @@ jobs:
             --case lifecycle-22.2,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,speaker,22.2 \
             --case lifecycle-binaural-d1,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,binaural-d1,7.1.4 \
             --case lifecycle-orientation-d1,crates/openjoc-wasm/testdata/joc.lifecycle.ec3,orientation-d1,7.1.4
+
+      - name: Record PCM job outcome
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/openjoc-pcm-gate"
+          printf 'job_status=%s\nsource_revision=%s\nselected_toolchain=%s\n' \
+            "${{ job.status }}" "$GITHUB_SHA" "1.98.1" \
+            > "$RUNNER_TEMP/openjoc-pcm-gate/job-status.txt"
+
+      - name: Upload PCM reports and bounded failure samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcm-bitexact-release-reports
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/openjoc-pcm-gate/job-status.txt
+            ${{ runner.temp }}/openjoc-pcm-gate/toolchain.txt
+            ${{ runner.temp }}/openjoc-pcm-gate/measurements.csv
+            ${{ runner.temp }}/openjoc-pcm-gate/evidence-*/**
 
   platform-windows:
     name: platform-windows
