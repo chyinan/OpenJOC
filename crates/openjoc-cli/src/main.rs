@@ -2176,6 +2176,118 @@ struct LegacyPassReport {
     render_timing: performance::RenderStageTiming,
 }
 
+// Keep renderer construction shared between the ordinary output route and
+// the normalization pass. Timing, sink ownership and error wrapping stay at
+// their original call sites.
+fn new_legacy_speaker_renderer(
+    arguments: &RenderJocArgs,
+) -> Result<joc_render::JocSpeakerRenderer, joc_render::JocRenderError> {
+    let mut renderer = if let Some(topology) = &arguments.topology {
+        let control = joc_render::RenderControl::from_path(topology)?;
+        if let Some(layout) = arguments.speaker_layout_definition.clone() {
+            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+                joc_render::JocSpeakerRenderer::new_with_layout(layout, control)?
+            } else {
+                joc_render::JocSpeakerRenderer::new_with_layout_and_contribution(
+                    layout,
+                    control,
+                    arguments.diagnostic_contribution,
+                )?
+            }
+        } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
+        } else {
+            joc_render::JocSpeakerRenderer::new_with_contribution(
+                &arguments.layout,
+                control,
+                arguments.diagnostic_contribution,
+            )?
+        }
+    } else if let Some(layout) = arguments.speaker_layout_definition.clone() {
+        if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            joc_render::JocSpeakerRenderer::new_automatic_with_layout(layout)
+        } else {
+            joc_render::JocSpeakerRenderer::new_automatic_with_layout_and_contribution(
+                layout,
+                arguments.diagnostic_contribution,
+            )
+        }
+    } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+        joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
+    } else {
+        joc_render::JocSpeakerRenderer::new_automatic_with_contribution(
+            &arguments.layout,
+            arguments.diagnostic_contribution,
+        )?
+    };
+    renderer.set_downmix_policy(arguments.downmix_policy.unwrap_or_default())?;
+    Ok(renderer)
+}
+
+// Shared construction only: each caller retains its timing and sink lifecycle.
+fn new_legacy_binaural_renderer(
+    arguments: &RenderJocArgs,
+) -> Result<joc_render::JocBinauralRenderer, joc_render::JocRenderError> {
+    let control = arguments
+        .topology
+        .as_ref()
+        .map(|path| joc_render::RenderControl::from_path(path))
+        .transpose()?;
+    let builtin_hrtf = arguments.binaural_sofa.is_none();
+    let mut renderer = if let Some(sofa_path) = &arguments.binaural_sofa {
+        let sofa = openjoc_sofa::load_simple_free_field_hrir(
+            sofa_path,
+            openjoc_sofa::SofaLoadLimits::default(),
+        )
+        .map_err(joc_render::JocRenderError::from)?;
+        let lfe_delay = openjoc_sofa::hrir_resampling_delay_samples(
+            sofa.bank.sample_rate_hz(),
+            openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+        )
+        .map_err(joc_render::JocRenderError::from)?;
+        let sofa = openjoc_sofa::resample_loaded_hrir_bank(
+            sofa,
+            openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
+            openjoc_sofa::SofaLoadLimits::default(),
+        )
+        .map_err(joc_render::JocRenderError::from)?;
+        let renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
+            joc_render::JocBinauralRenderer::new(
+                &arguments.layout,
+                sofa.bank,
+                arguments.binaural_backend,
+                arguments.lfe_policy,
+                control,
+            )?
+        } else {
+            joc_render::JocBinauralRenderer::new_with_contribution(
+                &arguments.layout,
+                sofa.bank,
+                arguments.binaural_backend,
+                arguments.lfe_policy,
+                control,
+                arguments.diagnostic_contribution,
+            )?
+        };
+        renderer.with_lfe_delay(lfe_delay)
+    } else {
+        let loaded = openjoc_sofa::load_builtin_hrir_f32(arguments.binaural_hrtf)
+            .map_err(joc_render::JocRenderError::from)?;
+        joc_render::JocBinauralRenderer::new_with_builtin_f32(
+            &arguments.layout,
+            &loaded.bank,
+            arguments.binaural_backend,
+            arguments.lfe_policy,
+            control,
+            arguments.diagnostic_contribution,
+        )?
+    };
+    if builtin_hrtf {
+        renderer.mark_builtin_generic_hrtf();
+    }
+    Ok(renderer)
+}
+
 fn run_legacy_render_pass(
     arguments: &RenderJocArgs,
     input: &render_input::RenderInput,
@@ -2189,63 +2301,7 @@ fn run_legacy_render_pass(
     let mut render_timing = performance::RenderStageTiming::default();
     let dither = deterministic_dither_values();
     if arguments.binaural {
-        let control = arguments
-            .topology
-            .as_ref()
-            .map(|path| joc_render::RenderControl::from_path(path))
-            .transpose()?;
-        let builtin_hrtf = arguments.binaural_sofa.is_none();
-        let mut renderer = if let Some(sofa_path) = &arguments.binaural_sofa {
-            let sofa = openjoc_sofa::load_simple_free_field_hrir(
-                sofa_path,
-                openjoc_sofa::SofaLoadLimits::default(),
-            )
-            .map_err(joc_render::JocRenderError::from)?;
-            let lfe_delay = openjoc_sofa::hrir_resampling_delay_samples(
-                sofa.bank.sample_rate_hz(),
-                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
-            )
-            .map_err(joc_render::JocRenderError::from)?;
-            let sofa = openjoc_sofa::resample_loaded_hrir_bank(
-                sofa,
-                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
-                openjoc_sofa::SofaLoadLimits::default(),
-            )
-            .map_err(joc_render::JocRenderError::from)?;
-            let renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                joc_render::JocBinauralRenderer::new(
-                    &arguments.layout,
-                    sofa.bank,
-                    arguments.binaural_backend,
-                    arguments.lfe_policy,
-                    control,
-                )?
-            } else {
-                joc_render::JocBinauralRenderer::new_with_contribution(
-                    &arguments.layout,
-                    sofa.bank,
-                    arguments.binaural_backend,
-                    arguments.lfe_policy,
-                    control,
-                    arguments.diagnostic_contribution,
-                )?
-            };
-            renderer.with_lfe_delay(lfe_delay)
-        } else {
-            let loaded = openjoc_sofa::load_builtin_hrir_f32(arguments.binaural_hrtf)
-                .map_err(joc_render::JocRenderError::from)?;
-            joc_render::JocBinauralRenderer::new_with_builtin_f32(
-                &arguments.layout,
-                &loaded.bank,
-                arguments.binaural_backend,
-                arguments.lfe_policy,
-                control,
-                arguments.diagnostic_contribution,
-            )?
-        };
-        if builtin_hrtf {
-            renderer.mark_builtin_generic_hrtf();
-        }
+        let mut renderer = new_legacy_binaural_renderer(arguments)?;
         if timing_requested {
             renderer.enable_stage_timing();
         }
@@ -2269,11 +2325,7 @@ fn run_legacy_render_pass(
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     }
                     let stage_timings = renderer.take_stage_timings();
-                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
-                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
-                    render_timing.binaural_render += stage_timings.binaural_render;
-                    render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
+                    render_timing.record_rendered_au(&stage_timings, base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -2309,45 +2361,7 @@ fn run_legacy_render_pass(
             render_timing,
         })
     } else {
-        let mut renderer = if let Some(topology) = &arguments.topology {
-            let control = joc_render::RenderControl::from_path(topology)?;
-            if let Some(layout) = arguments.speaker_layout_definition.clone() {
-                if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                    joc_render::JocSpeakerRenderer::new_with_layout(layout, control)?
-                } else {
-                    joc_render::JocSpeakerRenderer::new_with_layout_and_contribution(
-                        layout,
-                        control,
-                        arguments.diagnostic_contribution,
-                    )?
-                }
-            } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
-            } else {
-                joc_render::JocSpeakerRenderer::new_with_contribution(
-                    &arguments.layout,
-                    control,
-                    arguments.diagnostic_contribution,
-                )?
-            }
-        } else if let Some(layout) = arguments.speaker_layout_definition.clone() {
-            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                joc_render::JocSpeakerRenderer::new_automatic_with_layout(layout)
-            } else {
-                joc_render::JocSpeakerRenderer::new_automatic_with_layout_and_contribution(
-                    layout,
-                    arguments.diagnostic_contribution,
-                )
-            }
-        } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-            joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
-        } else {
-            joc_render::JocSpeakerRenderer::new_automatic_with_contribution(
-                &arguments.layout,
-                arguments.diagnostic_contribution,
-            )?
-        };
-        renderer.set_downmix_policy(arguments.downmix_policy.unwrap_or_default())?;
+        let mut renderer = new_legacy_speaker_renderer(arguments)?;
         if timing_requested {
             renderer.enable_stage_timing();
         }
@@ -2369,11 +2383,7 @@ fn run_legacy_render_pass(
                         })?;
                     }
                     let stage_timings = renderer.take_stage_timings();
-                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
-                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
-                    render_timing.binaural_render += stage_timings.binaural_render;
-                    render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
+                    render_timing.record_rendered_au(&stage_timings, base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -2610,63 +2620,7 @@ fn render_joc(
         terminal.width,
     );
     if arguments.binaural {
-        let control = arguments
-            .topology
-            .as_ref()
-            .map(|path| joc_render::RenderControl::from_path(path))
-            .transpose()?;
-        let builtin_hrtf = arguments.binaural_sofa.is_none();
-        let mut renderer = if let Some(sofa_path) = &arguments.binaural_sofa {
-            let sofa = openjoc_sofa::load_simple_free_field_hrir(
-                sofa_path,
-                openjoc_sofa::SofaLoadLimits::default(),
-            )
-            .map_err(joc_render::JocRenderError::from)?;
-            let lfe_delay = openjoc_sofa::hrir_resampling_delay_samples(
-                sofa.bank.sample_rate_hz(),
-                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
-            )
-            .map_err(joc_render::JocRenderError::from)?;
-            let sofa = openjoc_sofa::resample_loaded_hrir_bank(
-                sofa,
-                openjoc_sofa::BUILTIN_GENERIC_HRTF_SAMPLE_RATE_HZ,
-                openjoc_sofa::SofaLoadLimits::default(),
-            )
-            .map_err(joc_render::JocRenderError::from)?;
-            let renderer = if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                joc_render::JocBinauralRenderer::new(
-                    &arguments.layout,
-                    sofa.bank,
-                    arguments.binaural_backend,
-                    arguments.lfe_policy,
-                    control,
-                )?
-            } else {
-                joc_render::JocBinauralRenderer::new_with_contribution(
-                    &arguments.layout,
-                    sofa.bank,
-                    arguments.binaural_backend,
-                    arguments.lfe_policy,
-                    control,
-                    arguments.diagnostic_contribution,
-                )?
-            };
-            renderer.with_lfe_delay(lfe_delay)
-        } else {
-            let loaded = openjoc_sofa::load_builtin_hrir_f32(arguments.binaural_hrtf)
-                .map_err(joc_render::JocRenderError::from)?;
-            joc_render::JocBinauralRenderer::new_with_builtin_f32(
-                &arguments.layout,
-                &loaded.bank,
-                arguments.binaural_backend,
-                arguments.lfe_policy,
-                control,
-                arguments.diagnostic_contribution,
-            )?
-        };
-        if builtin_hrtf {
-            renderer.mark_builtin_generic_hrtf();
-        }
+        let mut renderer = new_legacy_binaural_renderer(arguments)?;
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
@@ -2705,11 +2659,7 @@ fn render_joc(
                         }
                     }
                     let stage_timings = renderer.take_stage_timings();
-                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
-                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
-                    render_timing.binaural_render += stage_timings.binaural_render;
-                    render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
+                    render_timing.record_rendered_au(&stage_timings, base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -2749,13 +2699,13 @@ fn render_joc(
                 }
                 progress.finish();
                 if let Some(report) = performance.as_mut() {
-                    report.merge_decode(decode_timing);
-                    report.merge_render(&render_timing);
-                    report.output_frames = output_frames;
-                    report.output_bytes = fs::metadata(&arguments.output)?.len();
-                    report.progress_enabled = progress.enabled();
-                    report.progress_updates = progress.updates();
-                    report.progress_overhead = progress.overhead();
+                    report.merge_completed_output(
+                        decode_timing,
+                        &render_timing,
+                        output_frames,
+                        &arguments.output,
+                        &progress,
+                    )?;
                     performance::write_report(
                         arguments
                             .performance_report
@@ -2799,45 +2749,7 @@ fn render_joc(
         )
         .into())
     } else {
-        let mut renderer = if let Some(topology) = &arguments.topology {
-            let control = joc_render::RenderControl::from_path(topology)?;
-            if let Some(layout) = arguments.speaker_layout_definition.clone() {
-                if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                    joc_render::JocSpeakerRenderer::new_with_layout(layout, control)?
-                } else {
-                    joc_render::JocSpeakerRenderer::new_with_layout_and_contribution(
-                        layout,
-                        control,
-                        arguments.diagnostic_contribution,
-                    )?
-                }
-            } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                joc_render::JocSpeakerRenderer::new(&arguments.layout, control)?
-            } else {
-                joc_render::JocSpeakerRenderer::new_with_contribution(
-                    &arguments.layout,
-                    control,
-                    arguments.diagnostic_contribution,
-                )?
-            }
-        } else if let Some(layout) = arguments.speaker_layout_definition.clone() {
-            if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-                joc_render::JocSpeakerRenderer::new_automatic_with_layout(layout)
-            } else {
-                joc_render::JocSpeakerRenderer::new_automatic_with_layout_and_contribution(
-                    layout,
-                    arguments.diagnostic_contribution,
-                )
-            }
-        } else if arguments.diagnostic_contribution == SpatialContributionMode::Full {
-            joc_render::JocSpeakerRenderer::new_automatic(&arguments.layout)?
-        } else {
-            joc_render::JocSpeakerRenderer::new_automatic_with_contribution(
-                &arguments.layout,
-                arguments.diagnostic_contribution,
-            )?
-        };
-        renderer.set_downmix_policy(arguments.downmix_policy.unwrap_or_default())?;
+        let mut renderer = new_legacy_speaker_renderer(arguments)?;
         if performance.is_some() {
             renderer.enable_stage_timing();
         }
@@ -2882,11 +2794,7 @@ fn render_joc(
                         }
                     }
                     let stage_timings = renderer.take_stage_timings();
-                    render_timing.bridge_control_assembly += stage_timings.bridge_control_assembly;
-                    render_timing.spatial_bridge_render += stage_timings.spatial_bridge_render;
-                    render_timing.binaural_render += stage_timings.binaural_render;
-                    render_timing.rendered_frames += 1;
-                    render_timing.rendered_samples += u64::from(base.joc_input_pcm.samples);
+                    render_timing.record_rendered_au(&stage_timings, base.joc_input_pcm.samples);
                     progress.update(frame_index, render_timing.rendered_samples);
                     renderer
                         .record_profile(metadata)
@@ -2919,13 +2827,13 @@ fn render_joc(
                 }
                 progress.finish();
                 if let Some(report) = performance.as_mut() {
-                    report.merge_decode(decode_timing);
-                    report.merge_render(&render_timing);
-                    report.output_frames = output_frames;
-                    report.output_bytes = fs::metadata(&arguments.output)?.len();
-                    report.progress_enabled = progress.enabled();
-                    report.progress_updates = progress.updates();
-                    report.progress_overhead = progress.overhead();
+                    report.merge_completed_output(
+                        decode_timing,
+                        &render_timing,
+                        output_frames,
+                        &arguments.output,
+                        &progress,
+                    )?;
                     performance::write_report(
                         arguments
                             .performance_report

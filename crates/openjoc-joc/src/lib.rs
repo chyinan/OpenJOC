@@ -6,7 +6,9 @@ use openjoc_bitio::{BitError, BitRead};
 use std::fmt;
 
 mod decoder;
+mod parsed_proof;
 mod parser;
+pub use parsed_proof::ParsedJocProof;
 mod reconstruction;
 mod timeline;
 pub use parser::{

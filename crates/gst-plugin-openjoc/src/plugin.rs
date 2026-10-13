@@ -987,70 +987,19 @@ fn fixed_downstream_speaker_layout(caps: &gst::Caps) -> Result<Option<String>, S
 
 fn supported_speaker_layouts() -> &'static [(&'static str, &'static [&'static str])] {
     &[
-        ("2.0", &["FL", "FR"]),
-        ("5.1", &["FL", "FR", "FC", "LFE", "Ls", "Rs"]),
-        (
-            "5.1.2",
-            &["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"],
-        ),
-        (
-            "5.1.4",
-            &[
-                "FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
-            ],
-        ),
-        ("7.1", &["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"]),
-        (
-            "7.1.2",
-            &[
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR",
-            ],
-        ),
-        (
-            "7.1.4",
-            &[
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
-            ],
-        ),
-        (
-            "7.1.6",
-            &[
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Ltf", "Rtf", "Ltm", "Rtm", "Ltr",
-                "Rtr",
-            ],
-        ),
-        (
-            "9.1",
-            &["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw"],
-        ),
-        (
-            "9.1.2",
-            &[
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltm", "Rtm",
-            ],
-        ),
-        (
-            "9.1.4",
-            &[
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltr",
-                "Rtr",
-            ],
-        ),
-        (
-            "9.1.6",
-            &[
-                "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Ltf", "Rtf", "Ltm",
-                "Rtm", "Ltr", "Rtr",
-            ],
-        ),
-        (
-            "22.2",
-            &[
-                "FL", "FR", "FC", "LFE1", "BL", "BR", "FLc", "FRc", "BC", "LFE2", "SiL", "SiR",
-                "TpFL", "TpFR", "TpFC", "TpC", "TpBL", "TpBR", "TpSiL", "TpSiR", "TpBC", "BtFC",
-                "BtFL", "BtFR",
-            ],
-        ),
+        ("2.0", &openjoc_scene::SPEAKER_LAYOUT_2_0_CHANNELS),
+        ("5.1", &openjoc_scene::SPEAKER_LAYOUT_5_1_CHANNELS),
+        ("5.1.2", &openjoc_scene::SPEAKER_LAYOUT_5_1_2_CHANNELS),
+        ("5.1.4", &openjoc_scene::SPEAKER_LAYOUT_5_1_4_CHANNELS),
+        ("7.1", &openjoc_scene::SPEAKER_LAYOUT_7_1_CHANNELS),
+        ("7.1.2", &openjoc_scene::SPEAKER_LAYOUT_7_1_2_CHANNELS),
+        ("7.1.4", &openjoc_scene::SPEAKER_LAYOUT_7_1_4_CHANNELS),
+        ("7.1.6", &openjoc_scene::SPEAKER_LAYOUT_7_1_6_CHANNELS),
+        ("9.1", &openjoc_scene::SPEAKER_LAYOUT_9_1_CHANNELS),
+        ("9.1.2", &openjoc_scene::SPEAKER_LAYOUT_9_1_2_CHANNELS),
+        ("9.1.4", &openjoc_scene::SPEAKER_LAYOUT_9_1_4_CHANNELS),
+        ("9.1.6", &openjoc_scene::SPEAKER_LAYOUT_9_1_6_CHANNELS),
+        ("22.2", &openjoc_scene::SPEAKER_LAYOUT_22_2_CHANNELS),
     ]
 }
 
