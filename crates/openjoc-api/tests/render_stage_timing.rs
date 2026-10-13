@@ -201,7 +201,10 @@ fn enabling_is_independent_and_reenabling_clears_only_the_renderer_slot() {
     session.enable_render_stage_timing();
     assert_eq!(push(&mut session, units[0]), OpenJocStatus::NeedMoreInput);
     assert!(session.take_decode_stage_timing().is_none());
-    assert_eq!(session.take_stage_timing(), Default::default());
+    assert_eq!(
+        session.take_stage_timing(),
+        openjoc_api::OpenJocStageTiming::default()
+    );
     session.enable_stage_timing();
     session.enable_decode_stage_timing();
     assert_push(&take(&mut session), units[0], 0);
@@ -218,7 +221,7 @@ fn enabling_is_independent_and_reenabling_clears_only_the_renderer_slot() {
     // Aggregate clocks may be exactly zero; presence cannot be inferred from
     // elapsed time. Detailed-slot preservation is independently observable.
     let _ = session.take_stage_timing();
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
 
     assert_eq!(push(&mut session, units[2]), OpenJocStatus::FrameAvailable);
     let _ = session.take_stage_timing();
@@ -226,7 +229,7 @@ fn enabling_is_independent_and_reenabling_clears_only_the_renderer_slot() {
     session.enable_stage_timing();
     session.enable_decode_stage_timing();
     assert_push(&take(&mut session), units[2], units[2].input_start_sample);
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     session.enable_render_stage_timing();
     assert!(session.take_render_stage_timing().is_none());
     assert_eq!(push(&mut session, units[3]), OpenJocStatus::FrameAvailable);
@@ -247,7 +250,7 @@ fn empty_aligned_output_is_a_real_success_and_latest_success_wins() {
 
         assert_eq!(push(&mut session, units[1]), OpenJocStatus::FrameAvailable);
         let frames = receive_all(&mut session);
-        assert!(!frames.is_empty());
+        assert_ne!(frames, [] as [OpenJocPcmFrame; 0]);
         // Leave this record untaken. Receiving owned PCM does not consume it;
         // the next successful operation replaces it rather than queueing it.
         assert_eq!(push(&mut session, units[2]), OpenJocStatus::FrameAvailable);
@@ -349,7 +352,7 @@ fn first_drain_publishes_counts_and_repeated_drain_preserves_the_slot() {
         assert_eq!(session.drain().unwrap(), OpenJocStatus::FrameAvailable);
         assert_eq!(session.drain().unwrap(), OpenJocStatus::OutputPending);
         let tail = receive_all(&mut session);
-        assert!(!tail.is_empty());
+        assert_ne!(tail, [] as [OpenJocPcmFrame; 0]);
         assert!(session.is_drained());
         assert_eq!(session.drain().unwrap(), OpenJocStatus::EndOfStream);
         assert_eq!(
@@ -789,7 +792,7 @@ fn pull_operations_count_speaker_work_and_each_returned_pcm_frame_separately() {
         assert_eq!(record.operation, OpenJocRenderOperation::BinauralPull);
         assert_pcm_counts(&record, std::slice::from_ref(projected.last().unwrap()));
         let fir_tail = collect_output(&mut session, true, true);
-        assert!(!fir_tail.is_empty());
+        assert_ne!(fir_tail, [] as [OpenJocPcmFrame; 0]);
         assert!(session.is_drained());
         assert_eq!(session.drain().unwrap(), OpenJocStatus::EndOfStream);
         assert!(session.take_render_stage_timing().is_none());

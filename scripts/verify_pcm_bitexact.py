@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import hashlib
 import os
@@ -502,15 +503,32 @@ def install_baseline_feature_overlay(baseline_root: Path) -> None:
 
 
 def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -> None:
-    """Compare Cargo metadata with narrow release and scene-parser allowances.
+    """Compare Cargo metadata with exact release, parser and native-layout allowances.
 
     The oracle files are never rewritten. Workspace identities and paths come from
     its pinned manifest, not a name prefix or the candidate's dependency claims.
     The scene parser may enable only float_roundtrip on the same serde_json version.
+    Only the native plugin may add the optional scene dependency, its gstreamer
+    feature activation and the matching lock edge, together as one exact variant.
     External package records, dependency edges and every other TOML field stay exact.
     """
     def read(path: Path) -> dict:
         return tomllib.loads(path.read_text(encoding="utf-8"))
+
+    def same_metadata(left, right) -> bool:
+        # TOML booleans, integers and floats are distinct even where Python's
+        # ordinary equality would treat their values as interchangeable.
+        if type(left) is not type(right):
+            return False
+        if isinstance(left, dict):
+            return left.keys() == right.keys() and all(
+                same_metadata(value, right[key]) for key, value in left.items()
+            )
+        if isinstance(left, list):
+            return len(left) == len(right) and all(
+                same_metadata(a, b) for a, b in zip(left, right)
+            )
+        return left == right
 
     baseline_workspace = read(baseline_root / "Cargo.toml")
     candidate_workspace = read(candidate_root / "Cargo.toml")
@@ -521,6 +539,7 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
     candidate_workspace["workspace"]["package"]["version"] = old
     if candidate_workspace != baseline_workspace:
         raise GateError("workspace manifest differs beyond the release version")
+    normalized_manifests = [(candidate_workspace, baseline_workspace)]
     members = baseline_workspace["workspace"]["members"]
     manifests = {}
     identities = {}
@@ -532,6 +551,7 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
             raise GateError("unexpected frozen workspace package identity/version")
         identities[name] = member
         manifests[member] = data
+    native_scene_dependency = False
     for member, baseline in manifests.items():
         candidate = read(candidate_root / member / "Cargo.toml")
         # The independently allowlisted harness feature is the only baseline overlay.
@@ -563,8 +583,23 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
                 "version": "1", "features": ["float_roundtrip"],
             }:
                 candidate["dependencies"]["serde_json"] = baseline_json
+        if member == "crates/gst-plugin-openjoc":
+            native_layout = copy.deepcopy(baseline)
+            native_layout["dependencies"]["openjoc-scene"] = {
+                "version": old, "path": "../openjoc-scene", "optional": True,
+            }
+            native_layout["features"]["gstreamer"].append("dep:openjoc-scene")
+            if same_metadata(candidate, native_layout):
+                native_scene_dependency = True
+                baseline = native_layout
         if candidate != baseline:
             raise GateError(f"package manifest differs beyond audited allowances: {member}")
+        normalized_manifests.append((candidate, baseline))
+    if native_scene_dependency and any(
+        not same_metadata(candidate, baseline)
+        for candidate, baseline in normalized_manifests
+    ):
+        raise GateError("native-layout allowance requires exact normalized manifest field types")
     baseline_lock = read(baseline_root / "Cargo.lock")
     candidate_lock = read(candidate_root / "Cargo.lock")
     seen = set()
@@ -580,8 +615,15 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
             parts = edge.split(" ")
             if len(parts) == 2 and parts[0] in identities and parts[1] == new:
                 package["dependencies"][index] = f"{parts[0]} {old}"
-    if seen != set(identities) or candidate_lock != baseline_lock:
-        raise GateError("Cargo.lock differs beyond verified internal workspace versions")
+    if native_scene_dependency:
+        native_package = next(
+            package for package in baseline_lock["package"]
+            if package["name"] == "gst-plugin-openjoc"
+        )
+        native_package["dependencies"].append("openjoc-scene")
+    if (seen != set(identities) or candidate_lock != baseline_lock
+            or (native_scene_dependency and not same_metadata(candidate_lock, baseline_lock))):
+        raise GateError("Cargo.lock differs beyond verified workspace versions and native-layout edge")
 
 
 def validate_baseline_worktree(baseline_root: Path, candidate_root: Path) -> None:

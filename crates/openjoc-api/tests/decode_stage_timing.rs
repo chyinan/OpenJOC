@@ -69,7 +69,7 @@ fn receive_all(session: &mut OpenJocSession) -> Vec<OpenJocPcmFrame> {
     std::iter::from_fn(|| session.receive_frame()).collect()
 }
 
-fn assert_record(record: OpenJocDecodeStageTiming, au: FixtureAu, input_start_sample: u64) {
+fn assert_record(record: &OpenJocDecodeStageTiming, au: FixtureAu, input_start_sample: u64) {
     assert_eq!(record.input_start_sample, input_start_sample);
     assert_eq!(record.input_sample_count, au.sample_count);
     assert_eq!(record.sample_rate, au.sample_rate);
@@ -86,7 +86,7 @@ fn assert_record(record: OpenJocDecodeStageTiming, au: FixtureAu, input_start_sa
 
 fn take_record(session: &mut OpenJocSession, au: FixtureAu, input_start_sample: u64) {
     assert_record(
-        session
+        &session
             .take_decode_stage_timing()
             .expect("successful AU timing"),
         au,
@@ -111,10 +111,10 @@ fn detailed_timing_is_disabled_by_default_and_by_aggregate_timing_alone() {
     assert_eq!(push(&mut session, units[1]), OpenJocStatus::FrameAvailable);
     assert!(session.take_decode_stage_timing().is_none());
     let _ = session.take_stage_timing();
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     assert!(session.take_decode_stage_timing().is_none());
     session.drain().unwrap();
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     assert!(session.take_decode_stage_timing().is_none());
 }
 
@@ -135,14 +135,14 @@ fn detailed_enable_clears_its_slot_and_aggregate_operations_leave_it_alone() {
     assert_eq!(push(&mut session, units[1]), OpenJocStatus::FrameAvailable);
     session.enable_stage_timing();
     take_record(&mut session, units[1], units[1].input_start_sample);
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
 
     assert_eq!(push(&mut session, units[2]), OpenJocStatus::FrameAvailable);
     session.enable_decode_stage_timing();
     assert!(session.take_decode_stage_timing().is_none());
     let _ = session.take_stage_timing();
     assert!(session.take_decode_stage_timing().is_none());
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     assert_eq!(push(&mut session, units[3]), OpenJocStatus::FrameAvailable);
     take_record(&mut session, units[3], units[3].input_start_sample);
 }
@@ -162,9 +162,9 @@ fn take_is_destructive_latest_success_replaces_and_backpressure_preserves() {
     assert_eq!(push(&mut session, units[2]), OpenJocStatus::OutputPending);
     assert!(session.take_decode_stage_timing().is_none());
 
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     assert_eq!(push(&mut session, units[2]), OpenJocStatus::FrameAvailable);
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     // Leave AU 2's record untaken. A later successful push replaces it.
     assert_eq!(push(&mut session, units[3]), OpenJocStatus::FrameAvailable);
     take_record(&mut session, units[3], units[3].input_start_sample);
@@ -239,7 +239,7 @@ fn reset_flush_and_discontinuity_start_a_new_enabled_timing_timeline() {
     session.enable_decode_stage_timing();
     assert_eq!(push(&mut session, units[0]), OpenJocStatus::NeedMoreInput);
     assert_eq!(push(&mut session, units[1]), OpenJocStatus::FrameAvailable);
-    assert!(!receive_all(&mut session).is_empty());
+    assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
     assert_eq!(
         session.push_packet(packet(units[0], None, true)).unwrap(),
         OpenJocStatus::NeedMoreInput,
@@ -284,12 +284,12 @@ fn receive_and_drain_preserve_the_latest_au_and_never_create_a_record() {
         take_record(&mut session, units[0], units[0].input_start_sample);
 
         assert_eq!(push(&mut session, units[1]), OpenJocStatus::FrameAvailable);
-        assert!(!receive_all(&mut session).is_empty());
+        assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
         take_record(&mut session, units[1], units[1].input_start_sample);
         assert_eq!(push(&mut session, units[2]), OpenJocStatus::FrameAvailable);
-        assert!(!receive_all(&mut session).is_empty());
+        assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
         assert_eq!(session.drain().unwrap(), OpenJocStatus::FrameAvailable);
-        assert!(!receive_all(&mut session).is_empty());
+        assert_ne!(receive_all(&mut session), [] as [OpenJocPcmFrame; 0]);
         assert!(session.is_drained());
         assert_eq!(session.drain().unwrap(), OpenJocStatus::EndOfStream);
         assert_eq!(

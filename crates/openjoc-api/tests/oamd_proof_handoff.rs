@@ -312,11 +312,7 @@ fn offered_proof(
             Some(proof(&separately_allocated, config, profile))
         }
         Offer::OtherAu => {
-            let other = if *raw != frames[0].metadata.oamd {
-                0
-            } else {
-                1
-            };
+            let other = usize::from(*raw == frames[0].metadata.oamd);
             assert_ne!(*raw, frames[other].metadata.oamd);
             Some(proof(&frames[other].metadata.oamd, config, profile))
         }

@@ -257,7 +257,7 @@ fn completed_output_merges_existing_values_and_copies_real_progress_snapshot() {
         progress.finish();
         let expected_updates = progress.updates();
         let expected_overhead = progress.overhead();
-        assert_eq!(expected_updates, if enabled { 1 } else { 0 });
+        assert_eq!(expected_updates, u64::from(enabled));
 
         let mut performance = seeded_performance();
         performance.progress_enabled = !enabled;
