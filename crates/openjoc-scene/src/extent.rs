@@ -75,7 +75,7 @@ pub(crate) fn compact_quartic_kernel(u: f64, center: f64, radius: f64, z_axis: b
         return 0.0;
     }
     let ratio = normalized_distance / radius;
-    let value = exp2a(-KERNEL_COEFFICIENT * ratio * ratio * ratio * ratio);
+    let value = approx_exp2(-KERNEL_COEFFICIENT * ratio * ratio * ratio * ratio);
     if !value.is_finite() || value <= 0.0 {
         return 0.0;
     }
@@ -317,7 +317,7 @@ impl ExtentFieldCache {
             };
             let field = RESPONSE_SCALE * (interior[channel] + lambda * endpoint_product);
             compensated[channel] = if field > 0.0 {
-                exp2a(log2a(field) / shaping_exponent(radius))
+                approx_exp2(approx_log2(field) / shaping_exponent(radius))
             } else {
                 0.0
             };
@@ -524,7 +524,7 @@ fn sampled_endpoint_response(
 
 fn shaped(value: f64, exponent: f64) -> f64 {
     if value > 0.0 {
-        let result = exp2a(exponent * log2a(value));
+        let result = approx_exp2(exponent * approx_log2(value));
         if result.is_finite() && result > 0.0 {
             result
         } else {
@@ -622,7 +622,9 @@ fn bracket(knots: &[f64], value: f64) -> (usize, usize, f64) {
     (lower, upper, t)
 }
 
-fn exp2a(value: f64) -> f64 {
+// These approximations intentionally retain their coefficients and evaluation
+// order: replacing them with libm calls or reassociating arithmetic changes PCM.
+fn approx_exp2(value: f64) -> f64 {
     if !value.is_finite() {
         return 0.0;
     }
@@ -641,7 +643,7 @@ fn exp2a(value: f64) -> f64 {
     if result.is_finite() { result } else { 0.0 }
 }
 
-fn log2a(value: f64) -> f64 {
+fn approx_log2(value: f64) -> f64 {
     if !value.is_finite() || value <= 0.0 {
         return f64::NEG_INFINITY;
     }

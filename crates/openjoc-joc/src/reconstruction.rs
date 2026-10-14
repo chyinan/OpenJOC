@@ -117,8 +117,19 @@ impl std::error::Error for ReconstructionError {}
 pub struct InterpolatedMatrix {
     /// Matrix layout is `[timeslot][channel][subband]`.
     pub matrix: Vec<Vec<[f64; QMF_SUBBANDS]>>,
-    /// Previous matrix layout is `[channel][subband]`.
+    /// Final data-point coefficients carried forward as the next frame's
+    /// previous matrix, with layout `[channel][subband]`. The public field name
+    /// is retained for compatibility; prefer [`Self::carry_forward_coefficients`].
     pub next_previous: Vec<[f64; QMF_SUBBANDS]>,
+}
+
+impl InterpolatedMatrix {
+    /// Borrows the coefficients carried into the next frame, without copying
+    /// or changing their `[channel][subband]` layout.
+    #[must_use]
+    pub fn carry_forward_coefficients(&self) -> &[[f64; QMF_SUBBANDS]] {
+        &self.next_previous
+    }
 }
 
 /// Differentially decodes sparse symbols into quantized coefficient matrices.
@@ -393,8 +404,8 @@ pub fn interpolate_matrix(
     let last = points
         .last()
         .ok_or(ReconstructionError::InvalidDataPointCount { count: 0 })?;
-    let mut next_previous = vec![[0.0; QMF_SUBBANDS]; channels];
-    for (channel_output, channel_last) in next_previous.iter_mut().zip(last) {
+    let mut carry_forward_coefficients = vec![[0.0; QMF_SUBBANDS]; channels];
+    for (channel_output, channel_last) in carry_forward_coefficients.iter_mut().zip(last) {
         for (subband, output) in channel_output.iter_mut().enumerate() {
             let parameter_band = usize::from(qmf_subband_to_parameter_band(
                 band_count,
@@ -405,7 +416,7 @@ pub fn interpolate_matrix(
     }
     Ok(InterpolatedMatrix {
         matrix,
-        next_previous,
+        next_previous: carry_forward_coefficients,
     })
 }
 

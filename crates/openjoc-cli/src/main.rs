@@ -62,7 +62,7 @@ use std::{
 };
 use terminal::TerminalCapabilities;
 
-const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--reference-f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE (--layout PRESET | --layout-file CUSTOM.json) --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
+const USAGE: &str = "usage: openjoc --version\n       openjoc inspect FILE [--json] [--aus] [--objects] [--emdf] [--verbose] [--au-range START:END] [--trim-config-count N]\n       openjoc decode FILE -o DIR [--downmix FILE | --internal-base] [--streaming] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--output-format f32|f64]\n       openjoc export-adm INPUT -o OUTPUT.wav|OUTPUT.bw64 [--adm-policy best-effort|strict] [--no-progress] [--overwrite]\n       openjoc validate-adm FILE [--json]\n       openjoc sofa inspect FILE [--json]\n       openjoc render-scene SCENE --binaural-sofa FILE --output DIR --backend direct|partitioned [--partition-size N] [--block-size N] [--json]\n       openjoc render-joc FILE (--layout PRESET | --layout-file CUSTOM.json) --output OUTPUT.wav|OUTPUT.caf [--downmix auto|loro|ltrt] [--dialnorm default|digital|analog] [--normalize-peak TARGET_DBFS] [--binaural-sofa HRTF.sofa --backend direct|partitioned --partition-size N --lfe-policy exclude|equal-power-dual-mono] [--validation-profile auto|etsi-strict|observed-vendor-compat] [--trim-config-count N] [--internal-base-policy current-default|codec-core] [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100] [--output-format f32|f64] [--diagnostic-contribution full|base-only|reconstruction-only] [--no-progress] [--performance-report FILE.json] [--overwrite]\n       openjoc diagnose-tools FILE --vector-id ID --json OUTPUT\n       openjoc census [MANIFEST] -o DIR\n       openjoc diagnose-oamd FILE [-o DIR] [--access-unit N | --au START..END | --all-access-units] [--trim-config-count N] [--diff-payload-11] [--warp-hypotheses] [--adm-reference PATH] [--json PATH] [--force]\n       openjoc decode-payload --downmix FILE --joc FILE --oamd FILE -o DIR [--validation-profile auto|etsi-strict|observed-vendor-compat] [--output-format f32|f64] [--trim-config-count N] [--screen-origin-x X --screen-origin-y Y --screen-origin-z Z --screen-width W --screen-height H]";
 
 // Capture diagnostics are deliberately bounded. Full sample arrays belong in
 // the explicit row WAV artifacts; per-frame Debug output must never duplicate
@@ -242,7 +242,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--internal-base-policy current-default|codec-core]\n",
         "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
         "                         [--trim-config-count N]\n",
-        "                         [--reference-f64]\n",
+        "                         [--output-format f32|f64]\n",
         "    openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n",
         "    openjoc census [MANIFEST] -o <DIR>\n",
         "    openjoc diagnose-oamd <FILE> [-o <DIR>] [--access-unit N | --au START..END | --all-access-units]\n",
@@ -254,7 +254,7 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "                         [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
         "                         [--downmix auto|loro|ltrt] (2.0 speaker output only; not binaural)\n",
         "                         [--drc disabled|line|rf|custom [--drc-boost 0..=100 --drc-cut 0..=100]]\n",
-        "                         [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
+        "                         [--output-format f32|f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
         "                         [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n",
         "    openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE>\n",
         "                         -o <DIR> [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
@@ -290,7 +290,8 @@ fn append_help(output: &mut String, color: bool) -> Result<(), std::fmt::Error> 
         "      --drc-cut        Custom negative-gain contribution, 0..=100 percent\n",
         "      --streaming      Bounded AU decode from raw EC3 or seekable ordinary ISO BMFF; requires --internal-base\n",
         "      --trim-config-count Override the normative OAMD trim configuration count (default: 9)\n",
-        "      --reference-f64 Use explicit reference f64 reconstruction-row output (default: f32)\n",
+        "      --output-format Select file sample encoding: f32 (default) or f64; does not change DSP precision\n",
+        "      --reference-f64 Compatibility alias for --output-format f64\n",
         "\n",
     ));
     append_heading(output, "OUTPUT CONTRACT", color)?;
@@ -324,7 +325,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--streaming] [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--internal-base-policy current-default|codec-core]\n",
             "       [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100]\n",
-            "       [--trim-config-count N] [--reference-f64]\n\n",
+            "       [--trim-config-count N] [--output-format f32|f64]\n\n",
             "Capture mode writes a metadata-only scene plus diagnostic ReconstructionBasis rows.\n",
             "--drc applies encoded E-AC-3 dynamic-range metadata; it is not volume normalization, a limiter, or a signal-level compressor.\n",
             "--streaming requires --internal-base, accepts raw EC3 or seekable ordinary ISO BMFF,\n",
@@ -348,7 +349,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
         ),
         "decode-payload" => concat!(
             "usage: openjoc decode-payload --downmix <FILE> --joc <FILE> --oamd <FILE> -o <DIR>\n",
-            "       [--validation-profile auto|etsi-strict|observed-vendor-compat] [--reference-f64]\n",
+            "       [--validation-profile auto|etsi-strict|observed-vendor-compat] [--output-format f32|f64]\n",
             "       [--trim-config-count N] [reference-screen options]\n\n",
             "Diagnostic/API-level payload path. Output is a metadata-only scene and separately\n",
             "named ReconstructionBasis rows, decoded-object PCM only within an admitted profile and never authored-object PCM.\n",
@@ -372,7 +373,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "       [--validation-profile auto|etsi-strict|observed-vendor-compat]\n",
             "       [--trim-config-count N] [--internal-base-policy current-default|codec-core]\n",
             "       [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100]\n",
-            "       [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
+            "       [--output-format f32|f64] [--diagnostic-contribution full|base-only|reconstruction-only]\n",
             "       [--no-progress] [--performance-report <FILE.json>] [--overwrite]\n\n",
             "Renders a real supported JOC stream through the experimental JocSpatialBridge.\n",
             "--diagnostic-contribution is expert-only fidelity isolation; FULL is the default.\n",
@@ -1304,7 +1305,7 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
     let input = values.first().filter(|value| !value.starts_with('-'));
     let mut downmix = None;
     let mut internal_base = false;
-    let mut reference_f64 = false;
+    let mut output_format = None;
     let mut validation_profile = ValidationProfileRequest::Auto;
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
@@ -1328,12 +1329,15 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
             continue;
         }
         if flag == "--reference-f64" {
-            reference_f64 = true;
+            select_output_format(&mut output_format, SampleFormat::F64)?;
             index += 1;
             continue;
         }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
+            "--output-format" => {
+                select_output_format(&mut output_format, parse_output_format(value)?)?;
+            }
             "--downmix" => downmix = Some(PathBuf::from(value)),
             "-o" | "--output" => output = Some(PathBuf::from(value)),
             "--validation-profile" => validation_profile = parse_validation_profile(value)?,
@@ -1393,11 +1397,7 @@ fn parse_decode_eac3(values: &[String]) -> Result<DecodeEac3Args, Box<dyn Error>
         downmix,
         internal_base,
         output: output.ok_or_else(usage_error)?,
-        output_format: if reference_f64 {
-            SampleFormat::F64
-        } else {
-            SampleFormat::F32
-        },
+        output_format: output_format.unwrap_or(SampleFormat::F32),
         validation_profile,
         trim_configuration_count,
         internal_base_policy,
@@ -1418,7 +1418,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     let mut binaural_backend = joc_render::BinauralBackend::Direct;
     let mut binaural_backend_requested = false;
     let mut lfe_policy = None;
-    let mut reference_f64 = false;
+    let mut output_format = None;
     let mut validation_profile = ValidationProfileRequest::Auto;
     let mut trim_configuration_count = None;
     let mut internal_base_policy = InternalBasePolicy::CurrentDefault;
@@ -1437,7 +1437,7 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
     while index < values.len() {
         let flag = &values[index];
         if flag == "--reference-f64" {
-            reference_f64 = true;
+            select_output_format(&mut output_format, SampleFormat::F64)?;
             index += 1;
             continue;
         }
@@ -1458,6 +1458,9 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
+            "--output-format" => {
+                select_output_format(&mut output_format, parse_output_format(value)?)?;
+            }
             "--topology" => topology = Some(PathBuf::from(value)),
             "--layout" => layout = Some(value.clone()),
             "--layout-file" => layout_file = Some(PathBuf::from(value)),
@@ -1670,17 +1673,39 @@ fn parse_render_joc(values: &[String]) -> Result<RenderJocArgs, Box<dyn Error>> 
         internal_base_policy,
         dialnorm,
         normalize_peak,
-        output_format: if reference_f64 {
-            SampleFormat::F64
-        } else {
-            SampleFormat::F32
-        },
+        output_format: output_format.unwrap_or(SampleFormat::F32),
         no_progress,
         performance_report,
         diagnostic_contribution,
         downmix_policy,
         overwrite,
     })
+}
+
+/// Selects file sample encoding only; it does not select a different DSP path.
+fn parse_output_format(value: &str) -> Result<SampleFormat, io::Error> {
+    match value {
+        "f32" | "F32" => Ok(SampleFormat::F32),
+        "f64" | "F64" => Ok(SampleFormat::F64),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("unknown output format {value}; expected f32 or f64"),
+        )),
+    }
+}
+
+fn select_output_format(
+    selected: &mut Option<SampleFormat>,
+    requested: SampleFormat,
+) -> Result<(), io::Error> {
+    if selected.is_some_and(|format| format != requested) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "conflicting output formats; --reference-f64 is an alias for --output-format f64",
+        ));
+    }
+    *selected = Some(requested);
+    Ok(())
 }
 
 fn parse_internal_base_policy(value: &str) -> Result<InternalBasePolicy, io::Error> {
@@ -2283,7 +2308,7 @@ fn new_legacy_binaural_renderer(
         )?
     };
     if builtin_hrtf {
-        renderer.mark_builtin_generic_hrtf();
+        renderer.set_builtin_hrtf_provenance(arguments.binaural_hrtf);
     }
     Ok(renderer)
 }
@@ -2523,7 +2548,7 @@ fn render_joc_with_peak_normalization(
     if let Some(report) = performance.as_mut() {
         report.merge_decode(render_pass.decode_timing);
         report.merge_render(&render_pass.render_timing);
-        report.output_conversion_wav_write += postprocess_elapsed;
+        report.output_conversion_file_write += postprocess_elapsed;
         report.output_frames = output_frames;
         report.output_bytes = fs::metadata(&arguments.output)?.len();
         report.progress_enabled = render_progress.enabled();
@@ -2655,7 +2680,7 @@ fn render_joc(
                                 eac3_decode::DecodeEac3Error::Sink(error.to_string())
                             })?;
                         if let Some(output_start) = output_start {
-                            render_timing.output_conversion_wav_write += output_start.elapsed();
+                            render_timing.output_conversion_file_write += output_start.elapsed();
                         }
                     }
                     let stage_timings = renderer.take_stage_timings();
@@ -2689,7 +2714,7 @@ fn render_joc(
                         return Err(error.into());
                     }
                     if let Some(output_start) = output_start {
-                        render_timing.output_conversion_wav_write += output_start.elapsed();
+                        render_timing.output_conversion_file_write += output_start.elapsed();
                     }
                 }
                 let output_frames = output.frames();
@@ -2790,7 +2815,7 @@ fn render_joc(
                             eac3_decode::DecodeEac3Error::Sink(error.to_string())
                         })?;
                         if let Some(output_start) = output_start {
-                            render_timing.output_conversion_wav_write += output_start.elapsed();
+                            render_timing.output_conversion_file_write += output_start.elapsed();
                         }
                     }
                     let stage_timings = renderer.take_stage_timings();
@@ -4072,18 +4097,21 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
     let mut output = None;
     let mut trim_count = None;
     let mut validation_profile = ValidationProfileRequest::Auto;
-    let mut reference_f64 = false;
+    let mut output_format = None;
     let mut screen = [None; 5];
     let mut index = 0;
     while index < values.len() {
         let flag = &values[index];
         if flag == "--reference-f64" {
-            reference_f64 = true;
+            select_output_format(&mut output_format, SampleFormat::F64)?;
             index += 1;
             continue;
         }
         let value = values.get(index + 1).ok_or_else(usage_error)?;
         match flag.as_str() {
+            "--output-format" => {
+                select_output_format(&mut output_format, parse_output_format(value)?)?;
+            }
             "--downmix" => downmix = Some(PathBuf::from(value)),
             "--joc" => joc = Some(PathBuf::from(value)),
             "--oamd" => oamd = Some(PathBuf::from(value)),
@@ -4121,11 +4149,7 @@ fn parse_decode_payload(values: &[String]) -> Result<DecodePayloadArgs, Box<dyn 
         trim_count,
         validation_profile,
         reference_screen,
-        output_format: if reference_f64 {
-            SampleFormat::F64
-        } else {
-            SampleFormat::F32
-        },
+        output_format: output_format.unwrap_or(SampleFormat::F32),
     })
 }
 
@@ -5694,5 +5718,84 @@ mod adm_transaction_tests {
         );
         assert_eq!(fs::read_dir(&root).expect("entries").count(), 3);
         fs::remove_dir_all(root).expect("cleanup");
+    }
+}
+
+#[cfg(test)]
+mod output_format_tests {
+    use super::{parse_decode_eac3, parse_decode_payload, parse_render_joc};
+    use openjoc_wave::SampleFormat;
+
+    fn parse(command: &str, flags: &[&str]) -> Result<SampleFormat, Box<dyn std::error::Error>> {
+        let mut values: Vec<String> = match command {
+            "decode" => vec!["input.ec3", "--internal-base", "-o", "output"],
+            "render-joc" => vec!["input.ec3", "--layout", "7.1.4", "-o", "output.wav"],
+            "decode-payload" => vec![
+                "--downmix",
+                "input.wav",
+                "--joc",
+                "joc.bin",
+                "--oamd",
+                "oamd.bin",
+                "-o",
+                "output",
+            ],
+            _ => unreachable!(),
+        }
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        values.extend(flags.iter().map(|value| (*value).to_owned()));
+        match command {
+            "decode" => parse_decode_eac3(&values).map(|args| args.output_format),
+            "render-joc" => parse_render_joc(&values).map(|args| args.output_format),
+            "decode-payload" => parse_decode_payload(&values).map(|args| args.output_format),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn explicit_output_formats_preserve_defaults_and_legacy_alias() {
+        for command in ["decode", "render-joc", "decode-payload"] {
+            for (flags, expected) in [
+                (vec![], SampleFormat::F32),
+                (vec!["--output-format", "f32"], SampleFormat::F32),
+                (vec!["--output-format", "f64"], SampleFormat::F64),
+                (vec!["--reference-f64"], SampleFormat::F64),
+                (
+                    vec!["--reference-f64", "--reference-f64"],
+                    SampleFormat::F64,
+                ),
+                (
+                    vec!["--reference-f64", "--output-format", "f64"],
+                    SampleFormat::F64,
+                ),
+                (
+                    vec!["--output-format", "f64", "--reference-f64"],
+                    SampleFormat::F64,
+                ),
+            ] {
+                assert_eq!(
+                    parse(command, &flags).unwrap(),
+                    expected,
+                    "{command}: {flags:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn conflicting_or_invalid_output_formats_are_rejected_in_every_parser() {
+        for command in ["decode", "render-joc", "decode-payload"] {
+            for flags in [
+                vec!["--output-format", "f32", "--reference-f64"],
+                vec!["--reference-f64", "--output-format", "f32"],
+                vec!["--output-format", "f32", "--output-format", "f64"],
+                vec!["--output-format", "s24"],
+                vec!["--output-format"],
+            ] {
+                assert!(parse(command, &flags).is_err(), "{command}: {flags:?}");
+            }
+        }
     }
 }

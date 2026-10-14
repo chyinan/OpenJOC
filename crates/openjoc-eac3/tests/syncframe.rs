@@ -1538,6 +1538,72 @@ fn parses_first_audio_block_through_spectral_extension_coordinates() {
 }
 
 #[test]
+fn historical_base_policy_names_preserve_explicit_drc_and_default_pcm_bits() {
+    use openjoc_eac3::decode_audio_frame_pcm_with_policy;
+
+    assert_eq!(
+        InternalBasePolicy::default(),
+        InternalBasePolicy::CurrentDefault
+    );
+    for dynamic_range in [None, Some(0x60), Some(0xa0)] {
+        let bytes = six_block_mono_frame(0, None, dynamic_range);
+        let dither = [0.5; 73];
+        for (legacy, control) in [
+            (
+                InternalBasePolicy::CurrentDefault,
+                DynamicRangeControl::Line,
+            ),
+            (InternalBasePolicy::CodecCore, DynamicRangeControl::Disabled),
+        ] {
+            let explicit = InternalBasePolicy::DynamicRange(control);
+            let legacy_blocks = decode_audio_blocks_with_policy(&bytes, &dither, legacy).unwrap();
+            let explicit_blocks =
+                decode_audio_blocks_with_policy(&bytes, &dither, explicit).unwrap();
+            assert_eq!(legacy_blocks, explicit_blocks);
+            let legacy_pcm = decode_audio_frame_pcm_with_policy(
+                &bytes,
+                &dither,
+                &mut AudioPcmSynthesizer::new(),
+                legacy,
+            )
+            .unwrap();
+            let explicit_pcm = decode_audio_frame_pcm_with_policy(
+                &bytes,
+                &dither,
+                &mut AudioPcmSynthesizer::new(),
+                explicit,
+            )
+            .unwrap();
+            let bits = |pcm: &openjoc_eac3::DecodedAudioPcm| {
+                pcm.channels
+                    .iter()
+                    .map(|channel| {
+                        channel
+                            .iter()
+                            .map(|sample| sample.to_bits())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(bits(&legacy_pcm), bits(&explicit_pcm));
+            assert_eq!(legacy_pcm.lfe, None);
+            assert_eq!(explicit_pcm.lfe, None);
+            if control == DynamicRangeControl::Line {
+                assert_eq!(decode_audio_blocks(&bytes, &dither).unwrap(), legacy_blocks);
+                assert_eq!(
+                    decode_first_audio_block(&bytes, &dither).unwrap(),
+                    legacy_blocks[0]
+                );
+                let default_pcm =
+                    decode_audio_frame_pcm(&bytes, &dither, &mut AudioPcmSynthesizer::new())
+                        .unwrap();
+                assert_eq!(bits(&default_pcm), bits(&legacy_pcm));
+            }
+        }
+    }
+}
+
+#[test]
 fn codec_core_policy_disables_only_optional_dynamic_range_gain() {
     let mut bits = Bits::default();
     bits.push(0x0b77, 16);

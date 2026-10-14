@@ -768,14 +768,14 @@ fn descriptor_for(
                     } => position,
                 }
             };
-            let raw3 = update
+            let additional_table_data = update
                 .additional_table_data
                 .clone()
-                .or_else(|| previous.raw3.clone());
+                .or_else(|| previous.additional_table_data().map(<[u8]>::to_vec));
             let point_size = update.render.size.width == 0.0
                 && update.render.size.depth == 0.0
                 && update.render.size.height == 0.0;
-            let guarded = raw3
+            let guarded = additional_table_data
                 .as_ref()
                 .is_some_and(|value| value.iter().any(|byte| *byte != 0));
             let class = if point_size || update.render.channel_lock || guarded {
@@ -790,7 +790,7 @@ fn descriptor_for(
                 spread: previous.spread.clone(),
                 paired: previous.paired.clone(),
                 pair_span_q15: previous.pair_span_q15,
-                raw3,
+                raw3: additional_table_data,
                 extent: Some([
                     bridge_quantize_extent(update.render.size.width),
                     bridge_quantize_extent(update.render.size.depth),
@@ -817,7 +817,7 @@ fn descriptor_for(
         raw3: update
             .additional_table_data
             .clone()
-            .or_else(|| previous.raw3.clone()),
+            .or_else(|| previous.additional_table_data().map(<[u8]>::to_vec)),
         extent: Some([
             bridge_quantize_extent(update.render.size.width),
             bridge_quantize_extent(update.render.size.depth),
@@ -862,7 +862,7 @@ fn selective_diff(
                     spread: Some(next.descriptor.spread.clone()),
                     paired: Some(next.descriptor.paired.clone()),
                     pair_span_q15: Some(next.descriptor.pair_span_q15),
-                    raw3: Some(next.descriptor.raw3.clone()),
+                    raw3: Some(next.descriptor.additional_table_data().map(<[u8]>::to_vec)),
                     extent: Some(next.descriptor.extent),
                     zones: Some(next.descriptor.zones),
                     channel_lock: Some(Some(next.descriptor.channel_lock)),
@@ -1171,6 +1171,57 @@ mod tests {
         .unwrap();
         assert_eq!(descriptor.raw3, Some(vec![3, 1]));
         assert_eq!(descriptor.source_class, SpatialSourceClass::DynamicPoint);
+    }
+
+    #[test]
+    fn additional_table_nonzero_guard_preserves_dynamic_point_selection() {
+        use openjoc_oamd::{Extent3, ObjectBasicInfo, ObjectRenderInfo, ObjectUpdate};
+        for (additional_table_data, guarded) in [
+            (None, false),
+            (Some(vec![]), false),
+            (Some(vec![0, 0]), false),
+            (Some(vec![0, 1]), true),
+        ] {
+            let update = ObjectUpdate {
+                active: true,
+                basic: ObjectBasicInfo::DEFAULT,
+                render: ObjectRenderInfo {
+                    size: Extent3 {
+                        width: 0.5,
+                        depth: 0.25,
+                        height: 0.125,
+                    },
+                    ..ObjectRenderInfo::DEFAULT
+                },
+                additional_table_data: additional_table_data.clone(),
+            };
+            let previous = crate::SpatialDescriptor::new(
+                SpatialSourceClass::DynamicRegion,
+                "dynamic-0",
+                vec![0.5],
+            );
+            let descriptor = super::descriptor_for(
+                Some(openjoc_oamd::ObjectAnchor::Dynamic),
+                super::CoordinateFamily::Dynamic,
+                &update,
+                &previous,
+                1,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                descriptor.source_class,
+                if guarded {
+                    SpatialSourceClass::DynamicPoint
+                } else {
+                    SpatialSourceClass::DynamicRegion
+                }
+            );
+            assert_eq!(
+                descriptor.additional_table_data(),
+                additional_table_data.as_deref()
+            );
+        }
     }
 
     #[test]

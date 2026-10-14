@@ -4,8 +4,9 @@
 
 use crate::{
     AccessUnitIndex, AudioPcmSynthesizer, BitstreamInformation, DecodedAudioPcm, DialnormMode,
-    DialnormSegment, DialnormState, DownmixMetadata, Eac3DecodeStageTiming, Eac3Error,
-    GENERAL_MAX_DEPENDENT_SUBSTREAMS, InternalBasePolicy, StreamType, SyncframeIndexEntry,
+    DialnormSegment, DialnormState, DownmixMetadata, DynamicRangeControl, Eac3DecodeStageTiming,
+    Eac3Error, GENERAL_MAX_DEPENDENT_SUBSTREAMS, InternalBasePolicy, StreamType,
+    SyncframeIndexEntry,
     audio_block::{DynamicRangeOverride, decode_audio_frame_pcm_with_policy_override_and_timing},
     inspect_audio_block_carriers, parse_audio_frame, parse_bsi,
     validate_short_access_unit_convsync,
@@ -719,7 +720,7 @@ impl JocAccessUnitPcmDecoder {
             frames,
             unit,
             dither_values,
-            InternalBasePolicy::CurrentDefault,
+            InternalBasePolicy::DynamicRange(DynamicRangeControl::Line),
         )
     }
 

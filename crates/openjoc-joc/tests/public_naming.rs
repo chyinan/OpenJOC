@@ -2,9 +2,47 @@
 
 use num_complex::Complex64;
 use openjoc_joc::{
-    QuantMode, decode_full_coefficients, decode_sparse_coefficients, reconstruct_basis_qmf,
-    reconstruct_full, reconstruct_objects, reconstruct_sparse,
+    InterpolatedMatrix, JocBandCount, QuantMode, Slope, decode_full_coefficients,
+    decode_sparse_coefficients, interpolate_matrix, reconstruct_basis_qmf, reconstruct_full,
+    reconstruct_objects, reconstruct_sparse,
 };
+
+#[test]
+fn carry_forward_accessor_borrows_legacy_field_without_changing_bits() {
+    let mut interpolation = InterpolatedMatrix {
+        matrix: vec![],
+        next_previous: vec![[-0.0; 64], [f64::from_bits(0x7ff8_0000_0000_0001); 64]],
+    };
+    assert!(std::ptr::eq(
+        interpolation.carry_forward_coefficients().as_ptr(),
+        interpolation.next_previous.as_ptr()
+    ));
+    assert_eq!(
+        interpolation.carry_forward_coefficients()[0][0].to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    assert_eq!(
+        interpolation.carry_forward_coefficients()[1][0].to_bits(),
+        0x7ff8_0000_0000_0001
+    );
+    interpolation.next_previous.clear();
+    let empty: &[[f64; 64]] = &[];
+    assert_eq!(interpolation.carry_forward_coefficients(), empty);
+
+    for slope in [Slope::Smooth, Slope::Steep] {
+        let interpolated = interpolate_matrix(
+            &[vec![vec![0.25]], vec![vec![-0.5]]],
+            &[[0.0; 64]],
+            slope,
+            &[Some(1), Some(7)],
+            JocBandCount::One,
+            12,
+        )
+        .unwrap();
+        assert_eq!(interpolated.carry_forward_coefficients(), &[[-0.5; 64]]);
+        assert_eq!(interpolated.next_previous, vec![[-0.5; 64]]);
+    }
+}
 
 #[test]
 fn legacy_coefficient_names_preserve_values_and_errors_without_warnings() {

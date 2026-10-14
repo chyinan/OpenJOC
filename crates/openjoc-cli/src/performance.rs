@@ -76,7 +76,7 @@ pub(crate) struct RenderStageTiming {
     pub(crate) bridge_control_assembly: Duration,
     pub(crate) spatial_bridge_render: Duration,
     pub(crate) binaural_render: Duration,
-    pub(crate) output_conversion_wav_write: Duration,
+    pub(crate) output_conversion_file_write: Duration,
     pub(crate) rendered_frames: u64,
     pub(crate) rendered_samples: u64,
 }
@@ -101,7 +101,7 @@ pub(crate) struct RenderPerformance {
     pub(crate) bridge_control_assembly: Duration,
     pub(crate) spatial_bridge_render: Duration,
     pub(crate) binaural_render: Duration,
-    pub(crate) output_conversion_wav_write: Duration,
+    pub(crate) output_conversion_file_write: Duration,
     pub(crate) frame_times: Vec<Duration>,
     pub(crate) sample_rate_hz: Option<u32>,
     pub(crate) processed_access_units: u64,
@@ -129,7 +129,7 @@ impl RenderPerformance {
             bridge_control_assembly: Duration::ZERO,
             spatial_bridge_render: Duration::ZERO,
             binaural_render: Duration::ZERO,
-            output_conversion_wav_write: Duration::ZERO,
+            output_conversion_file_write: Duration::ZERO,
             frame_times: Vec::new(),
             sample_rate_hz: None,
             processed_access_units: 0,
@@ -180,7 +180,7 @@ impl RenderPerformance {
         self.bridge_control_assembly += timing.bridge_control_assembly;
         self.spatial_bridge_render += timing.spatial_bridge_render;
         self.binaural_render += timing.binaural_render;
-        self.output_conversion_wav_write += timing.output_conversion_wav_write;
+        self.output_conversion_file_write += timing.output_conversion_file_write;
         self.rendered_frames += timing.rendered_frames;
     }
 }
@@ -220,7 +220,9 @@ struct StageTimings {
     bridge_control_assembly: f64,
     spatial_bridge_render: f64,
     binaural_render: f64,
-    output_conversion_wav_write: f64,
+    // Keep the performance-report v1 wire key for existing consumers.
+    #[serde(rename = "output_conversion_wav_write")]
+    output_conversion_file_write: f64,
 }
 
 #[derive(Serialize)]
@@ -350,7 +352,7 @@ pub(crate) fn write_report(
             bridge_control_assembly: milliseconds(performance.bridge_control_assembly),
             spatial_bridge_render: milliseconds(performance.spatial_bridge_render),
             binaural_render: milliseconds(performance.binaural_render),
-            output_conversion_wav_write: milliseconds(performance.output_conversion_wav_write),
+            output_conversion_file_write: milliseconds(performance.output_conversion_file_write),
         },
         eac3_decode_stages_ms: eac3_decode_stages(&performance.eac3_stages),
         eac3_decode_workload: eac3_decode_workload(&performance.eac3_stages),

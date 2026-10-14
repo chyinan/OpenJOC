@@ -600,6 +600,24 @@ fn binaural_hrtf_selection_survives_profiling_and_backend_selection() {
             "{name}: {}",
             String::from_utf8_lossy(&result.stderr)
         );
+        if report || backend == "partitioned" {
+            let summary = String::from_utf8(result.stdout).expect("UTF-8 summary");
+            let preset = if hrtf == "sadie-ii-d1-ku100" {
+                openjoc_sofa::BuiltinHrtf::SadieD1Ku100
+            } else {
+                openjoc_sofa::BuiltinHrtf::SadieD2Kemar
+            };
+            let metadata = preset.metadata();
+            assert!(summary.contains(&format!("HRTF source: built-in {}", metadata.id)));
+            assert!(summary.contains(&format!(
+                "HRTF dataset: {}; {}",
+                metadata.dataset, metadata.subject
+            )));
+            assert!(
+                !summary.contains("SOFA: "),
+                "bundled preset is not a user SOFA file"
+            );
+        }
         fs::read(output).expect("rendered WAV")
     };
 
@@ -1749,4 +1767,55 @@ fn streaming_decode_removes_partial_output_after_input_failure() {
         .count();
     assert_eq!(partials, 0, "failed decode left a partial output directory");
     fs::remove_dir_all(&root).expect("remove test directory");
+}
+
+#[test]
+fn canonical_file_format_flags_preserve_legacy_render_bytes() {
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "openjoc-file-format-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("input.ec3");
+    fs::write(&input, synthetic_joc_compressed_input()).unwrap();
+    for extension in ["wav", "caf"] {
+        for profiled in [false, true] {
+            let render = |label: &str, flags: &[&str]| {
+                let output = root.join(format!("{label}-{profiled}.{extension}"));
+                let mut command = Command::new(env!("CARGO_BIN_EXE_openjoc"));
+                command
+                    .arg("render-joc")
+                    .arg(&input)
+                    .args(["--layout", "7.1.4", "--no-progress"])
+                    .args(flags)
+                    .arg("--output")
+                    .arg(&output);
+                if profiled {
+                    command
+                        .arg("--performance-report")
+                        .arg(root.join(format!("{label}-{extension}.json")));
+                }
+                let result = command.output().unwrap();
+                assert!(
+                    result.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                fs::read(output).unwrap()
+            };
+            assert_eq!(
+                render("default", &[]),
+                render("f32", &["--output-format", "f32"])
+            );
+            assert_eq!(
+                render("legacy", &["--reference-f64"]),
+                render("f64", &["--output-format", "f64"])
+            );
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
 }

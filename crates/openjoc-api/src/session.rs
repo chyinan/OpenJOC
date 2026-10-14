@@ -580,11 +580,11 @@ impl OpenJocSession {
         } else {
             self.selected_profile = Some(profile);
         }
-        validate_complexity_index(metadata.complexity_index, parsed_oamd.prefix.object_count)?;
+        let oamd_total_object_count = parsed_oamd.prefix.object_count;
+        validate_complexity_index(metadata.complexity_index, oamd_total_object_count)?;
         self.downmix_index
             .get_or_insert(parsed_joc.header.downmix_index);
-        self.object_count
-            .get_or_insert(parsed_oamd.prefix.object_count);
+        self.object_count.get_or_insert(oamd_total_object_count);
         self.complexity_index
             .get_or_insert(metadata.complexity_index);
         let frame_number = self.next_input_sample / u64::from(unit.samples);

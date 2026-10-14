@@ -2015,11 +2015,11 @@ impl JocBinauralRenderer {
         })
     }
 
-    /// Marks a renderer built from the offline bundled generic resource for
-    /// concise, provenance-aware diagnostics.
-    pub fn mark_builtin_generic_hrtf(&mut self) {
-        "built-in generic".clone_into(&mut self.hrtf_source);
-        openjoc_sofa::BUILTIN_GENERIC_HRTF_DATASET.clone_into(&mut self.hrtf_dataset);
+    /// Records the selected bundled preset for diagnostics without changing audio.
+    pub fn set_builtin_hrtf_provenance(&mut self, preset: openjoc_sofa::BuiltinHrtf) {
+        let metadata = preset.metadata();
+        self.hrtf_source = format!("built-in {}", metadata.id);
+        self.hrtf_dataset = format!("{}; {}", metadata.dataset, metadata.subject);
     }
 
     /// Returns the maximum causal HRIR tail in samples.
@@ -2351,7 +2351,7 @@ impl JocBinauralRenderer {
             "CONTROL.json requirement: none".to_owned(),
             "vendor binaural fidelity: not claimed".to_owned(),
         ];
-        if self.hrtf_source != "built-in generic" {
+        if self.hrtf_source == "user SOFA" {
             extra.insert(
                 2,
                 format!(
