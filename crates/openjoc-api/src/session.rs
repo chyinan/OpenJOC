@@ -21,6 +21,25 @@ use super::{
 };
 use std::fmt::Write as _;
 
+#[derive(Default)]
+struct SessionOptions<'a> {
+    external_asset: Option<&'a [u8]>,
+    custom_sofa_load_limits: Option<SofaLoadLimits>,
+    listener_orientation_enabled: bool,
+    binaural_pull_samples: Option<usize>,
+    initial_stream_epoch: u64,
+    orientation_preparer: Option<ListenerOrientationPreparer>,
+}
+
+fn validate_binaural_pull_samples(max_pull_samples: usize) -> Result<(), OpenJocError> {
+    if max_pull_samples == 0 || max_pull_samples > MAX_LISTENER_ORIENTATION_PULL_SAMPLES {
+        return Err(OpenJocError::InvalidConfig(format!(
+            "binaural pull block must be in 1..={MAX_LISTENER_ORIENTATION_PULL_SAMPLES} samples"
+        )));
+    }
+    Ok(())
+}
+
 // Selection proves this payload parsed under the chosen profile; later
 // topology, complexity and scene admission checks still run in their old order.
 struct SelectedMetadata {
@@ -43,7 +62,13 @@ impl OpenJocSession {
     /// The default [`Self::new`] path remains static. This session expects the
     /// host to prepare poses away from rendering and submit them between calls.
     pub fn new_with_listener_orientation(config: OpenJocConfig) -> Result<Self, OpenJocError> {
-        Self::new_with_session_options(config, None, None, true, None, 0, None)
+        Self::new_with_session_options(
+            config,
+            SessionOptions {
+                listener_orientation_enabled: true,
+                ..SessionOptions::default()
+            },
+        )
     }
 
     /// Creates an opt-in orientation session that exposes projected virtual-speaker
@@ -69,19 +94,15 @@ impl OpenJocSession {
         max_pull_samples: usize,
         stream_epoch: u64,
     ) -> Result<Self, OpenJocError> {
-        if max_pull_samples == 0 || max_pull_samples > MAX_LISTENER_ORIENTATION_PULL_SAMPLES {
-            return Err(OpenJocError::InvalidConfig(format!(
-                "binaural pull block must be in 1..={MAX_LISTENER_ORIENTATION_PULL_SAMPLES} samples"
-            )));
-        }
+        validate_binaural_pull_samples(max_pull_samples)?;
         Self::new_with_session_options(
             config,
-            None,
-            None,
-            true,
-            Some(max_pull_samples),
-            stream_epoch,
-            None,
+            SessionOptions {
+                listener_orientation_enabled: true,
+                binaural_pull_samples: Some(max_pull_samples),
+                initial_stream_epoch: stream_epoch,
+                ..SessionOptions::default()
+            },
         )
     }
 
@@ -93,19 +114,16 @@ impl OpenJocSession {
         stream_epoch: u64,
         preparer: ListenerOrientationPreparer,
     ) -> Result<Self, OpenJocError> {
-        if max_pull_samples == 0 || max_pull_samples > MAX_LISTENER_ORIENTATION_PULL_SAMPLES {
-            return Err(OpenJocError::InvalidConfig(format!(
-                "binaural pull block must be in 1..={MAX_LISTENER_ORIENTATION_PULL_SAMPLES} samples"
-            )));
-        }
+        validate_binaural_pull_samples(max_pull_samples)?;
         Self::new_with_session_options(
             config,
-            None,
-            None,
-            true,
-            Some(max_pull_samples),
-            stream_epoch,
-            Some(preparer),
+            SessionOptions {
+                listener_orientation_enabled: true,
+                binaural_pull_samples: Some(max_pull_samples),
+                initial_stream_epoch: stream_epoch,
+                orientation_preparer: Some(preparer),
+                ..SessionOptions::default()
+            },
         )
     }
 
@@ -121,25 +139,40 @@ impl OpenJocSession {
         config: OpenJocConfig,
         sofa_load_limits: SofaLoadLimits,
     ) -> Result<Self, OpenJocError> {
-        Self::new_with_session_options(config, None, Some(sofa_load_limits), false, None, 0, None)
+        Self::new_with_session_options(
+            config,
+            SessionOptions {
+                custom_sofa_load_limits: Some(sofa_load_limits),
+                ..SessionOptions::default()
+            },
+        )
     }
 
     fn new_with_builtin_hrtf_asset(
         config: OpenJocConfig,
         external_asset: Option<&[u8]>,
     ) -> Result<Self, OpenJocError> {
-        Self::new_with_session_options(config, external_asset, None, false, None, 0, None)
+        Self::new_with_session_options(
+            config,
+            SessionOptions {
+                external_asset,
+                ..SessionOptions::default()
+            },
+        )
     }
 
     fn new_with_session_options(
         config: OpenJocConfig,
-        external_asset: Option<&[u8]>,
-        custom_sofa_load_limits: Option<SofaLoadLimits>,
-        listener_orientation_enabled: bool,
-        binaural_pull_samples: Option<usize>,
-        initial_stream_epoch: u64,
-        orientation_preparer: Option<ListenerOrientationPreparer>,
+        options: SessionOptions<'_>,
     ) -> Result<Self, OpenJocError> {
+        let SessionOptions {
+            external_asset,
+            custom_sofa_load_limits,
+            listener_orientation_enabled,
+            binaural_pull_samples,
+            initial_stream_epoch,
+            orientation_preparer,
+        } = options;
         config.validate()?;
         if listener_orientation_enabled && config.render_mode != RenderMode::Binaural {
             return Err(OpenJocError::InvalidConfig(
@@ -433,8 +466,8 @@ impl OpenJocSession {
         packet: OpenJocPacket<'_>,
     ) -> Result<OpenJocStatus, OpenJocError> {
         let total_start = self.stage_timing_enabled.then(clock_now_ms);
-        if let Some(message) = &self.terminal_error {
-            return Err(OpenJocError::Render(message.clone()));
+        if let Some(error) = &self.terminal_error {
+            return Err(error.legacy_error());
         }
         if self.drained {
             return Err(OpenJocError::AlreadyDrained);
@@ -666,8 +699,8 @@ impl OpenJocSession {
     /// apply pose updates between calls to change the next not-yet-rendered chunk.
     /// Reconstruction and FIR tails are also exposed incrementally after `drain`.
     pub fn receive_binaural_frame(&mut self) -> Result<Option<OpenJocPcmFrame>, OpenJocError> {
-        if let Some(message) = &self.terminal_error {
-            return Err(OpenJocError::Render(message.clone()));
+        if let Some(error) = &self.terminal_error {
+            return Err(error.legacy_error());
         }
         let Some(max_pull_samples) = self.binaural_pull_samples else {
             return Err(OpenJocError::InvalidConfig(
@@ -785,22 +818,13 @@ impl OpenJocSession {
     /// Whether `drain` has completed and no further frame can be received.
     #[must_use]
     pub fn is_drained(&self) -> bool {
-        self.drained
-            && (self.terminal_error.is_some()
-                || (self.output_queue.is_empty()
-                    && self.pending_binaural_inputs.is_empty()
-                    && self.current_binaural_input.is_none()
-                    && (self.binaural_pull_samples.is_none()
-                        || self
-                            .binaural
-                            .as_ref()
-                            .is_none_or(BinauralState::has_no_tail))))
+        self.drain_complete()
     }
 
     /// Flushes delayed QMF/reconstruction and SOFA FIR tail output.
     pub fn drain(&mut self) -> Result<OpenJocStatus, OpenJocError> {
-        if let Some(message) = &self.terminal_error {
-            return Err(OpenJocError::Render(message.clone()));
+        if let Some(error) = &self.terminal_error {
+            return Err(error.legacy_error());
         }
         if self.has_pending_output() {
             return Ok(OpenJocStatus::OutputPending);
@@ -854,13 +878,11 @@ impl OpenJocSession {
                     }
                 }
             }
-            Ok(
-                if !self.has_pending_output() && !self.has_unrendered_pull_tail() {
-                    OpenJocStatus::EndOfStream
-                } else {
-                    OpenJocStatus::FrameAvailable
-                },
-            )
+            Ok(if self.drain_complete() {
+                OpenJocStatus::EndOfStream
+            } else {
+                OpenJocStatus::FrameAvailable
+            })
         })();
         match result {
             Ok(status) => {
@@ -885,10 +907,7 @@ impl OpenJocSession {
     /// Fallible form of [`Self::flush`] that reports a fail-closed orientation
     /// epoch overflow or other reset error.
     pub fn try_flush(&mut self) -> Result<(), OpenJocError> {
-        self.output_queue.clear();
-        self.pending_binaural_inputs.clear();
-        self.current_binaural_input = None;
-        self.pending_binaural_input_samples = 0;
+        self.clear_pending_output();
         match self.reset_stream_state() {
             Ok(()) => {
                 self.drained = false;
@@ -1094,6 +1113,12 @@ impl OpenJocSession {
         Ok(())
     }
 
+    fn drain_complete(&self) -> bool {
+        self.drained
+            && (self.terminal_error.is_some()
+                || (!self.has_pending_output() && !self.has_unrendered_pull_tail()))
+    }
+
     fn has_pending_output(&self) -> bool {
         !self.output_queue.is_empty()
             || !self.pending_binaural_inputs.is_empty()
@@ -1173,3 +1198,7 @@ impl OpenJocSession {
 #[cfg(test)]
 #[path = "selected_metadata_tests.rs"]
 mod metadata_tests;
+
+#[cfg(all(test, feature = "embedded-builtin-hrtf"))]
+#[path = "session_lifecycle_contract.rs"]
+mod lifecycle_contract;

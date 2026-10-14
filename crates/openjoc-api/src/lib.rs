@@ -798,6 +798,25 @@ impl From<openjoc_render::RenderError> for OpenJocError {
     }
 }
 
+// Keep the original category and fields internally, while preserving the
+// historical Render wrapper (including its repeated prefix) at the API boundary.
+struct TerminalError {
+    original: OpenJocError,
+}
+
+impl TerminalError {
+    fn legacy_error(&self) -> OpenJocError {
+        OpenJocError::Render(self.original.to_string())
+    }
+}
+
+impl fmt::Debug for TerminalError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // OpenJocSession derives Debug; keep its former Option<String> output.
+        fmt::Debug::fmt(&self.original.to_string(), formatter)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct LegacyCoreConfiguration {
     bitstream_id: u8,
@@ -838,18 +857,25 @@ pub struct OpenJocSession {
     decode_timing: decode_timing::DecodeTimingState,
     #[cfg(not(target_arch = "wasm32"))]
     render_timing: render_timing::RenderTimingState,
+    // Drain has started (or failed closed); output and FIR tails may remain.
     drained: bool,
-    terminal_error: Option<String>,
+    terminal_error: Option<TerminalError>,
 }
 
 impl OpenJocSession {
-    fn fail_closed(&mut self, error: &OpenJocError) {
+    fn clear_pending_output(&mut self) {
         self.output_queue.clear();
         self.pending_binaural_inputs.clear();
         self.current_binaural_input = None;
         self.pending_binaural_input_samples = 0;
+    }
+
+    fn fail_closed(&mut self, error: &OpenJocError) {
+        self.clear_pending_output();
         self.drained = true;
-        self.terminal_error = Some(error.to_string());
+        self.terminal_error = Some(TerminalError {
+            original: error.clone(),
+        });
     }
 }
 
@@ -1184,3 +1210,9 @@ fn virtual_speaker_direction(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "embedded-builtin-hrtf"))]
+mod terminal_error_contract;
+
+#[cfg(test)]
+mod terminal_error_record_tests;
