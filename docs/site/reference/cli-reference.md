@@ -18,7 +18,7 @@ bin/openjoc export-adm --help
 That historical audit does not cover later source additions. The current
 `--output-format f32|f64` syntax below was checked against locally built current-source
 help; `--reference-f64` remains a compatibility alias. See
-[the file-encoding contract](../../JOC_RENDER.md#file-sample-encoding) for precision
+[the file-encoding contract](https://github.com/chyinan/OpenJOC/blob/047c99f24f27043531908bb1bb9f2e0e92d5cc8d/docs/JOC_RENDER.md#file-sample-encoding) for precision
 and conflict behavior.
 
 The CLI source in `crates/openjoc-cli/src/main.rs` remains the source of truth.

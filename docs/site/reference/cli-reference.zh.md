@@ -16,7 +16,7 @@ bin/openjoc render-joc --help
 bin/openjoc export-adm --help
 ```
 
-上述历史核对不包含后续源码新增功能。下文的 `--output-format f32|f64` 已根据本地构建的当前源码帮助文本核对；`--reference-f64` 仍作为兼容别名保留。精度边界和冲突处理见[文件编码契约](../../JOC_RENDER.md#file-sample-encoding)。
+上述历史核对不包含后续源码新增功能。下文的 `--output-format f32|f64` 已根据本地构建的当前源码帮助文本核对；`--reference-f64` 仍作为兼容别名保留。精度边界和冲突处理见[文件编码契约](https://github.com/chyinan/OpenJOC/blob/047c99f24f27043531908bb1bb9f2e0e92d5cc8d/docs/JOC_RENDER.md#file-sample-encoding)。
 
 CLI 源码 `crates/openjoc-cli/src/main.rs` 仍是唯一准确信息来源。语法发生变化时，请使用当前 CLI 可执行文件重新运行这些 help 命令。
 
