@@ -40,7 +40,7 @@ text and frame-count facts.
 FFmpeg staging/EOF, GStreamer parsing/caps, browser chunks/CMAF and LAV
 negotiation remain adapter-owned. The shared classifier does not manage any
 of their state. The
-[149-case policy contract](../../../crates/openjoc-api/tests/fixtures/admission/README.md)
+[149-case policy contract](https://github.com/chyinan/OpenJOC/blob/cd47e118afb075f4828bdb3f8bd5181eab7cd5ed/crates/openjoc-api/tests/fixtures/admission/README.md)
 freezes both adapters' complete pre-extraction classification transcripts.
 
 ## Data flow
@@ -112,7 +112,7 @@ in `joc_render`, while its private `joc_output` module owns output staging,
 container selection, channel descriptions and incremental WAV/CAF writers.
 The existing publication order, overwrite rules, failure cleanup and error
 text are covered by the
-[complete-file output contract](../../../crates/openjoc-cli/tests/fixtures/output-contract.md).
+[complete-file output contract](https://github.com/chyinan/OpenJOC/blob/cd47e118afb075f4828bdb3f8bd5181eab7cd5ed/crates/openjoc-cli/tests/fixtures/output-contract.md).
 The paired ADM publication transaction remains separately owned by `main.rs`.
 This file-output boundary does not alter session precision, queues or FIR/LFE
 tail handling.
