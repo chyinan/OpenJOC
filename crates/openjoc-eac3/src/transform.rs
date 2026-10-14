@@ -202,7 +202,7 @@ fn inverse_long(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
             imag: even * rotation.real + odd * rotation.imag,
         };
     }
-    let z = inverse_complex(&z, &LONG_INVERSE_ROTATIONS);
+    let z = inverse_dft_unnormalized(&z, &LONG_INVERSE_ROTATIONS);
     let mut y = [Complex::default(); QUARTER_SAMPLES];
     for n in 0..QUARTER_SAMPLES {
         let rotation = LONG_ROTATIONS[n];
@@ -233,14 +233,14 @@ fn inverse_short(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
         first[index] = coefficients[2 * index];
         second[index] = coefficients[2 * index + 1];
     }
-    let z1 = pre_short(&first);
-    let z2 = pre_short(&second);
-    let raw_y1 = inverse_complex(&z1, &SHORT_INVERSE_ROTATIONS);
-    let raw_y2 = inverse_complex(&z2, &SHORT_INVERSE_ROTATIONS);
+    let z1 = pre_rotate_short_transform(&first);
+    let z2 = pre_rotate_short_transform(&second);
+    let raw_y1 = inverse_dft_unnormalized(&z1, &SHORT_INVERSE_ROTATIONS);
+    let raw_y2 = inverse_dft_unnormalized(&z2, &SHORT_INVERSE_ROTATIONS);
     let y1: [Complex; EIGHTH_SAMPLES] =
-        std::array::from_fn(|index| post_short(raw_y1[index], index));
+        std::array::from_fn(|index| post_rotate_short_transform(raw_y1[index], index));
     let y2: [Complex; EIGHTH_SAMPLES] =
-        std::array::from_fn(|index| post_short(raw_y2[index], index));
+        std::array::from_fn(|index| post_rotate_short_transform(raw_y2[index], index));
     let mut output = vec![0.0; TRANSFORM_SAMPLES];
     for n in 0..EIGHTH_SAMPLES {
         let value1 = y1[n];
@@ -257,7 +257,8 @@ fn inverse_short(coefficients: &[f64]) -> Result<Vec<f64>, Eac3Error> {
     Ok(output)
 }
 
-fn pre_short(coefficients: &[f64; QUARTER_SAMPLES]) -> [Complex; EIGHTH_SAMPLES] {
+// Packs and pre-rotates the short-transform coefficients for the inverse DFT.
+fn pre_rotate_short_transform(coefficients: &[f64; QUARTER_SAMPLES]) -> [Complex; EIGHTH_SAMPLES] {
     let mut z = [Complex::default(); EIGHTH_SAMPLES];
     for k in 0..EIGHTH_SAMPLES {
         let rotation = SHORT_ROTATIONS[k];
@@ -271,7 +272,8 @@ fn pre_short(coefficients: &[f64; QUARTER_SAMPLES]) -> [Complex; EIGHTH_SAMPLES]
     z
 }
 
-fn post_short(value: Complex, index: usize) -> Complex {
+// Post-rotates one inverse-DFT value before short-transform sample reordering.
+fn post_rotate_short_transform(value: Complex, index: usize) -> Complex {
     let rotation = SHORT_ROTATIONS[index];
     Complex {
         real: value.real * rotation.real - value.imag * rotation.imag,
@@ -293,7 +295,11 @@ fn inverse_rotation_table(length: usize, stride: f64) -> Vec<Complex> {
     rotations
 }
 
-fn inverse_complex<const N: usize>(input: &[Complex; N], rotations: &[Complex]) -> [Complex; N] {
+// Direct inverse complex DFT: positive-exponent rotations, with no 1/N scaling.
+fn inverse_dft_unnormalized<const N: usize>(
+    input: &[Complex; N],
+    rotations: &[Complex],
+) -> [Complex; N] {
     debug_assert_eq!(rotations.len(), N * N);
     let mut output = [Complex::default(); N];
     for (value, row) in output.iter_mut().zip(rotations.chunks_exact(N)) {

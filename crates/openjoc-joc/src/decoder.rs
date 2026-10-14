@@ -1,9 +1,9 @@
 // pattern: Functional Core
 
 use crate::{
-    JocBandCount, JocFrame, JocParseError, JocPayloadData, ReconstructionError, dequantize,
-    interpolate_matrix, parse_joc_payload, reconstruct_full, reconstruct_objects,
-    reconstruct_sparse,
+    JocBandCount, JocFrame, JocParseError, JocPayloadData, ReconstructionError,
+    decode_full_coefficients, decode_sparse_coefficients, dequantize, interpolate_matrix,
+    parse_joc_payload, reconstruct_basis_qmf,
 };
 use num_complex::Complex64;
 use openjoc_qmf::{QMF_ROUNDTRIP_LATENCY_SAMPLES, ReferenceQmf64F64};
@@ -432,7 +432,7 @@ impl JocDecoderState {
                             vector_symbols,
                         },
                         true,
-                    ) => reconstruct_sparse(
+                    ) => decode_sparse_coefficients(
                         frame.header.channel_count,
                         mode,
                         *initial_channel,
@@ -445,7 +445,7 @@ impl JocDecoderState {
                             .map(|code| code.symbol)
                             .collect::<Vec<_>>(),
                     )?,
-                    (JocPayloadData::Full { matrix_symbols }, false) => reconstruct_full(
+                    (JocPayloadData::Full { matrix_symbols }, false) => decode_full_coefficients(
                         mode,
                         &matrix_symbols
                             .iter()
@@ -504,7 +504,7 @@ impl JocDecoderState {
             }));
         }
         let matrix_start = self.timing_start();
-        let reconstruction_qmf = reconstruct_objects(inputs, &object_matrices)?;
+        let reconstruction_qmf = reconstruct_basis_qmf(inputs, &object_matrices)?;
         self.record_timing(|timing| &mut timing.matrix_reconstruction, matrix_start);
         let buffer_start = self.timing_start();
         let mut synthesis_states =

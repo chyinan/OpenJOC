@@ -1,7 +1,8 @@
 use num_complex::Complex64;
 use openjoc_joc::{
-    JocBandCount, QuantMode, ReconstructionError, Slope, dequantize, interpolate_matrix,
-    qmf_subband_to_parameter_band, reconstruct_full, reconstruct_objects, reconstruct_sparse,
+    JocBandCount, QuantMode, ReconstructionError, Slope, decode_full_coefficients,
+    decode_sparse_coefficients, dequantize, interpolate_matrix, qmf_subband_to_parameter_band,
+    reconstruct_basis_qmf,
 };
 
 fn assert_close(actual: f64, expected: f64) {
@@ -10,7 +11,7 @@ fn assert_close(actual: f64, expected: f64) {
 
 #[test]
 fn sparse_and_full_differential_paths_follow_distinct_clause_6_6_2_rules() {
-    let sparse = reconstruct_sparse(5, QuantMode::Coarse96, 1, &[1, 2], &[0, 1, 95])
+    let sparse = decode_sparse_coefficients(5, QuantMode::Coarse96, 1, &[1, 2], &[0, 1, 95])
         .expect("valid sparse values");
     assert_eq!(sparse.len(), 5);
     assert_eq!(sparse[1][0], 50);
@@ -24,7 +25,7 @@ fn sparse_and_full_differential_paths_follow_distinct_clause_6_6_2_rules() {
         }
     }
 
-    let full = reconstruct_full(QuantMode::Coarse96, &[vec![0, 1, 95], vec![95, 2, 1]])
+    let full = decode_full_coefficients(QuantMode::Coarse96, &[vec![0, 1, 95], vec![95, 2, 1]])
         .expect("valid full values");
     assert_eq!(full, vec![vec![48, 49, 48], vec![47, 49, 50]]);
 }
@@ -32,15 +33,15 @@ fn sparse_and_full_differential_paths_follow_distinct_clause_6_6_2_rules() {
 #[test]
 fn differential_decoders_reject_malformed_dimensions_and_symbols() {
     assert!(matches!(
-        reconstruct_sparse(5, QuantMode::Coarse96, 5, &[], &[0]),
+        decode_sparse_coefficients(5, QuantMode::Coarse96, 5, &[], &[0]),
         Err(ReconstructionError::InvalidChannel { .. })
     ));
     assert!(matches!(
-        reconstruct_sparse(5, QuantMode::Coarse96, 0, &[1], &[0]),
+        decode_sparse_coefficients(5, QuantMode::Coarse96, 0, &[1], &[0]),
         Err(ReconstructionError::DimensionMismatch { .. })
     ));
     assert!(matches!(
-        reconstruct_full(QuantMode::Coarse96, &[vec![96]]),
+        decode_full_coefficients(QuantMode::Coarse96, &[vec![96]]),
         Err(ReconstructionError::QuantizedValueOutOfRange { .. })
     ));
 }
@@ -168,14 +169,14 @@ fn smooth_and_steep_interpolation_preserve_cross_frame_state() {
 }
 
 #[test]
-fn object_reconstruction_zeroes_outputs_and_performs_complex_matrix_multiply() {
+fn basis_qmf_reconstruction_zeroes_outputs_and_performs_complex_matrix_multiply() {
     let inputs = vec![
         vec![[Complex64::new(1.0, 2.0); 64]],
         vec![[Complex64::new(3.0, -1.0); 64]],
     ];
     let matrices = vec![vec![vec![[2.0; 64]], vec![[-0.5; 64]]]];
 
-    let output = reconstruct_objects(&inputs, &matrices).expect("matching dimensions");
+    let output = reconstruct_basis_qmf(&inputs, &matrices).expect("matching dimensions");
     assert_eq!(output.len(), 1);
     assert!(
         output[0][0]
@@ -183,13 +184,13 @@ fn object_reconstruction_zeroes_outputs_and_performs_complex_matrix_multiply() {
             .all(|sample| *sample == Complex64::new(0.5, 4.5))
     );
 
-    let zero = reconstruct_objects(&inputs, &[vec![vec![[0.0; 64]], vec![[0.0; 64]]]])
+    let zero = reconstruct_basis_qmf(&inputs, &[vec![vec![[0.0; 64]], vec![[0.0; 64]]]])
         .expect("zero matrix");
     assert!(zero[0][0].iter().all(|sample| *sample == Complex64::ZERO));
 }
 
 #[test]
-fn object_reconstruction_preserves_three_matrix_ordinals_including_zero_middle_row() {
+fn basis_qmf_reconstruction_preserves_three_matrix_ordinals_including_zero_middle_row() {
     let inputs = vec![
         vec![[Complex64::new(2.0, 3.0); 64]],
         vec![[Complex64::new(-5.0, 7.0); 64]],
@@ -200,7 +201,7 @@ fn object_reconstruction_preserves_three_matrix_ordinals_including_zero_middle_r
         vec![vec![[0.0; 64]], vec![[1.0; 64]]],
     ];
 
-    let output = reconstruct_objects(&inputs, &matrices).expect("matching dimensions");
+    let output = reconstruct_basis_qmf(&inputs, &matrices).expect("matching dimensions");
 
     assert_eq!(output.len(), 3);
     assert!(

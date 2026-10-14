@@ -121,12 +121,15 @@ pub struct InterpolatedMatrix {
     pub next_previous: Vec<[f64; QMF_SUBBANDS]>,
 }
 
-/// Applies sparse differential decoding exactly as clause 6.6.2 pseudocode 2.
+/// Differentially decodes sparse symbols into quantized coefficient matrices.
+///
+/// Applies clause 6.6.2 pseudocode 2. The output layout is `[channel][band]`;
+/// the coefficients still require dequantization.
 ///
 /// # Errors
 ///
 /// Returns [`ReconstructionError`] for invalid channels, dimensions, or symbols.
-pub fn reconstruct_sparse(
+pub fn decode_sparse_coefficients(
     channel_count: u8,
     mode: QuantMode,
     initial_channel: u8,
@@ -185,12 +188,15 @@ pub fn reconstruct_sparse(
     Ok(matrix)
 }
 
-/// Applies full-matrix differential decoding as clause 6.6.2 pseudocode 3.
+/// Differentially decodes full-matrix symbols into quantized coefficients.
+///
+/// Applies clause 6.6.2 pseudocode 3. The output layout is `[channel][band]`;
+/// the coefficients still require dequantization.
 ///
 /// # Errors
 ///
 /// Returns [`ReconstructionError`] for empty/ragged matrices or invalid symbols.
-pub fn reconstruct_full(
+pub fn decode_full_coefficients(
     mode: QuantMode,
     matrix_symbols: &[Vec<u16>],
 ) -> Result<Vec<Vec<u16>>, ReconstructionError> {
@@ -403,15 +409,17 @@ pub fn interpolate_matrix(
     })
 }
 
-/// Applies clause 6.6.6 complex QMF matrix multiplication.
+/// Reconstructs basis-row QMF values by clause 6.6.6 complex matrix multiplication.
 ///
 /// Inputs use `[channel][timeslot][subband]`; matrices use
-/// `[object][channel][timeslot][subband]`.
+/// `[basis_row][channel][timeslot][subband]`, and outputs use
+/// `[basis_row][timeslot][subband]`. Rows retain matrix order; this stage does
+/// not assign authored-object identities or synthesize PCM.
 ///
 /// # Errors
 ///
 /// Returns [`ReconstructionError`] for any mismatched channel/timeslot shape.
-pub fn reconstruct_objects(
+pub fn reconstruct_basis_qmf(
     inputs: &[Vec<[Complex64; QMF_SUBBANDS]>],
     matrices: &[Vec<Vec<[f64; QMF_SUBBANDS]>>],
 ) -> Result<Vec<Vec<[Complex64; QMF_SUBBANDS]>>, ReconstructionError> {

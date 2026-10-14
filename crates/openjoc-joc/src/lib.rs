@@ -16,9 +16,24 @@ pub use parser::{
     Slope, parse_joc_payload,
 };
 pub use reconstruction::{
-    InterpolatedMatrix, JocBandCount, ReconstructionError, dequantize, interpolate_matrix,
-    qmf_subband_to_parameter_band, reconstruct_full, reconstruct_objects, reconstruct_sparse,
+    InterpolatedMatrix, JocBandCount, ReconstructionError, decode_full_coefficients,
+    decode_sparse_coefficients, dequantize, interpolate_matrix, qmf_subband_to_parameter_band,
+    reconstruct_basis_qmf,
 };
+
+/// Compatibility name for [`decode_full_coefficients`].
+///
+/// Retained without deprecation warnings for existing callers.
+pub use reconstruction::decode_full_coefficients as reconstruct_full;
+/// Compatibility name for [`decode_sparse_coefficients`].
+///
+/// Retained without deprecation warnings for existing callers.
+pub use reconstruction::decode_sparse_coefficients as reconstruct_sparse;
+/// Compatibility name for [`reconstruct_basis_qmf`].
+///
+/// Its output contains reconstruction basis rows, not authored-object identities.
+/// Retained without deprecation warnings for existing callers.
+pub use reconstruction::reconstruct_basis_qmf as reconstruct_objects;
 
 mod generated {
     include!("generated_etsi_tables.rs");
