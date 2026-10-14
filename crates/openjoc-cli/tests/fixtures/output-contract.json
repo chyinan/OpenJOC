@@ -1,0 +1,370 @@
+{
+  "2.0-f32.caf": {
+    "bytes": 268,
+    "sha256": "764bc2d6f5874fd2c8210d3bef6ed080ae1f3140c686074fb2aa809ef06c6950"
+  },
+  "2.0-f32.wav": {
+    "bytes": 204,
+    "sha256": "90a5adf807862a1d30ebd7202051b985e365718a6c376684cc1d407a1c463f18"
+  },
+  "2.0-f64.caf": {
+    "bytes": 404,
+    "sha256": "234e0f63aa0ac06081cdf6e87a8bd9c47caba9f8c758884aa65069823ad64aed"
+  },
+  "2.0-f64.wav": {
+    "bytes": 340,
+    "sha256": "bf5e3185b3c33b8e90fa27aadec6be0b93a3c58170161584eb69f8247b580e36"
+  },
+  "2.0-s16.caf": {
+    "bytes": 200,
+    "sha256": "9c246380eb4eebd04db7d8c274af1e2176020f5c0365fc4b6e0e748fd67f9136"
+  },
+  "2.0-s16.wav": {
+    "bytes": 136,
+    "sha256": "a31c3a54df2c6e64b99b7a5b2930ead2f52762607308cfbc11f080b1c0d2cd6b"
+  },
+  "2.0-s24.caf": {
+    "bytes": 234,
+    "sha256": "19137457ade0aef22d27555d93ba3c15a02f93516956c08feb71faf9eee41f8b"
+  },
+  "2.0-s24.wav": {
+    "bytes": 170,
+    "sha256": "c39f81e14b1e2cd2dfa29f0bd894196abf5b3ad78ac574f31a8844cf82ff2f0a"
+  },
+  "22.2-f32.caf": {
+    "bytes": 2204,
+    "sha256": "f5e7a168ea418dfb0a381d98190d82345097d62d2ec26072db0f99fa553d49e9"
+  },
+  "22.2-f32.wav": {
+    "bytes": 1676,
+    "sha256": "4e1d7bfb9ea33386ea74d1817e103abbeb63e624379b15b4686438a7c1421259"
+  },
+  "22.2-f64.caf": {
+    "bytes": 3836,
+    "sha256": "f592dd776f89d68b50706fde35c1145dca8a346af5fc88a54f71010260eaf6ca"
+  },
+  "22.2-f64.wav": {
+    "bytes": 3308,
+    "sha256": "635265293df7a458d9bcc9ba04797e271166b86ec08f928a68c66b78a3057076"
+  },
+  "22.2-s16.caf": {
+    "bytes": 1388,
+    "sha256": "c588994d23b2d7b9fc91e3f4a100e2fbc61f1ed145f37964d9a89527a9711ab5"
+  },
+  "22.2-s16.wav": {
+    "bytes": 860,
+    "sha256": "b2dac834407c30253540eb1d50bfa51c04dd8376f12b9481f44b82eb92d99b11"
+  },
+  "22.2-s24.caf": {
+    "bytes": 1796,
+    "sha256": "cb4a82f85bf0bf94df6f167c66e559dfbc29761944b4fca110de03d5c44a46fb"
+  },
+  "22.2-s24.wav": {
+    "bytes": 1268,
+    "sha256": "b49d6dc53ca7724ea591527d022a6a49c86e79223222adbe85628debd1244cbc"
+  },
+  "5.1-f32.caf": {
+    "bytes": 620,
+    "sha256": "55cb42d4ea2b330e27c48b5483e5b849821ebe459ca4b32c24b95543fda6542a"
+  },
+  "5.1-f32.wav": {
+    "bytes": 476,
+    "sha256": "3fbf218d352c795ea47129f500dcdbf66a4fe6393bacd764e7ef72d9c038a721"
+  },
+  "5.1-f64.caf": {
+    "bytes": 1028,
+    "sha256": "2e24ac29ad0ffe1d219fa959548e134bff730a756668b6f28effe3e45dec8323"
+  },
+  "5.1-f64.wav": {
+    "bytes": 884,
+    "sha256": "260f90dc47bdc0ce2661a6beb39cf1a178c81b940e2359c375a6693c952b72be"
+  },
+  "5.1-s16.caf": {
+    "bytes": 416,
+    "sha256": "219ddf382036315e7f18bc40f53cb118ff9a57f325079c0c16306ed85708e9e2"
+  },
+  "5.1-s16.wav": {
+    "bytes": 272,
+    "sha256": "b8f91b8812c7a141762fbf295e9863439c413db0ebe8baa680ac28297aaf80da"
+  },
+  "5.1-s24.caf": {
+    "bytes": 518,
+    "sha256": "779e4f334067a7148bcdf860c15560e7e3a3766f9256b0b177547d39f2c9603a"
+  },
+  "5.1-s24.wav": {
+    "bytes": 374,
+    "sha256": "111e5fed1ccf7a6d9542156e10c9b5f9fb1b6fe054f9f1731510c2782ee69632"
+  },
+  "5.1.2-f32.caf": {
+    "bytes": 796,
+    "sha256": "96705f8afc6653ead2a35c94405abf823f52c64d8412b250e27385c75bfaae96"
+  },
+  "5.1.2-f32.wav": {
+    "bytes": 612,
+    "sha256": "d8518e27693828fada101d170f142a9cdd6c22426c01e4d304b6376a1755192b"
+  },
+  "5.1.2-f64.caf": {
+    "bytes": 1340,
+    "sha256": "b4403e9f3aae679d635cde137441c7c3c7099e98e8bec3a0145f59ec48678c81"
+  },
+  "5.1.2-f64.wav": {
+    "bytes": 1156,
+    "sha256": "7a4eceb601969bf7ff0a63f91ad9f472026e3e03058d953ec5a82096b8b9a87a"
+  },
+  "5.1.2-s16.caf": {
+    "bytes": 524,
+    "sha256": "d565f3bab336b310171b36c309214c9f17c52d3f21273786c3c7e4c52dc54b3f"
+  },
+  "5.1.2-s16.wav": {
+    "bytes": 340,
+    "sha256": "ea98746516cd48f77c665fd73a59e44f1882436c333f2850de9784a4934b2207"
+  },
+  "5.1.2-s24.caf": {
+    "bytes": 660,
+    "sha256": "298860c7d7e0c35bea50bf4fccfe5d3cde3e70bd221cb6e244cd565c10e70d2f"
+  },
+  "5.1.2-s24.wav": {
+    "bytes": 476,
+    "sha256": "c1d67be3070917ddfdc8a8e4ac54bd042bebd74be60acd7909ac4829f1c4fc8c"
+  },
+  "5.1.4-f32.caf": {
+    "bytes": 972,
+    "sha256": "2a1b019b6e64c41258b444b495f107230c94c3aee40262e1a90e3c67b8cad19e"
+  },
+  "5.1.4-f32.wav": {
+    "bytes": 748,
+    "sha256": "2de3cdd42524ceccca5c678b83d16727205b167a0d8b6c266008a1f0cad31877"
+  },
+  "5.1.4-f64.caf": {
+    "bytes": 1652,
+    "sha256": "d8edf2ac56b8a8c2e4d7c90d4a179ba375bb8e0efdb50e76998172f2ee697ba0"
+  },
+  "5.1.4-f64.wav": {
+    "bytes": 1428,
+    "sha256": "1df0c4761ac59c118f2786f2a24960411ee705c0d7791170ff7355957f667d39"
+  },
+  "5.1.4-s16.caf": {
+    "bytes": 632,
+    "sha256": "4bb047586fb616cfeec6c833a78cbc9f1d068201ef6c731ee1b2abf36b2b5bfa"
+  },
+  "5.1.4-s16.wav": {
+    "bytes": 408,
+    "sha256": "b65a6a7b79ee83a128217ac09d95a7dbc6a2af026dda34c1188ceb8a51c643e6"
+  },
+  "5.1.4-s24.caf": {
+    "bytes": 802,
+    "sha256": "c31f8dd2da309ffa9267d25cf2dd4c58d9a0262949a284a4fc9ab2d3b6c94e23"
+  },
+  "5.1.4-s24.wav": {
+    "bytes": 578,
+    "sha256": "4df74bc7e564054c7799527f5c7c77a6906ab17433db879489ac6b7af7af1710"
+  },
+  "7.1-f32.caf": {
+    "bytes": 796,
+    "sha256": "571c2d264aaea3daaa1753adfaea6fe733766a63255b3ee318d319e89a087a5d"
+  },
+  "7.1-f32.wav": {
+    "bytes": 612,
+    "sha256": "ef1b998673c9cbd4c163e3ad2c125ed87606b3870592f43ed9c06bb4846ef3e6"
+  },
+  "7.1-f64.caf": {
+    "bytes": 1340,
+    "sha256": "7fc16094e1ccbea397fffc77d93330cfd2ca6bf2a7c52dbc4ac6da3c94a1b8ec"
+  },
+  "7.1-f64.wav": {
+    "bytes": 1156,
+    "sha256": "b51a5b9187669221f25e5c6533d2b0bcdcc37611c5c084b5eb1eb01872d0958e"
+  },
+  "7.1-s16.caf": {
+    "bytes": 524,
+    "sha256": "8a6fd6615dff0ab93d85d3af93f8ae6c4423bd0475203d16a5667ff33315750f"
+  },
+  "7.1-s16.wav": {
+    "bytes": 340,
+    "sha256": "15d5eb39f197bfbb2249821286f61cbe0d7b5766266b62dfc2657b6cedb0232b"
+  },
+  "7.1-s24.caf": {
+    "bytes": 660,
+    "sha256": "baf76a912e6da736d21c91595535f99fc7fc6c38b30dca9883d262f5c42b6c87"
+  },
+  "7.1-s24.wav": {
+    "bytes": 476,
+    "sha256": "71a1a2c8bb6ae805ed98b14295d6d040c77f8e3576114abc8c8b79fff8357820"
+  },
+  "7.1.2-f32.caf": {
+    "bytes": 972,
+    "sha256": "b31d6707a579cfd9a26d236cfe2ca5665699898cfdfe5221f82e1e46ae4e8040"
+  },
+  "7.1.2-f32.wav": {
+    "bytes": 748,
+    "sha256": "05dd8adf9e86be27fb8730aa156ae4860d962aa5903418c78d5972be9f965aa4"
+  },
+  "7.1.2-f64.caf": {
+    "bytes": 1652,
+    "sha256": "5f8c0d6890541ea715972fc304f3d295cea98859bcebcc5f2d586b38bc3f3987"
+  },
+  "7.1.2-f64.wav": {
+    "bytes": 1428,
+    "sha256": "9bc29559c534fdc0b2cdb71f84a7d5e34fee2e4f17afaa7def7375bf3e65a411"
+  },
+  "7.1.2-s16.caf": {
+    "bytes": 632,
+    "sha256": "5604bebedf16f89682138456e8bffe7f0f33fbdf1126cd53d80761f798d5ce5a"
+  },
+  "7.1.2-s16.wav": {
+    "bytes": 408,
+    "sha256": "6a0a54acca8fe19c7c9a0f2f525d930d762f8192a30e01bd19d4242bcf3e292c"
+  },
+  "7.1.2-s24.caf": {
+    "bytes": 802,
+    "sha256": "70de222cc7dc197b442c6958a7908311dc28e5cf8304e2f63683c689b482f1f6"
+  },
+  "7.1.2-s24.wav": {
+    "bytes": 578,
+    "sha256": "e5bdb89919fca09bd5a5123a8da634879d5677110e9655ee1856e6883da3f796"
+  },
+  "7.1.4-f32.caf": {
+    "bytes": 1148,
+    "sha256": "88d8f5a2942b22330cea058048983cdaab1c91817860fb892aded24b6a73cd00"
+  },
+  "7.1.4-f32.wav": {
+    "bytes": 884,
+    "sha256": "bce1cddce2d6d93400d6c79a71ca71889f07ca2a6aa41a8b06ccae09495d4ba7"
+  },
+  "7.1.4-f64.caf": {
+    "bytes": 1964,
+    "sha256": "d819699629c08828e6715216a0936e6d09a516121ff23455cc271894781091d4"
+  },
+  "7.1.4-f64.wav": {
+    "bytes": 1700,
+    "sha256": "395c5c7b4e43e0f8b05a7750dd9f3ed277bfe3a715623bd41c128e98ef7659b3"
+  },
+  "7.1.4-s16.caf": {
+    "bytes": 740,
+    "sha256": "4ab3ee9936a29cf4dbfbfba8fa1e818016f95fc0fd67e68cbe743f8d4e726a52"
+  },
+  "7.1.4-s16.wav": {
+    "bytes": 476,
+    "sha256": "cc78d890df8c22ffd9da4b06eaab154c6ed64b68c60471eee79554184bf05179"
+  },
+  "7.1.4-s24.caf": {
+    "bytes": 944,
+    "sha256": "5e9d23ebe31e0af3ac2eca94fc20f6126ed5b870c6b16f40590f01409e683c22"
+  },
+  "7.1.4-s24.wav": {
+    "bytes": 680,
+    "sha256": "ab671c307af245d81b5ca837370c96d8cc39a6cd161ac75bbe581d92bde61233"
+  },
+  "7.1.6-f32.caf": {
+    "bytes": 1324,
+    "sha256": "f68dcad00e6fe83b42a8b2701f9186eac1eacd56f12e210f2d62f0600861c2a9"
+  },
+  "7.1.6-f64.caf": {
+    "bytes": 2276,
+    "sha256": "159db9baa4e7390d07f24d981b30c1e175754bad7aa487bbaefccb0e901be386"
+  },
+  "7.1.6-s16.caf": {
+    "bytes": 848,
+    "sha256": "f62a49957498ca110a5c86371525558e0ab1178439ea7111450c358f20a89cbf"
+  },
+  "7.1.6-s24.caf": {
+    "bytes": 1086,
+    "sha256": "f8e33082d3a3c8763c92d2c1bdafb3413eacf35d5982308f6f3311b7c737c883"
+  },
+  "9.1-f32.caf": {
+    "bytes": 972,
+    "sha256": "60de7baf5dc0aef1550b5c894ea3198b1f0b1bfc6358ac6f472bee48c64304a9"
+  },
+  "9.1-f64.caf": {
+    "bytes": 1652,
+    "sha256": "c1ba43a8651eb8bbf86b8120da3f03e072b511869868d48edc3eafdff51d50d0"
+  },
+  "9.1-s16.caf": {
+    "bytes": 632,
+    "sha256": "cda7c579a8685cffd2ca1aed622a6df82a6bea0fc418053c3a454da66ee86b70"
+  },
+  "9.1-s24.caf": {
+    "bytes": 802,
+    "sha256": "cad1d22f9e52fafd6c952841b192110733737a306b0c41800ba651af2be1930d"
+  },
+  "9.1.2-f32.caf": {
+    "bytes": 1148,
+    "sha256": "5f9d2b2d496c1a7ea523c0c82e694c95855bfe7b80309a602aa763ac70916817"
+  },
+  "9.1.2-f64.caf": {
+    "bytes": 1964,
+    "sha256": "e768fb2bd64eb0c399c16fc3a70d125a8cf57388d0d8978b2adcf1424965d1bc"
+  },
+  "9.1.2-s16.caf": {
+    "bytes": 740,
+    "sha256": "96fa614cf161af645abc7f8cdf7d686fa2977c7b05ada0ab5b3698bff13e8697"
+  },
+  "9.1.2-s24.caf": {
+    "bytes": 944,
+    "sha256": "506decbb4f225ed0f7195242f20fd754b2dafdeae5f3b67c70b891997aab259d"
+  },
+  "9.1.4-f32.caf": {
+    "bytes": 1324,
+    "sha256": "34c0d342b3876d2c4b6b152516a7ef6944943b7c307a968445b72e3296229e42"
+  },
+  "9.1.4-f64.caf": {
+    "bytes": 2276,
+    "sha256": "3bd07245dbf73ae35e21cf562b9f8ba1719f9daa8e7d73d013fd78d5c0346e5a"
+  },
+  "9.1.4-s16.caf": {
+    "bytes": 848,
+    "sha256": "b16e0e544d2779ffb9a2dd23972e87d9e836f0673538bfd23e525a65478d1667"
+  },
+  "9.1.4-s24.caf": {
+    "bytes": 1086,
+    "sha256": "04760aecb10125cb3dae754bb7b7c70ae1e8f6739d90eb194cab99145c5f2cc9"
+  },
+  "9.1.6-f32.caf": {
+    "bytes": 1500,
+    "sha256": "8aac32dbdccaa49271ca9c44066003ce53acd63be8a0b81e6e6ff3c9f8b7cbbb"
+  },
+  "9.1.6-f64.caf": {
+    "bytes": 2588,
+    "sha256": "ce9c897b8fc7166fba9ffaace5bc4ef0c030fef14e380d4142919f8c4a3fc1b3"
+  },
+  "9.1.6-s16.caf": {
+    "bytes": 956,
+    "sha256": "90036c59ee8120d26f842ced20db28cb2fa91f08b941086539477457c9488efb"
+  },
+  "9.1.6-s24.caf": {
+    "bytes": 1228,
+    "sha256": "4e408c400b1539e652976ca661ce5e488fd31cdaf69a7c50e066e978a0ab6411"
+  },
+  "binaural-f32.caf": {
+    "bytes": 268,
+    "sha256": "764bc2d6f5874fd2c8210d3bef6ed080ae1f3140c686074fb2aa809ef06c6950"
+  },
+  "binaural-f32.wav": {
+    "bytes": 180,
+    "sha256": "b94b4ae6eff5b837552b6b2dfba076edca4f3f0a844402c30c84d2a670833eda"
+  },
+  "binaural-f64.caf": {
+    "bytes": 404,
+    "sha256": "234e0f63aa0ac06081cdf6e87a8bd9c47caba9f8c758884aa65069823ad64aed"
+  },
+  "binaural-f64.wav": {
+    "bytes": 316,
+    "sha256": "c35421f4316e0930aad307cc01198865190445cd5cf8b5bbc559fe7b7d5085ce"
+  },
+  "binaural-s16.caf": {
+    "bytes": 200,
+    "sha256": "9c246380eb4eebd04db7d8c274af1e2176020f5c0365fc4b6e0e748fd67f9136"
+  },
+  "binaural-s16.wav": {
+    "bytes": 112,
+    "sha256": "2b606d64592a46e880d045262966303bfc12990b4924889a647c7265923ded21"
+  },
+  "binaural-s24.caf": {
+    "bytes": 234,
+    "sha256": "19137457ade0aef22d27555d93ba3c15a02f93516956c08feb71faf9eee41f8b"
+  },
+  "binaural-s24.wav": {
+    "bytes": 146,
+    "sha256": "62b27fd81beb971b4a12d3701c99fc1b5333c7048633c3d024ff282bf983b93e"
+  }
+}

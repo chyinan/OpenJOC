@@ -5,6 +5,9 @@ integrations/ffmpeg/native/patches/*.patch whitespace=-blank-at-eol,-blank-at-eo
 # Ensure consistent newline handling
 *.rs text eol=lf
 *.toml text eol=lf
+# Frozen contract provenance hashes the committed lockfile bytes on every OS.
+Cargo.lock text eol=lf
+crates/openjoc-api/tests/fixtures/admission/*.txt text eol=lf
 *.json text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
