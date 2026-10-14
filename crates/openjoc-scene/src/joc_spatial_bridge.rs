@@ -246,13 +246,24 @@ impl NamedFallbackParameterTuple {
         Self(codewords)
     }
 
-    /// The deterministic clean fixture tuple used by the public adapter when
-    /// no source-specific tuple is supplied.
+    /// Returns the fallback tuple used by the public adapter when no
+    /// source-specific tuple is supplied.
+    ///
+    /// This is the deterministic clean fixture tuple, not a normative or
+    /// source-independent set of coefficients.
     #[must_use]
-    pub const fn fixture() -> Self {
+    pub const fn adapter_default() -> Self {
         Self([
             0, 0, 0, 0, 0, -5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -51, 0,
         ])
+    }
+
+    /// Compatibility name for [`Self::adapter_default`].
+    ///
+    /// Retained as a const function without deprecation warnings for existing callers.
+    #[must_use]
+    pub const fn fixture() -> Self {
+        Self::adapter_default()
     }
 
     /// Returns the semantic codeword at a tuple position.
@@ -274,7 +285,7 @@ impl NamedFallbackParameterTuple {
 
 impl Default for NamedFallbackParameterTuple {
     fn default() -> Self {
-        Self::fixture()
+        Self::adapter_default()
     }
 }
 
