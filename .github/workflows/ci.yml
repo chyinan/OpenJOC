@@ -136,6 +136,40 @@ jobs:
       - name: Diff check
         run: git diff --check
 
+  session-contracts:
+    name: session-contracts-${{ matrix.toolchain }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ['1.89.0', '1.99.0']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the explicit contract toolchain
+        run: rustup toolchain install "${{ matrix.toolchain }}" --profile minimal
+      - name: Compare complete session captures with the independent freeze
+        run: |
+          python3 scripts/verify_session_contracts.py \
+            --toolchain "${{ matrix.toolchain }}" \
+            --output-dir "$RUNNER_TEMP/session-contracts" \
+            --target-dir "$RUNNER_TEMP/session-contract-target" \
+            --online
+      - name: Upload session contract provenance and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-contracts-${{ matrix.toolchain }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/session-contracts/report.json
+            ${{ runner.temp }}/session-contracts/rustc.txt
+            ${{ runner.temp }}/session-contracts/cargo.txt
+            ${{ runner.temp }}/session-contracts/*.log
+
   pcm-bitexact:
     name: pcm-bitexact
     runs-on: ubuntu-24.04

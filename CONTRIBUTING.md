@@ -181,3 +181,26 @@ are documented in
 [`crates/openjoc-cli/tests/fixtures/container/README.md`](crates/openjoc-cli/tests/fixtures/container/README.md).
 These are public container-boundary bytes, not JOC/Atmos or PCM oracle evidence;
 no existing golden output or frozen PCM expectation is replaced.
+
+### Frozen session contracts
+
+The `session-contracts-1.89.0` and `session-contracts-1.99.0` Linux CI jobs
+compare every constructor, terminal-error and lifecycle capture against the
+independent pre-refactor expectations retained for PR #53. Run locally with
+a new output directory:
+
+```sh
+python3 scripts/verify_session_contracts.py --toolchain 1.99.0 \
+  --output-dir /tmp/openjoc-session-contracts
+```
+
+The default is locked/offline; add `--online` to fetch locked dependencies.
+This checks exact file sets, complete byte lengths and SHA-256 digests for
+92 scenarios (184 PCM and event files). Integrated single-bit negative
+controls cover both PCM and events. There is no refresh/bless mode.
+The original raw files were not retained in the compact evidence archive,
+so this is a full-file digest gate without historical first-differing-byte
+localization. It supplements the pinned historical PCM oracle; it does not
+replace or rerun the separate historical 22-case or external 204-case gates.
+See the [frozen contract provenance](scripts/fixtures/session-contracts/README.md)
+for source stages, toolchains, scope and failure handling.

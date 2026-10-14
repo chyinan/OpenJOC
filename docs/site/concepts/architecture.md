@@ -17,6 +17,32 @@ libavformat for demux and public libavutil AVFrame allocation. In both cases
 OpenJOC retains E-AC-3/JOC decode, scene construction, DRC/dialnorm, speaker
 rendering, binaural HRTF rendering, latency, and drain state.
 
+### Complete access-unit classification
+
+`openjoc-api::admission` owns only stateless inspection of one complete AU:
+indexing, grouping, audio-frame syntax, JOC carrier parsing and decoder topology.
+The adapters select an explicit metadata policy:
+
+- FFmpeg uses `StrictOrObservedVendor`, trying ETSI strict validation before
+  the existing observed-vendor compatibility profile
+- GStreamer uses `FirstJocPayload`, preserving its direct first-payload check
+  without introducing EMDF profile validation into its classifier
+
+These policies intentionally remain different. For example, a syntactically
+complete carrier with mismatched payload group IDs or only a JOC payload is
+rejected by FFmpeg's profile classifier but can be classified as JOC by
+GStreamer's payload classifier. Classification is not permission to bypass
+the subsequent `OpenJocSession` admission rules. Profile rejection remains
+separate from parser errors, and the FFmpeg wrapper retains original error
+text and frame-count facts.
+
+`parse_access_unit_bounds` continues to own AU boundaries in `openjoc-eac3`.
+FFmpeg staging/EOF, GStreamer parsing/caps, browser chunks/CMAF and LAV
+negotiation remain adapter-owned. The shared classifier does not manage any
+of their state. The
+[149-case policy contract](../../../crates/openjoc-api/tests/fixtures/admission/README.md)
+freezes both adapters' complete pre-extraction classification transcripts.
+
 ## Data flow
 
 The explicit render-scene workflow is implemented in `openjoc-render-scene`.
@@ -80,6 +106,16 @@ and `JocSpatialBridge` projection path. The public library can consume a
 caller-defined channel registry, geometry, and output order without a
 preset-specific projection algorithm; the CLI accepts the same versioned
 geometry through `--layout-file`.
+
+The CLI keeps its speaker/binaural rendering and F64 intermediate processing
+in `joc_render`, while its private `joc_output` module owns output staging,
+container selection, channel descriptions and incremental WAV/CAF writers.
+The existing publication order, overwrite rules, failure cleanup and error
+text are covered by the
+[complete-file output contract](../../../crates/openjoc-cli/tests/fixtures/output-contract.md).
+The paired ADM publication transaction remains separately owned by `main.rs`.
+This file-output boundary does not alter session precision, queues or FIR/LFE
+tail handling.
 
 The `22.2` preset is ITU-R BS.2051-3 Sound System H (9+10+3): a four-layer
 bottom/middle/upper/top topology with 22 spatial speakers and two semantic

@@ -53,6 +53,7 @@ use std::{collections::VecDeque, fmt, fmt::Write as _, time::Duration};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{sync::OnceLock, time::Instant};
 
+pub mod admission;
 mod binaural;
 #[cfg(not(target_arch = "wasm32"))]
 mod decode_timing;

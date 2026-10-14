@@ -5,10 +5,7 @@ use gst::subclass::prelude::*;
 use gst_base::prelude::*;
 use gst_base::subclass::prelude::*;
 pub(super) use openjoc_eac3::AccessUnitParse;
-use openjoc_eac3::{
-    group_access_units, index_syncframes, parse_access_unit_bounds, parse_audio_frame,
-    parse_joc_access_unit, validate_joc_access_unit_decoder_contract,
-};
+use openjoc_eac3::parse_access_unit_bounds;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
@@ -48,57 +45,13 @@ pub(super) fn parse_access_unit(bytes: &[u8], eos: bool) -> Result<AccessUnitPar
 /// used. A complete valid E-AC-3 AU without an admitted JOC carrier is the
 /// positive ordinary-stream evidence used by the normal decoder path.
 pub(super) fn classify_access_unit(bytes: &[u8]) -> JocClassification {
-    let Ok(frames) = index_syncframes(bytes) else {
-        return JocClassification::InvalidOrUnsupported;
-    };
-    let Ok(units) = group_access_units(&frames) else {
-        return JocClassification::InvalidOrUnsupported;
-    };
-    let Some(unit) = units.first().copied() else {
-        return JocClassification::InvalidOrUnsupported;
-    };
-    if units.len() != 1 || unit.first_frame != 0 || unit.frame_count != frames.len() {
-        return JocClassification::InvalidOrUnsupported;
-    }
-
-    for entry in &frames {
-        let Some(frame) = bytes.get(entry.offset..) else {
-            return JocClassification::InvalidOrUnsupported;
-        };
-        if parse_audio_frame(frame).is_err() {
-            return JocClassification::InvalidOrUnsupported;
-        }
-    }
-
-    match parse_joc_access_unit(bytes, &frames, unit) {
-        Ok(Some(metadata)) => {
-            let Some(joc_payload) = metadata
-                .emdf
-                .payloads
-                .iter()
-                .find(|payload| payload.id == 14)
-                .map(|payload| payload.data.as_slice())
-            else {
-                return JocClassification::InvalidOrUnsupported;
-            };
-            let Ok(joc) = openjoc_joc::parse_joc_payload(joc_payload) else {
-                return JocClassification::InvalidOrUnsupported;
-            };
-            if validate_joc_access_unit_decoder_contract(
-                bytes,
-                &frames,
-                unit,
-                joc.header.downmix_index,
-                joc.header.channel_count,
-            )
-            .is_ok()
-            {
-                JocClassification::ConfirmedJoc
-            } else {
-                JocClassification::InvalidOrUnsupported
-            }
-        }
-        Ok(None) => JocClassification::ConfirmedNonJoc,
+    use openjoc_api::admission::{self, AdmissionPolicy, JocClassification as Classification};
+    match admission::inspect_complete_access_unit(bytes, AdmissionPolicy::FirstJocPayload) {
+        Ok(inspected) => match inspected.classification {
+            Classification::ConfirmedJoc => JocClassification::ConfirmedJoc,
+            Classification::ConfirmedNonJoc => JocClassification::ConfirmedNonJoc,
+            Classification::InvalidOrUnsupported => JocClassification::InvalidOrUnsupported,
+        },
         Err(_) => JocClassification::InvalidOrUnsupported,
     }
 }
@@ -319,6 +272,20 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod complete_access_unit_cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../openjoc-api/tests/support/complete_access_unit_cases.rs"
+        ));
+    }
+
+    #[test]
+    fn complete_access_unit_classification_contract() {
+        complete_access_unit_cases::verify("gstreamer", |bytes| {
+            format!("{:?}", classify_access_unit(bytes))
+        });
+    }
 
     fn push_bits(bytes: &mut [u8], cursor: &mut usize, value: u64, width: usize) {
         for shift in (0..width).rev() {

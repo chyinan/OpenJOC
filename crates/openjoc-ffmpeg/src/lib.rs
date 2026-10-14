@@ -23,11 +23,8 @@ pub use openjoc_container::cmaf::{
 };
 use openjoc_eac3::{
     AccessUnitIndex, AccessUnitParse, GENERAL_MAX_ACCESS_UNIT_BYTES,
-    GENERAL_MAX_ACCESS_UNIT_FRAMES, StreamType, group_access_units, index_syncframes,
-    parse_access_unit_bounds, parse_audio_frame, parse_joc_access_unit, validate_joc_access_unit,
-    validate_joc_access_unit_decoder_contract,
+    GENERAL_MAX_ACCESS_UNIT_FRAMES, StreamType, index_syncframes, parse_access_unit_bounds,
 };
-use openjoc_emdf::JocValidationProfile;
 pub use openjoc_inspect::{LiveInspectionObserver, LiveInspectionSnapshot};
 use openjoc_scene::SpeakerLayoutPreset;
 use sha2::{Digest, Sha256};
@@ -1503,82 +1500,21 @@ pub fn classify_complete_access_unit(bytes: &[u8]) -> JocClassification {
 }
 
 fn inspect_complete_access_unit(bytes: &[u8]) -> Result<InspectedAccessUnit, BridgeError> {
-    let frames = index_syncframes(bytes)
-        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    let units = group_access_units(&frames)
-        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    let Some(unit) = units.first().copied() else {
-        return Err(BridgeError::new(
-            BridgeErrorKind::InvalidData,
-            "input contains no E-AC-3 access unit",
-        ));
+    use openjoc_api::admission::{self, AdmissionPolicy, JocClassification as Classification};
+    let inspected =
+        admission::inspect_complete_access_unit(bytes, AdmissionPolicy::StrictOrObservedVendor)
+            .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error))?;
+    let classification = match inspected.classification {
+        Classification::ConfirmedJoc => JocClassification::ConfirmedJoc,
+        Classification::ConfirmedNonJoc => JocClassification::ConfirmedNonJoc,
+        Classification::InvalidOrUnsupported => JocClassification::InvalidOrUnsupported,
     };
-    if units.len() != 1 || unit.first_frame != 0 || unit.frame_count != frames.len() {
-        return Err(BridgeError::new(
-            BridgeErrorKind::InvalidData,
-            "classification requires exactly one complete access unit",
-        ));
-    }
-    for entry in &frames {
-        let frame = bytes.get(entry.offset..).ok_or_else(|| {
-            BridgeError::new(
-                BridgeErrorKind::InvalidData,
-                "syncframe offset is outside input",
-            )
-        })?;
-        parse_audio_frame(frame)
-            .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    }
-    let parsed = parse_joc_access_unit(bytes, &frames, unit)
-        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    let accepted_metadata = parsed.as_ref().and_then(|parsed| {
-        validate_joc_access_unit(parsed, JocValidationProfile::EtsiStrict)
-            .or_else(|_| {
-                validate_joc_access_unit(parsed, JocValidationProfile::ObservedVendorCompat)
-            })
-            .ok()
-    });
-    let admitted = if parsed.is_none() {
-        JocClassification::ConfirmedNonJoc
-    } else if accepted_metadata.is_some() {
-        JocClassification::ConfirmedJoc
-    } else {
-        JocClassification::InvalidOrUnsupported
-    };
-    if admitted == JocClassification::ConfirmedJoc {
-        let metadata = accepted_metadata.as_ref().ok_or_else(|| {
-            BridgeError::new(
-                BridgeErrorKind::InvalidData,
-                "missing admitted JOC metadata",
-            )
-        })?;
-        let joc = openjoc_joc::parse_joc_payload(&metadata.joc)
-            .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-        validate_joc_access_unit_decoder_contract(
-            bytes,
-            &frames,
-            unit,
-            joc.header.downmix_index,
-            joc.header.channel_count,
-        )
-        .map_err(|error| BridgeError::new(BridgeErrorKind::InvalidData, error.to_string()))?;
-    }
-    let independent_frame_count = frames
-        .iter()
-        .filter(|entry| {
-            matches!(
-                entry.header.stream_type,
-                StreamType::LegacyIndependent | StreamType::Independent
-            )
-        })
-        .count();
-    let dependent_frame_count = frames.len().saturating_sub(independent_frame_count);
     Ok(InspectedAccessUnit {
-        classification: admitted,
-        unit,
-        frames,
-        independent_frame_count,
-        dependent_frame_count,
+        classification,
+        unit: inspected.unit,
+        frames: inspected.frames,
+        independent_frame_count: inspected.independent_frame_count,
+        dependent_frame_count: inspected.dependent_frame_count,
     })
 }
 
@@ -1842,6 +1778,39 @@ mod tests {
         process::Command,
         time::{SystemTime, UNIX_EPOCH},
     };
+
+    mod complete_access_unit_cases {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../openjoc-api/tests/support/complete_access_unit_cases.rs"
+        ));
+    }
+
+    #[test]
+    fn complete_access_unit_classification_contract() {
+        complete_access_unit_cases::verify("ffmpeg", |bytes| {
+            let inspected = inspect_complete_access_unit(bytes).unwrap();
+            let expected_frames = index_syncframes(bytes).unwrap();
+            let expected_units = openjoc_eac3::group_access_units(&expected_frames).unwrap();
+            assert_eq!(inspected.frames, expected_frames);
+            assert_eq!(inspected.unit, expected_units[0]);
+            let independent = expected_frames
+                .iter()
+                .filter(|frame| {
+                    matches!(
+                        frame.header.stream_type,
+                        StreamType::LegacyIndependent | StreamType::Independent
+                    )
+                })
+                .count();
+            assert_eq!(inspected.independent_frame_count, independent);
+            assert_eq!(
+                inspected.dependent_frame_count,
+                expected_frames.len() - independent
+            );
+            format!("{:?}", classify_complete_access_unit(bytes))
+        });
+    }
 
     #[derive(Default)]
     struct Bits(Vec<bool>);
@@ -2457,6 +2426,33 @@ mod tests {
 
     fn synthetic_joc_frame() -> Vec<u8> {
         five_channel_audio_frame(&joc_emdf(&inactive_oamd(), &one_object_joc()), true)
+    }
+
+    #[test]
+    fn export_complete_au_classification_fixtures_when_requested() {
+        let Some(directory) = std::env::var_os("OPENJOC_CLASSIFICATION_FIXTURE_DIR") else {
+            return;
+        };
+        for (name, bytes) in [
+            ("legacy-flat7x", standard_legacy_flat7x_access_unit(1)),
+            (
+                "short-flat7x",
+                short_joc_access_unit_with_partition(1, 1, &[3, 3]),
+            ),
+            ("idx2", standard_idx234_access_unit(2, 1)),
+            ("idx3", standard_idx234_access_unit(3, 1)),
+            ("idx4", standard_idx234_access_unit(4, 1)),
+        ] {
+            use std::io::Write as _;
+            assert_eq!(
+                classify_complete_access_unit(&bytes),
+                JocClassification::ConfirmedJoc
+            );
+            std::fs::File::create_new(Path::new(&directory).join(format!("{name}.ec3")))
+                .unwrap()
+                .write_all(&bytes)
+                .unwrap();
+        }
     }
 
     #[test]
