@@ -659,8 +659,21 @@ pub struct OpenJocOutputInfo {
 pub struct OpenJocDiagnostics {
     pub profile: Option<&'static str>,
     pub downmix_index: Option<u8>,
+    /// Total object count from the first accepted OAMD content prefix, including
+    /// its bed/ISF and dynamic entries; not the JOC reconstruction-row count.
+    /// The field name is retained for source compatibility. Prefer
+    /// [`Self::oamd_total_object_count`] when reading this diagnostic.
     pub object_count: Option<u16>,
     pub complexity_index: Option<u8>,
+}
+
+impl OpenJocDiagnostics {
+    /// Returns the first accepted OAMD prefix's total object count, or `None`
+    /// before OAMD metadata has been accepted in the current session segment.
+    #[must_use]
+    pub const fn oamd_total_object_count(&self) -> Option<u16> {
+        self.object_count
+    }
 }
 
 /// Opt-in timing for one successful AU push through the headless session.
@@ -850,6 +863,7 @@ pub struct OpenJocSession {
     next_input_sample: u64,
     last_output_end: u64,
     downmix_index: Option<u8>,
+    // First accepted OAMD total. Keep this field name in the derived Debug output.
     object_count: Option<u16>,
     complexity_index: Option<u8>,
     stage_timing_enabled: bool,

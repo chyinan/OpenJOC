@@ -3,10 +3,10 @@
 
 # CLI 参考
 
-本页根据 OpenJOC v0.18.0 官方 GNU/Linux x86_64 发布版可执行文件核对。压缩包
+本页最初的发布版核对使用 OpenJOC v0.18.0 官方 GNU/Linux x86_64 可执行文件。压缩包
 `openjoc-0.18.0-x86_64-unknown-linux-gnu.tar.gz` 的 SHA-256 为
 `a238d881b25b8b5723d1d1a257a64705165d2b9749cc95d98d7ae62fe26cf9d8`，与该发布版的
-`SHA256SUMS` 一致；`openjoc --version` 输出 `OpenJOC 0.18.0`。本次核对没有在本地使用
+`SHA256SUMS` 一致；`openjoc --version` 输出 `OpenJOC 0.18.0`。该历史核对没有在本地使用
 Cargo 构建。从压缩包解压目录运行了以下命令：
 
 ```sh
@@ -15,6 +15,8 @@ bin/openjoc inspect --help
 bin/openjoc render-joc --help
 bin/openjoc export-adm --help
 ```
+
+上述历史核对不包含后续源码新增功能。下文的 `--output-format f32|f64` 已根据本地构建的当前源码帮助文本核对；`--reference-f64` 仍作为兼容别名保留。精度边界和冲突处理见[文件编码契约](https://github.com/chyinan/OpenJOC/blob/047c99f24f27043531908bb1bb9f2e0e92d5cc8d/docs/JOC_RENDER.md#file-sample-encoding)。
 
 CLI 源码 `crates/openjoc-cli/src/main.rs` 仍是唯一准确信息来源。语法发生变化时，请使用当前 CLI 可执行文件重新运行这些 help 命令。
 
@@ -66,7 +68,7 @@ usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET>
        [--validation-profile auto|etsi-strict|observed-vendor-compat]
        [--trim-config-count N] [--internal-base-policy current-default|codec-core]
        [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100]
-       [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]
+       [--output-format f32|f64] [--diagnostic-contribution full|base-only|reconstruction-only]
        [--no-progress] [--performance-report <FILE.json>] [--overwrite]
 ```
 

@@ -1,7 +1,7 @@
 // pattern: Functional Core
 
 use crate::{
-    JocBandCount, JocFrame, JocParseError, JocPayloadData, ReconstructionError,
+    InterpolatedMatrix, JocBandCount, JocFrame, JocParseError, JocPayloadData, ReconstructionError,
     decode_full_coefficients, decode_sparse_coefficients, dequantize, interpolate_matrix,
     parse_joc_payload, reconstruct_basis_qmf,
 };
@@ -492,15 +492,16 @@ impl JocDecoderState {
                 timeslots,
             )?;
             self.record_timing(|timing| &mut timing.interpolation, interpolation_start);
-            previous[object_index] = interpolation.next_previous;
-            object_matrices.push(transpose_interpolated(
-                &interpolation.matrix,
-                expected_channels,
-            ));
+            let InterpolatedMatrix {
+                matrix,
+                next_previous: carry_forward_coefficients,
+            } = interpolation;
+            previous[object_index] = carry_forward_coefficients;
+            object_matrices.push(transpose_interpolated(&matrix, expected_channels));
             stages.push(Some(ReconstructionRowStages {
                 quantized,
                 dequantized,
-                interpolated: interpolation.matrix,
+                interpolated: matrix,
             }));
         }
         let matrix_start = self.timing_start();

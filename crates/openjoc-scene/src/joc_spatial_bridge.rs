@@ -402,8 +402,8 @@ pub struct SpatialPairedGeometry {
     pub blend: f64,
 }
 
-/// One effective spatial descriptor. `raw3` is retained but never used in
-/// projection arithmetic.
+/// One effective spatial descriptor. Opaque additional table data is retained
+/// but never used in projection arithmetic.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct SpatialDescriptor {
     pub source_class: SpatialSourceClass,
@@ -415,6 +415,11 @@ pub struct SpatialDescriptor {
     /// This is intentionally separate from the caller-defined vector-pair API.
     #[serde(default)]
     pub pair_span_q15: Option<u16>,
+    /// Opaque bytes from OAMD [`openjoc_oamd::ObjectUpdate::additional_table_data`].
+    /// Nonzero bytes retain the bridge assembly's conservative DynamicPoint
+    /// guard; no further meaning is inferred. The public field and serialized
+    /// `raw3` key are retained for compatibility. Prefer
+    /// [`Self::additional_table_data`] when reading these bytes.
     pub raw3: Option<Vec<u8>>,
     /// Quantized decoded extent retained at the bridge boundary. The current
     /// projection contract does not use this field for P(d,L).
@@ -432,6 +437,12 @@ pub struct SpatialDescriptor {
 }
 
 impl SpatialDescriptor {
+    /// Borrows the opaque OAMD additional-table byte window without decoding it.
+    #[must_use]
+    pub fn additional_table_data(&self) -> Option<&[u8]> {
+        self.raw3.as_deref()
+    }
+
     /// Creates a descriptor without optional spread, pair, or opaque data.
     #[must_use]
     pub fn new(
@@ -530,10 +541,23 @@ pub struct SpatialDescriptorPatch {
     pub paired: Option<Option<SpatialPairedGeometry>>,
     #[serde(default)]
     pub pair_span_q15: Option<Option<u16>>,
+    /// Patch for the opaque OAMD additional-table byte window. `None` inherits,
+    /// `Some(None)` clears, and `Some(Some(bytes))` replaces the retained bytes.
+    /// The public field and serialized `raw3` key remain unchanged; prefer
+    /// [`Self::additional_table_data`] when reading this patch.
     pub raw3: Option<Option<Vec<u8>>>,
     pub extent: Option<Option<[f64; 3]>>,
     pub zones: Option<Option<[bool; 6]>>,
     pub channel_lock: Option<Option<bool>>,
+}
+
+impl SpatialDescriptorPatch {
+    /// Borrows the additional-table patch, preserving absent, clear, and replace
+    /// states without interpreting the opaque bytes.
+    #[must_use]
+    pub fn additional_table_data(&self) -> Option<Option<&[u8]>> {
+        self.raw3.as_ref().map(Option::as_deref)
+    }
 }
 
 /// Selective block update. Absent fields inherit from the current coordinate.
@@ -800,8 +824,8 @@ fn apply_update(
         if let Some(pair_span_q15) = patch.pair_span_q15 {
             record.descriptor.pair_span_q15 = pair_span_q15;
         }
-        if let Some(raw3) = &patch.raw3 {
-            record.descriptor.raw3.clone_from(raw3);
+        if let Some(additional_table_data) = &patch.raw3 {
+            record.descriptor.raw3.clone_from(additional_table_data);
         }
         if let Some(extent) = &patch.extent {
             if let Some(extent) = extent {

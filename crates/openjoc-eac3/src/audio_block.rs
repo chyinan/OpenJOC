@@ -86,17 +86,21 @@ pub(crate) struct DynamicRangeOverride {
 /// Selects whether optional presentation dynamic-range metadata is applied
 /// while producing the internal base PCM.
 ///
-/// The default public decoding functions retain [`InternalBasePolicy::CurrentDefault`]
-/// for backwards compatibility. [`InternalBasePolicy::CodecCore`] keeps the
-/// normative coefficient, coupling, spectral-extension, and transform stages
-/// intact while leaving optional presentation gain at unity.
-/// [`InternalBasePolicy::DynamicRange`] exposes the public E-AC-3 DRC policy
-/// controls without changing spatial/JOC processing.
+/// Prefer [`InternalBasePolicy::DynamicRange`] with an explicit
+/// [`DynamicRangeControl`]. The default decoding functions use Line DRC.
+/// The historical variants and `Default` identity remain compatible: all
+/// policies leave normative coefficient, coupling, spectral-extension, and
+/// transform stages intact and do not change spatial/JOC processing.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum InternalBasePolicy {
+    /// Historical name for `DynamicRange(DynamicRangeControl::Line)`.
+    /// Retained as the `Default` variant for compatibility.
     #[default]
     CurrentDefault,
+    /// Historical name for `DynamicRange(DynamicRangeControl::Disabled)`.
+    /// Only optional presentation DRC gain is held at unity.
     CodecCore,
+    /// Explicit presentation DRC policy; the canonical form for new callers.
     DynamicRange(DynamicRangeControl),
 }
 
@@ -1247,7 +1251,11 @@ pub fn decode_first_audio_block(
     bytes: &[u8],
     dither_values: &[f64],
 ) -> Result<DecodedAudioBlock, Eac3Error> {
-    decode_first_audio_block_with_policy(bytes, dither_values, InternalBasePolicy::CurrentDefault)
+    decode_first_audio_block_with_policy(
+        bytes,
+        dither_values,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Line),
+    )
 }
 
 /// Decodes the first block with an explicit internal-base policy.
@@ -1273,7 +1281,11 @@ pub fn decode_audio_blocks(
     bytes: &[u8],
     dither_values: &[f64],
 ) -> Result<Vec<DecodedAudioBlock>, Eac3Error> {
-    decode_audio_blocks_with_policy(bytes, dither_values, InternalBasePolicy::CurrentDefault)
+    decode_audio_blocks_with_policy(
+        bytes,
+        dither_values,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Line),
+    )
 }
 
 /// Decodes every block with an explicit internal-base policy.
@@ -1354,7 +1366,7 @@ pub fn decode_audio_frame_pcm(
         bytes,
         dither_values,
         synthesizer,
-        InternalBasePolicy::CurrentDefault,
+        InternalBasePolicy::DynamicRange(DynamicRangeControl::Line),
     )
 }
 

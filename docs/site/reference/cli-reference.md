@@ -1,7 +1,7 @@
 # CLI reference
 
-This page was verified against the official OpenJOC v0.18.0 GNU/Linux x86_64
-release executable. The archive
+The original release audit for this page used the official OpenJOC v0.18.0
+GNU/Linux x86_64 executable. The archive
 `openjoc-0.18.0-x86_64-unknown-linux-gnu.tar.gz` has SHA-256
 `a238d881b25b8b5723d1d1a257a64705165d2b9749cc95d98d7ae62fe26cf9d8`, matching
 the release's `SHA256SUMS`; `openjoc --version` reported `OpenJOC 0.18.0`. No
@@ -14,6 +14,12 @@ bin/openjoc inspect --help
 bin/openjoc render-joc --help
 bin/openjoc export-adm --help
 ```
+
+That historical audit does not cover later source additions. The current
+`--output-format f32|f64` syntax below was checked against locally built current-source
+help; `--reference-f64` remains a compatibility alias. See
+[the file-encoding contract](https://github.com/chyinan/OpenJOC/blob/047c99f24f27043531908bb1bb9f2e0e92d5cc8d/docs/JOC_RENDER.md#file-sample-encoding) for precision
+and conflict behavior.
 
 The CLI source in `crates/openjoc-cli/src/main.rs` remains the source of truth.
 When syntax changes, re-run these help commands with the current CLI executable.
@@ -66,7 +72,7 @@ usage: openjoc render-joc <FILE> [--topology <TOPOLOGY.json>] (--layout <PRESET>
        [--validation-profile auto|etsi-strict|observed-vendor-compat]
        [--trim-config-count N] [--internal-base-policy current-default|codec-core]
        [--drc disabled|line|rf|custom] [--drc-boost 0..=100 --drc-cut 0..=100]
-       [--reference-f64] [--diagnostic-contribution full|base-only|reconstruction-only]
+       [--output-format f32|f64] [--diagnostic-contribution full|base-only|reconstruction-only]
        [--no-progress] [--performance-report <FILE.json>] [--overwrite]
 ```
 

@@ -103,7 +103,7 @@ fn seeded_performance() -> RenderPerformance {
     performance.bridge_control_assembly = ns(500);
     performance.spatial_bridge_render = ns(600);
     performance.binaural_render = ns(700);
-    performance.output_conversion_wav_write = ns(800);
+    performance.output_conversion_file_write = ns(800);
     performance.frame_times = vec![ns(901)];
     performance.sample_rate_hz = Some(48_000);
     performance.processed_access_units = 41;
@@ -154,7 +154,7 @@ fn render_input() -> RenderStageTiming {
         bridge_control_assembly: ns(31),
         spatial_bridge_render: ns(37),
         binaural_render: ns(41),
-        output_conversion_wav_write: ns(43),
+        output_conversion_file_write: ns(43),
         rendered_frames: 47,
         // This field does not replace the report's total_audio_samples.
         rendered_samples: u64::MAX,
@@ -170,7 +170,7 @@ fn assert_merged_fields(performance: &RenderPerformance, started_at: Instant) {
     assert_eq!(performance.bridge_control_assembly, ns(531));
     assert_eq!(performance.spatial_bridge_render, ns(637));
     assert_eq!(performance.binaural_render, ns(741));
-    assert_eq!(performance.output_conversion_wav_write, ns(843));
+    assert_eq!(performance.output_conversion_file_write, ns(843));
     assert_eq!(performance.frame_times, vec![ns(17), ns(19)]);
     assert_eq!(performance.sample_rate_hz, Some(48_000));
     assert_eq!(performance.processed_access_units, 41);
@@ -206,7 +206,7 @@ fn rendered_au_accumulates_only_three_stages_and_explicit_input_samples() {
         bridge_control_assembly: ns(100),
         spatial_bridge_render: ns(200),
         binaural_render: ns(300),
-        output_conversion_wav_write: ns(400),
+        output_conversion_file_write: ns(400),
         rendered_frames: 500,
         rendered_samples: 600,
     };
@@ -214,7 +214,7 @@ fn rendered_au_accumulates_only_three_stages_and_explicit_input_samples() {
         bridge_control_assembly: ns(11),
         spatial_bridge_render: ns(13),
         binaural_render: ns(17),
-        output_conversion_wav_write: ns(19),
+        output_conversion_file_write: ns(19),
         rendered_frames: u64::MAX,
         rendered_samples: u64::MAX,
     };
@@ -223,7 +223,7 @@ fn rendered_au_accumulates_only_three_stages_and_explicit_input_samples() {
     assert_eq!(aggregate.bridge_control_assembly, ns(111));
     assert_eq!(aggregate.spatial_bridge_render, ns(213));
     assert_eq!(aggregate.binaural_render, ns(317));
-    assert_eq!(aggregate.output_conversion_wav_write, ns(400));
+    assert_eq!(aggregate.output_conversion_file_write, ns(400));
     assert_eq!(aggregate.rendered_frames, 501);
     assert_eq!(aggregate.rendered_samples, 2_136);
 
@@ -231,14 +231,14 @@ fn rendered_au_accumulates_only_three_stages_and_explicit_input_samples() {
     assert_eq!(aggregate.bridge_control_assembly, ns(122));
     assert_eq!(aggregate.spatial_bridge_render, ns(226));
     assert_eq!(aggregate.binaural_render, ns(334));
-    assert_eq!(aggregate.output_conversion_wav_write, ns(400));
+    assert_eq!(aggregate.output_conversion_file_write, ns(400));
     assert_eq!(aggregate.rendered_frames, 502);
     assert_eq!(aggregate.rendered_samples, 67_671);
 
     assert_eq!(stages.bridge_control_assembly, ns(11));
     assert_eq!(stages.spatial_bridge_render, ns(13));
     assert_eq!(stages.binaural_render, ns(17));
-    assert_eq!(stages.output_conversion_wav_write, ns(19));
+    assert_eq!(stages.output_conversion_file_write, ns(19));
     assert_eq!(stages.rendered_frames, u64::MAX);
     assert_eq!(stages.rendered_samples, u64::MAX);
 }
@@ -296,6 +296,12 @@ fn completed_output_merges_existing_values_and_copies_real_progress_snapshot() {
         let report: serde_json::Value =
             serde_json::from_slice(&fs::read(&report_path).unwrap()).unwrap();
         assert_eq!(report["schema"], PERFORMANCE_REPORT_SCHEMA);
+        assert!(report["stage_timings_ms"]["output_conversion_wav_write"].is_number());
+        assert!(
+            report["stage_timings_ms"]
+                .get("output_conversion_file_write")
+                .is_none()
+        );
         assert_eq!(report["sample_rate_hz"], 48_000);
         assert_eq!(report["processed_access_units"], 41);
         assert_eq!(report["rendered_frames"], 90);
