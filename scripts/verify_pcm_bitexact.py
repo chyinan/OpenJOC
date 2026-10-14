@@ -357,6 +357,9 @@ def source_provenance(root: Path) -> dict:
     symlinks hash their link text without reading the link target. Missing
     tracked paths have a distinct marker. This does not modify the Git index.
     """
+    # Compare canonical roots and parents, while preserving leaf symlink text.
+    root = root.resolve()
+
     def git_files(*arguments: str) -> list[bytes]:
         return subprocess.check_output(["git", "ls-files", "-z", *arguments], cwd=root).split(b"\0")[:-1]
 

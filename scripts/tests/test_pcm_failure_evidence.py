@@ -1,8 +1,10 @@
 """Failure diagnostics regressions; no Git writes, builds, or external processes."""
 
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
+import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -372,6 +374,69 @@ class EvidenceCopySafetyTests(unittest.TestCase):
         self.assertEqual(first["untracked_files"], ["new.rs"])
         self.assertNotEqual(first["working_tree_sha256"], second["working_tree_sha256"])
         self.assertNotEqual(second["working_tree_sha256"], third["working_tree_sha256"])
+
+
+class SourceProvenancePathTests(unittest.TestCase):
+    def setUp(self):
+        temporary = self.enterContext(tempfile.TemporaryDirectory(prefix="openjoc-source-test-", dir=Path.cwd()))
+        self.root = Path(temporary) / "source"
+        self.root.mkdir()
+        (self.root / "new.rs").write_bytes(b"source bytes")
+        self.files = b"new.rs\0"
+        self.enterContext(mock.patch.object(
+            gate.subprocess, "check_output", side_effect=self.git_output))
+        self.enterContext(mock.patch.object(
+            gate.subprocess, "run", side_effect=AssertionError("unexpected process")))
+
+    def git_output(self, command, **kwargs):
+        if "--cached" in command:
+            return self.files
+        return b""
+
+    def symlink(self, link, target, *, directory=False):
+        try:
+            link.symlink_to(target, target_is_directory=directory)
+        except OSError as error:
+            self.skipTest(f"symlinks unavailable: {error}")
+
+    def test_relative_root_matches_canonical_root(self):
+        relative = Path(os.path.relpath(self.root))
+        self.assertFalse(relative.is_absolute())
+        self.assertEqual(gate.source_provenance(relative),
+                         gate.source_provenance(self.root.resolve()))
+
+    def test_symlink_root_matches_canonical_root(self):
+        alias = self.root.parent / "alias"
+        self.symlink(alias, self.root.resolve(), directory=True)
+        self.assertEqual(gate.source_provenance(alias),
+                         gate.source_provenance(self.root.resolve()))
+
+    def test_absolute_and_parent_traversal_entries_are_rejected(self):
+        for name in (os.fsencode(self.root / "new.rs"), b"../outside.rs"):
+            with self.subTest(name=name):
+                self.files = name + b"\0"
+                with self.assertRaisesRegex(OSError, "out-of-worktree provenance path"):
+                    gate.source_provenance(self.root)
+
+    def test_symlink_parent_escape_is_rejected(self):
+        outside = self.root.parent / "outside"
+        outside.mkdir()
+        (outside / "external.rs").write_bytes(b"outside bytes")
+        self.symlink(self.root / "escape", outside.resolve(), directory=True)
+        self.files = b"escape/external.rs\0"
+        with mock.patch.object(gate, "hash_file", side_effect=AssertionError("outside read")):
+            with self.assertRaisesRegex(OSError, "out-of-worktree provenance path"):
+                gate.source_provenance(self.root)
+
+    def test_leaf_symlink_hashes_link_text_without_reading_target(self):
+        link = self.root / "leaf.rs"
+        target = self.root.parent / "missing.rs"
+        self.symlink(link, target.resolve())
+        self.files = b"leaf.rs\0"
+        link_hash = hashlib.sha256(os.fsencode(os.readlink(link))).hexdigest().encode("ascii")
+        expected = hashlib.sha256(b"leaf.rs\0symlink\0" + link_hash + b"\0").hexdigest()
+        with mock.patch.object(gate, "hash_file", side_effect=AssertionError("target read")):
+            self.assertEqual(gate.source_provenance(self.root)["working_tree_sha256"], expected)
 
 
 class PcmEvidenceWorkflowTests(unittest.TestCase):
