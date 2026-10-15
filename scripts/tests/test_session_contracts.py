@@ -99,6 +99,34 @@ class SessionContractTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(encoded).hexdigest(), digest)
         gate.verify_inputs(gate.ROOT, manifest)
 
+    def test_release_lock_admission_is_version_only_and_preserves_frozen_hash(self):
+        manifest = gate.load_manifest(gate.ROOT / gate.MANIFEST)
+        expected = manifest["inputs"]["Cargo.lock"]
+        original = (gate.ROOT / "Cargo.lock").read_bytes()
+        path = self.root / "Cargo.lock"
+        path.write_bytes(original)
+        self.assertTrue(gate.release_lock_matches(path, expected))
+        self.assertEqual(path.read_bytes(), original)
+        cases = [
+            (b'version = "0.20.0"', b'version = "0.21.0"'),
+            (b'version = "0.20.0"', b'version = "0.19.0"'),
+            (b'name = "openjoc-api"', b'name = "renamed-api"'),
+            (b'name = "adler2"\nversion = "2.0.1"', b'name = "adler2"\nversion = "2.0.2"'),
+            (b'checksum = "320119', b'checksum = "000119'),
+            (b' "derive_arbitrary",', b' "adler2",'),
+            (b' "derive_arbitrary",\n', b''),
+            (b'name = "adler2"', b'name = "openjoc-api"'),
+            (b'name = "openjoc-api"\nversion = "0.20.0"', b'name = "openjoc-api"\nversion = "0.20.0"\nsource = "git+https://example.invalid"'),
+            (b' "openjoc-api",\n "openjoc-eac3",', b' "openjoc-eac3",\n "openjoc-api",'),
+        ]
+        for old, new in cases:
+            with self.subTest(new=new):
+                self.assertIn(old, original)
+                path.write_bytes(original.replace(old, new, 1))
+                self.assertFalse(gate.release_lock_matches(path, expected))
+        path.write_bytes(original + b'\n')
+        self.assertFalse(gate.release_lock_matches(path, expected))
+
     def _manifest(self):
         return {"schema_version": 1, "suites": {name: {"cases": 1, "files": self.expected.copy()} for name in gate.SUITES}}
 

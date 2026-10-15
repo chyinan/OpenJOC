@@ -1,7 +1,7 @@
-# OpenJOC LAV full 0.19.0 for Windows x64 (optional test bundle)
+# OpenJOC LAV full 0.20.0 for Windows x64 (optional test bundle)
 
 This is the explicit `full` package variant. The default audio package remains
-`openjoc-lav-0.19.0-windows-x64.zip`, with its existing one-click `install.bat`,
+`openjoc-lav-0.20.0-windows-x64.zip`, with its existing one-click `install.bat`,
 `verify.bat`, and `uninstall.bat` experience. Choose that default package for the
 normal OpenJOC audio installation. This separate full bundle does not replace it.
 

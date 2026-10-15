@@ -1,6 +1,6 @@
 # Optional full Windows LAV package
 
-The default remains `audio`: `openjoc-lav-0.19.0-windows-x64.zip` keeps
+The default remains `audio`: `openjoc-lav-0.20.0-windows-x64.zip` keeps
 `install.bat`, `verify.bat`, and `uninstall.bat`, with the existing isolated
 OpenJOC Audio onboarding. It does not register stock Video or Splitter classes.
 

@@ -72,7 +72,7 @@ class LavFullPackageTests(unittest.TestCase):
     ) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, str(SCRIPTS / "package_lav_release.py"),
-             "--release-version", "0.19.0", "--variant", variant,
+             "--release-version", "0.20.0", "--variant", variant,
              "--lav-root", str(self.lav), "--capi-dll", str(self.capi),
              "--dependency-dir", str(self.dependencies),
              "--onboarding-template", str(template), "--output-dir", str(self.output),
@@ -90,7 +90,7 @@ class LavFullPackageTests(unittest.TestCase):
         (self.dependencies / "unrelated.dll").write_bytes(b"not part of runtime")
         result = self.package()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        archive = self.output / "openjoc-lav-full-0.19.0-windows-x64.zip"
+        archive = self.output / "openjoc-lav-full-0.20.0-windows-x64.zip"
         with zipfile.ZipFile(archive) as handle:
             names = set(handle.namelist())
             profile = json.loads(handle.read("runtime/OpenJocRuntimeProfile.json"))
@@ -99,7 +99,7 @@ class LavFullPackageTests(unittest.TestCase):
                 *packager.FFMPEG_DLLS, *packager.LAV_SUPPORT_DLLS, *packager.CRT_DLLS,
                 *FULL_EXTRA_CRT, "LAVFilters.Dependencies.manifest",
             }
-            self.assertEqual(profile["version"], "0.19.0")
+            self.assertEqual(profile["version"], "0.20.0")
             self.assertEqual(profile["architecture"], "x64")
             self.assertEqual(profile["variant"], "full")
             self.assertEqual(set(profile["required_runtime_files"]), expected)
@@ -200,7 +200,7 @@ class LavFullPackageTests(unittest.TestCase):
         notice.write_bytes(b"Synthetic nested copyright notice\n")
         result = self.package()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        with zipfile.ZipFile(self.output / "openjoc-lav-full-0.19.0-windows-x64.zip") as handle:
+        with zipfile.ZipFile(self.output / "openjoc-lav-full-0.20.0-windows-x64.zip") as handle:
             self.assertEqual(handle.read("LICENSES/lav/libbluray/contrib/libudfread/COPYING"), notice.read_bytes())
 
     def test_full_rejects_template_with_audio_installer_added(self) -> None:
@@ -212,12 +212,12 @@ class LavFullPackageTests(unittest.TestCase):
     def test_audio_and_full_outputs_can_coexist_without_replacement(self) -> None:
         result = self.package(variant="audio", template=WORKSPACE / "packaging" / "windows-lav")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        audio = self.output / "openjoc-lav-0.19.0-windows-x64.zip"
+        audio = self.output / "openjoc-lav-0.20.0-windows-x64.zip"
         audio_bytes = audio.read_bytes()
         result = self.package()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(audio.read_bytes(), audio_bytes)
-        full = self.output / "openjoc-lav-full-0.19.0-windows-x64.zip"
+        full = self.output / "openjoc-lav-full-0.20.0-windows-x64.zip"
         full_bytes = full.read_bytes()
         result = self.package()
         self.assertNotEqual(result.returncode, 0)
