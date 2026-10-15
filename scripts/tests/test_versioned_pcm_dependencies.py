@@ -281,6 +281,28 @@ class VersionedDependenciesTests(unittest.TestCase):
             with self.assertRaisesRegex(gate.GateError, "unexpected baseline manifest"):
                 gate.install_baseline_feature_overlay(self.baseline)
 
+    def test_v020_metadata_preserves_exact_dependency_contract(self):
+        self.bump()
+        self.add_native_scene_dependency()
+        self.mutate('crates/openjoc-scene/Cargo.toml', 'serde_json = "1"',
+                    'serde_json = { version = "1", features = ["float_roundtrip"] }')
+        for path in [self.candidate / 'Cargo.lock', *self.candidate.rglob('Cargo.toml')]:
+            path.write_text(path.read_text().replace('"0.19.0"', '"0.20.0"'))
+        self.validate_without_rewriting_metadata()
+        cases = [
+            ('Cargo.toml', 'version = "0.20.0"', 'version = "0.21.0"'),
+            ('crates/openjoc-api/Cargo.toml', 'version = "0.20.0"', 'version = "0.19.0"'),
+            ('Cargo.lock', 'name = "adler2"\nversion = "2.0.1"', 'name = "adler2"\nversion = "2.0.2"'),
+        ]
+        for relative, old, new in cases:
+            with self.subTest(relative=relative, new=new):
+                path = self.candidate / relative
+                original = path.read_bytes()
+                self.mutate(relative, old, new)
+                with self.assertRaises(gate.GateError):
+                    self.validate_without_rewriting_metadata()
+                path.write_bytes(original)
+
     def test_manifest_mutations_fail(self):
         self.bump()
         cases = [

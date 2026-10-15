@@ -81,6 +81,44 @@ def load_manifest(path):
     return manifest
 
 
+# Exact package identities from the frozen 0.19.0 lockfile, not candidate claims.
+RELEASE_WORKSPACE_PACKAGES = (
+    "gst-plugin-openjoc",
+    "import-etsi-tables",
+    "openjoc-adm",
+    "openjoc-api",
+    "openjoc-bitio",
+    "openjoc-capi",
+    "openjoc-cli",
+    "openjoc-container",
+    "openjoc-eac3",
+    "openjoc-emdf",
+    "openjoc-ffmpeg",
+    "openjoc-inspect",
+    "openjoc-joc",
+    "openjoc-oamd",
+    "openjoc-qmf",
+    "openjoc-render",
+    "openjoc-render-scene",
+    "openjoc-scene",
+    "openjoc-sofa",
+    "openjoc-wasm",
+    "openjoc-wave",
+)
+
+
+def release_lock_matches(path, expected):
+    """Admit only the 0.20.0 workspace-version bump against the original hash."""
+    data = path.read_bytes()
+    for name in RELEASE_WORKSPACE_PACKAGES:
+        old = f'name = "{name}"\nversion = "0.20.0"'.encode()
+        new = f'name = "{name}"\nversion = "0.19.0"'.encode()
+        if data.count(old) != 1:
+            return False
+        data = data.replace(old, new, 1)
+    return hashlib.sha256(data).hexdigest() == expected
+
+
 def verify_inputs(root, manifest):
     records = {}
     for name, expected in manifest["inputs"].items():
@@ -88,7 +126,9 @@ def verify_inputs(root, manifest):
         if relative.is_absolute() or ".." in relative.parts:
             raise ContractError(f"invalid input path: {name}")
         record = file_record(root / relative)
-        if record["sha256"] != expected:
+        if record["sha256"] != expected and not (
+            name == "Cargo.lock" and release_lock_matches(root / relative, expected)
+        ):
             raise ContractError(f"frozen fixture, lockfile or capture harness changed: {name}")
         records[name] = record
     return records

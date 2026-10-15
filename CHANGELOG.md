@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-15
+
+OpenJOC 0.20 improves ordered direct-FIR processing, adds interactive mpv
+settings and live output gain, and fixes decoder, custom-layout, SOFA, and
+playback-state edge cases.
+
+### Added
+
+- Added a compact, clickable mpv OpenJOC settings panel with persistent
+  settings, Unicode-safe Windows file handling, and live output gain.
+- Added runtime-gated x86 AVX adjacent-output direct FIR and a safe native
+  AArch64 adjacent-output unroll. Each output retains its ordered accumulation;
+  covered strict PCM comparisons remain bit-exact.
+
 ### Changed
 
 - Updated the default downstream LAV source to the tested `a876fbc` revision.
@@ -38,6 +52,55 @@
   descriptors, distinguishing labels such as `["A,B", "C"]` and `["A", "B,C"]`.
   Custom-layout fingerprints change; preset descriptors and fingerprints remain
   unchanged. This changes configuration identity only, not rendering or PCM.
+
+
+### Additional fixes
+
+- Corrected custom CAF front/back coordinate conversion and installed the
+  pre-event OAMD topology state before applying scene events.
+- Preserved delayed GStreamer PCM timestamps and semantic transport layout
+  metadata across the native playback boundary.
+- Preserved E-AC-3 TDAC history across equivalent dependent channel maps and
+  retained dialnorm changes within grouped short frames.
+- Rejected antipodal sparse SOFA interpolation coverage rather than accepting
+  unsupported directions.
+- Reset CLI linked gain history on in-band JOC resets.
+- Corrected mpv live-gain timestamp alignment, settings navigation, Cancel and
+  late-readiness handling, and gain persistence across filter-context rebuilds.
+- Corrected Windows Unicode package audits and native MSVC dependency setup
+  for the optional LAV packaging workflow.
+
+### Maintenance and validation
+
+- Factored shared decoding, AU admission, session lifecycle, rendering, output,
+  and packaging boundaries without changing the frozen PCM or event contracts.
+- Added frozen session-contract coverage, bounded PCM failure evidence and
+  provenance, cross-platform path handling, and reproducible package checks.
+- Kept the historical PCM oracle and frozen expected outputs unchanged.
+  Release-version metadata admission now explicitly includes 0.20.0 while
+  retaining exact external dependency and internal path/version checks.
+
+### Scope and known limitations
+
+- Correctness fixes may change affected custom renders or previously incorrect
+  decoder output. The bit-exact performance and maintenance work is separately
+  gated; this release does not claim identical PCM to 0.19.0 for every input.
+- FIR measurements are scoped to the documented workloads and machines.
+  They do not establish universal ARM/x86 speedups, Windows/LAV playback speed,
+  or physical-device latency.
+- The historical unversioned C configuration initializer remains unsafe for
+  older, smaller ILP32 allocations; LP64 size ambiguity also remains. Use the
+  documented versioned initializers and matching headers. Documentation does
+  not repair this historical binary-compatibility defect.
+- Listener orientation and virtual 9.1.6 remain experimental and host-supplied.
+  No sensor integration, automatic headphone detection, physical multichannel
+  hardware validation, or exact native Dolby/Apple renderer equivalence is claimed.
+- The main release workflow publishes CLI/library, mpv, SDK, FFmpeg and GStreamer
+  packages for macOS arm64, Linux x86_64 and Windows x64. LAV builds are separate;
+  the updated source pin and optional full-package tooling do not imply a
+  matching 0.20.0 LAV binary has been published.
+- Nonzero output gain is not clipping protection. Existing format, routing,
+  SOFA coverage and platform limitations remain in force.
 
 ## [0.19.0] — 2026-10-07
 

@@ -198,6 +198,10 @@ The default is locked/offline; add `--online` to fetch locked dependencies.
 This checks exact file sets, complete byte lengths and SHA-256 digests for
 92 scenarios (184 PCM and event files). Integrated single-bit negative
 controls cover both PCM and events. There is no refresh/bless mode.
+For release 0.20.0, only the explicit frozen workspace package versions may
+be normalized back to 0.19.0 in memory for the lockfile hash check. The full
+normalized lockfile must retain the original frozen digest; external packages,
+dependency edges, order, fixtures, capture harnesses and expected outputs stay exact.
 The original raw files were not retained in the compact evidence archive,
 so this is a full-file digest gate without historical first-differing-byte
 localization. It supplements the pinned historical PCM oracle; it does not
