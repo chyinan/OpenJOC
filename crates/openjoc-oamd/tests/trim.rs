@@ -1,3 +1,5 @@
+// pattern: Functional Core
+
 use std::num::NonZeroU8;
 
 use openjoc_oamd::{
@@ -22,6 +24,125 @@ fn pack(mut bits: Vec<bool>) -> Vec<u8> {
         }
     }
     bytes
+}
+
+fn parse_one_custom_configuration(
+    presence: u8,
+    control_bits: &[(u64, u8)],
+) -> openjoc_oamd::TrimElement {
+    let mut bits = Vec::new();
+    push(&mut bits, 0, 2); // no warp
+    push(&mut bits, 0, 2); // reserved
+    push(&mut bits, 2, 2); // custom global trim
+    push(&mut bits, 0, 1); // not default
+    push(&mut bits, 0, 1); // not disabled
+    push(&mut bits, u64::from(presence), 5);
+    for &(value, width) in control_bits {
+        push(&mut bits, value, width);
+    }
+    push(&mut bits, 0, 1); // no per-object flags
+
+    parse_trim_element(
+        &pack(bits),
+        0,
+        NonZeroU8::new(1).expect("nonzero configuration count"),
+    )
+    .expect("one custom trim configuration")
+}
+
+fn only_custom_controls(trim: &openjoc_oamd::TrimElement) -> openjoc_oamd::TrimControls {
+    let GlobalTrim::Custom(configurations) = &trim.global_trim else {
+        panic!("expected custom global trim");
+    };
+    let [TrimConfiguration::Custom(controls)] = configurations.as_slice() else {
+        panic!("expected one custom trim configuration");
+    };
+    *controls
+}
+
+#[test]
+fn presence_bit_zero_selects_centre_trim() {
+    let trim = parse_one_custom_configuration(0b0_0001, &[(2, 4)]);
+
+    assert_eq!(
+        only_custom_controls(&trim),
+        openjoc_oamd::TrimControls {
+            centre_db: Some(1.5),
+            surround_db: None,
+            height_db: None,
+            top_bottom_y_balance: None,
+            listener_y_balance: None,
+        }
+    );
+    assert_eq!(trim.consumed_bits, 18);
+}
+
+#[test]
+fn presence_bit_one_selects_surround_trim() {
+    let trim = parse_one_custom_configuration(0b0_0010, &[(4, 4)]);
+
+    assert_eq!(
+        only_custom_controls(&trim),
+        openjoc_oamd::TrimControls {
+            centre_db: None,
+            surround_db: Some(-0.75),
+            height_db: None,
+            top_bottom_y_balance: None,
+            listener_y_balance: None,
+        }
+    );
+    assert_eq!(trim.consumed_bits, 18);
+}
+
+#[test]
+fn presence_bit_two_selects_height_trim() {
+    let trim = parse_one_custom_configuration(0b0_0100, &[(15, 4)]);
+
+    assert_eq!(
+        only_custom_controls(&trim),
+        openjoc_oamd::TrimControls {
+            centre_db: None,
+            surround_db: None,
+            height_db: Some(-36.0),
+            top_bottom_y_balance: None,
+            listener_y_balance: None,
+        }
+    );
+    assert_eq!(trim.consumed_bits, 18);
+}
+
+#[test]
+fn presence_bit_three_selects_top_bottom_y_balance() {
+    let trim = parse_one_custom_configuration(0b0_1000, &[(0, 1), (15, 4)]);
+
+    assert_eq!(
+        only_custom_controls(&trim),
+        openjoc_oamd::TrimControls {
+            centre_db: None,
+            surround_db: None,
+            height_db: None,
+            top_bottom_y_balance: Some(-1.0),
+            listener_y_balance: None,
+        }
+    );
+    assert_eq!(trim.consumed_bits, 19);
+}
+
+#[test]
+fn presence_bit_four_selects_listener_y_balance() {
+    let trim = parse_one_custom_configuration(0b1_0000, &[(1, 1), (7, 4)]);
+
+    assert_eq!(
+        only_custom_controls(&trim),
+        openjoc_oamd::TrimControls {
+            centre_db: None,
+            surround_db: None,
+            height_db: None,
+            top_bottom_y_balance: None,
+            listener_y_balance: Some(0.5),
+        }
+    );
+    assert_eq!(trim.consumed_bits, 19);
 }
 
 #[test]

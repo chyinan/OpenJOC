@@ -172,12 +172,12 @@ fn parse_configuration(reader: &mut impl BitRead) -> Result<TrimConfiguration, O
     }
     let presence = read_u8(reader, 5)?;
     Ok(TrimConfiguration::Custom(TrimControls {
-        centre_db: if presence & 0b1_0000 != 0 {
+        centre_db: if presence & 0b0_0001 != 0 {
             Some(decode_trim_centre(read_u8(reader, 4)?)?)
         } else {
             None
         },
-        surround_db: if presence & 0b0_1000 != 0 {
+        surround_db: if presence & 0b0_0010 != 0 {
             Some(decode_trim_surround_or_height(read_u8(reader, 4)?)?)
         } else {
             None
@@ -187,12 +187,12 @@ fn parse_configuration(reader: &mut impl BitRead) -> Result<TrimConfiguration, O
         } else {
             None
         },
-        top_bottom_y_balance: if presence & 0b0_0010 != 0 {
+        top_bottom_y_balance: if presence & 0b0_1000 != 0 {
             Some(decode_y_balance(read_u8(reader, 1)?, read_u8(reader, 4)?)?)
         } else {
             None
         },
-        listener_y_balance: if presence & 0b0_0001 != 0 {
+        listener_y_balance: if presence & 0b1_0000 != 0 {
             Some(decode_y_balance(read_u8(reader, 1)?, read_u8(reader, 4)?)?)
         } else {
             None
