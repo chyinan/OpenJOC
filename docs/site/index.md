@@ -51,6 +51,6 @@ OpenJOC is an open-source, clean-room **E-AC-3 JOC Object decoder and spatial re
 
 ## Current release
 
-The repository baseline for this site is **v0.20.0**. Support is intentionally scoped. See the [capability matrix](project/capabilities.md) and [known limitations](compatibility/known-limitations.md) before treating a render or export as a production deliverable.
+The repository baseline for this site is **v0.20.1**. Support is intentionally scoped. See the [capability matrix](project/capabilities.md) and [known limitations](compatibility/known-limitations.md) before treating a render or export as a production deliverable.
 
 OpenJOC is not affiliated with, endorsed by, or sponsored by Dolby Laboratories. Third-party names belong to their respective owners.

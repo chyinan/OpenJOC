@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-10-18
+
+### Fixed
+
+- Corrected the OAMD trim custom-presence mask mapping so bit 0 selects centre,
+  bit 1 surround, bit 2 height, bit 3 top/bottom Y balance, and bit 4 listener
+  Y balance. This preserves the normative nine trim configurations and prevents
+  subsequent configuration boundaries from becoming misaligned.
+
 ## [0.20.0] — 2026-10-15
 
 OpenJOC 0.20 improves ordered direct-FIR processing, adds interactive mpv

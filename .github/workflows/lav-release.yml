@@ -8,7 +8,7 @@ on:
       release_tag:
         description: OpenJOC release tag to receive the LAV asset
         required: true
-        default: v0.20.0
+        default: v0.20.1
       variant:
         description: Package variant (audio keeps the one-click onboarding default)
         type: choice

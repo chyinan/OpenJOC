@@ -11,8 +11,8 @@ rust-version.workspace = true
 allocation-profile = []
 
 [dependencies]
-openjoc-bitio = { version = "0.20.0", path = "../openjoc-bitio" }
-openjoc-emdf = { version = "0.20.0", path = "../openjoc-emdf" }
+openjoc-bitio = { version = "0.20.1", path = "../openjoc-bitio" }
+openjoc-emdf = { version = "0.20.1", path = "../openjoc-emdf" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
