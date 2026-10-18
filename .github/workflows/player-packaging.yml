@@ -307,7 +307,6 @@ jobs:
             mingw-w64-x86_64-vulkan-loader
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
-            mingw-w64-x86_64-gst-plugins-good
 
       - name: Test the mocked mpv settings menu
         run: luajit integrations/mpv/test-openjoc-settings.lua

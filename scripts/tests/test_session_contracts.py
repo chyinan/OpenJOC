@@ -108,15 +108,15 @@ class SessionContractTests(unittest.TestCase):
         self.assertTrue(gate.release_lock_matches(path, expected))
         self.assertEqual(path.read_bytes(), original)
         cases = [
-            (b'version = "0.20.0"', b'version = "0.21.0"'),
-            (b'version = "0.20.0"', b'version = "0.19.0"'),
+            (b'version = "0.20.1"', b'version = "0.21.0"'),
+            (b'version = "0.20.1"', b'version = "0.19.0"'),
             (b'name = "openjoc-api"', b'name = "renamed-api"'),
             (b'name = "adler2"\nversion = "2.0.1"', b'name = "adler2"\nversion = "2.0.2"'),
             (b'checksum = "320119', b'checksum = "000119'),
             (b' "derive_arbitrary",', b' "adler2",'),
             (b' "derive_arbitrary",\n', b''),
             (b'name = "adler2"', b'name = "openjoc-api"'),
-            (b'name = "openjoc-api"\nversion = "0.20.0"', b'name = "openjoc-api"\nversion = "0.20.0"\nsource = "git+https://example.invalid"'),
+            (b'name = "openjoc-api"\nversion = "0.20.1"', b'name = "openjoc-api"\nversion = "0.20.1"\nsource = "git+https://example.invalid"'),
             (b' "openjoc-api",\n "openjoc-eac3",', b' "openjoc-eac3",\n "openjoc-api",'),
         ]
         for old, new in cases:

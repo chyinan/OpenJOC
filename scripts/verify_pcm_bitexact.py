@@ -752,7 +752,7 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
     candidate_workspace = read(candidate_root / "Cargo.toml")
     old = baseline_workspace["workspace"]["package"]["version"]
     new = candidate_workspace["workspace"]["package"]["version"]
-    if old != "0.18.0" or new not in (old, "0.19.0", "0.20.0"):
+    if old != "0.18.0" or new not in (old, "0.19.0", "0.20.0", "0.20.1"):
         raise GateError("unsupported workspace version transition")
     candidate_workspace["workspace"]["package"]["version"] = old
     if candidate_workspace != baseline_workspace:

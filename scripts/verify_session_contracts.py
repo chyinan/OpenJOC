@@ -108,10 +108,19 @@ RELEASE_WORKSPACE_PACKAGES = (
 
 
 def release_lock_matches(path, expected):
-    """Admit only the 0.20.0 workspace-version bump against the original hash."""
+    """Admit only an allowlisted workspace-version bump against the original hash."""
     data = path.read_bytes()
+    versions = {
+        version
+        for name in RELEASE_WORKSPACE_PACKAGES
+        for version in ("0.20.0", "0.20.1")
+        if f'name = "{name}"\nversion = "{version}"'.encode() in data
+    }
+    if len(versions) != 1:
+        return False
+    version = versions.pop()
     for name in RELEASE_WORKSPACE_PACKAGES:
-        old = f'name = "{name}"\nversion = "0.20.0"'.encode()
+        old = f'name = "{name}"\nversion = "{version}"'.encode()
         new = f'name = "{name}"\nversion = "0.19.0"'.encode()
         if data.count(old) != 1:
             return False
