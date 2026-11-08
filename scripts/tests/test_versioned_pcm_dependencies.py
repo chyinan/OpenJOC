@@ -19,12 +19,12 @@ class VersionedDependenciesTests(unittest.TestCase):
         self.baseline = Path(self.temporary.name) / 'baseline'
         self.candidate = Path(self.temporary.name) / 'candidate'
         paths = subprocess.check_output(
-            ['git', 'ls-tree', '-r', '--name-only', gate.BASELINE_REVISION], cwd=ROOT, text=True,
+            ['git', 'ls-tree', '-r', '--name-only', gate.DEPENDENCY_FIXTURE_REVISION], cwd=ROOT, text=True,
         ).splitlines()
         for relative in paths:
             if relative != 'Cargo.lock' and not relative.endswith('Cargo.toml'):
                 continue
-            content = subprocess.check_output(['git', 'show', f'{gate.BASELINE_REVISION}:{relative}'], cwd=ROOT)
+            content = subprocess.check_output(['git', 'show', f'{gate.DEPENDENCY_FIXTURE_REVISION}:{relative}'], cwd=ROOT)
             for root in (self.baseline, self.candidate):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)

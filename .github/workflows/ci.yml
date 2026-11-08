@@ -189,7 +189,7 @@ jobs:
         shell: bash
         run: |
           baseline="$RUNNER_TEMP/openjoc-perf-baseline"
-          git worktree add --detach "$baseline" 15aefe1baa7b40f37950df252b6dbf6179894d6d
+          git worktree add --detach "$baseline" d2939cd835798d8c0593f42004ea0f16cc1318ce
           mkdir -p "$baseline/crates/openjoc-api/examples"
           cp crates/openjoc-api/examples/pcm_regression_probe.rs \
             "$baseline/crates/openjoc-api/examples/pcm_regression_probe.rs"
@@ -273,7 +273,7 @@ jobs:
         shell: bash
         run: |
           baseline="$RUNNER_TEMP/openjoc-perf-baseline"
-          git worktree add --detach "$baseline" 15aefe1baa7b40f37950df252b6dbf6179894d6d
+          git worktree add --detach "$baseline" d2939cd835798d8c0593f42004ea0f16cc1318ce
           mkdir -p "$baseline/crates/openjoc-api/examples"
           cp crates/openjoc-api/examples/pcm_regression_probe.rs \
             "$baseline/crates/openjoc-api/examples/pcm_regression_probe.rs"

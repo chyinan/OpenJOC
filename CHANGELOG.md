@@ -10,6 +10,10 @@
   Those two statements agree with each other and disagree with production
   streams whose clip gain is not the unity code `x = 4`, `y = 0`. The bed,
   LFE, DRC, and dialnorm are unchanged. See `docs/PROVENANCE.md`.
+- Move the paired PCM oracle from `15aefe1` to `d2939cd`. `15aefe1` omitted
+  clip gain, so lifecycle object PCM no longer matches it. The 0.18.0 Cargo
+  allowance fixture stays on `15aefe1`. Session-contract digest replacement
+  uses the Linux recapture recorded by that gate.
 
 ## [0.20.1] — 2026-10-18
 

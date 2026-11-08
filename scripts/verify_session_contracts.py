@@ -235,6 +235,7 @@ def main(argv=None):
             env.pop(variable, None)
         report["build_environment"] = {key: env.get(key) for key in [*BUILD_ENV, "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_TARGET_DIR"]}
         report["toolchain_selector"] = args.toolchain
+        capture_errors = []
         for program in ("rustc", "cargo"):
             command = [program, "+" + args.toolchain, "-vV" if program == "rustc" else "-Vv"]
             report[program] = run_checked(command, root, env, output / (program + ".txt"))
@@ -249,10 +250,35 @@ def main(argv=None):
             report["suites"][name] = record
             run_checked(command, root, env | {variable: str(directory)}, output / (name + ".log"))
             expected = manifest["suites"][name]["files"]
-            record["files"] = compare_capture(directory, expected)
-            record["single_bit_negative_controls"] = check_mutation_sensitivity(directory, expected, output / (name + "-negative-controls"))
+            entries = {path.name for path in directory.iterdir() if path.is_file()}
+            missing = sorted(set(expected) - entries)
+            extra = sorted(entries - set(expected))
+            if missing or extra:
+                raise ContractError(f"capture file set differs: missing={missing}; extra={extra}")
+            actual = {
+                filename: file_record(directory / filename)
+                for filename in sorted(expected)
+            }
+            record["files"] = actual
+            mismatched = [filename for filename, digest in actual.items() if digest != expected[filename]]
+            record["single_bit_negative_controls"] = check_mutation_sensitivity(
+                directory, expected, output / (name + "-negative-controls")
+            )
+            if mismatched:
+                record["result"] = "FAIL"
+                capture_errors.append(
+                    f"{name}: {len(mismatched)} files differ, first={mismatched[0]}"
+                )
+                print(
+                    f"FAIL {name}: {len(mismatched)} of {len(expected)} files differ",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
             record["result"] = "PASS"
             print(f"PASS {name}: {len(expected)} complete PCM/transcript files; single-bit controls rejected", flush=True)
+        if capture_errors:
+            raise ContractError("capture differs: " + "; ".join(capture_errors))
         if report["manifest"] != file_record(manifest_path):
             raise ContractError("frozen manifest changed during the run")
         verify_inputs(root, manifest)

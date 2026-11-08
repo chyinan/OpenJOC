@@ -21,7 +21,11 @@ import tomllib
 from dataclasses import dataclass
 from contextlib import contextmanager
 
-BASELINE_REVISION = "15aefe1baa7b40f37950df252b6dbf6179894d6d"
+# Acoustic oracle: first commit that applies Dolby JOC clip gain. The previous
+# pin, 15aefe1baa7b40f37950df252b6dbf6179894d6d, omitted that gain.
+BASELINE_REVISION = "d2939cd835798d8c0593f42004ea0f16cc1318ce"
+# Cargo metadata used by the 0.18.0 allowance tests. It is not the PCM oracle.
+DEPENDENCY_FIXTURE_REVISION = "15aefe1baa7b40f37950df252b6dbf6179894d6d"
 BASELINE_LOCK_SHA256 = "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7"
 DEFAULT_TOOLCHAIN = "1.89.0"
 PROBE = "crates/openjoc-api/examples/pcm_regression_probe.rs"
@@ -752,7 +756,9 @@ def validate_versioned_dependencies(baseline_root: Path, candidate_root: Path) -
     candidate_workspace = read(candidate_root / "Cargo.toml")
     old = baseline_workspace["workspace"]["package"]["version"]
     new = candidate_workspace["workspace"]["package"]["version"]
-    if old != "0.18.0" or new not in (old, "0.19.0", "0.20.0", "0.20.1"):
+    historical = old == "0.18.0" and new in ("0.18.0", "0.19.0", "0.20.0", "0.20.1")
+    current = old == "0.20.1" and new == "0.20.1"
+    if not historical and not current:
         raise GateError("unsupported workspace version transition")
     candidate_workspace["workspace"]["package"]["version"] = old
     if candidate_workspace != baseline_workspace:

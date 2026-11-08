@@ -259,6 +259,13 @@ is an engineering provenance description, not a legal-safety guarantee.
   decode with `x = 0` scales object QMF and PCM by `1/16` while leaving the
   interpolated matrix unchanged. Matrix-state tests encode unity as `x = 4`,
   `y = 0`.
+- Oracle move: `joc.lifecycle.ec3` object PCM changed, so the paired
+  bit-exact gate no longer uses `15aefe1baa7b40f37950df252b6dbf6179894d6d`.
+  That revision remains the Cargo-metadata fixture for the 0.18.0 allowance
+  tests. The acoustic pin is `d2939cd835798d8c0593f42004ea0f16cc1318ce`, the
+  clip-gain commit. Session-contract live digests are replaced from the Linux
+  x86-64 recapture of this behavior; the pre-clip-gain archive identity stays
+  in the manifest provenance.
 
 ### Per-object inverse QMF
 
