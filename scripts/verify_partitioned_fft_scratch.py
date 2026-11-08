@@ -719,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
         "candidate_lock_sha256": candidate_lock,
         "baseline_partitioned_source_sha256": sha256_file(baseline_root / "crates/openjoc-render/src/partitioned.rs"),
         "candidate_partitioned_source_sha256": sha256_file(candidate_root / "crates/openjoc-render/src/partitioned.rs"),
-        "probe_sha256": sha256_file(candidate_harness),
+        "probe_sha256": sha256_file(candidate_root / PARTITIONED_PROBE),
         "shared_input_sha256": input_sha256,
         "shared_input_metadata": input_metadata,
         "same_backend_exact_matrix": exact_rows,
