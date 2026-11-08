@@ -218,7 +218,7 @@ class VersionedDependenciesTests(unittest.TestCase):
         gate.validate_versioned_dependencies(self.baseline, self.candidate)
         self.bump()
         # The old byte-equality guard rejects this legitimate release bump.
-        self.assertEqual(gate.hash_file(self.baseline / "Cargo.lock"), gate.BASELINE_LOCK_SHA256)
+        self.assertEqual(gate.hash_file(self.baseline / "Cargo.lock"), gate.DEPENDENCY_FIXTURE_LOCK_SHA256)
         self.assertNotEqual(gate.hash_file(self.baseline / "Cargo.lock"), gate.hash_file(self.candidate / "Cargo.lock"))
         gate.validate_versioned_dependencies(self.baseline, self.candidate)
         self.assertEqual(before, {p: p.read_bytes() for p in before})

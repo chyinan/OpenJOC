@@ -28,6 +28,11 @@
       "evidence/cargo-stable.log": "ab7bafd3494d118bb004f7c4135bb2e42c4e3647cbef07f43e99c869e952832e",
       "evidence/commands.jsonl": "36e8eeb7b8ae26c277cc16a59fda447a40beae42f791d3a7c5ce956e11c753aa",
       "validation/validate.py": "83a50573f7cea86503ab1073b4f9740a45a696a2037e117eead7fe88b1411b00"
+    },
+    "clip_gain_recapture": {
+      "acoustic_oracle": "d2939cd835798d8c0593f42004ea0f16cc1318ce",
+      "linux_rustc": "1.99.0 and 1.89.0 produced identical digests",
+      "note": "Live file digests replace the pre-clip-gain archive bytes. origin_sha256 values above remain the PR 53 archive identity."
     }
   },
   "inputs": {
@@ -45,7 +50,7 @@
       "cases": 16,
       "files": {
         "d1-builtin.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-builtin.txt": {
@@ -53,7 +58,7 @@
           "bytes": 2999
         },
         "d1-epoch.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-epoch.txt": {
@@ -61,7 +66,7 @@
           "bytes": 20065
         },
         "d1-external.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-external.txt": {
@@ -69,7 +74,7 @@
           "bytes": 2999
         },
         "d1-limits.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-limits.txt": {
@@ -77,7 +82,7 @@
           "bytes": 2999
         },
         "d1-orientation.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-orientation.txt": {
@@ -85,7 +90,7 @@
           "bytes": 3518
         },
         "d1-pull.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-pull.txt": {
@@ -93,7 +98,7 @@
           "bytes": 20065
         },
         "d1-shared.f32le": {
-          "sha256": "a24f37d6ed46c1175af4f2622c528311a9e51a66bf11285c564d30f099105bf3",
+          "sha256": "3b803db5d636de0bb58827a70381187745017c936ce8ff9828a0370b0c434103",
           "bytes": 75768
         },
         "d1-shared.txt": {
@@ -101,7 +106,7 @@
           "bytes": 20065
         },
         "d2-builtin.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-builtin.txt": {
@@ -109,7 +114,7 @@
           "bytes": 2994
         },
         "d2-epoch.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-epoch.txt": {
@@ -117,7 +122,7 @@
           "bytes": 20061
         },
         "d2-external.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-external.txt": {
@@ -125,7 +130,7 @@
           "bytes": 2994
         },
         "d2-limits.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-limits.txt": {
@@ -133,7 +138,7 @@
           "bytes": 2994
         },
         "d2-orientation.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-orientation.txt": {
@@ -141,7 +146,7 @@
           "bytes": 3514
         },
         "d2-pull.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-pull.txt": {
@@ -149,7 +154,7 @@
           "bytes": 20061
         },
         "d2-shared.f32le": {
-          "sha256": "efa2f46f706adafc640cc51bc1586ff90a1acab25cc86d57632cbc32aafdfd04",
+          "sha256": "33d0641db51387cd94cc3e1e7e22cbe36859d4a2f8cd533ffe8f3cd6d17cf24c",
           "bytes": 75768
         },
         "d2-shared.txt": {
@@ -157,7 +162,7 @@
           "bytes": 20061
         },
         "default-limits.f32le": {
-          "sha256": "b5660e24e609e5960df923f9eba86072612c1ccd2ed050114731332c99dea6fb",
+          "sha256": "bfd31e7c957f0df94b3009c305d1667fc91d8706e7f78e333b54ee365e6569d1",
           "bytes": 221952
         },
         "default-limits.txt": {
@@ -165,7 +170,7 @@
           "bytes": 2760
         },
         "default.f32le": {
-          "sha256": "b5660e24e609e5960df923f9eba86072612c1ccd2ed050114731332c99dea6fb",
+          "sha256": "bfd31e7c957f0df94b3009c305d1667fc91d8706e7f78e333b54ee365e6569d1",
           "bytes": 221952
         },
         "default.txt": {
@@ -187,7 +192,7 @@
       "cases": 28,
       "files": {
         "fresh-false-0.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-0.txt": {
@@ -195,7 +200,7 @@
           "bytes": 2621
         },
         "fresh-false-1.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-1.txt": {
@@ -203,7 +208,7 @@
           "bytes": 2418
         },
         "fresh-false-10.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-10.txt": {
@@ -211,7 +216,7 @@
           "bytes": 2559
         },
         "fresh-false-2.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-2.txt": {
@@ -219,7 +224,7 @@
           "bytes": 2383
         },
         "fresh-false-3.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-3.txt": {
@@ -227,7 +232,7 @@
           "bytes": 2383
         },
         "fresh-false-4.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-4.txt": {
@@ -235,7 +240,7 @@
           "bytes": 2443
         },
         "fresh-false-5.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-5.txt": {
@@ -243,7 +248,7 @@
           "bytes": 2562
         },
         "fresh-false-6.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-6.txt": {
@@ -251,7 +256,7 @@
           "bytes": 2381
         },
         "fresh-false-7.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-7.txt": {
@@ -259,7 +264,7 @@
           "bytes": 2280
         },
         "fresh-false-8.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-8.txt": {
@@ -267,7 +272,7 @@
           "bytes": 2255
         },
         "fresh-false-9.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "fresh-false-9.txt": {
@@ -275,7 +280,7 @@
           "bytes": 2464
         },
         "fresh-true-0.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-0.txt": {
@@ -283,7 +288,7 @@
           "bytes": 13689
         },
         "fresh-true-1.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-1.txt": {
@@ -291,7 +296,7 @@
           "bytes": 13486
         },
         "fresh-true-10.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-10.txt": {
@@ -299,7 +304,7 @@
           "bytes": 13627
         },
         "fresh-true-2.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-2.txt": {
@@ -307,7 +312,7 @@
           "bytes": 13451
         },
         "fresh-true-3.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-3.txt": {
@@ -315,7 +320,7 @@
           "bytes": 13451
         },
         "fresh-true-4.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-4.txt": {
@@ -323,7 +328,7 @@
           "bytes": 13511
         },
         "fresh-true-5.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-5.txt": {
@@ -331,7 +336,7 @@
           "bytes": 13630
         },
         "fresh-true-6.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-6.txt": {
@@ -339,7 +344,7 @@
           "bytes": 13449
         },
         "fresh-true-7.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-7.txt": {
@@ -347,7 +352,7 @@
           "bytes": 13348
         },
         "fresh-true-8.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-8.txt": {
@@ -355,7 +360,7 @@
           "bytes": 13323
         },
         "fresh-true-9.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "fresh-true-9.txt": {
@@ -363,7 +368,7 @@
           "bytes": 13532
         },
         "pull-draining.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "pull-draining.txt": {
@@ -371,7 +376,7 @@
           "bytes": 16467
         },
         "pull-partial.f32le": {
-          "sha256": "05a721bd33cb72a74aa63bbb6a155d31749f56076c43f1059bc05fc7cafcbf7d",
+          "sha256": "d57005c81f2dbe015df0f50bf791c89bbea0b5e98d80c17e952954ced65429da",
           "bytes": 52216
         },
         "pull-partial.txt": {
@@ -379,7 +384,7 @@
           "bytes": 13768
         },
         "pull-queued.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "pull-queued.txt": {
@@ -387,7 +392,7 @@
           "bytes": 13526
         },
         "replacement.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "replacement.txt": {
@@ -395,7 +400,7 @@
           "bytes": 12927
         },
         "speaker-draining.f32le": {
-          "sha256": "8765c62d07c5eb13768e39b5160baecfd508bd14f824ddfae46b391a515b06ee",
+          "sha256": "a72163d12f355ea5a798b8ab1a281580a3dd5618eb1642112916ddf6b7242b99",
           "bytes": 185088
         },
         "speaker-draining.txt": {
@@ -403,7 +408,7 @@
           "bytes": 2697
         },
         "speaker-queued.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "speaker-queued.txt": {
@@ -419,7 +424,7 @@
       "cases": 48,
       "files": {
         "clear-Binaural-Draining-fail-closed.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Binaural-Draining-fail-closed.txt": {
@@ -427,7 +432,7 @@
           "bytes": 4114
         },
         "clear-Binaural-Draining-reset.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Binaural-Draining-reset.txt": {
@@ -435,7 +440,7 @@
           "bytes": 3914
         },
         "clear-Binaural-Draining-try-flush.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Binaural-Draining-try-flush.txt": {
@@ -443,7 +448,7 @@
           "bytes": 3914
         },
         "clear-Binaural-Queued-fail-closed.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Binaural-Queued-fail-closed.txt": {
@@ -451,7 +456,7 @@
           "bytes": 3713
         },
         "clear-Binaural-Queued-reset.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Binaural-Queued-reset.txt": {
@@ -459,7 +464,7 @@
           "bytes": 3513
         },
         "clear-Binaural-Queued-try-flush.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Binaural-Queued-try-flush.txt": {
@@ -467,7 +472,7 @@
           "bytes": 3513
         },
         "clear-Pull128-Draining-fail-closed.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Pull128-Draining-fail-closed.txt": {
@@ -475,7 +480,7 @@
           "bytes": 27792
         },
         "clear-Pull128-Draining-reset.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Pull128-Draining-reset.txt": {
@@ -483,7 +488,7 @@
           "bytes": 27590
         },
         "clear-Pull128-Draining-try-flush.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Pull128-Draining-try-flush.txt": {
@@ -491,7 +496,7 @@
           "bytes": 27590
         },
         "clear-Pull128-Partial-fail-closed.f32le": {
-          "sha256": "05a721bd33cb72a74aa63bbb6a155d31749f56076c43f1059bc05fc7cafcbf7d",
+          "sha256": "d57005c81f2dbe015df0f50bf791c89bbea0b5e98d80c17e952954ced65429da",
           "bytes": 52216
         },
         "clear-Pull128-Partial-fail-closed.txt": {
@@ -499,7 +504,7 @@
           "bytes": 23206
         },
         "clear-Pull128-Partial-reset.f32le": {
-          "sha256": "05a721bd33cb72a74aa63bbb6a155d31749f56076c43f1059bc05fc7cafcbf7d",
+          "sha256": "d57005c81f2dbe015df0f50bf791c89bbea0b5e98d80c17e952954ced65429da",
           "bytes": 52216
         },
         "clear-Pull128-Partial-reset.txt": {
@@ -507,7 +512,7 @@
           "bytes": 23004
         },
         "clear-Pull128-Partial-try-flush.f32le": {
-          "sha256": "05a721bd33cb72a74aa63bbb6a155d31749f56076c43f1059bc05fc7cafcbf7d",
+          "sha256": "d57005c81f2dbe015df0f50bf791c89bbea0b5e98d80c17e952954ced65429da",
           "bytes": 52216
         },
         "clear-Pull128-Partial-try-flush.txt": {
@@ -515,7 +520,7 @@
           "bytes": 23004
         },
         "clear-Pull128-Queued-fail-closed.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Pull128-Queued-fail-closed.txt": {
@@ -523,7 +528,7 @@
           "bytes": 22774
         },
         "clear-Pull128-Queued-reset.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Pull128-Queued-reset.txt": {
@@ -531,7 +536,7 @@
           "bytes": 22571
         },
         "clear-Pull128-Queued-try-flush.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Pull128-Queued-try-flush.txt": {
@@ -539,7 +544,7 @@
           "bytes": 22571
         },
         "clear-Pull128-Tail-fail-closed.f32le": {
-          "sha256": "aba09931d693bfd08c5d160ce1729c64fe723382e8eef5d6d4c09666a5b5d76e",
+          "sha256": "9ddfe66dd6b0f2a0c82fefcf2bdb9c31be72249a47c1c92eef8a756d5dfbf472",
           "bytes": 75768
         },
         "clear-Pull128-Tail-fail-closed.txt": {
@@ -547,7 +552,7 @@
           "bytes": 32786
         },
         "clear-Pull128-Tail-reset.f32le": {
-          "sha256": "aba09931d693bfd08c5d160ce1729c64fe723382e8eef5d6d4c09666a5b5d76e",
+          "sha256": "9ddfe66dd6b0f2a0c82fefcf2bdb9c31be72249a47c1c92eef8a756d5dfbf472",
           "bytes": 75768
         },
         "clear-Pull128-Tail-reset.txt": {
@@ -555,7 +560,7 @@
           "bytes": 32584
         },
         "clear-Pull128-Tail-try-flush.f32le": {
-          "sha256": "aba09931d693bfd08c5d160ce1729c64fe723382e8eef5d6d4c09666a5b5d76e",
+          "sha256": "9ddfe66dd6b0f2a0c82fefcf2bdb9c31be72249a47c1c92eef8a756d5dfbf472",
           "bytes": 75768
         },
         "clear-Pull128-Tail-try-flush.txt": {
@@ -563,7 +568,7 @@
           "bytes": 32584
         },
         "clear-Pull256-Draining-fail-closed.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Pull256-Draining-fail-closed.txt": {
@@ -571,7 +576,7 @@
           "bytes": 14812
         },
         "clear-Pull256-Draining-reset.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Pull256-Draining-reset.txt": {
@@ -579,7 +584,7 @@
           "bytes": 14610
         },
         "clear-Pull256-Draining-try-flush.f32le": {
-          "sha256": "07af1beb4a08f03a8ba6f9eb25a03f25db8a0b3d1fc4c3243c75c73e8ca4ae9d",
+          "sha256": "d30506ee522fc905f0441574ce80fbf9e709add9f1eaa605e73b021f3ad98ba7",
           "bytes": 63480
         },
         "clear-Pull256-Draining-try-flush.txt": {
@@ -587,7 +592,7 @@
           "bytes": 14610
         },
         "clear-Pull256-Partial-fail-closed.f32le": {
-          "sha256": "be4c1822fd7a9733eea88e78a34b1b15975fdc2e3837ad9243aec88b89547fcf",
+          "sha256": "a58a170f934cd0832ddc8dd445a0096c69db9cb3a22fe0ff761f5f16976ce0d9",
           "bytes": 53240
         },
         "clear-Pull256-Partial-fail-closed.txt": {
@@ -595,7 +600,7 @@
           "bytes": 12744
         },
         "clear-Pull256-Partial-reset.f32le": {
-          "sha256": "be4c1822fd7a9733eea88e78a34b1b15975fdc2e3837ad9243aec88b89547fcf",
+          "sha256": "a58a170f934cd0832ddc8dd445a0096c69db9cb3a22fe0ff761f5f16976ce0d9",
           "bytes": 53240
         },
         "clear-Pull256-Partial-reset.txt": {
@@ -603,7 +608,7 @@
           "bytes": 12542
         },
         "clear-Pull256-Partial-try-flush.f32le": {
-          "sha256": "be4c1822fd7a9733eea88e78a34b1b15975fdc2e3837ad9243aec88b89547fcf",
+          "sha256": "a58a170f934cd0832ddc8dd445a0096c69db9cb3a22fe0ff761f5f16976ce0d9",
           "bytes": 53240
         },
         "clear-Pull256-Partial-try-flush.txt": {
@@ -611,7 +616,7 @@
           "bytes": 12542
         },
         "clear-Pull256-Queued-fail-closed.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Pull256-Queued-fail-closed.txt": {
@@ -619,7 +624,7 @@
           "bytes": 12312
         },
         "clear-Pull256-Queued-reset.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Pull256-Queued-reset.txt": {
@@ -627,7 +632,7 @@
           "bytes": 12109
         },
         "clear-Pull256-Queued-try-flush.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "clear-Pull256-Queued-try-flush.txt": {
@@ -635,7 +640,7 @@
           "bytes": 12109
         },
         "clear-Pull256-Tail-fail-closed.f32le": {
-          "sha256": "aba09931d693bfd08c5d160ce1729c64fe723382e8eef5d6d4c09666a5b5d76e",
+          "sha256": "9ddfe66dd6b0f2a0c82fefcf2bdb9c31be72249a47c1c92eef8a756d5dfbf472",
           "bytes": 75768
         },
         "clear-Pull256-Tail-fail-closed.txt": {
@@ -643,7 +648,7 @@
           "bytes": 17300
         },
         "clear-Pull256-Tail-reset.f32le": {
-          "sha256": "aba09931d693bfd08c5d160ce1729c64fe723382e8eef5d6d4c09666a5b5d76e",
+          "sha256": "9ddfe66dd6b0f2a0c82fefcf2bdb9c31be72249a47c1c92eef8a756d5dfbf472",
           "bytes": 75768
         },
         "clear-Pull256-Tail-reset.txt": {
@@ -651,7 +656,7 @@
           "bytes": 17098
         },
         "clear-Pull256-Tail-try-flush.f32le": {
-          "sha256": "aba09931d693bfd08c5d160ce1729c64fe723382e8eef5d6d4c09666a5b5d76e",
+          "sha256": "9ddfe66dd6b0f2a0c82fefcf2bdb9c31be72249a47c1c92eef8a756d5dfbf472",
           "bytes": 75768
         },
         "clear-Pull256-Tail-try-flush.txt": {
@@ -659,7 +664,7 @@
           "bytes": 17098
         },
         "clear-Speaker-Draining-fail-closed.f32le": {
-          "sha256": "8765c62d07c5eb13768e39b5160baecfd508bd14f824ddfae46b391a515b06ee",
+          "sha256": "a72163d12f355ea5a798b8ab1a281580a3dd5618eb1642112916ddf6b7242b99",
           "bytes": 185088
         },
         "clear-Speaker-Draining-fail-closed.txt": {
@@ -667,7 +672,7 @@
           "bytes": 4107
         },
         "clear-Speaker-Draining-reset.f32le": {
-          "sha256": "8765c62d07c5eb13768e39b5160baecfd508bd14f824ddfae46b391a515b06ee",
+          "sha256": "a72163d12f355ea5a798b8ab1a281580a3dd5618eb1642112916ddf6b7242b99",
           "bytes": 185088
         },
         "clear-Speaker-Draining-reset.txt": {
@@ -675,7 +680,7 @@
           "bytes": 3907
         },
         "clear-Speaker-Draining-try-flush.f32le": {
-          "sha256": "8765c62d07c5eb13768e39b5160baecfd508bd14f824ddfae46b391a515b06ee",
+          "sha256": "a72163d12f355ea5a798b8ab1a281580a3dd5618eb1642112916ddf6b7242b99",
           "bytes": 185088
         },
         "clear-Speaker-Draining-try-flush.txt": {
@@ -683,7 +688,7 @@
           "bytes": 3907
         },
         "clear-Speaker-Queued-fail-closed.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "clear-Speaker-Queued-fail-closed.txt": {
@@ -691,7 +696,7 @@
           "bytes": 3707
         },
         "clear-Speaker-Queued-reset.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "clear-Speaker-Queued-reset.txt": {
@@ -699,7 +704,7 @@
           "bytes": 3507
         },
         "clear-Speaker-Queued-try-flush.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "clear-Speaker-Queued-try-flush.txt": {
@@ -707,7 +712,7 @@
           "bytes": 3507
         },
         "discontinuity-Binaural.f32le": {
-          "sha256": "ceb3c178a5ff231fd691f140ef89c0b1f87cc31437c766002526ef93014cf05a",
+          "sha256": "30cc03689351d9fb6c30fb56d881aef99849a3a5be1b376e5ce9052be8f6d2b6",
           "bytes": 26616
         },
         "discontinuity-Binaural.txt": {
@@ -715,7 +720,7 @@
           "bytes": 2259
         },
         "discontinuity-Pull128.f32le": {
-          "sha256": "ceb3c178a5ff231fd691f140ef89c0b1f87cc31437c766002526ef93014cf05a",
+          "sha256": "30cc03689351d9fb6c30fb56d881aef99849a3a5be1b376e5ce9052be8f6d2b6",
           "bytes": 26616
         },
         "discontinuity-Pull128.txt": {
@@ -723,7 +728,7 @@
           "bytes": 12066
         },
         "discontinuity-Pull256.f32le": {
-          "sha256": "ceb3c178a5ff231fd691f140ef89c0b1f87cc31437c766002526ef93014cf05a",
+          "sha256": "30cc03689351d9fb6c30fb56d881aef99849a3a5be1b376e5ce9052be8f6d2b6",
           "bytes": 26616
         },
         "discontinuity-Pull256.txt": {
@@ -731,7 +736,7 @@
           "bytes": 6640
         },
         "discontinuity-Speaker.f32le": {
-          "sha256": "6163cffa0698d453fd0673e68afa08794923d4d0b6d1fb1c3554acbd62b8bbdd",
+          "sha256": "fbd79af783162742f4e377065d55e384b84c02151e011e64c3bc52d00d1a3308",
           "bytes": 74496
         },
         "discontinuity-Speaker.txt": {
@@ -771,7 +776,7 @@
           "bytes": 285
         },
         "transitions-Binaural.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "transitions-Binaural.txt": {
@@ -779,7 +784,7 @@
           "bytes": 4084
         },
         "transitions-Pull128.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "transitions-Pull128.txt": {
@@ -787,7 +792,7 @@
           "bytes": 23763
         },
         "transitions-Pull256.f32le": {
-          "sha256": "95cde1bbb82c664c5364a36e0c538bd39e45015d108a2600e96df62a057230c9",
+          "sha256": "94a00b8aabd7168a9e2c3c90f72cfa3205ef953c52d97eefbe376f509d90d707",
           "bytes": 51192
         },
         "transitions-Pull256.txt": {
@@ -795,7 +800,7 @@
           "bytes": 13301
         },
         "transitions-Speaker.f32le": {
-          "sha256": "2d429feca74ff6d08ca1102245d24cc6ea247396c6b0aebb135453326d76e0ac",
+          "sha256": "6e0d0dac142f99c996e047a4d6f22061042a86b6c0e21153c9d31a5d3d7e38f0",
           "bytes": 148224
         },
         "transitions-Speaker.txt": {

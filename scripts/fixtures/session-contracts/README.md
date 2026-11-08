@@ -3,9 +3,10 @@
 `frozen.json` keeps the file set from three independent captures made
 **before** their respective product refactors in
 [PR #53](https://github.com/chyinan/OpenJOC/pull/53). Clip gain changes
-object PCM, so the live digests have to be replaced by a Linux x86-64
-recapture; the original archive member hashes, archive hash, input hashes
-and toolchain records stay in the manifest. All 184 file entries remain.
+object PCM, so the live digests were replaced by the Linux x86-64 recapture
+from CI run 42488973703 (Rust 1.89.0 and 1.99.0 agreed). The original archive
+member hashes, archive hash, input hashes and toolchain records stay in the
+manifest. All 184 file entries remain.
 
 | Suite | Source state when frozen | Cases | PCM bytes | Event bytes |
 | --- | --- | ---: | ---: | ---: |
@@ -87,7 +88,7 @@ silently overwriting these historical expectations. The clip-gain recapture
 is that kind of change: object PCM gained the Dolby frame gain, the live
 digests moved, and the pre-clip-gain archive hashes stayed in `provenance`.
 
-This suite is distinct from the pinned `15aefe1` PCM oracle and the external
+This suite is distinct from the live PCM oracle at `d2939cd` and the external
 204-case matrix. The latter's original overlay and raw captures were not
 retained in this compact archive, so this runner does not claim to execute it.
 The existing historical PCM gate, probes, comparison rules and expected outputs

@@ -26,7 +26,8 @@ from contextlib import contextmanager
 BASELINE_REVISION = "d2939cd835798d8c0593f42004ea0f16cc1318ce"
 # Cargo metadata used by the 0.18.0 allowance tests. It is not the PCM oracle.
 DEPENDENCY_FIXTURE_REVISION = "15aefe1baa7b40f37950df252b6dbf6179894d6d"
-BASELINE_LOCK_SHA256 = "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7"
+BASELINE_LOCK_SHA256 = "503673e74e25c306b008e22787bb5f6040c2280b4bcadc75a674d6d75a3c7bc2"
+DEPENDENCY_FIXTURE_LOCK_SHA256 = "40f4a91c662652bef309f2bf57d01cfa811c5d004ebf9d194bf9e688d4ab45e7"
 DEFAULT_TOOLCHAIN = "1.89.0"
 PROBE = "crates/openjoc-api/examples/pcm_regression_probe.rs"
 CORE_PROBE = "crates/openjoc-eac3/examples/eac3_pcm_regression_probe.rs"

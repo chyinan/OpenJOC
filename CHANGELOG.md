@@ -12,8 +12,9 @@
   LFE, DRC, and dialnorm are unchanged. See `docs/PROVENANCE.md`.
 - Move the paired PCM oracle from `15aefe1` to `d2939cd`. `15aefe1` omitted
   clip gain, so lifecycle object PCM no longer matches it. The 0.18.0 Cargo
-  allowance fixture stays on `15aefe1`. Session-contract digest replacement
-  uses the Linux recapture recorded by that gate.
+  allowance fixture stays on `15aefe1`. The live lock pin is the `d2939cd`
+  `Cargo.lock`. Session-contract digests are the Linux x86-64 recapture from
+  CI run 42488973703; Rust 1.89.0 and 1.99.0 produced the same file map.
 
 ## [0.20.1] — 2026-10-18
 
