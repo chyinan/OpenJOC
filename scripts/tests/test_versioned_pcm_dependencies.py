@@ -275,7 +275,9 @@ class VersionedDependenciesTests(unittest.TestCase):
             gate.install_baseline_feature_overlay(self.baseline)
             for relative, content in committed.items():
                 package = Path(relative).parent.name
-                self.assertEqual((self.baseline / relative).read_bytes(), gate._expected_feature_manifest(content, package))
+                overlaid = gate._expected_feature_manifest(content, package)
+                self.assertEqual((self.baseline / relative).read_bytes(), overlaid)
+                self.assertEqual(gate._expected_feature_manifest(overlaid, package), overlaid)
             path = self.baseline / "crates/openjoc-api/Cargo.toml"
             path.write_bytes(path.read_bytes().replace(b'"0.18.0"', b'"0.19.0"'))
             with self.assertRaisesRegex(gate.GateError, "unexpected baseline manifest"):

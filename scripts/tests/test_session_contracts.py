@@ -85,11 +85,12 @@ class SessionContractTests(unittest.TestCase):
 
     def test_persisted_expected_values_are_original_not_new_capture_values(self):
         manifest = gate.load_manifest(gate.ROOT / gate.MANIFEST)
-        # Canonical digests of the three complete original archive files dictionaries.
+        # Live file-map digests after the Linux clip-gain recapture. The PR 53
+        # archive identity remains in each suite's origin_sha256.
         frozen = {
-            "constructors": (16, "a1c37e67c7f65a53ddac51286ae2501777412621d39c1b11dd32de5e31634def"),
-            "terminal": (28, "c4ee54ceeb3a79cc84bc2d1b589c8248f2f37713d4e3caf027045a3a8ccabf3d"),
-            "lifecycle": (48, "c7615470a710a435ad1ac9e2010c0648b0352a563056b3e7cc60f639fa5088b1"),
+            "constructors": (16, "4b98cf35d42b9b1dee14edc0572c703b4bdc9e5290086b4a50fb5909d424302a"),
+            "terminal": (28, "6a33a9b48b79ed17571480e39e44257b260588fcd592f373031b7d7cbb0b9f5c"),
+            "lifecycle": (48, "61321ba0c56fd3feb2baf61e63e4c093e84db33e339063265453b8af8c81c2a6"),
         }
         for name, (cases, digest) in frozen.items():
             suite = manifest["suites"][name]

@@ -15,6 +15,8 @@
   allowance fixture stays on `15aefe1`. The live lock pin is the `d2939cd`
   `Cargo.lock`. Session-contract digests are the Linux x86-64 recapture from
   CI run 42488973703; Rust 1.89.0 and 1.99.0 produced the same file map.
+  The allocator-profile harness overlay is a no-op on that oracle because
+  the feature is already declared there.
 
 ## [0.20.1] — 2026-10-18
 

@@ -699,15 +699,21 @@ def probe_binary_path(target: Path, example: str, *, platform: str | None = None
 def _expected_feature_manifest(head_bytes: bytes, package: str) -> bytes:
     if package == "openjoc-api":
         marker = b'orientation-profile = ["openjoc-sofa/orientation-profile"]\n'
-        replacement = marker + b"allocation-profile = []\n"
+        addition = b"allocation-profile = []\n"
     elif package == "openjoc-eac3":
         marker = b"rust-version.workspace = true\n"
-        replacement = marker + b"\n[features]\nallocation-profile = []\n"
+        addition = b"\n[features]\nallocation-profile = []\n"
     else:
         raise GateError(f"unexpected baseline feature overlay package: {package}")
     if head_bytes.count(marker) != 1:
         raise GateError(f"cannot validate expected one-line feature overlay in {package}/Cargo.toml")
-    return head_bytes.replace(marker, replacement, 1)
+    # 15aefe1 lacks the harness feature. d2939cd already declares it, so a second
+    # insert would duplicate the TOML key and the baseline manifest would not parse.
+    if addition in head_bytes:
+        if head_bytes.count(addition) != 1:
+            raise GateError(f"baseline {package} manifest has a conflicting allocation-profile feature")
+        return head_bytes
+    return head_bytes.replace(marker, marker + addition, 1)
 
 
 
