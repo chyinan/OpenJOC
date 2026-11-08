@@ -3,7 +3,7 @@
 use crate::{
     InterpolatedMatrix, JocBandCount, JocFrame, JocParseError, JocPayloadData, ReconstructionError,
     decode_full_coefficients, decode_sparse_coefficients, dequantize, interpolate_matrix,
-    parse_joc_payload, reconstruct_basis_qmf,
+    joc_clip_gain, parse_joc_payload, reconstruct_basis_qmf,
 };
 use num_complex::Complex64;
 use openjoc_qmf::{QMF_ROUNDTRIP_LATENCY_SAMPLES, ReferenceQmf64F64};
@@ -505,7 +505,11 @@ impl JocDecoderState {
             }));
         }
         let matrix_start = self.timing_start();
-        let reconstruction_qmf = reconstruct_basis_qmf(inputs, &object_matrices)?;
+        let mut reconstruction_qmf = reconstruct_basis_qmf(inputs, &object_matrices)?;
+        scale_reconstruction_qmf(
+            &mut reconstruction_qmf,
+            joc_clip_gain(frame.clip_gain_x_bits, frame.clip_gain_y_bits),
+        );
         self.record_timing(|timing| &mut timing.matrix_reconstruction, matrix_start);
         let buffer_start = self.timing_start();
         let mut synthesis_states =
@@ -550,6 +554,19 @@ impl JocDecoderState {
             && (self.channel_count != Some(frame.header.channel_count)
                 || self.previous_matrices.len() != frame.objects.len());
         sequence_reset || configuration_reset
+    }
+}
+
+fn scale_reconstruction_qmf(qmf: &mut [Vec<[Complex64; QMF_SUBBANDS]>], gain: f64) {
+    if gain == 1.0 {
+        return;
+    }
+    for row in qmf {
+        for timeslot in row {
+            for bin in timeslot {
+                *bin *= gain;
+            }
+        }
     }
 }
 

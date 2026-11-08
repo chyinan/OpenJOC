@@ -4,7 +4,7 @@ use num_complex::Complex64;
 use openjoc_joc::{
     HuffmanCodeword, JocDataPoint, JocDecodeError, JocDecoderState, JocFrame, JocHeader,
     JocObjectFrame, JocPayloadData, QuantMode, ReconstructionStageTiming, Slope,
-    all_huffman_tables,
+    all_huffman_tables, joc_clip_gain,
 };
 use openjoc_qmf::ReferenceQmf64F64;
 
@@ -166,7 +166,8 @@ fn frame(sequence_count: u16, object: JocObjectFrame) -> JocFrame {
             object_count: 1,
             extension_index: 0,
         },
-        clip_gain_x_bits: 0,
+        // x = 4, y = 0 is unity under the adopted clip-gain formula.
+        clip_gain_x_bits: 4,
         clip_gain_y_bits: 0,
         sequence_count,
         objects: vec![object],
@@ -183,7 +184,7 @@ fn multi_frame(sequence_count: u16, objects: Vec<JocObjectFrame>) -> JocFrame {
             object_count,
             extension_index: 0,
         },
-        clip_gain_x_bits: 0,
+        clip_gain_x_bits: 4,
         clip_gain_y_bits: 0,
         sequence_count,
         objects,
@@ -303,6 +304,50 @@ fn discontinuous_sequence_resets_interpolation_origin() {
             .abs()
             < 1.0e-12
     );
+}
+
+#[test]
+fn clip_gain_scales_object_qmf_and_pcm_without_scaling_the_matrix() {
+    let unity = frame(1, full_object(5));
+    let mut attenuated = unity.clone();
+    attenuated.clip_gain_x_bits = 0;
+    attenuated.clip_gain_y_bits = 0;
+    let gain = joc_clip_gain(0, 0);
+    assert_eq!(gain, 0.0625);
+
+    let mut unity_state = JocDecoderState::new();
+    let unity_decoded = unity_state
+        .decode_frame(&unity, &inputs())
+        .expect("unity clip gain");
+    let mut attenuated_state = JocDecoderState::new();
+    let attenuated_decoded = attenuated_state
+        .decode_frame(&attenuated, &inputs())
+        .expect("attenuating clip gain");
+
+    let coefficient = 5.0 * 820.0 / 4096.0;
+    assert!((unity_decoded.reconstruction_qmf[0][0][0].re - 15.0 * coefficient).abs() < 1.0e-12);
+    assert!(
+        (attenuated_decoded.reconstruction_qmf[0][0][0].re
+            - unity_decoded.reconstruction_qmf[0][0][0].re * gain)
+            .abs()
+            < 1.0e-12
+    );
+    assert_eq!(
+        unity_decoded.stages[0]
+            .as_ref()
+            .expect("stages")
+            .interpolated,
+        attenuated_decoded.stages[0]
+            .as_ref()
+            .expect("stages")
+            .interpolated
+    );
+    for (attenuated_sample, unity_sample) in attenuated_decoded.reconstruction_basis.rows[0]
+        .iter()
+        .zip(&unity_decoded.reconstruction_basis.rows[0])
+    {
+        assert!((attenuated_sample - unity_sample * gain).abs() < 1.0e-12);
+    }
 }
 
 #[test]

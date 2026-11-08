@@ -5,12 +5,14 @@
 use openjoc_bitio::{BitError, BitRead};
 use std::fmt;
 
+mod clip_gain;
 mod decoder;
 mod parsed_proof;
 mod parser;
 pub use parsed_proof::ParsedJocProof;
 mod reconstruction;
 mod timeline;
+pub use clip_gain::joc_clip_gain;
 pub use parser::{
     JocDataPoint, JocFrame, JocHeader, JocObjectFrame, JocParseError, JocPayloadData, QuantMode,
     Slope, parse_joc_payload,

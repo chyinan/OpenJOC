@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Apply JOC clip gain to reconstructed object QMF and PCM with
+  `(1 + y/32) * 2^(x-4)`, the grouping used by Dolby decoders. The printed
+  ETSI equation and its `[1; 8,75]` range leave the `1 +` outside the product.
+  Those two statements agree with each other and disagree with production
+  streams whose clip gain is not the unity code `x = 4`, `y = 0`. The bed,
+  LFE, DRC, and dialnorm are unchanged. See `docs/PROVENANCE.md`.
+
 ## [0.20.1] — 2026-10-18
 
 ### Fixed

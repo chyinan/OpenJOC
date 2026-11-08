@@ -224,6 +224,42 @@ is an engineering provenance description, not a legal-safety guarantee.
   frame reuses it; sequence zero resets it; a counter discontinuity starts
   smooth interpolation from zero; quantized and interpolated stages are checked.
 
+### JOC clip gain
+
+- Printed source: ETSI TS 103 420 V1.2.1 clause 6.3.3.2. The equation glyphs
+  are `joc_clipgain = (1 + joc_clipgain_y_bits/32 × 2^(joc_clipgain_x_bits − 4))`.
+  The large parentheses enclose the whole right-hand side, and the only inner
+  parentheses enclose the exponent. Operator precedence therefore gives
+  `1 + (y/32) * 2^(x-4)`. The same clause states the range `[1; 8,75]`, which
+  is exactly that reading: `y = 0` is 1 for every `x`, and `x = 7`, `y = 31`
+  is `1 + (31/32) * 8 = 8.75`. Clause 6.6.6 pseudocode 7 never multiplies by
+  this value. V1.1.1 typesets the same equation.
+- Adopted behaviour: Dolby decoders, including the Reference Player, Dolby
+  Access, and shipping device firmware, evaluate
+  `(1 + y/32) * 2^(x-4)`. Independent playback implementations that match
+  those decoders use the same grouping. Its range is `[0.0625, 15.75]`.
+  The two expressions differ by `2^(x-4) - 1` and are identical for every
+  `y` when `x = 4`. A comparison that only contains `x = 4` cannot tell them
+  apart, including a published Reference Player object-PCM check of the
+  printed equation. Music that stays at unity is the `x = 4`, `y = 0` code.
+  Movie streams change `x` or `y`, so the printed equation does not reproduce
+  the level the encoder and Dolby decoder apply.
+- Design rationale: OpenJOC previously retained the two bit fields and left
+  every reconstructed object at gain 1. It now multiplies the reconstructed
+  object QMF by one frame-constant Dolby gain before synthesis, so the PCM
+  basis follows the same scale and a gain change does not rescale the
+  previous frame's synthesis tail. Interpolation stages stay unscaled.
+  The E-AC-3 bed, LFE, DRC, and dialnorm are not multiplied. There is no
+  cross-frame ramp. `x = 4`, `y = 0` is exactly 1 and skips the multiply.
+  This is an interoperability deviation from the printed equation and from
+  the printed `[1; 8,75]` range. Both of those statements agree with each
+  other; both disagree with the decoders that play the streams.
+- Validation: endpoint values `0.0625`, `1`, `63/32`, and `15.75`; the
+  closed-form difference from the printed equation over all 256 codes; a
+  decode with `x = 0` scales object QMF and PCM by `1/16` while leaving the
+  interpolated matrix unchanged. Matrix-state tests encode unity as `x = 4`,
+  `y = 0`.
+
 ### Per-object inverse QMF
 
 - Normative source: TS 103 420 clauses 6.6.6, 7.3, and 7.4, pseudocode 13–17.
