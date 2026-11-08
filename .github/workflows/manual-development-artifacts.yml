@@ -214,7 +214,7 @@ jobs:
   build-macos:
     name: build-macos-arm64-development-artifact
     needs: quality
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check out the requested source
         uses: actions/checkout@v4

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Move GitHub Actions macOS jobs from the retired `macos-14` image to
+  `macos-15`. GitHub removed the Sonoma runners on 2026-11-02, so those
+  jobs failed before checkout with an unsupported runner configuration.
 - Apply JOC clip gain to reconstructed object QMF and PCM with
   `(1 + y/32) * 2^(x-4)`, the grouping used by Dolby decoders. The printed
   ETSI equation and its `[1; 8,75]` range leave the `1 +` outside the product.

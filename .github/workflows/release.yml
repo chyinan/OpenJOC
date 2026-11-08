@@ -107,7 +107,7 @@ jobs:
   build-release:
     name: build-verify-macos-arm64-release
     needs: validate-tag
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check out the exact pushed tag
         uses: actions/checkout@v4

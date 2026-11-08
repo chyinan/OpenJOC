@@ -56,7 +56,7 @@ env:
 jobs:
   macos-arm64:
     name: packaged OpenJOC-enabled mpv (macOS arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check out OpenJOC
         uses: actions/checkout@v4
