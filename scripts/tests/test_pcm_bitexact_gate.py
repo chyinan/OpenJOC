@@ -144,6 +144,38 @@ class PcmBitexactGateTests(unittest.TestCase):
             with self.assertRaisesRegex(gate.GateError, "distinct, non-overlapping"):
                 gate.validate_baseline_worktree(baseline, baseline)
 
+    def _probe_repo(self, root: Path, probe_bytes: bytes | None) -> Path:
+        root.mkdir(parents=True)
+        (root / "README").write_bytes(b"repo\n")
+        if probe_bytes is not None:
+            path = root / gate.PARTITIONED_PROBE
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(probe_bytes)
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "core.autocrlf", "false"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "gate-test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Gate Test"], check=True)
+        subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+        return root
+
+    def test_partitioned_probe_copies_when_untracked_and_rejects_a_tracked_difference(self):
+        probe = b"identical partitioned probe harness\n"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = self._probe_repo(root / "candidate", probe)
+            untracked = self._probe_repo(root / "untracked", None)
+            partitioned_gate.install_partitioned_probe(untracked, candidate)
+            self.assertEqual((untracked / gate.PARTITIONED_PROBE).read_bytes(), probe)
+
+            tracked = self._probe_repo(root / "tracked", probe)
+            partitioned_gate.install_partitioned_probe(tracked, candidate)
+            self.assertEqual((tracked / gate.PARTITIONED_PROBE).read_bytes(), probe)
+
+            different = self._probe_repo(root / "different", probe + b"\n")
+            with self.assertRaisesRegex(gate.GateError, "differs from the candidate harness"):
+                partitioned_gate.install_partitioned_probe(different, candidate)
+
     def test_partitioned_pcm_comparator_rejects_sample_bit_and_signed_zero_mutations(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

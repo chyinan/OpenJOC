@@ -29,6 +29,33 @@ from verify_pcm_bitexact import (
 )
 
 
+def install_partitioned_probe(baseline_root: Path, candidate_root: Path) -> None:
+    """Use one partitioned harness on both sides.
+
+    Older oracles do not track the probe, so the candidate file is copied in.
+    The clip-gain oracle already tracks those same bytes. A tracked difference
+    is rejected instead of being overwritten.
+    """
+    candidate_harness = candidate_root / PARTITIONED_PROBE
+    baseline_harness = baseline_root / PARTITIONED_PROBE
+    if not candidate_harness.is_file():
+        raise GateError(f"candidate partitioned harness is missing: {candidate_harness}")
+    baseline_harness.parent.mkdir(parents=True, exist_ok=True)
+    tracked_harness = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", PARTITIONED_PROBE],
+        cwd=baseline_root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+    if tracked_harness:
+        if not baseline_harness.is_file() or baseline_harness.read_bytes() != candidate_harness.read_bytes():
+            raise GateError("frozen baseline tracks a partitioned probe that differs from the candidate harness")
+        return
+    if not baseline_harness.exists() or baseline_harness.read_bytes() != candidate_harness.read_bytes():
+        shutil.copyfile(candidate_harness, baseline_harness)
+
+
 PROBE_NAME = "partitioned_fft_scratch_probe"
 PACKAGE = "openjoc-render"
 SAMPLE_BYTES = 8
@@ -454,22 +481,7 @@ def main(argv: list[str] | None = None) -> int:
     if hash_file(baseline_root / "Cargo.lock") != BASELINE_LOCK_SHA256:
         raise GateError("baseline Cargo.lock differs from the frozen oracle")
 
-    candidate_harness = candidate_root / PARTITIONED_PROBE
-    baseline_harness = baseline_root / PARTITIONED_PROBE
-    if not candidate_harness.is_file():
-        raise GateError(f"candidate partitioned harness is missing: {candidate_harness}")
-    baseline_harness.parent.mkdir(parents=True, exist_ok=True)
-    tracked_harness = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", PARTITIONED_PROBE],
-        cwd=baseline_root,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    ).returncode == 0
-    if tracked_harness:
-        raise GateError("frozen baseline unexpectedly tracks the partitioned probe path")
-    if not baseline_harness.exists() or baseline_harness.read_bytes() != candidate_harness.read_bytes():
-        shutil.copyfile(candidate_harness, baseline_harness)
+    install_partitioned_probe(baseline_root, candidate_root)
     validate_baseline_worktree(baseline_root, candidate_root)
 
     output_dir.mkdir(parents=True, exist_ok=True)
