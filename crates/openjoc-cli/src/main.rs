@@ -4988,16 +4988,10 @@ mod peak_normalized_output_tests {
                 match (extension, sample_rate, error) {
                     ("wav", 0, JocRenderError::Wave(WaveError::InvalidSampleRate))
                     | ("caf", 0, JocRenderError::Caf(CafError::InvalidSampleRate)) => {}
-                    (
-                        "wav",
-                        48000,
-                        JocRenderError::Wave(WaveError::OutOfRangeSample { index }),
-                    )
-                    | (
-                        "caf",
-                        48000,
-                        JocRenderError::Caf(CafError::OutOfRangeSample { index }),
-                    ) => assert_eq!(index, valid_frames * 2),
+                    ("wav", 48000, JocRenderError::Wave(WaveError::OutOfRangeSample { index }))
+                    | ("caf", 48000, JocRenderError::Caf(CafError::OutOfRangeSample { index })) => {
+                        assert_eq!(index, valid_frames * 2)
+                    }
                     (_, _, error) => panic!("unexpected output error: {error}"),
                 }
                 assert!(!partial.exists(), "{extension}/{label} leaked staging");
