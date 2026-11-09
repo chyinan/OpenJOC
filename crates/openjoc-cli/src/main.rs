@@ -4990,7 +4990,7 @@ mod peak_normalized_output_tests {
                     | ("caf", 0, JocRenderError::Caf(CafError::InvalidSampleRate)) => {}
                     ("wav", 48000, JocRenderError::Wave(WaveError::OutOfRangeSample { index }))
                     | ("caf", 48000, JocRenderError::Caf(CafError::OutOfRangeSample { index })) => {
-                        assert_eq!(index, valid_frames * 2)
+                        assert_eq!(index, valid_frames * 2);
                     }
                     (_, _, error) => panic!("unexpected output error: {error}"),
                 }
