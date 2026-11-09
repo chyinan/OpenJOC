@@ -250,7 +250,9 @@ def main(argv=None):
             report["suites"][name] = record
             run_checked(command, root, env | {variable: str(directory)}, output / (name + ".log"))
             expected = manifest["suites"][name]["files"]
-            entries = {path.name for path in directory.iterdir() if path.is_file()}
+            if directory.is_symlink() or not directory.is_dir():
+                raise ContractError(f"capture directory missing or symlinked: {directory}")
+            entries = {path.name for path in directory.iterdir()}
             missing = sorted(set(expected) - entries)
             extra = sorted(entries - set(expected))
             if missing or extra:
@@ -261,9 +263,6 @@ def main(argv=None):
             }
             record["files"] = actual
             mismatched = [filename for filename, digest in actual.items() if digest != expected[filename]]
-            record["single_bit_negative_controls"] = check_mutation_sensitivity(
-                directory, expected, output / (name + "-negative-controls")
-            )
             if mismatched:
                 record["result"] = "FAIL"
                 capture_errors.append(
@@ -275,6 +274,11 @@ def main(argv=None):
                     flush=True,
                 )
                 continue
+            # Only matched captures can test sensitivity against frozen bytes.
+            # A mismatching capture could flip back to the expected bytes.
+            record["single_bit_negative_controls"] = check_mutation_sensitivity(
+                directory, expected, output / (name + "-negative-controls")
+            )
             record["result"] = "PASS"
             print(f"PASS {name}: {len(expected)} complete PCM/transcript files; single-bit controls rejected", flush=True)
         if capture_errors:
