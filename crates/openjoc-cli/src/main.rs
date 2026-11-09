@@ -2440,6 +2440,32 @@ fn run_legacy_render_pass(
     }
 }
 
+fn write_peak_normalized_blocks(
+    intermediate: &mut joc_render::PcmIntermediateReader,
+    output: &mut joc_render::JocPcmOutput,
+    gain: f64,
+) -> Result<u64, joc_render::JocRenderError> {
+    let result = (|| {
+        let mut output_frames = 0_u64;
+        while let Some(mut block) = intermediate.read_block()? {
+            joc_render::PeakNormalization::apply(&mut block, gain)?;
+            output.write_block(&block)?;
+            output_frames = output_frames
+                .checked_add(
+                    u64::try_from(block.channels.first().map_or(0, Vec::len))
+                        .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
+                )
+                .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
+        }
+        Ok(output_frames)
+    })();
+    if result.is_err() {
+        // Close the writer before removing its staging file, including on Windows.
+        output.abort();
+    }
+    result
+}
+
 fn render_joc_with_peak_normalization(
     arguments: &RenderJocArgs,
     input: &render_input::RenderInput,
@@ -2529,17 +2555,7 @@ fn render_joc_with_peak_normalization(
         )?
     };
     let postprocess_started = std::time::Instant::now();
-    let mut output_frames = 0_u64;
-    while let Some(mut block) = intermediate.read_block()? {
-        joc_render::PeakNormalization::apply(&mut block, gain)?;
-        output.write_block(&block)?;
-        output_frames = output_frames
-            .checked_add(
-                u64::try_from(block.channels.first().map_or(0, Vec::len))
-                    .map_err(|_| joc_render::JocRenderError::NoRenderedFrames)?,
-            )
-            .ok_or(joc_render::JocRenderError::NoRenderedFrames)?;
-    }
+    let output_frames = write_peak_normalized_blocks(&mut intermediate, &mut output, gain)?;
     let postprocess_elapsed = postprocess_started.elapsed();
     if let Err(error) = output.finish() {
         output.abort();
@@ -4907,6 +4923,140 @@ const fn classify_decode_error(error: &eac3_decode::DecodeEac3Error) -> CliError
 
 fn usage_error() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, USAGE)
+}
+
+#[cfg(test)]
+mod peak_normalized_output_tests {
+    use super::write_peak_normalized_blocks;
+    use crate::joc_render::{
+        JocPcmOutput, JocRenderError, PcmIntermediateReader, PcmIntermediateWriter, RenderedBlock,
+    };
+    use openjoc_wave::{CafError, SampleFormat, WaveError};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::SystemTime,
+    };
+
+    fn root(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "openjoc-normalized-output-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).expect("test root");
+        root
+    }
+
+    fn intermediate(path: &Path, block: &RenderedBlock) -> PcmIntermediateReader {
+        let mut writer = PcmIntermediateWriter::new(path).expect("intermediate writer");
+        writer.write_block(block).expect("intermediate PCM");
+        writer.finish().expect("intermediate reader")
+    }
+
+    #[test]
+    fn write_errors_remove_partial_preserve_output_and_allow_overwrite_retry() {
+        for extension in ["wav", "caf"] {
+            // Exercise failure before writer initialization, in the first sample
+            // block, and after one complete 4096-frame intermediate chunk.
+            for (label, sample_rate, valid_frames) in [
+                ("header", 0, 0),
+                ("first-block", 48000, 0),
+                ("later-block", 48000, 4096),
+            ] {
+                let root = root(label);
+                let path = root.join(format!("output.{extension}"));
+                let partial = root.join(format!(".output.{extension}.openjoc-partial"));
+                let original = b"previous complete output";
+                fs::write(&path, original).expect("previous output");
+                let mut samples = vec![0.25; valid_frames];
+                samples.push(f64::MAX);
+                let block = RenderedBlock {
+                    sample_rate,
+                    channels: vec![samples.clone(), samples],
+                };
+                let mut reader = intermediate(&path, &block);
+                let mut output = JocPcmOutput::new_for_binaural(&path, SampleFormat::F32, true)
+                    .expect("output transaction");
+                // The deliberately unrepresentable F32 sample is a deterministic
+                // write_block failure after staging creation, without filling a disk.
+                let error = write_peak_normalized_blocks(&mut reader, &mut output, 1.0)
+                    .expect_err("output write must fail");
+                match (extension, sample_rate, error) {
+                    ("wav", 0, JocRenderError::Wave(WaveError::InvalidSampleRate))
+                    | ("caf", 0, JocRenderError::Caf(CafError::InvalidSampleRate)) => {}
+                    (
+                        "wav",
+                        48000,
+                        JocRenderError::Wave(WaveError::OutOfRangeSample { index }),
+                    )
+                    | (
+                        "caf",
+                        48000,
+                        JocRenderError::Caf(CafError::OutOfRangeSample { index }),
+                    ) => assert_eq!(index, valid_frames * 2),
+                    (_, _, error) => panic!("unexpected output error: {error}"),
+                }
+                assert!(!partial.exists(), "{extension}/{label} leaked staging");
+                assert_eq!(fs::read(&path).expect("preserved output"), original);
+                drop(reader);
+
+                let valid = RenderedBlock {
+                    sample_rate: 48000,
+                    channels: vec![vec![0.25, -0.5], vec![-0.125, 0.0]],
+                };
+                let mut reader = intermediate(&path, &valid);
+                let mut retry = JocPcmOutput::new_for_binaural(&path, SampleFormat::F32, true)
+                    .expect("same-path overwrite retry");
+                assert_eq!(
+                    write_peak_normalized_blocks(&mut reader, &mut retry, 0.5)
+                        .expect("retry conversion"),
+                    2
+                );
+                retry.finish().expect("retry publication");
+                assert!(!partial.exists());
+                drop(reader);
+
+                let reference_path = root.join(format!("reference.{extension}"));
+                let mut reference =
+                    JocPcmOutput::new_for_binaural(&reference_path, SampleFormat::F32, false)
+                        .expect("reference output");
+                reference
+                    .write_block(&RenderedBlock {
+                        sample_rate: 48000,
+                        channels: vec![vec![0.125, -0.25], vec![-0.0625, 0.0]],
+                    })
+                    .expect("reference samples");
+                reference.finish().expect("reference publication");
+                assert_eq!(
+                    fs::read(&path).expect("retried output"),
+                    fs::read(&reference_path).expect("reference bytes")
+                );
+                fs::remove_dir_all(root).expect("cleanup");
+            }
+        }
+    }
+
+    #[test]
+    fn overwrite_does_not_remove_preexisting_partial() {
+        for extension in ["wav", "caf"] {
+            let root = root("existing-partial");
+            let path = root.join(format!("output.{extension}"));
+            let partial = root.join(format!(".output.{extension}.openjoc-partial"));
+            fs::write(&path, b"previous output").expect("previous output");
+            fs::write(&partial, b"another transaction").expect("preexisting staging");
+            assert!(matches!(
+                JocPcmOutput::new_for_binaural(&path, SampleFormat::F32, true),
+                Err(JocRenderError::OutputExists(ref existing)) if existing == &partial
+            ));
+            assert_eq!(fs::read(&partial).unwrap(), b"another transaction");
+            assert_eq!(fs::read(&path).unwrap(), b"previous output");
+            fs::remove_dir_all(root).expect("cleanup");
+        }
+    }
 }
 
 #[cfg(test)]
