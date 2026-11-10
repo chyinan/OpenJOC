@@ -326,13 +326,21 @@ jobs:
           python3 - "$archive" "$manifest" <<'PY'
           import json
           import pathlib
+          import subprocess
           import sys
           import tarfile
 
           archive = pathlib.Path(sys.argv[1])
           manifest = pathlib.Path(sys.argv[2])
           data = json.loads(manifest.read_text(encoding="utf-8"))
-          assert data["version"] == "0.17.0"
+          metadata = json.loads(subprocess.check_output(
+              ["cargo", "metadata", "--format-version", "1", "--locked", "--no-deps"],
+              text=True,
+          ))
+          cli = next(
+              package for package in metadata["packages"] if package["name"] == "openjoc-cli"
+          )
+          assert data["version"] == cli["version"]
           with tarfile.open(archive, "r:gz") as handle:
               names = handle.getnames()
           assert any(name.endswith("/bin/openjoc") for name in names)
