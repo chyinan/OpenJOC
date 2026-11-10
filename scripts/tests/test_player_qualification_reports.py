@@ -105,8 +105,25 @@ class PlayerQualificationReportTests(unittest.TestCase):
                     self.assertNotEqual(str(report).casefold(), str(summary).casefold())
                     code, output = self.run_with_command_results(report, platform=platform)
                     self.assertEqual(code, 0)
-                    self.assertEqual(output["report"], str(report))
+                    self.assertEqual(output["report"], str(report.resolve()))
                     self.assert_reports(report, summary, "QUALIFIED")
+
+    def test_actual_cli_resolves_report_directory_alias(self):
+        directory = self.root / "reports"
+        directory.mkdir()
+        alias = self.root / "reports-alias"
+        try:
+            alias.symlink_to(directory, target_is_directory=True)
+        except OSError as error:
+            self.skipTest(f"directory symlinks unavailable: {error}")
+        report = alias / "qualification.txt"
+        result = subprocess.run(
+            [sys.executable, *self.arguments(report)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["report"], str(report.resolve()))
+        self.assert_reports(report, alias / "qualification.summary.txt", "BLOCKED")
 
     def test_blocked_harness_still_writes_both_reports(self):
         for harness_ok, markers in ((False, True), (True, False)):
