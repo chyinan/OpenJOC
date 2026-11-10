@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import copy
+import json
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -340,6 +343,87 @@ class LavLayeredEvidenceTests(unittest.TestCase):
         }
 
         self.assertEqual(validate_evidence(document), ())
+
+    def test_accepts_proven_realtek_rejection_for_each_layout(self) -> None:
+        document = _document()
+        for row in document["candidates"]:
+            row["states"]["physical_realtek_endpoint"] = "ENDPOINT_REJECTED"
+            row["physical_realtek_endpoint_evidence"] = _endpoint_rejection(row["layout"])
+
+        self.assertEqual(validate_evidence(document), ())
+
+    def test_accepts_waveout_delivery_without_directsound_evidence(self) -> None:
+        document = _document()
+        for row in document["candidates"]:
+            del row["virtual_windows_endpoint_evidence"]["directsound"]
+
+        self.assertEqual(validate_evidence(document), ())
+
+    def test_rejects_endpoint_rejection_with_successful_connect(self) -> None:
+        for index, layout in enumerate(CANONICAL_LAYOUTS):
+            for endpoint in ("virtual", "realtek"):
+                for kind in ("raw", "mp4"):
+                    with self.subTest(layout=layout, endpoint=endpoint, kind=kind):
+                        document = _document()
+                        row = document["candidates"][index]
+                        if endpoint == "virtual":
+                            evidence = row["virtual_windows_endpoint_evidence"]["directsound"]
+                        else:
+                            row["states"]["physical_realtek_endpoint"] = "ENDPOINT_REJECTED"
+                            evidence = _endpoint_rejection(layout)
+                            row["physical_realtek_endpoint_evidence"] = evidence
+                        for run in evidence["runs"]:
+                            if run["fixture"]["kind"] == kind:
+                                run["connect_direct"]["hresult"] = "0x00000000"
+
+                        self.assertRejected(document, "ENDPOINT_REJECTION_NOT_PROVEN")
+
+    def test_rejects_realtek_rejection_without_matching_evidence(self) -> None:
+        for index, layout in enumerate(CANONICAL_LAYOUTS):
+            evidence_cases = {
+                "missing": None,
+                "empty": {},
+                "success": _endpoint_success(layout, "@device:cm:realtek", "DirectSound"),
+            }
+            for name, evidence in evidence_cases.items():
+                with self.subTest(layout=layout, evidence=name):
+                    document = _document()
+                    row = document["candidates"][index]
+                    row["states"]["physical_realtek_endpoint"] = "ENDPOINT_REJECTED"
+                    row["physical_realtek_endpoint_evidence"] = evidence
+
+                    self.assertRejected(document, "ENDPOINT_REJECTION_NOT_PROVEN")
+
+    def test_rejects_endpoint_rejection_with_additional_fixture_kind(self) -> None:
+        document = _document()
+        evidence = document["candidates"][0]["virtual_windows_endpoint_evidence"]["directsound"]
+        extra = copy.deepcopy(evidence["runs"][0])
+        extra["fixture"]["kind"] = "other"
+        evidence["runs"].append(extra)
+
+        self.assertRejected(document, "ENDPOINT_REJECTION_NOT_PROVEN")
+
+    def test_cli_rejects_inconsistent_endpoint_rejection(self) -> None:
+        document = _document()
+        row = document["candidates"][0]
+        row["states"]["physical_realtek_endpoint"] = "ENDPOINT_REJECTED"
+        with tempfile.TemporaryDirectory(prefix="endpoint evidence ") as directory:
+            path = pathlib.Path(directory) / "evidence.json"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            before = path.read_bytes()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "validate_lav_multichannel_evidence.py"),
+                    str(path),
+                ],
+                capture_output=True, text=True, check=False,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("ENDPOINT_REJECTION_NOT_PROVEN", result.stderr)
+            self.assertNotIn("LAV_MULTICHANNEL_EVIDENCE_VALID", result.stdout)
+            self.assertEqual(path.read_bytes(), before)
 
     def test_rejects_directsound_driver_verified_when_only_waveout_delivered(self) -> None:
         document = _document()
