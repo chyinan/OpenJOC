@@ -33,7 +33,7 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def render(binary: Path, fixture: Path, layout: str, output: Path) -> tuple[int, bytes]:
+def render(binary: str, fixture: Path, layout: str, output: Path) -> tuple[int, bytes]:
     result = subprocess.run(
         [
             str(binary),
@@ -74,8 +74,10 @@ def numerical_delta(old: bytes, new: bytes) -> tuple[float, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--old-binary", type=Path, required=True)
-    parser.add_argument("--new-binary", type=Path, required=True)
+    # Path would turn "./openjoc" into "openjoc", changing a local executable
+    # request into a PATH lookup. Preserve the caller's executable spelling.
+    parser.add_argument("--old-binary", required=True)
+    parser.add_argument("--new-binary", required=True)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
