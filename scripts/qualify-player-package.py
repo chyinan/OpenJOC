@@ -331,6 +331,10 @@ def main() -> int:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     text_path = report_path.with_suffix(".txt")
+    # Keep the requested JSON report even when its name ends in .txt. Compare
+    # case-insensitively so the two outputs stay distinct on Windows/macOS too.
+    if report_path.suffix.lower() == ".txt":
+        text_path = report_path.with_suffix(".summary.txt")
     lines = [
         f"OpenJOC player qualification: {args.platform}",
         f"Archive: {archive.name}",
