@@ -4986,8 +4986,8 @@ mod peak_normalized_output_tests {
                 let error = write_peak_normalized_blocks(&mut reader, &mut output, 1.0)
                     .expect_err("output write must fail");
                 match (extension, sample_rate, error) {
-                    ("wav", 0, JocRenderError::Wave(WaveError::InvalidSampleRate))
-                    | ("caf", 0, JocRenderError::Caf(CafError::InvalidSampleRate)) => {}
+                    ("wav", 0, JocRenderError::Wave(WaveError::InvalidFormat))
+                    | ("caf", 0, JocRenderError::Caf(CafError::InvalidFormat)) => {}
                     ("wav", 48000, JocRenderError::Wave(WaveError::OutOfRangeSample { index }))
                     | ("caf", 48000, JocRenderError::Caf(CafError::OutOfRangeSample { index })) => {
                         assert_eq!(index, valid_frames * 2);
