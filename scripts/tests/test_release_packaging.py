@@ -5,12 +5,16 @@
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
+from unittest import mock
 
 
 SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
@@ -27,6 +31,7 @@ from release_packaging import (  # noqa: E402
     _prepare_binary_base,
     _write_text,
     ensure_new_directory,
+    finalize_binary,
 )
 
 
@@ -221,6 +226,82 @@ class ReleasePackagingTests(unittest.TestCase):
         self.assertNotIn("OPENJOC_LAV_0_10", text)
         self.assertNotIn("openjoc-lav-0.10.0", text)
         self.assertNotIn("openjoc-0.10.0", text)
+
+    def test_finalize_source_refuses_nested_output_without_rewriting_manifest(self) -> None:
+        for relative in ("source.zip", "archives/source.zip"):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary)
+                stage = root / "source"
+                stage.mkdir()
+                (stage / "payload.txt").write_bytes(b"source payload")
+                (stage / "SHA256SUMS.txt").write_bytes(b"prior manifest\n")
+                completed = subprocess.run(
+                    [sys.executable, str(SCRIPT), "finalize-source", "--stage", str(stage),
+                     "--output", str(stage / relative)],
+                    check=False, capture_output=True, text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("outside", completed.stderr)
+                self.assertEqual((stage / "SHA256SUMS.txt").read_bytes(), b"prior manifest\n")
+                self.assertEqual((stage / "payload.txt").read_bytes(), b"source payload")
+                self.assertEqual(
+                    sorted(path.relative_to(stage).as_posix() for path in stage.rglob("*")),
+                    ["SHA256SUMS.txt", "payload.txt"],
+                )
+
+    def test_finalize_binary_refuses_nested_output_before_audit_or_stage_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            stage = root / "binary"
+            stage.mkdir()
+            (stage / "REPRODUCIBILITY-MANIFEST.txt").write_bytes(b"existing metadata\n")
+            source = root / "source.zip"
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("README.txt", b"corresponding source payload\n")
+            arguments = argparse.Namespace(
+                stage=stage, source_archive=source, output=stage / "archives/binary.zip",
+                release_version=CANONICAL_RELEASE_VERSION,
+            )
+            with mock.patch("release_packaging._pe_audit") as audit:
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    finalize_binary(arguments)
+                audit.assert_not_called()
+            self.assertEqual(
+                sorted(path.relative_to(stage).as_posix() for path in stage.rglob("*")),
+                ["REPRODUCIBILITY-MANIFEST.txt"],
+            )
+            self.assertEqual(
+                (stage / "REPRODUCIBILITY-MANIFEST.txt").read_bytes(), b"existing metadata\n"
+            )
+
+    def test_finalize_source_external_archive_matches_manifest_and_is_repeatable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            stage = root / "source"
+            stage.mkdir()
+            payload = {"README.txt": b"source payload\n", "code/example.py": b"print('hello')\n"}
+            for relative, data in payload.items():
+                path = stage / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            archives = (root / "first.zip", root / "source-archives" / "second.zip")
+            for output in archives:
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "finalize-source", "--stage", str(stage),
+                     "--output", str(output)],
+                    check=True, capture_output=True, text=True,
+                )
+                with zipfile.ZipFile(output) as archive:
+                    self.assertEqual(set(archive.namelist()), set(payload) | {"SHA256SUMS.txt"})
+                    hashes = {}
+                    for line in archive.read("SHA256SUMS.txt").decode().splitlines():
+                        digest, name = line.split("  ", 1)
+                        hashes[name] = digest
+                    self.assertEqual(set(hashes), set(payload))
+                    for relative, data in payload.items():
+                        self.assertEqual(archive.read(relative), data)
+                        self.assertEqual(hashes[relative], hashlib.sha256(data).hexdigest().upper())
+            self.assertEqual(archives[0].read_bytes(), archives[1].read_bytes())
 
 
 if __name__ == "__main__":

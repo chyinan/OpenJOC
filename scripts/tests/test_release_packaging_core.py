@@ -86,6 +86,57 @@ class ReleasePackagingCoreTests(unittest.TestCase):
             self.assertIn("  runtime/x.dll", manifest)
             self.assertNotIn("SHA256SUMS.txt", manifest)
 
+    def test_zip_refuses_output_inside_source_before_creating_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "source"
+            root.mkdir()
+            (root / "payload.txt").write_bytes(b"source payload")
+            for relative in ("source.zip", "nested/source.zip", "../source/normalized.zip", "."):
+                with self.subTest(relative=relative):
+                    output = root / relative
+                    with self.assertRaisesRegex(ValueError, "outside"):
+                        deterministic_zip(root, output)
+                    self.assertEqual(
+                        sorted(path.relative_to(root).as_posix() for path in root.rglob("*")),
+                        ["payload.txt"],
+                    )
+                    self.assertEqual((root / "payload.txt").read_bytes(), b"source payload")
+
+    def test_zip_refuses_output_through_alias_to_source_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "source"
+            root.mkdir()
+            alias = pathlib.Path(temporary) / "alias"
+            try:
+                alias.symlink_to(root, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory symlinks are unavailable: {error}")
+            with self.assertRaisesRegex(ValueError, "outside"):
+                deterministic_zip(root, alias / "source.zip")
+            self.assertFalse((root / "source.zip").exists())
+
+    def test_zip_allows_sibling_with_shared_directory_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "source"
+            root.mkdir()
+            (root / "payload.txt").write_bytes(b"source payload")
+            output = pathlib.Path(temporary) / "source-archives" / "source.zip"
+            deterministic_zip(root, output)
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(archive.namelist(), ["payload.txt"])
+                self.assertEqual(archive.read("payload.txt"), b"source payload")
+
+    def test_zip_does_not_replace_existing_external_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "source"
+            root.mkdir()
+            (root / "payload.txt").write_bytes(b"source payload")
+            output = pathlib.Path(temporary) / "existing.zip"
+            output.write_bytes(b"prior archive bytes")
+            with self.assertRaises(FileExistsError):
+                deterministic_zip(root, output)
+            self.assertEqual(output.read_bytes(), b"prior archive bytes")
+
     def test_dependency_classification_requires_local_or_known_os_dll(self) -> None:
         payload = {"local.dll"}
 

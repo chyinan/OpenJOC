@@ -120,9 +120,17 @@ def render_sha256_manifest(
     return "\n".join(lines) + "\n"
 
 
+def validate_archive_destination(root: pathlib.Path, destination: pathlib.Path) -> None:
+    """Require ZIP output outside its input tree, including directory aliases."""
+
+    if destination.resolve().is_relative_to(root.resolve()):
+        raise ValueError(f"archive output must be outside the staging directory: {destination}")
+
+
 def deterministic_zip(root: pathlib.Path, destination: pathlib.Path) -> None:
     """Create a byte-stable ZIP from the release-safe file set."""
 
+    validate_archive_destination(root, destination)
     if destination.exists():
         raise FileExistsError(f"archive output already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)

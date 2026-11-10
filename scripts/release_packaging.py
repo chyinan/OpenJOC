@@ -21,6 +21,7 @@ from release_packaging_core import (
     deterministic_zip,
     render_sha256_manifest,
     sha256_file,
+    validate_archive_destination,
 )
 
 
@@ -481,6 +482,7 @@ def finalize_source(arguments: argparse.Namespace) -> int:
     destination = arguments.output.resolve()
     if not stage.is_dir():
         raise FileNotFoundError(f"source staging directory is missing: {stage}")
+    validate_archive_destination(stage, destination)
     _write_text(
         stage / "SHA256SUMS.txt",
         render_sha256_manifest(stage, excluded={"SHA256SUMS.txt"}),
@@ -525,6 +527,7 @@ def finalize_binary(arguments: argparse.Namespace) -> int:
     release_version = arguments.release_version
     if release_version != CANONICAL_RELEASE_VERSION:
         raise ValueError(f"unsupported release version: {release_version}")
+    validate_archive_destination(stage, destination)
     audit, missing = _pe_audit(stage / "runtime", release_version)
     _write_text(stage / "tools" / "PE-DEPENDENCY-AUDIT.txt", audit)
     if missing:
@@ -567,13 +570,19 @@ def _parser() -> argparse.ArgumentParser:
 
     source = subparsers.add_parser("finalize-source", help="write manifest and source ZIP")
     source.add_argument("--stage", type=pathlib.Path, required=True)
-    source.add_argument("--output", type=pathlib.Path, required=True)
+    source.add_argument(
+        "--output", type=pathlib.Path, required=True,
+        help="destination ZIP outside the staging directory",
+    )
     source.set_defaults(handler=finalize_source)
 
     binary = subparsers.add_parser("finalize-binary", help="audit PE closure and write binary ZIP")
     binary.add_argument("--stage", type=pathlib.Path, required=True)
     binary.add_argument("--source-archive", type=pathlib.Path, required=True)
-    binary.add_argument("--output", type=pathlib.Path, required=True)
+    binary.add_argument(
+        "--output", type=pathlib.Path, required=True,
+        help="destination ZIP outside the staging directory",
+    )
     binary.add_argument("--release-version", required=True)
     binary.set_defaults(handler=finalize_binary)
     return parser
