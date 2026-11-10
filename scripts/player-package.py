@@ -265,7 +265,9 @@ def collect_macos(
             dependency = resolve_macho_dependency(raw, source, search_dirs)
             if dependency is None:
                 raise RuntimeError(f"unresolved Mach-O dependency {raw!r} from {source}")
-            name = dependency.name
+            # Keep the load-command alias used by the rewrite below. Resolving
+            # a versioned dylib symlink may give a different real basename.
+            name = pathlib.Path(raw).name
             target_path = destination / name
             if name not in copied:
                 copied[name] = dependency
