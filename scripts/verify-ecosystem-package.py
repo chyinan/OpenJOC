@@ -373,7 +373,7 @@ def main() -> int:
                     roots.append(capi)
                 verify_windows_hermetic_closure(root, roots, build_info)
                 negative_windows_missing_dll_smoke(root, ffmpeg, ffprobe)
-        elif arguments.kind == "gstreamer" and arguments.run_gstreamer:
+        elif arguments.kind == "gstreamer-plugin" and arguments.run_gstreamer:
             gst_tool = shutil.which("gst-inspect-1.0")
             if gst_tool is None:
                 raise SystemExit("GStreamer qualification requires gst-inspect-1.0")
