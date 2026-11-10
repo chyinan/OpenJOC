@@ -256,7 +256,6 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("-c:a copy", fixture_text)
         self.assertIn("aevalsrc", fixture_text)
 
-    @REQUIRES_LAV_SOURCE
     def test_task3_lifecycle_fixture_has_conserved_streaming_and_seekable_mp4_timing_gates(self) -> None:
         fixture_text = FIXTURE_SCRIPT.read_text(encoding="utf-8")
         rust_text = RUST_BRIDGE.read_text(encoding="utf-8")
@@ -274,7 +273,8 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         ):
             self.assertIn(required, fixture_text + rust_text)
 
-        self.assertEqual(fixture_text.count('-bsf:a "$joc_setts"'), 2)
+        # The multi-AU, lifecycle, and repeated live-gain wrappers all need setts.
+        self.assertEqual(fixture_text.count('-bsf:a "$joc_setts"'), 3)
 
         self.assertIn("FINAL_LINKED_GAIN_LATENCY_SAMPLES", rust_text)
         self.assertIn("one_object_joc_with_sequence", rust_text)
@@ -289,6 +289,8 @@ class LavDirectShowNegotiationScriptTests(unittest.TestCase):
         self.assertIn("frame_duration=N/A", script_text)
         self.assertNotIn("$stream ^| Where-Object", script_text)
 
+    @REQUIRES_LAV_SOURCE
+    def test_task3_lifecycle_harness_has_seek_contract(self) -> None:
         harness_text = HARNESS.read_text(encoding="utf-8")
         self.assertIn("TASK3_LIFECYCLE_UNSUPPORTED", harness_text)
         self.assertIn("UNSUPPORTED_RAW_CONTAINER_OPERATION", harness_text)
