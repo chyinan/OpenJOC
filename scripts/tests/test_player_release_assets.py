@@ -34,6 +34,28 @@ class PlayerReleaseAssetTests(unittest.TestCase):
 
         self.assertIn("            diffutils\n", workflow)
 
+    def test_windows_luajit_is_pinned_without_changing_abi_or_skipping_io(self) -> None:
+        windows = PLAYER_WORKFLOW.read_text(encoding="utf-8").split("  windows-x64:", 1)[1]
+        self.assertIn("msystem: MINGW64", windows)
+        self.assertNotIn("            mingw-w64-x86_64-luajit\n", windows)
+        self.assertNotIn("mingw-w64-ucrt-x86_64-luajit", windows)
+        self.assertIn("package=mingw-w64-x86_64-luajit-2.1.1791988261-1-any.pkg.tar.zst", windows)
+        self.assertIn("https://repo.msys2.org/mingw/mingw64/$package", windows)
+        self.assertIn("d559881bffc105af4482eab52a34fa57963047cf45e735a5c0f8daca605c68a1", windows)
+        stages = [
+            "sha256sum --check --strict",
+            'pacman-key --verify "$package.sig" "$package"',
+            'pacman --noconfirm -U "$package"',
+            '/mingw64/bin/luajit.exe -e',
+            "luajit integrations/mpv/test-openjoc-settings.lua",
+            "luajit integrations/mpv/test-openjoc-settings-io.lua",
+            "scripts/build-openjoc-player-windows.sh",
+        ]
+        positions = [windows.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('assert(jit.os == "Windows" and jit.arch == "x64")', windows)
+        self.assertIn("OpenJOC Settings 日本語", windows)
+
     def test_player_harness_preserves_executable_paths_with_spaces_and_unicode(self) -> None:
         if os.name == "nt":
             self.skipTest("POSIX fake executable smoke is covered on Unix runners")

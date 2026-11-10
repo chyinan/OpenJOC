@@ -302,11 +302,29 @@ jobs:
             mingw-w64-x86_64-libass
             mingw-w64-x86_64-libplacebo
             mingw-w64-x86_64-SDL2
-            mingw-w64-x86_64-luajit
             mingw-w64-x86_64-lcms2
             mingw-w64-x86_64-vulkan-loader
             mingw-w64-x86_64-gstreamer
             mingw-w64-x86_64-gst-plugins-base
+
+      # MSYS2 removed LuaJIT from the MINGW64 repository during its deprecation.
+      # Keep the MSVCRT/MinGW ABI: do not substitute the UCRT64 or MSYS package.
+      - name: Install pinned native MINGW64 LuaJIT
+        run: |
+          set -euo pipefail
+          package=mingw-w64-x86_64-luajit-2.1.1791988261-1-any.pkg.tar.zst
+          package_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$package_dir"' EXIT
+          cd "$package_dir"
+          url="https://repo.msys2.org/mingw/mingw64/$package"
+          curl --fail --location --retry 3 --output "$package" "$url"
+          curl --fail --location --retry 3 --output "$package.sig" "$url.sig"
+          echo "d559881bffc105af4482eab52a34fa57963047cf45e735a5c0f8daca605c68a1  $package" | sha256sum --check --strict
+          # Explicitly verify the detached signature as well as pacman's normal checks.
+          pacman-key --verify "$package.sig" "$package"
+          pacman --noconfirm -U "$package"
+          /mingw64/bin/luajit.exe -e 'assert(jit.os == "Windows" and jit.arch == "x64"); print(jit.version)'
+          pkg-config --modversion luajit
 
       - name: Test the mocked mpv settings menu
         run: luajit integrations/mpv/test-openjoc-settings.lua
