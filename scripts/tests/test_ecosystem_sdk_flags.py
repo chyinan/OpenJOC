@@ -37,7 +37,7 @@ class SdkPkgConfigFlagsTests(unittest.TestCase):
                 commands.append(command)
                 return subprocess.CompletedProcess(command, 0, stdout="")
 
-            with mock.patch.object(VERIFY.shutil, "which", side_effect=which), mock.patch.object(VERIFY.subprocess, "run", side_effect=run), mock.patch.object(VERIFY.subprocess, "check_output", return_value=output) as query, mock.patch.object(VERIFY, "run_consumer") as consumer, contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.object(VERIFY.shutil, "which", side_effect=which), mock.patch.object(VERIFY.subprocess, "run", side_effect=run), mock.patch.object(VERIFY.subprocess, "check_output", return_value=output.encode("utf-8")) as query, mock.patch.object(VERIFY, "run_consumer") as consumer, contextlib.redirect_stdout(io.StringIO()):
                 VERIFY.verify_sdk_consumers(root, platform)
             query.assert_called_once()
             self.assertEqual(query.call_args.args[0][1:], ["--cflags", "--libs", "openjoc"])
