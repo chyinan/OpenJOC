@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -209,7 +210,7 @@ def main() -> int:
 
     corpus: dict[str, object] = {
         "schema": "openjoc-performance-corpus-v1",
-        "generated_utc_date": "2026-10-05",
+        "generated_utc_date": datetime.now(timezone.utc).date().isoformat(),
         "synthetic_only": True,
         "real_programme_media_available": False,
         "cases": [],
