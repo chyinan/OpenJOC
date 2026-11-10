@@ -5,6 +5,8 @@ import json
 import math
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -44,6 +46,53 @@ def float_wave(samples: list[float], channels: int = 2, rate: int = 48000) -> by
 
 
 class MpvLiveGainQualificationTests(unittest.TestCase):
+    def test_exact_pcm_checker_rejects_empty_evidence(self) -> None:
+        checker = load_checker()
+        with tempfile.TemporaryDirectory() as temporary_name:
+            temporary = Path(temporary_name)
+            source = temporary / "source.wav"
+            unity = temporary / "unity.wav"
+            for channels in (2, 12):
+                with self.subTest(channels=channels):
+                    source.write_bytes(float_wave([], channels=channels))
+                    unity.write_bytes(float_wave([], channels=channels))
+                    with self.assertRaisesRegex(ValueError, "no PCM frames"):
+                        checker.exact(source, unity, channels=channels, rate=48000)
+
+    def test_exact_pcm_checker_accepts_one_silent_frame(self) -> None:
+        checker = load_checker()
+        with tempfile.TemporaryDirectory() as temporary_name:
+            temporary = Path(temporary_name)
+            source = temporary / "source.wav"
+            unity = temporary / "unity.wav"
+            for channels in (2, 12):
+                with self.subTest(channels=channels):
+                    samples = [0.0, -0.0] * (channels // 2)
+                    source.write_bytes(float_wave(samples, channels=channels))
+                    unity.write_bytes(source.read_bytes())
+                    checker.exact(source, unity, channels=channels, rate=48000)
+                    samples[-1] = 0.0
+                    unity.write_bytes(float_wave(samples, channels=channels))
+                    with self.assertRaisesRegex(ValueError, "bytes or sample count"):
+                        checker.exact(source, unity, channels=channels, rate=48000)
+
+    def test_exact_pcm_cli_fails_without_pass_marker_for_empty_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_name:
+            temporary = Path(temporary_name)
+            source = temporary / "source.wav"
+            unity = temporary / "unity.wav"
+            source.write_bytes(float_wave([]))
+            unity.write_bytes(source.read_bytes())
+            result = subprocess.run(
+                [sys.executable, str(CHECKER_PATH), "exact", str(source), str(unity),
+                 "--channels", "2", "--rate", "48000"],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("PCM_CHECK:FAIL", result.stderr)
+            self.assertIn("no PCM frames", result.stderr)
+            self.assertNotIn("PCM_EXACT:PASS", result.stdout)
+
     def test_exact_pcm_checker_compares_shape_and_complete_samples(self) -> None:
         checker = load_checker()
         samples = [((index % 31) - 15) / 100.0 for index in range(400)]
