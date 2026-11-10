@@ -54,6 +54,24 @@ do
     fi
 done
 
+# Every payload file must occur exactly once, not merely pass when listed.
+# The manifest and checksum list are the producer's two non-payload files.
+sed '/^RELEASE_MANIFEST\.json$/d; /^SHA256SUMS$/d' "$expected" > "$actual"
+if ! LC_ALL=C awk '
+    length($0) < 67 || substr($0, 1, 64) ~ /[^0-9a-fA-F]/ ||
+        substr($0, 65, 1) != " " || substr($0, 66, 1) !~ /^[ *]$/ { exit 1 }
+    { print substr($0, 67) }
+' "$bundle_root/SHA256SUMS" > "$expected"; then
+    echo "openjoc release verification: malformed checksum record" >&2
+    exit 1
+fi
+LC_ALL=C sort "$expected" -o "$expected"
+if ! cmp -s "$expected" "$actual"; then
+    echo "openjoc release verification: checksum inventory mismatch" >&2
+    diff -u "$actual" "$expected" >&2 || true
+    exit 1
+fi
+
 (
     cd "$bundle_root"
     shasum -a 256 -c SHA256SUMS
