@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -286,11 +287,14 @@ def verify_sdk_consumers(root: pathlib.Path, platform_name: str) -> None:
     pkg_config = pathlib.Path(pkg_config_name).resolve()
     pkg_env = build_environment(root, platform_name, [compiler.parent, pkg_config.parent])
     pkg_env["PKG_CONFIG_PATH"] = str(root / "lib/pkgconfig")
-    flags = subprocess.check_output(
+    flags_output = subprocess.check_output(
         [str(pkg_config), "--cflags", "--libs", "openjoc"],
         text=True,
         env=pkg_env,
-    ).split()
+    )
+    # pkg-config/pkgconf emit shell-escaped flags, including under MSYS2.
+    # Decode that quoting without executing a shell or expanding its syntax.
+    flags = shlex.split(flags_output, posix=True)
     pkg_consumer = temporary / ("pkg-config-consumer.exe" if platform_name == "windows-x64" else "pkg-config-consumer")
     subprocess.run(
         [str(compiler), str(source), *flags, "-o", str(pkg_consumer)],
