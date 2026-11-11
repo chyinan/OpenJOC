@@ -1,4 +1,4 @@
-use openjoc_bitio::BitReader;
+use openjoc_bitio::{BitRead, BitReader};
 use openjoc_emdf::{
     CarrierClassification, EmdfContainer, EmdfError, EmdfPayload, EmdfPayloadConfig,
     EmdfProtection, JOC_PAYLOAD_ID, JocProfileField, JocProfileValue, JocValidationProfile,
@@ -94,6 +94,131 @@ fn variable_bits_enforces_group_and_arithmetic_bounds() {
             max_groups: 1
         })
     );
+}
+
+fn variable_groups(mut value: u128, width: u8) -> Vec<(u64, bool)> {
+    let radix = 1_u128 << width;
+    let mut groups = Vec::new();
+    loop {
+        let digit = u64::try_from(value % radix).expect("bounded test digit");
+        groups.push((digit, !groups.is_empty()));
+        value /= radix;
+        if value == 0 {
+            break;
+        }
+        value -= 1;
+    }
+    groups.reverse();
+    groups
+}
+
+#[test]
+fn variable_bits_preserves_full_u64_range_at_every_supported_width() {
+    for width in 1..=63 {
+        let radix = 1_u64 << width;
+        for value in [0, 1, radix - 1, radix, u64::MAX - 1, u64::MAX] {
+            let groups = variable_groups(u128::from(value), width);
+            let mut bits = Bits::default();
+            bits.variable(&groups, width);
+            let bytes = bits.bytes();
+            let mut reader = BitReader::new(&bytes);
+            assert_eq!(variable_bits(&mut reader, width, 255), Ok(value));
+            assert_eq!(
+                reader.bits_remaining(),
+                bytes.len() * 8 - groups.len() * (usize::from(width) + 1)
+            );
+        }
+    }
+}
+
+#[test]
+fn variable_bits_rejects_value_overflow_at_every_supported_width() {
+    for width in 1..=63 {
+        for value in [1_u128 << 64, (1_u128 << 64) + (1_u128 << width)] {
+            let mut bits = Bits::default();
+            bits.variable(&variable_groups(value, width), width);
+            assert_eq!(
+                variable_bits(&mut BitReader::new(&bits.bytes()), width, 255),
+                Err(EmdfError::ValueOverflow)
+            );
+        }
+    }
+}
+
+#[test]
+fn variable_bits_keeps_group_limit_precedence_and_overflow_cursor() {
+    for width in [3, 5] {
+        let groups = variable_groups((1_u128 << 64) + (1_u128 << width), width);
+        let prefix_groups = u8::try_from(groups.len() - 1).expect("bounded prefix");
+        let mut bits = Bits::default();
+        bits.variable(&groups, width);
+        let bytes = bits.bytes();
+        for (limit, expected) in [
+            (
+                prefix_groups,
+                EmdfError::VariableBitsGroupLimit {
+                    width,
+                    limit: prefix_groups,
+                },
+            ),
+            (31, EmdfError::ValueOverflow),
+        ] {
+            let mut reader = BitReader::new(&bytes);
+            assert_eq!(variable_bits(&mut reader, width, limit), Err(expected));
+            assert_eq!(
+                reader.bits_remaining(),
+                bytes.len() * 8 - usize::from(prefix_groups) * (usize::from(width) + 1)
+            );
+        }
+    }
+}
+
+#[test]
+fn rejects_overflowing_extended_keys_and_payload_ids_without_aliasing() {
+    for key_extension in [true, false] {
+        let width = if key_extension { 3 } else { 5 };
+        let radix = 1_u128 << width;
+        for extension in [radix, (1_u128 << 64) + radix] {
+            let mut container = Bits::default();
+            container.push(0, 2); // version
+            container.push(if key_extension { 7 } else { 0 }, 3);
+            if !key_extension {
+                container.push(31, 5); // extended payload ID
+            }
+            container.variable(&variable_groups(extension, width), width);
+            if !key_extension {
+                container.push(0, 4); // no offset, duration, group or codec data
+                container.push(1, 1); // discard unknown payload
+                container.variable(&[(1, false)], 8); // one-byte payload
+                container.push(0xa5, 8);
+            }
+            container.push(0, 5); // payload terminator
+            container.push(1, 2); // one primary protection byte
+            container.push(0, 2); // no secondary protection
+            container.push(0x7e, 8);
+            let bytes = wrap_sync(&container.bytes());
+            let parsed = parse_emdf_sync(&bytes);
+            if extension > u128::from(u64::MAX) {
+                assert_eq!(parsed, Err(EmdfError::ValueOverflow));
+                assert_eq!(
+                    classify_emdf_carrier(&bytes),
+                    CarrierClassification::Malformed(EmdfError::ValueOverflow)
+                );
+            } else {
+                let parsed = parsed.expect("representable extension");
+                assert_eq!(parsed.bytes_consumed, bytes.len());
+                if key_extension {
+                    assert_eq!(parsed.container.key_id, 15);
+                    assert!(parsed.container.payloads.is_empty());
+                } else {
+                    assert_eq!(parsed.container.payloads.len(), 1);
+                    assert_eq!(parsed.container.payloads[0].id, 63);
+                    assert_eq!(parsed.container.payloads[0].data, [0xa5]);
+                }
+                assert_eq!(parsed.container.protection.primary, [0x7e]);
+            }
+        }
+    }
 }
 
 #[test]
