@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import tarfile
@@ -248,6 +249,13 @@ def write_consumer_source(path: pathlib.Path, template: pathlib.Path) -> None:
     shutil.copyfile(template, path)
 
 
+def parse_pkg_config_flags(output: bytes) -> list[str]:
+    # pkgconf may shell-escape each UTF-8 byte separately. Unquote the byte
+    # stream before filesystem decoding; Latin-1 is only a lossless lexer bridge.
+    tokens = shlex.split(output.decode("latin-1"), posix=True)
+    return [os.fsdecode(token.encode("latin-1")) for token in tokens]
+
+
 def verify_sdk_consumers(root: pathlib.Path, platform_name: str) -> None:
     compiler_name = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
     if compiler_name is None:
@@ -286,11 +294,13 @@ def verify_sdk_consumers(root: pathlib.Path, platform_name: str) -> None:
     pkg_config = pathlib.Path(pkg_config_name).resolve()
     pkg_env = build_environment(root, platform_name, [compiler.parent, pkg_config.parent])
     pkg_env["PKG_CONFIG_PATH"] = str(root / "lib/pkgconfig")
-    flags = subprocess.check_output(
+    flags_output = subprocess.check_output(
         [str(pkg_config), "--cflags", "--libs", "openjoc"],
-        text=True,
         env=pkg_env,
-    ).split()
+    )
+    # pkg-config/pkgconf emit shell-escaped flags, including under MSYS2.
+    # Decode that quoting without executing a shell or expanding its syntax.
+    flags = parse_pkg_config_flags(flags_output)
     pkg_consumer = temporary / ("pkg-config-consumer.exe" if platform_name == "windows-x64" else "pkg-config-consumer")
     subprocess.run(
         [str(compiler), str(source), *flags, "-o", str(pkg_consumer)],
