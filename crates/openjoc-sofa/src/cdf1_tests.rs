@@ -1,9 +1,14 @@
 // pattern: Functional Core
 
-use super::{Cursor, SofaError, SofaLoadLimits, parse_attributes, parse_dimensions, parse_variables};
+use super::{
+    Cursor, SofaError, SofaLoadLimits, parse_attributes, parse_dimensions, parse_variables,
+};
 
 fn words(values: &[u32]) -> Vec<u8> {
-    values.iter().flat_map(|value| value.to_be_bytes()).collect()
+    values
+        .iter()
+        .flat_map(|value| value.to_be_bytes())
+        .collect()
 }
 
 #[test]

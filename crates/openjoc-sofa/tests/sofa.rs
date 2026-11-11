@@ -46,7 +46,10 @@ fn independently_encoded_cdf1_absent_attributes_preserve_tap_bits_and_delays() {
         right.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
     );
     assert_eq!(entry.pair().delay_samples(openjoc_render::HrirEar::Left), 1);
-    assert_eq!(entry.pair().delay_samples(openjoc_render::HrirEar::Right), 0);
+    assert_eq!(
+        entry.pair().delay_samples(openjoc_render::HrirEar::Right),
+        0
+    );
 }
 
 #[test]
