@@ -21,11 +21,9 @@ if [ -n "$ordinary_fixture" ] && [ ! -f "$ordinary_fixture" ]; then
 fi
 
 gstreamer_target=${OPENJOC_GSTREAMER_TARGET_DIR:-$repo_root/target-gstreamer}
-CARGO_TARGET_DIR="$gstreamer_target" cargo build \
-    --manifest-path "$repo_root/Cargo.toml" \
-    -p gst-plugin-openjoc --release --features gstreamer
+plugin_dir=$(python3 "$script_dir/build-gstreamer-plugin.py" \
+    --manifest-path "$repo_root/Cargo.toml" --target-dir "$gstreamer_target")
 
-plugin_dir=$gstreamer_target/release
 if [ -n "${GST_PLUGIN_PATH:-}" ]; then
     plugin_path=$plugin_dir:$GST_PLUGIN_PATH
 else

@@ -47,12 +47,17 @@ gstreamer_target="${OPENJOC_GSTREAMER_TARGET_DIR:-$PWD/target-gstreamer}"
 CARGO_TARGET_DIR="$gstreamer_target" cargo build -p gst-plugin-openjoc --release --features gstreamer
 ```
 
-The resulting authoritative library is
+Without an explicit Cargo build target, the resulting library is
 `$gstreamer_target/release/libgstopenjoc.dylib` on macOS,
 `$gstreamer_target/release/libgstopenjoc.so` on Linux, and the corresponding
-Windows DLL artifact. Keep this feature-enabled artifact isolated from the
-generic workspace `target/release` output. For development or manual loading,
-point GStreamer at the isolated artifact directory:
+Windows DLL artifact. An explicit target, including the host triple, adds a
+`<target-triple>` directory before `release`. Keep this feature-enabled artifact
+isolated from the generic workspace `target/release` output. The local
+`verify-gstreamer*.sh` scripts require Python 3 and select the unique existing
+cdylib reported by their Cargo build, rather than assuming an output layout.
+This does not make a cross-compiled plugin loadable by the host runtime.
+For development or manual loading with the default target layout, point
+GStreamer at the isolated artifact directory:
 
 ```sh
 GST_PLUGIN_PATH="$gstreamer_target/release" gst-inspect-1.0 openjocclassify
