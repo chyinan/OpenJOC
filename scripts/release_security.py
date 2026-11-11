@@ -69,6 +69,9 @@ DEFAULT_ALLOWED_ENVIRONMENT = frozenset(
 )
 _ASCII_STRINGS = re.compile(rb"[\x20-\x7e]{6,}")
 _UTF16_LE_STRINGS = re.compile(rb"(?:[\x20-\x7e]\x00){6,}")
+_BINARY_TEXT_STRINGS = re.compile(
+    r"[^\x00-\x1f\x7f-\x9f\ud800-\udfff\ufffd]{6,}"
+)
 
 
 def _scan_bytes(
@@ -89,6 +92,16 @@ def _scan_bytes(
             match.group().decode("utf-16-le", errors="ignore")
             for match in _UTF16_LE_STRINGS.finditer(data)
         )
+        # Binary strings can contain non-ASCII paths and assignment values.
+        # Keep invalid sequences as boundaries rather than joining fragments,
+        # and inspect both alignments of potentially embedded UTF-16LE strings.
+        # Preserve the original ASCII views and their assignment boundaries.
+        for encoding, offset in (("utf-8", 0), ("utf-16-le", 0), ("utf-16-le", 1)):
+            decoded = data[offset:].decode(encoding, errors="replace")
+            text_parts.extend(
+                match.group() for match in _BINARY_TEXT_STRINGS.finditer(decoded)
+                if not match.group().isascii()
+            )
     findings = scan_text(
         "\n".join(text_parts),
         subject=subject,
