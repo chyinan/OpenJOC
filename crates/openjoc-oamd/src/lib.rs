@@ -256,7 +256,7 @@ pub fn variable_bits_max(
 
 fn continue_value(value: u64, width: u8) -> Result<u64, OamdError> {
     value
-        .checked_shl(u32::from(width))
+        .checked_mul(1_u64 << width)
         .and_then(|shifted| shifted.checked_add(1_u64 << width))
         .ok_or(OamdError::ValueOverflow)
 }
