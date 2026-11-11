@@ -940,9 +940,12 @@ def _validate_layered_candidate(
         if isinstance(directsound, Mapping) and directsound.get(
             "classification"
         ) == "ENDPOINT_FORMAT_NOT_SUPPORTED":
-            _validate_endpoint_rejection_v2(
+            if not _validate_endpoint_rejection_v2(
                 directsound, contract, f"{location}.virtual.directsound", errors
-            )
+            ):
+                _error(
+                    errors, "ENDPOINT_REJECTION_NOT_PROVEN", f"{location}.virtual.directsound"
+                )
 
     realtek_state = states.get("physical_realtek_endpoint")
     realtek_evidence = row.get("physical_realtek_endpoint_evidence")
@@ -953,9 +956,10 @@ def _validate_layered_candidate(
     ):
         _error(errors, "REAL_ENDPOINT_DELIVERY_NOT_PROVEN", layout)
     elif realtek_state == "ENDPOINT_REJECTED":
-        _validate_endpoint_rejection_v2(
+        if not _validate_endpoint_rejection_v2(
             realtek_evidence, contract, f"{location}.realtek", errors
-        )
+        ):
+            _error(errors, "ENDPOINT_REJECTION_NOT_PROVEN", f"{location}.realtek")
     elif realtek_state == "HARDWARE_NOT_AVAILABLE":
         if not isinstance(realtek_evidence, Mapping) or not isinstance(
             realtek_evidence.get("reason"), str

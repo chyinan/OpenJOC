@@ -55,6 +55,8 @@ def exact(reference: Path, candidate: Path, channels: int, rate: int) -> None:
     if reference_format != expected or candidate_format != expected:
         raise ValueError(f"expected both formats to be {expected}; got {reference_format} and {candidate_format}")
     frames = len(reference_data) // (channels * 4)
+    if frames == 0:
+        raise ValueError("reference contains no PCM frames; unity evidence must be nonempty")
     if len(candidate_data) != len(reference_data) or candidate_data != reference_data:
         raise ValueError("unity filter changed final float PCM bytes or sample count")
     print(f"PCM_EXACT:PASS channels={channels} rate={rate} frames={frames}")

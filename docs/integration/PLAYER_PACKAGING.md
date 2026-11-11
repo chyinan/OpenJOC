@@ -213,6 +213,9 @@ access for runtime checks, runs the package verifier, invokes the full mpv
 selection/layout/codec harness, and writes machine-readable JSON plus a
 human-readable text report. Each report field is `PASS`, `FAIL`, or
 `NOT_APPLICABLE`.
+The `--report` path always contains JSON. Its text companion replaces the
+suffix with `.txt`, or with `.summary.txt` when the requested suffix is already
+`.txt` (case-insensitively), so the summary cannot overwrite the JSON report.
 
 The existing mpv harness remains the media acceptance gate:
 
