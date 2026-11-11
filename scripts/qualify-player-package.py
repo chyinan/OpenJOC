@@ -64,7 +64,7 @@ def safe_extract(archive: pathlib.Path, destination: pathlib.Path) -> pathlib.Pa
             names = [pathlib.PurePosixPath(member.name) for member in members]
             if not names or any(name.is_absolute() or ".." in name.parts for name in names):
                 raise SystemExit("qualification: archive contains an unsafe path")
-            package.extractall(destination)
+            package.extractall(destination, filter="data")
     roots = {name.parts[0] for name in names if name.parts}
     if len(roots) != 1:
         raise SystemExit("qualification: archive must contain exactly one package root")
