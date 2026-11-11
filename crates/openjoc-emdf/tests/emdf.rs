@@ -209,7 +209,7 @@ fn rejects_overflowing_extended_keys_and_payload_ids_without_aliasing() {
                 assert_eq!(parsed.bytes_consumed, bytes.len());
                 if key_extension {
                     assert_eq!(parsed.container.key_id, 15);
-                    assert!(parsed.container.payloads.is_empty());
+                    assert_eq!(parsed.container.payloads, [] as [EmdfPayload; 0]);
                 } else {
                     assert_eq!(parsed.container.payloads.len(), 1);
                     assert_eq!(parsed.container.payloads[0].id, 63);
