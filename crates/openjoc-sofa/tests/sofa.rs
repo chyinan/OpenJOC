@@ -16,6 +16,40 @@ use openjoc_sofa::{
 };
 
 #[test]
+fn independently_encoded_cdf1_absent_attributes_preserve_tap_bits_and_delays() {
+    // Written by SciPy, independently of the legacy one-word fixture builder.
+    let data = include_bytes!("fixtures/cdf1-standard-absent.sofa");
+    let loaded = parse_simple_free_field_hrir(data, SofaLoadLimits::default())
+        .expect("standard CDF-1 empty Data.IR and ListenerUp attribute lists");
+    assert_eq!(loaded.metadata.measurement_count, 1);
+    assert_eq!(loaded.metadata.sample_rate_hz, 48_000);
+    let entry = &loaded.bank.entries()[0];
+    assert_eq!(entry.direction(), [0.0, 1.0, 0.0]);
+    let left = [0.0_f64, 3.0, 4.0, -0.0, 0.5];
+    let right = [1.0_f64, -0.0, f64::from_bits(1), -2.0, 0.0];
+    assert_eq!(
+        entry
+            .pair()
+            .left_taps()
+            .iter()
+            .map(|x| x.to_bits())
+            .collect::<Vec<_>>(),
+        left.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        entry
+            .pair()
+            .right_taps()
+            .iter()
+            .map(|x| x.to_bits())
+            .collect::<Vec<_>>(),
+        right.iter().map(|x| x.to_bits()).collect::<Vec<_>>()
+    );
+    assert_eq!(entry.pair().delay_samples(openjoc_render::HrirEar::Left), 1);
+    assert_eq!(entry.pair().delay_samples(openjoc_render::HrirEar::Right), 0);
+}
+
+#[test]
 fn valid_reversed_receivers_map_coordinates_and_delays() {
     let data = fixture("SimpleFreeFieldHRIR", [0.0, 1.0], false);
     let loaded =

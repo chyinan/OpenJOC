@@ -17,6 +17,8 @@ use std::{
 use openjoc_render::{CartesianPosition, HrirBank, HrirEar, HrirEntry, HrirEntryId, HrirPair};
 
 mod builtin_hrtf;
+#[cfg(test)]
+mod cdf1_tests;
 
 pub use builtin_hrtf::{
     BUILTIN_HRTF_REGISTRY, BuiltinHrirF32Bank, BuiltinHrtf, BuiltinHrtfAssetMetadata,
@@ -619,7 +621,7 @@ impl<'a> NetcdfFile<'a> {
             ));
         }
         let dimensions = parse_dimensions(&mut cursor)?;
-        let globals = parse_attributes(&mut cursor, limits.max_metadata_bytes)?;
+        let globals = parse_attributes(&mut cursor, limits.max_metadata_bytes, false)?;
         let variables = parse_variables(&mut cursor, &dimensions, limits)?;
         for variable in &variables {
             let end = variable
@@ -933,6 +935,9 @@ fn read_hdf5_attributes(
 fn parse_dimensions(cursor: &mut Cursor<'_>) -> Result<Vec<Dimension>, SofaError> {
     let tag = cursor.u32()?;
     if tag == 0 {
+        if cursor.u32()? != 0 {
+            return Err(SofaError::InvalidContainer("absent dimension count"));
+        }
         return Ok(Vec::new());
     }
     if tag != NC_DIMENSION_TAG {
@@ -952,9 +957,26 @@ fn parse_dimensions(cursor: &mut Cursor<'_>) -> Result<Vec<Dimension>, SofaError
     Ok(dimensions)
 }
 
-fn parse_attributes(cursor: &mut Cursor<'_>, max_text: usize) -> Result<Vec<Attribute>, SofaError> {
+fn parse_attributes(
+    cursor: &mut Cursor<'_>,
+    max_text: usize,
+    legacy_variable: bool,
+) -> Result<Vec<Attribute>, SofaError> {
     let tag = cursor.u32()?;
     if tag == 0 {
+        let count_position = cursor.pos;
+        let count = cursor.u32()?;
+        if count != 0 {
+            // Older project-generated CDF-1 intermediates omitted the second
+            // ABSENT word. Only variable attributes can precede a known
+            // variable type, so keep that narrow compatibility path without treating
+            // arbitrary nonzero list counts as valid standard headers.
+            if legacy_variable && type_width(count).is_some() {
+                cursor.pos = count_position;
+            } else {
+                return Err(SofaError::InvalidContainer("absent attribute count"));
+            }
+        }
         return Ok(Vec::new());
     }
     if tag != NC_ATTRIBUTE_TAG {
@@ -1021,6 +1043,9 @@ fn parse_variables(
 ) -> Result<Vec<Variable>, SofaError> {
     let tag = cursor.u32()?;
     if tag == 0 {
+        if cursor.u32()? != 0 {
+            return Err(SofaError::InvalidContainer("absent variable count"));
+        }
         return Ok(Vec::new());
     }
     if tag != NC_VARIABLE_TAG {
@@ -1043,7 +1068,7 @@ fn parse_variables(
                 .checked_mul(dimension.len)
                 .ok_or(SofaError::ResourceLimitExceeded("dimension product"))?;
         }
-        let attrs = parse_attributes(cursor, limits.max_metadata_bytes)?;
+        let attrs = parse_attributes(cursor, limits.max_metadata_bytes, true)?;
         let ty = cursor.u32()?;
         let width =
             type_width(ty).ok_or_else(|| SofaError::UnsupportedAttributeType(name.clone()))?;
