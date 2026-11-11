@@ -52,7 +52,7 @@ def nc_var(name: str, dims: list[int], attributes: list[tuple[str, str]], ty: in
         result += struct.pack(">II", 12, len(attributes))
         result += b"".join(nc_attr(attr_name, value) for attr_name, value in attributes)
     else:
-        result += struct.pack(">I", 0)
+        result += struct.pack(">II", 0, 0)
     return result + struct.pack(">III", ty, vsize, begin)
 
 
