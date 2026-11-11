@@ -637,7 +637,7 @@ pub fn variable_bits(
             });
         }
         value = value
-            .checked_shl(u32::from(width))
+            .checked_mul(1_u64 << width)
             .and_then(|shifted| shifted.checked_add(1_u64 << width))
             .ok_or(EmdfError::ValueOverflow)?;
     }
