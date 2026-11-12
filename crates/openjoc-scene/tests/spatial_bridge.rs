@@ -1337,6 +1337,67 @@ fn region_topology_rebuilds_membership_before_projection() {
 }
 
 #[test]
+fn twenty_two_two_side_excluded_removes_only_middle_side_anchors() {
+    let layout = executable_layout("22.2");
+    let mut selector = RegionTopologySelector::new();
+    let selected = selector
+        .select(
+            &layout,
+            RegionSemanticState {
+                horizontal: RegionHorizontalState::SideExcluded,
+                top_bottom: RegionTopBottomState::Include,
+            },
+        )
+        .expect("22.2 side-excluded topology");
+    assert_eq!(selected.channels(), layout.channels());
+    for (original, constrained) in layout
+        .topology()
+        .layers
+        .iter()
+        .zip(&selected.topology().layers)
+    {
+        if original.z == 0.0 {
+            let identities = constrained
+                .rows
+                .iter()
+                .flat_map(|row| row.anchors.iter().map(|anchor| anchor.identity.clone()))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                identities,
+                ids(&["FC", "FLc", "FRc", "FL", "FR", "BL", "BR", "BC"])
+            );
+        } else {
+            assert_eq!(original, constrained);
+        }
+    }
+    assert_eq!(
+        selected.topology().layers.len(),
+        layout.topology().layers.len()
+    );
+}
+
+#[test]
+fn twenty_two_two_side_excluded_projects_no_gain_to_middle_sides() {
+    let layout = executable_layout("22.2");
+    for x in [0.0, QMAX_CLEAN] {
+        let mut point = dynamic_point(x, 0.5, 0.0);
+        let ordinary = layout.project(&point).expect("ordinary 22.2 point");
+        let left = active_index(&layout, "SiL");
+        let right = active_index(&layout, "SiR");
+        assert!(ordinary[left] > 0.0 || ordinary[right] > 0.0);
+        point.zones = Some(region_zones(
+            RegionHorizontalState::SideExcluded,
+            RegionTopBottomState::Include,
+        ));
+        let excluded = layout.project(&point).expect("22.2 side-excluded point");
+        assert_eq!(excluded.len(), ordinary.len());
+        assert_eq!(excluded[left], 0.0);
+        assert_eq!(excluded[right], 0.0);
+        assert_unit_l2(&excluded);
+    }
+}
+
+#[test]
 fn region_top_bottom_is_independent_and_keeps_the_canonical_output_vector() {
     let layout = executable_layout("7.1.4");
     let mut include = dynamic_point(0.5, 0.25, QMAX_CLEAN);

@@ -329,10 +329,12 @@ fn derive_selected_layout(
     canonical: &SpatialLayout,
     state: RegionSemanticState,
 ) -> Result<SpatialLayout, SpatialProjectionError> {
-    let five_x = !canonical
-        .channels()
-        .iter()
-        .any(|channel| matches!(channel.identity.as_str(), "Lb" | "Rb" | "Lw" | "Rw"));
+    let five_x = !canonical.channels().iter().any(|channel| {
+        matches!(
+            channel.identity.as_str(),
+            "Lb" | "Rb" | "BL" | "BR" | "Lw" | "Rw"
+        )
+    });
     let is_22_2 = canonical
         .channels()
         .iter()
@@ -409,7 +411,7 @@ fn matches_bed_state(
         _ => return Err(()),
     };
     let (screen, centre, surround, back) = classes;
-    let side = matches!(identity, "Ls" | "Rs" | "Lw" | "Rw") && !five_x;
+    let side = matches!(identity, "Ls" | "Rs" | "SiL" | "SiR" | "Lw" | "Rw") && !five_x;
     Ok(match state {
         RegionHorizontalState::NoConstraints => true,
         RegionHorizontalState::BackExcluded => !back,
