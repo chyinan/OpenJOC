@@ -58,7 +58,9 @@ pub struct CodingToolBlockInventory {
     pub dither_enabled: bool,
     pub dither_provenance: InventoryProvenance,
     pub coupling_in_use: bool,
+    /// First absolute transform bin in the parsed coupling exponent range.
     pub coupling_start_bin: Option<usize>,
+    /// Exclusive end of the parsed coupling exponent range.
     pub coupling_end_bin: Option<usize>,
     pub coupling_coordinates_reused: bool,
     pub coupling_phase_flags: Vec<bool>,
@@ -210,20 +212,13 @@ pub fn emit_coding_tool_inventory(
                             value.channel_in_use[channel_index]
                         }
                     });
-            let (coupling_start_bin, coupling_end_bin, phase_flags) =
-                match block.prefix.coupling.as_ref() {
-                    Some(crate::CouplingInformation::Standard(value)) => (
-                        Some(usize::from(value.begin_frequency_code)),
-                        usize::try_from(value.end_frequency_code).ok(),
-                        value.phase_flags.clone(),
-                    ),
-                    Some(crate::CouplingInformation::Enhanced(value)) => (
-                        Some(usize::from(value.begin_subband)),
-                        Some(usize::from(value.end_subband)),
-                        Vec::new(),
-                    ),
-                    None => (None, None, Vec::new()),
-                };
+            let coupling_exponents = block.prefix.coupling_exponents.as_ref();
+            let coupling_start_bin = coupling_exponents.map(|value| value.start_mantissa);
+            let coupling_end_bin = coupling_exponents.map(|value| value.end_mantissa);
+            let phase_flags = match block.prefix.coupling.as_ref() {
+                Some(crate::CouplingInformation::Standard(value)) => value.phase_flags.clone(),
+                _ => Vec::new(),
+            };
             let spx = block.prefix.spectral_extension.as_ref();
             let dither_enabled = block
                 .prefix
@@ -291,7 +286,7 @@ pub fn emit_coding_tool_inventory(
                 spx_source_start: spx.map(|value| usize::from(value.begin_subband)),
                 spx_source_end: spx.map(|value| usize::from(value.end_subband)),
                 spx_coordinates_reused: spx.is_some() && block_index > 0,
-                rematrix_flags: if coupling_active {
+                rematrix_flags: if frame.bsi.audio_coding_mode == 2 {
                     block.prefix.rematrix_flags.clone()
                 } else {
                     Vec::new()
