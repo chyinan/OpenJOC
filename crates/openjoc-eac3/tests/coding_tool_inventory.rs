@@ -43,8 +43,7 @@ fn inventory_reports_absolute_coupling_bins_for_every_block() {
 #[test]
 fn inventory_omits_coupling_bins_for_uncoupled_channels() {
     let (frame, blocks) = decoded(UNCOUPLED);
-    let inventory =
-        emit_coding_tool_inventory("uncoupled", 0, &frame, &blocks).expect("inventory");
+    let inventory = emit_coding_tool_inventory("uncoupled", 0, &frame, &blocks).expect("inventory");
     assert_eq!(inventory.blocks.len(), 24);
     for record in inventory.blocks {
         assert!(!record.coupling_in_use);
@@ -60,24 +59,21 @@ fn inventory_uses_parsed_enhanced_bins_only_for_participating_channels() {
     // Public diagnostic state, not a new encoded enhanced-coupling fixture.
     let (frame, mut blocks) = decoded(COUPLED[0]);
     for block in &mut blocks {
-        block.prefix.coupling = Some(CouplingInformation::Enhanced(
-            EnhancedCouplingInformation {
-                channel_in_use: vec![true, false, false, false],
-                begin_frequency_code: 12,
-                begin_subband: 14,
-                end_subband: 19,
-                band_structure: [false; 22],
-                band_count: 5,
-                amplitudes: vec![Some(vec![0; 5]), None, None, None],
-            },
-        ));
+        block.prefix.coupling = Some(CouplingInformation::Enhanced(EnhancedCouplingInformation {
+            channel_in_use: vec![true, false, false, false],
+            begin_frequency_code: 12,
+            begin_subband: 14,
+            end_subband: 19,
+            band_structure: [false; 22],
+            band_count: 5,
+            amplitudes: vec![Some(vec![0; 5]), None, None, None],
+        }));
         let exponents = block.prefix.coupling_exponents.as_mut().expect("exponents");
         exponents.start_mantissa = 157;
         exponents.end_mantissa = 217;
         exponents.decoded.resize(60, 0);
     }
-    let inventory =
-        emit_coding_tool_inventory("enhanced", 0, &frame, &blocks).expect("inventory");
+    let inventory = emit_coding_tool_inventory("enhanced", 0, &frame, &blocks).expect("inventory");
     assert_eq!(inventory.blocks.len(), 24);
     for records in inventory.blocks.chunks_exact(4) {
         assert!(records[0].coupling_in_use);
