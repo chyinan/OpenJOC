@@ -34,7 +34,7 @@ fn inventory_reports_absolute_coupling_bins_for_every_block() {
             assert_eq!(record.coupling_start_bin, Some(169));
             assert_eq!(record.coupling_end_bin, Some(217));
             assert_eq!(record.au_index, 7);
-            assert!(record.rematrix_flags.is_empty());
+            assert_eq!(record.rematrix_flags, [] as [bool; 0]);
         }
         assert_eq!(blocks, before);
     }
@@ -49,8 +49,8 @@ fn inventory_omits_coupling_bins_for_uncoupled_channels() {
         assert!(!record.coupling_in_use);
         assert_eq!(record.coupling_start_bin, None);
         assert_eq!(record.coupling_end_bin, None);
-        assert!(record.coupling_phase_flags.is_empty());
-        assert!(record.rematrix_flags.is_empty());
+        assert_eq!(record.coupling_phase_flags, [] as [bool; 0]);
+        assert_eq!(record.rematrix_flags, [] as [bool; 0]);
     }
 }
 
@@ -79,12 +79,12 @@ fn inventory_uses_parsed_enhanced_bins_only_for_participating_channels() {
         assert!(records[0].coupling_in_use);
         assert_eq!(records[0].coupling_start_bin, Some(157));
         assert_eq!(records[0].coupling_end_bin, Some(217));
-        assert!(records[0].coupling_phase_flags.is_empty());
+        assert_eq!(records[0].coupling_phase_flags, [] as [bool; 0]);
         for record in &records[1..] {
             assert!(!record.coupling_in_use);
             assert_eq!(record.coupling_start_bin, None);
             assert_eq!(record.coupling_end_bin, None);
-            assert!(record.coupling_phase_flags.is_empty());
+            assert_eq!(record.coupling_phase_flags, [] as [bool; 0]);
         }
     }
 }
