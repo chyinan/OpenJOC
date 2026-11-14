@@ -250,7 +250,6 @@ pub struct BridgeControlAssembler {
     base_projection_enabled: bool,
     topology_epoch: u64,
     signature: Option<Vec<(SpatialSourceClass, String)>>,
-    bindings: Vec<CoordinateBinding>,
     records: Option<Vec<SpatialBindingRecord>>,
 }
 
@@ -276,7 +275,6 @@ impl BridgeControlAssembler {
             base_projection_enabled,
             topology_epoch: 0,
             signature: None,
-            bindings: Vec::new(),
             records: None,
         }
     }
@@ -285,7 +283,6 @@ impl BridgeControlAssembler {
     pub fn reset(&mut self) {
         self.topology_epoch = 0;
         self.signature = None;
-        self.bindings.clear();
         self.records = None;
     }
 
@@ -301,6 +298,7 @@ impl BridgeControlAssembler {
     ///
     /// Returns a boundary error when decoded coordinates, metadata, timing,
     /// or the selected public geometry cannot be represented faithfully.
+    /// A rejected frame leaves the previous assembly state unchanged.
     pub fn assemble_frame(
         &mut self,
         frame: &DecodedPayloadFrame,
@@ -329,36 +327,30 @@ impl BridgeControlAssembler {
             });
         }
         let topology_changed = self.signature.as_ref() != Some(&signature);
-        let first_topology = self.records.is_none();
-        if topology_changed {
-            self.topology_epoch = self
-                .topology_epoch
+        let topology_epoch = if topology_changed {
+            self.topology_epoch
                 .checked_add(1)
-                .ok_or(BridgeControlAssemblyError::TopologyEpochOverflow)?;
-            self.signature = Some(signature);
-            self.bindings = bindings;
-            self.records = Some(default_records(
+                .ok_or(BridgeControlAssemblyError::TopologyEpochOverflow)?
+        } else {
+            self.topology_epoch
+        };
+
+        // Keep topology and event updates local until the whole frame succeeds.
+        // The first snapshot is still the pre-event state.
+        let mut staged_records = if topology_changed {
+            Some(default_records(
                 base_coordinates,
                 &families,
-                &self.bindings,
+                &bindings,
                 self.coordinate_dimensions,
                 self.base_projection_enabled,
-            )?);
-        } else {
-            self.bindings = bindings;
-        }
-
-        // The bridge installs this snapshot at the frame start. Capture the
-        // pre-event state, while retaining the final records below for the
-        // next frame's selective diffs and metadata inheritance.
-        let initial_topology = if first_topology || topology_changed {
-            Some(
-                self.topology_snapshot()
-                    .ok_or(BridgeControlAssemblyError::MissingInitialPayload)?,
-            )
+            )?)
         } else {
             None
         };
+        let initial_topology = staged_records
+            .as_deref()
+            .map(|records| Self::topology_snapshot(&bindings, records));
 
         let frame_samples = frame.sample_range.len();
         let mut events = Vec::new();
@@ -398,23 +390,26 @@ impl BridgeControlAssembler {
         let mut event_index = 0;
         while event_index < raw_events.len() {
             let quantum = raw_events[event_index].0;
-            let before = self
-                .records
-                .as_ref()
-                .ok_or(BridgeControlAssemblyError::MissingInitialPayload)?
-                .clone();
+            let before = staged_records
+                .as_deref()
+                .or(self.records.as_deref())
+                .ok_or(BridgeControlAssemblyError::MissingInitialPayload)?;
+            let mut after = before.to_vec();
             let mut ramp_duration = 0;
             while event_index < raw_events.len() && raw_events[event_index].0 == quantum {
                 let (_, _, block_index, block_ramp, objects) = &raw_events[event_index];
-                self.apply_block(&objects.objects, *block_index, reference_screen)?;
+                self.apply_block(
+                    &bindings,
+                    &mut after,
+                    &objects.objects,
+                    *block_index,
+                    reference_screen,
+                )?;
                 ramp_duration = *block_ramp;
                 event_index += 1;
             }
-            let after = self
-                .records
-                .as_ref()
-                .ok_or(BridgeControlAssemblyError::MissingInitialPayload)?;
-            let updates = selective_diff(&before, after);
+            let updates = selective_diff(before, &after);
+            staged_records = Some(after);
             if !updates.is_empty() {
                 events.push(BridgeControlEvent {
                     quantum,
@@ -424,8 +419,15 @@ impl BridgeControlAssembler {
             }
         }
 
+        if topology_changed {
+            self.topology_epoch = topology_epoch;
+            self.signature = Some(signature);
+        }
+        if let Some(records) = staged_records {
+            self.records = Some(records);
+        }
         Ok(BridgeControlFrame {
-            topology_epoch: self.topology_epoch,
+            topology_epoch,
             initial_topology,
             events,
         })
@@ -466,12 +468,14 @@ impl BridgeControlAssembler {
     }
 
     fn apply_block(
-        &mut self,
+        &self,
+        bindings: &[CoordinateBinding],
+        records: &mut [SpatialBindingRecord],
         objects: &[Vec<ObjectUpdate>],
         block_index: usize,
         reference_screen: Option<ReferenceScreen>,
     ) -> Result<(), BridgeControlAssemblyError> {
-        for (ordinal, binding) in self.bindings.clone().into_iter().enumerate() {
+        for (ordinal, binding) in bindings.iter().enumerate() {
             let Some(object_index) = binding.object_index else {
                 continue;
             };
@@ -482,9 +486,6 @@ impl BridgeControlAssembler {
                     object: object_index,
                     block: block_index,
                 })?;
-            let Some(records) = self.records.as_mut() else {
-                return Err(BridgeControlAssemblyError::MissingInitialPayload);
-            };
             let count = records.len();
             let Some(record) = records.get_mut(ordinal) else {
                 return Err(BridgeControlAssemblyError::UnsupportedCoordinateOrdinal {
@@ -515,15 +516,15 @@ impl BridgeControlAssembler {
         Ok(())
     }
 
-    fn topology_snapshot(&self) -> Option<SpatialTopologySnapshot> {
-        let records = self.records.as_ref()?;
-        let base_count = self
-            .bindings
+    fn topology_snapshot(
+        bindings: &[CoordinateBinding],
+        records: &[SpatialBindingRecord],
+    ) -> SpatialTopologySnapshot {
+        let base_count = bindings
             .iter()
             .take_while(|binding| binding.family == CoordinateFamily::Base)
             .count();
-        let fixed_count = self
-            .bindings
+        let fixed_count = bindings
             .iter()
             .skip(base_count)
             .take_while(|binding| binding.family == CoordinateFamily::Fixed)
@@ -539,11 +540,11 @@ impl BridgeControlAssembler {
                 }],
             })
             .collect();
-        Some(SpatialTopologySnapshot {
+        SpatialTopologySnapshot {
             explicit_groups,
             fixed_layout: records[base_count..base_count + fixed_count].to_vec(),
             dynamic_records: records[base_count + fixed_count..].to_vec(),
-        })
+        }
     }
 }
 
@@ -1394,6 +1395,48 @@ mod tests {
                 .unwrap();
         }
         output
+    }
+
+    #[test]
+    fn missing_reference_screen_does_not_consume_initial_topology() {
+        use crate::BaseFullBandCoordinate;
+        use openjoc_oamd::{OamdElement, ReferenceScreen};
+
+        let mut frame = equivalence_frame();
+        let OamdElement::Objects(objects) = &mut frame.oamd.elements[0].element else {
+            unreachable!();
+        };
+        objects.objects[0][0].render.screen_anchor = true;
+        let screen = ReferenceScreen {
+            bottom_left: Position3 {
+                x: 0.25,
+                y: 0.0,
+                z: 0.0,
+            },
+            width: 0.5,
+            height: 0.5,
+        };
+        let base = [BaseFullBandCoordinate::Left];
+        let mut assembler = super::BridgeControlAssembler::new(8, 1);
+        assert!(matches!(
+            assembler.assemble_frame(&frame, &base, None),
+            Err(super::BridgeControlAssemblyError::MissingReferenceScreen)
+        ));
+        assert_eq!(assembler.topology_epoch(), 0);
+
+        let retried = assembler
+            .assemble_frame(&frame, &base, Some(screen))
+            .unwrap();
+        let fresh = super::BridgeControlAssembler::new(8, 1)
+            .assemble_frame(&frame, &base, Some(screen))
+            .unwrap();
+        assert_eq!(retried.topology_epoch, 1);
+        assert!(retried.initial_topology.is_some());
+        assert_eq!(retried, fresh);
+        assert_pcm_bits(
+            &render_timing_control(&mut crate::JocSpatialBridge::new(), &retried),
+            &render_timing_control(&mut crate::JocSpatialBridge::new(), &fresh),
+        );
     }
 
     #[test]

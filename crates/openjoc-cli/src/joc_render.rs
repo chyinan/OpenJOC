@@ -3897,13 +3897,13 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         for block in blocks {
             assert_eq!(block.channels[3].len(), 640);
-            for index in 0..640 {
+            for (index, sample) in block.channels[3].iter().enumerate() {
                 let gain = DialnormState::new(
                     DialnormMode::Digital,
                     if (256..512).contains(&index) { 20 } else { 31 },
                 )
                 .linear_gain();
-                assert_eq!(block.channels[3][index].to_bits(), (99.0 * gain).to_bits());
+                assert_eq!(sample.to_bits(), (99.0 * gain).to_bits());
             }
         }
     }
