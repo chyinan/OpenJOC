@@ -1422,9 +1422,11 @@ fn parse_ac3_bsi_reader(bits: &mut BitReader<'_>) -> Result<BitstreamInformation
         compr_2,
         downmix: extended_downmix.unwrap_or(DownmixMetadata {
             dmixmod: dolby_surround_mode.map(|mode| if mode == 2 { 1 } else { 2 }),
-            ltrt_center_mix_level: center,
+            // TS 102 366 §D.2.1.2 falls back to §6.8.2: original AC-3
+            // uses fixed -3 dB Lt/Rt weights, not the signalled Lo/Ro ones.
+            ltrt_center_mix_level: center.map(|_| 4),
             loro_center_mix_level: center,
-            ltrt_surround_mix_level: surround,
+            ltrt_surround_mix_level: surround.map(|_| 4),
             loro_surround_mix_level: surround,
             lfe_mix_level_code: None,
         }),
