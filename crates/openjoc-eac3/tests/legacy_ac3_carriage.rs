@@ -622,9 +622,12 @@ fn legacy_ltrt_without_extended_mix_fields_keeps_fixed_weights() {
             dialnorm: DialnormState::default(),
             dialnorm_segments: Vec::new(),
         };
-        let matrix =
-            stereo_downmix_matrix(StereoDownmixMode::LtRt, base.downmix, &base.channel_locations)
-                .expect("3/2 Lt/Rt matrix");
+        let matrix = stereo_downmix_matrix(
+            StereoDownmixMode::LtRt,
+            base.downmix,
+            &base.channel_locations,
+        )
+        .expect("3/2 Lt/Rt matrix");
         let mut stereo = [vec![0.0], vec![0.0]];
         matrix.apply(&base, &mut stereo).expect("one-hot downmix");
         let weight = 0.707_f64 * (1.0 / (1.0 + 0.707 + 0.707 + 0.707));
