@@ -17,6 +17,83 @@ from release_security_core import format_finding  # noqa: E402
 
 
 class ReleaseSecurityShellTests(unittest.TestCase):
+    def test_utf8_bom_text_sensitive_assignments(self) -> None:
+        synthetic_value = "synthetic-bom-review-value"
+        for name in ("EXAMPLE_TOKEN", "EXAMPLE_API_KEY", "PASSWORD", "CLIENT_SECRET"):
+            for prefix in ("", "export ", "set ", " \t"):
+                with self.subTest(name=name, prefix=prefix), tempfile.TemporaryDirectory() as temporary:
+                    path = Path(temporary) / "config.log"
+                    path.write_bytes(
+                        b"\xef\xbb\xbf"
+                        + f"{prefix}{name}={synthetic_value}\n".encode("utf-8")
+                    )
+                    findings = scan_paths((path,), private_path_markers=())
+                    self.assertEqual(len(findings), 1)
+                    self.assertEqual(findings[0].category, "sensitive_assignment")
+                    self.assertEqual(findings[0].indicator, name)
+                    self.assertEqual(findings[0].line_number, 1)
+                    self.assertNotIn(synthetic_value, repr(findings))
+                    self.assertNotIn(synthetic_value, format_finding(findings[0]))
+
+    def test_utf8_bom_zip_sensitive_assignment(self) -> None:
+        synthetic_value = "synthetic-bom-review-value"
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            with self.subTest(compression=compression), tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary) / "candidate.zip"
+                with zipfile.ZipFile(path, "w", compression=compression) as archive:
+                    archive.writestr(
+                        "source/config.log",
+                        b"\xef\xbb\xbf" + f"EXAMPLE_TOKEN={synthetic_value}\n".encode(),
+                    )
+                findings = scan_paths((path,), private_path_markers=())
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].category, "sensitive_assignment")
+                self.assertTrue(findings[0].subject.endswith("!source/config.log"))
+                self.assertNotIn(synthetic_value, repr(findings))
+
+    def test_utf8_bom_scan_cli_fails_without_disclosing_value(self) -> None:
+        synthetic_value = "synthetic-bom-review-value"
+        data = b"\xef\xbb\xbf" + f"EXAMPLE_TOKEN={synthetic_value}\n".encode()
+        for archive_input in (False, True):
+            with self.subTest(archive=archive_input), tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary) / ("candidate.zip" if archive_input else "config.log")
+                if archive_input:
+                    with zipfile.ZipFile(path, "w") as archive:
+                        archive.writestr("config.log", data)
+                else:
+                    path.write_bytes(data)
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPTS / "release_security.py"), "scan", str(path)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("sensitive_assignment", result.stdout)
+                self.assertIn("release security scan failed", result.stdout)
+                self.assertNotIn(synthetic_value, result.stdout + result.stderr)
+
+    def test_utf8_bom_preserves_benign_and_source_exceptions(self) -> None:
+        cases = (
+            ("empty.log", ""),
+            ("empty-value.log", "EXAMPLE_TOKEN=\"\"\n"),
+            ("ordinary.log", "ordinary=测试\n"),
+            ("source.c", "token = parser_next_token(context);\n"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            for name, content in cases:
+                with self.subTest(name=name):
+                    path = Path(temporary) / name
+                    path.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+                    self.assertEqual(scan_paths((path,), private_path_markers=()), ())
+
+    def test_utf8_bom_preserves_later_line_numbers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "config.log"
+            path.write_bytes(b"\xef\xbb\xbfordinary=true\nEXAMPLE_TOKEN=synthetic-value\n")
+            findings = scan_paths((path,), private_path_markers=())
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].line_number, 2)
+        self.assertEqual(findings[0].category, "sensitive_assignment")
+
     def test_scans_file_without_disclosing_sensitive_value(self) -> None:
         sensitive_name = "_".join(("EXAMPLE", "API", "KEY"))
         synthetic_value = "synthetic-secret-value-123456789"

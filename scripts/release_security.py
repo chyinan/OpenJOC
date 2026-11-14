@@ -82,7 +82,7 @@ def _scan_bytes(
 ) -> tuple[Finding, ...]:
     text_parts: list[str] = []
     if b"\x00" not in data:
-        text_parts.append(data.decode("utf-8", errors="ignore"))
+        text_parts.append(data.decode("utf-8-sig", errors="ignore"))
     else:
         text_parts.extend(
             match.group().decode("ascii", errors="ignore")
