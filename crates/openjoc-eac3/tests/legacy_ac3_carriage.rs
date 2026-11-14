@@ -1,9 +1,10 @@
 // pattern: Functional Core
 
 use openjoc_eac3::{
-    AudioPcmSynthesizer, ChannelLocation, InternalBasePolicy, JocAccessUnitPcmDecoder, StreamType,
-    decode_audio_blocks, decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy,
-    group_access_units, index_syncframes, parse_bsi, parse_syncframe_header,
+    AudioPcmSynthesizer, ChannelLocation, DecodedAccessUnitPcm, DialnormState, InternalBasePolicy,
+    JocAccessUnitPcmDecoder, StereoDownmixMode, StreamType, decode_audio_blocks,
+    decode_audio_frame_pcm, decode_audio_frame_pcm_with_policy, group_access_units,
+    index_syncframes, parse_bsi, parse_syncframe_header, stereo_downmix_matrix,
 };
 
 #[derive(Default)]
@@ -583,6 +584,53 @@ fn bsid6_annex_d_extended_bsi_is_parsed_without_losing_downmix_ownership() {
     assert_eq!(absent.downmix.loro_center_mix_level, Some(4));
     assert_eq!(absent.downmix.loro_surround_mix_level, Some(4));
     assert_eq!(absent.addbsi, None);
+}
+
+#[test]
+fn legacy_ltrt_without_extended_mix_fields_keeps_fixed_weights() {
+    for (bsid, mut frame) in [
+        (8, decodable_legacy_ac3_frame()),
+        (6, decodable_bsid6_legacy_ac3_frame()),
+    ] {
+        // At bits 51..55 in the 3/2 core, set both original fields to the
+        // valid code 2: Lo/Ro centre -6 dB and Lo/Ro surround silent.
+        frame[6] = (frame[6] & !0b0001_1110) | 0b0001_0100;
+        finalize_ac3_crc(&mut frame);
+        let bsi = parse_bsi(&frame).expect("legacy 3/2 BSI");
+        assert_eq!(bsi.bitstream_id, bsid);
+        assert_eq!(bsi.downmix.loro_center_mix_level, Some(6));
+        assert_eq!(bsi.downmix.loro_surround_mix_level, Some(7));
+        assert_eq!(bsi.downmix.ltrt_center_mix_level, Some(4));
+        assert_eq!(bsi.downmix.ltrt_surround_mix_level, Some(4));
+
+        // Apply Lt/Rt to a one-sample left-surround impulse, using the parsed
+        // metadata and the actual 3/2 topology. The LFE has no mix metadata.
+        let base = DecodedAccessUnitPcm {
+            sample_rate: 48_000,
+            samples: 1,
+            channel_locations: vec![
+                ChannelLocation::Left,
+                ChannelLocation::Right,
+                ChannelLocation::Centre,
+                ChannelLocation::LeftSurround,
+                ChannelLocation::RightSurround,
+            ],
+            channels: vec![vec![0.0], vec![0.0], vec![0.0], vec![1.0], vec![0.0]],
+            lfe_location: Some(ChannelLocation::Lfe(0)),
+            lfe: Some(vec![0.0]),
+            downmix: bsi.downmix,
+            dialnorm: DialnormState::default(),
+            dialnorm_segments: Vec::new(),
+        };
+        let matrix =
+            stereo_downmix_matrix(StereoDownmixMode::LtRt, base.downmix, &base.channel_locations)
+                .expect("3/2 Lt/Rt matrix");
+        let mut stereo = [vec![0.0], vec![0.0]];
+        matrix.apply(&base, &mut stereo).expect("one-hot downmix");
+        let weight = 0.707_f64 * (1.0 / (1.0 + 0.707 + 0.707 + 0.707));
+        assert_eq!(stereo[0][0].to_bits(), (-weight).to_bits());
+        assert_eq!(stereo[1][0].to_bits(), weight.to_bits());
+    }
 }
 
 #[test]
