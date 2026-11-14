@@ -2,6 +2,7 @@
 // Reason: integration tests generate deterministic fixtures and render real files.
 use openjoc_render_scene::{RESULT_SCHEMA, RenderBackend, RenderRequest, SCENE_SCHEMA, render};
 use openjoc_sofa::{SofaLoadLimits, parse_simple_free_field_hrir};
+use openjoc_wave::{Clipping, Dither, SampleFormat, WaveEncodeOptions, WaveWriter};
 use std::{fs, path::Path, path::PathBuf};
 
 #[test]
@@ -167,6 +168,78 @@ fn direct_and_partitioned_render_same_scene_with_complete_tail() {
     assert!(direct_dir.join("binaural.wav").is_file());
     assert!(!root.join("direct.staging").exists());
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn extensible_mono_source_is_bit_identical_to_legacy_header() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let source = root.join("source.wav");
+    let scene = root.join("scene.json");
+    let sofa = root.join("listener.sofa");
+    let sofa_bytes = sofa_fixture();
+    let direction = parse_simple_free_field_hrir(&sofa_bytes, SofaLoadLimits::default())
+        .unwrap()
+        .bank
+        .entries()[0]
+        .direction();
+    fs::write(&sofa, sofa_bytes).unwrap();
+    fs::write(
+        &scene,
+        format!(
+            r#"{{"schema":"{SCENE_SCHEMA}","sample_rate_hz":48000,"source_semantics":"explicit_spatial_sources","sources":[{{"id":"voice","input_wav":"source.wav","start_sample":1,"position":{{"x":{},"y":{},"z":{}}},"gain":1.0}}]}}"#,
+            direction[0], direction[1], direction[2]
+        ),
+    )
+    .unwrap();
+
+    for (format_index, sample_format) in [SampleFormat::S24, SampleFormat::F32]
+        .into_iter()
+        .enumerate()
+    {
+        let options = WaveEncodeOptions {
+            sample_format,
+            clipping: Clipping::Reject,
+            dither: Dither::None,
+        };
+        for (backend_index, backend) in [
+            RenderBackend::Direct,
+            RenderBackend::Partitioned { partition_size: 4 },
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut outputs = Vec::new();
+            for extensible in [false, true] {
+                let file = fs::File::create(&source).unwrap();
+                let mut writer = if extensible {
+                    WaveWriter::new_with_speaker_mask(file, 48_000, 1, options, 0x4).unwrap()
+                } else {
+                    WaveWriter::new(file, 48_000, 1, options).unwrap()
+                };
+                writer
+                    .write_channels(&[&[0.25, -0.5, 0.75, -0.25, 0.125, -0.125]])
+                    .unwrap();
+                let _ = writer.finish().unwrap();
+                let output_dir =
+                    root.join(format!("out-{format_index}-{backend_index}-{extensible}"));
+                let result = render(&RenderRequest {
+                    scene_path: scene.clone(),
+                    sofa_path: sofa.clone(),
+                    output_dir: output_dir.clone(),
+                    backend,
+                    block_size: 3,
+                })
+                .unwrap();
+                assert_eq!(result.scene_input_length, 7);
+                assert_eq!(result.tail_samples, 2);
+                assert_eq!(result.output_sample_count, 9);
+                outputs.push(fs::read(output_dir.join("binaural.wav")).unwrap());
+            }
+            assert_eq!(outputs[0], outputs[1]);
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

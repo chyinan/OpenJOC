@@ -20,8 +20,9 @@ ReconstructionBasis rows, OAMD slots, or backend settings.
 Source paths are relative to the scene file. Absolute paths, parent traversal,
 symlink escapes, duplicate IDs, unknown directions, and source-WAV sample-rate
 mismatches are rejected before output promotion. Supported source WAVs are mono
-PCM16/24/32 and mono IEEE-float32; they must match the scene rate. OpenJOC does
-not resample, normalize, clip, or dither source audio.
+PCM16/24/32 and mono IEEE-float32, including WAVE_FORMAT_EXTENSIBLE headers when
+the valid bits equal the container bit depth. They must match the scene rate.
+OpenJOC does not resample, normalize, clip, or dither source audio.
 
 Inspect a supported SOFA file first:
 

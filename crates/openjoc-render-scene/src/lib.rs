@@ -25,6 +25,9 @@ pub const SCENE_SCHEMA: &str = "openjoc.render-scene.v1";
 pub const RESULT_SCHEMA: &str = "openjoc.render-result.v1";
 const MAX_RENDER_BLOCK_SAMPLES: usize = 65_536;
 const MAX_WAV_FMT_BYTES: u64 = 4_096;
+const WAV_SUBFORMAT_GUID_SUFFIX: [u8; 14] = [
+    0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RenderSceneLoadLimits {
@@ -656,6 +659,24 @@ impl StreamingWav {
                         actual: sr,
                     });
                 }
+                let enc = if enc == 0xfffe {
+                    // Extensible WAV wraps the same mono sample formats in a
+                    // full subformat GUID. Keep the existing sample decoding.
+                    if b.len() < 40
+                        || !(22..=b.len() - 18)
+                            .contains(&usize::from(u16::from_le_bytes([b[16], b[17]])))
+                        || u16::from_le_bytes([b[18], b[19]]) != bits
+                        || u16::from_le_bytes([b[12], b[13]]) != bits / 8
+                        || b[26..40] != WAV_SUBFORMAT_GUID_SUFFIX
+                    {
+                        return Err(RenderSceneError::UnsupportedWav(
+                            "unsupported extensible WAV format".into(),
+                        ));
+                    }
+                    u16::from_le_bytes([b[24], b[25]])
+                } else {
+                    enc
+                };
                 let e = match (enc, bits) {
                     (1, 16) => WavEncoding::Pcm16,
                     (1, 24) => WavEncoding::Pcm24,
