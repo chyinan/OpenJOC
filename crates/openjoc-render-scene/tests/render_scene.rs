@@ -91,6 +91,60 @@ fn relative_scene_paths_resolve_sources_and_render_identically() {
 }
 
 #[test]
+fn render_outputs_with_same_stem_do_not_share_staging_directories() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let sofa_bytes = sofa_fixture();
+    let direction = parse_simple_free_field_hrir(&sofa_bytes, SofaLoadLimits::default())
+        .unwrap()
+        .bank
+        .entries()[0]
+        .direction();
+    let sofa_path = root.join("listener.sofa");
+    fs::write(&sofa_path, sofa_bytes).unwrap();
+    write_pcm16_mono(&root.join("source.wav"), 48_000, &[0.25]);
+    let scene_path = root.join("scene.json");
+    fs::write(
+        &scene_path,
+        format!(
+            r#"{{"schema":"{SCENE_SCHEMA}","sample_rate_hz":48000,"source_semantics":"explicit_spatial_sources","sources":[{{"id":"voice","input_wav":"source.wav","position":{{"x":{},"y":{},"z":{}}},"gain":1.0}}]}}"#,
+            direction[0], direction[1], direction[2]
+        ),
+    )
+    .unwrap();
+
+    let first_path = root.join("mix.staging");
+    let second_path = root.join("mix.v2");
+    let render_to = |output_dir| {
+        render(&RenderRequest {
+            scene_path: scene_path.clone(),
+            sofa_path: sofa_path.clone(),
+            output_dir,
+            backend: RenderBackend::Direct,
+            block_size: 2,
+        })
+        .unwrap()
+    };
+    let first = render_to(first_path.clone());
+    fs::write(first_path.join("keep.txt"), b"existing output").unwrap();
+    let second = render_to(second_path.clone());
+
+    assert_eq!(first.output_sha256, second.output_sha256);
+    assert_eq!(
+        fs::read(first_path.join("binaural.wav")).unwrap(),
+        fs::read(second_path.join("binaural.wav")).unwrap()
+    );
+    assert!(first_path.join("render.json").is_file());
+    assert!(second_path.join("render.json").is_file());
+    assert_eq!(
+        fs::read(first_path.join("keep.txt")).unwrap(),
+        b"existing output"
+    );
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 5);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn direct_and_partitioned_render_same_scene_with_complete_tail() {
     let root = temp_root();
     fs::create_dir_all(&root).unwrap();
