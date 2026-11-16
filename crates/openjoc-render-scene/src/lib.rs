@@ -403,7 +403,7 @@ fn create_render_staging(output_dir: &Path) -> Result<PathBuf, RenderSceneError>
         let staging = parent.join(name);
         match fs::create_dir(&staging) {
             Ok(()) => return Ok(staging),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error.into()),
         }
     }
