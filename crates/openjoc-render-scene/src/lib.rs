@@ -19,6 +19,7 @@ use std::{
     fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 pub const SCENE_SCHEMA: &str = "openjoc.render-scene.v1";
@@ -352,13 +353,7 @@ pub fn render(request: &RenderRequest) -> Result<RenderResult, RenderSceneError>
         });
         readers.push((id, wav));
     }
-    let staging = request.output_dir.with_extension("staging");
-    if staging.exists() {
-        return Err(RenderSceneError::OutputFailure(
-            "staging directory exists".into(),
-        ));
-    }
-    fs::create_dir_all(&staging)?;
+    let staging = create_render_staging(&request.output_dir)?;
     let result = render_to_staging(
         &scene,
         &mut readers,
@@ -373,15 +368,43 @@ pub fn render(request: &RenderRequest) -> Result<RenderResult, RenderSceneError>
         sofa_hash,
         source_results,
     );
-    match result {
-        Ok(value) => {
-            fs::rename(&staging, &request.output_dir)
-                .map_err(|e| RenderSceneError::OutputFailure(e.to_string()))?;
-            Ok(value)
+    let result = result.and_then(|value| {
+        fs::rename(&staging, &request.output_dir)
+            .map_err(|e| RenderSceneError::OutputFailure(e.to_string()))?;
+        Ok(value)
+    });
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    result
+}
+
+fn create_render_staging(output_dir: &Path) -> Result<PathBuf, RenderSceneError> {
+    static NEXT_STAGING_ID: AtomicU64 = AtomicU64::new(0);
+
+    let parent = output_dir
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let output_name = output_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .trim_end_matches([' ', '.']);
+    fs::create_dir_all(parent)?;
+    loop {
+        let id = NEXT_STAGING_ID.fetch_add(1, Ordering::Relaxed);
+        let name = format!(".openjoc-render-{}-{id}.staging", std::process::id());
+        // The final path must not also be the staging path, including on
+        // filesystems that treat ASCII case variants as the same name.
+        if output_name.eq_ignore_ascii_case(&name) {
+            continue;
         }
-        Err(e) => {
-            let _ = fs::remove_dir_all(&staging);
-            Err(e)
+        let staging = parent.join(name);
+        match fs::create_dir(&staging) {
+            Ok(()) => return Ok(staging),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
         }
     }
 }
