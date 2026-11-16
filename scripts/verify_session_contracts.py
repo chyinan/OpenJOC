@@ -113,7 +113,7 @@ def release_lock_matches(path, expected):
     versions = {
         version
         for name in RELEASE_WORKSPACE_PACKAGES
-        for version in ("0.20.0", "0.20.1")
+        for version in ("0.20.0", "0.20.1", "0.20.2")
         if f'name = "{name}"\nversion = "{version}"'.encode() in data
     }
     if len(versions) != 1:

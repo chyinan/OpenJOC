@@ -2,17 +2,34 @@
 
 ## [Unreleased]
 
+## [0.20.2] — 2026-11-16
+
 ### Fixed
 
-- Move GitHub Actions macOS jobs from the retired `macos-14` image to
-  `macos-15`. GitHub removed the Sonoma runners on 2026-11-02, so those
-  jobs failed before checkout with an unsupported runner configuration.
 - Apply JOC clip gain to reconstructed object QMF and PCM with
   `(1 + y/32) * 2^(x-4)`, the grouping used by Dolby decoders. The printed
   ETSI equation and its `[1; 8,75]` range leave the `1 +` outside the product.
   Those two statements agree with each other and disagree with production
   streams whose clip gain is not the unity code `x = 4`, `y = 0`. The bed,
   LFE, DRC, and dialnorm are unchanged. See `docs/PROVENANCE.md`.
+- Restore the fixed legacy AC-3 Lt/Rt fallback weights when extended mix
+  fields are absent.
+- Accept extensible mono WAV source headers in explicit scenes, and keep
+  simultaneous renders to distinct destinations from sharing staging directories.
+- Correct explicit bridge state handling after frame assembly errors and prevent
+  canonical 22.2 side speakers from being mistaken for region members.
+- Accept standard CDF-1 SOFA absent-attribute-list encodings.
+- Reject variable-length integer overflow in EMDF and OAMD, and report parsed
+  E-AC-3 coupling bins and stereo rematrix flags accurately.
+- Clean up failed peak-normalized CLI output.
+
+### Packaging and verification
+
+- Fix package selection and verification for the C API, GStreamer and FFmpeg;
+  preserve macOS player bundle dylib aliases and check complete release checksums.
+- Move GitHub Actions macOS jobs from the retired `macos-14` image to
+  `macos-15`. GitHub removed the Sonoma runners on 2026-11-02, so those
+  jobs failed before checkout with an unsupported runner configuration.
 - Move the paired PCM oracle from `15aefe1` to `d2939cd`. `15aefe1` omitted
   clip gain, so lifecycle object PCM no longer matches it. The 0.18.0 Cargo
   allowance fixture stays on `15aefe1`. The live lock pin is the `d2939cd`
