@@ -83,15 +83,9 @@ fn synthetic_payload(
     if sparse {
         push_bits(&mut bits, 0, 3); // initial channel
         let index_table = tables[4 + usize::from(channel_count == 7)];
-        let mut previous_raw = 0_u8;
         for band in 1..7_u8 {
-            let raw = if band < channel_count {
-                (band + channel_count - previous_raw) % channel_count
-            } else {
-                0
-            };
-            bits.extend(codeword_for(index_table.nodes, u16::from(raw)));
-            previous_raw = raw;
+            let delta = u16::from(band < channel_count);
+            bits.extend(codeword_for(index_table.nodes, delta));
         }
         for _ in 0..7 {
             bits.extend(codeword_for(tables[2].nodes, 1));
@@ -474,7 +468,7 @@ fn idx234_full_and_sparse_payloads_decode_the_declared_input_dimensions() {
                 assert!(
                     object_stages.quantized[0]
                         .iter()
-                        .all(|bands| bands.iter().any(|value| *value != 50))
+                        .all(|bands| bands.iter().any(|value| *value != 48))
                 );
             } else {
                 assert!(

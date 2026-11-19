@@ -1539,6 +1539,62 @@ indexing is undefined for subbands above the selected band count. OpenJOC uses
 clause 6.5, and the final state assignment. A legal conformance vector remains
 the external confirmation gate for this textual inconsistency.
 
+Clause 6.3.5.2 identifies one input channel per sparse parameter band.
+Clause 6.6.2 pseudocode 2 assigns the predictor offset to the other channels.
+Under clause 6.6.4 pseudocode 5 this produces a gain of 0.400390625 in
+both quantization modes. OpenJOC writes the midpoint (48 or 96) to those
+channels. It keeps the printed predictor's numerical behavior: a channel
+change restarts from 50 or 100, the previous value of an unselected cell.
+
+The two-access-unit synthetic stream and Rust generator under
+`crates/openjoc-inspect/tests/fixtures/sparse/` exercise that distinction.
+The first unit selects channel zero for all three bands. Its selected values
+are 51, 52 and 53 in both readings, while the other four inputs now have zero
+gain. The second unit switches channel after a nonzero coefficient delta.
+The expected gains in the stream test are calculated independently of the
+decoder. These are regression expectations for this interpretation.
+
+For channel selection, OpenJOC interprets the initial index and subsequent
+Huffman symbols in clause 6.2 as an absolute index followed by modular
+deltas. Clause 6.6.2 instead adds adjacent coded values. In the second
+synthetic unit, initial channel 3 and deltas +1, 0 select channels 3, 4, 4
+under accumulation. Adding adjacent codes selects 3, 4, 1, so a zero delta
+changes the input. Accumulation is an interpretation of differential coding.
+
+The same unit distinguishes the coefficient predictors independently. Its
+three +1 symbols produce selected values 51, 51, 52 when a channel change
+restarts from the offset, or 51, 52, 53 when the previous coefficient carries
+across inputs. Either result has one nonzero gain per band. Pseudocode 2 reads
+the same channel in the previous band. The vector provides no independent
+target requiring prediction across a switch, so OpenJOC keeps the restart.
+
+As a separate behavioral check, a 7,029-unit programme contained 15 sparse
+units. For each of those units, stereo first-difference energy was compared
+with the same energy in a fixed stereo fold-down of the decoded core.
+Nine units exceeded a ratio of six with the printed rules, one with zero fill
+and accumulated indices, and three with cross-channel prediction added. Both
+predictors gave at most one nonzero gain per band across all 2,700 sparse
+object/data-point bands. This measurement on one programme does not establish
+an encoder target or a conformance result.
+
+The first version of this change (commit `7218ce3`) also carried the
+coefficient predictor across a channel change. Its evidence came from the
+same programme: decoded with the printed rules, the sparse access units put
+front-channel content into every object for one to three timeslots, audible
+as clicks. The mean absolute difference between a sparse data point's gains
+and the non-sparse data points of the adjacent access units, over 25200
+coefficients, was 0.515 with the printed rules, 0.301 with the zero-gain fill
+alone, 0.242 with the running channel index added and 0.210 with the
+predictor carried across a channel change. Those three readings match the
+open-source Cavern decoder (`JointObjectCodingDecoder.cs`, `DecodeSparse`),
+which was consulted for this clause after the defect was located. The split
+into separate changes, the synthetic stream and the first-difference
+measurement above were made from ETSI TS 103 420 and this repository's code
+only. The two measurements disagree on the predictor: the gain difference
+favours carrying it across a channel change, the first-difference ratio
+favours the restart. The predictor change is therefore left for a later
+patch. A legal conformance vector remains the external confirmation gate.
+
 Clause 6.3.3.4 defines `b_joc_obj_present` as presence of side information, but
 clause 6.6 does not separately state the absent-object interpolation operation.
 OpenJOC retains the previous matrix when side information is absent, consistent

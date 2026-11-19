@@ -16,11 +16,11 @@ fn sparse_and_full_differential_paths_follow_distinct_clause_6_6_2_rules() {
     assert_eq!(sparse.len(), 5);
     assert_eq!(sparse[1][0], 50);
     assert_eq!(sparse[2][1], 51);
-    assert_eq!(sparse[3][2], 49);
+    assert_eq!(sparse[4][2], 49);
     for (channel, coefficients) in sparse.iter().enumerate() {
         for (band, coefficient) in coefficients.iter().copied().enumerate() {
-            if !matches!((channel, band), (1, 0) | (2, 1) | (3, 2)) {
-                assert_eq!(coefficient, 50);
+            if !matches!((channel, band), (1, 0) | (2, 1) | (4, 2)) {
+                assert_eq!(coefficient, 48);
             }
         }
     }
@@ -28,6 +28,46 @@ fn sparse_and_full_differential_paths_follow_distinct_clause_6_6_2_rules() {
     let full = decode_full_coefficients(QuantMode::Coarse96, &[vec![0, 1, 95], vec![95, 2, 1]])
         .expect("valid full values");
     assert_eq!(full, vec![vec![48, 49, 48], vec![47, 49, 50]]);
+}
+
+#[test]
+fn sparse_bands_have_at_most_one_nonzero_gain() {
+    for (mode, offset) in [(QuantMode::Coarse96, 50), (QuantMode::Fine192, 100)] {
+        for channels in [5, 7] {
+            let zero_symbol = mode.steps() / 2 + mode.steps() - offset;
+            // The first selected coefficient wraps to zero. The second stays on
+            // that channel. The third switches and starts from offset again.
+            let matrix =
+                decode_sparse_coefficients(channels, mode, 0, &[0, 1], &[zero_symbol, 1, 0])
+                    .unwrap();
+            for (band, expected) in [0, 1, 1].into_iter().enumerate() {
+                let count = matrix
+                    .iter()
+                    .filter(|row| dequantize(row[band], mode).unwrap() != 0.0)
+                    .count();
+                assert_eq!(count, expected);
+            }
+            assert_eq!(matrix[0][1], mode.steps() / 2 + 1);
+            assert_eq!(matrix[1][2], offset);
+        }
+    }
+}
+
+#[test]
+fn sparse_channel_deltas_wrap_and_zero_keeps_the_previous_selection() {
+    for channels in [5, 7] {
+        let matrix = decode_sparse_coefficients(
+            channels,
+            QuantMode::Coarse96,
+            channels - 1,
+            &[2, 0, 1],
+            &[0; 4],
+        )
+        .unwrap();
+        for (band, channel) in [channels - 1, 1, 1, 2].into_iter().enumerate() {
+            assert_eq!(matrix[usize::from(channel)][band], 50);
+        }
+    }
 }
 
 #[test]
