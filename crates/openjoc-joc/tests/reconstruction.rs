@@ -16,10 +16,10 @@ fn sparse_and_full_differential_paths_follow_distinct_clause_6_6_2_rules() {
     assert_eq!(sparse.len(), 5);
     assert_eq!(sparse[1][0], 50);
     assert_eq!(sparse[2][1], 51);
-    assert_eq!(sparse[3][2], 49);
+    assert_eq!(sparse[4][2], 49);
     for (channel, coefficients) in sparse.iter().enumerate() {
         for (band, coefficient) in coefficients.iter().copied().enumerate() {
-            if !matches!((channel, band), (1, 0) | (2, 1) | (3, 2)) {
+            if !matches!((channel, band), (1, 0) | (2, 1) | (4, 2)) {
                 assert_eq!(coefficient, 48);
             }
         }
@@ -49,6 +49,23 @@ fn sparse_bands_have_at_most_one_nonzero_gain() {
             }
             assert_eq!(matrix[0][1], mode.steps() / 2 + 1);
             assert_eq!(matrix[1][2], offset);
+        }
+    }
+}
+
+#[test]
+fn sparse_channel_deltas_wrap_and_zero_keeps_the_previous_selection() {
+    for channels in [5, 7] {
+        let matrix = decode_sparse_coefficients(
+            channels,
+            QuantMode::Coarse96,
+            channels - 1,
+            &[2, 0, 1],
+            &[0; 4],
+        )
+        .unwrap();
+        for (band, channel) in [channels - 1, 1, 1, 2].into_iter().enumerate() {
+            assert_eq!(matrix[usize::from(channel)][band], 50);
         }
     }
 }

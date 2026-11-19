@@ -1554,6 +1554,29 @@ gain. The second unit switches channel after a nonzero coefficient delta.
 The expected gains in the stream test are calculated independently of the
 decoder. These are regression expectations for this interpretation.
 
+For channel selection, OpenJOC interprets the initial index and subsequent
+Huffman symbols in clause 6.2 as an absolute index followed by modular
+deltas. Clause 6.6.2 instead adds adjacent coded values. In the second
+synthetic unit, initial channel 3 and deltas +1, 0 select channels 3, 4, 4
+under accumulation. Adding adjacent codes selects 3, 4, 1, so a zero delta
+changes the input. Accumulation is an interpretation of differential coding.
+
+The same unit distinguishes the coefficient predictors independently. Its
+three +1 symbols produce selected values 51, 51, 52 when a channel change
+restarts from the offset, or 51, 52, 53 when the previous coefficient carries
+across inputs. Either result has one nonzero gain per band. Pseudocode 2 reads
+the same channel in the previous band. The vector provides no independent
+target requiring prediction across a switch, so OpenJOC keeps the restart.
+
+As a separate behavioral check, a 7,029-unit programme contained 15 sparse
+units. For each of those units, stereo first-difference energy was compared
+with the same energy in a fixed stereo fold-down of the decoded core.
+Nine units exceeded a ratio of six with the printed rules, one with zero fill
+and accumulated indices, and three with cross-channel prediction added. Both
+predictors gave at most one nonzero gain per band across all 2,700 sparse
+object/data-point bands. This measurement on one programme does not establish
+an encoder target or a conformance result.
+
 Clause 6.3.3.4 defines `b_joc_obj_present` as presence of side information, but
 clause 6.6 does not separately state the absent-object interpolation operation.
 OpenJOC retains the previous matrix when side information is absent, consistent

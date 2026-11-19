@@ -507,7 +507,7 @@ fn synthetic_sparse_stream_decodes_to_the_expected_band_gains() {
     let stream = include_bytes!("fixtures/sparse/sparse.ec3");
     let frames = openjoc_eac3::index_syncframes(stream).unwrap();
     let units = openjoc_eac3::group_access_units(&frames).unwrap();
-    let expected = [[(0, 3), (0, 4), (0, 5)], [(3, 3), (4, 3), (1, 3)]];
+    let expected = [[(0, 3), (0, 4), (0, 5)], [(3, 3), (4, 3), (4, 4)]];
     assert_eq!(units.len(), expected.len());
     for (unit, bands) in units.into_iter().zip(expected) {
         let metadata = openjoc_eac3::extract_joc_access_unit(stream, &frames, unit)

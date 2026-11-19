@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Accumulate sparse JOC channel deltas across bands so a zero delta keeps the selected input.
 - Remove gain from unselected input channels in sparse JOC parameter bands.
 
 ## [0.20.2] — 2026-11-16

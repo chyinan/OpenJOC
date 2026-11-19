@@ -180,18 +180,14 @@ pub fn decode_sparse_coefficients(
         QuantMode::Coarse96 => 50,
         QuantMode::Fine192 => 100,
     };
-    let mut raw_channels = Vec::with_capacity(bands);
-    raw_channels.push(u16::from(initial_channel));
-    raw_channels.extend_from_slice(channel_deltas);
-    let mut matrix = vec![vec![steps / 2; bands]; usize::from(channel_count)];
+    let channels = usize::from(channel_count);
+    let mut selected = usize::from(initial_channel);
+    let mut matrix = vec![vec![steps / 2; bands]; channels];
     let mut previous_channel = None;
     for band in 0..bands {
-        let selected = if band == 0 {
-            raw_channels[0]
-        } else {
-            (raw_channels[band - 1] + raw_channels[band]) % u16::from(channel_count)
-        };
-        let selected = usize::from(selected);
+        if band > 0 {
+            selected = (selected + usize::from(channel_deltas[band - 1])) % channels;
+        }
         // On a channel change the old matrix held offset in the previous band.
         let predictor = if previous_channel == Some(selected) {
             matrix[selected][band - 1]
