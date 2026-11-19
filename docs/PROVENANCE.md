@@ -1577,6 +1577,24 @@ predictors gave at most one nonzero gain per band across all 2,700 sparse
 object/data-point bands. This measurement on one programme does not establish
 an encoder target or a conformance result.
 
+The first version of this change (commit `7218ce3`) also carried the
+coefficient predictor across a channel change. Its evidence came from the
+same programme: decoded with the printed rules, the sparse access units put
+front-channel content into every object for one to three timeslots, audible
+as clicks. The mean absolute difference between a sparse data point's gains
+and the non-sparse data points of the adjacent access units, over 25200
+coefficients, was 0.515 with the printed rules, 0.301 with the zero-gain fill
+alone, 0.242 with the running channel index added and 0.210 with the
+predictor carried across a channel change. Those three readings match the
+open-source Cavern decoder (`JointObjectCodingDecoder.cs`, `DecodeSparse`),
+which was consulted for this clause after the defect was located. The split
+into separate changes, the synthetic stream and the first-difference
+measurement above were made from ETSI TS 103 420 and this repository's code
+only. The two measurements disagree on the predictor: the gain difference
+favours carrying it across a channel change, the first-difference ratio
+favours the restart. The predictor change is therefore left for a later
+patch. A legal conformance vector remains the external confirmation gate.
+
 Clause 6.3.3.4 defines `b_joc_obj_present` as presence of side information, but
 clause 6.6 does not separately state the absent-object interpolation operation.
 OpenJOC retains the previous matrix when side information is absent, consistent
