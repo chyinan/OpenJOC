@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Remove gain from unselected input channels in sparse JOC parameter bands.
+
 ## [0.20.2] — 2026-11-16
 
 ### Fixed

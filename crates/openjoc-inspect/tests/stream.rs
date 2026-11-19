@@ -499,3 +499,48 @@ fn extra_payload_orders_lengths_and_au_occurrence_denominators_are_exact() {
             .all(|d| d.affected_aus == 1)
     );
 }
+
+#[test]
+fn synthetic_sparse_stream_decodes_to_the_expected_band_gains() {
+    use openjoc_joc::{JocPayloadData, decode_sparse_coefficients, dequantize, parse_joc_payload};
+
+    let stream = include_bytes!("fixtures/sparse/sparse.ec3");
+    let frames = openjoc_eac3::index_syncframes(stream).unwrap();
+    let units = openjoc_eac3::group_access_units(&frames).unwrap();
+    let expected = [[(0, 3), (0, 4), (0, 5)], [(3, 3), (4, 3), (1, 3)]];
+    assert_eq!(units.len(), expected.len());
+    for (unit, bands) in units.into_iter().zip(expected) {
+        let metadata = openjoc_eac3::extract_joc_access_unit(stream, &frames, unit)
+            .unwrap()
+            .unwrap();
+        let joc = parse_joc_payload(&metadata.joc).unwrap();
+        let obj = &joc.objects[0];
+        let JocPayloadData::Sparse {
+            initial_channel,
+            channel_deltas,
+            vector_symbols,
+        } = &obj.data_points[0].payload
+        else {
+            panic!("expected sparse data")
+        };
+        let mode = obj.quant_mode.unwrap();
+        let matrix = decode_sparse_coefficients(
+            joc.header.channel_count,
+            mode,
+            *initial_channel,
+            &channel_deltas.iter().map(|w| w.symbol).collect::<Vec<_>>(),
+            &vector_symbols.iter().map(|w| w.symbol).collect::<Vec<_>>(),
+        )
+        .unwrap();
+        for (band, (selected, steps_above_zero)) in bands.into_iter().enumerate() {
+            for (channel, row) in matrix.iter().enumerate() {
+                let gain = if channel == selected {
+                    f64::from(steps_above_zero) * 820.0 / 4096.0
+                } else {
+                    0.0
+                };
+                assert_eq!(dequantize(row[band], mode).unwrap(), gain);
+            }
+        }
+    }
+}

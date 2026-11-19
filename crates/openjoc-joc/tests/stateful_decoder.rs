@@ -474,7 +474,7 @@ fn idx234_full_and_sparse_payloads_decode_the_declared_input_dimensions() {
                 assert!(
                     object_stages.quantized[0]
                         .iter()
-                        .all(|bands| bands.iter().any(|value| *value != 50))
+                        .all(|bands| bands.iter().any(|value| *value != 48))
                 );
             } else {
                 assert!(

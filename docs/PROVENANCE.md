@@ -1539,6 +1539,21 @@ indexing is undefined for subbands above the selected band count. OpenJOC uses
 clause 6.5, and the final state assignment. A legal conformance vector remains
 the external confirmation gate for this textual inconsistency.
 
+Clause 6.3.5.2 identifies one input channel per sparse parameter band.
+Clause 6.6.2 pseudocode 2 assigns the predictor offset to the other channels.
+Under clause 6.6.4 pseudocode 5 this produces a gain of 0.400390625 in
+both quantization modes. OpenJOC writes the midpoint (48 or 96) to those
+channels. It keeps the printed predictor's numerical behavior: a channel
+change restarts from 50 or 100, the previous value of an unselected cell.
+
+The two-access-unit synthetic stream and Rust generator under
+`crates/openjoc-inspect/tests/fixtures/sparse/` exercise that distinction.
+The first unit selects channel zero for all three bands. Its selected values
+are 51, 52 and 53 in both readings, while the other four inputs now have zero
+gain. The second unit switches channel after a nonzero coefficient delta.
+The expected gains in the stream test are calculated independently of the
+decoder. These are regression expectations for this interpretation.
+
 Clause 6.3.3.4 defines `b_joc_obj_present` as presence of side information, but
 clause 6.6 does not separately state the absent-object interpolation operation.
 OpenJOC retains the previous matrix when side information is absent, consistent

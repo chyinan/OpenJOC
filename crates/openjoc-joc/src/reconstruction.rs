@@ -134,7 +134,8 @@ impl InterpolatedMatrix {
 
 /// Differentially decodes sparse symbols into quantized coefficient matrices.
 ///
-/// Applies clause 6.6.2 pseudocode 2. The output layout is `[channel][band]`;
+/// Based on clause 6.6.2 pseudocode 2, with zero gain on unselected channels.
+/// The output layout is `[channel][band]`;
 /// the coefficients still require dequantization.
 ///
 /// # Errors
@@ -182,7 +183,8 @@ pub fn decode_sparse_coefficients(
     let mut raw_channels = Vec::with_capacity(bands);
     raw_channels.push(u16::from(initial_channel));
     raw_channels.extend_from_slice(channel_deltas);
-    let mut matrix = vec![vec![offset; bands]; usize::from(channel_count)];
+    let mut matrix = vec![vec![steps / 2; bands]; usize::from(channel_count)];
+    let mut previous_channel = None;
     for band in 0..bands {
         let selected = if band == 0 {
             raw_channels[0]
@@ -190,11 +192,14 @@ pub fn decode_sparse_coefficients(
             (raw_channels[band - 1] + raw_channels[band]) % u16::from(channel_count)
         };
         let selected = usize::from(selected);
-        matrix[selected][band] = if band == 0 {
-            (offset + vector_symbols[band]) % steps
+        // On a channel change the old matrix held offset in the previous band.
+        let predictor = if previous_channel == Some(selected) {
+            matrix[selected][band - 1]
         } else {
-            (matrix[selected][band - 1] + vector_symbols[band]) % steps
+            offset
         };
+        matrix[selected][band] = (predictor + vector_symbols[band]) % steps;
+        previous_channel = Some(selected);
     }
     Ok(matrix)
 }
