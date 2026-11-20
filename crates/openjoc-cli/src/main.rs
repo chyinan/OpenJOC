@@ -3025,6 +3025,12 @@ fn render_joc_with_embedded_session(
         )?
     };
     let output_container = output.container().name().to_owned();
+    let report_units = std::env::var_os("OPENJOC_RENDER_PROGRESS").as_deref()
+        == Some(std::ffi::OsStr::new("stdout"));
+    let mut last_report = std::time::Instant::now();
+    if report_units {
+        println!("render-progress 0 {}", timing.access_units);
+    }
     let progress_enabled = terminal.progress_is_tty() && !arguments.no_progress;
     let mut progress = progress::ProgressReporter::new(
         progress_enabled,
@@ -3059,6 +3065,13 @@ fn render_joc_with_embedded_session(
             unit_index = unit_index
                 .checked_add(1)
                 .ok_or("access-unit index overflow")?;
+            if report_units
+                && (last_report.elapsed() >= std::time::Duration::from_millis(200)
+                    || unit_index as u64 == timing.access_units)
+            {
+                println!("render-progress {unit_index} {}", timing.access_units);
+                last_report = std::time::Instant::now();
+            }
             frame_offset = frame_offset
                 .checked_add(au.unit.frame_count)
                 .ok_or("frame index overflow")?;

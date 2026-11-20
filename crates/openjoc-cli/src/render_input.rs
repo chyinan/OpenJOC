@@ -60,7 +60,9 @@ impl RenderInput {
             // This is a per-container-sample bound, not a programme length cap.
             InputMediaKind::IsoBmff => Ok(Box::new(open_seekable_iso_bmff(
                 &self.path,
-                Path::new("ffprobe"),
+                &std::env::var_os("OPENJOC_FFPROBE")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("ffprobe")),
                 DEFAULT_MAX_EAC3_BYTES,
             )?)),
             InputMediaKind::Unknown => Err(InputMediaError::UnsupportedSignature),
