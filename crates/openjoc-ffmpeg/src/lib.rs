@@ -4359,7 +4359,7 @@ mod tests {
     }
 
     #[test]
-    fn general_multi_dependent_speaker_51_rejects_unroutable_base_semantically() {
+    fn general_multi_dependent_speaker_51_renders_rear_pair() {
         let mut session = OpenJocSession::new(OpenJocConfig {
             render_mode: RenderMode::Speaker,
             speaker_layout: "5.1".to_owned(),
@@ -4379,16 +4379,10 @@ mod tests {
                 .expect("multi-dependent AU is decoded before timeline release"),
             openjoc_api::OpenJocStatus::NeedMoreInput
         );
-        let error = session
+        session
             .drain()
-            .expect_err("5.1 must reject missing Lb/Rb routes semantically");
-        let openjoc_api::OpenJocError::Render(message) = error else {
-            panic!("expected semantic render error, got {error:?}");
-        };
-        assert_eq!(
-            message,
-            "spatial projection error: unsupported explicit route Lb (unsupported)"
-        );
+            .expect("downmix rear carriers to the 5.1 layout");
+        assert!(session.receive_frame().is_some());
     }
 
     #[test]
@@ -5002,7 +4996,7 @@ mod tests {
     }
 
     #[test]
-    fn flat7x_speaker_51_rejects_unroutable_explicit_base_semantically() {
+    fn flat7x_speaker_51_renders_rear_pair() {
         let mut session = OpenJocSession::new(OpenJocConfig {
             render_mode: RenderMode::Speaker,
             speaker_layout: "5.1".to_owned(),
@@ -5024,21 +5018,15 @@ mod tests {
         );
 
         let second = standard_flat7x_access_unit(2);
-        let error = session
+        session
             .push_packet(OpenJocPacket {
                 data: &second,
                 pts_samples: Some(1536),
                 discontinuity: false,
                 preroll: false,
             })
-            .expect_err("5.1 cannot accept missing Lb/Rb routes implicitly");
-        let openjoc_api::OpenJocError::Render(message) = error else {
-            panic!("expected semantic render error, got {error:?}");
-        };
-        assert_eq!(
-            message,
-            "spatial projection error: unsupported explicit route Lb (unsupported)"
-        );
+            .expect("downmix rear carriers to the 5.1 layout");
+        assert!(session.receive_frame().is_some());
     }
 
     #[test]

@@ -694,6 +694,19 @@ fn default_records(
         };
         let coordinates = if *family == CoordinateFamily::Dynamic {
             default_coordinates(dimensions)
+        } else if *family == CoordinateFamily::Base {
+            // Exact speaker and custom explicit routes take priority. Supply
+            // the codec position when the output has no corresponding speaker.
+            let position = match identity.as_str() {
+                "Lb" => Some([0.0, 1.0, 0.0]),
+                "Rb" => Some([1.0, 1.0, 0.0]),
+                "TFL" => Some([0.0, 0.0, 1.0]),
+                "TFR" => Some([1.0, 0.0, 1.0]),
+                _ => None,
+            };
+            position.map_or_else(Vec::new, |point| {
+                point.into_iter().take(dimensions).collect()
+            })
         } else {
             Vec::new()
         };
@@ -746,7 +759,7 @@ fn descriptor_for(
         (CoordinateFamily::Base, Some(ObjectAnchor::Speaker(label))) => (
             SpatialSourceClass::ExplicitChannel,
             speaker_identity(label),
-            Vec::new(),
+            previous.coordinates.clone(),
         ),
         (CoordinateFamily::Fixed, Some(ObjectAnchor::IntermediateSpatial(label))) => (
             SpatialSourceClass::FixedLayout,
