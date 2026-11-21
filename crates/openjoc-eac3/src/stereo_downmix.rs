@@ -424,6 +424,10 @@ pub fn stereo_downmix_matrix(
             ChannelLocation::Left => (1.0, 0.0),
             ChannelLocation::Right => (0.0, 1.0),
             ChannelLocation::Centre => (center, center),
+            // Renderer policy: fold front heights into the corresponding front
+            // speakers at -3 dB before coherent-sum normalization.
+            ChannelLocation::TopFrontLeft => (std::f64::consts::FRAC_1_SQRT_2, 0.0),
+            ChannelLocation::TopFrontRight => (0.0, std::f64::consts::FRAC_1_SQRT_2),
             // Flat-7.X rear surrounds are a distinct codec topology, but a
             // physical 2.0 target has no rear output identity.  Preserve the
             // existing same-side surround matrix rule without relabelling
@@ -633,6 +637,28 @@ mod tests {
             .unwrap();
         assert_close(active[0][0], with_lfe.lfe_coefficient().unwrap());
         assert_eq!(active[0], active[1]);
+    }
+
+    #[test]
+    fn front_height_pair_folds_to_the_same_side_in_both_stereo_modes() {
+        let locations = [
+            ChannelLocation::Left,
+            ChannelLocation::Right,
+            ChannelLocation::TopFrontLeft,
+            ChannelLocation::TopFrontRight,
+        ];
+        for mode in [StereoDownmixMode::LoRo, StereoDownmixMode::LtRt] {
+            let matrix =
+                stereo_downmix_matrix(mode, DownmixMetadata::default(), &locations).unwrap();
+            let [left, right] = &matrix.rows()[2..] else {
+                unreachable!()
+            };
+            assert_close(left.unscaled_left(), std::f64::consts::FRAC_1_SQRT_2);
+            assert_eq!(left.right(), 0.0);
+            assert_close(right.right(), left.left());
+            assert_eq!(right.left(), 0.0);
+            assert!(matrix.maximum_coherent_sum() <= 1.0 + 1e-12);
+        }
     }
 
     #[test]
