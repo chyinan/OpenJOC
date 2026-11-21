@@ -61,8 +61,7 @@ impl RenderInput {
             InputMediaKind::IsoBmff => Ok(Box::new(open_seekable_iso_bmff(
                 &self.path,
                 &std::env::var_os("OPENJOC_FFPROBE")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("ffprobe")),
+                    .map_or_else(|| PathBuf::from("ffprobe"), PathBuf::from),
                 DEFAULT_MAX_EAC3_BYTES,
             )?)),
             InputMediaKind::Unknown => Err(InputMediaError::UnsupportedSignature),
