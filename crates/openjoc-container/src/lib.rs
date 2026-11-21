@@ -987,6 +987,9 @@ fn probe_iso_bmff_sample_cursor(
             "error",
             "-select_streams",
             stream_selector.as_str(),
+            // Read MP4 sample offsets, preserving all syncframes of each JOC access unit.
+            "-fflags",
+            "+noparse+nofillin",
             "-show_packets",
             "-show_entries",
             "packet=stream_index,size,pos",
@@ -1149,7 +1152,14 @@ fn demux_iso_bmff(
     }
     let mut command = Command::new(ffmpeg);
     command
-        .args(["-v", "error", "-nostdin", "-i"])
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-fflags",
+            "+noparse+nofillin",
+            "-i",
+        ])
         .arg(path)
         .args(["-map"])
         .arg(format!("0:{stream_index}"))
