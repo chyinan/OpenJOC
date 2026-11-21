@@ -3532,9 +3532,23 @@ mod tests {
     }
 
     #[test]
-    fn stereo_downmix_rejects_unmapped_height_base_channels() {
+    fn stereo_downmix_routes_front_heights_to_the_corresponding_side() {
+        let gain = std::f64::consts::FRAC_1_SQRT_2;
+        for (location, expected) in [
+            (ChannelLocation::TopFrontLeft, [gain, 0.0]),
+            (ChannelLocation::TopFrontRight, [0.0, gain]),
+        ] {
+            let base = stereo_base(&[location], &[1.0], None, DownmixMetadata::default());
+            let mut active = vec![vec![0.0], vec![0.0]];
+            add_stereo_base_downmix(&mut active, &base, StereoDownmixPolicy::LoRo).unwrap();
+            assert_eq!([active[0][0], active[1][0]], expected);
+        }
+    }
+
+    #[test]
+    fn stereo_downmix_rejects_unmapped_base_channels() {
         let base = stereo_base(
-            &[ChannelLocation::TopFrontLeft],
+            &[ChannelLocation::Other(1)],
             &[1.0],
             None,
             DownmixMetadata::default(),
