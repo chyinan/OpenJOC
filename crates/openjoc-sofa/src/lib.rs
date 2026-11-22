@@ -1276,13 +1276,38 @@ fn validate_and_build(
         })?;
         directions.push(direction);
     }
-    HrirBank::validate_unique_canonical_hrir_directions(directions.len(), |index| {
-        let direction = directions[index];
+    // A closed spherical grid may include both ends of the rear meridian.
+    // Keep +180 for nearest-neighbour lookup, preserving its measured FIR and delay.
+    let mut seams = std::collections::BTreeMap::new();
+    let mut keep = vec![true; measurements];
+    for (index, pos) in source_values.chunks_exact(3).enumerate() {
+        if pos[0].abs() == 180.0 {
+            let sides = seams
+                .entry((pos[1].to_bits(), pos[2].to_bits()))
+                .or_insert([None; 2]);
+            let side = usize::from(pos[0] > 0.0);
+            if let Some(first) = sides[side].replace(index) {
+                return Err(SofaError::DuplicateDirection {
+                    first,
+                    second: index,
+                });
+            }
+            if let [Some(minus), Some(_)] = *sides {
+                keep[minus] = false;
+            }
+        }
+    }
+    let retained: Vec<_> = (0..measurements).filter(|&i| keep[i]).collect();
+    HrirBank::validate_unique_canonical_hrir_directions(retained.len(), |index| {
+        let direction = directions[retained[index]];
         [direction.x, direction.y, direction.z]
     })
     .map_err(|error| match error {
         openjoc_render::RenderError::DuplicateHrirDirection { first, second } => {
-            SofaError::DuplicateDirection { first, second }
+            SofaError::DuplicateDirection {
+                first: retained[first],
+                second: retained[second],
+            }
         }
         _ => SofaError::InvalidCoordinate("canonical source direction".to_string()),
     })?;
@@ -1333,6 +1358,9 @@ fn validate_and_build(
             .map_err(|_| {
             SofaError::InvalidImpulseResponse("HrirPair validation".to_string())
         })?;
+        if !keep[measurement] {
+            continue;
+        }
         entries.push(
             HrirEntry::new(HrirEntryId::new(measurement as u64), direction, pair)
                 .map_err(|_| SofaError::InvalidCoordinate(format!("direction {measurement}")))?,
