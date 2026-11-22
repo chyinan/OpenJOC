@@ -157,7 +157,7 @@ fn alternative_lfe_layout_is_not_admitted() {
 #[test]
 fn count_mismatch_is_not_admitted() {
     let mut facts = admitted_facts();
-    facts.set_joc_object_count(14);
+    facts.reconstruction_row_count = 14;
 
     assert!(matches!(
         admit_decoded_joc_binding(&facts),
@@ -292,4 +292,18 @@ fn streaming_scene_builder_validates_admitted_binding_without_captured_basis() {
     let summary = builder.finish_streaming().expect("streaming summary");
     assert_eq!(summary.max_reconstruction_rows, 15);
     assert_eq!(summary.object_count, 16);
+}
+
+#[test]
+fn variable_population_requires_one_leading_lfe_and_matching_dynamic_rows() {
+    for count in [1, 8, 12, 15] {
+        let mut facts = admitted_facts();
+        facts.joc_object_count = count;
+        facts.reconstruction_row_count = count;
+        facts.oamd_total_classes.truncate(count + 1);
+        let profile = admit_decoded_joc_binding(&facts).unwrap();
+        assert_eq!(profile.bind_decoded_objects().unwrap().len(), count);
+        facts.oamd_total_classes.swap(0, count);
+        assert!(admit_decoded_joc_binding(&facts).is_err());
+    }
 }

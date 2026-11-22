@@ -211,7 +211,7 @@ fn assert_fixture_binding_contract(frame: &DecodedPayloadFrame) {
     assert_eq!(
         admit_decoded_joc_binding(&facts),
         Err(DecodedJocBindingUnavailable::OamdTotalPopulationMismatch {
-            expected: 16,
+            expected: 2,
             actual: 1,
         }),
     );

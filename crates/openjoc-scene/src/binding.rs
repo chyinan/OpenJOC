@@ -420,9 +420,23 @@ pub fn admit_decoded_joc_binding(
             actual: facts.codec_profile,
         });
     }
-    if facts.oamd_total_classes.len() != 16 {
+    if !(1..=15).contains(&facts.joc_object_count) {
+        return Err(
+            DecodedJocBindingUnavailable::DecodedJocObjectPopulationMismatch {
+                joc: facts.joc_object_count,
+                reconstruction_rows: facts.reconstruction_row_count,
+                oamd_dynamic: facts
+                    .oamd_total_classes
+                    .iter()
+                    .filter(|&&c| c == OamdBindingObjectClass::Dynamic)
+                    .count(),
+            },
+        );
+    }
+    let expected = facts.joc_object_count + 1;
+    if facts.oamd_total_classes.len() != expected {
         return Err(DecodedJocBindingUnavailable::OamdTotalPopulationMismatch {
-            expected: 16,
+            expected,
             actual: facts.oamd_total_classes.len(),
         });
     }
@@ -444,7 +458,9 @@ pub fn admit_decoded_joc_binding(
             }
         }
     }
-    if facts.joc_object_count != 15 || facts.reconstruction_row_count != 15 || dynamic_count != 15 {
+    if facts.reconstruction_row_count != facts.joc_object_count
+        || dynamic_count != facts.joc_object_count
+    {
         return Err(
             DecodedJocBindingUnavailable::DecodedJocObjectPopulationMismatch {
                 joc: facts.joc_object_count,
