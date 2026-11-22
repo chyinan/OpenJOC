@@ -1085,9 +1085,8 @@ impl JocSpeakerRenderer {
             downmix: base.downmix,
             dialnorm: base.dialnorm,
             dialnorm_segments: base.dialnorm_segments.clone(),
-            compatibility_pcm: (self.layout.is_stereo()
-                && frame.admitted_decoded_joc_binding().is_some())
-            .then(|| pcm_planes.compatibility_pcm.clone()),
+            compatibility_pcm: (self.layout.is_stereo() && frame.uses_i0_compatibility_stereo())
+                .then(|| pcm_planes.compatibility_pcm.clone()),
         });
         self.next_input_frame = self
             .next_input_frame
@@ -1124,8 +1123,7 @@ impl JocSpeakerRenderer {
             });
         }
         let stereo_speaker = self.layout.is_stereo();
-        let common_profile_stereo =
-            stereo_speaker && frame.admitted_decoded_joc_binding().is_some();
+        let common_profile_stereo = stereo_speaker && frame.uses_i0_compatibility_stereo();
         let calibrated_base = base.with_dialnorm_applied();
         let calibrated_compatibility = if common_profile_stereo {
             Some(
@@ -3141,9 +3139,13 @@ mod tests {
     }
 
     fn common_profile_decoded_frame(samples: usize) -> DecodedPayloadFrame {
+        decoded_frame_with_leading_lfe(samples, 15)
+    }
+
+    fn decoded_frame_with_leading_lfe(samples: usize, objects: u8) -> DecodedPayloadFrame {
         let prefix = OamdContentPrefix {
             syntax_version: 0,
-            object_count: 16,
+            object_count: u16::from(objects) + 1,
             content: ContentDescription::DynamicOnly { lfe_present: true },
             alternate_object_data_present: false,
             element_count: 0,
@@ -3152,8 +3154,8 @@ mod tests {
         let layout = ProgrammeLayout::from_prefix(&prefix).expect("common programme layout");
         let facts = DecodedJocBindingFacts::from_programme_layout_with_profile(
             BindingCodecProfile::EAc3JocObservedOrdinary,
-            15,
-            15,
+            usize::from(objects),
+            usize::from(objects),
             &layout,
         );
         DecodedPayloadFrame {
@@ -3164,8 +3166,8 @@ mod tests {
                 header: JocHeader {
                     downmix_index: 0,
                     channel_count: 5,
-                    object_count_bits: 14,
-                    object_count: 15,
+                    object_count_bits: objects - 1,
+                    object_count: objects,
                     extension_index: 0,
                 },
                 clip_gain_x_bits: 0,
@@ -3175,14 +3177,14 @@ mod tests {
             },
             oamd: OamdPayload {
                 prefix,
-                object_classes: vec![ObjectClass::Dynamic; 15],
+                object_classes: vec![ObjectClass::Dynamic; usize::from(objects)],
                 elements: Vec::new(),
                 consumed_bits: 0,
             },
             decoded: DecodedJocFrame {
                 reconstruction_qmf: Vec::new(),
                 reconstruction_basis: ReconstructionBasis {
-                    rows: vec![vec![500.0; samples]; 15],
+                    rows: vec![vec![500.0; samples]; usize::from(objects)],
                 },
                 stages: Vec::new(),
                 state_reset: true,
@@ -3191,6 +3193,15 @@ mod tests {
             decoded_joc_binding: Some(
                 admit_decoded_joc_binding(&facts).expect("exact common-profile admission"),
             ),
+        }
+    }
+
+    #[test]
+    fn binding_and_stereo_source_are_independent_for_reduced_populations() {
+        for objects in [8, 12, 15] {
+            let frame = decoded_frame_with_leading_lfe(2, objects);
+            assert!(frame.admitted_decoded_joc_binding().is_some());
+            assert_eq!(frame.uses_i0_compatibility_stereo(), objects == 15);
         }
     }
 

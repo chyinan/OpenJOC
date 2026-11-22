@@ -68,7 +68,7 @@ bit-identical Reference Player output, or proprietary renderer fidelity.
   seven JOC inputs, and `L R C Ls Rs Lrs Rrs` Table-47 assembly. JOC
   reconstruction consumes the assembled I0+D0..Dn seven-input plane. Speaker
   2.0 compatibility rendering still consumes the independent I0 presentation
-  for admitted common-profile frames; when the assembled Flat-7.X plane is the
+  for admitted frames with a leading LFE and 15 dynamic objects. Smaller admitted populations use the mix with object reconstruction. When the assembled Flat-7.X plane is the
   selected stereo source, the canonical Lo/Ro or Lt/Rt matrix admits Lrs/Rrs
   as distinct rear-surround inputs using the existing same-side surround rule.
 - Flat-7.X explicit `Lb/Rb` is not automatically folded into a 5.1 output

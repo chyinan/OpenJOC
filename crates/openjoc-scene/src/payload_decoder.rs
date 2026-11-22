@@ -53,6 +53,15 @@ pub struct DecodedPayloadFrame {
 }
 
 impl DecodedPayloadFrame {
+    /// Physical stereo uses the independently decoded compatibility mix for the
+    /// established leading-LFE plus fifteen-dynamic-object presentation.
+    /// Smaller admitted populations still participate in object reconstruction.
+    #[must_use]
+    pub fn uses_i0_compatibility_stereo(&self) -> bool {
+        self.admitted_decoded_joc_binding()
+            .is_some_and(|profile| profile.joc_object_count() == 15)
+    }
+
     /// Returns the exact common-profile admission token retained at decode.
     #[must_use]
     #[doc(hidden)]

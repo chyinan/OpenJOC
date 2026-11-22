@@ -93,7 +93,7 @@ impl SpeakerRenderer {
             dialnorm_segments: base.dialnorm_segments.clone(),
             compatibility_pcm: (self.common_profile_stereo_enabled
                 && self.layout.is_stereo()
-                && frame.admitted_decoded_joc_binding().is_some())
+                && frame.uses_i0_compatibility_stereo())
             .then(|| pcm_planes.compatibility_pcm.clone()),
         });
         self.next_input_frame = self.next_input_frame.saturating_add(1);
@@ -161,9 +161,8 @@ impl SpeakerRenderer {
             });
         }
         let stereo = self.layout.is_stereo();
-        let common_profile_stereo = stereo
-            && self.common_profile_stereo_enabled
-            && frame.admitted_decoded_joc_binding().is_some();
+        let common_profile_stereo =
+            stereo && self.common_profile_stereo_enabled && frame.uses_i0_compatibility_stereo();
         let calibrated_base = base.with_dialnorm_applied();
         let calibrated_compatibility = if common_profile_stereo {
             Some(
