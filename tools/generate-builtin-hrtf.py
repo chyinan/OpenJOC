@@ -110,7 +110,7 @@ def builtin_virtual_directions() -> np.ndarray:
 
 def append_virtual_aliases(
     source_position: np.ndarray, ir: np.ndarray, delay: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Add exact canonical positions using the nearest measured HRIR.
 
     The aliases are only added for the finite OpenJOC virtual-speaker set. The
@@ -140,12 +140,17 @@ def append_virtual_aliases(
         target_world = np.array([target[1], -target[0], target[2]])
         target_azimuth = np.rad2deg(np.arctan2(target_world[1], target_world[0])) % 360.0
         target_elevation = np.rad2deg(np.arcsin(target_world[2]))
-        additions.append((target_azimuth, target_elevation, source_position[nearest, 2], ir[nearest]))
+        additions.append((target_azimuth, target_elevation, nearest))
     if not additions:
-        return source_position, ir
-    added_positions = np.asarray([item[:3] for item in additions], dtype=np.float32)
-    added_ir = np.asarray([item[3] for item in additions], dtype=np.float32)
-    return np.concatenate((source_position, added_positions)), np.concatenate((ir, added_ir))
+        return source_position, ir, delay
+    nearest_rows = [nearest for _, _, nearest in additions]
+    added_positions = np.asarray(
+        [(azimuth, elevation, source_position[nearest, 2]) for azimuth, elevation, nearest in additions],
+        dtype=np.float32,
+    )
+    if delay.shape == (len(source_position), 2):
+        delay = np.concatenate((delay, delay[nearest_rows]))
+    return np.concatenate((source_position, added_positions)), np.concatenate((ir, ir[nearest_rows])), delay
 
 
 def deduplicate_direction_rows(
@@ -205,7 +210,7 @@ def convert_sofa(source: Path, add_virtual_aliases: bool) -> bytes:
 
     source_position, ir, delay = deduplicate_direction_rows(source_position, ir, delay)
     if add_virtual_aliases:
-        source_position, ir = append_virtual_aliases(source_position, ir, delay)
+        source_position, ir, delay = append_virtual_aliases(source_position, ir, delay)
 
     if ir.ndim != 3 or ir.shape[1] != 2 or ir.shape[2] == 0:
         raise ValueError(f"expected Data.IR [M,2,N], got {ir.shape}")
