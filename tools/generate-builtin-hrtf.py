@@ -82,7 +82,7 @@ def builtin_virtual_directions() -> np.ndarray:
     for azimuth_degrees, elevation_degrees in [
         (26.25, 0.0),
         (52.5, 0.0),
-        (90.0, 0.0),
+        # The 90-degree horizontal target is already in the vector list.
         (122.5, 0.0),
         (180.0, 0.0),
         (52.5, -22.5),
