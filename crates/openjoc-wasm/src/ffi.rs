@@ -154,6 +154,7 @@ pub unsafe extern "C" fn openjoc_wasm_decoder_create_with_renderer_and_custom_so
     let renderer = match renderer_mode {
         0 => WasmRenderer::Stereo,
         1 => WasmRenderer::Binaural,
+        2 => WasmRenderer::Speaker,
         _ => return 0,
     };
     // SAFETY: the allocation registry confirms this exact live region, and
@@ -178,6 +179,7 @@ fn create_decoder(
     let renderer = match renderer_mode {
         0 => WasmRenderer::Stereo,
         1 => WasmRenderer::Binaural,
+        2 => WasmRenderer::Speaker,
         _ => return 0,
     };
     let hrtf = match hrtf_mode {
@@ -213,6 +215,25 @@ fn store_decoder(decoder_result: Result<Decoder, DecoderError>) -> u32 {
             u32::try_from(decoders.len()).unwrap_or(0)
         }
     })
+}
+
+/// Creates a discrete speaker decoder for one preset physical layout code.
+/// Codes index `SPEAKER_LAYOUT_PRESETS`; the decoded programme channels reach
+/// the caller unmodified instead of being downmixed to stereo.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_create_with_speaker_layout(
+    dialnorm_mode: u32,
+    layout_code: u32,
+) -> u32 {
+    let dialnorm = match dialnorm_mode {
+        0 => DialnormMode::Default,
+        1 => DialnormMode::Analog,
+        _ => return 0,
+    };
+    let Some(layout) = super::speaker_layout_for_code(layout_code) else {
+        return 0;
+    };
+    store_decoder(Decoder::new_with_speaker_layout(dialnorm, layout))
 }
 
 #[unsafe(no_mangle)]

@@ -28,11 +28,28 @@ const WASM_CUSTOM_SOFA_LOAD_LIMITS: SofaLoadLimits = SofaLoadLimits {
 
 pub const BINAURAL_VIRTUAL_LAYOUT: &str = "7.1.4";
 pub const BINAURAL_HRTF_SOURCE: &str = "Built-in SADIE II D1";
+const STEREO_LAYOUT: &str = "2.0";
+
+/// Stable browser codes for the physical speaker layouts this bridge renders
+/// discretely. The order is part of the raw ABI, so append only; `Stereo`
+/// keeps its own 2.0 route and is not listed here.
+pub const SPEAKER_LAYOUT_PRESETS: &[&str] = &["5.1", "7.1", "5.1.4", "7.1.4", "9.1.4", "22.2"];
+
+/// Resolves one speaker-layout ABI code to its preset name.
+#[must_use]
+pub fn speaker_layout_for_code(code: u32) -> Option<&'static str> {
+    usize::try_from(code)
+        .ok()
+        .and_then(|index| SPEAKER_LAYOUT_PRESETS.get(index).copied())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WasmRenderer {
     Stereo,
     Binaural,
+    /// Discrete speaker rendering: the decoded layout is written as-is instead of being
+    /// downmixed or spatialised, so the caller receives every programme channel.
+    Speaker,
 }
 
 impl WasmRenderer {
@@ -40,6 +57,7 @@ impl WasmRenderer {
         match self {
             Self::Stereo => RenderMode::Stereo,
             Self::Binaural => RenderMode::Binaural,
+            Self::Speaker => RenderMode::Speaker,
         }
     }
 
@@ -47,6 +65,7 @@ impl WasmRenderer {
         match self {
             Self::Stereo => 0,
             Self::Binaural => 1,
+            Self::Speaker => 2,
         }
     }
 }
@@ -116,9 +135,12 @@ pub struct DecoderStatusSnapshot {
     pub realtime_factor: Option<f64>,
 }
 
-/// Stateful, bounded raw-E-AC-3/CMAF-sample-to-Stereo bridge.
+/// Stateful, bounded raw-E-AC-3/CMAF-sample-to-PCM bridge.
 pub struct Decoder {
     session: OpenJocSession,
+    /// Physical layout requested for discrete speaker output; `None` for the
+    /// binaural virtual layout and always `"2.0"` for the stereo downmix.
+    speaker_layout: Option<&'static str>,
     hrtf: Option<BuiltinHrtf>,
     custom_hrtf: bool,
     framer: ElementaryStreamFramer,
@@ -163,7 +185,7 @@ impl Decoder {
         renderer: WasmRenderer,
         hrtf: BuiltinHrtf,
     ) -> Result<Self, DecoderError> {
-        Self::new_with_hrtf_asset(dialnorm, renderer, hrtf, None)
+        Self::new_with_hrtf_asset(dialnorm, renderer, STEREO_LAYOUT, hrtf, None)
     }
 
     /// Creates a renderer session using an externally supplied built-in asset.
@@ -173,7 +195,22 @@ impl Decoder {
         hrtf: BuiltinHrtf,
         asset: &[u8],
     ) -> Result<Self, DecoderError> {
-        Self::new_with_hrtf_asset(dialnorm, renderer, hrtf, Some(asset))
+        Self::new_with_hrtf_asset(dialnorm, renderer, STEREO_LAYOUT, hrtf, Some(asset))
+    }
+
+    /// Creates a discrete speaker session that writes `layout` as-is instead of
+    /// downmixing to stereo, so the caller receives every programme channel.
+    pub fn new_with_speaker_layout(
+        dialnorm: DialnormMode,
+        layout: &'static str,
+    ) -> Result<Self, DecoderError> {
+        Self::new_with_hrtf_asset(
+            dialnorm,
+            WasmRenderer::Speaker,
+            layout,
+            BuiltinHrtf::SadieD1Ku100,
+            None,
+        )
     }
 
     /// Creates a binaural session from caller-owned SOFA bytes.
@@ -206,12 +243,13 @@ impl Decoder {
         let session =
             OpenJocSession::new_with_sofa_load_limits(config, WASM_CUSTOM_SOFA_LOAD_LIMITS)
                 .map_err(|error| map_openjoc_error(&error))?;
-        Ok(Self::from_session(session, None, true))
+        Ok(Self::from_session(session, None, None, true))
     }
 
     fn new_with_hrtf_asset(
         dialnorm: DialnormMode,
         renderer: WasmRenderer,
+        speaker_layout: &'static str,
         hrtf: BuiltinHrtf,
         asset: Option<&[u8]>,
     ) -> Result<Self, DecoderError> {
@@ -223,7 +261,7 @@ impl Decoder {
             speaker_layout: if renderer == WasmRenderer::Binaural {
                 BINAURAL_VIRTUAL_LAYOUT.to_owned()
             } else {
-                String::from("2.0")
+                speaker_layout.to_owned()
             },
             downmix: DownmixPolicy::Auto,
             drc: DrcPolicy::Line,
@@ -239,6 +277,11 @@ impl Decoder {
         .map_err(|error| map_openjoc_error(&error))?;
         Ok(Self::from_session(
             session,
+            match renderer {
+                WasmRenderer::Stereo => Some(STEREO_LAYOUT),
+                WasmRenderer::Speaker => Some(speaker_layout),
+                WasmRenderer::Binaural => None,
+            },
             (renderer == WasmRenderer::Binaural).then_some(hrtf),
             false,
         ))
@@ -246,12 +289,14 @@ impl Decoder {
 
     fn from_session(
         mut session: OpenJocSession,
+        speaker_layout: Option<&'static str>,
         hrtf: Option<BuiltinHrtf>,
         custom_hrtf: bool,
     ) -> Self {
         session.enable_stage_timing();
         Self {
             session,
+            speaker_layout,
             hrtf,
             custom_hrtf,
             framer: ElementaryStreamFramer::new(),
@@ -398,7 +443,13 @@ impl Decoder {
                     }
                 }),
             ),
-            RenderMode::Stereo | RenderMode::Speaker => ("Stereo (Speakers)", None, None),
+            RenderMode::Speaker => (
+                "Speaker (Discrete)",
+                self.speaker_layout
+                    .filter(|layout| *layout != STEREO_LAYOUT),
+                None,
+            ),
+            RenderMode::Stereo => ("Stereo (Speakers)", None, None),
         };
         let queued_samples = self
             .output
@@ -607,7 +658,8 @@ impl Decoder {
     pub(crate) fn renderer_code(&self) -> u32 {
         match self.session.output_info().render_mode {
             RenderMode::Binaural => WasmRenderer::Binaural.code(),
-            RenderMode::Speaker | RenderMode::Stereo => WasmRenderer::Stereo.code(),
+            RenderMode::Speaker => WasmRenderer::Speaker.code(),
+            RenderMode::Stereo => WasmRenderer::Stereo.code(),
         }
     }
 
