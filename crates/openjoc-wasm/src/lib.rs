@@ -33,7 +33,12 @@ const STEREO_LAYOUT: &str = "2.0";
 /// Stable browser codes for the physical speaker layouts this bridge renders
 /// discretely. The order is part of the raw ABI, so append only; `Stereo`
 /// keeps its own 2.0 route and is not listed here.
-pub const SPEAKER_LAYOUT_PRESETS: &[&str] = &["5.1", "7.1", "5.1.4", "7.1.4", "9.1.4", "22.2"];
+///
+/// `2.0` is appended last rather than placed first: code 0 already means "5.1"
+/// to deployed pages, and a discrete 2.0 speaker layout is *not* the same
+/// rendering as the stereo downmix (`RenderMode::Stereo`).
+pub const SPEAKER_LAYOUT_PRESETS: &[&str] =
+    &["5.1", "7.1", "5.1.4", "7.1.4", "9.1.4", "22.2", "2.0"];
 
 /// Resolves one speaker-layout ABI code to its preset name.
 #[must_use]
@@ -443,12 +448,7 @@ impl Decoder {
                     }
                 }),
             ),
-            RenderMode::Speaker => (
-                "Speaker (Discrete)",
-                self.speaker_layout
-                    .filter(|layout| *layout != STEREO_LAYOUT),
-                None,
-            ),
+            RenderMode::Speaker => ("Speaker (Discrete)", self.speaker_layout, None),
             RenderMode::Stereo => ("Stereo (Speakers)", None, None),
         };
         let queued_samples = self

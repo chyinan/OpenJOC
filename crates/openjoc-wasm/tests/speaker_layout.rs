@@ -86,8 +86,99 @@ fn preset_codes_are_stable_and_reject_unknown_codes() {
     assert_eq!(speaker_layout_for_code(1), Some("7.1"));
     assert_eq!(speaker_layout_for_code(3), Some("7.1.4"));
     assert_eq!(speaker_layout_for_code(5), Some("22.2"));
-    assert_eq!(speaker_layout_for_code(6), None);
+    // 2.0 was appended, not prepended: existing codes keep their meaning.
+    assert_eq!(speaker_layout_for_code(6), Some("2.0"));
+    assert_eq!(speaker_layout_for_code(7), None);
     assert_eq!(speaker_layout_for_code(u32::MAX), None);
+}
+
+/// `RenderMode::Speaker` + "2.0" and `RenderMode::Stereo` are different paths, and the difference
+/// is narrower than "different audio": with the default policy the stereo path resolves to Lo/Ro,
+/// which equals the discrete 2.0 render sample for sample. What separates them is configuration,
+/// not sound — an explicit downmix policy is rejected for speaker output, and Lt/Rt produces
+/// different samples from the discrete render. Measured 2026-11-23.
+#[test]
+fn discrete_two_channel_layout_is_separate_from_the_stereo_policy() {
+    let discrete = decode_bridge_speaker("2.0");
+    let auto = decode_native_stereo(DownmixPolicy::Auto);
+    let lt_rt = decode_native_stereo(DownmixPolicy::LtRt);
+
+    assert_eq!(discrete[0].channel_count, 2);
+    assert_eq!(auto[0].channel_count, 2);
+    assert_eq!(sample_digest(&discrete), sample_digest(&auto));
+    assert_ne!(
+        sample_digest(&discrete),
+        sample_digest(&lt_rt),
+        "Lt/Rt must not collapse into the discrete 2.0 render"
+    );
+    assert!(
+        OpenJocSession::new(OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: "2.0".to_owned(),
+            downmix: DownmixPolicy::LtRt,
+            drc: DrcPolicy::Line,
+            validation_profile: ValidationProfile::Auto,
+            ..OpenJocConfig::default()
+        })
+        .is_err(),
+        "an explicit downmix policy only applies to stereo output"
+    );
+}
+
+/// Decodes the fixture through a native stereo session with one explicit downmix policy.
+fn decode_native_stereo(policy: DownmixPolicy) -> Vec<OpenJocPcmFrame> {
+    let config = OpenJocConfig {
+        render_mode: RenderMode::Stereo,
+        speaker_layout: "2.0".to_owned(),
+        downmix: policy,
+        drc: DrcPolicy::Line,
+        validation_profile: ValidationProfile::Auto,
+        ..OpenJocConfig::default()
+    };
+    let mut session = OpenJocSession::new(config).expect("native stereo session");
+    let mut pending = FIXTURE.to_vec();
+    let mut frames = Vec::new();
+    let mut eos = false;
+    loop {
+        if pending.is_empty() {
+            break;
+        }
+        match parse_access_unit_bounds(&pending, eos).expect("native AU framing") {
+            AccessUnitParse::NeedMore => eos = true,
+            AccessUnitParse::Complete(length) => {
+                let packet: Vec<u8> = pending.drain(..length).collect();
+                let status = session
+                    .push_packet(OpenJocPacket {
+                        data: &packet,
+                        pts_samples: None,
+                        discontinuity: false,
+                        preroll: false,
+                    })
+                    .expect("native packet");
+                assert_ne!(status, OpenJocStatus::OutputPending);
+                collect_session(&mut session, &mut frames);
+                eos = false;
+            }
+        }
+    }
+    session.drain().expect("native drain");
+    collect_session(&mut session, &mut frames);
+    frames
+}
+
+/// Digest of the samples only. Frame structs carry `render_mode`, so comparing whole frames can
+/// never answer "is the audio the same".
+fn sample_digest(frames: &[OpenJocPcmFrame]) -> String {
+    let mut hash: u32 = 0x811c_9dc5;
+    for frame in frames {
+        for sample in &frame.interleaved_f32 {
+            for byte in sample.to_le_bytes() {
+                hash ^= u32::from(byte);
+                hash = hash.wrapping_mul(0x0100_0193);
+            }
+        }
+    }
+    format!("{hash:08x}")
 }
 
 #[test]
