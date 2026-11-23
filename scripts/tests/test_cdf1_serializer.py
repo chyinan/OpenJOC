@@ -3,6 +3,7 @@
 import ast
 from pathlib import Path
 import struct
+from types import SimpleNamespace
 import unittest
 
 
@@ -10,17 +11,18 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "tools" / "generate-builtin-hrtf.py"
 
 
-def serializer_functions():
+def serializer_functions(extra_names=(), **dependencies):
     # Execute the production serializer, not a copied implementation. These
     # functions use only struct; full HDF5 conversion is outside this test.
     names = {"pad4", "nc_string", "nc_attr", "nc_dims", "nc_var"}
+    names.update(extra_names)
     tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
     selected = [
         node for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name in names
     ]
     assert {node.name for node in selected} == names
-    namespace = {"struct": struct, "NC_CHAR": 2}
+    namespace = {"struct": struct, "NC_CHAR": 2, **dependencies}
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(SOURCE), "exec"), namespace)
     return namespace
 
@@ -137,6 +139,62 @@ class Cdf1SerializerTests(unittest.TestCase):
             self.assertEqual(variables[name]["bytes"], payload)
             self.assertEqual(variables[name]["attrs"], dict(attrs))
             self.assertEqual(variables[name]["kind"], kind)
+
+    def test_virtual_alias_copies_the_measured_ear_delays_and_taps(self):
+        try:
+            import numpy as np
+        except ImportError:
+            self.skipTest("NumPy is required for the offline conversion")
+        from contextlib import nullcontext
+
+        class Source(dict):
+            attrs = {}
+
+        # Exercise the real production converter; substitute only its HDF5
+        # reader. One canonical position sits 0.7 degrees from the grid.
+        source = Source()
+        names = ("float32_bytes", "builtin_virtual_directions", "deduplicate_direction_rows",
+                 "append_virtual_aliases", "convert_sofa")
+        converter = serializer_functions(
+            names, np=np, NC_FLOAT=5, Path=Path,
+            h5py=SimpleNamespace(File=lambda *_: nullcontext(source)),
+        )
+        targets = converter["builtin_virtual_directions"]()
+        _, keep = np.unique(np.round(targets, decimals=6), axis=0, return_index=True)
+        targets = targets[np.sort(keep)]
+        azimuth = np.rad2deg(np.arctan2(-targets[:, 0], targets[:, 1])) % 360
+        azimuth[0] += 0.7
+        positions = np.column_stack((azimuth, np.rad2deg(np.arcsin(targets[:, 2])),
+                                     np.ones(len(targets))))
+        taps = np.arange(len(targets) * 4, dtype=np.float32).reshape(-1, 2, 2)
+        taps[0, 0, 0] = -0.0
+        delay = np.arange(len(targets) * 2, dtype=np.float32).reshape(-1, 2)
+        source.update({
+            "SourcePosition": positions, "Data.IR": taps, "Data.Delay": delay,
+            "Data.SamplingRate": np.array([48000]), "ListenerPosition": np.zeros((1, 3)),
+            "ListenerView": np.array([[1, 0, 0]]), "ListenerUp": np.array([[0, 0, 1]]),
+            "ReceiverPosition": np.array([[0, .09, 0], [0, -.09, 0]]),
+            "EmitterPosition": np.zeros((1, 3)),
+        })
+
+        def payload(aliases):
+            return HeaderReader(converter["convert_sofa"](Path("unused"), aliases)).variables()
+
+        def float_bits(values):
+            return np.ascontiguousarray(values, dtype=">f4").tobytes()
+
+        for aliases in (False, True):
+            with self.subTest(aliases=aliases):
+                variables = payload(aliases)
+                exact_taps = np.concatenate((taps, taps[:1])) if aliases else taps
+                exact_delay = np.concatenate((delay, delay[:1])) if aliases else delay
+                self.assertEqual(variables["Data.IR"]["bytes"], float_bits(exact_taps))
+                self.assertEqual(variables["Data.Delay"]["bytes"], float_bits(exact_delay))
+
+        source["Data.Delay"] = np.array([[7, 13]])
+        variables = payload(True)
+        self.assertEqual(variables["Data.Delay"]["dims"], [1])
+        self.assertEqual(variables["Data.Delay"]["bytes"], float_bits([[7, 13]]))
 
     def test_independent_sofa_fixture_has_standard_absent_attributes(self):
         path = ROOT / "crates/openjoc-sofa/tests/fixtures/cdf1-standard-absent.sofa"
