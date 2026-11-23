@@ -9,6 +9,7 @@ use std::{
     fs,
     io::Write as _,
     path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -16,13 +17,16 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new() -> Self {
+        // Concurrent tests can observe the same clock tick.
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "openjoc-output-contract-{}-{}",
+            "openjoc-output-contract-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
         Self(path)
