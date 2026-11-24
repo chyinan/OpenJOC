@@ -151,7 +151,8 @@ class Cdf1SerializerTests(unittest.TestCase):
             attrs = {}
 
         # Exercise the real production converter; substitute only its HDF5
-        # reader. One canonical position sits 0.7 degrees from the grid.
+        # reader. Two canonical positions sit 0.7 degrees from the grid;
+        # the shared 90-degree side direction must only be appended once.
         source = Source()
         names = ("float32_bytes", "builtin_virtual_directions", "deduplicate_direction_rows",
                  "append_virtual_aliases", "convert_sofa")
@@ -163,7 +164,9 @@ class Cdf1SerializerTests(unittest.TestCase):
         _, keep = np.unique(np.round(targets, decimals=6), axis=0, return_index=True)
         targets = targets[np.sort(keep)]
         azimuth = np.rad2deg(np.arctan2(-targets[:, 0], targets[:, 1])) % 360
-        azimuth[0] += 0.7
+        side = np.flatnonzero((azimuth == 90.0) & (targets[:, 2] == 0.0)).item()
+        alias_rows = [0, side]
+        azimuth[alias_rows] += 0.7
         positions = np.column_stack((azimuth, np.rad2deg(np.arcsin(targets[:, 2])),
                                      np.ones(len(targets))))
         taps = np.arange(len(targets) * 4, dtype=np.float32).reshape(-1, 2, 2)
@@ -186,8 +189,8 @@ class Cdf1SerializerTests(unittest.TestCase):
         for aliases in (False, True):
             with self.subTest(aliases=aliases):
                 variables = payload(aliases)
-                exact_taps = np.concatenate((taps, taps[:1])) if aliases else taps
-                exact_delay = np.concatenate((delay, delay[:1])) if aliases else delay
+                exact_taps = np.concatenate((taps, taps[alias_rows])) if aliases else taps
+                exact_delay = np.concatenate((delay, delay[alias_rows])) if aliases else delay
                 self.assertEqual(variables["Data.IR"]["bytes"], float_bits(exact_taps))
                 self.assertEqual(variables["Data.Delay"]["bytes"], float_bits(exact_delay))
 
