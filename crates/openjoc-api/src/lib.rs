@@ -676,6 +676,32 @@ impl OpenJocDiagnostics {
     }
 }
 
+/// Upper bound on positions buffered between two
+/// [`OpenJocSession::take_object_positions`] calls.
+const MAX_PENDING_OBJECT_POSITIONS: usize = 65_536;
+
+/// One dynamic-object position update decoded from OAMD, for visualisation.
+///
+/// Coordinates are the TS 103 420 normalised room cube: `x` 0 = left .. 1 =
+/// right, `y` 0 = front .. 1 = back, `z` 0 = ear height .. 1 = ceiling
+/// (negative values lie below ear height). Screen-anchored objects report
+/// their interpolated room position; objects at infinity report their
+/// room-boundary intersection. Bed, ISF and LFE objects are not reported.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OpenJocObjectPosition {
+    /// Index within the OAMD content prefix; not an authored ADM identity.
+    pub object_index: u16,
+    /// Absolute sample on the session's logical timeline where the update starts.
+    pub start_sample: u64,
+    /// Samples over which the renderer ramps from the previous position.
+    pub ramp_samples: u16,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    /// `false` when the object is inactive or its gain is negative infinity.
+    pub active: bool,
+}
+
 /// Opt-in timing for one successful AU push through the headless session.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct OpenJocStageTiming {
@@ -868,6 +894,9 @@ pub struct OpenJocSession {
     complexity_index: Option<u8>,
     stage_timing_enabled: bool,
     last_stage_timing: OpenJocStageTiming,
+    // Opt-in OAMD dynamic-object positions for visualisation; never affects audio.
+    object_positions_enabled: bool,
+    object_positions: Vec<OpenJocObjectPosition>,
     #[cfg(not(target_arch = "wasm32"))]
     decode_timing: decode_timing::DecodeTimingState,
     #[cfg(not(target_arch = "wasm32"))]

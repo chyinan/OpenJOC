@@ -233,6 +233,8 @@ impl OpenJocSession {
             complexity_index: None,
             stage_timing_enabled: false,
             last_stage_timing: OpenJocStageTiming::default(),
+            object_positions_enabled: false,
+            object_positions: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             decode_timing: decode_timing::DecodeTimingState::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -391,6 +393,69 @@ impl OpenJocSession {
     pub fn enable_stage_timing(&mut self) {
         self.stage_timing_enabled = true;
         self.last_stage_timing = OpenJocStageTiming::default();
+    }
+
+    /// Opt-in: records each decoded frame's dynamic-object positions from OAMD.
+    ///
+    /// Audio output is unchanged. Positions accumulate (bounded) until
+    /// [`Self::take_object_positions`] collects them.
+    pub fn enable_object_positions(&mut self) {
+        self.object_positions_enabled = true;
+    }
+
+    /// Returns and clears the dynamic-object positions recorded since the last call.
+    pub fn take_object_positions(&mut self) -> Vec<super::OpenJocObjectPosition> {
+        std::mem::take(&mut self.object_positions)
+    }
+
+    /// Visualisation only: a frame whose metadata cannot be resolved here
+    /// contributes no positions and never fails the audio path.
+    fn record_object_positions(&mut self, frame: &openjoc_scene::DecodedPayloadFrame) {
+        let Ok(anchors) = frame.oamd.prefix.object_anchors() else {
+            return;
+        };
+        let Ok(updates) = openjoc_scene::metadata_updates_for_frame(
+            &frame.oamd,
+            frame.sample_range.start_sample,
+            None,
+        ) else {
+            return;
+        };
+        for update in updates {
+            let is_dynamic = usize::try_from(update.object_id)
+                .ok()
+                .and_then(|index| anchors.get(index))
+                .is_some_and(|anchor| *anchor == openjoc_oamd::ObjectAnchor::Dynamic);
+            if !is_dynamic {
+                continue;
+            }
+            let point = match update.position {
+                openjoc_scene::Position::Room(point) => point,
+                openjoc_scene::Position::RoomAtInfinity {
+                    boundary_intersection,
+                } => boundary_intersection,
+                openjoc_scene::Position::Screen {
+                    interpolated_room, ..
+                } => interpolated_room,
+                openjoc_scene::Position::Speaker(_)
+                | openjoc_scene::Position::IntermediateSpatial(_) => continue,
+            };
+            let Ok(object_index) = u16::try_from(update.object_id) else {
+                continue;
+            };
+            if self.object_positions.len() >= super::MAX_PENDING_OBJECT_POSITIONS {
+                return;
+            }
+            self.object_positions.push(super::OpenJocObjectPosition {
+                object_index,
+                start_sample: update.start_sample,
+                ramp_samples: update.ramp_duration,
+                x: point.x,
+                y: point.y,
+                z: point.z,
+                active: update.active && update.gain_db.is_some(),
+            });
+        }
     }
 
     /// Takes the most recent successful AU stage timing record.
@@ -609,6 +674,9 @@ impl OpenJocSession {
                 Some(joc_proof),
                 Some(oamd_proof),
             )?;
+        if self.object_positions_enabled {
+            self.record_object_positions(&frame);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         let detailed_decode_timing = decode_timing::finish(reconstruction_start)
             .zip(eac3_timing)
@@ -942,6 +1010,7 @@ impl OpenJocSession {
         self.audio_decoder.reset();
         self.audio_decoder.set_dialnorm_mode(self.config.dialnorm);
         self.payload_decoder = new_payload_decoder(&self.config);
+        self.object_positions.clear();
         #[cfg(not(target_arch = "wasm32"))]
         if self.decode_timing.enabled {
             self.payload_decoder.enable_reconstruction_timing();

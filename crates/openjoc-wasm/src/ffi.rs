@@ -582,6 +582,44 @@ pub extern "C" fn openjoc_wasm_decoder_object_count(handle: u32) -> u32 {
     .unwrap_or(u32::MAX)
 }
 
+/// Opt-in per handle: records OAMD dynamic-object positions while decoding.
+/// Returns 0 on success and -1 for an unknown handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_enable_object_positions(handle: u32) -> i32 {
+    with_decoder(handle, Decoder::enable_object_positions).map_or(STATUS_ERROR, |()| 0)
+}
+
+/// Pointer to the flattened f64 position records
+/// (`[object_index, start_sample, ramp_samples, x, y, z, active]` each), or 0.
+/// Valid until the next call into this handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_object_positions_ptr(handle: u32) -> u32 {
+    with_decoder(handle, |decoder| {
+        let values = decoder.object_positions();
+        if values.is_empty() {
+            0
+        } else {
+            values.as_ptr() as usize as u32
+        }
+    })
+    .unwrap_or(0)
+}
+
+/// Number of f64 values (not records) behind `object_positions_ptr`.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_object_positions_len(handle: u32) -> u32 {
+    with_decoder(handle, |decoder| {
+        u32::try_from(decoder.object_positions().len()).unwrap_or(u32::MAX)
+    })
+    .unwrap_or(0)
+}
+
+/// Drops the buffered records after the caller has copied them out.
+#[unsafe(no_mangle)]
+pub extern "C" fn openjoc_wasm_decoder_clear_object_positions(handle: u32) {
+    let _ = with_decoder(handle, Decoder::clear_object_positions);
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn openjoc_wasm_decoder_complexity_index(handle: u32) -> u32 {
     with_decoder(handle, |decoder| {

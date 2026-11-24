@@ -17,6 +17,12 @@ use stream::{ElementaryStreamFramer, FramingError, FramingStatus};
 
 const MAX_QUEUED_PCM_FRAMES: usize = 8;
 const MAX_TIMING_SAMPLES: usize = 4096;
+/// f64 values per exported object-position record:
+/// `[object_index, start_sample, ramp_samples, x, y, z, active]`.
+pub const OBJECT_POSITION_STRIDE: usize = 7;
+/// Bound on buffered object-position values between two caller clears
+/// (records × stride); records beyond it are dropped, never the audio.
+const MAX_BUFFERED_OBJECT_POSITION_VALUES: usize = 262_144 * OBJECT_POSITION_STRIDE;
 const WASM_CUSTOM_SOFA_LOAD_LIMITS: SofaLoadLimits = SofaLoadLimits {
     max_file_bytes: 16 * 1024 * 1024,
     max_measurements: 4096,
@@ -163,6 +169,9 @@ pub struct Decoder {
     input_seen: bool,
     end_of_stream: bool,
     last_error: Option<DecoderError>,
+    /// Flattened dynamic-object positions (see [`OBJECT_POSITION_STRIDE`]);
+    /// filled only after [`Decoder::enable_object_positions`].
+    object_positions: Vec<f64>,
 }
 
 impl Decoder {
@@ -319,6 +328,7 @@ impl Decoder {
             input_seen: false,
             end_of_stream: false,
             last_error: None,
+            object_positions: Vec::new(),
         }
     }
 
@@ -429,6 +439,7 @@ impl Decoder {
         self.input_seen = false;
         self.end_of_stream = false;
         self.last_error = None;
+        self.object_positions.clear();
     }
 
     /// Returns a bounded status snapshot for UI and machine QA.
@@ -596,6 +607,22 @@ impl Decoder {
     }
 
     fn collect_session_output(&mut self) -> Result<(), DecoderError> {
+        for position in self.session.take_object_positions() {
+            if self.object_positions.len() + OBJECT_POSITION_STRIDE
+                > MAX_BUFFERED_OBJECT_POSITION_VALUES
+            {
+                break;
+            }
+            self.object_positions.extend_from_slice(&[
+                f64::from(position.object_index),
+                position.start_sample as f64,
+                f64::from(position.ramp_samples),
+                position.x,
+                position.y,
+                position.z,
+                if position.active { 1.0 } else { 0.0 },
+            ]);
+        }
         while let Some(frame) = self.session.receive_frame() {
             if self.output.len() >= MAX_QUEUED_PCM_FRAMES {
                 return Err(DecoderError {
@@ -645,6 +672,23 @@ impl Decoder {
 
     pub(crate) fn object_count(&self) -> Option<u16> {
         self.objects
+    }
+
+    /// Opt-in: also record OAMD dynamic-object positions for visualisation.
+    /// Rendering and PCM are unaffected.
+    pub fn enable_object_positions(&mut self) {
+        self.session.enable_object_positions();
+    }
+
+    /// Flattened positions recorded since the last [`Self::clear_object_positions`],
+    /// [`OBJECT_POSITION_STRIDE`] values per record.
+    #[must_use]
+    pub fn object_positions(&self) -> &[f64] {
+        &self.object_positions
+    }
+
+    pub fn clear_object_positions(&mut self) {
+        self.object_positions.clear();
     }
 
     pub(crate) fn downmix_index(&self) -> Option<u8> {
