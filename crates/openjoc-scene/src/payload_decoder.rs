@@ -145,6 +145,7 @@ pub struct PayloadDecoder {
     config: PayloadDecoderConfig,
     oamd_profile: OamdParseProfile,
     joc: JocDecoderState,
+    splice_tail: Option<ReconstructionBasis>,
     builder: Option<SceneBuilder>,
     streaming: bool,
     sample_rate: Option<u32>,
@@ -164,6 +165,7 @@ impl PayloadDecoder {
             config,
             oamd_profile: OamdParseProfile::EtsiStrict,
             joc: JocDecoderState::new(),
+            splice_tail: None,
             builder: None,
             streaming: false,
             sample_rate: None,
@@ -363,6 +365,10 @@ impl PayloadDecoder {
             self.builder = Some(builder);
         }
 
+        // A zero count explicitly marks a splice. Close the old programme
+        // interval with its own filter history before replacing decoder state.
+        self.splice_tail = (decoded.state_reset && joc.sequence_count == 0)
+            .then(|| self.joc.flush_reconstruction());
         self.joc = next_joc;
         self.sample_rate = Some(input.sample_rate);
         self.next_frame_index = next_frame_index;
@@ -518,6 +524,13 @@ impl PayloadDecoder {
         oamd_proof: Option<ParsedOamdProof>,
     ) -> Result<DecodedPayloadFrame, PayloadDecodeError> {
         self.decode_frame_inner(input, binding_profile, joc_proof, oamd_proof)
+    }
+
+    /// Takes the old reconstruction tail produced by the last successful
+    /// frame if it signalled an in-band JOC splice. This is not an EOS tail for
+    /// the output; it closes the previous epoch's already admitted intervals.
+    pub fn take_splice_reconstruction_tail(&mut self) -> Option<ReconstructionBasis> {
+        self.splice_tail.take()
     }
 
     /// Finalizes the accumulated renderer-independent object scene.

@@ -1040,6 +1040,16 @@ impl JocSpeakerRenderer {
         frame: &DecodedPayloadFrame,
         pcm_planes: &DecodedJocAccessUnitPcm,
     ) -> Result<Vec<RenderedBlock>, JocRenderError> {
+        self.render_frame_aligned_with_splice_tail(frame_index, frame, pcm_planes, None)
+    }
+
+    pub fn render_frame_aligned_with_splice_tail(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        pcm_planes: &DecodedJocAccessUnitPcm,
+        splice_tail: Option<&ReconstructionBasis>,
+    ) -> Result<Vec<RenderedBlock>, JocRenderError> {
         let base = &pcm_planes.joc_input_pcm;
         let frame_index =
             u64::try_from(frame_index).map_err(|_| JocRenderError::FrameSampleCount)?;
@@ -1049,18 +1059,24 @@ impl JocSpeakerRenderer {
                 actual: frame_index,
             });
         }
-        let state_reset = frame.decoded.state_reset;
-        if state_reset {
+        let mut rendered = Vec::new();
+        if frame.decoded.state_reset {
+            if let Some(tail) = splice_tail {
+                let aligned = self.timeline.finish(tail)?;
+                rendered = self.render_aligned_outputs(aligned)?;
+            }
             self.bridge.reset();
             self.timeline.reset();
             self.pending_frames.clear();
             if let Some(assembler) = self.assembler.as_mut() {
                 assembler.reset();
             }
-            if let Some(control) = self.control.as_mut() {
+            // Keep programme-wide sidecar accounting and output lookahead
+            // across an explicitly marked splice.
+            if let (None, Some(control)) = (splice_tail, self.control.as_mut()) {
                 control.reset();
             }
-            if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+            if let (None, Some(linked_gain)) = (splice_tail, self.final_linked_gain.as_mut()) {
                 linked_gain.reset();
             }
             self.base_coordinates = None;
@@ -1092,7 +1108,8 @@ impl JocSpeakerRenderer {
             .next_input_frame
             .checked_add(1)
             .ok_or(JocRenderError::FrameSampleCount)?;
-        self.render_aligned_outputs(aligned)
+        rendered.extend(self.render_aligned_outputs(aligned)?);
+        Ok(rendered)
     }
 
     fn render_aligned_frame(
@@ -2079,15 +2096,28 @@ impl JocBinauralRenderer {
         frame: &DecodedPayloadFrame,
         pcm_planes: &DecodedJocAccessUnitPcm,
     ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
+        self.render_frame_aligned_with_splice_tail(frame_index, frame, pcm_planes, None)
+    }
+
+    pub fn render_frame_aligned_with_splice_tail(
+        &mut self,
+        frame_index: usize,
+        frame: &DecodedPayloadFrame,
+        pcm_planes: &DecodedJocAccessUnitPcm,
+        splice_tail: Option<&ReconstructionBasis>,
+    ) -> Result<Vec<BinauralRenderedBlock>, JocRenderError> {
         if self.finished {
             return Err(JocRenderError::BinauralOutput(
                 "renderer has already been finalized".to_owned(),
             ));
         }
         self.ensure_engine(frame.sample_rate)?;
-        let rendered =
-            self.speaker
-                .render_frame_aligned_with_pcm_planes(frame_index, frame, pcm_planes)?;
+        let rendered = self.speaker.render_frame_aligned_with_splice_tail(
+            frame_index,
+            frame,
+            pcm_planes,
+            splice_tail,
+        )?;
         let speaker_timings = self.speaker.take_stage_timings();
         self.stage_timings.bridge_control_assembly += speaker_timings.bridge_control_assembly;
         self.stage_timings.spatial_bridge_render += speaker_timings.spatial_bridge_render;
@@ -3814,6 +3844,50 @@ mod tests {
     }
 
     #[test]
+    fn marked_splice_renders_pending_interval_before_new_epoch() {
+        let mut renderer = JocSpeakerRenderer::new("5.1", control(true, 6)).unwrap();
+        let mut pcm = base(1536, 0.1);
+        pcm.dialnorm = DialnormState::new(openjoc_eac3::DialnormMode::Digital, 20);
+        let tail = ReconstructionBasis {
+            rows: vec![vec![
+                0.0;
+                openjoc_joc::ReconstructionOutputTimeline::qmf_latency_samples()
+            ]],
+        };
+        let first = decoded_frame(0, 0, 1536);
+        let second = decoded_frame(1, 1536, 1536);
+        let mut splice = decoded_frame(2, 3072, 1536);
+        splice.decoded.state_reset = true;
+
+        let before = renderer.render_frame_aligned(0, &first, &pcm).unwrap();
+        assert_eq!(before, [] as [RenderedBlock; 0]);
+        let before = renderer.render_frame_aligned(1, &second, &pcm).unwrap();
+        assert_eq!(before[0].channels[0].len(), 1536);
+        let at = renderer
+            .render_frame_aligned_with_splice_tail(
+                2,
+                &splice,
+                &DecodedJocAccessUnitPcm {
+                    compatibility_pcm: pcm.clone(),
+                    joc_input_pcm: pcm,
+                },
+                Some(&tail),
+            )
+            .unwrap();
+        assert_eq!(at.len(), 1);
+        assert_eq!(at[0].channels[0].len(), 1536);
+
+        let after = renderer.finish_with_reconstruction_tail(&tail).unwrap();
+        assert_eq!(
+            after
+                .iter()
+                .map(|block| block.channels[0].len())
+                .collect::<Vec<_>>(),
+            [1536, 32]
+        );
+    }
+
+    #[test]
     fn final_linked_gain_is_downstream_of_combined_speaker_accumulation() {
         let mut renderer = JocSpeakerRenderer::new("5.1", control(false, 6)).unwrap();
         let first = renderer
@@ -4068,7 +4142,7 @@ mod tests {
                     &dither,
                     InternalBasePolicy::default(),
                     DialnormMode::Digital,
-                    |index, metadata, frame, pcm| {
+                    |index, metadata, frame, pcm, _splice_tail| {
                         assert_eq!(
                             metadata.validation_profile,
                             JocValidationProfile::EtsiStrict

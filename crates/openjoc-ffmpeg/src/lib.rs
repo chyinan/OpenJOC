@@ -5030,6 +5030,58 @@ mod tests {
     }
 
     #[test]
+    fn in_band_joc_splice_keeps_every_input_interval_and_only_one_output_tail() {
+        for fixture in [
+            short_splice_fixture as fn(u16) -> Vec<u8>,
+            standard_legacy_flat7x_access_unit,
+        ] {
+            for layout in ["2.0", "7.1.4"] {
+                let mut session = OpenJocSession::new(OpenJocConfig {
+                    render_mode: RenderMode::Speaker,
+                    speaker_layout: layout.to_owned(),
+                    ..OpenJocConfig::default()
+                })
+                .expect("speaker session");
+                let mut trace = Vec::new();
+                for (index, sequence) in [0, 1, 0, 1].into_iter().enumerate() {
+                    let bytes = fixture(sequence);
+                    session
+                        .push_packet(OpenJocPacket {
+                            data: &bytes,
+                            pts_samples: Some(i64::try_from(index).unwrap() * 1536),
+                            discontinuity: false,
+                            preroll: false,
+                        })
+                        .expect("complete packet");
+                    while let Some(f) = session.receive_frame() {
+                        trace.push((f.pts_samples, f.sample_count));
+                    }
+                }
+                session.drain().expect("drain");
+                while let Some(f) = session.receive_frame() {
+                    trace.push((f.pts_samples, f.sample_count));
+                }
+                assert_eq!(
+                    trace,
+                    [
+                        (Some(0), 1536),
+                        (Some(1536), 1536),
+                        (Some(3072), 1536),
+                        (Some(4608), 1536),
+                        (Some(6144), 32)
+                    ],
+                    "layout {layout}"
+                );
+                assert!(session.is_drained());
+            }
+        }
+    }
+
+    fn short_splice_fixture(sequence: u16) -> Vec<u8> {
+        short_joc_access_unit_with_partition(1, sequence, &[3, 3])
+    }
+
+    #[test]
     fn short_block_idx1_joc_is_classified_and_decoded_end_to_end() {
         let access_unit = short_flat7x_access_unit(1);
         let frames = openjoc_eac3::index_syncframes(&access_unit).expect("short index");

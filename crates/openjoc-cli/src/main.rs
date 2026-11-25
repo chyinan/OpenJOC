@@ -2338,9 +2338,14 @@ fn run_legacy_render_pass(
                 &dither,
                 arguments.internal_base_policy,
                 arguments.dialnorm,
-                |frame_index, metadata, frame, base| {
+                |frame_index, metadata, frame, base, splice_tail| {
                     let blocks = renderer
-                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
+                        .render_frame_aligned_with_splice_tail(
+                            frame_index,
+                            frame,
+                            base,
+                            splice_tail,
+                        )
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         sink.consume(&joc_render::RenderedBlock {
@@ -2398,9 +2403,14 @@ fn run_legacy_render_pass(
                 &dither,
                 arguments.internal_base_policy,
                 arguments.dialnorm,
-                |frame_index, metadata, frame, base| {
+                |frame_index, metadata, frame, base, splice_tail| {
                     let blocks = renderer
-                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
+                        .render_frame_aligned_with_splice_tail(
+                            frame_index,
+                            frame,
+                            base,
+                            splice_tail,
+                        )
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         sink.consume(&block).map_err(|error| {
@@ -2681,9 +2691,14 @@ fn render_joc(
                 &dither,
                 arguments.internal_base_policy,
                 arguments.dialnorm,
-                |frame_index, metadata, frame, base| {
+                |frame_index, metadata, frame, base, splice_tail| {
                     let blocks = renderer
-                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
+                        .render_frame_aligned_with_splice_tail(
+                            frame_index,
+                            frame,
+                            base,
+                            splice_tail,
+                        )
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         let output_start = collect_timing.then(std::time::Instant::now);
@@ -2821,9 +2836,14 @@ fn render_joc(
                 &dither,
                 arguments.internal_base_policy,
                 arguments.dialnorm,
-                |frame_index, metadata, frame, base| {
+                |frame_index, metadata, frame, base, splice_tail| {
                     let blocks = renderer
-                        .render_frame_aligned_with_pcm_planes(frame_index, frame, base)
+                        .render_frame_aligned_with_splice_tail(
+                            frame_index,
+                            frame,
+                            base,
+                            splice_tail,
+                        )
                         .map_err(|error| eac3_decode::DecodeEac3Error::Sink(error.to_string()))?;
                     for block in blocks {
                         let output_start = collect_timing.then(std::time::Instant::now);
