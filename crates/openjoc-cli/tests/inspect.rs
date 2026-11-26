@@ -463,8 +463,8 @@ fn speaker_sequence_resets_and_continuity_preserve_profiling_pcm_bits() {
     ));
     fs::create_dir_all(&root).expect("test directory");
 
-    for (name, sequences, reset) in [
-        ("sequence-zero", [1, 2, 0, 1], true),
+    for (name, sequences, drops_pending_interval) in [
+        ("sequence-zero", [1, 2, 0, 1], false),
         ("sequence-gap", [1, 2, 7, 8], true),
         ("continuous", [1, 2, 3, 4], false),
         ("counter-wrap", [1022, 1023, 1, 2], false),
@@ -530,11 +530,15 @@ fn speaker_sequence_resets_and_continuity_preserve_profiling_pcm_bits() {
             let pcm = decode(&reference).expect("decode reference WAV");
             assert_eq!(pcm.channels.len(), channels);
             assert_eq!(pcm.sample_rate, 48_000);
-            // A real reconstruction reset drops the pending previous interval;
-            // normal increment and 1023-to-1 wrap preserve it. Include the
-            // 32-sample final linked-gain drain in the exact output comparison.
-            let frames = if reset { 3 * 1536 + 32 } else { 4 * 1536 + 32 };
-            assert!(pcm.channels.iter().all(|channel| channel.len() == frames));
+            // Only an unmarked jump drops the pending previous interval. An
+            // explicit splice preserves it, as do increment and 1023-to-1 wrap.
+            // All cases include exactly one 32-sample final linked-gain drain.
+            let intervals = if drops_pending_interval { 3 } else { 4 };
+            let frames = intervals * 1536 + 32;
+            assert!(
+                pcm.channels.iter().all(|channel| channel.len() == frames),
+                "{name}/{layout}: expected {frames} samples per channel"
+            );
             assert!(pcm.channels.iter().flatten().any(|sample| *sample != 0.0));
             assert!(
                 pcm.channels.iter().any(|channel| {
@@ -546,13 +550,22 @@ fn speaker_sequence_resets_and_continuity_preserve_profiling_pcm_bits() {
                     .iter()
                     .any(|channel| { channel[frames - 32..].iter().any(|sample| *sample != 0.0) })
             );
-            let boundary_has_audio = pcm
-                .channels
-                .iter()
-                .any(|channel| channel[1536..1536 + 32].iter().any(|sample| *sample != 0.0));
+            // The epoch boundary follows one retained interval after a gap,
+            // or two after an explicit splice. Check for the gain-reset hole
+            // at the boundary itself, not one interval before the splice.
+            let boundary = if drops_pending_interval {
+                1536
+            } else {
+                2 * 1536
+            };
+            let boundary_has_audio = pcm.channels.iter().any(|channel| {
+                channel[boundary..boundary + 32]
+                    .iter()
+                    .any(|sample| *sample != 0.0)
+            });
             assert_eq!(
-                boundary_has_audio, !reset,
-                "{name}/{layout}: gain history boundary"
+                boundary_has_audio, !drops_pending_interval,
+                "{name}/{layout}: gain history boundary at sample {boundary}"
             );
             assert!(
                 reference == profiled,

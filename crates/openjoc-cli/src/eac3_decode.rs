@@ -607,7 +607,7 @@ where
         false,
         sink,
         base_sink,
-        |_, _, _, _| Ok(()),
+        |_, _, _, _, _| Ok(()),
         PayloadDecoder::finish,
         None,
     )
@@ -639,7 +639,7 @@ where
         true,
         sink,
         base_sink,
-        |_, _, _, _| Ok(()),
+        |_, _, _, _, _| Ok(()),
         PayloadDecoder::finish_streaming,
         None,
     )
@@ -669,6 +669,7 @@ where
         &JocMetadataFrame,
         &DecodedPayloadFrame,
         &DecodedJocAccessUnitPcm,
+        Option<&ReconstructionBasis>,
     ) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
 {
@@ -706,6 +707,7 @@ where
         &JocMetadataFrame,
         &DecodedPayloadFrame,
         &DecodedJocAccessUnitPcm,
+        Option<&ReconstructionBasis>,
     ) -> Result<(), DecodeEac3Error>,
     B: FnMut(usize, &DecodedAccessUnitPcm) -> Result<(), DecodeEac3Error>,
 {
@@ -1175,6 +1177,7 @@ where
         &JocMetadataFrame,
         &DecodedPayloadFrame,
         &DecodedJocAccessUnitPcm,
+        Option<&ReconstructionBasis>,
     ) -> Result<(), DecodeEac3Error>,
     F: FnOnce(PayloadDecoder) -> Result<R, PayloadDecodeError>,
 {
@@ -1287,7 +1290,14 @@ where
         }
         sink(unit_index, &metadata, &frame)?;
         base_sink(unit_index, pcm)?;
-        combined_sink(unit_index, &metadata, &frame, &pcm_planes)?;
+        let splice_tail = decoder.take_splice_reconstruction_tail();
+        combined_sink(
+            unit_index,
+            &metadata,
+            &frame,
+            &pcm_planes,
+            splice_tail.as_ref(),
+        )?;
         if let Some(timing) = timing.as_mut() {
             if timing.collect_frame_times {
                 timing.frame_times.push(frame_start.elapsed());

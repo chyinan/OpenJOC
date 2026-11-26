@@ -44,7 +44,7 @@ fn positions_are_opt_in_and_leave_pcm_unchanged() {
     let (without, pcm_without) = decode(false);
     let (with, pcm_with) = decode(true);
     assert!(without.is_empty(), "positions must stay off unless enabled");
-    assert!(!pcm_without.is_empty());
+    assert_ne!(pcm_without, [] as [f32; 0]);
     assert_eq!(
         pcm_with, pcm_without,
         "enabling positions changed the audio"

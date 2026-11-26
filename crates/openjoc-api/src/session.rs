@@ -705,7 +705,10 @@ impl OpenJocSession {
         #[cfg(not(target_arch = "wasm32"))]
         self.begin_render_observation();
         let render_start = self.stage_timing_enabled.then(clock_now_ms);
-        let rendered = self.speaker.render_frame_aligned(&frame, &pcm_planes)?;
+        let splice_tail = self.payload_decoder.take_splice_reconstruction_tail();
+        let rendered =
+            self.speaker
+                .render_frame_aligned(&frame, &pcm_planes, splice_tail.as_ref())?;
         #[cfg(not(target_arch = "wasm32"))]
         self.render_timing.record_speaker(&rendered);
         let render_elapsed = render_start.map(elapsed_since_ms);

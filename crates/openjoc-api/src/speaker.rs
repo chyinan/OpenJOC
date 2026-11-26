@@ -47,14 +47,22 @@ impl SpeakerRenderer {
         &mut self,
         frame: &DecodedPayloadFrame,
         pcm_planes: &DecodedJocAccessUnitPcm,
+        splice_tail: Option<&ReconstructionBasis>,
     ) -> Result<Vec<RenderedBlock>, OpenJocError> {
         let base = &pcm_planes.joc_input_pcm;
+        let mut rendered = Vec::new();
         if frame.decoded.state_reset {
+            if let Some(tail) = splice_tail {
+                let aligned = self.timeline.finish(tail)?;
+                rendered = self.render_aligned_outputs(aligned)?;
+            }
             self.timeline.reset();
             self.pending_frames.clear();
             self.assembler.reset();
             self.bridge.reset();
-            if let Some(linked_gain) = self.final_linked_gain.as_mut() {
+            // The in-band splice resets reconstruction and spatial state,
+            // not the contiguous output limiter's lookahead.
+            if let (None, Some(linked_gain)) = (splice_tail, self.final_linked_gain.as_mut()) {
                 linked_gain.reset();
             }
             self.base_coordinates = None;
@@ -106,6 +114,14 @@ impl SpeakerRenderer {
         } else {
             self.base_coordinates = Some(base_coordinates);
         }
+        rendered.extend(self.render_aligned_outputs(aligned)?);
+        Ok(rendered)
+    }
+
+    fn render_aligned_outputs(
+        &mut self,
+        aligned: Vec<openjoc_joc::AlignedReconstructionOutput>,
+    ) -> Result<Vec<RenderedBlock>, OpenJocError> {
         let mut rendered = Vec::new();
         for aligned_frame in aligned {
             let pending = self.pending_frames.pop_front().ok_or_else(|| {
@@ -392,34 +408,7 @@ impl SpeakerRenderer {
         tail: &ReconstructionBasis,
     ) -> Result<Vec<RenderedBlock>, OpenJocError> {
         let aligned = self.timeline.finish(tail)?;
-        let mut rendered = Vec::new();
-        for aligned_frame in aligned {
-            let pending = self.pending_frames.pop_front().ok_or_else(|| {
-                OpenJocError::Render("reconstruction timeline queue underflow".to_owned())
-            })?;
-            let base = DecodedAccessUnitPcm {
-                sample_rate: aligned_frame.timeline.sample_rate,
-                samples: u16::try_from(
-                    aligned_frame.base_full_band_pcm.first().map_or(0, Vec::len),
-                )
-                .unwrap_or(u16::MAX),
-                channel_locations: pending.channel_locations,
-                channels: aligned_frame.base_full_band_pcm,
-                lfe_location: pending.lfe_location,
-                lfe: aligned_frame.lfe_pcm,
-                downmix: pending.downmix,
-                dialnorm: pending.dialnorm,
-                dialnorm_segments: pending.dialnorm_segments,
-            };
-            let mut frame = pending.frame;
-            frame.decoded.reconstruction_basis = aligned_frame.reconstruction_basis;
-            rendered.push(self.render_aligned_block(
-                &frame,
-                &base,
-                pending.compatibility_pcm.as_ref(),
-                aligned_frame.timeline.logical_start_sample,
-            )?);
-        }
+        let mut rendered = self.render_aligned_outputs(aligned)?;
         if !self.pending_frames.is_empty() {
             return Err(OpenJocError::Render(
                 "reconstruction timeline left pending frames".to_owned(),
