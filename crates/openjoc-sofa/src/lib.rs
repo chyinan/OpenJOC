@@ -1204,12 +1204,12 @@ fn validate_and_build(
     #[allow(clippy::cast_sign_loss)]
     let sample_rate = rate as u32;
 
-    let listener_position = read_fixed_vec3(file, "ListenerPosition", "metre")?;
-    let listener_view = read_fixed_vec3(file, "ListenerView", "metre")?;
-    let listener_up = read_fixed_vec3(file, "ListenerUp", "metre")?;
+    let listener_position = read_fixed_vec3(file, "ListenerPosition")?;
+    let listener_view = read_fixed_vec3(file, "ListenerView")?;
+    let listener_up = read_fixed_vec3(file, "ListenerUp")?;
     let basis = listener_basis(listener_view, listener_up)?;
     let receiver_var = file.variable("ReceiverPosition")?;
-    let receiver_positions = read_fixed_matrix(file, receiver_var, receivers, 3, "metre")?;
+    let receiver_positions = read_fixed_matrix(file, receiver_var, receivers, 3)?;
     // SOFA receivers are already listener-local: +X is forward and +Y is
     // left, regardless of the listener's world position or orientation.
     // Convert only the axis convention to OpenJOC's +X right / +Y forward.
@@ -1231,21 +1231,8 @@ fn validate_and_build(
         .ok_or(SofaError::MissingAttribute("SourcePosition:Units"))?;
     let source_type = NetcdfFile::attr_text(&source_var.attrs, "Type")
         .ok_or(SofaError::MissingAttribute("SourcePosition:Type"))?;
-    let spherical = source_type.eq_ignore_ascii_case("spherical");
-    let valid_units = if spherical {
-        units_spherical(&source_units)
-    } else {
-        source_type.eq_ignore_ascii_case("cartesian")
-            && matches!(
-                source_units.trim().to_ascii_lowercase().as_str(),
-                "metre" | "meter" | "m"
-            )
-    };
-    if !valid_units {
-        return Err(SofaError::InvalidCoordinate(format!(
-            "SourcePosition Type={source_type}, Units={source_units}; expected spherical angles in degrees and radius in metres, or Cartesian coordinates in metres"
-        )));
-    }
+    let coordinates =
+        CoordinateSystem::from_attributes("SourcePosition", &source_type, &source_units)?;
     let source_values = file.values(source_var)?;
 
     if let Ok(emitter_var) = file.variable("EmitterPosition") {
@@ -1263,23 +1250,12 @@ fn validate_and_build(
 
     let mut directions = Vec::with_capacity(measurements);
     for (measurement, position) in source_values.chunks_exact(3).enumerate() {
-        if position.iter().any(|value| !value.is_finite()) || (spherical && position[2] <= 0.0) {
+        if coordinates == CoordinateSystem::Spherical && position[2] == 0.0 {
             return Err(SofaError::InvalidCoordinate(format!(
                 "source measurement {measurement}"
             )));
         }
-        let world = if spherical {
-            let azimuth = position[0].to_radians();
-            let elevation = position[1].to_radians();
-            let distance = position[2];
-            CartesianPosition::new(
-                distance * elevation.cos() * azimuth.cos(),
-                distance * elevation.cos() * azimuth.sin(),
-                distance * elevation.sin(),
-            )
-        } else {
-            CartesianPosition::new(position[0], position[1], position[2])
-        };
+        let world = coordinates.to_cartesian("SourcePosition", position)?;
         let local = transform(sub(world, listener_position), basis);
         let direction = normalize(local).ok_or_else(|| {
             SofaError::InvalidCoordinate(format!("zero source direction at {measurement}"))
@@ -1291,7 +1267,7 @@ fn validate_and_build(
     let mut seams = std::collections::BTreeMap::new();
     let mut keep = vec![true; measurements];
     for (index, pos) in source_values.chunks_exact(3).enumerate() {
-        if spherical && pos[0].abs() == 180.0 {
+        if coordinates == CoordinateSystem::Spherical && pos[0].abs() == 180.0 {
             let sides = seams
                 .entry((pos[1].to_bits(), pos[2].to_bits()))
                 .or_insert([None; 2]);
@@ -2714,7 +2690,6 @@ fn optional_coordinate_attribute(
 fn read_fixed_vec3(
     file: &NetcdfFile<'_>,
     name: &'static str,
-    required_units: &str,
 ) -> Result<CartesianPosition, SofaError> {
     let variable = file.variable(name)?;
     require_float_variable(variable)?;
@@ -2739,23 +2714,10 @@ fn read_fixed_vec3(
         }
         inherited.map_or(Ok(None), |view| optional_coordinate_attribute(view, key))
     };
-    if let Some(kind) = attribute("Type")? {
-        if !kind.eq_ignore_ascii_case("cartesian") {
-            return Err(SofaError::InvalidCoordinate(format!(
-                "{name} type must be cartesian"
-            )));
-        }
-    }
-    if !required_units.is_empty() {
-        let units = attribute("Units")?.ok_or(SofaError::MissingAttribute("listener units"))?;
-        if !units_metre(&units) {
-            return Err(SofaError::InvalidCoordinate(format!("{name} units")));
-        }
-    }
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(SofaError::InvalidCoordinate(name.to_string()));
-    }
-    Ok(CartesianPosition::new(values[0], values[1], values[2]))
+    let kind = attribute("Type")?;
+    let units = attribute("Units")?.ok_or(SofaError::MissingAttribute("listener units"))?;
+    CoordinateSystem::from_attributes(name, kind.as_deref().unwrap_or("cartesian"), &units)?
+        .to_cartesian(name, &values)
 }
 
 fn read_fixed_matrix(
@@ -2763,7 +2725,6 @@ fn read_fixed_matrix(
     variable: &Variable,
     rows: usize,
     cols: usize,
-    required_units: &str,
 ) -> Result<Vec<CartesianPosition>, SofaError> {
     require_float_variable(variable)?;
     let shape = file.shape(variable);
@@ -2775,17 +2736,16 @@ fn read_fixed_matrix(
     }
     let units = NetcdfFile::attr_text(&variable.attrs, "Units")
         .ok_or(SofaError::MissingAttribute("receiver units"))?;
-    if !units_metre(&units) || required_units != "metre" {
-        return Err(SofaError::InvalidCoordinate("receiver units".to_string()));
-    }
-    let values = file.values(variable)?;
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(SofaError::InvalidCoordinate(variable.name.clone()));
-    }
-    Ok(values
+    let kind = optional_coordinate_attribute(variable, "Type")?;
+    let coordinates = CoordinateSystem::from_attributes(
+        &variable.name,
+        kind.as_deref().unwrap_or("cartesian"),
+        &units,
+    )?;
+    file.values(variable)?
         .chunks_exact(3)
-        .map(|chunk| CartesianPosition::new(chunk[0], chunk[1], chunk[2]))
-        .collect())
+        .map(|values| coordinates.to_cartesian(&variable.name, values))
+        .collect()
 }
 
 fn listener_basis(
@@ -2829,21 +2789,60 @@ fn receiver_ears(local: &[CartesianPosition]) -> Result<(usize, usize), SofaErro
     }
 }
 
-fn units_metre(value: &str) -> bool {
-    value
-        .to_ascii_lowercase()
-        .replace(' ', "")
-        .contains("metre")
-        || value.to_ascii_lowercase().replace(' ', "") == "m"
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CoordinateSystem {
+    Cartesian,
+    Spherical,
+}
+
+impl CoordinateSystem {
+    fn from_attributes(name: &str, kind: &str, units: &str) -> Result<Self, SofaError> {
+        let normalized = units.to_ascii_lowercase().replace(' ', "");
+        let metre = |token: &str| matches!(token, "metre" | "meter" | "m");
+        if kind.eq_ignore_ascii_case("cartesian")
+            && matches!(normalized.split(',').count(), 1 | 3)
+            && normalized.split(',').all(metre)
+        {
+            Ok(Self::Cartesian)
+        } else if kind.eq_ignore_ascii_case("spherical")
+            && normalized.strip_prefix("degree,degree,").is_some_and(metre)
+        {
+            Ok(Self::Spherical)
+        } else {
+            Err(SofaError::InvalidCoordinate(format!(
+                "{name} Type={kind}, Units={units}; expected Cartesian metres or spherical degrees, degrees, metres"
+            )))
+        }
+    }
+
+    fn to_cartesian(self, name: &str, values: &[f64]) -> Result<CartesianPosition, SofaError> {
+        let &[x, y, z] = values else {
+            return Err(SofaError::InvalidDimension(name.to_string()));
+        };
+        if !x.is_finite()
+            || !y.is_finite()
+            || !z.is_finite()
+            || (self == Self::Spherical && z < 0.0)
+        {
+            return Err(SofaError::InvalidCoordinate(name.to_string()));
+        }
+        Ok(match self {
+            Self::Cartesian => CartesianPosition::new(x, y, z),
+            Self::Spherical => {
+                let azimuth = x.to_radians();
+                let elevation = y.to_radians();
+                CartesianPosition::new(
+                    z * elevation.cos() * azimuth.cos(),
+                    z * elevation.cos() * azimuth.sin(),
+                    z * elevation.sin(),
+                )
+            }
+        })
+    }
 }
 fn units_hertz(value: &str) -> bool {
     matches!(value.trim().to_ascii_lowercase().as_str(), "hertz" | "hz")
 }
-fn units_spherical(value: &str) -> bool {
-    let normalized = value.to_ascii_lowercase().replace(' ', "");
-    normalized == "degree,degree,metre" || normalized == "degree,degree,m"
-}
-
 fn dot(a: CartesianPosition, b: CartesianPosition) -> f64 {
     a.x * b.x + a.y * b.y + a.z * b.z
 }

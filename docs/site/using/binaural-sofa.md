@@ -65,9 +65,7 @@ accepted. Receiver positions are listener-local; rotating or translating the
 listener does not change the ear assignment. `ListenerUp` inherits coordinate
 type and units from `ListenerView` when its own attributes are omitted.
 `Data.Delay` is in samples even without a `Units` attribute. Explicit incompatible
-coordinate or delay units are rejected. Listener positions and orientation
-vectors must use Cartesian coordinates in metres; spherical listener metadata
-is not currently supported.
+coordinate or delay units are rejected. Listener positions, orientation vectors and ear positions accept Cartesian metres or spherical azimuth and elevation in degrees with radius in metres.
 
 Each HDF5 chunk must decompress to at most 16 MiB, further limited
 by the configured file-byte and coefficient budgets. Oversized chunks are

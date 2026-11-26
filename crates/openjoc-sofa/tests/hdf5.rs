@@ -24,6 +24,7 @@ fn fixture_with_precision(
 }
 
 struct Metadata<'a> {
+    spherical_pose: bool,
     convention_version: &'a str,
     source: Option<([f64; 6], &'a str)>,
     position: [f64; 3],
@@ -36,6 +37,7 @@ struct Metadata<'a> {
 impl Default for Metadata<'_> {
     fn default() -> Self {
         Self {
+            spherical_pose: false,
             convention_version: "1.1",
             source: None,
             position: [0., 0., 0.],
@@ -130,6 +132,22 @@ fn fixture_with_metadata(
             metadata.source.map_or("degree, degree, metre", |s| s.1),
         ),
     ] {
+        let (data, kind, units) = if metadata.spherical_pose && name != "SourcePosition" {
+            let spherical = data
+                .chunks_exact(3)
+                .flat_map(|v| {
+                    let horizontal = v[0].hypot(v[1]);
+                    [
+                        v[1].atan2(v[0]).to_degrees(),
+                        v[2].atan2(horizontal).to_degrees(),
+                        horizontal.hypot(v[2]),
+                    ]
+                })
+                .collect();
+            (spherical, "spherical", "degree, degree, metre")
+        } else {
+            (data, kind, units)
+        };
         let dataset = file.create_dataset(name);
         dataset.with_f64_data(&data).with_shape(&shape);
         let (kind, units) = if name == "ListenerUp" {
@@ -145,6 +163,38 @@ fn fixture_with_metadata(
         }
     }
     file.finish().expect("HDF5 fixture")
+}
+
+#[test]
+fn spherical_pose_and_local_receivers_preserve_directions_and_ear_filters() {
+    let load = |spherical_pose| {
+        let metadata = Metadata {
+            spherical_pose,
+            position: [0.25, -0.5, 0.1],
+            view: [0., 1., 0.],
+            up_type: None,
+            up_units: None,
+            ..Metadata::default()
+        };
+        parse_simple_free_field_hrir(
+            &fixture_with_metadata(&[2, 3, 1], &[1, 2], &[1, 2, 2], false, &metadata),
+            SofaLoadLimits::default(),
+        )
+        .unwrap()
+    };
+    let reference = load(false);
+    let spherical = load(true);
+    for (actual, expected) in spherical
+        .bank
+        .entries()
+        .iter()
+        .zip(reference.bank.entries())
+    {
+        for (a, b) in actual.direction().into_iter().zip(expected.direction()) {
+            assert!((a - b).abs() < 1e-12);
+        }
+        assert_eq!(actual.pair(), expected.pair());
+    }
 }
 
 #[test]
