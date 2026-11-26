@@ -58,6 +58,8 @@ Matching-rate input adds no delay. Conversion ratios above 16:1 are rejected.
 With `equal-power-dual-mono`, the LFE receives the same added delay, including
 its drained tail, to preserve timing relative to the spatial channels.
 
+For source locations, `SourcePosition` accepts spherical azimuth/elevation in degrees and radius in metres, or Cartesian X/Y/Z in metres. Both use the listener position and orientation to resolve each measurement direction.
+
 Standard fixed `ReceiverPosition [R,C,1]` and `Data.Delay [1,R]` layouts are
 accepted. Receiver positions are listener-local; rotating or translating the
 listener does not change the ear assignment. `ListenerUp` inherits coordinate

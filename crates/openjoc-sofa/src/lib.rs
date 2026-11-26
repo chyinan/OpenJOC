@@ -1231,10 +1231,20 @@ fn validate_and_build(
         .ok_or(SofaError::MissingAttribute("SourcePosition:Units"))?;
     let source_type = NetcdfFile::attr_text(&source_var.attrs, "Type")
         .ok_or(SofaError::MissingAttribute("SourcePosition:Type"))?;
-    if !source_type.eq_ignore_ascii_case("spherical") || !units_spherical(&source_units) {
-        return Err(SofaError::InvalidCoordinate(
-            "SourcePosition requires spherical degree, degree, metre".to_string(),
-        ));
+    let spherical = source_type.eq_ignore_ascii_case("spherical");
+    let valid_units = if spherical {
+        units_spherical(&source_units)
+    } else {
+        source_type.eq_ignore_ascii_case("cartesian")
+            && matches!(
+                source_units.trim().to_ascii_lowercase().as_str(),
+                "metre" | "meter" | "m"
+            )
+    };
+    if !valid_units {
+        return Err(SofaError::InvalidCoordinate(format!(
+            "SourcePosition Type={source_type}, Units={source_units}; expected spherical angles in degrees and radius in metres, or Cartesian coordinates in metres"
+        )));
     }
     let source_values = file.values(source_var)?;
 
@@ -1252,24 +1262,24 @@ fn validate_and_build(
     }
 
     let mut directions = Vec::with_capacity(measurements);
-    for measurement in 0..measurements {
-        let azimuth = source_values[measurement * 3].to_radians();
-        let elevation = source_values[measurement * 3 + 1].to_radians();
-        let distance = source_values[measurement * 3 + 2];
-        if !azimuth.is_finite()
-            || !elevation.is_finite()
-            || !distance.is_finite()
-            || distance <= 0.0
-        {
+    for (measurement, position) in source_values.chunks_exact(3).enumerate() {
+        if position.iter().any(|value| !value.is_finite()) || (spherical && position[2] <= 0.0) {
             return Err(SofaError::InvalidCoordinate(format!(
                 "source measurement {measurement}"
             )));
         }
-        let world = CartesianPosition::new(
-            distance * elevation.cos() * azimuth.cos(),
-            distance * elevation.cos() * azimuth.sin(),
-            distance * elevation.sin(),
-        );
+        let world = if spherical {
+            let azimuth = position[0].to_radians();
+            let elevation = position[1].to_radians();
+            let distance = position[2];
+            CartesianPosition::new(
+                distance * elevation.cos() * azimuth.cos(),
+                distance * elevation.cos() * azimuth.sin(),
+                distance * elevation.sin(),
+            )
+        } else {
+            CartesianPosition::new(position[0], position[1], position[2])
+        };
         let local = transform(sub(world, listener_position), basis);
         let direction = normalize(local).ok_or_else(|| {
             SofaError::InvalidCoordinate(format!("zero source direction at {measurement}"))
@@ -1281,7 +1291,7 @@ fn validate_and_build(
     let mut seams = std::collections::BTreeMap::new();
     let mut keep = vec![true; measurements];
     for (index, pos) in source_values.chunks_exact(3).enumerate() {
-        if pos[0].abs() == 180.0 {
+        if spherical && pos[0].abs() == 180.0 {
             let sides = seams
                 .entry((pos[1].to_bits(), pos[2].to_bits()))
                 .or_insert([None; 2]);

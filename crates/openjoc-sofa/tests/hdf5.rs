@@ -25,6 +25,7 @@ fn fixture_with_precision(
 
 struct Metadata<'a> {
     convention_version: &'a str,
+    source: Option<([f64; 6], &'a str)>,
     position: [f64; 3],
     view: [f64; 3],
     up_type: Option<&'a str>,
@@ -36,6 +37,7 @@ impl Default for Metadata<'_> {
     fn default() -> Self {
         Self {
             convention_version: "1.1",
+            source: None,
             position: [0., 0., 0.],
             view: [1., 0., 0.],
             up_type: Some("cartesian"),
@@ -115,10 +117,17 @@ fn fixture_with_metadata(
         ),
         (
             "SourcePosition",
-            vec![0., 0., 1., 90., 0., 1.],
+            metadata
+                .source
+                .map_or([0., 0., 1., 90., 0., 1.], |s| s.0)
+                .to_vec(),
             vec![2, 3],
-            "spherical",
-            "degree, degree, metre",
+            if metadata.source.is_some() {
+                "cartesian"
+            } else {
+                "spherical"
+            },
+            metadata.source.map_or("degree, degree, metre", |s| s.1),
         ),
     ] {
         let dataset = file.create_dataset(name);
@@ -136,6 +145,30 @@ fn fixture_with_metadata(
         }
     }
     file.finish().expect("HDF5 fixture")
+}
+
+#[test]
+fn cartesian_sources_match_spherical_sources_with_offset_listener() {
+    let parse = |source| {
+        let metadata = Metadata {
+            source,
+            position: [0.25, 0.5, -0.1],
+            ..Metadata::default()
+        };
+        parse_simple_free_field_hrir(
+            &fixture_with_metadata(&[2, 3, 1], &[1, 2], &[1, 2, 2], false, &metadata),
+            SofaLoadLimits::default(),
+        )
+    };
+    let positions = [1., 0., 0., 90f64.to_radians().cos(), 1., 0.];
+    assert_eq!(
+        parse(None).unwrap(),
+        parse(Some((positions, "metre"))).unwrap()
+    );
+    assert!(matches!(
+        parse(Some((positions, "millimetre"))),
+        Err(SofaError::InvalidCoordinate(_))
+    ));
 }
 
 #[test]
