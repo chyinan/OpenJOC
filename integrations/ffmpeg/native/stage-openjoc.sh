@@ -23,22 +23,57 @@ case "$stage_prefix" in
 esac
 
 if [ -n "$rust_target" ]; then
-    cargo build --manifest-path "$repo_root/Cargo.toml" \
-        -p openjoc-capi --release --target "$rust_target" --locked
-    target_dir="$repo_root/target/$rust_target/release"
+    set -- --target "$rust_target"
 else
-    cargo build --manifest-path "$repo_root/Cargo.toml" \
-        -p openjoc-capi --release --locked
-    target_dir="$repo_root/target/release"
+    set --
 fi
+
+# The artifact reported by this build already accounts for the configured
+# target directory and any explicit or implicit target triple.
+cargo_output=$(cargo build --manifest-path "$repo_root/Cargo.toml" \
+    -p openjoc-capi --release --locked --message-format=json-render-diagnostics "$@")
+archive=$(printf '%s\n' "$cargo_output" | python3 -c '
+import json, sys
+archives = set()
+for line in sys.stdin.buffer:
+    if not line.startswith(b"{"):
+        continue
+    message = json.loads(line)
+    target = message.get("target", {})
+    if (message.get("reason") == "compiler-artifact"
+            and target.get("name") == "openjoc_capi"
+            and "staticlib" in target.get("crate_types", [])):
+        for filename in message.get("filenames", []):
+            if filename.replace(chr(92), "/").rsplit("/", 1)[-1] == "libopenjoc_capi.a":
+                archives.add(filename)
+if len(archives) != 1:
+    sys.exit("Cargo did not report exactly one OpenJOC C ABI static archive")
+sys.stdout.buffer.write(archives.pop().encode("utf-8"))
+')
+host_os=$(uname -s)
+case "$host_os" in
+    MINGW*|MSYS_NT*|CYGWIN*)
+        case "$archive" in
+            /*) ;;
+            *) archive=$(cygpath -u "$archive") ;;
+        esac
+        ;;
+esac
+case "$archive" in
+    /*) target_dir=${archive%/*} ;;
+    *)
+        echo "Cargo did not report an absolute OpenJOC C ABI artifact path" >&2
+        exit 1
+        ;;
+esac
 
 mkdir -p "$stage_prefix/include" "$stage_prefix/lib/pkgconfig" "$stage_prefix/bin"
 install -m 0644 "$repo_root/crates/openjoc-capi/include/openjoc.h" \
     "$stage_prefix/include/openjoc.h"
-install -m 0644 "$target_dir/libopenjoc_capi.a" \
+install -m 0644 "$archive" \
     "$stage_prefix/lib/libopenjoc_capi.a"
 
-case "$(uname -s)" in
+case "$host_os" in
     Darwin)
         install -m 0755 "$target_dir/libopenjoc_capi.dylib" \
             "$stage_prefix/lib/libopenjoc_capi.dylib"
@@ -70,7 +105,7 @@ case "$(uname -s)" in
             "$stage_prefix/lib/libopenjoc_capi.dll.a"
         ;;
     *)
-        echo "dynamic C ABI staging is not implemented for $(uname -s)" >&2
+        echo "dynamic C ABI staging is not implemented for $host_os" >&2
         exit 1
         ;;
 esac
