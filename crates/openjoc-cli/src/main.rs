@@ -398,6 +398,7 @@ fn print_command_help(command: &str) -> Result<(), Box<dyn Error>> {
             "--performance-report writes diagnostic JSON with stage timings and realtime metrics.\n",
             "Existing output files prompt once on an interactive terminal ([y/N]); --overwrite skips the prompt.\n",
             "Non-interactive renders refuse existing outputs unless --overwrite is given; replacements remain transactional.\n",
+            "An output path that is a directory is always refused.\n",
         ),
         "diagnose-tools" => concat!(
             "usage: openjoc diagnose-tools <FILE> --vector-id <ID> --json <OUTPUT>\n\n",
@@ -2072,6 +2073,16 @@ fn render_joc_preflight(
 ) -> Result<bool, Box<dyn Error>> {
     let outputs = planned_render_outputs(arguments);
     for (index, output) in outputs.iter().enumerate() {
+        if output.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::IsADirectory,
+                format!(
+                    "render-joc output path is a directory: {}",
+                    output.display()
+                ),
+            )
+            .into());
+        }
         for other in outputs.iter().skip(index + 1) {
             if paths_alias(output, other)? {
                 return Err(io::Error::new(

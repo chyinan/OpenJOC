@@ -26,7 +26,7 @@ fn replacement_backup_path(output: &Path) -> Result<PathBuf, io::Error> {
 pub(crate) fn replace_existing_file(staging: &Path, output: &Path) -> io::Result<()> {
     match fs::rename(staging, output) {
         Ok(()) => Ok(()),
-        Err(_rename_error) if output.exists() => {
+        Err(_rename_error) if output.is_file() => {
             let backup = replacement_backup_path(output)?;
             if backup.exists() {
                 return Err(io::Error::new(
