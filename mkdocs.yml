@@ -113,7 +113,7 @@ extra_css:
   - assets/stylesheets/extra.css
 
 extra:
-  release: v0.20.2
+  release: v0.21.0
 
 copyright: OpenJOC contributors · Apache-2.0
 

@@ -25,7 +25,7 @@ from release_packaging_core import (
 )
 
 
-CANONICAL_RELEASE_VERSION = "0.20.2"
+CANONICAL_RELEASE_VERSION = "0.21.0"
 LAV_UPSTREAM_BASE = "fefb6987994ed56e4525e8a125f5fbb53707bc52"
 LAV_MODIFIED_FILES = (
     "common/DSUtilLite/growarray.h",

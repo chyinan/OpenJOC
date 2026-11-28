@@ -1,11 +1,39 @@
 # Changelog
 
-## [Unreleased]
+## [0.21.0] — 2026-11-28
+
+### Added
+
+- Expose decoded OAMD dynamic-object positions for visualization through the
+  Rust and WebAssembly APIs.
+- Add discrete speaker layouts to WebAssembly, including discrete 2.0 as a
+  separate option from ordinary stereo.
+- Expose file-render progress and allow overriding the ffprobe executable.
+- Accept Cartesian source coordinates and spherical listener poses and
+  receiver positions in supported SimpleFreeFieldHRIR SOFA files.
 
 ### Fixed
 
-- Accumulate sparse JOC channel deltas across bands so a zero delta keeps the selected input.
-- Remove gain from unselected input channels in sparse JOC parameter bands.
+- Preserve pending PCM at signalled JOC splices and keep unmarked gaps distinct.
+- Accumulate sparse JOC channel deltas across bands and mute unselected
+  inputs. Accept matching dynamic object populations with a leading LFE.
+- Preserve complete ISO BMFF samples when reading multi-dependent JOC streams.
+- Route front-height, rear, and height carriers onto available speakers when
+  the target layout lacks those channels; keep physical stereo sources
+  distinct from decoded object binding.
+- Accept paired rear-meridian endpoints in spherical SOFA grids, preserve
+  per-direction delays when generating virtual aliases, and emit the
+  horizontal 90-degree alias only once.
+- Copy verified built-in HRTF assets byte for byte rather than repacking them.
+- Preserve the dither sequence after a rejected PCM chunk and reject directory
+  render destinations before starting work when overwrite is enabled.
+
+### Packaging and verification
+
+- Stage the native FFmpeg integration from the current Cargo artifact, including
+  builds with custom target directories or explicit target triples.
+- Admit the workspace version bump in the frozen PCM and session checks without
+  changing their reference inputs, expected outputs, or exact comparisons.
 
 ## [0.20.2] — 2026-11-16
 

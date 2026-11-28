@@ -314,6 +314,15 @@ class VersionedDependenciesTests(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "unsupported workspace version transition"):
             self.validate_without_rewriting_metadata()
 
+    def test_v0210_metadata_preserves_exact_dependency_contract(self):
+        for root, version in ((self.baseline, "0.20.1"), (self.candidate, "0.21.0")):
+            for path in [root / "Cargo.lock", *root.rglob("Cargo.toml")]:
+                path.write_text(path.read_text().replace('"0.18.0"', f'"{version}"'))
+        self.validate_without_rewriting_metadata()
+        self.mutate("Cargo.toml", 'version = "0.21.0"', 'version = "0.22.0"')
+        with self.assertRaisesRegex(gate.GateError, "unsupported workspace version transition"):
+            self.validate_without_rewriting_metadata()
+
     def test_manifest_mutations_fail(self):
         self.bump()
         cases = [
