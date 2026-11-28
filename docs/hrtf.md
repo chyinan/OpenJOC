@@ -34,7 +34,9 @@ The offline pipeline is [`tools/generate-builtin-hrtf.py`](../tools/generate-bui
 followed by `cargo run -p openjoc-sofa --example pack-hrtf-asset --
 <preset-id> <prepared-CDF-1.sofa> <output.ojhrtf>`. The packer rejects taps
 that are not exactly representable as f32; source Data.IR is f32, so widening
-and re-packing the built-in measurements is bit-exact. There is no lossy
+and re-packing the built-in measurements is bit-exact. When given an existing
+registered `.ojhrtf` instead, the example validates the selected preset and
+copies the verified bytes unchanged. There is no lossy
 compression, spatial downsampling, tap truncation, resampling, EQ, or
 subjective tuning.
 
