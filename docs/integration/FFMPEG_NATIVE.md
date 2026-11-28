@@ -72,7 +72,9 @@ change or when manually dispatched.
 `openjoc.h` plus `openjoc_stream_decoder_create`. A requested build fails
 clearly if either the header or library is absent. The development staging
 script installs `libopenjoc_capi.dylib`/`.so` dynamically; static linkage is not
-part of this acceptance.
+part of this acceptance. The staging script uses the C ABI artifact reported
+by Cargo, including when `CARGO_TARGET_DIR` or an implicit build target is
+configured.
 
 At runtime, the OpenJOC shared library must be discoverable through a packaged
 rpath or the platform's development loader path. There is no fallback to stock

@@ -13,6 +13,27 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def write_cargo_stub(path: Path, *archive_paths: str):
+    metadata = {"packages": [{"name": "openjoc-capi", "version": "9.8.7"}]}
+    artifact = {
+        "reason": "compiler-artifact",
+        "target": {"name": "openjoc_capi", "crate_types": ["rlib", "staticlib", "cdylib"]},
+        "filenames": list(archive_paths),
+        "fresh": True,
+    }
+    path.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "metadata) cat <<'METADATA'\n"
+        + json.dumps(metadata) + "\nMETADATA\n;;\n"
+        "build) cat <<'ARTIFACT'\n"
+        + json.dumps(artifact) + "\nARTIFACT\n;;\n"
+        "*) exit 2 ;;\n"
+        "esac\n"
+    )
+    path.chmod(0o755)
+
+
 @unittest.skipUnless(os.name != 'nt' and shutil.which('sh'), 'requires POSIX shell')
 class StagingContractTests(unittest.TestCase):
     def test_release_verifier_invokes_path_with_spaces(self):
@@ -47,8 +68,7 @@ class StagingContractTests(unittest.TestCase):
                 (target / name).touch()
             tools = root / 'tools'
             tools.mkdir()
-            metadata = json.dumps({'packages': [{'name': 'openjoc-capi', 'version': '9.8.7'}]})
-            (tools / 'cargo').write_text('#!/bin/sh\nif [ "$1" = metadata ]; then\ncat <<\'EOF\'\n' + metadata + '\nEOF\nfi\n')
+            write_cargo_stub(tools / 'cargo', str(target / 'libopenjoc_capi.a'))
             (tools / 'uname').write_text('#!/bin/sh\necho Linux\n')
             for tool in tools.iterdir():
                 tool.chmod(0o755)
@@ -101,12 +121,7 @@ class StagingContractTests(unittest.TestCase):
             consumer.write_text('#include <openjoc.h>\nint main(void) { return openjoc_staging_probe() == 37 ? 0 : 1; }\n')
             tools = root / 'tools'
             tools.mkdir()
-            (tools / 'cargo').write_text(
-                '#!/bin/sh\nif [ "$1" = metadata ]; then\n'
-                "cat <<'EOF'\n"
-                '{"packages":[{"name":"openjoc-capi","version":"9.8.7"}]}\n'
-                'EOF\nfi\n'
-            )
+            write_cargo_stub(tools / 'cargo', str(target / 'libopenjoc_capi.a'))
             (tools / 'uname').write_text('#!/bin/sh\nprintf "Linux\\n"\n')
             for tool in tools.iterdir():
                 tool.chmod(0o755)
@@ -130,6 +145,70 @@ class StagingContractTests(unittest.TestCase):
                     subprocess.run(['cc', str(consumer), *arguments, '-o', str(executable)], check=True)
                     subprocess.run([str(executable)], env={**environment,
                                    'LD_LIBRARY_PATH': str(prefix / 'lib')}, check=True)
+
+
+    @unittest.skipUnless(shutil.which('python3'), 'requires Python')
+    def test_stage_follows_the_build_artifact_and_rejects_missing_artifact(self):
+        with tempfile.TemporaryDirectory(prefix='openjoc-stage-target-') as tmp:
+            root = Path(tmp)
+            script = root / 'integrations/ffmpeg/native/stage-openjoc.sh'
+            capi = root / 'crates/openjoc-capi'
+            script.parent.mkdir(parents=True)
+            (capi / 'include').mkdir(parents=True)
+            shutil.copy2(ROOT / 'integrations/ffmpeg/native/stage-openjoc.sh', script)
+            shutil.copy2(ROOT / 'crates/openjoc-capi/openjoc.pc.in', capi / 'openjoc.pc.in')
+            (capi / 'include/openjoc.h').touch()
+            tools = root / 'tools'
+            tools.mkdir()
+            (tools / 'uname').write_text('#!/bin/sh\nprintf "%s\n" "$TEST_HOST_OS"\n')
+            (tools / 'cygpath').write_text(
+                '#!/bin/sh\n[ "$1" = "-u" ] && [ "$2" = "$TEST_NATIVE_ARCHIVE" ] || exit 2\n'
+                'printf "%s\n" "$TEST_POSIX_ARCHIVE"\n'
+            )
+            for tool in tools.iterdir():
+                tool.chmod(0o755)
+            for label, host, flag in (
+                ('directory', 'Linux', ''),
+                ('implicit-target', 'Linux', ''),
+                ('explicit-target', 'Linux', 'x86_64-unknown-linux-gnu'),
+                ('mingw-gnu', 'MINGW64_NT-10.0', 'x86_64-pc-windows-gnu'),
+            ):
+                with self.subTest(label=label):
+                    target = root / ('custom 输出 ' + label)
+                    triple = flag or ('x86_64-unknown-linux-gnu' if label == 'implicit-target' else '')
+                    current = target / triple / 'release'
+                    stale = root / 'target' / flag / 'release'
+                    outputs = {'lib/libopenjoc_capi.a': 'libopenjoc_capi.a'}
+                    if host == 'Linux':
+                        outputs['lib/libopenjoc_capi.so'] = 'libopenjoc_capi.so'
+                    else:
+                        outputs['bin/openjoc_capi.dll'] = 'openjoc_capi.dll'
+                        outputs['lib/libopenjoc_capi.dll.a'] = 'openjoc_capi.dll.a'
+                    for directory, marker in ((current, 'current'), (stale, 'stale')):
+                        directory.mkdir(parents=True, exist_ok=True)
+                        for filename in outputs.values():
+                            (directory / filename).write_text(marker)
+                    archive = current / 'libopenjoc_capi.a'
+                    native = str(archive) if host == 'Linux' else r'C:\custom output\release\libopenjoc_capi.a'
+                    write_cargo_stub(tools / 'cargo', native)
+                    prefix = root / ('stage-' + label)
+                    env = {**os.environ, 'PATH': f'{tools}:{os.environ["PATH"]}', 'TEST_HOST_OS': host,
+                           'CARGO_TARGET_DIR': str(target), 'TEST_NATIVE_ARCHIVE': native,
+                           'TEST_POSIX_ARCHIVE': str(archive)}
+                    if label == 'implicit-target':
+                        env['CARGO_BUILD_TARGET'] = triple
+                    subprocess.run(['sh', str(script), str(prefix), *([flag] if flag else [])],
+                                   env=env, check=True)
+                    for staged in outputs:
+                        self.assertEqual((prefix / staged).read_text(), 'current')
+            write_cargo_stub(tools / 'cargo')
+            prefix = root / 'no-artifact'
+            result = subprocess.run(['sh', str(script), str(prefix)],
+                                    env={**os.environ, 'PATH': f'{tools}:{os.environ["PATH"]}'},
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Cargo did not report exactly one OpenJOC C ABI static archive', result.stderr)
+            self.assertFalse(prefix.exists())
 
 
 if __name__ == '__main__':
