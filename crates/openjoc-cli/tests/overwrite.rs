@@ -183,3 +183,66 @@ fn export_adm_help_explains_sidecar_overwrite() {
         stdout.contains("Existing audio or adjacent .adm-report.json files require --overwrite")
     );
 }
+
+#[test]
+fn overwrite_refuses_directory_at_audio_destination() {
+    assert_overwrite_refuses_directory("render.wav");
+}
+
+#[test]
+fn overwrite_refuses_directory_at_report_destination() {
+    assert_overwrite_refuses_directory("render-performance.json");
+}
+
+fn assert_overwrite_refuses_directory(directory_name: &str) {
+    let root = unique_root(directory_name);
+    let input = root.join("input.ec3");
+    let output = root.join("render.wav");
+    let report = root.join("render-performance.json");
+    let directory = root.join(directory_name);
+    let marker = directory.join("existing.txt");
+    fs::create_dir_all(&directory).expect("directory occupying destination");
+    fs::write(&marker, b"keep this file").expect("existing directory contents");
+    fs::write(
+        &input,
+        include_bytes!("../../openjoc-wasm/testdata/joc.ec3"),
+    )
+    .expect("synthetic input");
+    let other = if directory == output {
+        &report
+    } else {
+        &output
+    };
+    fs::write(other, b"keep the other destination").expect("existing other destination");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openjoc"))
+        .arg("render-joc")
+        .arg(&input)
+        .args(["--layout", "7.1.4", "--output"])
+        .arg(&output)
+        .arg("--performance-report")
+        .arg(&report)
+        .arg("--overwrite")
+        .output()
+        .expect("render-joc directory check");
+
+    // Read back the generated files before cleaning up, including on a baseline failure.
+    let marker_bytes = fs::read(&marker);
+    let other_bytes = fs::read(other);
+    let entry_count = fs::read_dir(&root).unwrap().count();
+    fs::remove_dir_all(root).expect("cleanup");
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(!result.status.success(), "{stderr}");
+    assert!(stderr.contains("is a directory"), "{stderr}");
+    assert!(stderr.contains(&*directory.to_string_lossy()), "{stderr}");
+    assert_eq!(
+        marker_bytes.expect("directory contents preserved"),
+        b"keep this file"
+    );
+    assert_eq!(
+        other_bytes.expect("other destination preserved"),
+        b"keep the other destination"
+    );
+    assert_eq!(entry_count, 3, "unexpected staging or backup output");
+}

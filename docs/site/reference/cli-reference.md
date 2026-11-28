@@ -99,4 +99,4 @@ The command exports a reconstructed RIFF/RF64 ADM BWF representation. It cannot 
   fragmented samples before the common in-band classifier is called.
 - `render-scene` accepts explicit static sources and the strict local SOFA subset only.
 - ReconstructionBasis rows are not authored-object PCM.
-- `--overwrite` is required for existing outputs in non-interactive execution; replacements remain transactional.
+- `--overwrite` is required for existing output files in non-interactive execution; replacements remain transactional. A directory at the audio or performance-report destination is always refused.
