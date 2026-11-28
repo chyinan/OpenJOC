@@ -597,3 +597,26 @@ fn writer_positions_use_checked_arithmetic_before_io() {
         }
     }
 }
+
+#[test]
+fn rejected_chunk_can_be_retried_without_shifting_dither() {
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::S16,
+        clipping: Clipping::Reject,
+        dither: Dither::Triangular { seed: 0xab72_4e41 },
+    };
+    let corrected = (0..64)
+        .map(|n| (f64::from(n) + f64::from(n % 8) / 8.0) / 32768.0)
+        .collect::<Vec<_>>();
+    let mut rejected = corrected.clone();
+    rejected[11] = 1.25;
+    let mut writer = WaveWriter::new(Cursor::new(Vec::new()), 48_000, 1, options).unwrap();
+    assert_eq!(
+        writer.write_interleaved(&rejected),
+        Err(WaveError::OutOfRangeSample { index: 11 })
+    );
+    writer.write_interleaved(&corrected).unwrap();
+    let actual = writer.finish().unwrap().into_inner();
+    let expected = encode_channels(48_000, &[corrected], options).unwrap();
+    assert_eq!(actual, expected);
+}

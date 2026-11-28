@@ -292,22 +292,23 @@ impl<W: Write + Seek> CafWriter<W> {
             .ok_or(CafError::SizeOverflow)?;
         self.encoded_scratch.clear();
         self.encoded_scratch.reserve(encoded_len);
+        let mut next_sample_index = self.sample_index;
         for index in 0..self.interleaved_scratch.len() {
             encode_sample(
                 &mut self.encoded_scratch,
                 self.interleaved_scratch[index],
                 self.options,
-                self.sample_index,
+                next_sample_index,
             )
             .map_err(CafError::from)?;
-            self.sample_index = self
-                .sample_index
+            next_sample_index = next_sample_index
                 .checked_add(1)
                 .ok_or(CafError::SizeOverflow)?;
         }
         self.writer
             .write_all(&self.encoded_scratch)
             .map_err(caf_io_error)?;
+        self.sample_index = next_sample_index;
         self.data_bytes = self
             .data_bytes
             .checked_add(
@@ -774,21 +775,22 @@ impl<W: Write + Seek> WaveWriter<W> {
             .ok_or(WaveError::SizeOverflow)?;
         self.encoded_scratch.clear();
         self.encoded_scratch.reserve(encoded_len);
+        let mut next_sample_index = self.sample_index;
         for index in 0..self.interleaved_scratch.len() {
             encode_sample(
                 &mut self.encoded_scratch,
                 self.interleaved_scratch[index],
                 self.options,
-                self.sample_index,
+                next_sample_index,
             )?;
-            self.sample_index = self
-                .sample_index
+            next_sample_index = next_sample_index
                 .checked_add(1)
                 .ok_or(WaveError::SizeOverflow)?;
         }
         self.writer
             .write_all(&self.encoded_scratch)
             .map_err(io_error)?;
+        self.sample_index = next_sample_index;
         self.data_bytes = data_bytes;
         self.frames = self
             .frames
