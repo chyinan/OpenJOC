@@ -18,7 +18,7 @@ import tempfile
 from release_packaging_core import deterministic_zip, render_sha256_manifest, sha256_file
 
 
-CANONICAL_RELEASE_VERSION = "0.20.2"
+CANONICAL_RELEASE_VERSION = "0.21.0"
 
 FFMPEG_DLLS = (
     "avcodec-lav-63.dll",
