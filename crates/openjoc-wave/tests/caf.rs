@@ -228,3 +228,45 @@ fn caf_f32_rejects_finite_overflow_and_preserves_maximum() {
         );
     }
 }
+
+#[test]
+fn rejected_chunk_can_be_retried_without_shifting_dither() {
+    let options = WaveEncodeOptions {
+        sample_format: SampleFormat::S16,
+        clipping: Clipping::Reject,
+        dither: Dither::Triangular { seed: 0xab72_4e41 },
+    };
+    let descriptions = [CafChannelDescription {
+        label: 1,
+        flags: 0,
+        coordinates: [0.0; 3],
+    }];
+    let make =
+        || CafWriter::new(Cursor::new(Vec::new()), 48_000, 1, options, &descriptions).unwrap();
+    let corrected = (0..64)
+        .map(|n| (f64::from(n) + f64::from(n % 8) / 8.0) / 32768.0)
+        .collect::<Vec<_>>();
+    let mut rejected = corrected.clone();
+    rejected[11] = 1.25;
+    let mut retried = make();
+    assert_eq!(
+        retried.write_interleaved(&rejected),
+        Err(openjoc_wave::CafError::OutOfRangeSample { index: 11 })
+    );
+    retried.write_interleaved(&corrected).unwrap();
+    let mut fresh = make();
+    fresh.write_interleaved(&corrected).unwrap();
+    let actual = retried.finish().unwrap().into_inner();
+    let expected = fresh.finish().unwrap().into_inner();
+    let differences = parse_caf(&actual)
+        .data
+        .chunks_exact(2)
+        .zip(parse_caf(&expected).data.chunks_exact(2))
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        differences, 0,
+        "retry changed {differences} of 64 PCM samples"
+    );
+    assert_eq!(actual, expected);
+}
